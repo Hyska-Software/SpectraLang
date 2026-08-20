@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import os
 import re
 import subprocess
 import sys
@@ -25,6 +26,7 @@ SYMBOL_RE = re.compile(r"(?:std|spectra\.std|spectra\.api)\.[A-Za-z0-9_]+(?:\.[A
 FULL_DECL_RE = re.compile(r'\(\s*"((?:std|spectra\.std|spectra\.api)\.[A-Za-z0-9_.]+)"\s*,\s*"([^"]+)"')
 STRING_PATH_RE = re.compile(r'"((?:std|spectra\.std|spectra\.api)\.[A-Za-z0-9_.]+)"')
 SIGNAL_RE = re.compile(r"\b(?:TODO|FIXME|unimplemented|placeholder|mock|stub|simulat(?:e|ed|ion)|reserved but not implemented)\b", re.IGNORECASE)
+INCLUDE_RE = re.compile(r'include!\(\s*"([^"]+)"\s*\)')
 
 
 @dataclass
@@ -72,6 +74,31 @@ def source_paths(root: Path, configured: list[str]) -> list[Path]:
         elif path.is_file():
             paths.append(path)
     return paths
+
+
+def expand_included_paths(paths: list[Path]) -> list[Path]:
+    """Return the configured Rust files plus same-module include! children."""
+    ordered: list[Path] = []
+    visited: set[Path] = set()
+
+    def visit(path: Path) -> None:
+        resolved = path.resolve()
+        if resolved in visited:
+            return
+        visited.add(resolved)
+        ordered.append(path)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return
+        for relative in INCLUDE_RE.findall(text):
+            child = path.parent / relative
+            if child.is_file():
+                visit(child)
+
+    for path in paths:
+        visit(path)
+    return ordered
 
 
 def add_symbol(inventory: dict[str, SymbolEvidence], raw: str, source: str, *, kind: str = "function", mode: str | None = None) -> None:
@@ -263,12 +290,40 @@ def discover_sources(root: Path, manifest: dict[str, Any]) -> SourceInventory:
     }
     for category in SOURCE_KEYS:
         paths = source_paths(root, manifest.get("sources", {}).get(category, []))
+        if category in {"semantic", "lowering"}:
+            paths = expand_included_paths(paths)
         files[category] = [str(path.relative_to(root)) for path in paths]
+        # A Rust `include!("domain.rs")` shares the containing module's
+        # namespace.  The stdlib keeps its public binding constants in
+        # `mod.rs` while registrations live in the extracted domain files, so
+        # scan that category as one logical module before recording per-file
+        # diagnostics.  Treating each include file as an isolated crate would
+        # manufacture semantic_without_runtime drift after K-10.  The API
+        # package uses ordinary Rust modules and must retain its per-file
+        # context: its string inventory intentionally relies on the local
+        # `name = "..."` registration shape.
+        if category == "runtime":
+            combined_text = "\n".join(
+                path.read_text(encoding="utf-8") for path in paths
+            )
+            runtime_inventory(source=category, text=combined_text, symbols=symbols, generated_bindings=generated_bindings)
+        elif category in {"semantic", "lowering"}:
+            combined_text = "\n".join(
+                path.read_text(encoding="utf-8") for path in paths
+            )
+            if category == "semantic":
+                semantic_inventory(combined_text, symbols)
+            else:
+                generic, api = lowering_inventory(combined_text, symbols, generated_bindings)
+                generic_lowering = generic_lowering or generic
+                api_lowering = api_lowering or api
         for path in paths:
             text = path.read_text(encoding="utf-8")
-            if category == "semantic":
-                semantic_inventory(text, symbols)
-            elif category in {"runtime", "api_runtime"}:
+            if category in {"semantic", "lowering"}:
+                pass
+            elif category == "runtime":
+                pass
+            elif category == "api_runtime":
                 runtime_inventory(text, category, symbols, generated_bindings)
             elif category == "lowering":
                 generic, api = lowering_inventory(text, symbols, generated_bindings)
@@ -479,11 +534,33 @@ def probe_matches(symbol: str, manifest: dict[str, Any]) -> list[dict[str, Any]]
     return [probe for probe in manifest.get("probe", []) if any(fnmatch.fnmatch(symbol, pattern) for pattern in probe.get("covers", []))]
 
 
-def run_probe(root: Path, binary: Path, probe: dict[str, Any], timeout_seconds: int) -> dict[str, Any]:
+def build_probe_command(
+    binary: Path,
+    probe: dict[str, Any],
+    postgres_version_probe_docker_container: str | None = None,
+) -> list[str]:
     if probe.get("kind", "spectra") == "external":
         command = [str(value) for value in probe["command"]]
+        if probe.get("id") == "api-postgres-driver" and postgres_version_probe_docker_container:
+            command.extend(
+                [
+                    "--version-probe-docker-container",
+                    postgres_version_probe_docker_container,
+                ]
+            )
     else:
         command = [str(binary), "run", probe["path"]]
+    return command
+
+
+def run_probe(
+    root: Path,
+    binary: Path,
+    probe: dict[str, Any],
+    timeout_seconds: int,
+    postgres_version_probe_docker_container: str | None = None,
+) -> dict[str, Any]:
+    command = build_probe_command(binary, probe, postgres_version_probe_docker_container)
     try:
         completed = subprocess.run(command, cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout_seconds, check=False)
     except subprocess.TimeoutExpired as exc:
@@ -654,6 +731,11 @@ def main() -> int:
         action="store_true",
         help="fail when every discovered public symbol is not represented in the typed catalog",
     )
+    parser.add_argument(
+        "--postgres-version-probe-docker-container",
+        default=os.environ.get("SPECTRA_POSTGRES_VERSION_PROBE_DOCKER_CONTAINER"),
+        help="use psql inside this container for the independent PostgreSQL version probe",
+    )
     args = parser.parse_args()
     manifest_path = Path(args.manifest)
     manifest_path = manifest_path if manifest_path.is_absolute() else ROOT / manifest_path
@@ -676,7 +758,15 @@ def main() -> int:
     probe_results = []
     for probe in manifest["probe"]:
         if binary.is_file() or probe.get("kind", "spectra") == "external":
-            probe_results.append(run_probe(ROOT, binary, probe, args.timeout_seconds))
+            probe_results.append(
+                run_probe(
+                    ROOT,
+                    binary,
+                    probe,
+                    args.timeout_seconds,
+                    args.postgres_version_probe_docker_container,
+                )
+            )
         else:
             probe_results.append({"id": probe["id"], "kind": "spectra", "path": probe.get("path"), "status": "binary_missing", "exit_code": None, "command": []})
     report = build_report(ROOT, manifest, inventory, probe_results)

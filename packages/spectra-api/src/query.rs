@@ -1,5 +1,5 @@
-use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use crate::handles::ApiHandleTable;
+use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
 };
@@ -25,6 +25,10 @@ impl Query {
 
     pub fn len(&self) -> usize {
         self.values.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
     }
 
     pub fn has(&self, key: &str) -> bool {

@@ -1,0 +1,98 @@
+module api_rate_limiting
+
+import std.string as str
+
+from std.api.http import Request, Response, method_get, request, request_with_header, response_header, response_status
+from std.api.handler import text
+from std.api.middleware import MiddlewareChain, MiddlewareHandle, chain_new, execute_sync, rate_limit_update, register_rate_limit, use_sync
+
+func with_tenant(req: Request, tenant: string) returns Request {
+    return request_with_header(req, "X-Spectra-Tenant", tenant)
+}
+
+func with_user(req: Request, user: string) returns Request {
+    return request_with_header(req, "X-Spectra-User", user)
+}
+
+func expect_contains(value: string, expected: string, code: int) returns int {
+    if str.contains(value, expected) != true {
+        return code
+    }
+    return 0
+}
+
+func exercise_token_bucket(base: Request) returns int {
+    let limiter: MiddlewareHandle = register_rate_limit(
+        "token_bucket",
+        2,
+        60000,
+        "tenant",
+        true,
+    )
+    let chain: MiddlewareChain = use_sync(chain_new(), limiter)
+    let tenant_a = with_tenant(base, "tenant-a")
+    let tenant_b = with_tenant(base, "tenant-b")
+
+    if response_status(execute_sync(chain, tenant_a, text("one"))) != 200 {
+        return 10
+    }
+    if response_status(execute_sync(chain, tenant_a, text("two"))) != 200 {
+        return 11
+    }
+    let denied: Response = execute_sync(chain, tenant_a, text("three"))
+    if response_status(denied) != 429 {
+        return 12
+    }
+    let retry_after: string = response_header(denied, "Retry-After")
+    if retry_after == "" {
+        return 13
+    }
+    if expect_contains(retry_after, "30", 13) != 0 {
+        return 13
+    }
+    if response_status(execute_sync(chain, tenant_b, text("isolated"))) != 200 {
+        return 14
+    }
+    if rate_limit_update(limiter, 3, 60000) != true {
+        return 15
+    }
+    if response_status(execute_sync(chain, tenant_a, text("reloaded"))) != 200 {
+        return 16
+    }
+    return 0
+}
+
+func exercise_sliding_window(base: Request) returns int {
+    let limiter: MiddlewareHandle = register_rate_limit(
+        "sliding_window",
+        1,
+        60000,
+        "user",
+        false,
+    )
+    let chain: MiddlewareChain = use_sync(chain_new(), limiter)
+    let user_a = with_user(base, "user-a")
+    let user_b = with_user(base, "user-b")
+    if response_status(execute_sync(chain, user_a, text("one"))) != 200 {
+        return 30
+    }
+    if response_status(execute_sync(chain, user_a, text("two"))) != 429 {
+        return 31
+    }
+    if response_status(execute_sync(chain, user_b, text("isolated"))) != 200 {
+        return 32
+    }
+    if rate_limit_update(limiter, 2, 60000) != false {
+        return 33
+    }
+    return 0
+}
+
+public func main() returns int {
+    let base = request(method_get(), "/limited")
+    let token_result = exercise_token_bucket(base)
+    if token_result != 0 {
+        return token_result
+    }
+    return exercise_sliding_window(base)
+}

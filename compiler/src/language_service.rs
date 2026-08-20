@@ -125,8 +125,22 @@ pub fn type_to_string(ty: &Type) -> String {
     match ty {
         Type::Int => "int".to_string(),
         Type::Float => "float".to_string(),
-        Type::ExactInt { signed, width } => format!("{}{}", if *signed { "i" } else { "u" }, match width { crate::ast::IntWidth::I8 => "8", crate::ast::IntWidth::I16 => "16", crate::ast::IntWidth::I32 => "32", crate::ast::IntWidth::I64 => "64", crate::ast::IntWidth::Isize => "size", crate::ast::IntWidth::Usize => "size" }),
-        Type::ExactFloat { width } => match width { crate::ast::FloatWidth::F32 => "f32".to_string(), crate::ast::FloatWidth::F64 => "f64".to_string() },
+        Type::ExactInt { signed, width } => format!(
+            "{}{}",
+            if *signed { "i" } else { "u" },
+            match width {
+                crate::ast::IntWidth::I8 => "8",
+                crate::ast::IntWidth::I16 => "16",
+                crate::ast::IntWidth::I32 => "32",
+                crate::ast::IntWidth::I64 => "64",
+                crate::ast::IntWidth::Isize => "size",
+                crate::ast::IntWidth::Usize => "size",
+            }
+        ),
+        Type::ExactFloat { width } => match width {
+            crate::ast::FloatWidth::F32 => "f32".to_string(),
+            crate::ast::FloatWidth::F64 => "f64".to_string(),
+        },
         Type::Bool => "bool".to_string(),
         Type::String => "string".to_string(),
         Type::Char => "char".to_string(),
@@ -146,6 +160,14 @@ pub fn type_to_string(ty: &Type) -> String {
         ),
         Type::Struct { name } => name.clone(),
         Type::Enum { name } => name.clone(),
+        Type::Applied { name, args } => format!(
+            "{}<{}>",
+            name,
+            args.iter()
+                .map(type_to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         Type::TypeParameter { name } => name.clone(),
         Type::SelfType => "Self".to_string(),
         Type::Fn {
@@ -391,7 +413,11 @@ fn format_function(function: &Function) -> String {
         .as_ref()
         .map(format_type_annotation)
         .unwrap_or_else(|| "unit".to_string());
-    let prefix = if function.is_async { "async func" } else { "func" };
+    let prefix = if function.is_async {
+        "async func"
+    } else {
+        "func"
+    };
     format!(
         "{} {}({}) returns {}",
         prefix, function.name, params, return_type
@@ -410,7 +436,11 @@ fn format_method(type_name: &str, method: &Method) -> String {
         .as_ref()
         .map(format_type_annotation)
         .unwrap_or_else(|| "unit".to_string());
-    let prefix = if method.is_async { "async func" } else { "func" };
+    let prefix = if method.is_async {
+        "async func"
+    } else {
+        "func"
+    };
     format!(
         "{} {}::{}({}) returns {}",
         prefix, type_name, method.name, params, return_type

@@ -1,0 +1,63 @@
+// R-2403 regression: the typed SSE surface configures a bounded replaying
+// stream, formats an event, and exposes the event fields through the API.
+module api_sse
+
+from std.api.http import Response, response_status
+from std.api.handler import HandlerHandle, register_sync
+from std.api.routing import Route, Router, get, route_id, router
+from std.api.server import Server, listen, new as server_new, serve, shutdown
+from std.api.sse import SseEvent, SseServer, event_data, event_id, event_new, event_release, event_retry_ms, event_type, server_listen, server_local_port, server_new as sse_server_new, server_response, server_set_heartbeat_interval, server_set_max_event_bytes, server_set_replay_capacity
+
+public func main() returns int {
+    let server: SseServer = sse_server_new()
+    if server_set_heartbeat_interval(server, 1000) != true {
+        return 10
+    }
+    if server_set_replay_capacity(server, 8) != true {
+        return 20
+    }
+    if server_set_max_event_bytes(server, 4096) != true {
+        return 30
+    }
+    let response: Response = server_response(server)
+    if response_status(response) != 200 {
+        return 35
+    }
+    let routes: Router = router()
+    let route: Route = get(routes, "/events")
+    if route_id(route) == 0 {
+        return 36
+    }
+    let handler: HandlerHandle = register_sync(route_id(route), response)
+    if server_listen(server, 0) != true || server_local_port(server) <= 0 {
+        return 37
+    }
+    let http_server: Server = server_new()
+    if listen(http_server, 0) != true {
+        return 40
+    }
+    if block_on(serve(http_server, routes)) != 1 {
+        return 41
+    }
+    if shutdown(http_server) != true {
+        return 42
+    }
+
+    let event: SseEvent = event_new("1", "update", "hello", 500)
+    if event_id(event) != "1" {
+        return 50
+    }
+    if event_type(event) != "update" {
+        return 60
+    }
+    if event_data(event) != "hello" {
+        return 70
+    }
+    if event_retry_ms(event) != 500 {
+        return 80
+    }
+    if event_release(event) != true {
+        return 90
+    }
+    return 0
+}

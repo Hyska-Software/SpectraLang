@@ -413,6 +413,15 @@ pub enum Type {
         name: String,
         variants: Vec<(String, Option<Vec<Type>>)>, // (name, data_types)
     },
+    /// A concrete generic application whose arguments remain explicit in IR.
+    /// `representation` is the ABI/layout form used by existing lowering and
+    /// backend code while the application is migrated away from name-only
+    /// mangling.
+    Generic {
+        name: String,
+        args: Vec<Type>,
+        representation: Box<Type>,
+    },
     Function {
         params: Vec<Type>,
         return_type: Box<Type>,
@@ -532,7 +541,11 @@ impl Function {
 impl BasicBlock {
     pub fn add_instruction(&mut self, kind: InstructionKind) -> usize {
         let id = self.instructions.len();
-        self.instructions.push(Instruction { id, kind, source_span: None });
+        self.instructions.push(Instruction {
+            id,
+            kind,
+            source_span: None,
+        });
         id
     }
 
@@ -543,7 +556,10 @@ impl BasicBlock {
 
 impl Type {
     pub fn is_numeric(&self) -> bool {
-        matches!(self, Type::Int | Type::Float | Type::ExactInt { .. } | Type::ExactFloat { .. })
+        matches!(
+            self,
+            Type::Int | Type::Float | Type::ExactInt { .. } | Type::ExactFloat { .. }
+        )
     }
 
     pub fn is_integer(&self) -> bool {

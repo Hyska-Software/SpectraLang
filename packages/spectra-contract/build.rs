@@ -42,9 +42,20 @@ fn main() {
     let mut bindings = Vec::with_capacity(catalog.entry.len());
     let mut seen = HashSet::new();
     for entry in &catalog.entry {
-        assert!(!entry.path.trim().is_empty(), "catalog path cannot be empty");
-        assert!(seen.insert(entry.path.clone()), "duplicate catalog path: {}", entry.path);
-        assert!(!entry.binding.trim().is_empty(), "catalog binding cannot be empty: {}", entry.path);
+        assert!(
+            !entry.path.trim().is_empty(),
+            "catalog path cannot be empty"
+        );
+        assert!(
+            seen.insert(entry.path.clone()),
+            "duplicate catalog path: {}",
+            entry.path
+        );
+        assert!(
+            !entry.binding.trim().is_empty(),
+            "catalog binding cannot be empty: {}",
+            entry.path
+        );
         paths.push(entry.path.clone());
         bindings.push(entry.binding.clone());
     }
@@ -66,9 +77,7 @@ fn main() {
             if !generated_constant_names.insert(constant_name.clone()) {
                 return None;
             }
-            Some(format!(
-                "pub const {constant_name}: &str = {binding:?};"
-            ))
+            Some(format!("pub const {constant_name}: &str = {binding:?};"))
         })
         .collect::<Vec<_>>()
         .join("\n");

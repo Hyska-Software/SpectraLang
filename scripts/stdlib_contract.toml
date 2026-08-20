@@ -27,6 +27,9 @@ docs = [
   "docs/api/std-api-sqlite.md",
   "docs/api/std-api-redis.md",
   "docs/api/std-api-health.md",
+  "docs/api/std-api-session.md",
+  "docs/api/std-api-websocket.md",
+  "docs/api/std-api-sse.md",
   "docs/concurrency-serving.md",
 ]
 
@@ -76,6 +79,26 @@ covers = ["std.api.db.redis.*"]
 id = "api-health"
 path = "tests/validation/197_health_checks.spectra"
 covers = ["std.api.health.*"]
+
+[[probe]]
+id = "api-session"
+path = "tests/validation/342_api_session.spectra"
+covers = ["std.api.session.*"]
+
+[[probe]]
+id = "api-websocket"
+path = "tests/validation/343_api_websocket.spectra"
+covers = ["std.api.websocket.*"]
+
+[[probe]]
+id = "api-websocket-client"
+path = "tests/validation/344_api_websocket_client.spectra"
+covers = ["std.api.websocket.client_*", "std.api.websocket.connection_*", "std.api.websocket.message_*"]
+
+[[probe]]
+id = "api-sse"
+path = "tests/validation/345_api_sse.spectra"
+covers = ["std.api.sse.*"]
 
 [[probe]]
 id = "tensor-kernels"

@@ -1817,9 +1817,9 @@ baselines.
   `std.api.*`, `spectra.api.*` host calls, `packages/spectra-api`,
   HTTP/1.1-first delivery, `rustls`, and Phase 21 async dependencies)
 - `R-2202` `spectra-api` Rust crate and host call registration (complete;
-  `packages/spectra-api` links against `spectra-runtime`, registers 277 public
+  `packages/spectra-api` links against `spectra-runtime`, registers 414 public
   `spectra.api.*` host calls through the runtime host-call registry, satisfies
-  the runtime's 211-name required namespace, exposes
+  the runtime's 346-name required namespace, exposes
   `spectra_api_register_host_calls`, and is validated by
   `scripts/validate_r2202_spectra_api_hostcalls.py`)
 - `R-2203` `std.api.*` semantic and tooling surface (complete; virtual
@@ -1829,17 +1829,20 @@ baselines.
 - `R-2204` HTTP/1.1 parser (complete; `Http1Parser` streams requests and
   responses, produces structured headers/body chunks, round-trips chunked
   transfer coding, and reports typed parse errors with byte positions)
-- `R-2205` HTTP/1.1 server (complete; nonblocking accept loop,
+- `R-2205` HTTP/1.1 server (complete; `mio::Poll`-driven nonblocking accept
+  loop,
   per-connection state, response writer, body limits, slowloris/read
   timeouts, cleanup paths, and 10k connection-slot validation landed)
 - `R-2206` HTTP/1.1 client (complete; `HttpClient` supports pooled plain
   HTTP connections, GET/POST/PUT/PATCH/DELETE/HEAD, arbitrary bodies,
-  redirect method semantics, configurable timeouts, and typed
-  connection/protocol/timeout errors)
+  redirect method semantics, configurable timeouts, typed
+  connection/protocol/timeout errors, plus the registered nonblocking
+  `spectra.api.client.request` `Task<Response>` bridge with cancellation)
 - `R-2207` TLS via `rustls` (complete; `spectra-api` exposes
   `TlsServerConfig`, `TlsClientConfig`, HTTPS round trips, SNI, configurable
-  DER certificate roots/chains, WebPKI client roots, ALPN `http/1.1`, and
-  typed TLS handshake/certificate errors)
+  DER certificate roots/chains, WebPKI client roots, ALPN `http/1.1` plus
+  `h2`, typed TLS handshake/certificate errors, and a validated nonblocking
+  HTTPS path for the registered `Task<Response>` client bridge)
 - `R-2208` `std.api.json` encoder and decoder (complete; native
   `JsonValue`/`JsonNumber` codec handles primitives, null, arrays, maps,
   nested structures, common escapes, RFC 8259 output, typed parse errors with
@@ -1877,13 +1880,17 @@ baselines.
   `std.api.handler` exports `IntoResponse`, `Handler`, and `AsyncHandler`,
   supports sync and async handler contracts over `Request -> Response`,
   normalizes text/JSON/bytes/status/error returns, dispatches registered
-  handler handles, and is covered by
-  `tests/validation/139_api_handler_response_return.spectra`)
+  handler handles, transports sync/async user callbacks through the runtime
+  closure ABI, and is covered by
+  `tests/validation/139_api_handler_response_return.spectra` and
+  `tests/validation/330_api_handler_callbacks.spectra`)
 - `R-2216` Server lifecycle, listen, serve, graceful shutdown (complete;
   `std.api.server` exposes configured listen ports, `serve`, state,
   assigned-port reporting, SIGINT/SIGTERM-compatible shutdown signaling,
-  lifecycle stats, and graceful drain/cancel policy; covered by
-  `tests/validation/147_api_server_lifecycle.spectra`)
+  lifecycle stats, graceful drain/cancel policy, synchronous callback routing,
+  and mio-polled asynchronous callback tasks; covered by
+  `tests/validation/147_api_server_lifecycle.spectra` and
+  `tests/validation/330_api_handler_callbacks.spectra`)
 - `R-2217` `spectra.api` package published to local registry (complete;
   local registry publish writes checksum and `source_path` metadata,
   `spectralang package add spectra-api` installs the canonical
@@ -1920,29 +1927,118 @@ baselines.
   `std.api.http.request_with_header`, `docs/api/std-api-cors.md`,
   `tests/validation/149_api_cors_middleware.spectra`, and
   `scripts/validate_r2302_cors_middleware.py`)
-- `R-2303` Structured logging and request ID tracing
-- `R-2304` Rate limiting (token bucket, sliding window)
-- `R-2305` Response compression (gzip, brotli, deflate)
-- `R-2306` Security headers (CSP, HSTS, X-Frame-Options, ...)
-- `R-2307` API key authentication
-- `R-2308` JWT (HS256, RS256, ES256)
-- `R-2309` OAuth2 client (auth code + PKCE + refresh)
+- `R-2303` Structured logging and request ID tracing (complete;
+  `std.api.middleware.register_logging` assigns a unique request ID before
+  request hooks, emits one JSON or text line with request ID, method, path,
+  status, and latency, and exposes the rendered records through
+  `logging_len`, `logging_line`, and `logging_request_id`; validated by
+  `tests/validation/331_api_structured_logging.spectra` and
+  `scripts/validate_r2303_structured_logging.py`)
+- `R-2304` Rate limiting (complete; `std.api.middleware.register_rate_limit`
+  implements token bucket and sliding-window counters with global, route,
+  tenant, user, and combined scopes, standard `429` retry headers, and a
+  development-only atomic update path; validated by
+  `tests/validation/332_api_rate_limiting.spectra` and
+  `scripts/validate_r2304_rate_limiting.py`)
+- `R-2305` Response compression (complete; `std.api.middleware.register_compression`
+  negotiates Brotli, gzip, and deflate with q-values, threshold and HTTP
+  exclusions; validated by `tests/validation/336_api_compression.spectra` and
+  `scripts/validate_r2305_compression.py`)
+- `R-2306` Security headers (complete; `std.api.middleware.register_security_headers`
+  applies CSP, Permissions-Policy, X-Frame-Options, X-Content-Type-Options,
+  Referrer-Policy, and opt-in HSTS, with longest-prefix per-route overrides;
+  validated by `tests/validation/334_api_security_headers.spectra` and
+  `scripts/validate_r2306_security_headers.py`)
+- `R-2307` API key authentication (complete; `std.api.middleware.register_api_key`
+  supports header/query sources, expiry, revocation, structured `401` errors,
+  and an internal API-key identity for rate-limit composition; validated by
+  `tests/validation/333_api_key_auth.spectra` and
+  `scripts/validate_r2307_api_key.py`)
+- `R-2308` JWT (complete; `std.api.jwt.sign` and `std.api.jwt.verify` support
+  HS256, RS256, and ES256 with exp/nbf/iss/aud/sub/jti validation and
+  constant-time cryptographic verification; validated by
+  `tests/validation/335_api_jwt.spectra` and
+  `scripts/validate_r2308_jwt.py`)
+- `R-2309` OAuth2 client (complete; `std.api.oauth` implements
+  authorization-code exchange with state and PKCE S256, refresh rotation, and
+  revocation; validated by `tests/validation/337_api_oauth.spectra` and
+  `scripts/validate_r2309_oauth.py`)
 - `R-2310` OAuth2 resource server and introspection
-- `R-2311` Sessions (server-side store)
-- `R-2312` Cookie API (Secure, httpOnly, SameSite, signed)
-- `R-2313` Request validation (RFC 7807)
-- `R-2314` Unified error handling and exception middleware
-- `R-2315` HTTPS hardening (HSTS preload, OCSP stapling)
-- `R-2316` Threat mitigations (CSRF, SSRF, body size, timeouts)
-- `R-2317` API example: authenticated REST API (JWT)
-- `R-2318` API example: middleware composition
+- `R-2311` Sessions (complete; `std.api.session` provides a pluggable
+  in-memory/Redis backend contract, opaque cryptographically random IDs,
+  bounded TTL/sliding expiration, maximum lifetime, backend lookup validity,
+  and immediate revocation; validated by
+  `tests/validation/342_api_session.spectra` and
+  `scripts/validate_r2311_session.py`; Redis 7 service certification remains
+  owned by the independent R-2507 gate)
+- `R-2312` Cookie API (complete; `std.api.http` supports typed Path, Domain,
+  Max-Age, Secure, HttpOnly, SameSite, multi-value `Set-Cookie`, and
+  HMAC-SHA256 signing/constant-time verification with typed error state;
+  validated by `tests/validation/338_api_cookie.spectra` and
+  `scripts/validate_r2312_cookie.py`)
+- `R-2313` Request validation (complete; `std.api.validation` provides
+  immutable handle-backed schemas, required/length/range/regex constraints,
+  JSON and Form validation, typed field issues, and RFC 7807
+  `application/problem+json` responses; validated by
+  `tests/validation/339_api_validation.spectra` and
+  `scripts/validate_r2313_validation.py`)
+- `R-2314` Unified error handling and exception middleware (complete;
+  `std.api.errors.ApiError` maps public errors to deterministic RFC 7807
+  responses, `internal_error` logs full details while sanitizing public
+  output, and `exception_middleware` recovers sync/async chain failures with
+  per-route mappings; validated by `tests/validation/340_api_errors.spectra`
+  and `scripts/validate_r2314_errors.py`)
+- `R-2315` HTTPS hardening (complete; HSTS preload/includeSubDomains remains
+  covered by R-2306, while rustls OCSP stapling and listener-preserving
+  certificate rotation are implemented in `spectra-api` and validated by
+  `scripts/validate_r2315_https_hardening.py`)
+- `R-2316` Threat mitigations (complete; `std.api.security` now provides
+  CSRF origin allowlists and default-deny SSRF policies, the HTTP client validates
+  resolved addresses before sync/async/TLS sockets, and server body/timeout
+  setters preserve early parser rejection and per-connection timeouts; validated
+  by `tests/validation/341_api_security.spectra` and
+  `scripts/validate_r2316_security.py`)
+- `R-2317` API example: authenticated REST API (JWT) (complete; the example
+  issues and verifies deterministic HS256 bearer tokens, rejects tampering,
+  validates real request bodies, returns unified Problem Details errors, wires
+  five CRUD routes and starts/stops a local server; validated by
+  `examples/api/02_jwt_auth_crud.spectra` and
+  `scripts/validate_r2317_jwt_auth_crud_example.py`)
+- `R-2318` API example: middleware composition (complete; the reference
+  example composes logging, security headers, CORS, compression, and
+  route-scoped rate limiting, proves short-circuit/header behavior and
+  longest-prefix configuration, and preserves both `Vary` dimensions after a
+  CORS merge fix; validated by
+  `examples/api/03_middleware_composition.spectra` and
+  `scripts/validate_r2318_middleware_composition_example.py`)
 
 ### Phase 24 — Advanced API Features
 
-- `R-2401` WebSocket server (RFC 6455)
-- `R-2402` WebSocket client
-- `R-2403` Server-Sent Events (SSE)
-- `R-2404` HTTP/2 server (h2, ALPN, HPACK)
+- `R-2401` WebSocket server (in progress; the dedicated `std.api.websocket`
+  listener now implements the RFC 6455 handshake, strict frame parsing,
+  fragmentation, ping/pong, close validation, message limits, and negotiated
+  `permessage-deflate`, with the typed surface and 17 host calls validated by
+  `tests/validation/343_api_websocket.spectra` and
+  `scripts/validate_r2401_websocket.py`; HTTP-router upgrade integration and
+  the 10k concurrent-connections soak remain before completion)
+- `R-2402` WebSocket client (in progress; `WebSocketClient` now implements
+  masked `ws://`/`wss://` handshakes, `Sec-WebSocket-Accept` validation, the
+  project `rustls`/WebPKI trust path, SSRF policy, per-message deflate, bounded
+  reconnect/backoff, and typed async host calls, validated by native
+  round-trip/reconnect/TLS tests and
+  `tests/validation/344_api_websocket_client.spectra`; external echo-server
+  certification remains)
+- `R-2403` Server-Sent Events (SSE) (complete; dedicated
+  `std.api.sse` transport now performs HTTP/1.1 event-stream handshakes,
+  bounded multiline event serialization, automatic heartbeats, `retry` hints,
+  and `Last-Event-ID` replay, validated by native tests and
+  `tests/validation/345_api_sse.spectra`; `server_response` connects the
+  bounded stream to the normal routed `std.api.server` lifecycle)
+- `R-2404` HTTP/2 server (complete; the native `h2` transport performs
+  stream multiplexing, HPACK header round-trips, bounded flow control, and
+  graceful shutdown; rustls advertises `http/1.1` plus `h2` and the listener
+  requires negotiated `h2`; validated by native TLS/multiplexing tests and
+  `scripts/validate_r2404_http2.py`)
 - `R-2405` HTTP/2 client
 - `R-2406` HTTP/3 and QUIC
 - `R-2407` API versioning (path, header, query)

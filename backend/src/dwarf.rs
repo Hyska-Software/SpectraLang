@@ -13,6 +13,7 @@ use gimli::write::{
 };
 use gimli::{constants, Encoding, Format, LineEncoding, LittleEndian};
 
+use crate::aot::NativeValueLocation;
 use crate::debug::CodeViewFunction;
 
 pub type DwarfSection = (String, Vec<u8>);
@@ -22,7 +23,11 @@ pub fn sections_for_functions(
     source: &str,
     functions: &[CodeViewFunction],
 ) -> Result<Vec<DwarfSection>, String> {
-    let encoding = Encoding { format: Format::Dwarf32, version: 4, address_size: 8 };
+    let encoding = Encoding {
+        format: Format::Dwarf32,
+        version: 4,
+        address_size: 8,
+    };
     let file_name = std::path::Path::new(source_file)
         .file_name()
         .and_then(|name| name.to_str())
@@ -36,7 +41,11 @@ pub fn sections_for_functions(
         None,
     );
     let directory = line_program.default_directory();
-    let file = line_program.add_file(LineString::String(file_name.as_bytes().to_vec()), directory, None);
+    let file = line_program.add_file(
+        LineString::String(file_name.as_bytes().to_vec()),
+        directory,
+        None,
+    );
     for function in functions {
         line_program.begin_sequence(Some(Address::Constant(function.offset as u64)));
         let line_count = source.lines().count().max(1) as u32;
@@ -56,11 +65,26 @@ pub fn sections_for_functions(
     let mut dwarf = DwarfUnit::new(encoding);
     dwarf.unit.line_program = line_program;
     let root = dwarf.unit.root();
-    dwarf.unit.get_mut(root).set(constants::DW_AT_name, AttributeValue::String(file_name.as_bytes().to_vec()));
-    dwarf.unit.get_mut(root).set(constants::DW_AT_comp_dir, AttributeValue::String(Vec::new()));
-    dwarf.unit.get_mut(root).set(constants::DW_AT_producer, AttributeValue::String(b"SpectraLang".to_vec()));
-    dwarf.unit.get_mut(root).set(constants::DW_AT_language, AttributeValue::Language(constants::DW_LANG_Rust));
-    dwarf.unit.get_mut(root).set(constants::DW_AT_stmt_list, AttributeValue::LineProgramRef);
+    dwarf.unit.get_mut(root).set(
+        constants::DW_AT_name,
+        AttributeValue::String(file_name.as_bytes().to_vec()),
+    );
+    dwarf.unit.get_mut(root).set(
+        constants::DW_AT_comp_dir,
+        AttributeValue::String(Vec::new()),
+    );
+    dwarf.unit.get_mut(root).set(
+        constants::DW_AT_producer,
+        AttributeValue::String(b"SpectraLang".to_vec()),
+    );
+    dwarf.unit.get_mut(root).set(
+        constants::DW_AT_language,
+        AttributeValue::Language(constants::DW_LANG_Rust),
+    );
+    dwarf
+        .unit
+        .get_mut(root)
+        .set(constants::DW_AT_stmt_list, AttributeValue::LineProgramRef);
 
     for function in functions {
         let subprogram = dwarf.unit.add(root, constants::DW_TAG_subprogram);
@@ -74,19 +98,31 @@ pub fn sections_for_functions(
         );
         dwarf.unit.get_mut(subprogram).set(
             constants::DW_AT_high_pc,
-            AttributeValue::Address(Address::Constant((function.offset + function.size.max(1)) as u64)),
+            AttributeValue::Address(Address::Constant(
+                (function.offset + function.size.max(1)) as u64,
+            )),
         );
         let ranges = dwarf.unit.ranges.add(RangeList(vec![Range::StartLength {
             begin: Address::Constant(function.offset as u64),
             length: function.size.max(1) as u64,
         }]));
-        dwarf.unit.get_mut(subprogram).set(constants::DW_AT_ranges, AttributeValue::RangeListRef(ranges));
-        dwarf.unit.get_mut(subprogram).set(constants::DW_AT_decl_file, AttributeValue::FileIndex(Some(file)));
-        dwarf.unit.get_mut(subprogram).set(constants::DW_AT_decl_line, AttributeValue::Udata(1));
+        dwarf.unit.get_mut(subprogram).set(
+            constants::DW_AT_ranges,
+            AttributeValue::RangeListRef(ranges),
+        );
+        dwarf.unit.get_mut(subprogram).set(
+            constants::DW_AT_decl_file,
+            AttributeValue::FileIndex(Some(file)),
+        );
+        dwarf
+            .unit
+            .get_mut(subprogram)
+            .set(constants::DW_AT_decl_line, AttributeValue::Udata(1));
 
         // A location is emitted only for a compiler-proven stack/register
-        // mapping.  The current CodeView compatibility path does not provide
-        // that proof, so no fabricated DW_OP_fbreg location is emitted here.
+        // mapping. Ranges that do not cover the complete function are left
+        // absent until a DWARF location-list entry can represent their exact
+        // lifetime; emitting a function-wide expression would be false.
         for (local_index, local_name) in function.locals.iter().enumerate() {
             let local = dwarf.unit.add(subprogram, constants::DW_TAG_variable);
             dwarf.unit.get_mut(local).set(
@@ -97,12 +133,40 @@ pub fn sections_for_functions(
                 constants::DW_AT_decl_file,
                 AttributeValue::FileIndex(Some(file)),
             );
-            dwarf.unit.get_mut(local).set(constants::DW_AT_decl_line, AttributeValue::Udata(1));
-            if let Some(Some(offset)) = function.local_offsets.get(local_index) {
-                dwarf.unit.get_mut(local).set(
-                    constants::DW_AT_location,
-                    AttributeValue::Exprloc(_location_expression(*offset)),
-                );
+            dwarf
+                .unit
+                .get_mut(local)
+                .set(constants::DW_AT_decl_line, AttributeValue::Udata(1));
+            let complete_range = function
+                .local_locations
+                .get(local_index)
+                .and_then(|ranges| {
+                    ranges
+                        .iter()
+                        .find(|range| range.start == 0 && range.end >= function.size.max(1))
+                });
+            if let Some(range) = complete_range {
+                let expression = match range.location {
+                    NativeValueLocation::CfaOffset(offset) => Some(_location_expression(offset)),
+                    NativeValueLocation::Register(hw_enc) => _register_expression(hw_enc),
+                };
+                if let Some(expression) = expression {
+                    dwarf.unit.get_mut(local).set(
+                        constants::DW_AT_location,
+                        AttributeValue::Exprloc(expression),
+                    );
+                }
+            } else if function
+                .local_locations
+                .get(local_index)
+                .is_none_or(Vec::is_empty)
+            {
+                if let Some(Some(offset)) = function.local_offsets.get(local_index) {
+                    dwarf.unit.get_mut(local).set(
+                        constants::DW_AT_location,
+                        AttributeValue::Exprloc(_location_expression(*offset)),
+                    );
+                }
             }
         }
     }
@@ -110,14 +174,18 @@ pub fn sections_for_functions(
     let mut write_dwarf = Dwarf::new();
     write_dwarf.units.add(dwarf.unit);
     let mut sections = Sections::new(EndianVec::new(LittleEndian));
-    write_dwarf.write(&mut sections).map_err(|error| format!("DWARF write failed: {error:?}"))?;
+    write_dwarf
+        .write(&mut sections)
+        .map_err(|error| format!("DWARF write failed: {error:?}"))?;
     let mut output = Vec::new();
-    sections.for_each(|id, data| {
-        if !data.slice().is_empty() {
-            output.push((format!("{}", id.name()), data.slice().to_vec()));
-        }
-        Ok::<(), ()>(())
-    }).map_err(|error| format!("DWARF section extraction failed: {error:?}"))?;
+    sections
+        .for_each(|id, data| {
+            if !data.slice().is_empty() {
+                output.push((id.name().to_string(), data.slice().to_vec()));
+            }
+            Ok::<(), ()>(())
+        })
+        .map_err(|error| format!("DWARF section extraction failed: {error:?}"))?;
     Ok(output)
 }
 
@@ -126,6 +194,17 @@ fn _location_expression(offset: i64) -> Expression {
     let mut expression = Expression::new();
     expression.op_fbreg(offset);
     expression
+}
+
+fn _register_expression(hw_enc: u8) -> Option<Expression> {
+    // Cranelift's x86-64 hardware order is RAX, RCX, RDX, RBX, RSP, RBP,
+    // RSI, RDI, R8..R15. DWARF orders the first eight as RAX, RDX, RCX,
+    // RBX, RSI, RDI, RBP, RSP.
+    const DWARF_REGISTERS: [u16; 16] = [0, 2, 1, 3, 7, 6, 4, 5, 8, 9, 10, 11, 12, 13, 14, 15];
+    let register = *DWARF_REGISTERS.get(hw_enc as usize)?;
+    let mut expression = Expression::new();
+    expression.op_reg(gimli::Register(register));
+    Some(expression)
 }
 
 #[cfg(test)]
@@ -142,11 +221,18 @@ mod tests {
             section: 1,
             locals: vec!["debug_value".to_string()],
             local_offsets: vec![Some(-8)],
+            local_locations: vec![Vec::new()],
         }];
         let sections = sections_for_functions("fixture.spectra", "fn helper() {}", &functions)
             .expect("DWARF writer should accept a valid unit");
-        assert!(sections.iter().any(|(name, data)| name == ".debug_info" && !data.is_empty()));
-        assert!(sections.iter().any(|(name, data)| name == ".debug_line" && !data.is_empty()));
-        assert!(sections.iter().any(|(name, data)| name == ".debug_abbrev" && !data.is_empty()));
+        assert!(sections
+            .iter()
+            .any(|(name, data)| name == ".debug_info" && !data.is_empty()));
+        assert!(sections
+            .iter()
+            .any(|(name, data)| name == ".debug_line" && !data.is_empty()));
+        assert!(sections
+            .iter()
+            .any(|(name, data)| name == ".debug_abbrev" && !data.is_empty()));
     }
 }

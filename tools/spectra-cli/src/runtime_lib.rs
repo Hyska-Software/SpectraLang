@@ -67,11 +67,9 @@ fn is_runtime_archive_name(name: &str) -> bool {
 
 fn is_api_archive_name(name: &str) -> bool {
     if cfg!(windows) {
-        name == "spectra_api.lib"
-            || (name.starts_with("spectra_api-") && name.ends_with(".lib"))
+        name == "spectra_api.lib" || (name.starts_with("spectra_api-") && name.ends_with(".lib"))
     } else {
-        name == "libspectra_api.a"
-            || (name.starts_with("libspectra_api-") && name.ends_with(".a"))
+        name == "libspectra_api.a" || (name.starts_with("libspectra_api-") && name.ends_with(".a"))
     }
 }
 
@@ -134,7 +132,10 @@ pub fn validate_required_symbols(path: &std::path::Path) -> Result<(), String> {
         return Ok(());
     };
     let text = String::from_utf8_lossy(&output.stdout);
-    let missing = REQUIRED.iter().filter(|symbol| !text.contains(**symbol)).collect::<Vec<_>>();
+    let missing = REQUIRED
+        .iter()
+        .filter(|symbol| !text.contains(**symbol))
+        .collect::<Vec<_>>();
     if !missing.is_empty() {
         return Err(format!(
             "runtime archive '{}' is missing required symbols: {}",

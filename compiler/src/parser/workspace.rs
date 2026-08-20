@@ -44,6 +44,12 @@ pub struct ModuleLoader {
     cache: HashMap<String, CachedModule>,
 }
 
+impl Default for ModuleLoader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModuleLoader {
     pub fn new() -> Self {
         Self {

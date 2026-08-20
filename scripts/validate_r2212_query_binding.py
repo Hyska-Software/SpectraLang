@@ -10,7 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def read(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
+    source = ROOT / path
+    if source.suffix == ".rs":
+        return "\n".join(
+            sibling.read_text(encoding="utf-8")
+            for sibling in sorted(source.parent.rglob("*.rs"))
+        )
+    return source.read_text(encoding="utf-8")
 
 
 def fail(message: str) -> None:
@@ -42,7 +48,10 @@ def run_command(args: list[str]) -> None:
 
 
 def validate_implementation() -> None:
-    query = read("packages/spectra-api/src/query.rs")
+    # Query parsing is still implemented in this focused module.  Do not
+    # aggregate unrelated API modules here: HTTP form decoding legitimately
+    # handles `+`, while RFC 3986 query decoding must preserve it.
+    query = (ROOT / "packages/spectra-api/src/query.rs").read_text(encoding="utf-8")
     for term in [
         "pub struct Query",
         "pub struct QuerySchema",

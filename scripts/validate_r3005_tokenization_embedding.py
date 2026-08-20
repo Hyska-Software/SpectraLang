@@ -140,7 +140,13 @@ def main() -> int:
         report["reference_comparisons"].append({"fixture": str(args.fixture), "cli_exit_code": result.returncode, "expected": 0})
         if result.returncode != 0:
             report["failures"].append("production fixture failed")
-        source = (root / "runtime" / "src" / "stdlib" / "mod.rs").read_text(encoding="utf-8")
+        # The stdlib registration and implementation are split across
+        # runtime/src/stdlib/*.rs.  Validate the production tree instead of
+        # the former monolithic mod.rs file.
+        source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted((root / "runtime" / "src" / "stdlib").glob("*.rs"))
+        )
         report["fallback_checks"].append({"production_loaders_present": "std_ml_tokenizer_load" in source and "std_ml_embedding_load" in source, "hash_path_is_not_fixture": "text_embed" not in args.fixture.read_text(encoding="utf-8")})
         if "std_ml_tokenizer_load" not in source or "std_ml_embedding_load" not in source:
             report["failures"].append("production loader registration missing")

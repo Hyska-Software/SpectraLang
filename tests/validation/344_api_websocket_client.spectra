@@ -1,0 +1,22 @@
+// R-2402 regression: client configuration is visible through the typed API
+// and preserves the default-deny SSRF policy until explicitly changed.
+module api_websocket_client
+
+from std.api.websocket import WebSocketClient, client_allow_private_networks, client_new, client_set_max_message_bytes, client_set_per_message_deflate, client_set_reconnect
+
+public func main() returns int {
+    let client: WebSocketClient = client_new()
+    if client_set_per_message_deflate(client, true) != true {
+        return 10
+    }
+    if client_set_max_message_bytes(client, 1048576) != true {
+        return 20
+    }
+    if client_set_reconnect(client, 2, 25) != true {
+        return 30
+    }
+    if client_allow_private_networks(client, false) != true {
+        return 40
+    }
+    return 0
+}

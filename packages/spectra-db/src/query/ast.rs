@@ -188,7 +188,16 @@ impl Predicate {
     pub fn or(self, other: Predicate) -> Self {
         Self::Or(vec![self, other])
     }
+    #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Self {
+        Self::Not(Box::new(self))
+    }
+}
+
+impl std::ops::Not for Predicate {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
         Self::Not(Box::new(self))
     }
 }

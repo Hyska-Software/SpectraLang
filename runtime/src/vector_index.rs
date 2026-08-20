@@ -493,7 +493,7 @@ impl VectorIndex {
             .map(|chunk| i64::from_le_bytes(chunk.try_into().expect("validated i64 width")));
         let mut graph = vec![vec![Vec::new(); max_level + 1]; entry_count];
         for node in 0..entry_count {
-            for layer in 0..=max_level {
+            for (layer, neighbors) in graph[node].iter_mut().enumerate().take(max_level + 1) {
                 for _slot in 0..M {
                     let value = links_values
                         .next()
@@ -507,12 +507,12 @@ impl VectorIndex {
                         {
                             return Err(invalid("invalid HNSW link"));
                         }
-                        graph[node][layer].push(neighbor);
+                        neighbors.push(neighbor);
                     }
                 }
-                graph[node][layer].sort_unstable();
-                graph[node][layer].dedup();
-                if graph[node][layer].len() > M {
+                neighbors.sort_unstable();
+                neighbors.dedup();
+                if neighbors.len() > M {
                     return Err(invalid("HNSW degree exceeds M"));
                 }
             }

@@ -3,7 +3,7 @@
 // with the Spectra runtime static library to produce standalone executables.
 
 use cranelift::prelude::*;
-use cranelift_codegen::ir::ValueLabel;
+use cranelift_codegen::{ir::ValueLabel, LabelValueLoc};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule, ObjectProduct};
 use spectra_midend::ir::{
@@ -20,6 +20,28 @@ use crate::hostcall_abi::{
     declare_runtime_bindings, HostCallLoweringContext, HostCallSiteRecord, RuntimeBindings,
 };
 use spectra_runtime::abi::{RuntimeImport, SpectraHostCallCache};
+
+/// The location class selected by Cranelift's post-allocation value-label
+/// pass.  These are deliberately kept as native locations rather than being
+/// guessed from source/IR text: a location is only exported after Cranelift
+/// has proven that the value is live there in the generated machine code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeValueLocation {
+    CfaOffset(i64),
+    /// Hardware register encoding for the target ISA.  The CLI maps this to
+    /// the target debugger's register namespace when it emits CodeView/DWARF.
+    Register(u8),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeValueLocationRange {
+    pub start: u32,
+    pub end: u32,
+    pub location: NativeValueLocation,
+}
+
+pub type DebugLocation = (String, usize, NativeValueLocationRange);
+type AotCompileOutput = (Vec<u8>, Vec<DebugLocation>, HostCallBatchStats);
 
 /// Options that control AOT code generation.
 #[derive(Debug, Clone, Default)]
@@ -64,10 +86,9 @@ pub struct AotCodeGenerator {
     host_call_sites: HashMap<String, HostCallSiteRecord>,
     hostcall_batch_stats: HostCallBatchStats,
     /// Locations produced by Cranelift's register allocator for labelled IR
-    /// values: (function, IR value id, CFA-relative offset).  These are
-    /// intentionally collected from compiled machine code, never guessed
-    /// from source or sidecar text.
-    debug_locations: Vec<(String, usize, i64)>,
+    /// values. These are intentionally collected from compiled machine code,
+    /// never guessed from source or sidecar text.
+    debug_locations: Vec<DebugLocation>,
 }
 
 impl AotCodeGenerator {
@@ -132,7 +153,7 @@ impl AotCodeGenerator {
         self,
         ir_module: &IRModule,
         opts: &AotOptions,
-    ) -> BackendResult<(Vec<u8>, Vec<(String, usize, i64)>)> {
+    ) -> BackendResult<(Vec<u8>, Vec<DebugLocation>)> {
         let (bytes, locations, _) =
             self.compile_to_object_with_locations_and_stats(ir_module, opts)?;
         Ok((bytes, locations))
@@ -142,7 +163,7 @@ impl AotCodeGenerator {
         mut self,
         ir_module: &IRModule,
         opts: &AotOptions,
-    ) -> BackendResult<(Vec<u8>, Vec<(String, usize, i64)>, HostCallBatchStats)> {
+    ) -> BackendResult<AotCompileOutput> {
         self.hostcall_batch_stats = HostCallBatchStats::default();
         let rename_main = opts.emit_executable;
         let _tensor_ir = validate_tensor_ir(ir_module)?;
@@ -246,7 +267,7 @@ impl AotCodeGenerator {
         Ok(func_id)
     }
 
-    pub fn take_debug_locations(&mut self) -> Vec<(String, usize, i64)> {
+    pub fn take_debug_locations(&mut self) -> Vec<DebugLocation> {
         std::mem::take(&mut self.debug_locations)
     }
 
@@ -461,16 +482,26 @@ impl AotCodeGenerator {
                 let label = ValueLabel::from_u32(value_id as u32);
                 if let Some(ranges) = compiled.value_labels_ranges.get(&label) {
                     for range in ranges {
-                        let rendered = format!("{:?}", range.loc);
-                        if let Some(offset) = rendered
-                            .strip_prefix("CFAOffset(")
-                            .and_then(|s| s.strip_suffix(')'))
-                            .and_then(|s| s.parse::<i64>().ok())
-                        {
-                            self.debug_locations
-                                .push((ir_func.name.clone(), value_id, offset));
-                            break;
-                        }
+                        let location = match range.loc {
+                            LabelValueLoc::CFAOffset(offset) => {
+                                NativeValueLocation::CfaOffset(offset)
+                            }
+                            LabelValueLoc::Reg(reg) => {
+                                let Some(real_reg) = reg.to_real_reg() else {
+                                    continue;
+                                };
+                                NativeValueLocation::Register(real_reg.hw_enc())
+                            }
+                        };
+                        self.debug_locations.push((
+                            ir_func.name.clone(),
+                            value_id,
+                            NativeValueLocationRange {
+                                start: range.start,
+                                end: range.end,
+                                location,
+                            },
+                        ));
                     }
                 }
             }
@@ -562,11 +593,7 @@ impl AotCodeGenerator {
             api_sig.returns.push(AbiParam::new(types::I64));
             Some(
                 self.module
-                    .declare_function(
-                        "spectra_api_register_host_calls",
-                        Linkage::Import,
-                        &api_sig,
-                    )
+                    .declare_function("spectra_api_register_host_calls", Linkage::Import, &api_sig)
                     .map_err(|e| {
                         BackendCodegenError::cranelift(format!(
                             "Failed to declare 'spectra_api_register_host_calls': {}",

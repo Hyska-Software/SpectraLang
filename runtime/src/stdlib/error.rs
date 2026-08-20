@@ -125,14 +125,7 @@ extern "C" fn std_error_new(ctx: *mut SpectraHostCallContext) -> i32 {
             None => return HOST_STATUS_INVALID_ARGUMENT,
         };
 
-        let error = alloc_error(
-            code,
-            &message,
-            &operation,
-            &context,
-            &origin,
-            args[5] != 0,
-        );
+        let error = alloc_error(code, &message, &operation, &context, &origin, args[5] != 0);
         if error == 0 {
             return HOST_STATUS_INTERNAL_ERROR;
         }
@@ -142,10 +135,7 @@ extern "C" fn std_error_new(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-fn write_error_scalar(
-    ctx: *mut SpectraHostCallContext,
-    field: usize,
-) -> i32 {
+fn write_error_scalar(ctx: *mut SpectraHostCallContext, field: usize) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

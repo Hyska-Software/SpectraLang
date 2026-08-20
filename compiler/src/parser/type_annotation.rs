@@ -48,16 +48,16 @@ impl Parser {
             }
             self.consume_symbol(')', "Expected ')' after function parameter types")?;
             let return_type = if self.check_keyword(Keyword::Returns) {
-                    self.advance(); // consume 'returns'
-                    self.parse_type_annotation()?
-                } else {
-                    TypeAnnotation {
-                        kind: TypeAnnotationKind::Simple {
-                            segments: vec!["unit".to_string()],
-                        },
-                        span: start_span,
-                    }
-                };
+                self.advance(); // consume 'returns'
+                self.parse_type_annotation()?
+            } else {
+                TypeAnnotation {
+                    kind: TypeAnnotationKind::Simple {
+                        segments: vec!["unit".to_string()],
+                    },
+                    span: start_span,
+                }
+            };
             let end_span = self
                 .tokens
                 .get(self.position.saturating_sub(1))

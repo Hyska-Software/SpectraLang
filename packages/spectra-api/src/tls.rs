@@ -1,5 +1,5 @@
-use crate::{read_args, write_result};
 use crate::handles::ApiHandleTable;
+use crate::{read_args, write_result};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName};
 use rustls::{ClientConfig, ClientConnection, RootCertStore, ServerConfig, ServerConnection};
 use spectra_runtime::ffi::{
@@ -9,13 +9,14 @@ use spectra_runtime::handles::HandleKind;
 use std::fmt;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 pub const TLS_MODE_SERVER: SpectraHostValue = 1;
 pub const TLS_MODE_CLIENT: SpectraHostValue = 2;
 
 pub const DEFAULT_TLS_ALPN_HTTP11: &[u8] = b"http/1.1";
+pub const DEFAULT_TLS_ALPN_HTTP2: &[u8] = b"h2";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TlsErrorKind {
@@ -73,6 +74,7 @@ pub struct TlsServerConfig {
     pub cert_chain_der: Vec<Vec<u8>>,
     pub private_key_der: Vec<u8>,
     pub alpn_protocols: Vec<Vec<u8>>,
+    ocsp_response: Option<Vec<u8>>,
 }
 
 impl TlsServerConfig {
@@ -81,6 +83,7 @@ impl TlsServerConfig {
             cert_chain_der,
             private_key_der,
             alpn_protocols: default_alpn_protocols(),
+            ocsp_response: None,
         }
     }
 
@@ -89,12 +92,74 @@ impl TlsServerConfig {
         self
     }
 
+    /// Attach a DER-encoded OCSP response to the TLS handshake.
+    ///
+    /// Rustls sends this response as the server certificate status extension;
+    /// an empty response is rejected so callers cannot accidentally advertise
+    /// a stapling configuration that carries no status data.
+    pub fn with_ocsp_response(mut self, response: Vec<u8>) -> Result<Self, TlsError> {
+        if response.is_empty() {
+            return Err(TlsError::new(
+                TlsErrorKind::InvalidCertificate,
+                "OCSP response must not be empty",
+            ));
+        }
+        self.ocsp_response = Some(response);
+        Ok(self)
+    }
+
+    pub fn ocsp_response(&self) -> Option<&[u8]> {
+        self.ocsp_response.as_deref()
+    }
+
     pub fn build(self) -> Result<Arc<ServerConfig>, TlsError> {
-        server_config_from_der(
+        server_config_from_der_with_ocsp(
             self.cert_chain_der,
             self.private_key_der,
             self.alpn_protocols,
+            self.ocsp_response,
         )
+    }
+}
+
+/// Atomically replaceable TLS certificate/configuration used by long-lived
+/// listeners. Existing connections keep the `Arc<ServerConfig>` selected at
+/// accept time; subsequent handshakes observe the newly rotated config.
+#[derive(Clone)]
+pub struct TlsCertificateStore {
+    current: Arc<RwLock<Arc<ServerConfig>>>,
+}
+
+impl fmt::Debug for TlsCertificateStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TlsCertificateStore")
+            .field("initialized", &true)
+            .finish()
+    }
+}
+
+impl TlsCertificateStore {
+    pub fn new(config: TlsServerConfig) -> Result<Self, TlsError> {
+        Ok(Self {
+            current: Arc::new(RwLock::new(config.build()?)),
+        })
+    }
+
+    pub fn current(&self) -> Result<Arc<ServerConfig>, TlsError> {
+        self.current
+            .read()
+            .map(|config| Arc::clone(&config))
+            .map_err(|_| TlsError::new(TlsErrorKind::Io, "TLS certificate store lock poisoned"))
+    }
+
+    pub fn rotate(&self, config: TlsServerConfig) -> Result<(), TlsError> {
+        let next = config.build()?;
+        let mut current = self
+            .current
+            .write()
+            .map_err(|_| TlsError::new(TlsErrorKind::Io, "TLS certificate store lock poisoned"))?;
+        *current = next;
+        Ok(())
     }
 }
 
@@ -150,13 +215,30 @@ pub struct HttpsServerExchange {
 }
 
 fn default_alpn_protocols() -> Vec<Vec<u8>> {
-    vec![DEFAULT_TLS_ALPN_HTTP11.to_vec()]
+    vec![
+        DEFAULT_TLS_ALPN_HTTP11.to_vec(),
+        DEFAULT_TLS_ALPN_HTTP2.to_vec(),
+    ]
+}
+
+#[cfg(test)]
+pub(crate) fn default_alpn_protocols_for_http2() -> Vec<Vec<u8>> {
+    default_alpn_protocols()
 }
 
 pub fn server_config_from_der(
     cert_chain_der: Vec<Vec<u8>>,
     private_key_der: Vec<u8>,
     alpn_protocols: Vec<Vec<u8>>,
+) -> Result<Arc<ServerConfig>, TlsError> {
+    server_config_from_der_with_ocsp(cert_chain_der, private_key_der, alpn_protocols, None)
+}
+
+pub fn server_config_from_der_with_ocsp(
+    cert_chain_der: Vec<Vec<u8>>,
+    private_key_der: Vec<u8>,
+    alpn_protocols: Vec<Vec<u8>>,
+    ocsp_response: Option<Vec<u8>>,
 ) -> Result<Arc<ServerConfig>, TlsError> {
     if cert_chain_der.is_empty() {
         return Err(TlsError::new(
@@ -176,16 +258,19 @@ pub fn server_config_from_der(
         .map(CertificateDer::from)
         .collect::<Vec<_>>();
     let private_key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(private_key_der));
-    let mut config = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(cert_chain, private_key)
-        .map_err(|error| {
-            TlsError::with_cause(
-                TlsErrorKind::InvalidCertificate,
-                "failed to build TLS server certificate configuration",
-                error.to_string(),
-            )
-        })?;
+    let builder = ServerConfig::builder().with_no_client_auth();
+    let mut config = if let Some(ocsp_response) = ocsp_response {
+        builder.with_single_cert_with_ocsp(cert_chain, private_key, ocsp_response)
+    } else {
+        builder.with_single_cert(cert_chain, private_key)
+    }
+    .map_err(|error| {
+        TlsError::with_cause(
+            TlsErrorKind::InvalidCertificate,
+            "failed to build TLS server certificate configuration",
+            error.to_string(),
+        )
+    })?;
     config.alpn_protocols = normalize_alpn_protocols(alpn_protocols);
     Ok(Arc::new(config))
 }
@@ -354,6 +439,60 @@ pub fn serve_single_https_request(
     })
 }
 
+pub fn serve_single_https_request_rotating(
+    listener: &TcpListener,
+    certificates: &TlsCertificateStore,
+    response: Vec<u8>,
+    timeout: Duration,
+) -> Result<HttpsServerExchange, TlsError> {
+    let config = certificates.current()?;
+    let (tcp, peer) = listener
+        .accept()
+        .map_err(|error| io_error("failed to accept HTTPS connection", error))?;
+    tcp.set_read_timeout(Some(timeout))
+        .map_err(|error| io_error("failed to set HTTPS server read timeout", error))?;
+    tcp.set_write_timeout(Some(timeout))
+        .map_err(|error| io_error("failed to set HTTPS server write timeout", error))?;
+    let connection = ServerConnection::new(config).map_err(map_tls_error)?;
+    let mut stream = rustls::StreamOwned::new(connection, tcp);
+    let mut request = Vec::new();
+    let mut buf = [0_u8; 8192];
+    loop {
+        let read = stream
+            .read(&mut buf)
+            .map_err(|error| io_error("failed to read HTTPS request", error))?;
+        if read == 0 {
+            return Err(TlsError::new(
+                TlsErrorKind::Protocol,
+                "HTTPS client closed before request headers completed",
+            ));
+        }
+        request.extend_from_slice(&buf[..read]);
+        if request.windows(4).any(|window| window == b"\r\n\r\n") {
+            break;
+        }
+    }
+    stream
+        .write_all(&response)
+        .map_err(|error| io_error("failed to write HTTPS response", error))?;
+    stream
+        .flush()
+        .map_err(|error| io_error("failed to flush HTTPS response", error))?;
+    stream.conn.send_close_notify();
+    stream
+        .flush()
+        .map_err(|error| io_error("failed to flush HTTPS close notify", error))?;
+    let selected_alpn = stream
+        .conn
+        .alpn_protocol()
+        .map(|protocol| protocol.to_vec());
+    Ok(HttpsServerExchange {
+        peer,
+        request,
+        selected_alpn,
+    })
+}
+
 fn map_tls_error(error: rustls::Error) -> TlsError {
     let cause = error.to_string();
     let lower = cause.to_ascii_lowercase();
@@ -402,6 +541,18 @@ pub extern "C" fn tls_config_new(ctx: *mut SpectraHostCallContext) -> i32 {
     write_result(ctx, store.modes.insert(args[0]))
 }
 
+/// Creates the default client-side TLS configuration handle exposed by
+/// `std.api.tls.client_config`.  The handle keeps the mode explicit at the
+/// language/runtime boundary; the concrete rustls client configuration is
+/// built by `TlsClientConfig` when a network operation needs it.
+pub extern "C" fn tls_client_config(ctx: *mut SpectraHostCallContext) -> i32 {
+    if read_args(ctx, 0).is_err() {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    let mut store = store().lock().unwrap_or_else(|e| e.into_inner());
+    write_result(ctx, store.modes.insert(TLS_MODE_CLIENT))
+}
+
 pub extern "C" fn tls_config_mode(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = read_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
@@ -418,8 +569,63 @@ mod tests {
     use super::*;
     use crate::http::parse_response;
     use rcgen::generate_simple_self_signed;
+    use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+    use rustls::pki_types::UnixTime;
+    use rustls::{DigitallySignedStruct, Error as RustlsError, SignatureScheme};
     use std::net::TcpListener;
+    use std::sync::{mpsc, Arc, Mutex};
     use std::thread;
+
+    #[derive(Debug)]
+    struct RecordingVerifier {
+        inner: Arc<rustls::client::WebPkiServerVerifier>,
+        stapled_ocsp: Arc<Mutex<Option<Vec<u8>>>>,
+    }
+
+    impl ServerCertVerifier for RecordingVerifier {
+        fn verify_server_cert(
+            &self,
+            end_entity: &CertificateDer<'_>,
+            intermediates: &[CertificateDer<'_>],
+            server_name: &ServerName<'_>,
+            ocsp_response: &[u8],
+            now: UnixTime,
+        ) -> Result<ServerCertVerified, RustlsError> {
+            *self
+                .stapled_ocsp
+                .lock()
+                .expect("OCSP capture lock is not poisoned") = Some(ocsp_response.to_vec());
+            self.inner.verify_server_cert(
+                end_entity,
+                intermediates,
+                server_name,
+                ocsp_response,
+                now,
+            )
+        }
+
+        fn verify_tls12_signature(
+            &self,
+            message: &[u8],
+            cert: &CertificateDer<'_>,
+            dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, RustlsError> {
+            self.inner.verify_tls12_signature(message, cert, dss)
+        }
+
+        fn verify_tls13_signature(
+            &self,
+            message: &[u8],
+            cert: &CertificateDer<'_>,
+            dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, RustlsError> {
+            self.inner.verify_tls13_signature(message, cert, dss)
+        }
+
+        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+            self.inner.supported_verify_schemes()
+        }
+    }
 
     struct TestCertificate {
         cert_der: Vec<u8>,
@@ -434,6 +640,28 @@ mod tests {
             cert_der: certified.cert.der().to_vec(),
             key_der: certified.key_pair.serialize_der(),
         }
+    }
+
+    fn recording_client_config(
+        cert_der: Vec<u8>,
+        stapled_ocsp: Arc<Mutex<Option<Vec<u8>>>>,
+    ) -> Arc<ClientConfig> {
+        let mut roots = RootCertStore::empty();
+        roots
+            .add(CertificateDer::from(cert_der))
+            .expect("recording client root certificate");
+        let verifier = rustls::client::WebPkiServerVerifier::builder(Arc::new(roots))
+            .build()
+            .expect("recording client verifier");
+        let mut config = ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(RecordingVerifier {
+                inner: verifier,
+                stapled_ocsp,
+            }))
+            .with_no_client_auth();
+        config.alpn_protocols = default_alpn_protocols();
+        Arc::new(config)
     }
 
     #[test]
@@ -492,12 +720,148 @@ mod tests {
             .expect("server TLS");
         assert_eq!(
             client_config.alpn_protocols,
-            vec![DEFAULT_TLS_ALPN_HTTP11.to_vec()]
+            vec![
+                DEFAULT_TLS_ALPN_HTTP11.to_vec(),
+                DEFAULT_TLS_ALPN_HTTP2.to_vec()
+            ]
         );
         assert_eq!(
             server_config.alpn_protocols,
-            vec![DEFAULT_TLS_ALPN_HTTP11.to_vec()]
+            vec![
+                DEFAULT_TLS_ALPN_HTTP11.to_vec(),
+                DEFAULT_TLS_ALPN_HTTP2.to_vec()
+            ]
         );
+    }
+
+    #[test]
+    fn ocsp_response_is_stapled_to_server_handshake() {
+        let cert = self_signed_localhost();
+        let ocsp_response = vec![0x30, 0x03, 0x01, 0x01, 0xff];
+        let captured_ocsp = Arc::new(Mutex::new(None));
+        let client_config = recording_client_config(cert.cert_der.clone(), captured_ocsp.clone());
+        let server_config = TlsServerConfig::new(vec![cert.cert_der], cert.key_der)
+            .with_ocsp_response(ocsp_response.clone())
+            .expect("non-empty OCSP response")
+            .build()
+            .expect("server TLS with OCSP stapling");
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind OCSP test listener");
+        let addr = listener.local_addr().expect("OCSP listener address");
+        let response =
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec();
+        let server = thread::spawn(move || {
+            serve_single_https_request(listener, server_config, response, Duration::from_secs(5))
+        });
+
+        https_get(
+            "127.0.0.1",
+            addr.port(),
+            "/ocsp",
+            client_config,
+            Duration::from_secs(5),
+        )
+        .expect("OCSP-stapled HTTPS handshake");
+        server
+            .join()
+            .expect("OCSP server thread joins")
+            .expect("OCSP server exchange");
+
+        assert_eq!(
+            captured_ocsp.lock().expect("OCSP capture lock").as_deref(),
+            Some(ocsp_response.as_slice())
+        );
+    }
+
+    #[test]
+    fn certificate_rotation_changes_future_handshakes_without_listener_restart() {
+        let first_cert = self_signed_localhost();
+        let second_cert = self_signed_localhost();
+        let first_client = TlsClientConfig::with_roots(vec![first_cert.cert_der.clone()])
+            .build()
+            .expect("first client TLS");
+        let second_client = TlsClientConfig::with_roots(vec![second_cert.cert_der.clone()])
+            .build()
+            .expect("second client TLS");
+        let store = Arc::new(
+            TlsCertificateStore::new(TlsServerConfig::new(
+                vec![first_cert.cert_der],
+                first_cert.key_der,
+            ))
+            .expect("initial certificate store"),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind rotation listener");
+        let addr = listener.local_addr().expect("rotation listener address");
+        let response =
+            b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\nrotated!".to_vec();
+        let (first_done_tx, first_done_rx) = mpsc::channel();
+        let (continue_tx, continue_rx) = mpsc::channel();
+        let server_store = Arc::clone(&store);
+        let server = thread::spawn(move || {
+            let first = serve_single_https_request_rotating(
+                &listener,
+                &server_store,
+                response.clone(),
+                Duration::from_secs(5),
+            );
+            first_done_tx
+                .send(first)
+                .expect("signal first rotation exchange");
+            continue_rx
+                .recv()
+                .expect("release second rotation exchange");
+            serve_single_https_request_rotating(
+                &listener,
+                &server_store,
+                response,
+                Duration::from_secs(5),
+            )
+        });
+
+        let first = https_get(
+            "127.0.0.1",
+            addr.port(),
+            "/before-rotation",
+            first_client,
+            Duration::from_secs(5),
+        )
+        .expect("first certificate handshake");
+        first_done_rx
+            .recv()
+            .expect("first rotation result")
+            .expect("first rotating server exchange");
+
+        store
+            .rotate(TlsServerConfig::new(
+                vec![second_cert.cert_der],
+                second_cert.key_der,
+            ))
+            .expect("rotate certificate without replacing listener");
+        continue_tx
+            .send(())
+            .expect("release second rotation exchange");
+        let second = https_get(
+            "127.0.0.1",
+            addr.port(),
+            "/after-rotation",
+            second_client,
+            Duration::from_secs(5),
+        )
+        .expect("rotated certificate handshake");
+
+        let second_exchange = server
+            .join()
+            .expect("rotation server thread joins")
+            .expect("second rotating server exchange");
+        assert!(
+            String::from_utf8_lossy(&parse_response(&first.raw).unwrap().body.bytes())
+                .contains("rotated")
+        );
+        assert!(
+            String::from_utf8_lossy(&parse_response(&second.raw).unwrap().body.bytes())
+                .contains("rotated")
+        );
+        assert!(String::from_utf8_lossy(&second_exchange.request)
+            .starts_with("GET /after-rotation HTTP/1.1"));
     }
 
     #[test]
@@ -548,19 +912,12 @@ mod tests {
             .ok()
             .and_then(|value| value.parse().ok())
             .unwrap_or(443);
-        let path = std::env::var("SPECTRA_TLS_EXTERNAL_PATH")
-            .unwrap_or_else(|_| "/".to_string());
+        let path = std::env::var("SPECTRA_TLS_EXTERNAL_PATH").unwrap_or_else(|_| "/".to_string());
         let client_config = TlsClientConfig::with_webpki_roots()
             .build()
             .expect("webpki client TLS");
-        let response = https_get(
-            &host,
-            port,
-            &path,
-            client_config,
-            Duration::from_secs(10),
-        )
-        .expect("configured external HTTPS chain validates");
+        let response = https_get(&host, port, &path, client_config, Duration::from_secs(10))
+            .expect("configured external HTTPS chain validates");
         let parsed = parse_response(&response.raw).expect("example.com response parses");
         assert!(
             (200..400).contains(&parsed.status_code),

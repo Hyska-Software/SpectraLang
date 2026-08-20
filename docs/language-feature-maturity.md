@@ -1,6 +1,6 @@
 # Language Feature Maturity Policy
 
-Updated: 2026-06-16
+Updated: 2026-08-19
 Roadmap item: `R-106`, `R-118`, `R-2102`, `R-2103`, `R-2104`, `R-2105`, `R-2106`, `R-2107`, `R-2108`
 
 This file is the source of truth for language maturity labels. Documentation, examples, and CLI behavior must match this policy exactly.
@@ -29,6 +29,9 @@ This file is the source of truth for language maturity labels. Documentation, ex
 - `dyn Trait` in the currently validated surface
 - primitives, tuples, function types
 - canonical `int`, `float`, `bool`, `char`, and `string` primitives
+- exact-width scalar integers and floats (`i8` through `usize`, `f32`/`f64`)
+  with checked casts, explicit wrapping operations, JIT/AOT storage, and the
+  certified C ABI boundary
 - top-level `const` evaluation for primitive literal/arithmetic/logical expressions
 - module-level mutable `static` globals with constant initialization, typed
   visibility/imports, mutation, and local/cross-module JIT/AOT equivalence
@@ -131,8 +134,6 @@ This file is the source of truth for language maturity labels. Documentation, ex
 
 ### Beta
 
-- exact-width numeric aliases and overflow/narrowing semantics (`i8` through
-  `usize`, `f32`/`f64`), pending the complete ABI and C-interoperability matrix
 - typed `List<T>`/`Map<K,V>` collections, including higher-order operations;
   legacy sentinel accessors remain available only under `std.compat.collections`
 - absence-safe `std.env.env_get`/`env_arg` returning `Option<string>`; legacy
@@ -195,7 +196,7 @@ CLI compatibility contract:
 - `class` declarations, inheritance, `override`, `super`, class layout and ABI
 - Unicode identifiers
 - advanced numeric literal syntax beyond current decimal forms
-- exact-width numeric storage and overflow semantics beyond current canonical ABI
+- scalar exact-width forms outside the certified `i8`–`usize`/`f32`–`f64` matrix
 - closure captures with environment objects
 - `repeat/until`
 - `foreach`

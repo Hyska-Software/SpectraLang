@@ -7,8 +7,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 277
-RUNTIME_REQUIRED_HOST_CALL_COUNT = 211
+PACKAGE_HOST_CALL_COUNT = 414
+RUNTIME_REQUIRED_HOST_CALL_COUNT = 346
 LEGACY_REQUIRED_HOST_CALLS = [
     "spectra.api.version.major",
     "spectra.api.version.minor",
@@ -78,6 +78,7 @@ LEGACY_REQUIRED_HOST_CALLS = [
     "spectra.api.server.signal",
     "spectra.api.server.stats",
     "spectra.api.client.new",
+    "spectra.api.client.request",
     "spectra.api.client.timeout_ms",
     "spectra.api.json.validate",
     "spectra.api.json.kind",
@@ -172,6 +173,8 @@ LEGACY_REQUIRED_HOST_CALLS = [
     "spectra.api.handler.last_error_message",
     "spectra.api.handler.register_sync",
     "spectra.api.handler.register_async",
+    "spectra.api.handler.register_sync_callback",
+    "spectra.api.handler.register_async_callback",
     "spectra.api.handler.dispatch_sync",
     "spectra.api.handler.dispatch_async",
     "spectra.api.cors.policy",
@@ -273,9 +276,20 @@ def validate_files() -> None:
 
 
 def validate_host_calls() -> None:
-    lib = read("packages/spectra-api/src/lib.rs")
+    lib = "\n".join(
+        read(path)
+        for path in (
+            "packages/spectra-api/src/lib.rs",
+            "packages/spectra-api/src/api_registration.rs",
+            "packages/spectra-api/src/api_tests.rs",
+        )
+    )
+    # HOST_CALLS is included from host_calls.rs after the crate was split into
+    # focused modules; inspect that authoritative registry directly rather
+    # than expecting the include body to be duplicated in lib.rs.
+    host_registry = read("packages/spectra-api/src/host_calls.rs")
     runtime_api = read("runtime/src/api/mod.rs")
-    names = re.findall(r'name:\s*"([^"]+)"', lib)
+    names = re.findall(r'name:\s*"([^"]+)"', host_registry)
     require(
         len(names) == PACKAGE_HOST_CALL_COUNT,
         f"expected {PACKAGE_HOST_CALL_COUNT} package host calls, found {len(names)}",
@@ -283,6 +297,10 @@ def validate_host_calls() -> None:
     require(len(set(names)) == len(names), "host call names must be unique")
     for name in names:
         require(name.startswith("spectra.api."), f"{name} must use spectra.api prefix")
+    require(
+        "function: client::client_request" in host_registry,
+        "client request host call must point to its real implementation",
+    )
 
     contract_start = runtime_api.split(
         "pub const REQUIRED_HOST_CALLS: &[&str] = &[", 1
@@ -323,15 +341,22 @@ def validate_host_calls() -> None:
 
 def validate_cli_integration() -> None:
     cargo = read("tools/spectra-cli/Cargo.toml")
-    integration = read("tools/spectra-cli/src/compiler_integration.rs")
-    main = read("tools/spectra-cli/src/main.rs")
+    cli_src = ROOT / "tools/spectra-cli/src"
+    integration = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(cli_src.glob("compiler_integration*.rs"))
+    )
+    entrypoints = "\n".join(
+        (cli_src / path).read_text(encoding="utf-8")
+        for path in ("main.rs", "cli_bench.rs")
+    )
     require("spectra-api" in cargo, "spectra-cli must depend on spectra-api")
     require(
         "spectra_api::register();" in integration,
         "JIT execution path must register spectra-api host calls",
     )
     require(
-        "spectra_api::register();" in main,
+        "spectra_api::register();" in entrypoints,
         "CLI async benchmark/runtime path must register spectra-api host calls",
     )
 

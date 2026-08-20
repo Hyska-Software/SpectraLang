@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -19,6 +20,35 @@ def find_c_compiler() -> tuple[str | None, str | None]:
         path = shutil.which(name)
         if path:
             return path, family
+
+    # Windows developer shells are not guaranteed to be initialized in the
+    # process that invokes the validator.  Discover the standard LLVM and
+    # Visual Studio installations without mutating PATH; the selected absolute
+    # path is recorded in the report so the ABI evidence remains reproducible.
+    candidates: list[tuple[Path, str]] = []
+    for root_name in ("LLVM_PATH", "LLVM_HOME"):
+        root = os.environ.get(root_name)
+        if root:
+            candidates.append((Path(root) / "bin" / "clang.exe", "clang"))
+    for root in (Path("C:/Program Files"), Path("C:/Program Files (x86)")):
+        candidates.append((root / "LLVM" / "bin" / "clang.exe", "clang"))
+        candidates.append((root / "LLVM" / "bin" / "clang-cl.exe", "clang"))
+
+    for visual_studio_root in (
+        Path("C:/Program Files/Microsoft Visual Studio"),
+        Path("C:/Program Files (x86)/Microsoft Visual Studio"),
+    ):
+        if visual_studio_root.is_dir():
+            candidates.extend(
+                (path, "msvc")
+                for path in visual_studio_root.glob(
+                    "*/**/VC/Tools/MSVC/*/bin/Hostx64/x64/cl.exe"
+                )
+            )
+
+    for path, family in candidates:
+        if path.is_file():
+            return str(path), family
     return None, None
 
 

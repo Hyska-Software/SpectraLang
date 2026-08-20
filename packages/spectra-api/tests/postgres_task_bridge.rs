@@ -30,15 +30,10 @@ fn public_postgres_task_cancel_is_non_blocking_and_connection_is_reusable() {
     let url = env::var("SPECTRA_POSTGRES_URL").expect("SPECTRA_POSTGRES_URL");
     spectra_api::register();
 
-    let (status, connection) = call(
-        "spectra.api.db.postgres.open",
-        &[runtime_string(&url)],
-    );
+    let (status, connection) = call("spectra.api.db.postgres.open", &[runtime_string(&url)]);
     assert_eq!(status, HOST_STATUS_SUCCESS);
-    let (status, unrelated_connection) = call(
-        "spectra.api.db.postgres.open",
-        &[runtime_string(&url)],
-    );
+    let (status, unrelated_connection) =
+        call("spectra.api.db.postgres.open", &[runtime_string(&url)]);
     assert_eq!(status, HOST_STATUS_SUCCESS);
     let (status, statement) = call(
         "spectra.api.db.postgres.prepare",
@@ -146,10 +141,7 @@ fn public_postgres_task_cancel_is_non_blocking_and_connection_is_reusable() {
         (HOST_STATUS_SUCCESS, 1)
     );
     assert_eq!(
-        call(
-            "spectra.api.db.postgres.close",
-            &[unrelated_connection]
-        ),
+        call("spectra.api.db.postgres.close", &[unrelated_connection]),
         (HOST_STATUS_SUCCESS, 1)
     );
     spectra_rt_manual_clear();

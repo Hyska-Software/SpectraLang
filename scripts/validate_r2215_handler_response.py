@@ -10,7 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def read(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
+    source = ROOT / path
+    if source.suffix == ".rs":
+        return "\n".join(
+            sibling.read_text(encoding="utf-8")
+            for sibling in sorted(source.parent.rglob("*.rs"))
+        )
+    return source.read_text(encoding="utf-8")
 
 
 def fail(message: str) -> None:
@@ -80,6 +86,8 @@ def validate_implementation() -> None:
         "spectra.api.handler.last_error_message",
         "spectra.api.handler.register_sync",
         "spectra.api.handler.register_async",
+        "spectra.api.handler.register_sync_callback",
+        "spectra.api.handler.register_async_callback",
         "spectra.api.handler.dispatch_sync",
         "spectra.api.handler.dispatch_async",
     ]:
@@ -87,8 +95,12 @@ def validate_implementation() -> None:
         require(name in runtime, f"{name} missing from runtime contract")
     for term in [
         '"handler", "text"',
+        '"handler", "register_sync_callback"',
+        '"handler", "register_async_callback"',
         '"handler", "dispatch_sync"',
         '"handler", "dispatch_async"',
+        "lower_named_function_value",
+        "build_escape_manual_alloc",
         "HandlerHandle",
         "AsyncHandlerHandle",
         "HandlerError",
@@ -111,6 +123,7 @@ def validate_implementation() -> None:
 
 def validate_fixture_and_docs() -> None:
     fixture = read("tests/validation/139_api_handler_response_return.spectra")
+    callbacks = read("tests/validation/330_api_handler_callbacks.spectra")
     for term in [
         "IntoResponse",
         "impl IntoResponse for TextValue",
@@ -124,6 +137,16 @@ def validate_fixture_and_docs() -> None:
         "error_response",
     ]:
         require(term in fixture, f"fixture missing {term}")
+    for term in [
+        "register_sync_callback",
+        "register_async_callback",
+        "dispatch_sync",
+        "dispatch_async",
+        "async func async_callback",
+        "Request",
+        "Task<Response>",
+    ]:
+        require(term in callbacks, f"callback fixture missing {term}")
 
     docs = read("docs/api/std-api-handler.md")
     for term in [
@@ -133,8 +156,11 @@ def validate_fixture_and_docs() -> None:
         "AsyncHandler",
         "HandlerError",
         "register_sync",
+        "register_sync_callback",
+        "register_async_callback",
         "dispatch_async",
         "tests/validation/139_api_handler_response_return.spectra",
+        "tests/validation/330_api_handler_callbacks.spectra",
     ]:
         require(term in docs, f"handler docs missing {term}")
 
@@ -164,6 +190,7 @@ def validate_planning() -> None:
         "HandlerError",
         "unified error middleware",
         "139_api_handler_response_return.spectra",
+        "330_api_handler_callbacks.spectra",
         "scripts/validate_r2215_handler_response.py",
     ]:
         require(term in acceptance, f"R-2215 acceptance missing {term}")
@@ -177,7 +204,10 @@ def validate_planning() -> None:
         "packages/spectra-api/src/handler.rs",
         "std.api.handler",
         "IntoResponse",
+        "register_sync_callback",
+        "register_async_callback",
         "139_api_handler_response_return.spectra",
+        "330_api_handler_callbacks.spectra",
         "validate_r2215_handler_response.py",
     ]:
         require(term in block, f"backlog R-2215 missing {term}")

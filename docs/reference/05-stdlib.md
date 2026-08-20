@@ -17,9 +17,9 @@ The scalar types `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`,
 `isize`, `usize`, `f32`, and `f64` are represented explicitly in semantic and
 midend IR. `int` remains the compatibility spelling for `i64`, and `float`
 for `f64`. `as` casts are checked by default; `as wrapping` is reserved for
-integer modular conversion. The exact-width contract is still `in_progress`
-until dynamic overflow diagnostics, AOT/interop evidence, and the complete
-ABI gate pass.
+integer modular conversion. The certified exact-width scalar matrix is stable:
+dynamic overflow diagnostics, AOT/interop evidence, and the C ABI gate pass in
+R-2901. Scalar forms outside this matrix remain deferred.
 
 `std.numeric.wrapping_add_*`, `wrapping_sub_*`, and `wrapping_mul_*` provide
 explicit modular operations for the supported integer widths.

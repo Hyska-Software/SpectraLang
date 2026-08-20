@@ -10,12 +10,18 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 277
-RUNTIME_REQUIRED_HOST_CALL_COUNT = 211
+PACKAGE_HOST_CALL_COUNT = 414
+RUNTIME_REQUIRED_HOST_CALL_COUNT = 346
 
 
 def read(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
+    source = ROOT / path
+    if source.suffix == ".rs":
+        return "\n".join(
+            sibling.read_text(encoding="utf-8")
+            for sibling in sorted(source.parent.rglob("*.rs"))
+        )
+    return source.read_text(encoding="utf-8")
 
 
 def fail(message: str) -> None:
@@ -76,10 +82,18 @@ def validate_implementation() -> None:
         "server_stats",
         "routed_handler",
         "ready_task",
+        "mio::net",
+        "Poll::new",
+        "Interest::READABLE",
+        "reregister",
+        "server_poll_timeout",
         "spectra.async.task.ready",
         "r2216_serve_routes_to_registered_handler_and_shutdowns_cleanly",
         "r2216_shutdown_drains_in_flight_keep_alive_request",
         "r2216_shutdown_cancels_unfinished_connections_after_grace_period",
+        "registered_callbacks_execute_sync_and_async_routes_end_to_end",
+        "HandlerResult::Pending",
+        "poll_task_once",
     ]:
         require(term in server, f"server.rs missing {term}")
 
@@ -147,6 +161,9 @@ def validate_surface_fixture_and_docs() -> None:
         "default drain timeout",
         "drained",
         "cancelled",
+        "register_sync_callback",
+        "register_async_callback",
+        "330_api_handler_callbacks.spectra",
         "tests/validation/147_api_server_lifecycle.spectra",
         "scripts/validate_r2216_server_lifecycle.py",
     ]:
@@ -179,6 +196,9 @@ def validate_planning() -> None:
         "configured port",
         "SIGINT/SIGTERM",
         "configurable drain timeout",
+        "registered sync callbacks",
+        "async callback tasks",
+        "330_api_handler_callbacks.spectra",
         "147_api_server_lifecycle.spectra",
         "validate_r2216_server_lifecycle.py",
     ]:

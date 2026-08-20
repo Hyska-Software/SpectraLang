@@ -1,0 +1,129 @@
+module api_security_headers
+
+from std.api.http import Request, Response, method_get, request, response_header, response_status
+from std.api.handler import text
+from std.api.middleware import MiddlewareChain, MiddlewareHandle, chain_new, execute_sync, register_security_headers, security_headers_configure, security_headers_route, use_sync
+
+func expect_header(response: Response, name: string, expected: string, code: int) returns int {
+    if response_header(response, name) != expected {
+        return code
+    }
+    return 0
+}
+
+func check_default_headers(response: Response) returns int {
+    let csp = expect_header(response, "Content-Security-Policy", "default-src 'self'", 10)
+    if csp != 0 {
+        return csp
+    }
+    let permissions = expect_header(response, "Permissions-Policy", "geolocation=(), microphone=(), camera=()", 11)
+    if permissions != 0 {
+        return permissions
+    }
+    let frame = expect_header(response, "X-Frame-Options", "DENY", 12)
+    if frame != 0 {
+        return frame
+    }
+    let content_type = expect_header(response, "X-Content-Type-Options", "nosniff", 13)
+    if content_type != 0 {
+        return content_type
+    }
+    return expect_header(response, "Referrer-Policy", "strict-origin-when-cross-origin", 14)
+}
+
+func exercise_defaults(base: Request, security: MiddlewareHandle) returns int {
+    let chain: MiddlewareChain = use_sync(chain_new(), security)
+    let response = execute_sync(chain, base, text("default"))
+    if response_status(response) != 200 {
+        return 20
+    }
+    return check_default_headers(response)
+}
+
+func exercise_configured(base: Request, security: MiddlewareHandle) returns int {
+    if security_headers_configure(
+        security,
+        "default-src 'none'",
+        "camera=()",
+        true,
+        true,
+        true,
+    ) != true {
+        return 30
+    }
+    if security_headers_configure(
+        security,
+        "default-src 'self'",
+        "camera=()",
+        false,
+        true,
+        false,
+    ) != false {
+        return 31
+    }
+    let chain: MiddlewareChain = use_sync(chain_new(), security)
+    let response = execute_sync(chain, base, text("configured"))
+    if response_status(response) != 200 {
+        return 32
+    }
+    if expect_header(response, "Content-Security-Policy", "default-src 'none'", 33) != 0 {
+        return 33
+    }
+    if expect_header(response, "Permissions-Policy", "camera=()", 34) != 0 {
+        return 34
+    }
+    return expect_header(
+        response,
+        "Strict-Transport-Security",
+        "max-age=31536000; includeSubDomains; preload",
+        35,
+    )
+}
+
+func exercise_routes(security: MiddlewareHandle) returns int {
+    if security_headers_route(
+        security,
+        "/api",
+        "default-src https://api.example",
+        "geolocation=(self)",
+    ) != true {
+        return 40
+    }
+    if security_headers_route(
+        security,
+        "/api/admin",
+        "default-src 'none'",
+        "camera=()",
+    ) != true {
+        return 41
+    }
+    let chain: MiddlewareChain = use_sync(chain_new(), security)
+    let admin = request(method_get(), "/api/admin/users?active=true")
+    let admin_response = execute_sync(chain, admin, text("admin"))
+    if expect_header(admin_response, "Content-Security-Policy", "default-src 'none'", 42) != 0 {
+        return 42
+    }
+    if expect_header(admin_response, "Permissions-Policy", "camera=()", 43) != 0 {
+        return 43
+    }
+    let api = request(method_get(), "/api/orders")
+    let api_response = execute_sync(chain, api, text("api"))
+    if expect_header(api_response, "Content-Security-Policy", "default-src https://api.example", 44) != 0 {
+        return 44
+    }
+    return expect_header(api_response, "Permissions-Policy", "geolocation=(self)", 45)
+}
+
+public func main() returns int {
+    let base = request(method_get(), "/public")
+    let security: MiddlewareHandle = register_security_headers()
+    let defaults = exercise_defaults(base, security)
+    if defaults != 0 {
+        return defaults
+    }
+    let configured = exercise_configured(base, security)
+    if configured != 0 {
+        return configured
+    }
+    return exercise_routes(security)
+}

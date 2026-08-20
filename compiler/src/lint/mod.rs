@@ -662,7 +662,7 @@ impl BindingKind {
 /// **except** inside nested `loop`, `while`, `do-while`, or `for` bodies
 /// (those `break`s would exit the *inner* loop, not the one being analysed).
 fn block_has_break(block: &Block) -> bool {
-    block.statements.iter().any(|s| stmt_has_break(s))
+    block.statements.iter().any(stmt_has_break)
 }
 
 fn stmt_has_break(stmt: &Statement) -> bool {
@@ -671,7 +671,7 @@ fn stmt_has_break(stmt: &Statement) -> bool {
         // Descend into switch cases — a `break` inside exits *this* loop.
         StatementKind::Switch(sw) => {
             sw.cases.iter().any(|c| block_has_break(&c.body))
-                || sw.default.as_ref().map_or(false, |b| block_has_break(b))
+                || sw.default.as_ref().is_some_and(block_has_break)
         }
         // Do NOT descend into nested loops — their `break` belongs to them.
         StatementKind::Loop(_)

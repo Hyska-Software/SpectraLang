@@ -1,5 +1,5 @@
-use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use crate::handles::ApiHandleTable;
+use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
 };
@@ -126,19 +126,10 @@ struct WildcardEdge {
     route_by_method: HashMap<RouteMethod, SpectraHostValue>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Router {
     routes: HashMap<SpectraHostValue, Route>,
     root: RouteNode,
-}
-
-impl Default for Router {
-    fn default() -> Self {
-        Self {
-            routes: HashMap::new(),
-            root: RouteNode::default(),
-        }
-    }
 }
 
 impl Router {

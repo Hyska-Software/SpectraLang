@@ -13,7 +13,7 @@
 //! - [`type_size_bytes`]: bytes allocated for a standalone value of the type
 //!   (used by `alloca`), equal to the padded layout total for aggregates.
 
-use crate::ir::{IntWidth, FloatWidth, Type as IRType};
+use crate::ir::{FloatWidth, IntWidth, Type as IRType};
 
 /// Bytes a value of `ty` occupies when stored inside an aggregate.
 pub fn stored_size(ty: &IRType) -> usize {
@@ -43,9 +43,13 @@ pub fn stored_size(ty: &IRType) -> usize {
         IRType::Range => 8,
         IRType::Function { .. } => 8,
         IRType::Tensor { .. } => 8,
-        IRType::Array { .. } | IRType::Tuple { .. } | IRType::Struct { .. } | IRType::Enum { .. } => {
+        IRType::Array { .. }
+        | IRType::Tuple { .. }
+        | IRType::Struct { .. }
+        | IRType::Enum { .. } => {
             8 // pointer to the aggregate
         }
+        IRType::Generic { representation, .. } => stored_size(representation),
         IRType::DynTrait { .. } => 16, // fat pointer: data_ptr (8) + vtable_ptr (8)
     }
 }
@@ -71,6 +75,7 @@ pub fn type_size_bytes(ty: &IRType) -> usize {
                 .unwrap_or(0);
             align_to(max_variant_size + 8, 8)
         }
+        IRType::Generic { representation, .. } => type_size_bytes(representation),
         _ => stored_size(ty),
     }
 }
@@ -88,7 +93,7 @@ pub fn alignment_of(size: usize) -> usize {
 }
 
 fn align_to(size: usize, alignment: usize) -> usize {
-    if size % alignment == 0 {
+    if size.is_multiple_of(alignment) {
         size
     } else {
         size + (alignment - size % alignment)
@@ -101,7 +106,7 @@ pub fn layout_of_sizes(sizes: &[usize]) -> Layout {
     let mut offset = 0usize;
     for size in sizes {
         let alignment = alignment_of(*size);
-        if offset % alignment != 0 {
+        if !offset.is_multiple_of(alignment) {
             offset += alignment - offset % alignment;
         }
         offsets.push(offset);

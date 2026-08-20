@@ -1,6 +1,6 @@
 module http_core_types
 
-from std.api.http import Request, Response, Header, Cookie, method_get, method_post, method_name, method_allows_body, request, request_method, request_path, response, response_status, status_created, status_class, status_reason, header, header_name, header_value, cookie, cookie_name, cookie_value, header_name_is_valid, header_value_is_valid
+from std.api.http import Request, Response, Header, Cookie, method_get, method_post, method_name, method_allows_body, request, request_method, request_path, request_body, request_with_body, response, response_status, status_created, status_class, status_reason, header, header_name, header_value, cookie, cookie_name, cookie_value, header_name_is_valid, header_value_is_valid
 
 func create_user(req: Request) returns Response {
     let method  = request_method(req)
@@ -14,7 +14,7 @@ public func main() returns int {
     let get_code     = method_get()
     let post_code    = method_post()
     let post_text    = method_name(post_code)
-    let req          = request(post_code, "/users")
+    let req          = request_with_body(request(post_code, "/users"), "{\"name\":\"Ada\"}")
     let res          = create_user(req)
     let status       = response_status(res)
     let status_group = status_class(status)
@@ -27,7 +27,7 @@ public func main() returns int {
     let c_value      = cookie_value(c)
     let valid_name   = header_name_is_valid("content-type")
     let valid_value  = header_value_is_valid("application/json")
-    if status == 201 and status_group == 2 and get_code == 1 and post_code == 3 {
+    if status == 201 and status_group == 2 and get_code == 1 and post_code == 3 and request_body(req) == "{\"name\":\"Ada\"}" {
         return 0
     }
     return 1

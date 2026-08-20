@@ -32,6 +32,17 @@ pub enum Type {
     Enum {
         name: String,
     },
+    /// A concrete application of a generic nominal type, preserving the
+    /// base name and every resolved argument instead of encoding the
+    /// application only in a mangled nominal name.
+    ///
+    /// The nominal name remains available to compatibility adapters, while
+    /// semantic/type-checking code can compare `List<int>` and
+    /// `List<string>` structurally.
+    Applied {
+        name: String,
+        args: Vec<Type>,
+    },
     /// Generic type parameter (e.g., T in fn foo<T>(x: T))
     TypeParameter {
         name: String,
@@ -714,7 +725,7 @@ pub struct SwitchCase {
 /// Bloco de implementação para adicionar métodos a um tipo
 #[derive(Debug, Clone)]
 pub struct ImplBlock {
-    pub type_name: String,          // Nome do tipo (struct ou enum)
+    pub type_name: String, // Nome do tipo (struct ou enum)
     /// Optional module qualification from `impl module::Type`.
     /// The semantic phase validates the module/type target before treating
     /// the implementation as an ordinary impl for the imported type.

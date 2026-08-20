@@ -65,7 +65,14 @@ def main() -> int:
         if missing:
             failures.append("handle table source is missing: " + ", ".join(missing))
 
-    registry_text = registry_source.read_text(encoding="utf-8") if registry_source.is_file() else ""
+    registry_text = (
+        "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted((root / "runtime" / "src" / "stdlib").rglob("*.rs"))
+        )
+        if (root / "runtime" / "src" / "stdlib").is_dir()
+        else ""
+    )
     api_text = "\n".join(path.read_text(encoding="utf-8") for path in api_source.glob("*.rs")) if api_source.is_dir() else ""
     result["runtime_registry_uses_generational_tables"] = "HandleTable::new" in registry_text
     result["api_registry_uses_generational_tables"] = "ApiHandleTable" in api_text

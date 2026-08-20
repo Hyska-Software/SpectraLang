@@ -41,10 +41,19 @@ declarations and blanket impls are first-class in Spectra source.
 ## Dispatch
 
 `register_sync(route_id, response)` and `register_async(route_id, response)`
-produce handler handles. `dispatch_sync` and `dispatch_async` return the
-normalized `Response` for a request handle. Phase 22 keeps dispatch
-deterministic and handle-based; server lifecycle integration is owned by
-R-2216.
+remain the deterministic compatibility form for materialized responses.
+
+For user code, `register_sync_callback(route_id, fn(Request) -> Response)` and
+`register_async_callback(route_id, fn(Request) -> Task<Response>)` register
+real closure callbacks. `dispatch_sync` and `dispatch_async` invoke those
+callbacks with the request handle and return the normalized `Response`.
+`std.api.server.serve` uses the same callback bridge: synchronous callbacks run
+on request dispatch, while async callbacks remain pending in the mio server
+loop until their `Task<Response>` completes. Disconnect, shutdown-drain, and
+timeout paths cancel the pending task. The compiler promotes a callback
+closure's manual allocation to the base runtime frame before registration, so
+the server may safely retain and invoke it after the registering function
+returns.
 
 ## Errors
 
@@ -58,5 +67,6 @@ R-2215 is covered by:
 
 - `packages/spectra-api/src/handler.rs` unit tests.
 - `tests/validation/139_api_handler_response_return.spectra`.
+- `tests/validation/330_api_handler_callbacks.spectra`.
 - `scripts/validate_r2215_handler_response.py`.
 - the full `run_tests.ps1` suite.

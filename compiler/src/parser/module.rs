@@ -37,15 +37,14 @@ impl Parser {
             name.push_str(&segment);
         }
 
-        let end_span = match self
-            .consume_statement_terminator("Expected a line break after module name")
-        {
-            Ok(span) => span,
-            Err(_) => {
-                self.synchronize();
-                return Module::new(name, start_span);
-            }
-        };
+        let end_span =
+            match self.consume_statement_terminator("Expected a line break after module name") {
+                Ok(span) => span,
+                Err(_) => {
+                    self.synchronize();
+                    return Module::new(name, start_span);
+                }
+            };
 
         let mut module = Module::new(name, span_union(start_span, end_span));
 
@@ -115,8 +114,8 @@ impl Parser {
             }
         }
 
-        let end_span = self
-            .consume_statement_terminator("Expected a line break after import declaration")?;
+        let end_span =
+            self.consume_statement_terminator("Expected a line break after import declaration")?;
         Ok(Import {
             path,
             alias: None,
@@ -140,7 +139,10 @@ impl Parser {
         Ok((path, end_span))
     }
 
-    fn parse_import_alias(&mut self, name_span: crate::span::Span) -> Result<(Option<String>, crate::span::Span), ()> {
+    fn parse_import_alias(
+        &mut self,
+        name_span: crate::span::Span,
+    ) -> Result<(Option<String>, crate::span::Span), ()> {
         if self.check_keyword(Keyword::As) {
             self.advance();
             let (alias, alias_span) = self.consume_identifier("Expected alias after 'as'")?;

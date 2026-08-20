@@ -56,6 +56,28 @@ jobs:
       - name: Run workspace tests
         run: cargo test --workspace
 
+  reactor-platform:
+    name: Real reactor readiness (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: cargo-test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate platform reactor and real TCP readiness
+        run: cargo test -p spectra-runtime reactor -- --nocapture
+
+      - name: Validate async standard-library real I/O
+        run: cargo test -p spectra-runtime async_stdlib_host_calls_cover_fs_tcp_udp_channels_and_cancellation -- --nocapture
+
   package-offline:
     name: Reproducible offline package gate
     runs-on: ubuntu-latest

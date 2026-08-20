@@ -135,13 +135,14 @@ impl Parser {
 
                     // Block expressions terminate with their closing brace;
                     // all other statements use a source line break.
-                    let requires_terminator = !matches!(
-                        expr.kind,
-                        crate::ast::ExpressionKind::If { .. }
-                    ) && !self.check_symbol('}');
+                    let requires_terminator =
+                        !matches!(expr.kind, crate::ast::ExpressionKind::If { .. })
+                            && !self.check_symbol('}');
 
                     if requires_terminator {
-                        self.consume_statement_terminator("Expected a line break after expression")?;
+                        self.consume_statement_terminator(
+                            "Expected a line break after expression",
+                        )?;
                     }
 
                     StatementKind::Expression(expr)

@@ -1,7 +1,7 @@
 // Optimization passes for IR
 
-pub mod constant_folding;
 pub mod concurrent_spawn_join_fusion;
+pub mod constant_folding;
 pub mod dead_code_elimination;
 pub mod function_inlining;
 pub mod strength_reduction;

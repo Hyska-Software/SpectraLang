@@ -1,5 +1,5 @@
-use spectra_runtime::handles::{HandleId, HandleKind, HandleTable};
 use spectra_runtime::ffi::SpectraHostValue;
+use spectra_runtime::handles::{HandleId, HandleKind, HandleTable};
 
 pub(crate) struct ApiHandleTable<T> {
     table: HandleTable<T>,

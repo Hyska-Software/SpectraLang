@@ -54,7 +54,10 @@ fn type_annotation_inner(ty: &TypeAnnotation) -> String {
                 .map(type_annotation_inner)
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("func({params}) returns {}", type_annotation_inner(return_type))
+            format!(
+                "func({params}) returns {}",
+                type_annotation_inner(return_type)
+            )
         }
         TypeAnnotationKind::Generic { name, type_args } => {
             let args = type_args
@@ -203,7 +206,11 @@ fn ast_snapshot(module: &Module) -> String {
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                let prefix = if function.is_async { "async func" } else { "func" };
+                let prefix = if function.is_async {
+                    "async func"
+                } else {
+                    "func"
+                };
                 out.push_str(&format!(
                     "{} {:?} {}({params}) returns {}\n",
                     prefix,

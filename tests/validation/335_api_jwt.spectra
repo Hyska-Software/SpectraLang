@@ -1,0 +1,33 @@
+module api_jwt
+
+from std.api.jwt import sign, verify
+
+const KEY: string = "spectra-jwt-fixture-secret-with-32-byte-minimum"
+const NOW_MS: int = 1700000000000
+
+public func main() returns int {
+    let claims = "{\"exp\":1700000100,\"nbf\":1699999900,\"iss\":\"issuer\",\"aud\":\"api\",\"sub\":\"user-1\",\"jti\":\"token-1\"}"
+    let token = sign("HS256", KEY, claims)
+    if token == "" {
+        return 10
+    }
+    if verify(token, "HS256", KEY, "issuer", "api", NOW_MS) != true {
+        return 11
+    }
+    if verify(token, "HS256", KEY, "wrong-issuer", "api", NOW_MS) != false {
+        return 12
+    }
+    if verify(token + "x", "HS256", KEY, "issuer", "api", NOW_MS) != false {
+        return 13
+    }
+
+    let expired = sign("HS256", KEY, "{\"exp\":1699999999,\"iss\":\"issuer\"}")
+    if verify(expired, "HS256", KEY, "issuer", "", NOW_MS) != false {
+        return 14
+    }
+    let not_yet_valid = sign("HS256", KEY, "{\"nbf\":1700000101,\"iss\":\"issuer\"}")
+    if verify(not_yet_valid, "HS256", KEY, "issuer", "", NOW_MS) != false {
+        return 15
+    }
+    return 0
+}

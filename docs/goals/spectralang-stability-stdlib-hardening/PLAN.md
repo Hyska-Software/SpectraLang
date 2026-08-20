@@ -728,3 +728,559 @@ O pacote só está concluído quando:
 
 Esses itens continuam visíveis como trabalho de produto separado e não podem
 ser implicitamente promovidos por este pacote.
+
+## Revisão final da evidência (2026-08-19)
+
+> Registro histórico anterior ao cutover estrutural; a atualização vigente está
+> em “Atualização da evidência após o cutover estrutural”, ao final deste plano.
+
+O lane local de release foi executado com os serviços externos configurados e
+passou: o relatório required registrou `18/18` gates, `status = passed`,
+`release_certifying = true`, zero falhas e zero skips obrigatórios. A suíte
+ampla registrou `611/611` testes esperados, zero falhas e taxa de sucesso de
+100%; os 13 testes semânticos continuam informativos e há um único teste
+manual/de ambiente não certificador para speedup de GPU. Também passaram
+`cargo fmt --check`, Clippy com `-D warnings`, workspace tests, `git diff
+--check` e a regra de fronteiras de módulos, sem violações.
+
+Essa evidência certifica o subconjunto atualmente promovido, não encerra
+automaticamente todos os critérios do pacote. Permanecem em `in_progress`:
+
+- K-05a: as aplicações genéricas ainda são materializadas em nomes mangled em
+  partes da semântica/lowering; falta preservar uma aplicação genérica
+  estrutural de ponta a ponta, inclusive no IR, sem depender desse encoding;
+- K-08: o `for` já consome o protocolo de iterator nos fixtures, mas o
+  lowering ainda possui adapters/branches por origem e o caminho legado não
+  foi removido no cutover final;
+- K-09: a evidência local cobre Windows/IOCP e serviços reais, mas a matriz
+  executada neste workspace não certifica runtime em Linux/epoll e macOS ou
+  BSD/kqueue; as lanes CI externas e o smoke test interativo do debugger
+  continuam necessários;
+- K-12: `core.modules`, `core.static` e a matriz scalar exact-width são o
+  núcleo estável certificado. `class` permanece reserved; arrays, iterators,
+  collections, Option/Result, async e a superfície externa permanecem beta
+  até os critérios acima serem fechados.
+
+Portanto, o pacote deve continuar reportado como `in_progress`; não alterar
+status de roadmap/backlog nem declarar a linguagem inteira estável apenas com
+base no relatório required local.
+
+## Atualização da evidência após o cutover estrutural (2026-08-19)
+
+Os gaps locais de K-05a e K-08 foram implementados e revalidados. A semântica
+preserva `Type::Applied` para aplicações genéricas, o IR preserva a aplicação e
+sua representação ABI sem criar wrappers nominais duplicados, e os caminhos de
+`Option`/`Result` e collections tipadas propagam os tipos concretos até o
+lowering. Foram adicionados positivos e negativos para aplicações aninhadas,
+receivers genéricos, `map`/`map_err` e incompatibilidade de tipos. O `for` agora
+converge nos adapters do protocolo `Iterator<T>`; os helpers legados
+`lower_non_range_for_loop`, `lower_counted_range_for_loop` e
+`lower_range_for_loop` não existem mais no midend.
+
+Evidência atualizada:
+
+- `TEST_RESULTS.txt`: 612 testes com resultado esperado, 612 passados, zero
+  falhas; 13 resultados semânticos informativos e um skip ambiental explícito;
+- `target/stability/collections-generic-5.json`: collections e aplicações
+  genéricas tipadas com JIT/AOT e negativos fail-closed;
+- `target/stdlib-core-bug-hunt/report.json`: matriz de Option/Result,
+  collections e async sem regressões;
+- `target/stability/module-boundaries-after-generic-2.json`: zero violações e
+  máximo de 1000 linhas por módulo elegível;
+- `target/stability/release-required-final-11.json` e `.md`: 19/19 gates
+  required passados, `release_certifying = true`, zero falhas e zero skips;
+- WSL2 Ubuntu com `CARGO_BUILD_JOBS=2`: `cargo test -p spectra-runtime`
+  passou 111/111 testes, incluindo epoll, readiness TCP, FS/TCP/UDP/canais,
+  cancellation, streams e tracing; essa execução também encontrou e corrigiu
+  o erro de flattening do ACK em `tracing::config_shutdown`;
+- `cargo check -p spectra-runtime --target x86_64-apple-darwin --lib` e o
+  mesmo check para `aarch64-apple-darwin`: ambos passaram, validando o caminho
+  `cfg(target_os = "macos")`/kqueue em compilação, sem substituir a execução
+  nativa do CI;
+- `git diff --check`, `validate_module_boundaries.py --strict` e
+  `validate_r2104_reactor.py`: passados.
+
+K-09 permanece `in_progress`: além da certificação CI de todas as plataformas
+e da execução macOS/kqueue, a execução end-to-end de callbacks `AsyncHandler`
+no servidor ainda não está fechada.
+A lane Windows local e a lane Linux/epoll real no WSL passaram, mas ainda não
+há execução macOS neste workspace. K-12 também permanece `in_progress`: o
+relatório local está verde, porém a sincronização final de
+roadmap/backlog/documentação e a declaração de estabilidade global devem
+esperar esses critérios e o lane CI required correspondente.
+
+## Atualização da evidência required final-14 (2026-08-19)
+
+O primeiro required final após a integração do I/O real (`final-12`) expôs uma
+violação legítima da regra de decomposição: `runtime/src/stdlib/async_registry.rs`
+tinha 1.115 linhas. Os helpers de streams/background foram extraídos para
+`runtime/src/stdlib/async_registry_support.rs`; o registry ficou com 946 linhas
+e o novo módulo com 110. A correção passou `validate_module_boundaries.py
+--strict`, `cargo check -p spectra-runtime --lib` e a suíte completa do runtime.
+
+Evidência final desta rodada:
+
+- `target/stability/release-required-final-14.json` e `.md`: `status = passed`,
+  `release_certifying = true`, 19/19 gates required passados, zero falhas e
+  zero skips;
+- Windows: `cargo test -p spectra-runtime -- --test-threads=2` passou 109/109;
+- Ubuntu/WSL2: o mesmo comando passou 111/111, incluindo epoll, 10.000
+  wakeups, readiness TCP, FS/TCP/UDP/canais e tracing;
+- `cargo check -p spectra-runtime --target x86_64-apple-darwin --lib` e
+  `aarch64-apple-darwin`: ambos passaram no estado atual, comprovando a
+  compilação do caminho kqueue sem substituir execução nativa;
+- `validate_r2107_async_stdlib.py`, `validate_r2104_reactor.py` e a matriz
+  external required (PostgreSQL 16, Redis 7, TLS externo e OTLP) passaram;
+- a regressão async verifica contagens reais de fontes no reactor: 1 listener,
+  3 fontes TCP, 2 sockets UDP e 0 após fechamento, em Windows e Linux;
+- `TEST_RESULTS.txt` permanece em 612/612, e os resultados do required local
+  não contêm `skipped_environment`.
+
+K-09 continua `in_progress`: o código agora registra listeners, streams e UDP
+no `mio::Poll` real, mantém FS fora do reactor por executor de I/O cancelável
+e o cliente HTTP assíncrono também executa HTTPS sobre `rustls`, mas ainda
+faltam a execução end-to-end de callbacks `AsyncHandler` pelo servidor, a
+execução nativa macOS/BSD com kqueue e o lane CI required correspondente. K-12 continua `in_progress` até essa
+evidência externa e a sincronização final de roadmap/backlog/documentação; não
+há base para declarar a linguagem inteira estável antes desses gates.
+
+## Atualização da higiene do CI e dependências (2026-08-19)
+
+A execução remota `CI` 30832671944 não alcançou as lanes de plataforma porque
+o `dependency-scan` falhou no `npm audit` da extensão VS Code. O lockfile foi
+atualizado apenas nas versões transitivas corrigidas (`brace-expansion`,
+`fast-uri`, `js-yaml`, `linkify-it` e `undici`); `npm audit --audit-level=high`
+agora reporta zero vulnerabilidades. A instalação reproduzível `npm ci`, a
+compilação TypeScript e `npm run test:syntax` passaram localmente.
+
+O workflow `.github/workflows/ci.yml` também passou a executar explicitamente
+`async_stdlib_host_calls_cover_fs_tcp_udp_channels_and_cancellation` em cada
+OS da matriz `reactor-platform`, além do teste de readiness do reactor. O YAML
+foi parseado com sucesso e o validador local de estabilidade continua passando.
+
+`cargo audit` local terminou com código zero. O lockfile também foi atualizado
+de `anyhow 1.0.100` para `1.0.104`, removendo a advisory de soundness
+RUSTSEC-2026-0190. Resta somente `paste 1.0.15` sem manutenção
+(RUSTSEC-2024-0436), transitivo de `metal`/`wgpu` no caminho macOS; a
+substituição exigiria atualizar uma cadeia gráfica com mudança potencial de
+API, portanto o aviso permanece explicitamente classificado como risco
+transitivo não bloqueante. A lane nativa macOS/kqueue ainda não foi executada
+para este estado não publicado, portanto K-09 e K-12 permanecem `in_progress`.
+
+Após a atualização do lockfile, Clippy, `cargo test -p spectra-runtime`,
+`cargo check --workspace --all-targets`, os validadores R-2104/R-2107, a
+validação estática/AOT, as fronteiras de módulos e os testes do agregador
+continuaram passando. O relatório required `final-14` permanece a evidência
+dos 19 gates com serviços externos; não foi sobrescrito sem
+`SPECTRA_TLS_EXTERNAL_URL` disponível neste shell, pois um relatório required
+sem essa prova seria não certificador.
+
+Também foi executado `cargo test --workspace --all-targets --no-fail-fast` no
+estado atual: todos os testes executáveis passaram; os únicos ignorados foram
+os casos que declaram explicitamente depender de collector OTLP/endpoint TLS
+ou de uma prova externa específica, já cobertos pelo relatório required
+anterior quando essas capacidades estavam configuradas.
+
+## Atualização da suíte operacional completa (2026-08-19)
+
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\run_tests.ps1` também
+passou no estado atual: 612/612 resultados esperados, 13 testes semânticos
+informativos, zero falhas e um único skip ambiental explícito. A execução
+incluiu a matriz de linguagem/STD, projetos multi-arquivo, erros esperados,
+CLI, packages, interop, API/DB, R-2101--R-2112, AOT/debug, exemplos AI e os
+validadores de release já disponíveis.
+
+## Atualização da integração HTTP assíncrona (2026-08-19)
+
+O bridge que faltava entre a superfície `std.api.client` e o runtime foi
+implementado e validado. `spectra.api.client.request` agora está registrado
+no catálogo de host calls (279 entradas públicas), cria um `Task<Response>`
+real, preserva o contexto de tracing, usa `mio::net`/`Poll` para connect,
+write e read, e recebe um token de cancelamento cooperativo observado em cada
+espera de readiness. O servidor HTTP/1.1 também deixou o scan por conexão e o
+`thread::sleep` e passou a usar `mio::Poll`, registro dinâmico de interesse
+`READABLE`/`WRITABLE`, timeouts limitados e deregistration explícita.
+
+Evidência focalizada desta atualização:
+
+- `cargo test -p spectra-api --lib -- --test-threads=1`: 77 passados, 2
+  ignorados somente por dependências externas declaradas;
+- testes específicos de `client`, `server` e do host call `client.request`:
+  todos passaram, incluindo cancelamento durante uma espera de readiness;
+- `scripts/validate_r2202_spectra_api_hostcalls.py`,
+  `validate_r2203_std_api_surface.py`, `validate_r2205_http1_server.py`,
+  `validate_r2206_http1_client.py`, `validate_r2215_handler_response.py` e
+  `validate_r2216_server_lifecycle.py`: todos passaram;
+- `validate_r3007_stdlib_contract.py`: 929 símbolos tipados, 986/929 no
+  catálogo, zero blockers e todos os probes passaram;
+- a verificação cruzada dos targets Apple do runtime já passou em modo de
+  compilação; o check equivalente do pacote API foi tentado para
+  `x86_64-apple-darwin` e `aarch64-apple-darwin`, mas o ambiente Windows não
+  possui o `cc` exigido pelo build script de `ring`. Portanto não há claim de
+  compilação cross-target ou execução nativa Apple para o pacote API nesta
+  rodada.
+
+O escopo agora cobre HTTP plano e HTTPS no bridge assíncrono. O cliente TLS
+usa `rustls`, SNI, ALPN e WebPKI por padrão; callers nativos podem fornecer
+raízes explícitas por `ClientConfig::with_tls_config`, e o teste local valida
+uma cadeia autoassinada nesse caminho. A superfície do host `client.new` usa
+as raízes WebPKI padrão; a configuração de raízes customizadas ainda é uma
+API nativa, não um argumento adicional de `std.api.client.new`. Além disso, a
+assinatura pública atual de `register_async(route_id, response)` é um contrato
+de handle/resposta determinístico: as traits nativas `AsyncHandler` e o
+lowering de `Task<Response>` estão cobertos, mas a integração do servidor com
+um callback assíncrono de usuário ainda não pode ser chamada de execução
+end-to-end enquanto a API não transportar esse callback e seu contexto de
+cancelamento.
+
+Assim, `K-09` e `K-12` continuam `in_progress`. Os bloqueadores restantes são
+a execução real de handlers assíncronos dentro do servidor e a evidência
+required de execução nativa macOS/BSD/kqueue; não há
+base para declarar a linguagem inteira estável enquanto esses critérios
+continuarem pendentes.
+
+## Reexecução dos gates após a integração HTTP (2026-08-19)
+
+Depois do cutover do cliente e do accept loop, a prova operacional completa
+foi executada novamente com
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\run_tests.ps1`:
+612/612 resultados esperados passaram, 13 testes semânticos permaneceram
+informativos, não houve falhas e houve somente um skip ambiental explícito.
+Também passaram novamente `cargo test --workspace --all-targets
+--no-fail-fast`, `cargo check --workspace --all-targets`, Clippy com
+`-D warnings`, `cargo fmt --all -- --check`, `git diff --check` e o validador
+de fronteiras de módulos. O relatório `TEST_RESULTS.txt` foi atualizado com
+essa execução; o relatório required externo não foi sobrescrito sem as
+variáveis de certificação correspondentes.
+
+## Atualização do bridge de callbacks e valores de função (2026-08-19)
+
+O gap identificado na integração HTTP foi fechado no código real. A superfície
+std.api.handler agora transporta callbacks de usuário através da ABI de
+closures em register_sync_callback e register_async_callback; funções
+nomeadas também são materializadas pelo midend como closures sem captura, com
+o adaptador de ABI necessário para atravessar host calls. O servidor roteia o
+callback síncrono diretamente e mantém o Task<Response> assíncrono pendente
+no loop mio, fazendo polling não bloqueante, timeout, cancelamento em
+disconnect/drain e finalização de resposta. O lowering também promove a
+alocação manual do callback para o frame-base antes do registro, evitando que
+o frame da função registradora invalide o closure retido pelo servidor.
+
+Evidência focalizada desta atualização:
+
+- cargo test -p spectra-api --lib -- --test-threads=1: 79 passados, 0
+  falhas e 2 ignorados declarados por dependências externas;
+- cargo check -p spectra-midend e cargo test -p spectra-midend --lib:
+  passaram; tests/validation/330_api_handler_callbacks.spectra passou em
+  spectralang check e spectralang run;
+- scripts/validate_r2215_handler_response.py,
+  validate_r2216_server_lifecycle.py, validate_r2202_spectra_api_hostcalls.py,
+  validate_r2203_std_api_surface.py e validate_r2207_tls_rustls.py passaram;
+- o contrato público foi sincronizado para 281 host calls no pacote e 213
+  contratos obrigatórios no runtime, incluindo as duas novas inscrições de
+  callback; os validadores R-2301/R-2302 também foram atualizados para essa
+  contagem;
+- a validação Rust de integração abre um servidor real, envia requisições TCP
+  para callbacks sync e async e verifica os corpos de resposta.
+
+Com isso, a pendência de callback async registrada nas seções históricas foi
+resolvida. K-09 e K-12 continuam in_progress somente pelos gates que ainda
+dependem de execução nativa macOS/BSD com kqueue e da lane CI required
+correspondente; esses gates não podem ser substituídos por cross-check de
+compilação em Windows. A declaração de estabilidade global permanece vedada
+somente por esses gates externos: a execução final de
+powershell -NoProfile -ExecutionPolicy Bypass -File .\run_tests.ps1 passou
+com 613/613 resultados esperados, 13 testes semânticos informativos, zero
+falhas e um skip manual/ambiental explicitamente classificado.
+
+## Atualização R-2303: logging estruturado e request ID (2026-08-19)
+
+O item R-2303 também foi implementado no código real. Cada execução de
+`MiddlewareChain` recebe um ID `req-<hex>` antes do primeiro hook; o middleware
+`std.api.middleware.register_logging` registra exatamente uma linha por
+resposta em formato JSON ou texto, incluindo `request_id`, `method`, `path`,
+`status` e `latency_us`. Os host calls `logging_len`, `logging_line` e
+`logging_request_id` expõem o sink nativo à linguagem para consumo e testes.
+
+Evidência: `cargo test -p spectra-api --lib middleware --offline` passou com
+5 testes; o snapshot do contrato público, o build do CLI e o fixture
+`tests/validation/331_api_structured_logging.spectra` passaram em `check` e
+`run`; `scripts/validate_r2303_structured_logging.py` passou. O contrato foi
+sincronizado para 295 host calls no pacote e 227 nomes obrigatórios no runtime,
+e R-2303 foi marcado `complete` em `roadmap/roadmap.toml` e no backlog.
+
+## Atualização R-2304: rate limiting (2026-08-19)
+
+R-2304 foi implementado no mesmo chain de middleware. A implementação suporta
+token bucket e sliding window, chaves global/rota/tenant/usuário e combinações
+rota-tenant/rota-usuário, isolamento por header `X-Spectra-Tenant` ou
+`X-Spectra-User`, resposta `429` com `Retry-After` e headers de quota, e
+reload atômico somente quando o limiter foi criado em modo dev.
+
+Evidência: os sete testes nativos de middleware, o snapshot público, o build
+do CLI e `tests/validation/332_api_rate_limiting.spectra` passaram; o fixture
+validou `check` e `run`, e `scripts/validate_r2304_rate_limiting.py` passou.
+R-2304 foi marcado `complete` nos dois artefatos de roadmap.
+
+## Atualização R-2307: API-key authentication (2026-08-19)
+
+R-2307 foi implementado com fontes `header`, `query` e nomes explícitos. O
+registro suporta adição/substituição de chaves, expiração por Unix epoch em
+milissegundos e revogação; ausente, desconhecida, expirada ou revogada gera
+`401 application/problem+json` sem ecoar o segredo. Uma chave válida cria o
+contexto interno usado pelo escopo `api_key` do rate limiter.
+
+Evidência: nove testes nativos de middleware, snapshot público, build do CLI e
+`tests/validation/333_api_key_auth.spectra` passaram; o fixture validou `check`
+e `run`, e `scripts/validate_r2307_api_key.py` passou. R-2307 foi marcado
+`complete` no roadmap e no backlog.
+
+## Atualização R-2306: security headers (2026-08-19)
+
+R-2306 foi implementado como middleware síncrono com política padrão de CSP,
+`Permissions-Policy`, `X-Frame-Options`, `X-Content-Type-Options` e
+`Referrer-Policy`. HSTS é opt-in e compõe `max-age=31536000` com
+`includeSubDomains` e `preload` somente quando configurados; combinações
+inválidas são rejeitadas. CSP e `Permissions-Policy` têm overrides por prefixo
+de rota, com precedência para o maior prefixo e ignorando a query string.
+
+Evidência: onze testes nativos de middleware, snapshot público, build do CLI e
+`tests/validation/334_api_security_headers.spectra` passaram; o fixture validou
+`check` e `run`, e `scripts/validate_r2306_security_headers.py` passou. O
+contrato foi sincronizado para 307 host calls no pacote e 239 nomes obrigatórios
+no runtime; R-2306 foi marcado `complete` no roadmap e no backlog.
+
+## Atualização R-2315: HTTPS hardening (2026-08-19)
+
+R-2315 foi implementado sobre o TLS nativo existente. HSTS preload e
+`includeSubDomains` já são emitidos pelo middleware de security headers de
+R-2306; a lacuna restante foi fechada com `TlsServerConfig::with_ocsp_response`,
+que usa `rustls::ServerConfig` com `with_single_cert_with_ocsp`, e com
+`TlsCertificateStore`, que troca atomicamente a configuração usada por novos
+handshakes sem recriar o `TcpListener`.
+
+Evidência: os testes nativos verificam que o OCSP chega ao verificador do
+cliente durante o handshake e que duas conexões sucessivas, antes e depois da
+rotação, usam a mesma porta/listener; `tests/validation/334_api_security_headers.spectra`
+continua cobrindo HSTS, e `scripts/validate_r2315_https_hardening.py` foi
+adicionado ao `run_tests.ps1`. R-2315 foi marcado `complete` no roadmap e no
+backlog.
+
+## Atualização R-2308: JWT HS256/RS256/ES256 (2026-08-19)
+
+R-2308 foi implementado em `std.api.jwt` com assinatura e verificação compacta
+para HS256, RS256 e ES256. A implementação valida o algoritmo protegido, usa
+primitivas `ring` para HMAC/RSA/ECDSA, rejeita chaves HS256 menores que 32 bytes
+e verifica `exp`, `nbf`, `iss`, `aud`, `sub` e `jti`. O relógio pode ser injetado
+em milissegundos para testes determinísticos; zero usa o relógio Unix atual.
+
+Evidência: quatro testes nativos de JWT, snapshot público, build do CLI e
+`tests/validation/335_api_jwt.spectra` passaram; o fixture validou `check` e
+`run`, e `scripts/validate_r2308_jwt.py` passou. O contrato foi sincronizado
+para 307 host calls no pacote e 239 nomes obrigatórios no runtime; R-2308 foi
+marcado `complete` no roadmap e no backlog.
+
+## Atualização R-2305: response compression (2026-08-19)
+
+R-2305 foi implementado como middleware síncrono com negociação de
+`Accept-Encoding` por q-values para Brotli, gzip e deflate, desempate
+determinístico `br > gzip > deflate`, limiar configurável e `Vary` mesclado.
+Respostas HEAD, informacionais, 204/205/304, vazias, previamente codificadas e
+com `Cache-Control: no-transform` não são comprimidas.
+
+Evidência: treze testes nativos de middleware, snapshot público, build do CLI e
+`tests/validation/336_api_compression.spectra` passaram; o fixture validou
+`check` e `run`, e `scripts/validate_r2305_compression.py` passou. O contrato
+foi sincronizado para 307 host calls no pacote e 239 nomes obrigatórios no
+runtime; R-2305 foi marcado `complete` no roadmap e no backlog.
+
+## Atualização R-2309: OAuth2 client com PKCE (2026-08-19)
+
+R-2309 foi implementado em `std.api.oauth`. O cliente gera um verifier
+PKCE S256 por cliente, publica somente o challenge na URL de autorização,
+preserva e compara o state em tempo constante, troca authorization code por
+token, faz refresh com retenção/rotação de refresh token e chama o endpoint de
+revogação para marcar o handle local como revogado.
+
+Evidência: dois testes nativos com servidor HTTP local (incluindo verificação
+do challenge contra o verifier), snapshot público, build do CLI e
+`tests/validation/337_api_oauth.spectra` passaram; o fixture validou
+`check` e `run`, e `scripts/validate_r2309_oauth.py` passou. O
+contrato foi sincronizado para 307 host calls no pacote e 239 nomes
+obrigatórios no runtime; R-2309 foi marcado `complete` no roadmap e no
+backlog.
+
+## Atualização R-2312: typed cookie API (2026-08-19)
+
+R-2312 foi implementado sobre o tipo HTTP `Cookie` existente. A API agora
+suporta Path, Domain, Max-Age, Secure, HttpOnly e SameSite (Lax/Strict/None),
+serializa uma ou mais ocorrências de `Set-Cookie`, assina valores com
+HMAC-SHA256 e verifica assinaturas em tempo constante. Expiração e falhas de
+atributo/assinatura são expostas por `cookie_error_code` e
+`cookie_error_message`, mantendo `cookie(name, value)` compatível.
+
+Evidência: o teste nativo de HTTP cobre atributos, serialização, múltiplos
+`Set-Cookie`, tampering, expiração e a regra `SameSite=None` + Secure; o
+snapshot público, build do CLI e `tests/validation/338_api_cookie.spectra`
+passaram em `check` e `run`; `scripts/validate_r2312_cookie.py` foi adicionado
+ao runner. O contrato foi sincronizado para 321 host calls no pacote e 253
+nomes obrigatórios no runtime; R-2312 foi marcado `complete` no roadmap e no
+backlog.
+
+## Atualização R-2313: request validation e RFC 7807 (2026-08-19)
+
+R-2313 foi implementado como o módulo `std.api.validation`. Schemas são
+imutáveis e armazenados por handles; campos declaram tipo, obrigatoriedade,
+limites de tamanho, faixa numérica e regex. `validate_json` valida objetos JSON
+pelos wire names e `validate_form` reutiliza os valores de `std.api.form.Form`,
+produzindo todos os problemas com campo, código e mensagem. Resultados
+inválidos serializam RFC 7807 e viram respostas `422` com
+`application/problem+json`.
+
+Evidência: testes nativos de constraints e resposta, snapshot público, build do
+CLI, fixture `tests/validation/339_api_validation.spectra` em `check` e `run`,
+e `scripts/validate_r2313_validation.py` passaram; o validator foi adicionado
+ao runner. O contrato foi sincronizado para 338 host calls no pacote e 270
+nomes obrigatórios no runtime; R-2313 foi marcado `complete` no roadmap e no
+backlog.
+
+## Atualização R-2314: unified errors e exception middleware (2026-08-19)
+
+R-2314 foi implementado com o handle `ApiError` em `std.api.errors`. Erros
+públicos mapeiam status, código e mensagem para Problem Details RFC 7807;
+`internal_error` mantém o detalhe completo no log e retorna apenas a mensagem
+sanitizada `internal server error`. `exception_middleware` permite configurar
+status/código/mensagem por cadeia de rota e intercepta falhas de middleware
+síncronas e assíncronas.
+
+Evidência: testes nativos de mapeamento, logging/sanitização e recuperação
+customizada, snapshot público, build do CLI, fixture
+`tests/validation/340_api_errors.spectra` em `check` e `run`, e
+`scripts/validate_r2314_errors.py` passaram; o validator foi adicionado ao
+runner. O contrato foi sincronizado para 345 host calls no pacote e 277 nomes
+obrigatórios no runtime; R-2314 foi marcado `complete` no roadmap e no
+backlog.
+
+## Atualização R-2316: threat mitigations (2026-08-19)
+
+R-2316 foi implementado com `std.api.security`: `CsrfPolicy` valida o header
+`Origin` para métodos state-changing e `SsrfPolicy` bloqueia endereços
+loopback, privados e link-local por padrão. A política SSRF é aplicada após a
+resolução DNS e antes da criação do socket nos caminhos síncrono, assíncrono e
+HTTPS do cliente; redes privadas só são habilitadas por opt-in explícito. O
+parser mantém a rejeição antecipada de `Content-Length`/chunked acima do limite
+e o servidor ganhou setters de limite de corpo e timeouts por conexão.
+
+Passaram os testes nativos de security/client/server, o snapshot semântico, o
+build/check/run do fixture `tests/validation/341_api_security.spectra`, e
+`scripts/validate_r2316_security.py`; o validator foi ligado ao runner. O
+contrato foi sincronizado para 356 host calls públicos no pacote e 288 nomes
+obrigatórios no runtime; R-2316 foi marcado `complete` no roadmap e backlog.
+
+## Atualização R-2317: exemplo REST autenticado com JWT (2026-08-19)
+
+R-2317 foi implementado em `examples/api/02_jwt_auth_crud.spectra`. O exemplo
+emite tokens HS256 determinísticos, verifica assinatura e claims `iss`, `aud`,
+`exp` e `nbf`, rejeita token adulterado e credenciais Bearer inválidas, e
+registra callbacks para list/create/read/update/delete. A requisição POST/PUT
+agora carrega corpo real através de `std.api.http.request_with_body` e o
+callback lê esse corpo com `request_body` antes de executar o schema de
+validação. Falhas de autenticação usam `std.api.errors`, falhas de payload
+usam RFC 7807, e ambos passam pela cadeia com `exception_middleware`.
+
+Evidência: testes nativos de `spectra-api` e `spectra-runtime`,
+`tests/validation/134_http_core_types.spectra`, compilação/execução do exemplo
+e `scripts/validate_r2317_jwt_auth_crud_example.py` passaram; o validator foi
+ligado ao runner. O contrato atual foi sincronizado para 358 host calls no
+pacote e 290 nomes obrigatórios no runtime; R-2317 foi marcado `complete` no
+roadmap e no backlog.
+
+## Atualização R-2318: exemplo de composição de middleware (2026-08-19)
+
+R-2318 foi implementado em `examples/api/03_middleware_composition.spectra`,
+com a ordem documentada logging → security headers → CORS → compression →
+rate limit. O exemplo valida respostas normais, `429` e preflight, request IDs
+únicos, configuração de security headers por prefixo (`/api` e
+`/api/admin`) e rate limit por rota. A integração revelou e corrigiu a perda de
+`Vary: Accept-Encoding` quando CORS adicionava `Vary: Origin`; agora as duas
+dimensões são mescladas e há regressão nativa dedicada.
+
+Evidência: testes nativos focados de CORS/middleware, compilação/execução do
+exemplo e `scripts/validate_r2318_middleware_composition_example.py` passaram;
+o validator foi ligado ao runner. R-2318 foi marcado `complete` no roadmap e
+no backlog.
+
+## Atualização R-2311: gerenciamento de sessões (2026-08-19)
+
+R-2311 foi implementado no módulo `std.api.session`. O contrato interno
+`SessionBackend` permite trocar o backend sem mudar a API da linguagem; o
+backend padrão mantém sessões concorrentes em memória e o backend Redis usa o
+driver real de `spectra-db`, serializando o registro com TTL PX. IDs têm 256
+bits de aleatoriedade criptográfica, valores são limitados a 1 MiB, o sliding
+expiration nunca ultrapassa o máximo absoluto contado desde a criação, e
+`revoke`/`is_valid` invalidam e consultam o backend imediatamente.
+
+Evidência: testes nativos cobrem criação, lookup, expiração, sliding, limite
+máximo, revogação, configuração inválida e round-trip do registro Redis;
+snapshot semântico, catálogo, build/check/run de
+`tests/validation/342_api_session.spectra` e o validator dedicado passam.
+Redis 7 externo continua certificado pelo gate independente de R-2507; uma
+execução sem serviço Redis não é promovida a evidência de infraestrutura.
+
+## Atualização R-2401: servidor WebSocket RFC 6455 (2026-08-19)
+
+Foi implementado o núcleo nativo de `std.api.websocket` em
+`packages/spectra-api/src/websocket.rs`, incluindo handshake `101`, validação
+de frames RFC 6455, máscaras, fragmentação de mensagens texto/binário,
+ping/pong, close codes, limites de payload e negociação de
+`permessage-deflate`. A superfície possui 17 host calls, handles próprios e
+funções assíncronas canceláveis; o fixture `tests/validation/343_api_websocket.spectra`
+passa no caminho normal da CLI.
+
+O item permanece `in_progress`: ainda faltam a integração do upgrade com o
+roteador HTTP existente e a evidência real de soak para 10 mil conexões
+concorrentes. `scripts/validate_r2401_websocket.py` foi adicionado ao gate
+dedicado e preserva explicitamente esses critérios restantes.
+
+## Atualização R-2402: cliente WebSocket (2026-08-19)
+
+`WebSocketClient` foi adicionado ao módulo `std.api.websocket`. O cliente
+gera nonce criptográfico por tentativa, valida a resposta `101`, impõe
+política SSRF default-deny após DNS, usa frames mascarados, suporta
+`permessage-deflate`, `ws://`/`wss://` com `rustls` e reconexão com backoff
+cancelável. Os testes nativos validam handshake, round-trip texto/binário,
+round-trip TLS com raiz explícita e a segunda tentativa após um handshake
+falho; `tests/validation/344_api_websocket_client.spectra` valida a
+configuração pela CLI.
+
+R-2402 permanece `in_progress`: falta obter certificação contra um echo server
+externo. O teste nativo de `wss://` comprova o transporte local, mas não
+substitui interoperabilidade externa.
+
+## Atualização R-2403: Server-Sent Events (2026-08-19)
+
+Foi adicionado o transporte dedicado `std.api.sse`. Ele mantém uma conexão
+HTTP/1.1 `text/event-stream`, serializa eventos multiline com `retry`, emite
+heartbeats automáticos, limita o log de replay e usa `Last-Event-ID` para
+retomar somente eventos identificados posteriores. A superfície tipada,
+handles, 20 host calls, fixture 345 e o gate `validate_r2403_sse.py` foram
+integrados. `server_response` conecta o mesmo estado limitado de eventos e
+replay ao ciclo de vida roteado de `std.api.server`; a prova nativa cobre
+handshake, publicação, fila no loop HTTP e encerramento. R-2403 foi marcado
+`complete`.
+
+## Atualização R-2404: servidor HTTP/2 nativo (2026-08-19)
+
+Foi implementado `packages/spectra-api/src/http2.rs` com a máquina de
+protocolo `h2`: multiplexação de streams em uma única conexão, HPACK,
+flow-control com liberação de capacidade durante a leitura, limites de
+streams/cabeçalhos/corpo e shutdown com grace period. A configuração rustls
+passou a anunciar `http/1.1` e `h2`; o listener HTTP/2 só aceita a conexão
+quando o ALPN efetivamente seleciona `h2`.
+
+Evidência: testes nativos cobrem round-trip multiplexado de cabeçalhos HPACK,
+conteúdo ALPN e negociação TLS `h2` com request/response; `cargo check` do
+pacote passa e `scripts/validate_r2404_http2.py` foi ligado ao runner como
+Group 8.78. O item entrega o transporte nativo; o contrato roteado existente
+de `std.api.server` continua sendo HTTP/1.1 até haver uma especificação de
+callback/router para streams HTTP/2 concorrentes.

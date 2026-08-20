@@ -110,6 +110,12 @@ def gates_for_binary(binary: Path) -> list[Gate]:
             command = [resolved, *command[len(cargo_prefix):]]
         elif gate.name == "feature_maturity_policy":
             command = [*command[:-1], resolved]
+        elif gate.name == "ai_examples_benchmark":
+            # The benchmark has an explicit binary mode.  When the
+            # conformance runner receives --binary, use it here as well so
+            # the gate measures the already-built candidate instead of
+            # recompiling the entire workspace once per example.
+            command = [*command, "--binary", resolved]
         configured.append(Gate(gate.category, gate.name, command, gate.timeout_seconds))
     return configured
 

@@ -129,6 +129,11 @@ def main() -> int:
         action="store_true",
         help="require every external capability; missing services fail closed",
     )
+    parser.add_argument(
+        "--postgres-version-probe-docker-container",
+        default=os.environ.get("SPECTRA_POSTGRES_VERSION_PROBE_DOCKER_CONTAINER"),
+        help="use psql inside this container for the independent PostgreSQL version probe",
+    )
     args = parser.parse_args()
 
     binary = Path(args.binary)
@@ -150,6 +155,13 @@ def main() -> int:
         redis_command.append("--require-redis")
         tls_command.append("--require-external")
         exact_width_command.append("--require-c-abi")
+    if args.postgres_version_probe_docker_container:
+        postgres_command.extend(
+            [
+                "--version-probe-docker-container",
+                args.postgres_version_probe_docker_container,
+            ]
+        )
 
     stdlib_contract_command = [
         "python",
@@ -215,6 +227,11 @@ def main() -> int:
                 "target/stability/collections-release.json",
             ],
             360,
+        ),
+        (
+            "reactor-real-io",
+            ["python", "scripts/validate_r2104_reactor.py"],
+            420,
         ),
         ("feature-maturity", ["python", "scripts/validate_feature_maturity.py", "--binary", str(binary)], 120),
         ("stdlib-contract", stdlib_contract_command, 420),

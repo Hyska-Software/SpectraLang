@@ -12,6 +12,7 @@ use crate::{
     token::{Keyword, Token, TokenKind},
 };
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -222,17 +223,17 @@ impl Parser {
     ///
     /// Spectra's readable surface terminates statements with a line break (or
     /// the end of a block/file). Semicolons are rejected after the migration.
-    pub(super) fn consume_statement_terminator(
-        &mut self,
-        error_message: &str,
-    ) -> Result<Span, ()> {
+    pub(super) fn consume_statement_terminator(&mut self, error_message: &str) -> Result<Span, ()> {
         if self.check_symbol(';') {
             let span = self.current().span;
             self.push_error_coded(
                 "P012",
                 "Semicolons are not valid statement terminators in Spectra",
                 span,
-                Some("Remove the semicolon and end the statement with a line break instead.".to_string()),
+                Some(
+                    "Remove the semicolon and end the statement with a line break instead."
+                        .to_string(),
+                ),
                 Some("legacy semicolon terminator".to_string()),
             );
             self.advance();
@@ -374,13 +375,11 @@ impl Parser {
                     return Some(self.synthetic_span_before_current());
                 }
             }
-            ')' => {
-                if self.is_at_end()
-                    || self.is_post_paren_boundary_token()
-                    || self.is_statement_boundary_token()
-                {
-                    return Some(self.synthetic_span_before_current());
-                }
+            ')' if (self.is_at_end()
+                || self.is_post_paren_boundary_token()
+                || self.is_statement_boundary_token()) =>
+            {
+                return Some(self.synthetic_span_before_current());
             }
             _ => {}
         }
@@ -467,22 +466,22 @@ impl Parser {
             return true;
         }
 
-        match &self.current().kind {
+        matches!(
+            &self.current().kind,
             TokenKind::Keyword(Keyword::Else)
-            | TokenKind::Keyword(Keyword::From)
-            | TokenKind::Keyword(Keyword::Case)
-            | TokenKind::Keyword(Keyword::Func)
-            | TokenKind::Keyword(Keyword::Record)
-            | TokenKind::Keyword(Keyword::Enum)
-            | TokenKind::Keyword(Keyword::Trait)
-            | TokenKind::Keyword(Keyword::Impl)
-            | TokenKind::Keyword(Keyword::Class)
-            | TokenKind::Keyword(Keyword::Module)
-            | TokenKind::Keyword(Keyword::Import)
-            | TokenKind::Keyword(Keyword::Async)
-            | TokenKind::Keyword(Keyword::Return) => true,
-            _ => false,
-        }
+                | TokenKind::Keyword(Keyword::From)
+                | TokenKind::Keyword(Keyword::Case)
+                | TokenKind::Keyword(Keyword::Func)
+                | TokenKind::Keyword(Keyword::Record)
+                | TokenKind::Keyword(Keyword::Enum)
+                | TokenKind::Keyword(Keyword::Trait)
+                | TokenKind::Keyword(Keyword::Impl)
+                | TokenKind::Keyword(Keyword::Class)
+                | TokenKind::Keyword(Keyword::Module)
+                | TokenKind::Keyword(Keyword::Import)
+                | TokenKind::Keyword(Keyword::Async)
+                | TokenKind::Keyword(Keyword::Return)
+        )
     }
 
     fn is_post_paren_boundary_token(&self) -> bool {
@@ -490,10 +489,10 @@ impl Parser {
             return true;
         }
 
-        match &self.current().kind {
-            TokenKind::Symbol('{') | TokenKind::Symbol(')') => true,
-            _ => false,
-        }
+        matches!(
+            &self.current().kind,
+            TokenKind::Symbol('{') | TokenKind::Symbol(')')
+        )
     }
 
     fn push_error(
@@ -540,7 +539,7 @@ impl Parser {
                 const MAX_PREVIEW: usize = 24;
                 if value.len() > MAX_PREVIEW {
                     let mut preview = value[..MAX_PREVIEW].to_string();
-                    preview.push_str("…");
+                    preview.push('…');
                     format!("string literal \"{}\"", preview)
                 } else {
                     format!("string literal \"{}\"", value)
@@ -554,10 +553,13 @@ impl Parser {
 
     fn keyword_hint(&self, keyword: Keyword) -> Option<String> {
         match keyword {
-            Keyword::Module => Some("Start the file with `module <name>` on its own line.".to_string()),
-            Keyword::Import => {
-                Some("Use `from path.to.module import name` or `import path.to.module` on its own line.".to_string())
+            Keyword::Module => {
+                Some("Start the file with `module <name>` on its own line.".to_string())
             }
+            Keyword::Import => Some(
+                "Use `from path.to.module import name` or `import path.to.module` on its own line."
+                    .to_string(),
+            ),
             Keyword::Func => Some("Function declarations start with `func name(...)`.".to_string()),
             Keyword::Async => Some(
                 "`async` must be followed by `func`, `{ ... }`, or a closure parameter list."
@@ -567,7 +569,9 @@ impl Parser {
                 Some("Traits are declared with `trait TraitName { ... }`.".to_string())
             }
             Keyword::Impl => Some("Use `impl Type` to provide trait implementations.".to_string()),
-            Keyword::Let => Some("Introduce bindings with `let name = expression` on its own line.".to_string()),
+            Keyword::Let => {
+                Some("Introduce bindings with `let name = expression` on its own line.".to_string())
+            }
             Keyword::Return => {
                 Some("Use `return expression` to exit a function early.".to_string())
             }
@@ -580,7 +584,9 @@ impl Parser {
 
     fn symbol_hint(&self, symbol: char) -> Option<String> {
         match symbol {
-            ';' => Some("Remove the semicolon and end the statement with a line break.".to_string()),
+            ';' => {
+                Some("Remove the semicolon and end the statement with a line break.".to_string())
+            }
             ')' => Some("Close the parenthesis with `)`.".to_string()),
             '}' => Some("Close the block with `}`.".to_string()),
             ']' => Some("Close the bracket with `]`.".to_string()),
@@ -927,17 +933,21 @@ impl TypePattern {
             }
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl fmt::Display for TypePattern {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TypePattern::Simple(segments) => segments.join("::"),
+            TypePattern::Simple(segments) => formatter.write_str(&segments.join("::")),
             TypePattern::Tuple(elements) => {
-                let inner = elements
-                    .iter()
-                    .map(|elem| elem.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("({})", inner)
+                formatter.write_str("(")?;
+                for (index, element) in elements.iter().enumerate() {
+                    if index > 0 {
+                        formatter.write_str(", ")?;
+                    }
+                    write!(formatter, "{element}")?;
+                }
+                formatter.write_str(")")
             }
         }
     }

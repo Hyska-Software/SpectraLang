@@ -23,7 +23,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use mio::{Events, Poll, Token, Waker};
+use mio::{Events, Interest as MioInterest, Poll, Token, Waker};
 
 const REACTOR_WAKE_TOKEN: Token = Token(0);
 
@@ -263,6 +263,45 @@ impl ReactorCore {
         };
         events.clear();
         let _ = poll.poll(&mut events, timeout);
+        let readiness = events
+            .iter()
+            .filter_map(|event| {
+                if event.token() == REACTOR_WAKE_TOKEN {
+                    return None;
+                }
+
+                let mut bits = 0;
+                if event.is_readable() || event.is_read_closed() || event.is_error() {
+                    bits |= Interest::READABLE.bits();
+                }
+                if event.is_writable() || event.is_write_closed() || event.is_error() {
+                    bits |= Interest::WRITABLE.bits();
+                }
+                Interest::from_bits(bits).map(|interest| (event.token().0 as i64, interest))
+            })
+            .collect::<Vec<_>>();
+        drop(events);
+        drop(poll);
+
+        for (token, interest) in readiness {
+            self.push_io_event(token, interest);
+        }
+    }
+
+    fn push_io_event(&self, token: i64, readiness: Interest) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let Some(registration) = state.io.get(&token) else {
+            return;
+        };
+        let Some(readiness) = Interest::from_bits(registration.interest.bits() & readiness.bits())
+        else {
+            return;
+        };
+        state.io_events += 1;
+        state.queue.push_back(ReactorEvent::io(token, readiness));
+        self.ready.notify_one();
     }
 }
 
@@ -319,6 +358,65 @@ impl Reactor {
         };
         state.io.insert(token, IoRegistration { interest });
         true
+    }
+
+    /// Register a real mio source with the platform multiplexer.  The
+    /// synthetic `register_io`/`notify_io` pair remains available for host
+    /// adapters, but production socket readiness must use this path so the
+    /// selected epoll/IOCP/kqueue backend owns the event.
+    pub fn register_source<S: mio::event::Source + ?Sized>(
+        &self,
+        source: &mut S,
+        token: i64,
+        interest: Interest,
+    ) -> bool {
+        if token < 0 {
+            return false;
+        }
+        let Some(mio_interest) = mio_interest(interest) else {
+            return false;
+        };
+        let Some(os) = &self.core.os else {
+            return false;
+        };
+        let Ok(poll) = os.poll.lock() else {
+            return false;
+        };
+        if poll
+            .registry()
+            .register(source, Token(token as usize), mio_interest)
+            .is_err()
+        {
+            return false;
+        }
+        drop(poll);
+
+        let Ok(mut state) = self.core.state.lock() else {
+            return false;
+        };
+        state.io.insert(token, IoRegistration { interest });
+        true
+    }
+
+    /// Remove a source from the platform multiplexer and from the reactor's
+    /// token registry.
+    pub fn deregister_source<S: mio::event::Source + ?Sized>(
+        &self,
+        source: &mut S,
+        token: i64,
+    ) -> bool {
+        let Some(os) = &self.core.os else {
+            return false;
+        };
+        let Ok(poll) = os.poll.lock() else {
+            return false;
+        };
+        let deregistered = poll.registry().deregister(source).is_ok();
+        drop(poll);
+        if let Ok(mut state) = self.core.state.lock() {
+            state.io.remove(&token);
+        }
+        deregistered
     }
 
     pub fn notify_io(&self, token: i64, readiness: Interest) -> bool {
@@ -428,6 +526,15 @@ fn selected_backend() -> BackendKind {
     BackendKind::Fallback
 }
 
+fn mio_interest(interest: Interest) -> Option<MioInterest> {
+    match interest.bits() {
+        1 => Some(MioInterest::READABLE),
+        2 => Some(MioInterest::WRITABLE),
+        3 => Some(MioInterest::READABLE.add(MioInterest::WRITABLE)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -461,6 +568,30 @@ mod tests {
         assert!(kinds.contains(&EventKind::TaskWake));
         assert!(kinds.contains(&EventKind::Io));
         assert!(kinds.contains(&EventKind::Timer));
+    }
+
+    #[test]
+    fn real_tcp_listener_readiness_reaches_the_shared_queue() {
+        let reactor = Reactor::new();
+        let mut listener = mio::net::TcpListener::bind(
+            "127.0.0.1:0".parse().expect("loopback address must parse"),
+        )
+        .expect("loopback listener must bind");
+        let address = listener.local_addr().expect("listener must expose address");
+        let token = 41;
+
+        assert!(reactor.register_source(&mut listener, token, Interest::READABLE));
+        let _client = std::net::TcpStream::connect(address).expect("loopback connect");
+
+        let event = reactor
+            .poll(Some(Duration::from_secs(2)))
+            .expect("mio must report listener readiness");
+        assert_eq!(event.kind, EventKind::Io);
+        assert_eq!(event.token, token);
+        assert_eq!(event.readiness, Interest::READABLE);
+
+        let (_accepted, _) = listener.accept().expect("ready listener must accept");
+        assert!(reactor.deregister_source(&mut listener, token));
     }
 
     #[cfg(target_os = "linux")]

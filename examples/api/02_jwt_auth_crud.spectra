@@ -1,0 +1,218 @@
+module jwt_auth_crud_api
+
+import std.string as str
+
+from std.api.http import Request, Response, method_delete, method_get, method_post, method_put, request, request_body, request_header, request_method, request_path, request_with_body, request_with_header, response_body_len, response_header, response_status, status_no_content
+from std.api.jwt import sign, verify
+from std.api.routing import Route, RouteMatch, Router, get, post, put, delete, match_param_int, match_route_id, route_id, route_match, router
+from std.api.handler import HandlerHandle, dispatch_sync, json, register_sync_callback, status, with_header
+from std.api.middleware import MiddlewareChain, chain_new, execute_sync, use_sync
+from std.api.validation import ValidationResult, ValidationSchema, field, min_length, range, result_response, result_ok, schema, validate_json
+from std.api.errors import ApiError, exception_middleware, new as new_error, response as error_response
+from std.api.server import Server, listen, local_port, new as server_new, serve, shutdown, state
+
+const JWT_KEY: string = "spectra-jwt-auth-crud-example-secret-key"
+const JWT_ISSUER: string = "spectra-auth-example"
+const JWT_AUDIENCE: string = "spectra-api"
+const JWT_NOW_MS: int = 1700000000000
+
+func issue_access_token() returns string {
+    let claims = "{\"exp\":1700000100,\"nbf\":1699999900,\"iss\":\"spectra-auth-example\",\"aud\":\"spectra-api\",\"sub\":\"user-7\",\"jti\":\"crud-token-1\"}"
+    return sign("HS256", JWT_KEY, claims)
+}
+
+func bearer_header(token: string) returns string {
+    return str.concat("Bearer ", token)
+}
+
+func unauthorized() returns Response {
+    let error: ApiError = new_error(401, "unauthorized", "a valid bearer token is required")
+    return error_response(error)
+}
+
+func not_found() returns Response {
+    let error: ApiError = new_error(404, "not_found", "user does not exist")
+    return error_response(error)
+}
+
+func user_schema() returns ValidationSchema {
+    let s0: ValidationSchema = schema()
+    let s1: ValidationSchema = field(s0, "name", 1, true)
+    let s2: ValidationSchema = min_length(s1, "name", 3)
+    let s3: ValidationSchema = field(s2, "age", 2, true)
+    return range(s3, "age", 18, 120)
+}
+
+func validate_user_payload(payload: string) returns Response {
+    let result: ValidationResult = validate_json(user_schema(), payload)
+    if result_ok(result) != true {
+        return result_response(result)
+    }
+    return with_header(json(payload), "Content-Type", "application/json")
+}
+
+func authenticated(req: Request) returns bool {
+    let authorization = request_header(req, "Authorization")
+    if str.starts_with(authorization, "Bearer ") != true {
+        return false
+    }
+    let token = str.substring(authorization, 7, str.len(authorization))
+    return verify(token, "HS256", JWT_KEY, JWT_ISSUER, JWT_AUDIENCE, JWT_NOW_MS)
+}
+
+func api_handler(req: Request) returns Response {
+    if authenticated(req) != true {
+        return unauthorized()
+    }
+
+    let path = request_path(req)
+    let method = request_method(req)
+    if path == "/users" and method == method_get() {
+        return with_header(
+            json("[{\"id\":7,\"name\":\"Ada\",\"age\":37}]"),
+            "Content-Type",
+            "application/json",
+        )
+    }
+    if path == "/users" and method == method_post() {
+        return validate_user_payload(request_body(req))
+    }
+    if path == "/users/7" and method == method_get() {
+        return with_header(
+            json("{\"id\":7,\"name\":\"Ada\",\"age\":37}"),
+            "Content-Type",
+            "application/json",
+        )
+    }
+    if path == "/users/7" and method == method_put() {
+        return validate_user_payload(request_body(req))
+    }
+    if path == "/users/7" and method == method_delete() {
+        return status(status_no_content())
+    }
+    return not_found()
+}
+
+func with_auth(req: Request, token: string) returns Request {
+    return request_with_header(req, "Authorization", bearer_header(token))
+}
+
+func expect_problem(response: Response, expected_status: int, code: int) returns int {
+    if response_status(response) != expected_status {
+        return code
+    }
+    if response_header(response, "Content-Type") != "application/problem+json" {
+        return code + 1
+    }
+    if response_body_len(response) <= 0 {
+        return code + 2
+    }
+    return 0
+}
+
+public func main() returns int {
+    let token = issue_access_token()
+    if token == "" {
+        return 1
+    }
+    if verify(token, "HS256", JWT_KEY, JWT_ISSUER, JWT_AUDIENCE, JWT_NOW_MS) != true {
+        return 2
+    }
+    if verify(token + "x", "HS256", JWT_KEY, JWT_ISSUER, JWT_AUDIENCE, JWT_NOW_MS) != false {
+        return 3
+    }
+
+    let routes: Router = router()
+    let list_route: Route = get(routes, "/users")
+    let create_route: Route = post(routes, "/users")
+    let read_route: Route = get(routes, "/users/{id:\\d+}")
+    let update_route: Route = put(routes, "/users/{id:\\d+}")
+    let delete_route: Route = delete(routes, "/users/{id:\\d+}")
+    if route_id(list_route) == 0 or route_id(create_route) == 0 {
+        return 10
+    }
+
+    let read_match: RouteMatch = route_match(routes, method_get(), "/users/7")
+    if match_route_id(read_match) != route_id(read_route) or match_param_int(read_match, "id") != 7 {
+        return 11
+    }
+
+    let api_chain: MiddlewareChain = use_sync(
+        chain_new(),
+        exception_middleware(500, "internal_error", "request failed"),
+    )
+    let list_handler: HandlerHandle = register_sync_callback(route_id(list_route), api_handler)
+    let create_handler: HandlerHandle = register_sync_callback(route_id(create_route), api_handler)
+    let read_handler: HandlerHandle = register_sync_callback(route_id(read_route), api_handler)
+    let update_handler: HandlerHandle = register_sync_callback(route_id(update_route), api_handler)
+    let delete_handler: HandlerHandle = register_sync_callback(route_id(delete_route), api_handler)
+
+    let valid_create: Request = with_auth(
+        request_with_body(request(method_post(), "/users"), "{\"name\":\"Ada\",\"age\":37}"),
+        token,
+    )
+    let created = execute_sync(api_chain, valid_create, dispatch_sync(create_handler, valid_create))
+    if response_status(created) != 200 or response_header(created, "Content-Type") != "application/json" {
+        return 20
+    }
+    if request_body(valid_create) != "{\"name\":\"Ada\",\"age\":37}" {
+        return 21
+    }
+
+    let invalid_token: Request = request_with_header(
+        request(method_get(), "/users"),
+        "Authorization",
+        "Bearer tampered.token.value",
+    )
+    let rejected = execute_sync(api_chain, invalid_token, dispatch_sync(list_handler, invalid_token))
+    if expect_problem(rejected, 401, 30) != 0 {
+        return expect_problem(rejected, 401, 30)
+    }
+
+    let invalid_payload: Request = with_auth(
+        request_with_body(request(method_post(), "/users"), "{\"name\":\"Al\",\"age\":12}"),
+        token,
+    )
+    let validation_failure = execute_sync(api_chain, invalid_payload, dispatch_sync(create_handler, invalid_payload))
+    if expect_problem(validation_failure, 422, 40) != 0 {
+        return expect_problem(validation_failure, 422, 40)
+    }
+
+    let listed: Request = with_auth(request(method_get(), "/users"), token)
+    if response_status(execute_sync(api_chain, listed, dispatch_sync(list_handler, listed))) != 200 {
+        return 50
+    }
+    let read: Request = with_auth(request(method_get(), "/users/7"), token)
+    if response_status(execute_sync(api_chain, read, dispatch_sync(read_handler, read))) != 200 {
+        return 51
+    }
+    let update: Request = with_auth(
+        request_with_body(request(method_put(), "/users/7"), "{\"name\":\"Ada Lovelace\",\"age\":37}"),
+        token,
+    )
+    if response_status(execute_sync(api_chain, update, dispatch_sync(update_handler, update))) != 200 {
+        return 52
+    }
+    let deleted: Request = with_auth(request(method_delete(), "/users/7"), token)
+    if response_status(execute_sync(api_chain, deleted, dispatch_sync(delete_handler, deleted))) != status_no_content() {
+        return 53
+    }
+    if response_status(execute_sync(api_chain, with_auth(request(method_get(), "/users/999"), token), dispatch_sync(read_handler, with_auth(request(method_get(), "/users/999"), token)))) != 404 {
+        return 54
+    }
+
+    let server: Server = server_new()
+    if listen(server, 0) != true {
+        return 60
+    }
+    if block_on(serve(server, routes)) != 1 {
+        return 61
+    }
+    if state(server) != 2 or local_port(server) <= 0 {
+        return 62
+    }
+    if shutdown(server) != true or state(server) != 3 {
+        return 63
+    }
+    return 0
+}

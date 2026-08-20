@@ -146,7 +146,7 @@ impl CompilationPipeline<NoopBackend> {
         };
         Self {
             options,
-            backend: NoopBackend::default(),
+            backend: NoopBackend,
             module_loader: ModuleLoader::new(),
             registry,
             package_name: None,
@@ -223,7 +223,7 @@ where
         if !semantic_errors.is_empty() {
             return Err(semantic_errors
                 .into_iter()
-                .map(|e| CompilerError::Semantic(e))
+                .map(CompilerError::Semantic)
                 .collect());
         }
 

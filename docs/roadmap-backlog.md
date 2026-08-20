@@ -4500,16 +4500,24 @@ that `std.api.*` will dispatch into.
 
 - Added the `packages/spectra-api` Rust crate and the `spectra.api` package
   manifest at `packages/spectra-api/spectra.toml`.
-- Added 277 public `spectra.api.*` host calls covering the Phase 22, R-2301, and R-2302 registration
+- Added 414 public `spectra.api.*` host calls covering the Phase 22, R-2301, R-2302, R-2303, R-2304, R-2305, R-2306, R-2307, R-2308, R-2309, R-2312, R-2313, R-2314, R-2316, R-2317, R-2311, R-2401, R-2402, and R-2403 registration
   surface for version metadata, HTTP method/status/header helpers, request and
   response handles, server/client handles, JSON classification, TLS config
-  handles, routing handles, and error metadata.
+  handles, routing handles, error metadata, and sync/async handler callback
+  registration; `spectra.api.client.request` is registered as the real
+  `Task<Response>` bridge.
 - Host calls are registered in the existing runtime host-call registry through
   `spectra_api::register()`, and the crate exports
   `spectra_api_register_host_calls` for native integration.
 - Added `runtime/src/api/mod.rs` as the runtime-side namespace contract for the
-  required 211-name `spectra.api.*` namespace; the package registry may expose
+  required 346-name `spectra.api.*` namespace; the package registry may expose
   additional public calls beyond that runtime-required subset.
+- Added stable `request_body` and `request_with_body` bridges so handlers and
+  clients can read and construct UTF-8 request payloads through `std.api.http`.
+- Added `std.api.session` with a shared backend contract, cryptographically
+  random opaque IDs, bounded in-memory storage, Redis persistence through the
+  existing real driver, sliding TTL capped by a maximum lifetime, lookup
+  validity checks, explicit revocation, and typed error reporting.
 - Wired `spectra_api::register()` into the CLI runtime setup paths after
   `spectra_runtime::register_standard_library()`.
 - Added unit coverage in `cargo test -p spectra-api` for host-call uniqueness,
@@ -4652,7 +4660,9 @@ body limits, response writer, and per-connection timeouts.
 
 - Added a nonblocking HTTP/1.1 server in
   `packages/spectra-api/src/server.rs` using the `R-2204` parser for request
-  framing and response serialization.
+  framing and response serialization. Listener and connection readiness now
+  runs through `mio::Poll`, with platform-specific readiness selected by the
+  `mio` backend and dynamic writable interest for pending responses.
 - Added public server API types: `ServerConfig`, `ServerResponse`,
   `ServerStats`, `ServerError`, `Handler`, and `HttpServer`.
 - Implemented accept-loop connection state, keep-alive handling, response
@@ -4695,6 +4705,8 @@ configurable timeouts, and structured responses.
   method semantics.
 - Timeouts, connection failures, and protocol errors are reported as
   typed errors.
+- `spectra.api.client.request` returns a real `Task<Response>` and uses
+  `mio` readiness with cooperative cancellation.
 - Tests cover redirect chains, large bodies, and explicit timeout.
 - `cargo test -p spectra-api` covers `HttpClient`, `ClientConfig`,
   `ClientRequest`, `ClientResponse`, `ClientError`, redirects, pool reuse,
@@ -4714,11 +4726,16 @@ configurable timeouts, and structured responses.
   connection pooling with idle expiry, configurable timeout, configurable
   redirect limit, large response bodies, and typed timeout/connection/protocol
   errors.
+- Added the registered `spectra.api.client.request` host call. It owns a real
+  `HttpClient` handle, performs connect/write/read through `mio::net` readiness,
+  returns a runtime `Task<Response>`, propagates trace context, and observes
+  cancellation at every readiness wait.
 - Implemented redirect handling for 301, 302, 303, 307, and 308, including
   POST-to-GET conversion for 301/302/303 and method/body preservation for
   307/308.
 - Preserved existing Phase 22 host calls `spectra.api.client.new` and
-  `spectra.api.client.timeout_ms`.
+  `spectra.api.client.timeout_ms`, and added the previously missing
+  `spectra.api.client.request` implementation.
 - Added crate tests for all public methods, arbitrary bodies, pool reuse,
   redirect method semantics, redirect limit, large bodies, explicit timeout,
   connection failure, and protocol error.
@@ -4727,8 +4744,8 @@ configurable timeouts, and structured responses.
 
 ### Boundary
 
-- `R-2206` implements plain HTTP/1.1 over TCP. HTTPS, certificate validation,
-  SNI, and ALPN remain owned by `R-2207`.
+- `R-2206` owns the HTTP/1.1 client contract and the runtime task bridge;
+  HTTPS certificate validation, SNI, and ALPN remain owned by `R-2207`.
 
 ## R-2207 TLS via rustls (HTTPS Server and Client)
 
@@ -4747,8 +4764,9 @@ Implemented in `packages/spectra-api/src/tls.rs` with `TlsServerConfig`,
 `TlsClientConfig`, `HttpsResponse`, `HttpsServerExchange`, and typed
 `TlsErrorKind`/`TlsError` reporting. Server and client configs accept DER
 certificate chains, client configs can use explicit roots or `webpki-roots`,
-SNI is supplied through `ServerName`, and ALPN defaults to `http/1.1` until
-HTTP/2 support lands.
+SNI is supplied through `ServerName`, and the default ALPN list advertises
+`http/1.1` alongside `h2`; the HTTP/1.1 path keeps its existing preference and
+the native HTTP/2 listener requires an actual `h2` selection.
 
 ### Acceptance
 
@@ -4760,6 +4778,9 @@ HTTP/2 support lands.
   negotiation selects `http/1.1`.
 - TLS handshake failures are reported as typed errors with the underlying
   cause via `TlsErrorKind` and `TlsError`.
+- The task-aware client bridge performs a nonblocking validated HTTPS
+  round-trip with explicit roots, SNI, ALPN, and the same cooperative
+  cancellation boundary used by plain HTTP.
 - `cargo test -p spectra-api tls --offline` passes.
 - `cargo test -p spectra-api tls::tests::known_external_endpoint_validates_chain --offline -- --ignored`
   passes.
@@ -5077,7 +5098,11 @@ router calls to produce a `Response`.
 - The trait supports `async func` and synchronous handlers.
 - Handlers can return any value that implements `IntoResponse`.
 - Errors thrown by handlers flow through the unified error middleware.
-- Tests cover both handler shapes and trait object dispatch.
+- `register_sync_callback` and `register_async_callback` transport user
+  `Request -> Response` and `Request -> Task<Response>` closures through the
+  runtime closure ABI.
+- Tests cover both handler shapes, trait object dispatch, callback dispatch,
+  and the callback fixture `tests/validation/330_api_handler_callbacks.spectra`.
 
 ### Completed Implementation Notes
 
@@ -5094,11 +5119,18 @@ router calls to produce a `Response`.
 - Added response helper host calls for text, JSON, bytes, status-only
   responses, header decoration, typed handler errors, and deterministic
   sync/async handler handle dispatch.
+- Added real `register_sync_callback` and `register_async_callback` bridges;
+  server routing now invokes user callbacks through the closure ABI and the
+  callback closure allocations are promoted to the runtime base frame before
+  registration so server-owned handlers remain valid after the registering
+  function returns.
+  mio loop cooperatively polls async `Task<Response>` results.
 - Registered `spectra.api.handler.*` host calls through `packages/spectra-api`,
   `runtime/src/api/mod.rs`, semantic builtins, midend lowering, and the public
   API snapshot.
 - Documented the public surface in `docs/api/std-api-handler.md`.
 - Added `tests/validation/139_api_handler_response_return.spectra` and
+  `tests/validation/330_api_handler_callbacks.spectra` and
   `scripts/validate_r2215_handler_response.py`.
 
 ## R-2216 Server Lifecycle, Listen, Serve, and Graceful Shutdown
@@ -5127,8 +5159,13 @@ and clean teardown of in-flight requests.
 - Resources (sockets, listener wakeups, and active connection state) are
   released on shutdown and post-shutdown active connection count returns to
   zero.
-- Tests cover host-call listen/serve routing, signal handling, drain,
-  cancellation, and `tests/validation/147_api_server_lifecycle.spectra`.
+- `serve` invokes registered sync callbacks directly and keeps registered async
+  callback tasks pending in the mio event loop until completion, timeout,
+  disconnect, or cancellation.
+- Tests cover host-call listen/serve routing, callback execution, signal
+  handling, drain, cancellation, and
+  `tests/validation/147_api_server_lifecycle.spectra` plus
+  `tests/validation/330_api_handler_callbacks.spectra`.
 - `scripts/validate_r2216_server_lifecycle.py` passes and is wired into
   `run_tests.ps1`.
 
@@ -5142,11 +5179,15 @@ and clean teardown of in-flight requests.
   requests drain within the configured grace period, idle keep-alive
   connections close as drained, and unfinished connections are cancelled
   after the deadline.
+- Integrated callback routing: synchronous user handlers execute during route
+  dispatch; asynchronous user handlers hold connection state until their task
+  completes, times out, disconnects, or is cancelled during shutdown.
 - Wired `spectra.api.server.listen`, `serve`, `local_port`, `signal`, and
   `stats` into the host-call registry, runtime contract, midend lowering,
   semantic builtin surface, and std.api public snapshot.
 - Added `docs/api/std-api-server-lifecycle.md`,
   `tests/validation/147_api_server_lifecycle.spectra`, and
+  `tests/validation/330_api_handler_callbacks.spectra`, and
   `scripts/validate_r2216_server_lifecycle.py`.
 
 ## R-2217 spectra.api Package Published to Local Registry
@@ -5373,10 +5414,16 @@ block with documented behavior.
   fields.
 - Log format is configurable (JSON for production, text for development).
 - Tests assert the log line contents and the request ID propagation.
+- The native middleware stores the rendered line at response completion and
+  exposes `logging_len`, `logging_line`, and `logging_request_id` through
+  `std.api.middleware`.
+- `tests/validation/331_api_structured_logging.spectra` covers JSON, text,
+  unique IDs, and short-circuit responses.
+- `scripts/validate_r2303_structured_logging.py` is wired into `run_tests.ps1`.
 
 ## R-2304 Rate Limiting (Token Bucket and Sliding Window)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5390,10 +5437,16 @@ block with documented behavior.
   another tenant's budget).
 - Configuration is hot-reloadable in dev mode.
 - Tests cover token bucket, sliding window, and per-tenant isolation.
+- The native middleware supports global, route, tenant, user, route-tenant,
+  and route-user keys and emits `Retry-After`, `X-RateLimit-Limit`, and
+  `X-RateLimit-Remaining` on rejection.
+- `tests/validation/332_api_rate_limiting.spectra` covers both algorithms,
+  tenant/user isolation, `429`, and the development-only update path.
+- `scripts/validate_r2304_rate_limiting.py` is wired into `run_tests.ps1`.
 
 ## R-2305 Response Compression (gzip, brotli, deflate)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `medium`
@@ -5405,10 +5458,14 @@ block with documented behavior.
 - Small responses below the threshold are not compressed.
 - The `Content-Encoding` and `Vary` headers are set correctly.
 - Tests cover each encoding and the threshold behavior.
+- `tests/validation/336_api_compression.spectra` covers Brotli, gzip, deflate,
+  q-values, `Vary`, and threshold behavior.
+- `scripts/validate_r2305_compression.py` passes and is wired into
+  `run_tests.ps1`.
 
 ## R-2306 Security Headers Middleware
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `low`
@@ -5420,10 +5477,14 @@ block with documented behavior.
 - CSP and Permissions-Policy are configurable per route.
 - HSTS preload and `includeSubDomains` are honored when configured.
 - Tests assert each header is present and correctly configured.
+- `tests/validation/334_api_security_headers.spectra` covers defaults, longest
+  route precedence, HSTS flags, and invalid flag combinations.
+- `scripts/validate_r2306_security_headers.py` passes and is wired into
+  `run_tests.ps1`.
 
 ## R-2307 API Key Authentication
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `medium`
@@ -5435,10 +5496,15 @@ block with documented behavior.
 - Expired or revoked keys are rejected with `401` and a structured error.
 - The middleware can be combined with rate limiting per key.
 - Tests cover valid, invalid, expired, and revoked keys.
+- Header and query sources support default and explicit names; structured
+  `401` responses never echo the credential.
+- `tests/validation/333_api_key_auth.spectra` covers valid, missing, unknown,
+  expired, revoked, query, and API-key rate-limit paths.
+- `scripts/validate_r2307_api_key.py` is wired into `run_tests.ps1`.
 
 ## R-2308 JWT (HS256, RS256, ES256)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5451,10 +5517,14 @@ block with documented behavior.
   tokens.
 - The verifier is constant-time for signature comparison.
 - Tests cover happy path, expiry, wrong issuer, and tampered payload.
+- `tests/validation/335_api_jwt.spectra` covers the public HS256 surface and
+  deterministic claim checks.
+- Native tests cover RS256 and ES256 signing and verification.
+- `scripts/validate_r2308_jwt.py` passes and is wired into `run_tests.ps1`.
 
 ## R-2309 OAuth2 Client (Authorization Code + PKCE + Refresh)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `high`
@@ -5467,10 +5537,16 @@ block with documented behavior.
 - PKCE is generated and verified end-to-end.
 - Refresh tokens are exchanged for new access tokens.
 - Tests cover happy path, refresh, and revocation.
+- `tests/validation/337_api_oauth.spectra` covers the public PKCE
+  authorization URL surface.
+- Native tests use a local HTTP authorization server to verify the PKCE
+  challenge, code exchange, refresh rotation, state mismatch, and revocation.
+- `scripts/validate_r2309_oauth.py` passes and is wired into
+  `run_tests.ps1`.
 
 ## R-2310 OAuth2 Resource Server and Token Introspection
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P2`
 - Owner: `web`
 - Risk: `medium`
@@ -5485,7 +5561,7 @@ block with documented behavior.
 
 ## R-2311 Session Management
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `medium`
@@ -5499,10 +5575,14 @@ block with documented behavior.
   lifetime.
 - Explicit logout invalidates the session immediately.
 - Tests cover creation, lookup, expiry, sliding, and invalidation.
+- `std.api.session` exposes opaque random IDs, typed store/session handles,
+  backend errors, and memory/Redis constructors.
+- `tests/validation/342_api_session.spectra` and
+  `scripts/validate_r2311_session.py` pass.
 
 ## R-2312 Cookie API (Secure, httpOnly, SameSite, Signed)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `low`
@@ -5510,15 +5590,25 @@ block with documented behavior.
 
 ### Acceptance
 
-- Cookies can be set with the documented attributes and read back as a
-  typed value.
-- Signed cookies are verified with constant-time comparison.
-- Invalid signatures or expired cookies are rejected with a typed error.
-- Tests cover each attribute and the signature verification paths.
+- Cookies can be created with Path, Domain, Max-Age, Secure, HttpOnly, and
+  SameSite (Lax/Strict/None) attributes, read back through typed getters, and
+  serialized as one or more `Set-Cookie` response headers.
+- Signed cookies use HMAC-SHA256 and constant-time verification.
+- Invalid signatures and expired cookies are rejected through the typed
+  `cookie_error_code`/`cookie_error_message` surface.
+- Native tests cover attributes, serialization, signing, tampering, expiry,
+  and the `SameSite=None` + Secure rule.
+- `tests/validation/338_api_cookie.spectra` covers the language surface and
+  `scripts/validate_r2312_cookie.py` is wired into `run_tests.ps1`.
+
+Implementation evidence: `packages/spectra-api/src/http_types.rs` now owns the
+typed cookie model and HMAC verification; `response_with_cookie` preserves
+multiple `Set-Cookie` headers. The package HTTP tests, compiler snapshot, CLI
+fixture check/run, and the dedicated validator pass.
 
 ## R-2313 Request Validation (Constraints, RFC 7807)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5526,16 +5616,32 @@ block with documented behavior.
 
 ### Acceptance
 
-- Field-level constraints (required, length, range, regex) are applied to
-  validated structs.
-- Failed validation returns a `422` with an RFC 7807 body listing the
-  offending fields.
-- The validation framework composes with the JSON derive.
-- Tests cover each constraint and the response shape.
+- Field-level required, length, numeric range, and regex constraints validate
+  JSON and Form wire-name payloads.
+- Failed validation returns HTTP `422` with an RFC 7807
+  `application/problem+json` body containing field, code, and message entries.
+- `validate_json` and `validate_form` expose typed results and a deterministic
+  response mapping without mutating the schema.
+- Native tests cover each constraint and the response shape;
+  `tests/validation/339_api_validation.spectra` and
+  `scripts/validate_r2313_validation.py` pass and the validator is wired into
+  `run_tests.ps1`.
+
+### Implementação concluída
+
+`packages/spectra-api/src/validation.rs` adiciona schemas imutáveis por
+handles, campos obrigatórios, limites de tamanho, faixa numérica e regex para
+JSON e `std.api.form.Form`. Os resultados acumulam todos os problemas com
+`field`, `code` e `message`, serializam RFC 7807 e produzem `422
+application/problem+json` para entradas inválidas. O módulo foi conectado ao
+compilador semântico, lowering, catálogo, snapshot público e ao runtime com
+17 host calls, além dos handles `ApiValidationSchema` e `ApiValidationResult`.
+Os testes nativos, snapshot, fixture 339, build/check/run do CLI e
+`scripts/validate_r2313_validation.py` são os gates de aceitação.
 
 ## R-2314 Unified Error Handling and Exception Middleware
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5543,17 +5649,32 @@ block with documented behavior.
 
 ### Acceptance
 
-- The public `api.Error` type maps to HTTP status codes and bodies
-  deterministically.
-- Internal errors are logged with full detail and produce sanitized
-  public responses.
-- The middleware can be customized per route.
-- Tests cover the default mapping, the custom mapping, and the
-  sanitization.
+- The public `std.api.errors.ApiError` type maps status, code, and message to
+  deterministic RFC 7807 `application/problem+json` responses.
+- `internal_error` and exception middleware log full internal details while
+  returning only sanitized public status/code/message fields.
+- `exception_middleware` can be configured independently on each route's
+  `MiddlewareChain` and recovers sync/async middleware failures.
+- Native tests cover default mapping, custom per-chain mapping, full-detail
+  logging, and sanitization; `tests/validation/340_api_errors.spectra` and
+  `scripts/validate_r2314_errors.py` pass and the validator is wired into
+  `run_tests.ps1`.
+
+### Implementação concluída
+
+`packages/spectra-api/src/errors.rs` agora implementa o handle `ApiError`,
+normalização determinística de status/código/mensagem, resposta RFC 7807 e
+registro de detalhes internos. O middleware de exceção é configurável por
+cadeia/rota e intercepta falhas tanto no fluxo síncrono quanto no assíncrono;
+os detalhes completos permanecem no log e não entram no corpo público.
+O contrato semântico, lowering, catálogo, snapshot e runtime foram
+sincronizados, com o handle `ApiError` e sete host calls adicionais. Os testes
+nativos, fixture 340, snapshot, build/check/run e
+`scripts/validate_r2314_errors.py` são os gates de aceitação.
 
 ## R-2315 HTTPS Hardening (HSTS Preload, OCSP Stapling)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `medium`
@@ -5568,9 +5689,23 @@ block with documented behavior.
 - Certificate rotation is supported without server restart.
 - Tests cover the HSTS header, OCSP stapling, and hot rotation.
 
+### Implementation
+
+- `TlsServerConfig::with_ocsp_response` uses rustls
+  `with_single_cert_with_ocsp` so the configured DER response is sent during
+  the certificate handshake.
+- `TlsCertificateStore` swaps an `Arc<ServerConfig>` under `RwLock`; the
+  rotating listener selects the current configuration per accepted connection,
+  keeping the TCP listener alive while future handshakes use the new chain.
+- HSTS preload and `includeSubDomains` remain covered by the R-2306 security
+  headers middleware and `tests/validation/334_api_security_headers.spectra`.
+- Native TLS tests cover the stapled response and two handshakes across a
+  certificate rotation; `scripts/validate_r2315_https_hardening.py` is wired
+  into `run_tests.ps1`.
+
 ## R-2316 Threat Mitigations (CSRF, SSRF, Body Size, Timeouts)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5584,10 +5719,29 @@ block with documented behavior.
   addresses by default.
 - Body size limits are enforced before the body is fully read.
 - Request timeouts cut off slow clients without affecting other requests.
+- `std.api.security` exposes immutable CSRF/SSRF policies; the HTTP client
+  validates resolved addresses before opening synchronous, asynchronous, or
+  HTTPS sockets; and `std.api.server` exposes body and timeout configuration.
+- Native security/client/server tests, `tests/validation/341_api_security.spectra`,
+  and `scripts/validate_r2316_security.py` pass and the validator is wired into
+  `run_tests.ps1`.
+
+### Implementação concluída
+
+`packages/spectra-api/src/security.rs` implementa a allowlist CSRF para métodos
+state-changing e a política SSRF que bloqueia loopback, redes privadas,
+link-local, multicast, unspecified e IPv6 unique-local por padrão. A resolução
+DNS é validada antes do socket e o mesmo conjunto de endereços validados é
+usado pelo cliente síncrono e pelo cliente assíncrono/TLS. O parser HTTP já
+rejeita `Content-Length` acima do limite antes de ler o corpo completo e mede
+corpos chunked incrementalmente; os setters públicos expõem o limite e os
+timeouts de leitura/idle do servidor. O contrato semântico, lowering, handles,
+catálogo, snapshot e runtime foram sincronizados, com o fixture 341 e o gate
+dedicado registrados no runner.
 
 ## R-2317 API Example: Authenticated REST API (JWT)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `ecosystem`
 - Risk: `low`
@@ -5599,9 +5753,25 @@ block with documented behavior.
 - The example issues, validates, and rejects JWTs end-to-end.
 - The example uses the unified error middleware and validation framework.
 
+### Implementation and evidence (2026-08-19)
+
+Complete. `examples/api/02_jwt_auth_crud.spectra` issues deterministic HS256
+tokens, rejects tampered and malformed bearer credentials, routes authenticated
+list/create/read/update/delete callbacks, validates the real UTF-8 request body,
+and returns unified Problem Details responses for authentication and validation
+failures. The missing public request-body bridge was added as
+`std.api.http.request_body` and `request_with_body`, with the HTTP fixture,
+catalog, snapshot, package/runtime contracts, and docs synchronized. The
+example starts and stops a real local server through the normal CLI path.
+
+Evidence: `cargo test -p spectra-api --lib --offline`,
+`cargo test -p spectra-runtime --lib --offline`, CLI compile/run for the
+example and HTTP body fixture, and `scripts/validate_r2317_jwt_auth_crud_example.py`
+pass. The dedicated validator is registered as Group 8.71 in `run_tests.ps1`.
+
 ## R-2318 API Example: Middleware Composition
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `ecosystem`
 - Risk: `low`
@@ -5614,6 +5784,23 @@ block with documented behavior.
 - The example demonstrates per-route configuration of the rate limit and
   security headers.
 
+### Implementation and evidence (2026-08-19)
+
+Complete. The example composes structured logging, security headers, CORS,
+compression, and a route-scoped sliding-window limiter in the documented order.
+It proves that successful, `429`, and CORS preflight responses retain the
+expected security/CORS headers, that compression reaches the rate-limit
+short-circuit, that request IDs are unique, and that `/api/admin` overrides
+`/api` while sibling routes have independent budgets. During integration a
+real CORS bug was fixed: `Vary: Origin` now merges with an existing
+`Vary: Accept-Encoding` dimension instead of replacing it, with native
+regression coverage.
+
+Evidence: focused CORS and middleware native tests, CLI compile/run for
+`examples/api/03_middleware_composition.spectra`, and
+`scripts/validate_r2318_middleware_composition_example.py` pass. The gate is
+registered as Group 8.72 in `run_tests.ps1`.
+
 ---
 
 # Phase 24: Advanced API Features
@@ -5623,7 +5810,7 @@ negotiation, and other production API features.
 
 ## R-2401 WebSocket Server (RFC 6455)
 
-- Status: `not_started`
+- Status: `in_progress`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5639,9 +5826,27 @@ negotiation, and other production API features.
 - Tests cover handshake, fragmented messages, ping/pong, and a 10k
   concurrent connections soak.
 
+### Completed so far (2026-08-19)
+
+The native `packages/spectra-api/src/websocket.rs` module now implements the
+RFC 6455 handshake, strict frame validation, masking direction, fragmented
+text/binary messages, automatic pong, close validation, configurable message
+limits, and negotiated `permessage-deflate`. The typed `std.api.websocket`
+surface is wired through semantic analysis, lowering, runtime handle kinds,
+and 17 host calls. `tests/validation/343_api_websocket.spectra` passes
+through the normal CLI path, and the focused native tests plus
+`scripts/validate_r2401_websocket.py` are the reproducible evidence gate.
+
+### Remaining before completion
+
+The public API is currently a dedicated WebSocket listener. R-2401 remains
+`in_progress` until the HTTP server/router upgrade path is integrated and a
+real 10k concurrent-connections soak is executed and recorded; those gates
+must not be inferred from the focused protocol tests.
+
 ## R-2402 WebSocket Client
 
-- Status: `not_started`
+- Status: `in_progress`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5655,9 +5860,25 @@ negotiation, and other production API features.
 - Reconnect with backoff is supported when configured.
 - Tests cover handshake, frame round-trip, and reconnect.
 
+### Completed so far (2026-08-19)
+
+`WebSocketClient` now performs real `ws://` and `wss://` handshakes with a fresh
+nonce, validates the `101` response and `Sec-WebSocket-Accept`, reuses the RFC
+6455 codec for masked client frames, applies default-deny SSRF policy after DNS
+resolution, uses the project `rustls` configuration and WebPKI roots for
+secure endpoints, supports per-message deflate, bounded reconnect with
+cancellation, and typed async host calls. Native tests cover text/binary
+round-trip, a TLS round-trip with an explicit trust root, and a retry after a
+failed first handshake. Fixture 344 validates the configuration surface
+through the CLI (`tests/validation/344_api_websocket_client.spectra`).
+
+### Remaining before completion
+
+R-2402 remains `in_progress` until the implementation passes an external echo-server certification. The native `wss://` test proves the local rustls transport and is not promoted to external interoperability evidence.
+
 ## R-2403 Server-Sent Events (SSE)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `medium`
@@ -5670,10 +5891,35 @@ negotiation, and other production API features.
   connection alive.
 - The `Last-Event-ID` header is honored for resume on the server.
 - Tests cover streaming, heartbeat, and resume.
+- The typed `std.api.sse` surface is wired through semantic analysis, lowering,
+  runtime handles, and 20 registered host calls.
+- `std.api.sse.server_response` is served by the normal routed
+  `std.api.server` lifecycle.
+
+### Completed so far (2026-08-19)
+
+Added a dedicated `std.api.sse` transport with HTTP/1.1
+`text/event-stream` handshakes, bounded event serialization, multiline data,
+`retry` reconnection hints, automatic flushed heartbeats, a bounded replay log,
+and `Last-Event-ID` resume. The typed surface is wired through semantic
+analysis, lowering, runtime handle kinds, and 20 host calls. Native tests cover
+streaming, heartbeat, event formatting, and resume; fixture
+`tests/validation/345_api_sse.spectra` and
+`scripts/validate_r2403_sse.py` provide the CLI/contract gate. The new
+`server_response` binding connects the same bounded event/replay state to a
+routed `std.api.server` response; the native integration test exercises the
+real HTTP loop, handshake, publication, heartbeat scheduling, and shutdown.
+
+### Completion note
+
+R-2403 is complete. The routed response is kept out of the finite
+`ServerResponse` serializer: the HTTP loop owns the connection, applies a
+bounded pending queue, probes disconnects, and drains events and heartbeats
+without blocking the server.
 
 ## R-2404 HTTP/2 Server (h2, ALPN, HPACK)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `high`
@@ -5686,6 +5932,23 @@ negotiation, and other production API features.
   head-of-line blocking.
 - HPACK encoding round-trips with the configured client.
 - Tests cover ALPN negotiation, multiplexing, and HPACK.
+
+### Completed (2026-08-19)
+
+`packages/spectra-api/src/http2.rs` now provides a real native HTTP/2 server
+over the `h2` state machine. It bounds concurrent streams, decoded header
+lists, request bodies, and graceful shutdown; releases stream flow-control
+capacity while consuming request data; and filters HTTP/1-only connection
+headers from encoded responses. The default rustls configuration advertises
+`http/1.1` and `h2`, while the HTTP/2 listener requires an actual `h2` ALPN
+selection before starting the protocol handshake.
+
+Native tests cover multiplexed HPACK header round-trips, default ALPN contents,
+and a rustls `h2` negotiation with a complete request/response exchange.
+`scripts/validate_r2404_http2.py` is the reproducible evidence gate and is
+registered as Group 8.78 in `run_tests.ps1`. The implementation is transport
+level; the existing `std.api.server` callback/router contract remains the
+HTTP/1.1 surface until an HTTP/2-aware callback adapter is specified.
 
 ## R-2405 HTTP/2 Client
 

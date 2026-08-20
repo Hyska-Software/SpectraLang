@@ -43,10 +43,14 @@ public func main() returns int {
         "target/ai-examples/advanced-phase17/checkpoint.json",
         2
     )
-    let checkpoint_text = fs.fs_read(checkpoint)
-    if str.contains(checkpoint_text, "\"interrupted_worker\":2") {
-        let ok_interrupted = 1
-        if ok_interrupted != 1 {
+    let checkpoint_result = fs.fs_read(checkpoint)
+    if let Result::Ok(checkpoint_text) = checkpoint_result {
+        if str.contains(checkpoint_text, "\"interrupted_worker\":2") {
+            let ok_interrupted = 1
+            if ok_interrupted != 1 {
+                return 5
+            }
+        } else {
             return 5
         }
     } else {

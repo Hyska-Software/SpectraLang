@@ -12,7 +12,10 @@ surface is intentionally small:
   OS-assigned loopback port.
 - `serve(Server, Router) -> task<int>` starts the listener, routes requests
   through `std.api.routing`, and dispatches registered `std.api.handler`
-  responses.
+  responses and invokes registered sync callbacks
+  (`register_sync_callback`) and async callbacks
+  (`register_async_callback`). Async callback tasks are polled by the same mio
+  event loop and are cancelled on disconnect or drain timeout.
 - `local_port(Server) -> int` reports the configured or OS-assigned port.
 - `state(Server) -> int` returns `1` created, `2` running, `3` stopped, or `4`
   stopping.
@@ -54,4 +57,6 @@ Coverage is split across the public Spectra surface and Rust integration tests:
 - `tests/validation/147_api_server_lifecycle.spectra`
 - `packages/spectra-api/src/server.rs` R-2216 drain/cancellation tests
 - `packages/spectra-api/src/lib.rs` host-call lifecycle integration test
+- `packages/spectra-api/src/lib.rs` callback routing integration test
+- `tests/validation/330_api_handler_callbacks.spectra`
 - `scripts/validate_r2216_server_lifecycle.py`

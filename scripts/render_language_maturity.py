@@ -18,7 +18,7 @@ from pathlib import Path
 REQUIRED_FEATURES = {
     "core.class": "reserved",
     "core.static": "stable",
-    "core.exact_width": "beta",
+    "core.exact_width": "stable",
     "core.arrays": "beta",
     "core.iterators": "beta",
     "std.collections": "beta",

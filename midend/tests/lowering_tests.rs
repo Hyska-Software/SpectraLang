@@ -321,11 +321,7 @@ fn stdlib_fs_result_and_env_boolean_host_types_are_preserved() {
 
 #[test]
 fn result_unwrap_err_uses_the_enum_error_payload_type() {
-    let error = enum_variant(
-        "Result",
-        "Err",
-        Some(vec![string_lit("failure")]),
-    );
+    let error = enum_variant("Result", "Err", Some(vec![string_lit("failure")]));
     let unwrap = call(
         field_path(&["std", "result", "result_unwrap_err"]),
         vec![error],
@@ -357,11 +353,7 @@ fn result_unwrap_err_uses_the_enum_error_payload_type() {
 
 #[test]
 fn result_unwrap_err_keeps_inferred_binding_payload_type() {
-    let error = enum_variant(
-        "Result",
-        "Err",
-        Some(vec![string_lit("failure")]),
-    );
+    let error = enum_variant("Result", "Err", Some(vec![string_lit("failure")]));
     let unwrap = call(
         field_path(&["std", "result", "result_unwrap_err"]),
         vec![ident("error")],
@@ -370,10 +362,7 @@ fn result_unwrap_err_keeps_inferred_binding_payload_type() {
         "result_error_binding",
         vec![make_function(
             "main",
-            vec![
-                let_stmt("error", error),
-                let_stmt("message", unwrap),
-            ],
+            vec![let_stmt("error", error), let_stmt("message", unwrap)],
         )],
     );
 

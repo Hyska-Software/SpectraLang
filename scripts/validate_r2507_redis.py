@@ -7,6 +7,7 @@ import os
 import socket
 import subprocess
 import tempfile
+import time
 from urllib.parse import urlsplit
 from pathlib import Path
 
@@ -112,7 +113,11 @@ def main() -> int:
         fixture = Path(args.fixture)
         with tempfile.TemporaryDirectory(prefix="spectra-r2507-") as directory:
             generated = Path(directory) / fixture.name
-            generated.write_text(fixture.read_text(encoding="utf-8").replace("__SPECTRA_REDIS_URL__", url), encoding="utf-8")
+            run_id = f"{os.getpid()}-{time.time_ns()}"
+            fixture_source = fixture.read_text(encoding="utf-8")
+            fixture_source = fixture_source.replace("__SPECTRA_REDIS_URL__", url)
+            fixture_source = fixture_source.replace("__SPECTRA_REDIS_RUN_ID__", run_id)
+            generated.write_text(fixture_source, encoding="utf-8")
             cli = run([str(ROOT / args.binary), "run", str(generated)], env, url)
             report["connection"]["cli_fixture"] = cli
             if cli["exit_code"] != 0: report["failures"].append("Redis Spectra fixture failed")

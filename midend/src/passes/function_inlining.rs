@@ -192,12 +192,9 @@ fn inline_calls_in_function(
     candidates: &HashMap<String, InlineCandidate>,
 ) -> bool {
     let mut modified = false;
-    loop {
-        let Some((block_index, instruction_index, candidate_name)) =
-            find_inline_call(function, candidates)
-        else {
-            break;
-        };
+    while let Some((block_index, instruction_index, candidate_name)) =
+        find_inline_call(function, candidates)
+    {
         let candidate = candidates
             .get(&candidate_name)
             .expect("candidate disappeared")
@@ -466,7 +463,11 @@ fn remap_instruction(kind: &InstructionKind, values: &HashMap<usize, Value>) -> 
             index: map_value(*index, values),
             element_type: element_type.clone(),
         },
-        InstructionKind::FieldPtr { result, ptr, offset } => InstructionKind::FieldPtr {
+        InstructionKind::FieldPtr {
+            result,
+            ptr,
+            offset,
+        } => InstructionKind::FieldPtr {
             result: map_value(*result, values),
             ptr: map_value(*ptr, values),
             offset: *offset,

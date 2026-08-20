@@ -95,14 +95,40 @@ def main() -> int:
         ROOT / "compiler" / "tests" / "snapshots" / "std_range_public_function_table.snap",
         ["std.range.Range", "std.range.create", "std.range.is_inclusive"],
     )
-    require_text(
-        ROOT / "midend" / "src" / "lowering.rs",
-        ["spectra.std.range.create", "spectra.std.range.len", "spectra.std.range.at"],
+    # The lowering stage is split across lowering_impl_loops.rs and
+    # lowering_std_host_convert_time.rs.  Check the stage sources as a unit so
+    # this gate follows the production implementation after decomposition.
+    midend_sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / "midend" / "src").glob("*.rs"))
     )
-    require_text(
-        ROOT / "runtime" / "src" / "stdlib" / "mod.rs",
-        ["RANGE_CREATE", "std_range_invalid_handles_and_indexes_return_status"],
+    missing = [
+        needle
+        for needle in [
+            "spectra.std.range.create",
+            "spectra.std.range.len",
+            "spectra.std.range.at",
+        ]
+        if needle not in midend_sources
+    ]
+    if missing:
+        raise SystemExit(
+            "midend/src/**/*.rs missing required text: " + ", ".join(missing)
+        )
+    stdlib_sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / "runtime" / "src" / "stdlib").glob("*.rs"))
     )
+    missing_runtime = [
+        needle
+        for needle in ["RANGE_CREATE", "std_range_invalid_handles_and_indexes_return_status"]
+        if needle not in stdlib_sources
+    ]
+    if missing_runtime:
+        raise SystemExit(
+            "runtime/src/stdlib/**/*.rs missing required text: "
+            + ", ".join(missing_runtime)
+        )
     require_text(
         ROOT / "docs" / "reference" / "03-tipos-compostos.md",
         ["Range", "std.range", "stored range"],

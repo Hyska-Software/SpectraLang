@@ -46,6 +46,7 @@ pub enum HandleKind {
     ServeServer = 33,
     ServeRequest = 34,
     ApiClientTimeout = 35,
+    ApiClient = 70,
     ApiCorsPolicy = 36,
     ApiHandler = 37,
     ApiHandlerError = 38,
@@ -69,6 +70,23 @@ pub enum HandleKind {
     ApiMiddlewareChain = 56,
     ApiMiddleware = 57,
     ApiMiddlewareTrace = 58,
+    ApiMiddlewareLog = 71,
+    ApiOAuthClient = 72,
+    ApiOAuthToken = 73,
+    ApiValidationSchema = 74,
+    ApiValidationResult = 75,
+    ApiError = 76,
+    ApiCsrfPolicy = 77,
+    ApiSsrfPolicy = 78,
+    ApiSessionStore = 79,
+    ApiSession = 80,
+    ApiWebSocketServer = 81,
+    ApiWebSocket = 82,
+    ApiWebSocketMessage = 83,
+    ApiWebSocketClient = 84,
+    ApiSseServer = 85,
+    ApiSseConnection = 86,
+    ApiSseEvent = 87,
     DatabaseSqliteConnection = 59,
     DatabaseSqliteStatement = 60,
     DatabasePostgresConnection = 61,
@@ -121,6 +139,7 @@ impl HandleKind {
             33 => Self::ServeServer,
             34 => Self::ServeRequest,
             35 => Self::ApiClientTimeout,
+            70 => Self::ApiClient,
             36 => Self::ApiCorsPolicy,
             37 => Self::ApiHandler,
             38 => Self::ApiHandlerError,
@@ -144,6 +163,23 @@ impl HandleKind {
             56 => Self::ApiMiddlewareChain,
             57 => Self::ApiMiddleware,
             58 => Self::ApiMiddlewareTrace,
+            71 => Self::ApiMiddlewareLog,
+            72 => Self::ApiOAuthClient,
+            73 => Self::ApiOAuthToken,
+            74 => Self::ApiValidationSchema,
+            75 => Self::ApiValidationResult,
+            76 => Self::ApiError,
+            77 => Self::ApiCsrfPolicy,
+            78 => Self::ApiSsrfPolicy,
+            79 => Self::ApiSessionStore,
+            80 => Self::ApiSession,
+            81 => Self::ApiWebSocketServer,
+            82 => Self::ApiWebSocket,
+            83 => Self::ApiWebSocketMessage,
+            84 => Self::ApiWebSocketClient,
+            85 => Self::ApiSseServer,
+            86 => Self::ApiSseConnection,
+            87 => Self::ApiSseEvent,
             59 => Self::DatabaseSqliteConnection,
             60 => Self::DatabaseSqliteStatement,
             61 => Self::DatabasePostgresConnection,
@@ -218,7 +254,10 @@ impl HandleId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HandleError {
     Invalid,
-    TypeMismatch { expected: HandleKind, actual: HandleKind },
+    TypeMismatch {
+        expected: HandleKind,
+        actual: HandleKind,
+    },
     Stale,
 }
 
@@ -227,7 +266,10 @@ impl fmt::Display for HandleError {
         match self {
             Self::Invalid => write!(f, "invalid handle"),
             Self::TypeMismatch { expected, actual } => {
-                write!(f, "handle type mismatch: expected {expected:?}, got {actual:?}")
+                write!(
+                    f,
+                    "handle type mismatch: expected {expected:?}, got {actual:?}"
+                )
             }
             Self::Stale => write!(f, "stale or released handle"),
         }
@@ -366,7 +408,10 @@ impl<T> HandleTable<T> {
     }
 
     pub fn len(&self) -> usize {
-        self.slots.iter().filter(|slot| slot.value.is_some()).count()
+        self.slots
+            .iter()
+            .filter(|slot| slot.value.is_some())
+            .count()
     }
 
     pub fn slot_count(&self) -> usize {
@@ -382,14 +427,17 @@ impl<T> HandleTable<T> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (HandleId, &T)> {
-        self.slots.iter().enumerate().filter_map(move |(index, slot)| {
-            slot.value.as_ref().map(|value| {
-                (
-                    HandleId::new(self.kind, index as u32, slot.generation),
-                    value,
-                )
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(move |(index, slot)| {
+                slot.value.as_ref().map(|value| {
+                    (
+                        HandleId::new(self.kind, index as u32, slot.generation),
+                        value,
+                    )
+                })
             })
-        })
     }
 }
 
@@ -429,7 +477,10 @@ mod tests {
 
     #[test]
     fn raw_zero_and_round_trip_are_explicit() {
-        assert_eq!(HandleId::from_raw(INVALID_HANDLE), Err(HandleError::Invalid));
+        assert_eq!(
+            HandleId::from_raw(INVALID_HANDLE),
+            Err(HandleError::Invalid)
+        );
         let id = HandleId::new(HandleKind::Tensor, 4, 9);
         assert_eq!(HandleId::from_raw(id.raw()), Ok(id));
     }

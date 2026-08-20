@@ -52,7 +52,11 @@ mod tests {
     fn catalog_is_typed_and_unique() {
         let catalog = catalog();
         assert_eq!(catalog.entry.len(), CATALOG_ENTRY_COUNT);
-        let paths: HashSet<_> = catalog.entry.iter().map(|item| item.path.as_str()).collect();
+        let paths: HashSet<_> = catalog
+            .entry
+            .iter()
+            .map(|item| item.path.as_str())
+            .collect();
         assert_eq!(paths.len(), catalog.entry.len());
         assert_eq!(paths.len(), CATALOG_PATHS.len());
         assert_eq!(paths.len(), CATALOG_BINDINGS.len());

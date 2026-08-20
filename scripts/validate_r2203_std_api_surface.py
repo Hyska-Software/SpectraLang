@@ -189,6 +189,8 @@ REQUIRED_FUNCTIONS = [
     "std.api.handler.last_error_message",
     "std.api.handler.register_sync",
     "std.api.handler.register_async",
+    "std.api.handler.register_sync_callback",
+    "std.api.handler.register_async_callback",
     "std.api.handler.dispatch_sync",
     "std.api.handler.dispatch_async",
     "std.api.cors.policy",
@@ -240,7 +242,13 @@ REQUIRED_TYPES = [
 
 
 def read(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
+    source = ROOT / path
+    if source.suffix == ".rs":
+        return "\n".join(
+            sibling.read_text(encoding="utf-8")
+            for sibling in sorted(source.parent.rglob("*.rs"))
+        )
+    return source.read_text(encoding="utf-8")
 
 
 def fail(message: str) -> None:

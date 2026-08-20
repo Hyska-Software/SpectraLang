@@ -1,0 +1,46 @@
+module stability_generic_applications
+
+import std.collections as collections
+from std.collections import List
+
+enum Maybe<T> {
+    Some(T),
+    None
+}
+
+record Wrapper<T> {
+    value: T,
+}
+
+func unwrap_nested(value: Maybe<Maybe<int>>) returns int {
+    match value {
+        when Maybe::Some(inner) then match inner {
+            when Maybe::Some(number) then number,
+            when Maybe::None then 0
+        },
+        when Maybe::None then 0
+    }
+}
+
+func read_wrapper(input: Wrapper<int>) returns int {
+    input.value
+}
+
+public func main() returns int {
+    let values: List<string> = collections.list_new()
+    collections.list_push(values, "generic")
+    for value in values {
+        if value != "generic" {
+            return 1
+        }
+    }
+
+    let nested = Maybe::Some(Maybe::Some(7))
+    let wrapped = Wrapper { value: unwrap_nested(nested) }
+    if read_wrapper(wrapped) != 7 or wrapped.value != 7 {
+        return 2
+    }
+
+    collections.list_free(values)
+    return 0
+}

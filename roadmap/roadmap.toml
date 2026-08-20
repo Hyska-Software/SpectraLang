@@ -2224,7 +2224,7 @@ dependencies = ["R-2201"]
 summary = "Add a new workspace crate `spectra-api` that hosts the Rust implementation of HTTP parsing, server, client, JSON, TLS, and registers the host calls that `std.api.*` will dispatch into."
 acceptance = [
   "`packages/spectra-api` compiles in the workspace and links against the existing `spectra-runtime` crate",
-  "277 public `spectra.api.*` host calls are registered through the runtime host-call registry by `spectra_api::register()`, including the runtime's 211-name required namespace",
+  "414 public `spectra.api.*` host calls are registered through the runtime host-call registry by `spectra_api::register()`, including the runtime's 346-name required namespace, the real `spectra.api.client.request` task bridge, sync/async handler callback bridges, structured request logging, token-bucket/sliding-window rate limiting, API-key authentication, response compression, security headers, JWT signing/verification, OAuth2 authorization-code, PKCE, refresh, and revocation flows, the typed HMAC-signed cookie API, request validation with RFC 7807 responses, unified errors with exception middleware, default-deny CSRF/SSRF threat mitigations with configurable body limits and timeouts, stable request-body construction/reading, pluggable memory/Redis server-side sessions with sliding expiration and forced revocation, and the native WebSocket/SSE transport surfaces",
   "`cargo test -p spectra-api` covers the registered host functions and registry behavior",
   "`runtime/src/api/mod.rs` records the required host-call namespace contract",
   "`scripts/validate_r2202_spectra_api_hostcalls.py` verifies host call naming, registration count, CLI integration, package metadata, and planning sync",
@@ -2301,6 +2301,7 @@ acceptance = [
   "the client supports GET, POST, PUT, PATCH, DELETE, and HEAD with arbitrary bodies",
   "Redirect chains (up to the configured limit) are followed with the right method semantics",
   "Timeouts, connection failures, and protocol errors are reported as typed errors",
+  "`spectra.api.client.request` returns a real runtime `Task<Response>` and uses mio readiness with cooperative cancellation",
   "tests cover redirect chains, large bodies, and explicit timeout",
   "`cargo test -p spectra-api` covers `HttpClient`, `ClientConfig`, `ClientRequest`, `ClientResponse`, `ClientError`, redirects, pool reuse, large bodies, and timeout behavior",
   "`scripts/validate_r2206_http1_client.py` passes and is wired into `run_tests.ps1`"
@@ -2321,6 +2322,7 @@ acceptance = [
   "an HTTPS client connects to a known external test endpoint with `webpki-roots` and validates the chain",
   "ALPN advertises `http/1.1` on client and server configs, and local negotiation selects `http/1.1`",
   "TLS handshake failures are reported as typed errors with the underlying cause via `TlsErrorKind` and `TlsError`",
+  "the task-aware client bridge performs a nonblocking validated HTTPS round-trip with explicit roots, SNI, ALPN, and cooperative cancellation",
   "`cargo test -p spectra-api tls --offline` passes",
   "`cargo test -p spectra-api tls::tests::known_external_endpoint_validates_chain --offline -- --ignored` passes",
   "`scripts/validate_r2207_tls_rustls.py` passes and is wired into `run_tests.ps1`"
@@ -2482,8 +2484,9 @@ acceptance = [
   "`std.api.handler` exports `Handler`, `AsyncHandler`, and `IntoResponse` traits plus handler/error handle types",
   "the trait surface supports `async func` and synchronous handlers over `Request -> Response`",
   "handlers can return values that implement `IntoResponse`, including native `Response`, text, bytes, unit, handler errors, and `Result<T, HandlerError>` in `spectra-api`",
+  "`register_sync_callback` and `register_async_callback` transport user `Request -> Response` and `Request -> Task<Response>` closures through the runtime closure ABI",
   "`HandlerError` flows through `error_response` and `last_error_message` so R-2301/R-2314 unified error middleware can consume typed handler failures",
-  "tests cover synchronous handlers, async handlers, `IntoResponse`, handler handle dispatch, and error-to-response conversion in `tests/validation/139_api_handler_response_return.spectra`",
+  "tests cover synchronous handlers, async handlers, `IntoResponse`, handler handle dispatch, callback dispatch, and error-to-response conversion in `tests/validation/139_api_handler_response_return.spectra` and `tests/validation/330_api_handler_callbacks.spectra`",
   "`cargo test -p spectra-api handler --offline`, `cargo test -p spectra-compiler --offline`, and `cargo test -p spectra-midend --offline` pass",
   "`scripts/validate_r2215_handler_response.py` passes and is wired into `run_tests.ps1`"
 ]
@@ -2503,7 +2506,8 @@ acceptance = [
   "a server can be started on a configured port and shut down deterministically on SIGINT/SIGTERM",
   "in-flight requests are given a configurable drain timeout before forced cancellation, with drained and cancelled connections reflected in lifecycle stats",
   "resources (sockets, listener wakeups, and active connection state) are released on shutdown and post-shutdown active connection count returns to zero",
-  "tests cover host-call listen/serve routing, signal handling, drain, cancellation, and `tests/validation/147_api_server_lifecycle.spectra`",
+  "`serve` invokes registered sync callbacks directly and keeps registered async callback tasks pending in the mio event loop until completion, timeout, disconnect, or cancellation",
+  "tests cover host-call listen/serve routing, callback execution, signal handling, drain, cancellation, and `tests/validation/147_api_server_lifecycle.spectra` plus `tests/validation/330_api_handler_callbacks.spectra`",
   "`scripts/validate_r2216_server_lifecycle.py` passes and is wired into `run_tests.ps1`"
 ]
 
@@ -2618,7 +2622,7 @@ title = "Structured Logging and Request ID Tracing"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "in_progress"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2301"]
 summary = "Provide a structured logging middleware that emits a request ID, method, path, status, latency, and a configurable log format (JSON or text)."
@@ -2626,7 +2630,10 @@ acceptance = [
   "every request gets a unique request ID that flows through the log lines",
   "the middleware emits one log line per request with the documented fields",
   "log format is configurable (JSON for production, text for development)",
-  "tests assert the log line contents and the request ID propagation"
+  "tests assert the log line contents and the request ID propagation",
+  "the native middleware exposes logging_len, logging_line, and logging_request_id for the language surface",
+  "tests/validation/331_api_structured_logging.spectra covers JSON, text, unique IDs, and short-circuit responses",
+  "scripts/validate_r2303_structured_logging.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]
@@ -2635,7 +2642,7 @@ title = "Rate Limiting (Token Bucket and Sliding Window)"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2301"]
 summary = "Add a rate-limiting middleware supporting token bucket and sliding window, configurable per route, per tenant, and per user."
@@ -2643,7 +2650,9 @@ acceptance = [
   "the middleware enforces the configured limit and returns `429` when exceeded",
   "per-tenant and per-user limits are isolated (one tenant cannot exhaust another tenant's budget)",
   "configuration is hot-reloadable in dev mode",
-  "tests cover token bucket, sliding window, and per-tenant isolation"
+  "tests cover token bucket, sliding window, and per-tenant isolation",
+  "the middleware supports route, tenant, user, and combined route scopes with standard retry and remaining headers",
+  "tests/validation/332_api_rate_limiting.spectra and scripts/validate_r2304_rate_limiting.py pass"
 ]
 
 [[items]]
@@ -2652,7 +2661,7 @@ title = "Response Compression (gzip, brotli, deflate)"
 phase = "phase_23"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2301"]
 summary = "Add a compression middleware that negotiates gzip, brotli, and deflate based on the `Accept-Encoding` header."
@@ -2660,7 +2669,9 @@ acceptance = [
   "the middleware negotiates the best supported encoding from the request",
   "small responses below the threshold are not compressed",
   "the `Content-Encoding` and `Vary` headers are set correctly",
-  "tests cover each encoding and the threshold behavior"
+  "tests cover each encoding and the threshold behavior",
+  "tests/validation/336_api_compression.spectra covers Brotli, gzip, deflate, q-values, `Vary`, and the threshold",
+  "scripts/validate_r2305_compression.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]
@@ -2669,7 +2680,7 @@ title = "Security Headers Middleware"
 phase = "phase_23"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "low"
 dependencies = ["R-2301"]
 summary = "Add a security headers middleware that sets CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy."
@@ -2677,7 +2688,9 @@ acceptance = [
   "the middleware applies the configured header policy on every response",
   "CSP and Permissions-Policy are configurable per route",
   "HSTS preload and includeSubDomains are honored when configured",
-  "tests assert each header is present and correctly configured"
+  "tests assert each header is present and correctly configured",
+  "tests/validation/334_api_security_headers.spectra covers defaults, route precedence, HSTS, and invalid flag combinations",
+  "scripts/validate_r2306_security_headers.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]
@@ -2686,7 +2699,7 @@ title = "API Key Authentication"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2301"]
 summary = "Add an API key auth middleware that validates keys from a header, a query parameter, or a revocation list."
@@ -2694,7 +2707,9 @@ acceptance = [
   "the middleware extracts the key from the configured source",
   "expired or revoked keys are rejected with `401` and a structured error",
   "the middleware can be combined with rate limiting per key",
-  "tests cover valid, invalid, expired, and revoked keys"
+  "tests cover valid, invalid, expired, and revoked keys",
+  "header and query sources support default and explicit names, without echoing secrets",
+  "tests/validation/333_api_key_auth.spectra and scripts/validate_r2307_api_key.py pass"
 ]
 
 [[items]]
@@ -2703,7 +2718,7 @@ title = "JWT (HS256, RS256, ES256)"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2202"]
 summary = "Implement JWT signing and verification for HS256, RS256, and ES256, with claims validation (exp, nbf, iss, aud, sub, jti)."
@@ -2711,7 +2726,10 @@ acceptance = [
   "tokens can be signed and verified with each documented algorithm",
   "claims validation rejects expired, not-yet-valid, and wrong-issuer tokens",
   "the verifier is constant-time for signature comparison",
-  "tests cover happy path, expiry, wrong issuer, and tampered payload"
+  "tests cover happy path, expiry, wrong issuer, and tampered payload",
+  "tests/validation/335_api_jwt.spectra covers the public HS256 surface and deterministic claim checks",
+  "native tests cover RS256 and ES256 signing and verification",
+  "scripts/validate_r2308_jwt.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]
@@ -2720,7 +2738,7 @@ title = "OAuth2 Client (Authorization Code + PKCE + Refresh)"
 phase = "phase_23"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2308"]
 summary = "Add an OAuth2 client that supports the authorization code flow with PKCE and refresh tokens."
@@ -2728,7 +2746,10 @@ acceptance = [
   "the client follows the authorization code flow and exchanges the code for tokens",
   "PKCE is generated and verified end-to-end",
   "refresh tokens are exchanged for new access tokens",
-  "tests cover happy path, refresh, and revocation"
+  "tests cover happy path, refresh, and revocation",
+  "tests/validation/337_api_oauth.spectra covers the public PKCE authorization URL surface",
+  "native tests use a local HTTP authorization server to verify the PKCE challenge, code exchange, refresh rotation, state mismatch, and revocation",
+  "scripts/validate_r2309_oauth.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]
@@ -2737,7 +2758,7 @@ title = "OAuth2 Resource Server and Token Introspection"
 phase = "phase_23"
 owner = "web"
 priority = "P2"
-status = "not_started"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2308"]
 summary = "Add an OAuth2 resource server that accepts bearer tokens, validates them locally, and falls back to introspection for opaque tokens."
@@ -2754,7 +2775,7 @@ title = "Session Management"
 phase = "phase_23"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2312"]
 summary = "Add server-side session management with a configurable store, configurable TTL, sliding expiration, and forced invalidation."
@@ -2762,7 +2783,9 @@ acceptance = [
   "sessions are stored in a pluggable store (memory, Redis) with a defined interface",
   "sliding expiration extends the session on activity up to a maximum lifetime",
   "explicit logout invalidates the session immediately",
-  "tests cover creation, lookup, expiry, sliding, and invalidation"
+  "tests cover creation, lookup, expiry, sliding, and invalidation",
+  "`std.api.session` exposes opaque random IDs, typed store/session handles, backend errors, and memory/Redis constructors",
+  "`tests/validation/342_api_session.spectra` and `scripts/validate_r2311_session.py` pass"
 ]
 
 [[items]]
@@ -2771,15 +2794,16 @@ title = "Cookie API (Secure, httpOnly, SameSite, Signed)"
 phase = "phase_23"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "low"
 dependencies = ["R-2210"]
 summary = "Provide a typed cookie API supporting Secure, HttpOnly, SameSite (Lax/Strict/None), and signed cookies with HMAC verification."
 acceptance = [
-  "cookies can be set with the documented attributes and read back as a typed value",
-  "signed cookies are verified with constant-time comparison",
-  "invalid signatures or expired cookies are rejected with a typed error",
-  "tests cover each attribute and the signature verification paths"
+  "cookies can be created with Path, Domain, Max-Age, Secure, HttpOnly, and SameSite (Lax/Strict/None) attributes, serialized as one or more `Set-Cookie` response headers, and read back through typed getters",
+  "signed cookies use HMAC-SHA256 verification through a constant-time cryptographic comparison",
+  "invalid signatures or expired cookies are rejected through the typed `cookie_error_code`/`cookie_error_message` surface",
+  "native tests cover each attribute, Set-Cookie serialization, signature verification, tampering, expiration, and the SameSite=None Secure requirement",
+  "`tests/validation/338_api_cookie.spectra` covers the public language surface and `scripts/validate_r2312_cookie.py` passes and is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2788,15 +2812,15 @@ title = "Request Validation (Constraints, RFC 7807)"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2209"]
 summary = "Add a request validation framework that produces RFC 7807 Problem Details responses for failed validation."
 acceptance = [
-  "field-level constraints (required, length, range, regex) are applied to validated structs",
-  "failed validation returns a `422` with an RFC 7807 body listing the offending fields",
-  "the validation framework composes with the JSON derive",
-  "tests cover each constraint and the response shape"
+  "field-level required, length, numeric range, and regex constraints validate JSON and Form wire-name payloads",
+  "failed validation returns HTTP `422` with an RFC 7807 `application/problem+json` body containing field, code, and message entries",
+  "`validate_json` and `validate_form` expose typed validation results and a deterministic response mapping without mutating the schema",
+  "native tests cover each constraint and the response shape; `tests/validation/339_api_validation.spectra` and `scripts/validate_r2313_validation.py` pass and the validator is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2805,15 +2829,15 @@ title = "Unified Error Handling and Exception Middleware"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2301"]
 summary = "Define a unified error type for the API surface, a default `IntoResponse` mapping, and an exception middleware that converts internal errors to safe public responses."
 acceptance = [
-  "the public `api.Error` type maps to HTTP status codes and bodies deterministically",
-  "internal errors are logged with full detail and produce sanitized public responses",
-  "the middleware can be customized per route",
-  "tests cover the default mapping, the custom mapping, and the sanitization"
+  "the public `std.api.errors.ApiError` type maps status, code, and message to deterministic RFC 7807 `application/problem+json` responses",
+  "`internal_error` and exception middleware log full internal details while returning only sanitized public status/code/message fields",
+  "`exception_middleware` can be configured independently on each route's `MiddlewareChain` and recovers sync/async middleware failures",
+  "native tests cover default mapping, custom per-chain mapping, full-detail logging, and sanitization; `tests/validation/340_api_errors.spectra` and `scripts/validate_r2314_errors.py` pass and the validator is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2822,7 +2846,7 @@ title = "HTTPS Hardening (HSTS Preload, OCSP Stapling)"
 phase = "phase_23"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2207"]
 summary = "Add HSTS preload, OCSP stapling, and automatic certificate rotation support to the HTTPS server."
@@ -2830,7 +2854,9 @@ acceptance = [
   "the server emits `Strict-Transport-Security: max-age=...; preload; includeSubDomains` when configured",
   "OCSP responses are stapled to the TLS handshake when available",
   "certificate rotation is supported without server restart",
-  "tests cover the HSTS header, OCSP stapling, and hot rotation"
+  "tests cover the HSTS header, OCSP stapling, and hot rotation",
+  "`packages/spectra-api/src/tls.rs` uses rustls `with_single_cert_with_ocsp`, `TlsCertificateStore`, and a rotating listener path; `cargo test -p spectra-api --lib tls` passes",
+  "`tests/validation/334_api_security_headers.spectra` and `scripts/validate_r2315_https_hardening.py` pass and the validator is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2839,7 +2865,7 @@ title = "Threat Mitigations (CSRF, SSRF, Body Size, Timeouts)"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2301"]
 summary = "Add default-on and configurable mitigations for CSRF, SSRF, request body size, and request timeouts."
@@ -2847,7 +2873,9 @@ acceptance = [
   "CSRF protection validates the `Origin` header against an allowlist for state-changing methods",
   "SSRF protection blocks requests to private IP ranges and link-local addresses by default",
   "body size limits are enforced before the body is fully read",
-  "request timeouts cut off slow clients without affecting other requests"
+  "request timeouts cut off slow clients without affecting other requests",
+  "`std.api.security` exposes immutable CSRF/SSRF policies, the HTTP client applies SSRF validation before sync/async socket creation, and `std.api.server` exposes body/timeout configuration",
+  "native security/client/server tests plus `tests/validation/341_api_security.spectra` and `scripts/validate_r2316_security.py` pass, and the validator is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2856,14 +2884,16 @@ title = "API Example: Authenticated REST API (JWT)"
 phase = "phase_23"
 owner = "ecosystem"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "low"
 dependencies = ["R-2308", "R-2219"]
 summary = "Provide a runnable example that wires JWT authentication, request validation, and error handling into a CRUD API."
 acceptance = [
-  "`examples/api/02_jwt_auth_crud.spectra` builds and runs",
-  "the example issues, validates, and rejects JWTs end-to-end",
-  "the example uses the unified error middleware and validation framework"
+  "`examples/api/02_jwt_auth_crud.spectra` builds and runs through the normal CLI",
+  "the example issues, validates, and rejects JWTs end-to-end for list/create/read/update/delete routes",
+  "the example uses the unified error middleware and validation framework against the real UTF-8 request body",
+  "`std.api.http.request_body` and `request_with_body` are registered in the package/runtime contracts and covered by `tests/validation/134_http_core_types.spectra`",
+  "`scripts/validate_r2317_jwt_auth_crud_example.py` passes and is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2872,14 +2902,16 @@ title = "API Example: Middleware Composition"
 phase = "phase_23"
 owner = "ecosystem"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "low"
 dependencies = ["R-2302", "R-2303", "R-2304", "R-2306"]
 summary = "Provide a runnable example that composes CORS, logging, rate limiting, security headers, and request ID tracing in the documented order."
 acceptance = [
-  "`examples/api/03_middleware_composition.spectra` builds and runs",
-  "the example asserts the middleware order matches the documentation",
-  "the example demonstrates per-route configuration of the rate limit and security headers"
+  "`examples/api/03_middleware_composition.spectra` builds and runs through the normal CLI",
+  "the example asserts the middleware order documented as logging -> security headers -> CORS -> compression -> rate limit using successful and short-circuit responses",
+  "the example demonstrates per-route configuration of the rate limit and longest-prefix security headers",
+  "CORS and compression preserve both `Vary: Origin` and `Vary: Accept-Encoding` dimensions",
+  "`scripts/validate_r2318_middleware_composition_example.py` passes and is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2888,7 +2920,7 @@ title = "WebSocket Server (RFC 6455)"
 phase = "phase_24"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "in_progress"
 risk = "high"
 dependencies = ["R-2210", "R-2215"]
 summary = "Implement a WebSocket server compatible with RFC 6455: handshake, fragmented messages, ping/pong, and per-message deflate."
@@ -2896,7 +2928,10 @@ acceptance = [
   "the server completes the RFC 6455 handshake and upgrades the connection",
   "fragmented messages are reassembled and ping/pong are handled",
   "per-message deflate is supported and negotiated via the extension header",
-  "tests cover handshake, fragmented messages, ping/pong, and a 10k concurrent connections soak"
+  "tests cover handshake, fragmented messages, ping/pong, and a 10k concurrent connections soak",
+  "the typed std.api.websocket surface is wired through semantic analysis, lowering, runtime handles, and 17 registered host calls",
+  "tests/validation/343_api_websocket.spectra and scripts/validate_r2401_websocket.py pass",
+  "the remaining HTTP-router upgrade integration and 10k concurrent connections soak are recorded before status can become complete"
 ]
 
 [[items]]
@@ -2905,7 +2940,7 @@ title = "WebSocket Client"
 phase = "phase_24"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "in_progress"
 risk = "high"
 dependencies = ["R-2401"]
 summary = "Implement a WebSocket client that performs the handshake, sends and receives text/binary frames, and supports per-message deflate."
@@ -2913,7 +2948,10 @@ acceptance = [
   "the client connects to a known external test echo server and round-trips messages",
   "the client supports text and binary frames and ping/pong",
   "reconnect with backoff is supported when configured",
-  "tests cover handshake, frame round-trip, and reconnect"
+  "tests cover handshake, frame round-trip, and reconnect",
+  "the typed std.api.websocket client surface is wired through semantic analysis, lowering, runtime handles, and registered host calls",
+  "tests/validation/344_api_websocket_client.spectra and the focused native client tests pass",
+  "wss:// TLS support is implemented and covered by a native rustls round-trip; external echo-server certification remains before status can become complete"
 ]
 
 [[items]]
@@ -2922,7 +2960,7 @@ title = "Server-Sent Events (SSE)"
 phase = "phase_24"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2210"]
 summary = "Implement a server-sent events response type that streams events to the client, with heartbeat, last-event-id, and automatic reconnection hints."
@@ -2930,7 +2968,10 @@ acceptance = [
   "the SSE response streams events in the documented format",
   "heartbeats are emitted at the configured interval to keep the connection alive",
   "the `Last-Event-ID` header is honored for resume on the server",
-  "tests cover streaming, heartbeat, and resume"
+  "tests cover streaming, heartbeat, and resume",
+  "the typed `std.api.sse` surface is wired through semantic analysis, lowering, runtime handles, and 20 registered host calls",
+  "tests/validation/345_api_sse.spectra and scripts/validate_r2403_sse.py pass",
+  "`std.api.sse.server_response` returns a streaming response that is served by the normal routed `std.api.server` lifecycle"
 ]
 
 [[items]]
@@ -2939,7 +2980,7 @@ title = "HTTP/2 Server (h2, ALPN, HPACK)"
 phase = "phase_24"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2205", "R-2207"]
 summary = "Add HTTP/2 support to the server: ALPN negotiation, HPACK header compression, stream multiplexing, and flow control."
@@ -2947,7 +2988,9 @@ acceptance = [
   "ALPN advertises `h2` alongside `http/1.1`",
   "the server multiplexes streams on a single connection without head-of-line blocking",
   "HPACK encoding round-trips with the configured client",
-  "tests cover ALPN negotiation, multiplexing, and HPACK"
+  "tests cover ALPN negotiation, multiplexing, and HPACK",
+  "the native transport enforces HTTP/2 ALPN selection, bounded flow control, request body/header limits, and graceful shutdown",
+  "scripts/validate_r2404_http2.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]

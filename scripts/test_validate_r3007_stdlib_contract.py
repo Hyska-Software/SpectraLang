@@ -136,6 +136,15 @@ class R3007ContractTests(unittest.TestCase):
         )
         self.assertEqual([p["id"] for p in audit.probe_matches("std.api.http.method_get", self.manifest)], ["api-http", "api-conformance"])
 
+    def test_postgres_probe_can_use_a_container_psql(self) -> None:
+        probe = next(item for item in self.manifest["probe"] if item["id"] == "api-postgres-driver")
+        command = audit.build_probe_command(
+            audit.ROOT / "target" / "debug" / "spectralang.exe",
+            probe,
+            "spectralang-stability-postgres16",
+        )
+        self.assertEqual(command[-2:], ["--version-probe-docker-container", "spectralang-stability-postgres16"])
+
     def test_canonicalizes_legacy_spectra_prefixes(self) -> None:
         self.assertEqual(audit.canonical_symbol("spectra.std.math.abs"), "std.math.abs")
         self.assertEqual(audit.canonical_symbol("spectra.api.http.method_get"), "std.api.http.method_get")

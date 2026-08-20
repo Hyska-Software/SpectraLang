@@ -1,0 +1,200 @@
+// ── std.string & std.convert registrations ─────────────────────────────────
+
+fn register_string() {
+    register_host_function(STR_LEN, std_string_len);
+    register_host_function(STR_CONTAINS, std_string_contains);
+    register_host_function(STR_TO_UPPER, std_string_to_upper);
+    register_host_function(STR_TO_LOWER, std_string_to_lower);
+    register_host_function(STR_TRIM, std_string_trim);
+    register_host_function(STR_STARTS_WITH, std_string_starts_with);
+    register_host_function(STR_ENDS_WITH, std_string_ends_with);
+    register_host_function(STR_EQ, std_string_eq);
+    register_host_function(STR_CONCAT, std_string_concat);
+    register_host_function(STR_REPEAT, std_string_repeat);
+    register_host_function(STR_BUILDER_NEW, std_string_builder_new);
+    register_host_function(STR_BUILDER_PUSH, std_string_builder_push);
+    register_host_function(STR_BUILDER_LEN, std_string_builder_len);
+    register_host_function(STR_BUILDER_FINISH, std_string_builder_finish);
+    register_host_function(STR_BUILDER_FREE, std_string_builder_free);
+    register_host_function(STR_CHAR_AT, std_string_char_at);
+    register_host_function(STR_SUBSTRING, std_string_substring);
+    register_host_function(STR_REPLACE, std_string_replace);
+    register_host_function(STR_INDEX_OF, std_string_index_of);
+    register_host_function(STR_SPLIT_FIRST, std_string_split_first);
+    register_host_function(STR_SPLIT_LAST, std_string_split_last);
+    register_host_function(STR_IS_EMPTY, std_string_is_empty);
+    register_host_function(STR_COUNT, std_string_count_occurrences);
+    register_host_function(STR_SPLIT_BY, std_string_split_by);
+    register_host_function(STR_PAD_LEFT, std_string_pad_left);
+    register_host_function(STR_PAD_RIGHT, std_string_pad_right);
+    register_host_function(STR_REVERSE, std_string_reverse);
+}
+
+fn register_convert() {
+    register_host_function(CONV_INT_TO_STRING, std_convert_int_to_string);
+    register_host_function(CONV_FLOAT_TO_STRING, std_convert_float_to_string);
+    register_host_function(CONV_BOOL_TO_STRING, std_convert_bool_to_string);
+    register_host_function(CONV_STRING_TO_INT, std_convert_string_to_int);
+    register_host_function(CONV_STRING_TO_FLOAT, std_convert_string_to_float);
+    register_host_function(CONV_INT_TO_FLOAT, std_convert_int_to_float);
+    register_host_function(CONV_FLOAT_TO_INT, std_convert_float_to_int);
+    register_host_function(CONV_STRING_TO_INT_OR, std_convert_string_to_int_or);
+    register_host_function(CONV_STRING_TO_FLOAT_OR, std_convert_string_to_float_or);
+    register_host_function(CONV_STRING_TO_BOOL, std_convert_string_to_bool);
+    register_host_function(CONV_BOOL_TO_INT, std_convert_bool_to_int);
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Read a Spectra string (null-terminated i64 array) from a raw pointer value.
+/// Returns `None` if the pointer is null or the bytes are not valid UTF-8.
+unsafe fn read_spectra_string(ptr_val: SpectraHostValue) -> Option<String> {
+    if ptr_val == 0 {
+        return None;
+    }
+    let raw = ptr_val as *const i64;
+    let mut bytes: Vec<u8> = Vec::new();
+    let mut offset = 0usize;
+    loop {
+        let b = *raw.add(offset) as u8;
+        if b == 0 {
+            break;
+        }
+        bytes.push(b);
+        offset += 1;
+    }
+    let value = String::from_utf8(bytes).ok()?;
+    register_string_value(ptr_val, &value);
+    Some(value)
+}
+
+/// Allocate a new Spectra string using the runtime manual allocator.
+/// Each character is stored as one `i64` slot; the array is null-terminated.
+/// Returns the pointer cast to `i64`, or `0` on allocation failure.
+unsafe fn alloc_spectra_string(s: &str) -> SpectraHostValue {
+    use crate::ffi::spectra_rt_manual_alloc;
+    let bytes = s.as_bytes();
+    let total_bytes = (bytes.len() + 1) * std::mem::size_of::<i64>();
+    let raw = spectra_rt_manual_alloc(total_bytes) as *mut i64;
+    if raw.is_null() {
+        return 0;
+    }
+    for (i, &b) in bytes.iter().enumerate() {
+        *raw.add(i) = b as i64;
+    }
+    *raw.add(bytes.len()) = 0; // null terminator
+    let pointer = raw as i64;
+    register_string_value(pointer, s);
+    pointer
+}
+
+/// Allocate the common two-word representation used by compiler-generated
+/// `Option<T>` and `Result<T, E>` values: tag at slot zero, payload at slot one.
+/// The allocation is intentionally manual so the value can cross a host-call
+/// boundary and remain valid after this function returns.
+unsafe fn alloc_tagged_payload(tag: SpectraHostValue, payload: SpectraHostValue) -> SpectraHostValue {
+    use crate::ffi::spectra_rt_manual_alloc;
+    let raw = spectra_rt_manual_alloc(2 * std::mem::size_of::<i64>()) as *mut i64;
+    if raw.is_null() {
+        return 0;
+    }
+    *raw = tag;
+    *raw.add(1) = payload;
+    raw as SpectraHostValue
+}
+
+/// Fast-path helper for `str.len(s)`.
+///
+/// Mirrors `std_string_len` but skips the generic host-call dispatch AND the
+/// unnecessary `String` allocation in `read_spectra_string`. Walks the
+/// null-terminated `i64` array directly to count bytes.
+///
+/// Returns the string length (>0) or `0` for an invalid handle.
+pub fn string_len_fast(s: SpectraHostValue) -> SpectraHostValue {
+    if s == 0 {
+        return 0;
+    }
+    let raw = s as *const i64;
+    let mut len: usize = 0;
+    unsafe {
+        while (*raw.add(len) as u8) != 0 {
+            len += 1;
+        }
+    }
+    len as SpectraHostValue
+}
+
+/// Fast-path helper for `str.char_at(s, index)`.
+///
+/// Mirrors `std_string_char_at` but skips the generic host-call dispatch AND
+/// the unnecessary `String` allocation in `read_spectra_string`. Reads the
+/// byte at the given index directly from the null-terminated `i64` array.
+///
+/// Returns the byte value (0-255) on success or `-1` for an out-of-bounds
+/// access (null handle, negative index, or index past the null terminator).
+pub fn string_char_at_fast(s: SpectraHostValue, index: SpectraHostValue) -> SpectraHostValue {
+    if s == 0 || index < 0 {
+        return -1;
+    }
+    let idx = index as usize;
+    let raw = s as *const i64;
+    unsafe {
+        let mut len: usize = 0;
+        while (*raw.add(len) as u8) != 0 {
+            len += 1;
+        }
+        if idx >= len {
+            return -1;
+        }
+        (*raw.add(idx) as u8) as SpectraHostValue
+    }
+}
+
+fn fs_path_from_string(path: String) -> Option<PathBuf> {
+    if path.trim().is_empty() || path.contains('\0') {
+        return None;
+    }
+    Some(PathBuf::from(path))
+}
+
+unsafe fn read_fs_path_arg(arg: SpectraHostValue) -> Result<Option<PathBuf>, i32> {
+    match read_spectra_string(arg) {
+        Some(path) => Ok(fs_path_from_string(path)),
+        None => Err(HOST_STATUS_INVALID_ARGUMENT),
+    }
+}
+
+fn ensure_file_parent(path: &Path) -> bool {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => std::fs::create_dir_all(parent).is_ok(),
+        _ => true,
+    }
+}
+
+fn fs_write_text(path: &Path, content: &str, append: bool) -> bool {
+    fs_write_text_result(path, content, append).is_ok()
+}
+
+fn fs_write_text_result(
+    path: &Path,
+    content: &str,
+    append: bool,
+) -> Result<(), std::io::Error> {
+    if !ensure_file_parent(path) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "unable to create filesystem parent directory",
+        ));
+    }
+
+    if append {
+        std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(path)
+            .and_then(|mut file| file.write_all(content.as_bytes()))
+    } else {
+        std::fs::write(path, content.as_bytes())
+    }
+}
+

@@ -1,0 +1,100 @@
+module api_key_auth
+
+import std.string as str
+
+from std.api.http import Request, Response, method_get, request, request_with_header, response_body_len, response_header, response_status
+from std.api.handler import text
+from std.api.middleware import MiddlewareChain, MiddlewareHandle, api_key_add, api_key_revoke, chain_new, execute_sync, register_api_key, register_rate_limit, use_sync
+
+func with_key(req: Request, key: string) returns Request {
+    return request_with_header(req, "X-API-Key", key)
+}
+
+func expect_reason(response: Response, reason: string, code: int) returns int {
+    if response_status(response) != 401 {
+        return code
+    }
+    if str.contains(response_header(response, "Content-Type"), "problem+json") != true {
+        return code + 1
+    }
+    if response_body_len(response) <= 0 {
+        return code + 2
+    }
+    return 0
+}
+
+func exercise_header_auth(base: Request) returns int {
+    let auth: MiddlewareHandle = register_api_key("header")
+    if api_key_add(auth, "valid-key", 0) != true {
+        return 10
+    }
+    if api_key_add(auth, "expired-key", 1) != true {
+        return 11
+    }
+    if api_key_add(auth, "revoked-key", 0) != true {
+        return 12
+    }
+    if api_key_revoke(auth, "revoked-key") != true {
+        return 13
+    }
+    let chain: MiddlewareChain = use_sync(chain_new(), auth)
+
+    let missing = execute_sync(chain, base, text("missing"))
+    if expect_reason(missing, "missing", 20) != 0 {
+        return 20
+    }
+    let unknown = execute_sync(chain, with_key(base, "unknown-key"), text("unknown"))
+    if expect_reason(unknown, "unknown", 23) != 0 {
+        return 23
+    }
+    let valid = execute_sync(chain, with_key(base, "valid-key"), text("valid"))
+    if response_status(valid) != 200 {
+        return 26
+    }
+    let expired = execute_sync(chain, with_key(base, "expired-key"), text("expired"))
+    if expect_reason(expired, "expired", 27) != 0 {
+        return 27
+    }
+    let revoked = execute_sync(chain, with_key(base, "revoked-key"), text("revoked"))
+    if expect_reason(revoked, "revoked", 30) != 0 {
+        return 30
+    }
+    return 0
+}
+
+func exercise_query_and_rate_limit(base: Request) returns int {
+    let auth: MiddlewareHandle = register_api_key("query")
+    if api_key_add(auth, "query-key", 0) != true {
+        return 40
+    }
+    let limiter: MiddlewareHandle = register_rate_limit(
+        "sliding_window",
+        1,
+        60000,
+        "api_key",
+        false,
+    )
+    let chain: MiddlewareChain = use_sync(use_sync(chain_new(), auth), limiter)
+    let query_request = request(method_get(), "/secure?api_key=query-key")
+    if response_status(execute_sync(chain, query_request, text("first"))) != 200 {
+        return 41
+    }
+    let second = execute_sync(chain, query_request, text("second"))
+    if response_status(second) != 429 {
+        return 42
+    }
+    let missing = execute_sync(chain, request(method_get(), "/secure"), text("missing"))
+    if response_status(missing) != 401 {
+        return 43
+    }
+    return 0
+}
+
+public func main() returns int {
+    let base = request(method_get(), "/private")
+    let header_result = exercise_header_auth(base)
+    if header_result != 0 {
+        return header_result
+    }
+    return exercise_query_and_rate_limit(base)
+}

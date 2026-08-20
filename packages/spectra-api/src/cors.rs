@@ -31,6 +31,12 @@ pub struct CorsPolicy {
     max_age: Option<u32>,
 }
 
+impl Default for CorsPolicy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CorsPolicy {
     pub fn new() -> Self {
         Self {
@@ -209,9 +215,7 @@ impl CorsPolicy {
             .with_header(HEADER_ALLOW_ORIGIN, value)
             .map_err(to_handler_error)?;
         if self.allow_credentials || !self.allow_any_origin {
-            response = response
-                .with_header(HEADER_VARY, HEADER_ORIGIN)
-                .map_err(to_handler_error)?;
+            response = add_vary(response, HEADER_ORIGIN)?;
         }
         Ok(response)
     }
@@ -278,6 +282,23 @@ impl CorsPolicy {
                 .map(|value| value.to_string())
         }
     }
+}
+
+fn add_vary(response: Response, value: &str) -> Result<Response, HandlerError> {
+    let Some(existing) = response.header(HEADER_VARY).map(str::to_string) else {
+        return response
+            .with_header(HEADER_VARY, value)
+            .map_err(to_handler_error);
+    };
+    if existing.split(',').any(|token| {
+        let token = token.trim();
+        token == "*" || token.eq_ignore_ascii_case(value)
+    }) {
+        return Ok(response);
+    }
+    response
+        .with_header(HEADER_VARY, format!("{existing}, {value}"))
+        .map_err(to_handler_error)
 }
 
 #[derive(Clone)]
@@ -618,6 +639,21 @@ mod tests {
         );
         assert_eq!(response.header(HEADER_ALLOW_CREDENTIALS), Some("true"));
         assert_eq!(response.header(HEADER_VARY), Some(HEADER_ORIGIN));
+    }
+
+    #[test]
+    fn actual_cors_merges_vary_with_existing_compression_dimension() {
+        let policy = CorsPolicy::new().allow_origin("https://app.example");
+        let response = Response::new(Status::new(200).unwrap())
+            .with_header(HEADER_VARY, "Accept-Encoding")
+            .expect("vary header");
+        let response = policy
+            .apply_actual_response(&request(Method::Get), response)
+            .expect("actual response");
+        assert_eq!(
+            response.header(HEADER_VARY),
+            Some("Accept-Encoding, Origin")
+        );
     }
 
     #[test]

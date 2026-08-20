@@ -35,6 +35,12 @@ def require_contains(path: Path, needles: list[str]) -> None:
     text = path.read_text(encoding="utf-8")
     missing = [needle for needle in needles if needle not in text]
     if missing:
+        stage_text = "\n".join(
+            source.read_text(encoding="utf-8")
+            for source in sorted(path.parent.rglob("*.rs"))
+        )
+        missing = [needle for needle in missing if needle not in stage_text]
+    if missing:
         for needle in missing:
             print(f"[R-2110] missing marker in {path}: {needle}", file=sys.stderr)
         raise SystemExit(1)

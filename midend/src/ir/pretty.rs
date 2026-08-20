@@ -200,7 +200,11 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                 fmt_value(*index),
                 fmt_type(element_type)
             ),
-            InstructionKind::FieldPtr { result, ptr, offset } => format!(
+            InstructionKind::FieldPtr {
+                result,
+                ptr,
+                offset,
+            } => format!(
                 "{} = field_ptr {}, {}",
                 fmt_value(*result),
                 fmt_value(*ptr),
@@ -255,9 +259,24 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                 let upstream = upstream
                     .map(fmt_value)
                     .unwrap_or_else(|| "seed".to_string());
-                let inputs = inputs.iter().map(|v| fmt_value(*v)).collect::<Vec<_>>().join(", ");
-                let targets = targets.iter().map(|v| fmt_value(*v)).collect::<Vec<_>>().join(", ");
-                let text = format!("autodiff.{} output={} upstream={} inputs=[{}] targets=[{}]", operation, fmt_value(*output), upstream, inputs, targets);
+                let inputs = inputs
+                    .iter()
+                    .map(|v| fmt_value(*v))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let targets = targets
+                    .iter()
+                    .map(|v| fmt_value(*v))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let text = format!(
+                    "autodiff.{} output={} upstream={} inputs=[{}] targets=[{}]",
+                    operation,
+                    fmt_value(*output),
+                    upstream,
+                    inputs,
+                    targets
+                );
                 match result {
                     Some(value) => format!("{} = {}", fmt_value(*value), text),
                     None => text,
@@ -324,13 +343,23 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                 format!("{} = const.int {}", fmt_value(*result), value)
             }
             InstructionKind::ConstIntTyped { result, value, ty } => {
-                format!("{} = const.int<{}> {}", fmt_value(*result), fmt_type(ty), value)
+                format!(
+                    "{} = const.int<{}> {}",
+                    fmt_value(*result),
+                    fmt_type(ty),
+                    value
+                )
             }
             InstructionKind::ConstFloat { result, value } => {
                 format!("{} = const.float {}", fmt_value(*result), value)
             }
             InstructionKind::ConstFloatTyped { result, value, ty } => {
-                format!("{} = const.float<{}> {}", fmt_value(*result), fmt_type(ty), value)
+                format!(
+                    "{} = const.float<{}> {}",
+                    fmt_value(*result),
+                    fmt_type(ty),
+                    value
+                )
             }
             InstructionKind::ConstBool { result, value } => {
                 format!("{} = const.bool {}", fmt_value(*result), value)
@@ -444,32 +473,47 @@ fn fmt_type(ty: &Type) -> String {
         Type::Void => "void".to_string(),
         Type::Int => "int".to_string(),
         Type::Float => "float".to_string(),
-        Type::ExactInt { signed, width } => format!("{}{}", if *signed { "i" } else { "u" }, match width { crate::ir::IntWidth::I8 => "8", crate::ir::IntWidth::I16 => "16", crate::ir::IntWidth::I32 => "32", crate::ir::IntWidth::I64 => "64", crate::ir::IntWidth::Isize | crate::ir::IntWidth::Usize => "size" }),
-        Type::ExactFloat { width } => match width { crate::ir::FloatWidth::F32 => "f32".to_string(), crate::ir::FloatWidth::F64 => "f64".to_string() },
+        Type::ExactInt { signed, width } => format!(
+            "{}{}",
+            if *signed { "i" } else { "u" },
+            match width {
+                crate::ir::IntWidth::I8 => "8",
+                crate::ir::IntWidth::I16 => "16",
+                crate::ir::IntWidth::I32 => "32",
+                crate::ir::IntWidth::I64 => "64",
+                crate::ir::IntWidth::Isize | crate::ir::IntWidth::Usize => "size",
+            }
+        ),
+        Type::ExactFloat { width } => match width {
+            crate::ir::FloatWidth::F32 => "f32".to_string(),
+            crate::ir::FloatWidth::F64 => "f64".to_string(),
+        },
         Type::Bool => "bool".to_string(),
         Type::String => "string".to_string(),
         Type::Char => "char".to_string(),
         Type::Pointer(inner) => format!("*{}", fmt_type(inner)),
         Type::Array { element_type, size } => format!("[{} x {}]", size, fmt_type(element_type)),
         Type::Tuple { elements } => {
-            let elems = elements
-                .iter()
-                .map(|ty| fmt_type(ty))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let elems = elements.iter().map(fmt_type).collect::<Vec<_>>().join(", ");
             format!("({})", elems)
         }
         Type::Struct { name, .. } => format!("struct {}", name),
         Type::Enum { name, .. } => format!("enum {}", name),
+        Type::Generic {
+            name,
+            args,
+            representation,
+        } => format!(
+            "{}<{}> [{}]",
+            name,
+            args.iter().map(fmt_type).collect::<Vec<_>>().join(", "),
+            fmt_type(representation)
+        ),
         Type::Function {
             params,
             return_type,
         } => {
-            let params = params
-                .iter()
-                .map(|ty| fmt_type(ty))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let params = params.iter().map(fmt_type).collect::<Vec<_>>().join(", ");
             format!("fn({}) -> {}", params, fmt_type(return_type))
         }
         Type::Task { output } => format!("Task<{}>", fmt_type(output)),

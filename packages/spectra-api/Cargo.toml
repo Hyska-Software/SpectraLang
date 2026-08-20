@@ -7,10 +7,20 @@ edition = "2021"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
+brotli = "8"
+bytes = "1"
+flate2 = "1.1"
+h2 = "0.4"
+http = "1"
+mio = { version = "0.8", features = ["os-poll", "net"] }
+ring = "0.17"
+regex = "1.11"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = "1.0"
 spectra-runtime = { path = "../../runtime" }
 spectra-db = { path = "../spectra-db" }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 webpki-roots = "0.26"
 
 [dev-dependencies]

@@ -8,8 +8,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 277
-RUNTIME_REQUIRED_HOST_CALL_COUNT = 211
+PACKAGE_HOST_CALL_COUNT = 414
+RUNTIME_REQUIRED_HOST_CALL_COUNT = 346
 
 
 def cargo_command() -> str:
@@ -22,7 +22,13 @@ def cargo_command() -> str:
 
 
 def read(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
+    source = ROOT / path
+    if source.suffix == ".rs":
+        return "\n".join(
+            sibling.read_text(encoding="utf-8")
+            for sibling in sorted(source.parent.rglob("*.rs"))
+        )
+    return source.read_text(encoding="utf-8")
 
 
 def fail(message: str) -> None:

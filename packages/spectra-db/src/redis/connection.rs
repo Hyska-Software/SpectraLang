@@ -354,10 +354,16 @@ impl RedisConnection {
         connection
             .set_write_timeout(Some(self.inner.config.command_timeout))
             .map_err(RedisError::from)?;
-        {
-            let mut pubsub = connection.as_pubsub();
-            pubsub.subscribe(&channel).map_err(RedisError::from)?;
-        }
+        // Do not use `Connection::as_pubsub()` here.  The redis-rs
+        // `PubSub` guard unsubscribes from every channel when it is dropped;
+        // keeping that guard in a short-lived block would therefore make the
+        // returned handle silently unsubscribe before its first notification.
+        // The owned `RedisPubSub` handle reads the protocol directly instead,
+        // so its connection remains subscribed for its whole lifetime.
+        let _: redis::Value = redis::cmd("SUBSCRIBE")
+            .arg(&channel)
+            .query(&mut connection)
+            .map_err(RedisError::from)?;
         Ok(RedisPubSub {
             connection: Arc::new(Mutex::new(Some(connection))),
             channel,
@@ -386,16 +392,17 @@ impl RedisPubSub {
                 .lock()
                 .map_err(|_| RedisError::new("DB2507_LOCK", "Redis pub/sub lock poisoned"))?;
             let connection = guard.as_mut().ok_or_else(RedisError::closed)?;
-            let mut pubsub = connection.as_pubsub();
-            pubsub
-                .get_message()
-                .map(|message| {
-                    Some(RedisNotification {
-                        channel: message.get_channel_name().to_owned(),
-                        payload: message.get_payload_bytes().to_vec(),
-                    })
-                })
-                .map_err(RedisError::from)
+            let value = connection.recv_response().map_err(RedisError::from)?;
+            let message = redis::Msg::from_value(&value).ok_or_else(|| {
+                RedisError::new(
+                    "DB2507_PROTOCOL",
+                    "Redis returned a non-pub/sub notification response",
+                )
+            })?;
+            Ok(Some(RedisNotification {
+                channel: message.get_channel_name().to_owned(),
+                payload: message.get_payload_bytes().to_vec(),
+            }))
         })
     }
     pub fn unsubscribe(&self) -> RedisResult<()> {
@@ -404,9 +411,9 @@ impl RedisPubSub {
             .lock()
             .map_err(|_| RedisError::new("DB2507_LOCK", "Redis pub/sub lock poisoned"))?;
         if let Some(connection) = guard.as_mut() {
-            let mut pubsub = connection.as_pubsub();
-            pubsub
-                .unsubscribe(&self.channel)
+            let _: redis::Value = redis::cmd("UNSUBSCRIBE")
+                .arg(&self.channel)
+                .query(connection)
                 .map_err(RedisError::from)?;
         }
         guard.take();

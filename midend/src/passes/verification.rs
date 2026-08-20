@@ -5,12 +5,21 @@ use crate::ir::{Instruction, InstructionKind, Module, Terminator, Value};
 /// Performs structural verification of the IR and returns a list of problems if any were found.
 pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
-    let global_names: HashSet<&str> = module.globals.iter().map(|global| global.name.as_str()).collect();
+    let global_names: HashSet<&str> = module
+        .globals
+        .iter()
+        .map(|global| global.name.as_str())
+        .collect();
     let function_names: HashSet<&str> = module
         .functions
         .iter()
         .map(|function| function.name.as_str())
-        .chain(module.external_functions.iter().map(|function| function.name.as_str()))
+        .chain(
+            module
+                .external_functions
+                .iter()
+                .map(|function| function.name.as_str()),
+        )
         .collect();
 
     for external in &module.external_functions {
@@ -40,7 +49,8 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
         }
         for param in &function.params {
             if type_contains_unknown(&param.ty) {
-                unresolved_function_types.push(format!("parameter '{}' ({:?})", param.name, param.ty));
+                unresolved_function_types
+                    .push(format!("parameter '{}' ({:?})", param.name, param.ty));
             }
         }
         for local in &function.locals {
@@ -184,17 +194,17 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                             function.name, block.label, name
                         ));
                     }
-                    InstructionKind::Call { function: callee, .. }
-                        if !function_names.contains(callee.as_str()) =>
-                    {
+                    InstructionKind::Call {
+                        function: callee, ..
+                    } if !function_names.contains(callee.as_str()) => {
                         errors.push(format!(
                             "Function '{}', block '{}' calls unknown function '{}'",
                             function.name, block.label, callee
                         ));
                     }
-                    InstructionKind::FuncAddr { function: callee, .. }
-                        if !function_names.contains(callee.as_str()) =>
-                    {
+                    InstructionKind::FuncAddr {
+                        function: callee, ..
+                    } if !function_names.contains(callee.as_str()) => {
                         errors.push(format!(
                             "Function '{}', block '{}' takes address of unknown function '{}'",
                             function.name, block.label, callee
@@ -278,6 +288,11 @@ fn type_contains_unknown(ty: &crate::ir::Type) -> bool {
                 .as_ref()
                 .is_some_and(|types| types.iter().any(type_contains_unknown))
         }),
+        Type::Generic {
+            args,
+            representation,
+            ..
+        } => args.iter().any(type_contains_unknown) || type_contains_unknown(representation),
         Type::Function {
             params,
             return_type,
@@ -323,14 +338,13 @@ fn instruction_unresolved_type(instruction: &Instruction) -> Option<String> {
             ..
         } => (signature_params.iter().any(type_is_unresolved)
             || type_is_unresolved(signature_return))
-            .then(|| "indirect call signature".to_string()),
+        .then(|| "indirect call signature".to_string()),
         InstructionKind::AsyncReady { output_type, .. } => {
             type_is_unresolved(output_type).then(|| "async result".to_string())
         }
-        InstructionKind::Cast {
-            from_ty, to_ty, ..
-        } => (type_is_unresolved(from_ty) || type_is_unresolved(to_ty))
-            .then(|| "cast".to_string()),
+        InstructionKind::Cast { from_ty, to_ty, .. } => {
+            (type_is_unresolved(from_ty) || type_is_unresolved(to_ty)).then(|| "cast".to_string())
+        }
         _ => None,
     }
 }
@@ -459,7 +473,12 @@ fn instruction_operands(instruction: &Instruction) -> Vec<Value> {
         | InstructionKind::ConstFloatTyped { .. }
         | InstructionKind::ConstBool { .. }
         | InstructionKind::ConstString { .. } => Vec::new(),
-        InstructionKind::AutodiffStep { upstream, inputs, targets, .. } => {
+        InstructionKind::AutodiffStep {
+            upstream,
+            inputs,
+            targets,
+            ..
+        } => {
             let mut operands = Vec::new();
             if let Some(value) = upstream {
                 operands.push(*value);

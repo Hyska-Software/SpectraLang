@@ -10,8 +10,8 @@ mod value;
 
 pub use async_ops::{PostgresExecuteFuture, PostgresPrepareFuture, PostgresQueryFuture};
 pub use connection::{
-    open_pool, Notification, NotificationListener, PostgresColumn, PostgresConfig,
-    PostgresCancellation, PostgresConnection, PostgresFactory, PostgresOperationCancellation,
+    open_pool, Notification, NotificationListener, PostgresCancellation, PostgresColumn,
+    PostgresConfig, PostgresConnection, PostgresFactory, PostgresOperationCancellation,
     PostgresPool, PostgresStatement, PostgresTransaction, SecretString, SslMode,
 };
 pub use error::{PostgresError, PostgresResult};
@@ -25,8 +25,10 @@ mod tests {
 
     #[test]
     fn config_debug_does_not_expose_password() {
-        let mut config = PostgresConfig::default();
-        config.password = "secret".into();
+        let config = PostgresConfig {
+            password: "secret".into(),
+            ..PostgresConfig::default()
+        };
         let debug = format!("{config:?}");
         assert!(!debug.contains("secret"));
     }
@@ -44,7 +46,10 @@ mod tests {
         assert_eq!(config.password.expose_secret(), "p@ss");
         assert_eq!(config.ssl_mode, super::SslMode::Require);
         assert_eq!(config.connect_timeout, std::time::Duration::from_secs(7));
-        assert_eq!(config.statement_timeout, Some(std::time::Duration::from_millis(2500)));
+        assert_eq!(
+            config.statement_timeout,
+            Some(std::time::Duration::from_millis(2500))
+        );
         assert!(!format!("{config:?}").contains("p@ss"));
     }
 }

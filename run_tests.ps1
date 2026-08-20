@@ -41,11 +41,20 @@ if (-not (Test-Path $binary)) {
 
 if ($Phase -contains "stability_release") {
     Write-Host "--- SpectraLang required stability release gate ---" -ForegroundColor Yellow
-    & python scripts\validate_stability_release.py `
-        --binary $binary `
-        --required `
-        --report target\stability\release-report.json `
-        --markdown target\stability\release-report.md
+    $stabilityArguments = @(
+        "scripts\validate_stability_release.py",
+        "--binary", $binary,
+        "--required",
+        "--report", "target\stability\release-report.json",
+        "--markdown", "target\stability\release-report.md"
+    )
+    if ($env:SPECTRA_POSTGRES_VERSION_PROBE_DOCKER_CONTAINER) {
+        $stabilityArguments += @(
+            "--postgres-version-probe-docker-container",
+            $env:SPECTRA_POSTGRES_VERSION_PROBE_DOCKER_CONTAINER
+        )
+    }
+    & python @stabilityArguments
     exit $LASTEXITCODE
 }
 
@@ -1713,6 +1722,9 @@ Write-Host ""
 Write-Host "--- R-2505 PostgreSQL driver ---" -ForegroundColor Yellow
 $r2505Arguments = @("scripts\validate_r2505_postgres.py", "--binary", $binary, "--fixture", "tests\validation\195_postgres_driver.spectra", "--report", "target\r2505-postgres\report.json")
 if ($env:SPECTRA_POSTGRES_URL) { $r2505Arguments += @("--database-url", $env:SPECTRA_POSTGRES_URL) }
+if ($env:SPECTRA_POSTGRES_VERSION_PROBE_DOCKER_CONTAINER) {
+    $r2505Arguments += @("--version-probe-docker-container", $env:SPECTRA_POSTGRES_VERSION_PROBE_DOCKER_CONTAINER)
+}
 $r2505Postgres = Invoke-HostCommand -name "validate_r2505_postgres" -fileName "python" -arguments $r2505Arguments -workingDir (Get-Location).Path
 if ($r2505Postgres.Detail -match "skipped_environment") {
     $totalSkipped++
@@ -2421,6 +2433,252 @@ if ($r2302CorsMiddleware.Status -eq "PASSOU") {
 $results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2302_cors_middleware"; Status = $r2302CorsMiddleware.Status; Detalhe = $r2302CorsMiddleware.Detail }
 
 # ---------------------------------------------------------------------------
+# Grupo 8.60: R-2303 structured logging and request ID tracing
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2303 structured logging and request ID tracing ---" -ForegroundColor Yellow
+$r2303StructuredLogging = Invoke-HostCommand -name "validate_r2303_structured_logging" -fileName "python" -arguments @("scripts\validate_r2303_structured_logging.py") -workingDir (Get-Location).Path
+if ($r2303StructuredLogging.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2303_structured_logging"; Status = $r2303StructuredLogging.Status; Detalhe = $r2303StructuredLogging.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.61: R-2304 rate limiting
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2304 rate limiting ---" -ForegroundColor Yellow
+$r2304RateLimiting = Invoke-HostCommand -name "validate_r2304_rate_limiting" -fileName "python" -arguments @("scripts\validate_r2304_rate_limiting.py") -workingDir (Get-Location).Path
+if ($r2304RateLimiting.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2304_rate_limiting"; Status = $r2304RateLimiting.Status; Detalhe = $r2304RateLimiting.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.62: R-2305 response compression
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2305 response compression ---" -ForegroundColor Yellow
+$r2305Compression = Invoke-HostCommand -name "validate_r2305_compression" -fileName "python" -arguments @("scripts\validate_r2305_compression.py") -workingDir (Get-Location).Path
+if ($r2305Compression.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2305_compression"; Status = $r2305Compression.Status; Detalhe = $r2305Compression.Detail }
+
+# Grupo 8.63: R-2306 security headers
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2306 security headers ---" -ForegroundColor Yellow
+$r2306SecurityHeaders = Invoke-HostCommand -name "validate_r2306_security_headers" -fileName "python" -arguments @("scripts\validate_r2306_security_headers.py") -workingDir (Get-Location).Path
+if ($r2306SecurityHeaders.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2306_security_headers"; Status = $r2306SecurityHeaders.Status; Detalhe = $r2306SecurityHeaders.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.64: R-2307 API key authentication
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2307 API key authentication ---" -ForegroundColor Yellow
+$r2307ApiKey = Invoke-HostCommand -name "validate_r2307_api_key" -fileName "python" -arguments @("scripts\validate_r2307_api_key.py") -workingDir (Get-Location).Path
+if ($r2307ApiKey.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2307_api_key"; Status = $r2307ApiKey.Status; Detalhe = $r2307ApiKey.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.65: R-2308 JWT signing and verification
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2308 JWT signing and verification ---" -ForegroundColor Yellow
+$r2308Jwt = Invoke-HostCommand -name "validate_r2308_jwt" -fileName "python" -arguments @("scripts\validate_r2308_jwt.py") -workingDir (Get-Location).Path
+if ($r2308Jwt.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2308_jwt"; Status = $r2308Jwt.Status; Detalhe = $r2308Jwt.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.66: R-2309 OAuth2 client with PKCE
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2309 OAuth2 client with PKCE ---" -ForegroundColor Yellow
+$r2309OAuth = Invoke-HostCommand -name "validate_r2309_oauth" -fileName "python" -arguments @("scripts\validate_r2309_oauth.py") -workingDir (Get-Location).Path
+if ($r2309OAuth.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2309_oauth"; Status = $r2309OAuth.Status; Detalhe = $r2309OAuth.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.67: R-2312 typed cookie API
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2312 typed cookie API ---" -ForegroundColor Yellow
+$r2312Cookie = Invoke-HostCommand -name "validate_r2312_cookie" -fileName "python" -arguments @("scripts\validate_r2312_cookie.py") -workingDir (Get-Location).Path
+if ($r2312Cookie.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2312_cookie"; Status = $r2312Cookie.Status; Detalhe = $r2312Cookie.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.68: R-2313 request validation and RFC 7807
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2313 request validation and RFC 7807 ---" -ForegroundColor Yellow
+$r2313Validation = Invoke-HostCommand -name "validate_r2313_validation" -fileName "python" -arguments @("scripts\validate_r2313_validation.py") -workingDir (Get-Location).Path
+if ($r2313Validation.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2313_validation"; Status = $r2313Validation.Status; Detalhe = $r2313Validation.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.69: R-2314 unified errors and exception middleware
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2314 unified errors and exception middleware ---" -ForegroundColor Yellow
+$r2314Errors = Invoke-HostCommand -name "validate_r2314_errors" -fileName "python" -arguments @("scripts\validate_r2314_errors.py") -workingDir (Get-Location).Path
+if ($r2314Errors.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2314_errors"; Status = $r2314Errors.Status; Detalhe = $r2314Errors.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.70: R-2316 threat mitigations
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2316 threat mitigations ---" -ForegroundColor Yellow
+$r2316Security = Invoke-HostCommand -name "validate_r2316_security" -fileName "python" -arguments @("scripts\validate_r2316_security.py") -workingDir (Get-Location).Path
+if ($r2316Security.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2316_security"; Status = $r2316Security.Status; Detalhe = $r2316Security.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.71: R-2317 authenticated REST CRUD example with JWT
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2317 authenticated REST CRUD example with JWT ---" -ForegroundColor Yellow
+$r2317JwtCrud = Invoke-HostCommand -name "validate_r2317_jwt_auth_crud_example" -fileName "python" -arguments @("scripts\validate_r2317_jwt_auth_crud_example.py") -workingDir (Get-Location).Path
+if ($r2317JwtCrud.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2317_jwt_auth_crud_example"; Status = $r2317JwtCrud.Status; Detalhe = $r2317JwtCrud.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.72: R-2318 middleware composition example
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2318 middleware composition example ---" -ForegroundColor Yellow
+$r2318MiddlewareComposition = Invoke-HostCommand -name "validate_r2318_middleware_composition_example" -fileName "python" -arguments @("scripts\validate_r2318_middleware_composition_example.py") -workingDir (Get-Location).Path
+if ($r2318MiddlewareComposition.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2318_middleware_composition_example"; Status = $r2318MiddlewareComposition.Status; Detalhe = $r2318MiddlewareComposition.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.73: R-2311 server-side session management
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2311 server-side session management ---" -ForegroundColor Yellow
+$r2311Session = Invoke-HostCommand -name "validate_r2311_session" -fileName "python" -arguments @("scripts\validate_r2311_session.py") -workingDir (Get-Location).Path
+if ($r2311Session.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2311_session"; Status = $r2311Session.Status; Detalhe = $r2311Session.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.74: R-2315 HTTPS hardening
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2315 HTTPS hardening ---" -ForegroundColor Yellow
+$r2315HttpsHardening = Invoke-HostCommand -name "validate_r2315_https_hardening" -fileName "python" -arguments @("scripts\validate_r2315_https_hardening.py") -workingDir (Get-Location).Path
+if ($r2315HttpsHardening.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2315_https_hardening"; Status = $r2315HttpsHardening.Status; Detalhe = $r2315HttpsHardening.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.75: R-2401 WebSocket server (RFC 6455)
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2401 WebSocket server (RFC 6455) ---" -ForegroundColor Yellow
+$r2401WebSocket = Invoke-HostCommand -name "validate_r2401_websocket" -fileName "python" -arguments @("scripts\validate_r2401_websocket.py") -workingDir (Get-Location).Path
+if ($r2401WebSocket.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase24-api"; Teste = "validate_r2401_websocket"; Status = $r2401WebSocket.Status; Detalhe = $r2401WebSocket.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.76: R-2402 WebSocket client
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2402 WebSocket client ---" -ForegroundColor Yellow
+$r2402WebSocketClient = Invoke-HostCommand -name "validate_r2402_websocket_client" -fileName "python" -arguments @("scripts\validate_r2402_websocket_client.py") -workingDir (Get-Location).Path
+if ($r2402WebSocketClient.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase24-api"; Teste = "validate_r2402_websocket_client"; Status = $r2402WebSocketClient.Status; Detalhe = $r2402WebSocketClient.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.77: R-2403 Server-Sent Events
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2403 Server-Sent Events ---" -ForegroundColor Yellow
+$r2403Sse = Invoke-HostCommand -name "validate_r2403_sse" -fileName "python" -arguments @("scripts\validate_r2403_sse.py") -workingDir (Get-Location).Path
+if ($r2403Sse.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase24-api"; Teste = "validate_r2403_sse"; Status = $r2403Sse.Status; Detalhe = $r2403Sse.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.78: R-2404 HTTP/2 server
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2404 HTTP/2 server ---" -ForegroundColor Yellow
+$r2404Http2 = Invoke-HostCommand -name "validate_r2404_http2" -fileName "python" -arguments @("scripts\validate_r2404_http2.py") -workingDir (Get-Location).Path
+if ($r2404Http2.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase24-api"; Teste = "validate_r2404_http2"; Status = $r2404Http2.Status; Detalhe = $r2404Http2.Detail }
+
+# ---------------------------------------------------------------------------
 # Grupo 9: Phase 12 security evidence and stress/soak smoke
 # ---------------------------------------------------------------------------
 Write-Host ""
@@ -2562,3 +2820,8 @@ $results | Format-Table -AutoSize
 $reportPath = "TEST_RESULTS.txt"
 $results | Format-Table -AutoSize -Wrap | Out-File -FilePath $reportPath -Encoding UTF8 -Width 240
 Write-Host "Relatorio salvo em: $reportPath" -ForegroundColor Cyan
+
+if ($totalFailed -gt 0) {
+    exit 1
+}
+exit 0

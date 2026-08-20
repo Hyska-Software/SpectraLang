@@ -282,7 +282,8 @@ pub fn config_shutdown(id: u64) -> Result<(), &'static str> {
         .sender
         .send(WorkerCommand::Shutdown(ack_tx))
         .map_err(|_| "E2707");
-    let shutdown_result = send_result.and_then(|_| ack_rx.recv_timeout(exporter.timeout).map_err(|_| "E2707"));
+    let shutdown_result: Result<(), &'static str> =
+        send_result.and_then(|_| ack_rx.recv_timeout(exporter.timeout).map_err(|_| "E2707")?);
     let join_result = exporter
         .join
         .take()
@@ -300,8 +301,7 @@ pub fn config_shutdown(id: u64) -> Result<(), &'static str> {
             .into(),
         );
     }
-    shutdown_result
-        .and(join_result)
+    shutdown_result.and(join_result)
 }
 
 pub fn span_start(name: &str, kind: SpanKind) -> Result<u64, &'static str> {
@@ -503,6 +503,11 @@ pub fn stats() -> Option<(u64, u64, u64, u64, u64, bool)> {
         )
     })
 }
+/// # Safety
+///
+/// The returned pointer is owned by the runtime allocation table and must be
+/// treated as an opaque Spectra string handle. Callers must not dereference,
+/// resize, or free it except through the runtime allocation APIs.
 pub unsafe fn alloc_string(value: &str) -> i64 {
     use crate::ffi::spectra_rt_manual_alloc;
     let raw = spectra_rt_manual_alloc((value.len() + 1) * std::mem::size_of::<i64>()) as *mut i64;
@@ -724,7 +729,7 @@ fn resource_attribute(out: &mut Vec<u8>, key: &str, value: &str) {
     field_message(out, 1, &kv);
 }
 fn field_varint(out: &mut Vec<u8>, field: u32, value: u64) {
-    put_varint(out, ((field as u64) << 3) | 0);
+    put_varint(out, (field as u64) << 3);
     put_varint(out, value);
 }
 fn field_fixed64(out: &mut Vec<u8>, field: u32, value: u64) {
@@ -867,9 +872,12 @@ mod tests {
         let failed = config_new("http://127.0.0.1:1/v1/traces", "shutdown-failure").unwrap();
         config_start(failed).unwrap();
         let span = span_start("failed.export", SpanKind::Internal).unwrap();
-        span_end(span).unwrap();
+        assert_eq!(span_end(span), Ok(()));
         let failed_result = config_shutdown(failed);
-        assert!(failed_result == Err("E2706") || failed_result == Err("E2707"));
+        assert!(
+            failed_result == Err("E2706") || failed_result == Err("E2707"),
+            "unexpected shutdown result: {failed_result:?}"
+        );
         assert_eq!(config_shutdown(failed), Err("E2701"));
 
         let recovered = config_new("http://127.0.0.1:1/v1/traces", "shutdown-recovery").unwrap();

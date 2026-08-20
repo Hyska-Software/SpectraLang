@@ -86,20 +86,22 @@ impl Pass for ConcurrentSpawnJoinFusion {
                     // A handle must not be observed by any instruction other
                     // than the matching join, and no effectful operation may
                     // be moved across the pair.
-                    let safe_gap = block.instructions[index + 1..join_index]
-                        .iter()
-                        .all(|instruction| {
-                            instruction_inputs(&instruction.kind)
-                                .into_iter()
-                                .all(|value| value.id != spawn_value.id)
-                                && is_pure(&instruction.kind)
-                        });
+                    let safe_gap =
+                        block.instructions[index + 1..join_index]
+                            .iter()
+                            .all(|instruction| {
+                                instruction_inputs(&instruction.kind)
+                                    .into_iter()
+                                    .all(|value| value.id != spawn_value.id)
+                                    && is_pure(&instruction.kind)
+                            });
                     if !safe_gap {
                         index += 1;
                         continue;
                     }
 
-                    let (join_result, join_result_type) = match &block.instructions[join_index].kind {
+                    let (join_result, join_result_type) = match &block.instructions[join_index].kind
+                    {
                         InstructionKind::HostCall {
                             result,
                             result_type,
@@ -153,9 +155,9 @@ fn is_pure(kind: &InstructionKind) -> bool {
             | InstructionKind::ConstFloat { .. }
             | InstructionKind::ConstFloatTyped { .. }
             | InstructionKind::ConstBool { .. }
-        | InstructionKind::ConstString { .. }
-        | InstructionKind::Cast { .. }
-        | InstructionKind::AutodiffStep { .. }
+            | InstructionKind::ConstString { .. }
+            | InstructionKind::Cast { .. }
+            | InstructionKind::AutodiffStep { .. }
     )
 }
 
@@ -174,8 +176,9 @@ fn instruction_inputs(kind: &InstructionKind) -> Vec<Value> {
         | InstructionKind::Ge { lhs, rhs, .. }
         | InstructionKind::And { lhs, rhs, .. }
         | InstructionKind::Or { lhs, rhs, .. } => vec![*lhs, *rhs],
-        InstructionKind::Not { operand, .. }
-        | InstructionKind::Cast { operand, .. } => vec![*operand],
+        InstructionKind::Not { operand, .. } | InstructionKind::Cast { operand, .. } => {
+            vec![*operand]
+        }
         InstructionKind::Load { ptr, .. } => vec![*ptr],
         InstructionKind::Store { ptr, value } => vec![*ptr, *value],
         InstructionKind::GetElementPtr { ptr, index, .. } => vec![*ptr, *index],
@@ -194,7 +197,11 @@ fn instruction_inputs(kind: &InstructionKind) -> Vec<Value> {
         InstructionKind::AsyncReady { value, .. } => value.iter().copied().collect(),
         InstructionKind::Phi { incoming, .. } => incoming.iter().map(|(value, _)| *value).collect(),
         InstructionKind::Copy { source, .. } => vec![*source],
-        InstructionKind::MakeDynFatPtr { data_ptr, vtable_ptr, .. } => vec![*data_ptr, *vtable_ptr],
+        InstructionKind::MakeDynFatPtr {
+            data_ptr,
+            vtable_ptr,
+            ..
+        } => vec![*data_ptr, *vtable_ptr],
         InstructionKind::LoadVtableSlot { vtable_ptr, .. } => vec![*vtable_ptr],
         InstructionKind::Alloca { .. }
         | InstructionKind::GlobalAddr { .. }
@@ -206,7 +213,12 @@ fn instruction_inputs(kind: &InstructionKind) -> Vec<Value> {
         | InstructionKind::ConstFloatTyped { .. }
         | InstructionKind::ConstBool { .. }
         | InstructionKind::ConstString { .. } => Vec::new(),
-        InstructionKind::AutodiffStep { upstream, inputs, targets, .. } => {
+        InstructionKind::AutodiffStep {
+            upstream,
+            inputs,
+            targets,
+            ..
+        } => {
             let mut values = Vec::new();
             if let Some(value) = upstream {
                 values.push(*value);
@@ -221,7 +233,9 @@ fn instruction_inputs(kind: &InstructionKind) -> Vec<Value> {
 fn terminator_inputs(terminator: &Terminator) -> Vec<Value> {
     match terminator {
         Terminator::Return { value: Some(value) }
-        | Terminator::CondBranch { condition: value, .. }
+        | Terminator::CondBranch {
+            condition: value, ..
+        }
         | Terminator::Switch { value, .. } => vec![*value],
         _ => Vec::new(),
     }
@@ -275,7 +289,9 @@ mod tests {
         ]);
         assert!(ConcurrentSpawnJoinFusion::new().run(&mut module));
         assert_eq!(module.functions[0].blocks[0].instructions.len(), 2);
-        assert!(matches!(module.functions[0].blocks[0].instructions[0].kind, InstructionKind::HostCall { ref host, .. } if host == FUSED));
+        assert!(
+            matches!(module.functions[0].blocks[0].instructions[0].kind, InstructionKind::HostCall { ref host, .. } if host == FUSED)
+        );
     }
 
     #[test]

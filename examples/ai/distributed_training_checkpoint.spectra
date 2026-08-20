@@ -18,10 +18,14 @@ public func main() returns int {
         1
     )
 
-    let checkpoint_text = fs.fs_read(checkpoint)
-    if str.contains(checkpoint_text, "spectra.ml.distributed_checkpoint.v1") {
-        let ok_checkpoint = 1
-        if ok_checkpoint != 1 {
+    let checkpoint_result = fs.fs_read(checkpoint)
+    if let Result::Ok(checkpoint_text) = checkpoint_result {
+        if str.contains(checkpoint_text, "spectra.ml.distributed_checkpoint.v1") {
+            let ok_checkpoint = 1
+            if ok_checkpoint != 1 {
+                return 1
+            }
+        } else {
             return 1
         }
     } else {

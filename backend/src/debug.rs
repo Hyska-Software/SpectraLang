@@ -6,6 +6,8 @@
 //! consumes these records and produces the PDB; the JSON sidecar is never used
 //! as a substitute for the native artifact.
 
+use crate::aot::{NativeValueLocation, NativeValueLocationRange};
+
 /// CodeView subsection kinds used by the C13 debug stream.
 const DEBUG_S_SYMBOLS: u32 = 0xF1;
 const DEBUG_S_LINES: u32 = 0xF2;
@@ -13,6 +15,8 @@ const DEBUG_S_FILECHKSMS: u32 = 0xF4;
 const DEBUG_S_STRINGTABLE: u32 = 0xF3;
 const S_GPROC32: u16 = 0x110F;
 const S_LOCAL: u16 = 0x113E;
+const S_DEFRANGE_REGISTER: u16 = 0x1141;
+const S_DEFRANGE_FRAMEPOINTER_REL: u16 = 0x1142;
 const S_END: u16 = 0x114F;
 const S_OBJNAME: u16 = 0x1101;
 
@@ -27,16 +31,54 @@ pub struct CodeViewFunction {
     /// the compiler could not prove a native location and therefore no
     /// def-range record is emitted for that local.
     pub local_offsets: Vec<Option<i64>>,
+    /// Exact, compiler-proven location ranges resolved by Cranelift. Each
+    /// range is relative to the beginning of this function's code range.
+    /// This is the authoritative representation for native debug emission;
+    /// `local_offsets` remains as a compatibility fallback for callers that
+    /// only have the older CFA-only metadata.
+    pub local_locations: Vec<Vec<NativeValueLocationRange>>,
 }
 
-fn push_u16(out: &mut Vec<u8>, value: u16) { out.extend_from_slice(&value.to_le_bytes()); }
-fn push_u32(out: &mut Vec<u8>, value: u32) { out.extend_from_slice(&value.to_le_bytes()); }
+/// Convert a Cranelift x86-64 hardware-register encoding to the CodeView
+/// register namespace. Cranelift follows the architectural encoding order
+/// (RAX, RCX, RDX, ...), while CodeView orders the first three as RAX, RDX,
+/// RCX and uses the 64-bit register IDs beginning at 0x148.
+pub fn codeview_x64_register(hw_enc: u8) -> Option<u16> {
+    const REGISTERS: [u16; 16] = [
+        0x148, // RAX
+        0x14A, // RCX
+        0x149, // RDX
+        0x14B, // RBX
+        0x14C, // RSP
+        0x14D, // RBP
+        0x14E, // RSI
+        0x14F, // RDI
+        0x150, // R8
+        0x151, // R9
+        0x152, // R10
+        0x153, // R11
+        0x154, // R12
+        0x155, // R13
+        0x156, // R14
+        0x157, // R15
+    ];
+    REGISTERS.get(hw_enc as usize).copied()
+}
+
+fn push_u16(out: &mut Vec<u8>, value: u16) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
 
 fn subsection(out: &mut Vec<u8>, kind: u32, payload: &[u8]) {
     push_u32(out, kind);
     push_u32(out, payload.len() as u32);
     out.extend_from_slice(payload);
-    while out.len() % 4 != 0 { out.push(0); }
+    while !out.len().is_multiple_of(4) {
+        out.push(0);
+    }
 }
 
 fn symbol_record(out: &mut Vec<u8>, kind: u16, payload: &[u8]) {
@@ -49,6 +91,29 @@ fn symbol_record(out: &mut Vec<u8>, kind: u16, payload: &[u8]) {
     push_u16(out, kind);
     out.extend_from_slice(payload);
     out.resize(out.len() + padding, 0);
+}
+
+fn local_location_ranges(
+    function: &CodeViewFunction,
+    local_index: usize,
+) -> Vec<NativeValueLocationRange> {
+    if let Some(ranges) = function.local_locations.get(local_index) {
+        if !ranges.is_empty() {
+            return ranges.clone();
+        }
+    }
+    function
+        .local_offsets
+        .get(local_index)
+        .and_then(|offset| {
+            offset.map(|offset| NativeValueLocationRange {
+                start: 0,
+                end: function.size.max(1),
+                location: NativeValueLocation::CfaOffset(offset),
+            })
+        })
+        .into_iter()
+        .collect()
 }
 
 /// Build a C13 `.debug$S` section for a generated COFF object.
@@ -93,13 +158,34 @@ fn function_symbols(function: &CodeViewFunction) -> Vec<u8> {
         local.push(0);
         symbol_record(&mut symbols, S_LOCAL, &local);
 
-        if let Some(Some(offset)) = function.local_offsets.get(local_index) {
+        for range in local_location_ranges(function, local_index) {
+            let start = range.start.min(function.size);
+            let end = range.end.min(function.size);
+            let length = end.saturating_sub(start).min(u16::MAX as u32) as u16;
+            if length == 0 {
+                continue;
+            }
             let mut defrange = Vec::new();
-            push_u32(&mut defrange, *offset as u32);
-            push_u32(&mut defrange, 0); // relative start
-            push_u16(&mut defrange, function.size.min(u16::MAX as u32) as u16);
-            push_u16(&mut defrange, 0); // no gaps
-            symbol_record(&mut symbols, 0x1142, &defrange); // S_DEFRANGE_FRAMEPOINTER_REL
+            match range.location {
+                NativeValueLocation::CfaOffset(offset) => {
+                    push_u32(&mut defrange, offset as u32);
+                    push_u32(&mut defrange, start);
+                    push_u16(&mut defrange, length);
+                    push_u16(&mut defrange, 0); // no gaps
+                    symbol_record(&mut symbols, S_DEFRANGE_FRAMEPOINTER_REL, &defrange);
+                }
+                NativeValueLocation::Register(hw_enc) => {
+                    let Some(register) = codeview_x64_register(hw_enc) else {
+                        continue;
+                    };
+                    push_u16(&mut defrange, register);
+                    push_u16(&mut defrange, 0); // mayHaveNoName
+                    push_u32(&mut defrange, start);
+                    push_u16(&mut defrange, function.section);
+                    push_u16(&mut defrange, length);
+                    symbol_record(&mut symbols, S_DEFRANGE_REGISTER, &defrange);
+                }
+            }
         }
     }
     symbol_record(&mut symbols, S_END, &[]);
@@ -119,6 +205,7 @@ pub fn codeview_section(source_file: &str, functions: &[String], source: &str) -
             section: 1,
             locals: vec!["debug_value".to_string()],
             local_offsets: vec![None],
+            local_locations: vec![Vec::new()],
         })
         .collect::<Vec<_>>();
     codeview_section_with_ranges(source_file, &ranges, source)
@@ -134,7 +221,9 @@ pub fn codeview_section_with_ranges(
     checksums.push(16); // checksum size
     checksums.push(0); // MD5 checksum kind
     checksums.extend_from_slice(&[0u8; 16]);
-    while checksums.len() % 4 != 0 { checksums.push(0); }
+    while checksums.len() % 4 != 0 {
+        checksums.push(0);
+    }
 
     let line_count = source.lines().count().max(1) as u32;
     let mut result = Vec::new();
@@ -193,7 +282,8 @@ pub fn coff_function_ranges(object: &[u8]) -> Vec<CodeViewFunction> {
     }
     let section_count = u16::from_le_bytes([object[2], object[3]]) as usize;
     let symbol_offset = u32::from_le_bytes([object[8], object[9], object[10], object[11]]) as usize;
-    let symbol_count = u32::from_le_bytes([object[12], object[13], object[14], object[15]]) as usize;
+    let symbol_count =
+        u32::from_le_bytes([object[12], object[13], object[14], object[15]]) as usize;
     if symbol_offset == 0 || symbol_count == 0 || symbol_offset + symbol_count * 18 > object.len() {
         return Vec::new();
     }
@@ -205,29 +295,49 @@ pub fn coff_function_ranges(object: &[u8]) -> Vec<CodeViewFunction> {
     let mut section_sizes = vec![0u32; section_count + 1];
     for index in 0..section_count {
         let header = 20 + index * 40;
-        if header + 40 > object.len() { return Vec::new(); }
+        if header + 40 > object.len() {
+            return Vec::new();
+        }
         section_sizes[index + 1] = u32::from_le_bytes([
-            object[header + 16], object[header + 17], object[header + 18], object[header + 19],
+            object[header + 16],
+            object[header + 17],
+            object[header + 18],
+            object[header + 19],
         ]);
     }
     let mut result = Vec::new();
     for index in 0..symbol_count {
         let entry = symbol_offset + index * 18;
         let name_bytes = &object[entry..entry + 8];
-        let value = u32::from_le_bytes([object[entry + 8], object[entry + 9], object[entry + 10], object[entry + 11]]);
+        let value = u32::from_le_bytes([
+            object[entry + 8],
+            object[entry + 9],
+            object[entry + 10],
+            object[entry + 11],
+        ]);
         let section = u16::from_le_bytes([object[entry + 12], object[entry + 13]]);
         let storage = object[entry + 16];
-        if storage != 2 || section == 0 || section as usize > section_count { continue; }
+        if storage != 2 || section == 0 || section as usize > section_count {
+            continue;
+        }
         let name = if name_bytes[..4] == [0, 0, 0, 0] {
-            let offset = u32::from_le_bytes([name_bytes[4], name_bytes[5], name_bytes[6], name_bytes[7]]) as usize;
-            if offset < 4 || offset - 4 >= strings.len() { continue; }
+            let offset =
+                u32::from_le_bytes([name_bytes[4], name_bytes[5], name_bytes[6], name_bytes[7]])
+                    as usize;
+            if offset < 4 || offset - 4 >= strings.len() {
+                continue;
+            }
             &strings[offset - 4..]
         } else {
             name_bytes
         };
         let name = name.split(|byte| *byte == 0).next().unwrap_or_default();
-        let Ok(name) = std::str::from_utf8(name) else { continue; };
-        if name.is_empty() || name.starts_with('.') { continue; }
+        let Ok(name) = std::str::from_utf8(name) else {
+            continue;
+        };
+        if name.is_empty() || name.starts_with('.') {
+            continue;
+        }
         result.push(CodeViewFunction {
             name: name.to_string(),
             offset: value,
@@ -235,6 +345,7 @@ pub fn coff_function_ranges(object: &[u8]) -> Vec<CodeViewFunction> {
             section,
             locals: Vec::new(),
             local_offsets: Vec::new(),
+            local_locations: Vec::new(),
         });
     }
     // COFF function symbols carry starts but not sizes.  The next symbol in
@@ -256,7 +367,9 @@ pub fn coff_function_ranges(object: &[u8]) -> Vec<CodeViewFunction> {
 /// Mach-O and COFF symbol tables independently of the linker.
 pub fn native_function_ranges(bytes: &[u8]) -> Vec<CodeViewFunction> {
     use object::{Object, ObjectSymbol, SymbolKind, SymbolSection};
-    let Ok(file) = object::File::parse(bytes) else { return Vec::new(); };
+    let Ok(file) = object::File::parse(bytes) else {
+        return Vec::new();
+    };
     let mut functions = file
         .symbols()
         .filter(|symbol| {
@@ -275,8 +388,9 @@ pub fn native_function_ranges(bytes: &[u8]) -> Vec<CodeViewFunction> {
                 offset: symbol.address().min(u32::MAX as u64) as u32,
                 size: symbol.size().min(u32::MAX as u64) as u32,
                 section,
-            locals: Vec::new(),
-            local_offsets: Vec::new(),
+                locals: Vec::new(),
+                local_offsets: Vec::new(),
+                local_locations: Vec::new(),
             })
         })
         .collect::<Vec<_>>();
@@ -298,9 +412,13 @@ pub fn append_coff_section(
     }
     let section_count = u16::from_le_bytes([object[2], object[3]]) as usize;
     let old_table_end = 20usize
-        .checked_add(section_count.checked_mul(40).ok_or("COFF section table overflow")?)
+        .checked_add(
+            section_count
+                .checked_mul(40)
+                .ok_or("COFF section table overflow")?,
+        )
         .ok_or("COFF section table overflow")?;
-    if old_table_end > object.len() || name.as_bytes().len() > 8 {
+    if old_table_end > object.len() || name.len() > 8 {
         return Err("invalid COFF section table or section name".to_string());
     }
     let symbol_ptr = u32::from_le_bytes([object[8], object[9], object[10], object[11]]) as usize;
@@ -310,13 +428,19 @@ pub fn append_coff_section(
         let header = 20 + index * 40;
         for field in [20usize, 24usize, 28usize] {
             let pointer = u32::from_le_bytes([
-                object[header + field], object[header + field + 1],
-                object[header + field + 2], object[header + field + 3],
+                object[header + field],
+                object[header + field + 1],
+                object[header + field + 2],
+                object[header + field + 3],
             ]) as usize;
-            if pointer != 0 { insert_at = insert_at.min(pointer); }
+            if pointer != 0 {
+                insert_at = insert_at.min(pointer);
+            }
         }
     }
-    if symbol_ptr != 0 { insert_at = insert_at.min(symbol_ptr); }
+    if symbol_ptr != 0 {
+        insert_at = insert_at.min(symbol_ptr);
+    }
     if insert_at < pointer_fields {
         return Err("COFF data begins inside the section table".to_string());
     }
@@ -325,16 +449,28 @@ pub fn append_coff_section(
     rewritten.resize(rewritten.len() + 40, 0);
     rewritten.extend_from_slice(&object[insert_at..]);
     let shift = 40u32;
-    let adjust = |value: u32| if value == 0 { Ok(0) } else { value.checked_add(shift).ok_or("COFF pointer overflow") };
+    let adjust = |value: u32| {
+        if value == 0 {
+            Ok(0)
+        } else {
+            value.checked_add(shift).ok_or("COFF pointer overflow")
+        }
+    };
     for index in 0..section_count {
         let old_header = 20 + index * 40;
         let header = old_header;
         for field in [20usize, 24usize, 28usize] {
             let value = u32::from_le_bytes([
-                object[old_header + field], object[old_header + field + 1],
-                object[old_header + field + 2], object[old_header + field + 3],
+                object[old_header + field],
+                object[old_header + field + 1],
+                object[old_header + field + 2],
+                object[old_header + field + 3],
             ]) as usize;
-            let adjusted = if value != 0 && value >= insert_at { value.checked_add(40).ok_or("COFF pointer overflow")? } else { value } as u32;
+            let adjusted = if value != 0 && value >= insert_at {
+                value.checked_add(40).ok_or("COFF pointer overflow")?
+            } else {
+                value
+            } as u32;
             rewritten[header + field..header + field + 4].copy_from_slice(&adjusted.to_le_bytes());
         }
     }

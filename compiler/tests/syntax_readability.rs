@@ -50,9 +50,9 @@ fn legacy_surface_is_rejected_with_migration_diagnostics() {
         .parse()
         .expect_err("legacy syntax must not remain accepted");
 
-    assert!(errors.iter().any(|error| {
-        matches!(error.code.as_deref(), Some("P001" | "P012"))
-    }));
+    assert!(errors
+        .iter()
+        .any(|error| { matches!(error.code.as_deref(), Some("P001" | "P012")) }));
 }
 
 #[test]

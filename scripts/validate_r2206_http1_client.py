@@ -12,7 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def read(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
+    source = ROOT / path
+    if source.suffix == ".rs":
+        return "\n".join(
+            sibling.read_text(encoding="utf-8")
+            for sibling in sorted(source.parent.rglob("*.rs"))
+        )
+    return source.read_text(encoding="utf-8")
 
 
 def fail(message: str) -> None:
@@ -79,6 +85,9 @@ def validate_client_surface() -> None:
         "fn put_connection",
         "fn redirected_request",
         "fn redirect_target",
+        "request_nonblocking",
+        "mio::net",
+        "spawn_cancellable_io_task_with_token",
         "fn read_head_response",
         "TcpStream::connect",
         "max_redirects",
@@ -98,6 +107,7 @@ def validate_client_surface() -> None:
         "client_reports_explicit_timeout",
         "client_reports_connection_failure",
         "client_reports_protocol_error",
+        "client_nonblocking_request_observes_cancellation_during_readiness_wait",
     ]:
         require(test in client, f"missing R-2206 regression test {test}")
 

@@ -28,16 +28,26 @@ MAX_LINES = 1000
 
 def scan(root: Path) -> dict[str, object]:
     files: list[dict[str, object]] = []
+    excluded_test_files: list[str] = []
     for raw_root in SOURCE_ROOTS:
         source_root = root / raw_root
         if not source_root.is_dir():
             continue
         for path in sorted(source_root.rglob("*.rs")):
+            relative = path.relative_to(root).as_posix()
+            # K-10's 1,000-line boundary applies to production modules.  Test
+            # support moved out of an inline module is intentionally tracked
+            # separately; otherwise extracting tests would perversely create
+            # a new production violation while making the owning module
+            # smaller.
+            if path.name == "tests.rs" or path.name.endswith("_tests.rs") or "tests" in path.parts:
+                excluded_test_files.append(relative)
+                continue
             lines = len(path.read_text(encoding="utf-8").splitlines())
             if lines > MAX_LINES:
                 files.append(
                     {
-                        "path": path.relative_to(root).as_posix(),
+                        "path": relative,
                         "lines": lines,
                         "limit": MAX_LINES,
                         "status": "decomposition_required",
@@ -49,6 +59,7 @@ def scan(root: Path) -> dict[str, object]:
         "source_roots": list(SOURCE_ROOTS),
         "violations": files,
         "violation_count": len(files),
+        "excluded_test_files": excluded_test_files,
         "status": "passed" if not files else "partial",
     }
 

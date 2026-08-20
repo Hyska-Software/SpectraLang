@@ -1,0 +1,101 @@
+module api_structured_logging
+
+import std.string as str
+
+from std.api.http import Request, Response, method_get, request, response_status
+from std.api.handler import text, status
+from std.api.middleware import MiddlewareChain, MiddlewareHandle, chain_new, execute_sync, logging_len, logging_line, logging_request_id, register_logging, register_sync_short_circuit, use_sync
+
+func require_contains(value: string, expected: string, code: int) returns int {
+    if str.contains(value, expected) != true {
+        return code
+    }
+    return 0
+}
+
+func exercise_json(req: Request) returns int {
+    let logger: MiddlewareHandle = register_logging("json")
+    let chain: MiddlewareChain = use_sync(chain_new(), logger)
+
+    let first: Response = execute_sync(chain, req, text("created"))
+    if response_status(first) != 200 {
+        return 10
+    }
+    if logging_len(logger) != 1 {
+        return 11
+    }
+
+    let line: string = logging_line(logger, 0)
+    let request_id: string = logging_request_id(logger, 0)
+    if require_contains(line, "request_id", 12) != 0 {
+        return 12
+    }
+    if require_contains(line, "method", 13) != 0 {
+        return 13
+    }
+    if require_contains(line, "GET", 14) != 0 {
+        return 14
+    }
+    if require_contains(line, "/observability", 15) != 0 {
+        return 15
+    }
+    if require_contains(line, "200", 16) != 0 {
+        return 16
+    }
+    if str.contains(request_id, "req-") != true {
+        return 17
+    }
+    if str.contains(line, request_id) != true {
+        return 18
+    }
+
+    let second: Response = execute_sync(chain, req, text("accepted"))
+    if response_status(second) != 200 {
+        return 19
+    }
+    if logging_len(logger) != 2 {
+        return 20
+    }
+    let second_id: string = logging_request_id(logger, 1)
+    if second_id == request_id {
+        return 21
+    }
+    return 0
+}
+
+func exercise_text(req: Request) returns int {
+    let logger: MiddlewareHandle = register_logging("text")
+    let limiter: MiddlewareHandle = register_sync_short_circuit(
+        "limit:request",
+        "limit:response",
+        status(429),
+    )
+    let chain: MiddlewareChain = use_sync(use_sync(chain_new(), logger), limiter)
+    let response: Response = execute_sync(chain, req, text("terminal"))
+    if response_status(response) != 429 {
+        return 30
+    }
+    if logging_len(logger) != 1 {
+        return 31
+    }
+    let line: string = logging_line(logger, 0)
+    if require_contains(line, "method=GET", 32) != 0 {
+        return 32
+    }
+    if require_contains(line, "path=/observability", 33) != 0 {
+        return 33
+    }
+    if require_contains(line, "status=429", 34) != 0 {
+        return 34
+    }
+    return 0
+}
+
+public func main() returns int {
+    let req = request(method_get(), "/observability")
+    let json_result = exercise_json(req)
+    if json_result != 0 {
+        return json_result
+    }
+    return exercise_text(req)
+}

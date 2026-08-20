@@ -74,10 +74,7 @@ fn lexical_errors_expose_stable_codes() {
 #[test]
 fn pipeline_handles_malformed_inputs_without_internal_errors() {
     let corpus = [
-        (
-            "broken_import.spectra",
-            "module demo\nfrom std.io import",
-        ),
+        ("broken_import.spectra", "module demo\nfrom std.io import"),
         (
             "broken_return.spectra",
             "module demo\nfunc main() returns int { return }",

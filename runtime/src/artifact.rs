@@ -137,7 +137,7 @@ pub(crate) fn write_atomic(path: &Path, data: &ArtifactData) -> Result<(), Artif
         if tensor.precision != "f64" {
             return Err(invalid("only f64 physical precision is supported in v1"));
         }
-        if tensor.shape.is_empty() || tensor.shape.iter().any(|dim| *dim == 0) {
+        if tensor.shape.is_empty() || tensor.shape.contains(&0) {
             return Err(invalid("tensor shape must be non-empty and non-zero"));
         }
         let element_count = tensor
@@ -361,7 +361,7 @@ pub(crate) fn read(path: &Path) -> Result<ArtifactData, ArtifactError> {
                     .ok_or_else(|| invalid("array shape must contain integers"))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if shape.is_empty() || shape.iter().any(|dim| *dim == 0) {
+        if shape.is_empty() || shape.contains(&0) {
             return Err(invalid("array shape must be non-empty and non-zero"));
         }
         let offset = item

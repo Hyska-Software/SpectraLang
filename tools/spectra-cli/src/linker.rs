@@ -240,16 +240,14 @@ pub fn link_executable_many(
     })?;
 
     match &linker {
-        LinkerKind::Msvc(link_exe) => {
-            link_with_msvc(
-                link_exe,
-                obj_paths,
-                runtime_lib_path,
-                api_lib_path,
-                output_path,
-                native_debug,
-            )
-        }
+        LinkerKind::Msvc(link_exe) => link_with_msvc(
+            link_exe,
+            obj_paths,
+            runtime_lib_path,
+            api_lib_path,
+            output_path,
+            native_debug,
+        ),
         LinkerKind::Cc(cc) => link_with_cc(
             cc,
             obj_paths,

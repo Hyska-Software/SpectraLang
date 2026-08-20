@@ -26,6 +26,7 @@ pub(crate) struct HostCallSiteRecord {
 /// Interns a JIT host-call name and allocates exactly one cache slot for it.
 /// Both allocations are owned by the code generator and therefore outlive
 /// every generated function that embeds their addresses.
+#[allow(clippy::vec_box)]
 pub(crate) fn intern_jit_host_call_site(
     host_call_sites: &mut HashMap<String, HostCallSiteRecord>,
     host_name_storage: &mut Vec<Box<[u8]>>,
@@ -103,6 +104,7 @@ pub(crate) fn register_jit_runtime_symbols(builder: &mut JITBuilder) {
 }
 
 /// Declares every runtime import using the runtime-owned ABI catalog.
+#[allow(clippy::result_large_err)]
 pub(crate) fn declare_runtime_bindings<M: Module>(
     module: &mut M,
 ) -> Result<RuntimeBindings, ModuleError> {

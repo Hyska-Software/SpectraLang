@@ -8,8 +8,8 @@ pub(crate) mod artifact;
 pub mod ffi;
 #[cfg(feature = "gpu")]
 pub mod gpu;
-pub mod health;
 pub mod handles;
+pub mod health;
 pub mod memory;
 pub mod metrics;
 pub mod numeric;

@@ -89,6 +89,34 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.api.Session"
+kind = "type"
+namespace = "std.api"
+signature = "record Session {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.Session"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.SessionStore"
+kind = "type"
+namespace = "std.api"
+signature = "record SessionStore {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.SessionStore"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
 path = "std.api.SqliteConnection"
 kind = "type"
 namespace = "std.api"
@@ -117,6 +145,48 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.api.SseConnection"
+kind = "type"
+namespace = "std.api"
+signature = "record SseConnection {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.SseConnection"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.SseEvent"
+kind = "type"
+namespace = "std.api"
+signature = "record SseEvent {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.SseEvent"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.SseServer"
+kind = "type"
+namespace = "std.api"
+signature = "record SseServer {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.SseServer"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
 path = "std.api.TlsConfig"
 kind = "type"
 namespace = "std.api"
@@ -125,6 +195,62 @@ abi = "semantic descriptor"
 effects = []
 error_model = "none"
 binding = "spectra.type.std.api.TlsConfig"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.WebSocket"
+kind = "type"
+namespace = "std.api"
+signature = "record WebSocket {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.WebSocket"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.WebSocketClient"
+kind = "type"
+namespace = "std.api"
+signature = "record WebSocketClient {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.WebSocketClient"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.WebSocketMessage"
+kind = "type"
+namespace = "std.api"
+signature = "record WebSocketMessage {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.WebSocketMessage"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.WebSocketServer"
+kind = "type"
+namespace = "std.api"
+signature = "record WebSocketServer {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.WebSocketServer"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
@@ -185,6 +311,20 @@ maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.client.set_ssrf_policy"
+kind = "function"
+namespace = "std.api.client"
+signature = "fn(Client, SsrfPolicy) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.client.set_ssrf_policy"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
 
 [[entry]]
 path = "std.api.client.timeout_ms"
@@ -2469,6 +2609,48 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.api.errors.code"
+kind = "function"
+namespace = "std.api.errors"
+signature = "fn(ApiError) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.errors.code"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-errors.md"
+fixture = "tests/validation/340_api_errors.spectra"
+
+[[entry]]
+path = "std.api.errors.exception_middleware"
+kind = "function"
+namespace = "std.api.errors"
+signature = "fn(int, string, string) -> MiddlewareHandle"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.errors.exception_middleware"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-errors.md"
+fixture = "tests/validation/340_api_errors.spectra"
+
+[[entry]]
+path = "std.api.errors.internal_error"
+kind = "function"
+namespace = "std.api.errors"
+signature = "fn(string, string) -> ApiError"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.errors.internal_error"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-errors.md"
+fixture = "tests/validation/340_api_errors.spectra"
+
+[[entry]]
 path = "std.api.errors.last_code"
 kind = "function"
 namespace = "std.api.errors"
@@ -2495,6 +2677,62 @@ maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.errors.message"
+kind = "function"
+namespace = "std.api.errors"
+signature = "fn(ApiError) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.errors.message"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-errors.md"
+fixture = "tests/validation/340_api_errors.spectra"
+
+[[entry]]
+path = "std.api.errors.new"
+kind = "function"
+namespace = "std.api.errors"
+signature = "fn(int, string, string) -> ApiError"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.errors.new"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-errors.md"
+fixture = "tests/validation/340_api_errors.spectra"
+
+[[entry]]
+path = "std.api.errors.response"
+kind = "function"
+namespace = "std.api.errors"
+signature = "fn(ApiError) -> Response"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.errors.response"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-errors.md"
+fixture = "tests/validation/340_api_errors.spectra"
+
+[[entry]]
+path = "std.api.errors.status"
+kind = "function"
+namespace = "std.api.errors"
+signature = "fn(ApiError) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.errors.status"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-errors.md"
+fixture = "tests/validation/340_api_errors.spectra"
 
 [[entry]]
 path = "std.api.form"
@@ -3099,6 +3337,20 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/139_api_handler_response_return.spectra"
 
 [[entry]]
+path = "std.api.handler.register_async_callback"
+kind = "function"
+namespace = "std.api.handler"
+signature = "fn(int, fn(Request) -> Task<Response>) -> AsyncHandlerHandle"
+abi = "host(ctx: SpectraHostCallContext, invoke_fn) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.handler.register_async_callback"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/330_api_handler_callbacks.spectra"
+
+[[entry]]
 path = "std.api.handler.register_sync"
 kind = "function"
 namespace = "std.api.handler"
@@ -3111,6 +3363,20 @@ maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
 fixture = "tests/validation/139_api_handler_response_return.spectra"
+
+[[entry]]
+path = "std.api.handler.register_sync_callback"
+kind = "function"
+namespace = "std.api.handler"
+signature = "fn(int, fn(Request) -> Response) -> HandlerHandle"
+abi = "host(ctx: SpectraHostCallContext, invoke_fn) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.handler.register_sync_callback"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/330_api_handler_callbacks.spectra"
 
 [[entry]]
 path = "std.api.handler.status"
@@ -3337,6 +3603,104 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
+path = "std.api.http.cookie_domain"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Cookie) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.http.cookie_domain"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
+
+[[entry]]
+path = "std.api.http.cookie_error_code"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn() -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "typed error state"
+binding = "spectra.api.http.cookie_error_code"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
+
+[[entry]]
+path = "std.api.http.cookie_error_message"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn() -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "typed error state"
+binding = "spectra.api.http.cookie_error_message"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
+
+[[entry]]
+path = "std.api.http.cookie_header"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Cookie) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.http.cookie_header"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
+
+[[entry]]
+path = "std.api.http.cookie_http_only"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Cookie) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.http.cookie_http_only"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
+
+[[entry]]
+path = "std.api.http.cookie_is_expired"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Cookie) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.http.cookie_is_expired"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
+
+[[entry]]
+path = "std.api.http.cookie_max_age"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Cookie) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.http.cookie_max_age"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
+
+[[entry]]
 path = "std.api.http.cookie_name"
 kind = "function"
 namespace = "std.api.http"
@@ -3351,6 +3715,62 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
+path = "std.api.http.cookie_path"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Cookie) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.http.cookie_path"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
+
+[[entry]]
+path = "std.api.http.cookie_same_site"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Cookie) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.http.cookie_same_site"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
+
+[[entry]]
+path = "std.api.http.cookie_secure"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Cookie) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.http.cookie_secure"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
+
+[[entry]]
+path = "std.api.http.cookie_sign"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Cookie, string) -> Cookie"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host", "crypto"]
+error_model = "host status + cookie_error_code"
+binding = "spectra.api.http.cookie_sign"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
+
+[[entry]]
 path = "std.api.http.cookie_value"
 kind = "function"
 namespace = "std.api.http"
@@ -3363,6 +3783,34 @@ maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
 fixture = "tests/validation/134_http_core_types.spectra"
+
+[[entry]]
+path = "std.api.http.cookie_verify"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Cookie, string) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host", "crypto"]
+error_model = "boolean + cookie_error_code"
+binding = "spectra.api.http.cookie_verify"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
+
+[[entry]]
+path = "std.api.http.cookie_with_options"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(string, string, string, string, int, bool, bool, int) -> Cookie"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + std.api.http.cookie_error_code"
+binding = "spectra.api.http.cookie_with_options"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
 
 [[entry]]
 path = "std.api.http.header"
@@ -3589,6 +4037,20 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
+path = "std.api.http.request_body"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Request) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.http.request_body"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/134_http_core_types.spectra"
+
+[[entry]]
 path = "std.api.http.request_cookie"
 kind = "function"
 namespace = "std.api.http"
@@ -3653,6 +4115,20 @@ abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.api.http.request_path"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/134_http_core_types.spectra"
+
+[[entry]]
+path = "std.api.http.request_with_body"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Request, string) -> Request"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.http.request_with_body"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
@@ -3741,6 +4217,20 @@ maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
 fixture = "tests/validation/134_http_core_types.spectra"
+
+[[entry]]
+path = "std.api.http.response_with_cookie"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Response, Cookie) -> Response"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.http.response_with_cookie"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-cookie.md"
+fixture = "tests/validation/338_api_cookie.spectra"
 
 [[entry]]
 path = "std.api.http.status"
@@ -4191,6 +4681,48 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.api.jwt"
+kind = "module"
+namespace = "std.api"
+signature = "module spectra.std.api.jwt"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.api.jwt"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/335_api_jwt.spectra"
+
+[[entry]]
+path = "std.api.jwt.sign"
+kind = "function"
+namespace = "std.api.jwt"
+signature = "fn(string, string, string) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.jwt.sign"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/335_api_jwt.spectra"
+
+[[entry]]
+path = "std.api.jwt.verify"
+kind = "function"
+namespace = "std.api.jwt"
+signature = "fn(string, string, string, string, string, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.jwt.verify"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/335_api_jwt.spectra"
+
+[[entry]]
 path = "std.api.middleware"
 kind = "module"
 namespace = "std.api"
@@ -4259,6 +4791,34 @@ maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
 fixture = "tests/validation/148_api_middleware_chain.spectra"
+
+[[entry]]
+path = "std.api.middleware.api_key_add"
+kind = "function"
+namespace = "std.api.middleware"
+signature = "fn(MiddlewareHandle, string, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.middleware.api_key_add"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/333_api_key_auth.spectra"
+
+[[entry]]
+path = "std.api.middleware.api_key_revoke"
+kind = "function"
+namespace = "std.api.middleware"
+signature = "fn(MiddlewareHandle, string) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.middleware.api_key_revoke"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/333_api_key_auth.spectra"
 
 [[entry]]
 path = "std.api.middleware.chain"
@@ -4345,6 +4905,76 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
+path = "std.api.middleware.logging_len"
+kind = "function"
+namespace = "std.api.middleware"
+signature = "fn(MiddlewareHandle) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.middleware.logging_len"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/331_api_structured_logging.spectra"
+
+[[entry]]
+path = "std.api.middleware.logging_line"
+kind = "function"
+namespace = "std.api.middleware"
+signature = "fn(MiddlewareHandle, int) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.middleware.logging_line"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/331_api_structured_logging.spectra"
+
+[[entry]]
+path = "std.api.middleware.logging_request_id"
+kind = "function"
+namespace = "std.api.middleware"
+signature = "fn(MiddlewareHandle, int) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.middleware.logging_request_id"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/331_api_structured_logging.spectra"
+
+[[entry]]
+path = "std.api.middleware.rate_limit_update"
+kind = "function"
+namespace = "std.api.middleware"
+signature = "fn(MiddlewareHandle, int, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.middleware.rate_limit_update"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/332_api_rate_limiting.spectra"
+
+[[entry]]
+path = "std.api.middleware.register_api_key"
+kind = "function"
+namespace = "std.api.middleware"
+signature = "fn(string) -> MiddlewareHandle"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.middleware.register_api_key"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/333_api_key_auth.spectra"
+
+[[entry]]
 path = "std.api.middleware.register_async"
 kind = "function"
 namespace = "std.api.middleware"
@@ -4373,6 +5003,62 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
+path = "std.api.middleware.register_compression"
+kind = "function"
+namespace = "std.api.middleware"
+signature = "fn(int) -> MiddlewareHandle"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.middleware.register_compression"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-middleware.md"
+fixture = "tests/validation/336_api_compression.spectra"
+
+[[entry]]
+path = "std.api.middleware.register_logging"
+kind = "function"
+namespace = "std.api.middleware"
+signature = "fn(string) -> MiddlewareHandle"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.middleware.register_logging"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/331_api_structured_logging.spectra"
+
+[[entry]]
+path = "std.api.middleware.register_rate_limit"
+kind = "function"
+namespace = "std.api.middleware"
+signature = "fn(string, int, int, string, bool) -> MiddlewareHandle"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.middleware.register_rate_limit"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/332_api_rate_limiting.spectra"
+
+[[entry]]
+path = "std.api.middleware.register_security_headers"
+kind = "function"
+namespace = "std.api.middleware"
+signature = "fn() -> MiddlewareHandle"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.middleware.register_security_headers"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/334_api_security_headers.spectra"
+
+[[entry]]
 path = "std.api.middleware.register_sync"
 kind = "function"
 namespace = "std.api.middleware"
@@ -4399,6 +5085,34 @@ maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
 fixture = "tests/validation/148_api_middleware_chain.spectra"
+
+[[entry]]
+path = "std.api.middleware.security_headers_configure"
+kind = "function"
+namespace = "std.api.middleware"
+signature = "fn(MiddlewareHandle, string, string, bool, bool, bool) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.middleware.security_headers_configure"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/334_api_security_headers.spectra"
+
+[[entry]]
+path = "std.api.middleware.security_headers_route"
+kind = "function"
+namespace = "std.api.middleware"
+signature = "fn(MiddlewareHandle, string, string, string) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.middleware.security_headers_route"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/334_api_security_headers.spectra"
 
 [[entry]]
 path = "std.api.middleware.trace_event"
@@ -4735,6 +5449,202 @@ maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.oauth"
+kind = "module"
+namespace = "std.api"
+signature = "module spectra.std.api.oauth"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.api.oauth"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
+
+[[entry]]
+path = "std.api.oauth.OAuthClient"
+kind = "type"
+namespace = "std.api.oauth"
+signature = "record OAuthClient {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.oauth.OAuthClient"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
+
+[[entry]]
+path = "std.api.oauth.OAuthToken"
+kind = "type"
+namespace = "std.api.oauth"
+signature = "record OAuthToken {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.oauth.OAuthToken"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
+
+[[entry]]
+path = "std.api.oauth.authorization_url"
+kind = "function"
+namespace = "std.api.oauth"
+signature = "fn(OAuthClient, string) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.oauth.authorization_url"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
+
+[[entry]]
+path = "std.api.oauth.client_new"
+kind = "function"
+namespace = "std.api.oauth"
+signature = "fn(string, string, string, string, string, string) -> OAuthClient"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.oauth.client_new"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
+
+[[entry]]
+path = "std.api.oauth.client_set_revocation_url"
+kind = "function"
+namespace = "std.api.oauth"
+signature = "fn(OAuthClient, string) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.oauth.client_set_revocation_url"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
+
+[[entry]]
+path = "std.api.oauth.exchange_code"
+kind = "function"
+namespace = "std.api.oauth"
+signature = "fn(OAuthClient, string, string) -> OAuthToken"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.oauth.exchange_code"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
+
+[[entry]]
+path = "std.api.oauth.refresh"
+kind = "function"
+namespace = "std.api.oauth"
+signature = "fn(OAuthClient, OAuthToken) -> OAuthToken"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.oauth.refresh"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
+
+[[entry]]
+path = "std.api.oauth.revoke"
+kind = "function"
+namespace = "std.api.oauth"
+signature = "fn(OAuthClient, OAuthToken) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.oauth.revoke"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
+
+[[entry]]
+path = "std.api.oauth.token_access_token"
+kind = "function"
+namespace = "std.api.oauth"
+signature = "fn(OAuthToken) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.oauth.token_access_token"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
+
+[[entry]]
+path = "std.api.oauth.token_expires_at_ms"
+kind = "function"
+namespace = "std.api.oauth"
+signature = "fn(OAuthToken) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.oauth.token_expires_at_ms"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
+
+[[entry]]
+path = "std.api.oauth.token_refresh_token"
+kind = "function"
+namespace = "std.api.oauth"
+signature = "fn(OAuthToken) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.oauth.token_refresh_token"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
+
+[[entry]]
+path = "std.api.oauth.token_scope"
+kind = "function"
+namespace = "std.api.oauth"
+signature = "fn(OAuthToken) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.oauth.token_scope"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
+
+[[entry]]
+path = "std.api.oauth.token_type"
+kind = "function"
+namespace = "std.api.oauth"
+signature = "fn(OAuthToken) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.oauth.token_type"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-oauth.md"
+fixture = "tests/validation/337_api_oauth.spectra"
 
 [[entry]]
 path = "std.api.query"
@@ -5367,6 +6277,146 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/135_api_router_matching.spectra"
 
 [[entry]]
+path = "std.api.security"
+kind = "module"
+namespace = "std.api"
+signature = "module spectra.std.api.security"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.api.security"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
+
+[[entry]]
+path = "std.api.security.CsrfPolicy"
+kind = "type"
+namespace = "std.api.security"
+signature = "record CsrfPolicy {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.security.CsrfPolicy"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
+
+[[entry]]
+path = "std.api.security.SsrfPolicy"
+kind = "type"
+namespace = "std.api.security"
+signature = "record SsrfPolicy {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.security.SsrfPolicy"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
+
+[[entry]]
+path = "std.api.security.csrf_allow_origin"
+kind = "function"
+namespace = "std.api.security"
+signature = "fn(CsrfPolicy, string) -> CsrfPolicy"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.security.csrf_allow_origin"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
+
+[[entry]]
+path = "std.api.security.csrf_middleware"
+kind = "function"
+namespace = "std.api.security"
+signature = "fn(CsrfPolicy) -> MiddlewareHandle"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.security.csrf_middleware"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
+
+[[entry]]
+path = "std.api.security.csrf_origin_count"
+kind = "function"
+namespace = "std.api.security"
+signature = "fn(CsrfPolicy) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.security.csrf_origin_count"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
+
+[[entry]]
+path = "std.api.security.csrf_policy"
+kind = "function"
+namespace = "std.api.security"
+signature = "fn() -> CsrfPolicy"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.security.csrf_policy"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
+
+[[entry]]
+path = "std.api.security.ssrf_allow_private_networks"
+kind = "function"
+namespace = "std.api.security"
+signature = "fn(SsrfPolicy, bool) -> SsrfPolicy"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.security.ssrf_allow_private_networks"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
+
+[[entry]]
+path = "std.api.security.ssrf_allows"
+kind = "function"
+namespace = "std.api.security"
+signature = "fn(SsrfPolicy, string) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.security.ssrf_allows"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
+
+[[entry]]
+path = "std.api.security.ssrf_policy"
+kind = "function"
+namespace = "std.api.security"
+signature = "fn() -> SsrfPolicy"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.security.ssrf_policy"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
+
+[[entry]]
 path = "std.api.server"
 kind = "module"
 namespace = "std.api"
@@ -5451,6 +6501,48 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.api.server.set_idle_timeout"
+kind = "function"
+namespace = "std.api.server"
+signature = "fn(Server, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.server.set_idle_timeout"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
+
+[[entry]]
+path = "std.api.server.set_max_body_bytes"
+kind = "function"
+namespace = "std.api.server"
+signature = "fn(Server, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.server.set_max_body_bytes"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
+
+[[entry]]
+path = "std.api.server.set_read_timeout"
+kind = "function"
+namespace = "std.api.server"
+signature = "fn(Server, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.server.set_read_timeout"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-security.md"
+fixture = "tests/validation/341_api_security.spectra"
+
+[[entry]]
 path = "std.api.server.shutdown"
 kind = "function"
 namespace = "std.api.server"
@@ -5505,6 +6597,566 @@ maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.session"
+kind = "module"
+namespace = "std.api"
+signature = "module spectra.std.api.session"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.api.session"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.session.Session"
+kind = "type"
+namespace = "std.api.session"
+signature = "record Session {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.session.Session"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.SessionStore"
+kind = "type"
+namespace = "std.api.session"
+signature = "record SessionStore {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.session.SessionStore"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.create"
+kind = "function"
+namespace = "std.api.session"
+signature = "fn(SessionStore, string, int, int, bool) -> Session"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.session.create"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.created_at_ms"
+kind = "function"
+namespace = "std.api.session"
+signature = "fn(Session) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.session.created_at_ms"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.error_code"
+kind = "function"
+namespace = "std.api.session"
+signature = "fn() -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.session.error_code"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.error_message"
+kind = "function"
+namespace = "std.api.session"
+signature = "fn() -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.session.error_message"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.expires_at_ms"
+kind = "function"
+namespace = "std.api.session"
+signature = "fn(Session) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.session.expires_at_ms"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.id"
+kind = "function"
+namespace = "std.api.session"
+signature = "fn(Session) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.session.id"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.is_valid"
+kind = "function"
+namespace = "std.api.session"
+signature = "fn(Session) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.session.is_valid"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.lookup"
+kind = "function"
+namespace = "std.api.session"
+signature = "fn(SessionStore, string) -> Session"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.session.lookup"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.memory_store"
+kind = "function"
+namespace = "std.api.session"
+signature = "fn() -> SessionStore"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.session.memory_store"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.redis_store"
+kind = "function"
+namespace = "std.api.session"
+signature = "fn(RedisConnection, string) -> SessionStore"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.session.redis_store"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.revoke"
+kind = "function"
+namespace = "std.api.session"
+signature = "fn(SessionStore, string) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.session.revoke"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.store_kind"
+kind = "function"
+namespace = "std.api.session"
+signature = "fn(SessionStore) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.session.store_kind"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.session.value"
+kind = "function"
+namespace = "std.api.session"
+signature = "fn(Session) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.session.value"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/342_api_session.spectra"
+
+[[entry]]
+path = "std.api.sse"
+kind = "module"
+namespace = "std.api"
+signature = "module spectra.std.api.sse"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.api.sse"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.sse.SseConnection"
+kind = "type"
+namespace = "std.api.sse"
+signature = "record SseConnection {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.sse.SseConnection"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.SseEvent"
+kind = "type"
+namespace = "std.api.sse"
+signature = "record SseEvent {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.sse.SseEvent"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.SseServer"
+kind = "type"
+namespace = "std.api.sse"
+signature = "record SseServer {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.sse.SseServer"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.connection_close"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseConnection) -> Task<int>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.connection_close"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.connection_heartbeat"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseConnection) -> Task<int>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.connection_heartbeat"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.connection_last_event_id"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseConnection) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.connection_last_event_id"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.connection_peer_port"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseConnection) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.connection_peer_port"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.connection_send"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseConnection, SseEvent) -> Task<int>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.connection_send"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.event_data"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseEvent) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.event_data"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.event_id"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseEvent) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.event_id"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.event_new"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(string, string, string, int) -> SseEvent"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.event_new"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.event_release"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseEvent) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.event_release"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.event_retry_ms"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseEvent) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.event_retry_ms"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.event_type"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseEvent) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.event_type"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.server_accept"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseServer) -> Task<SseConnection>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.server_accept"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.server_listen"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseServer, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.server_listen"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.server_local_port"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseServer) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.server_local_port"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.server_new"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn() -> SseServer"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.server_new"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.server_publish"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseServer, SseEvent) -> Task<int>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.server_publish"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.server_response"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseServer) -> Response"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.server_response"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.server_set_heartbeat_interval"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseServer, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.server_set_heartbeat_interval"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.server_set_max_event_bytes"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseServer, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.server_set_max_event_bytes"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
+
+[[entry]]
+path = "std.api.sse.server_set_replay_capacity"
+kind = "function"
+namespace = "std.api.sse"
+signature = "fn(SseServer, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.sse.server_set_replay_capacity"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/345_api_sse.spectra"
 
 [[entry]]
 path = "std.api.tls"
@@ -5871,6 +7523,286 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/193_opentelemetry_tracing.spectra"
 
 [[entry]]
+path = "std.api.validation"
+kind = "module"
+namespace = "std.api"
+signature = "module spectra.std.api.validation"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.api.validation"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.ValidationResult"
+kind = "type"
+namespace = "std.api.validation"
+signature = "record ValidationResult {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.validation.ValidationResult"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.ValidationSchema"
+kind = "type"
+namespace = "std.api.validation"
+signature = "record ValidationSchema {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.validation.ValidationSchema"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.error_code"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn() -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.error_code"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.error_message"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn() -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.error_message"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.field"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationSchema, string, int, bool) -> ValidationSchema"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.field"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.max_length"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationSchema, string, int) -> ValidationSchema"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.max_length"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.min_length"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationSchema, string, int) -> ValidationSchema"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.min_length"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.range"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationSchema, string, int, int) -> ValidationSchema"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.range"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.regex"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationSchema, string, string) -> ValidationSchema"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.regex"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.result_code"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationResult, int) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.result_code"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.result_count"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationResult) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.result_count"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.result_field"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationResult, int) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.result_field"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.result_message"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationResult, int) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.result_message"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.result_ok"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationResult) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.result_ok"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.result_problem_json"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationResult) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.result_problem_json"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.result_response"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationResult) -> Response"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.result_response"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.schema"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn() -> ValidationSchema"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.schema"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.validate_form"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationSchema, Form) -> ValidationResult"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.validate_form"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
+path = "std.api.validation.validate_json"
+kind = "function"
+namespace = "std.api.validation"
+signature = "fn(ValidationSchema, string) -> ValidationResult"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.validation.validate_json"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-validation.md"
+fixture = "tests/validation/339_api_validation.spectra"
+
+[[entry]]
 path = "std.api.version.major"
 kind = "function"
 namespace = "std.api.version"
@@ -5911,6 +7843,398 @@ maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.websocket"
+kind = "module"
+namespace = "std.api"
+signature = "module spectra.std.api.websocket"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.api.websocket"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.websocket.WebSocket"
+kind = "type"
+namespace = "std.api.websocket"
+signature = "record WebSocket {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.websocket.WebSocket"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.WebSocketClient"
+kind = "type"
+namespace = "std.api.websocket"
+signature = "record WebSocketClient {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.websocket.WebSocketClient"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.WebSocketMessage"
+kind = "type"
+namespace = "std.api.websocket"
+signature = "record WebSocketMessage {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.websocket.WebSocketMessage"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.WebSocketServer"
+kind = "type"
+namespace = "std.api.websocket"
+signature = "record WebSocketServer {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.websocket.WebSocketServer"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.client_allow_private_networks"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketClient, bool) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.client_allow_private_networks"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.client_connect"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketClient, string) -> Task<WebSocket>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.client_connect"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.client_new"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn() -> WebSocketClient"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.client_new"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.client_set_max_message_bytes"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketClient, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.client_set_max_message_bytes"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.client_set_per_message_deflate"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketClient, bool) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.client_set_per_message_deflate"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.client_set_reconnect"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketClient, int, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.client_set_reconnect"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.connection_close"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocket, int, string) -> Task<int>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.connection_close"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.connection_peer_port"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocket) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.connection_peer_port"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.connection_ping"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocket, string) -> Task<int>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.connection_ping"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.connection_receive"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocket) -> Task<WebSocketMessage>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.connection_receive"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.connection_send_binary_base64"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocket, string) -> Task<int>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.connection_send_binary_base64"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.connection_send_text"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocket, string) -> Task<int>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.connection_send_text"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.message_base64"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketMessage) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.message_base64"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.message_kind"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketMessage) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.message_kind"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.message_len"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketMessage) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.message_len"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.message_release"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketMessage) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.message_release"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.message_text"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketMessage) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.message_text"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.server_accept"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketServer) -> Task<WebSocket>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.server_accept"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.server_listen"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketServer, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.server_listen"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.server_local_port"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketServer) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.server_local_port"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.server_new"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn() -> WebSocketServer"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.server_new"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.server_set_max_message_bytes"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketServer, int) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.server_set_max_message_bytes"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
+path = "std.api.websocket.server_set_per_message_deflate"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketServer, bool) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.server_set_per_message_deflate"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
 
 [[entry]]
 path = "std.char"

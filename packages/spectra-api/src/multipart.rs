@@ -1,5 +1,5 @@
-use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use crate::handles::ApiHandleTable;
+use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
 };

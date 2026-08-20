@@ -47,11 +47,8 @@ impl Pass for StrengthReduction {
 
             for block in &func.blocks {
                 for instr in &block.instructions {
-                    match &instr.kind {
-                        InstructionKind::ConstInt { result, value } => {
-                            int_consts.insert(result.id, *value);
-                        }
-                        _ => {}
+                    if let InstructionKind::ConstInt { result, value } = &instr.kind {
+                        int_consts.insert(result.id, *value);
                     }
                 }
             }

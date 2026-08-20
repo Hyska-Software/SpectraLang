@@ -712,4 +712,3 @@ fn test_function_inlining_allows_stack_safe_alloca_helpers() {
         "stack-safe alloca should not block inlining"
     );
 }
-

@@ -34,10 +34,11 @@ reason = "Scalar mutable statics have constant initialization, typed visibility/
 [[feature]]
 id = "core.exact_width"
 name = "exact-width numeric semantics"
-status = "beta"
+status = "stable"
 owner = "numerics"
 positive_fixture = "tests/validation/189_exact_width_numeric_semantics.spectra"
 negative_fixture = "tests/errors/exact_width_overflow.spectra"
+reason = "Checked casts, wrapping operations, JIT/AOT aggregate storage, host ABI behavior, and the required C interoperability gate are certified by R-2901."
 
 [[feature]]
 id = "core.arrays"

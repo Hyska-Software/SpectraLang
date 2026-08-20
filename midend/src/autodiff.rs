@@ -5,7 +5,9 @@
 //! which values must be retained, and which reverse rule is selected.
 
 use crate::ir::{Function, Instruction, InstructionKind, Module, SourceSpan, Value};
-use crate::tensor_graph::{TensorGraph, TensorGraphFunction, TensorGraphOp, TensorMetadata, TensorGraphSource};
+use crate::tensor_graph::{
+    TensorGraph, TensorGraphFunction, TensorGraphOp, TensorGraphSource, TensorMetadata,
+};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,8 +106,17 @@ fn function_host_definitions(function: &Function) -> HashMap<usize, HostDefiniti
     let mut definitions = HashMap::new();
     for block in &function.blocks {
         for instruction in &block.instructions {
-            if let InstructionKind::HostCall { result: Some(result), host, args, .. } = &instruction.kind {
-                definitions.insert(result.id, (host.clone(), args.clone(), instruction.source_span.clone()));
+            if let InstructionKind::HostCall {
+                result: Some(result),
+                host,
+                args,
+                ..
+            } = &instruction.kind
+            {
+                definitions.insert(
+                    result.id,
+                    (host.clone(), args.clone(), instruction.source_span.clone()),
+                );
             }
         }
     }
@@ -122,7 +133,10 @@ fn materialize_node(
     steps: &mut Vec<Instruction>,
 ) -> Result<(), String> {
     if !visiting.insert(output.id) {
-        return Err(format!("E3004: cyclic autodiff dependency at value %{}", output.id));
+        return Err(format!(
+            "E3004: cyclic autodiff dependency at value %{}",
+            output.id
+        ));
     }
     let Some((host, args, node_source)) = definitions.get(&output.id) else {
         visiting.remove(&output.id);
@@ -131,13 +145,19 @@ fn materialize_node(
     let Some(operation) = autodiff_operation(host) else {
         if host.starts_with("spectra.std.tensor.") || host.starts_with("spectra.std.ml.") {
             if host.ends_with(".to_device") {
-                return Err(format!("E3010: device transfer is not legal inside compiler-native diff ({host})"));
+                return Err(format!(
+                    "E3010: device transfer is not legal inside compiler-native diff ({host})"
+                ));
             }
             if host.ends_with(".full") || host.ends_with(".full_i") {
-                return Err(format!("E3006: integer tensor is not differentiable ({host})"));
+                return Err(format!(
+                    "E3006: integer tensor is not differentiable ({host})"
+                ));
             }
             if !is_autodiff_leaf_or_auxiliary(Some(host)) {
-                return Err(format!("E3004: operation has no registered reverse kernel ({host})"));
+                return Err(format!(
+                    "E3004: operation has no registered reverse kernel ({host})"
+                ));
             }
         }
         visiting.remove(&output.id);
@@ -149,18 +169,14 @@ fn materialize_node(
         return Ok(());
     }
     let step_source = node_source.clone().or_else(|| source.clone());
-    let effective_upstream = if upstream.is_some() {
-        upstream
-    } else {
-        None
-    };
+    let effective_upstream = if upstream.is_some() { upstream } else { None };
     steps.push(Instruction {
         id: 0,
-            kind: InstructionKind::AutodiffStep {
-                result: None,
-                operation: format!("grad_apply_{operation}"),
-                output,
-                upstream: effective_upstream,
+        kind: InstructionKind::AutodiffStep {
+            result: None,
+            operation: format!("grad_apply_{operation}"),
+            output,
+            upstream: effective_upstream,
             inputs: tensor_args.clone(),
             targets: tensor_args.clone(),
         },
@@ -199,10 +215,12 @@ fn materialize_node(
 }
 
 fn autodiff_operation(host: &str) -> Option<&str> {
-    let name = host.strip_prefix("spectra.std.tensor.").or_else(|| host.strip_prefix("spectra.std.ml."))?;
+    let name = host
+        .strip_prefix("spectra.std.tensor.")
+        .or_else(|| host.strip_prefix("spectra.std.ml."))?;
     match name {
-        "add" | "sub" | "mul" | "div" | "neg" | "relu" | "sum_t" | "mean_t"
-        | "dot_t" | "matmul" | "transpose" | "reshape" | "linear" | "mse_loss" => Some(name),
+        "add" | "sub" | "mul" | "div" | "neg" | "relu" | "sum_t" | "mean_t" | "dot_t"
+        | "matmul" | "transpose" | "reshape" | "linear" | "mse_loss" => Some(name),
         "exp_f" => Some("exp"),
         "log_f" => Some("log"),
         "sigmoid_f" => Some("sigmoid"),
@@ -211,24 +229,34 @@ fn autodiff_operation(host: &str) -> Option<&str> {
 }
 
 fn tensor_arguments(host: &str, args: &[Value]) -> Vec<Value> {
-    let name = host.strip_prefix("spectra.std.tensor.").or_else(|| host.strip_prefix("spectra.std.ml.")).unwrap_or("");
+    let name = host
+        .strip_prefix("spectra.std.tensor.")
+        .or_else(|| host.strip_prefix("spectra.std.ml."))
+        .unwrap_or("");
     let positions: &[usize] = match name {
-        "reshape" | "transpose" | "sum_t" | "neg" | "exp_f" | "log_f" | "relu" | "sigmoid_f" => &[0],
+        "reshape" | "transpose" | "sum_t" | "neg" | "exp_f" | "log_f" | "relu" | "sigmoid_f" => {
+            &[0]
+        }
         "add" | "sub" | "mul" | "div" | "matmul" | "dot_t" | "mse_loss" => &[0, 1],
         "linear" => &[0, 1, 2],
         _ => &[],
     };
-    positions.iter().filter_map(|index| args.get(*index).copied()).collect()
+    positions
+        .iter()
+        .filter_map(|index| args.get(*index).copied())
+        .collect()
 }
 
 fn is_autodiff_leaf_or_auxiliary(host: Option<&str>) -> bool {
     match host {
         None => true,
-        Some(value) => value.ends_with(".requires_grad")
-            || value.ends_with(".full_f")
-            || value.ends_with(".full2_f")
-            || value.ends_with(".literal_f")
-            || value.ends_with(".literal2_f"),
+        Some(value) => {
+            value.ends_with(".requires_grad")
+                || value.ends_with(".full_f")
+                || value.ends_with(".full2_f")
+                || value.ends_with(".literal_f")
+                || value.ends_with(".literal2_f")
+        }
     }
 }
 
@@ -247,21 +275,41 @@ impl AutodiffGraph {
     }
 
     pub fn has_gradient_nodes(&self) -> bool {
-        self.functions.iter().any(|function| !function.backward.is_empty())
+        self.functions
+            .iter()
+            .any(|function| !function.backward.is_empty())
     }
 
     pub fn stable_dump(&self) -> String {
         let mut out = format!("autodiff_ir schema={}\n", self.schema);
         for function in &self.functions {
-            out.push_str(&format!("fn {} losses={:?}\n", function.name, function.loss_nodes));
+            out.push_str(&format!(
+                "fn {} losses={:?}\n",
+                function.name, function.loss_nodes
+            ));
             for node in &function.forward {
-                out.push_str(&format!("  forward %{} {} rule={} inputs={:?}\n", node.id, node_name(&node.kind), node.rule, node.inputs));
+                out.push_str(&format!(
+                    "  forward %{} {} rule={} inputs={:?}\n",
+                    node.id,
+                    node_name(&node.kind),
+                    node.rule,
+                    node.inputs
+                ));
             }
             for node in &function.backward {
-                out.push_str(&format!("  backward %{} {} rule={} inputs={:?}\n", node.id, node_name(&node.kind), node.rule, node.inputs));
+                out.push_str(&format!(
+                    "  backward %{} {} rule={} inputs={:?}\n",
+                    node.id,
+                    node_name(&node.kind),
+                    node.rule,
+                    node.inputs
+                ));
             }
             for diagnostic in &function.diagnostics {
-                out.push_str(&format!("  diagnostic {} node={} op={} {}\n", diagnostic.code, diagnostic.node, diagnostic.operation, diagnostic.message));
+                out.push_str(&format!(
+                    "  diagnostic {} node={} op={} {}\n",
+                    diagnostic.code, diagnostic.node, diagnostic.operation, diagnostic.message
+                ));
             }
         }
         out
@@ -301,19 +349,22 @@ impl AutodiffFunction {
                 collect_ancestors(*loss, function, &mut reachable);
             }
             for loss in &loss_nodes {
-            backward.push(AutodiffNode {
-                id: 0,
-                kind: AutodiffNodeKind::BackwardSeed { loss_node: *loss },
-                inputs: vec![*loss],
-                output: function.nodes[*loss].output.clone(),
-                source: function.nodes[*loss].source.clone(),
-                rule: "seed=1".to_string(),
-            });
+                backward.push(AutodiffNode {
+                    id: 0,
+                    kind: AutodiffNodeKind::BackwardSeed { loss_node: *loss },
+                    inputs: vec![*loss],
+                    output: function.nodes[*loss].output.clone(),
+                    source: function.nodes[*loss].source.clone(),
+                    rule: "seed=1".to_string(),
+                });
             }
 
             for node in function.nodes.iter().rev() {
                 if !reachable.contains(&node.id)
-                    || matches!(node.op, TensorGraphOp::Parameter | TensorGraphOp::Create { .. })
+                    || matches!(
+                        node.op,
+                        TensorGraphOp::Parameter | TensorGraphOp::Create { .. }
+                    )
                 {
                     continue;
                 }
@@ -325,7 +376,9 @@ impl AutodiffFunction {
                         let save_id = backward.len();
                         backward.push(AutodiffNode {
                             id: save_id,
-                            kind: AutodiffNodeKind::SaveForBackward { forward_node: node.id },
+                            kind: AutodiffNodeKind::SaveForBackward {
+                                forward_node: node.id,
+                            },
                             inputs: vec![node.id],
                             output: node.output.clone(),
                             source: node.source.clone(),
@@ -359,7 +412,8 @@ impl AutodiffFunction {
                         code: "E3004",
                         node: node.id,
                         operation: node.op.stable_name(),
-                        message: "operation has no registered compiler-native gradient rule".to_string(),
+                        message: "operation has no registered compiler-native gradient rule"
+                            .to_string(),
                     }),
                 }
             }
@@ -377,8 +431,10 @@ impl AutodiffFunction {
 }
 
 fn is_loss_candidate(op: &TensorGraphOp) -> bool {
-    matches!(op, TensorGraphOp::Reduction { .. } | TensorGraphOp::Loss { .. })
-        || matches!(op, TensorGraphOp::Elementwise { name } if name == "dot_t")
+    matches!(
+        op,
+        TensorGraphOp::Reduction { .. } | TensorGraphOp::Loss { .. }
+    ) || matches!(op, TensorGraphOp::Elementwise { name } if name == "dot_t")
 }
 
 fn collect_ancestors(
@@ -419,7 +475,9 @@ fn gradient_rule(op: &TensorGraphOp) -> Option<String> {
         TensorGraphOp::Matmul => Some("(g@transpose(b),transpose(a)@g)".to_string()),
         TensorGraphOp::Transpose => Some("transpose(g)".to_string()),
         TensorGraphOp::Reshape => Some("reshape(g,input_shape)".to_string()),
-        TensorGraphOp::DeviceTransfer { .. } => Some("identity_with_device_transfer(g)".to_string()),
+        TensorGraphOp::DeviceTransfer { .. } => {
+            Some("identity_with_device_transfer(g)".to_string())
+        }
         TensorGraphOp::Linear => Some("linear_backward(input,weight,bias,g)".to_string()),
         TensorGraphOp::Loss { name } if name == "mse_loss" => {
             Some("2*(prediction-target)/count".to_string())
@@ -442,34 +500,79 @@ fn node_name(kind: &AutodiffNodeKind) -> String {
         AutodiffNodeKind::SaveForBackward { forward_node } => format!("save(%{forward_node})"),
         AutodiffNodeKind::BackwardSeed { loss_node } => format!("seed(%{loss_node})"),
         AutodiffNodeKind::Gradient { target_node, op } => format!("grad(%{target_node},{op})"),
-        AutodiffNodeKind::AccumulateGradient { target_node } => format!("accumulate(%{target_node})"),
+        AutodiffNodeKind::AccumulateGradient { target_node } => {
+            format!("accumulate(%{target_node})")
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tensor_graph::{TensorDType, TensorDevice, TensorGraphNode, TensorGraphOp, TensorGraphSource, TensorShape};
+    use crate::tensor_graph::{
+        TensorDType, TensorDevice, TensorGraphNode, TensorGraphOp, TensorGraphSource, TensorShape,
+    };
 
     #[test]
     fn builds_reverse_rule_and_accumulation_for_mul_sum() {
-        let source = TensorGraphSource { block: 0, instruction: 0, host: None };
+        let source = TensorGraphSource {
+            block: 0,
+            instruction: 0,
+            host: None,
+        };
         let graph = TensorGraph {
             module: "test".into(),
             functions: vec![TensorGraphFunction {
                 name: "loss".into(),
                 nodes: vec![
-                    TensorGraphNode { id: 0, value: Some(0), op: TensorGraphOp::Parameter, inputs: vec![], output: TensorMetadata::unknown(), source: source.clone() },
-                    TensorGraphNode { id: 1, value: Some(1), op: TensorGraphOp::Elementwise { name: "mul".into() }, inputs: vec![0, 0], output: TensorMetadata::new(TensorDType::Float, TensorShape::Ranked(vec![Some(3)]), TensorDevice::Cpu), source: source.clone() },
-                    TensorGraphNode { id: 2, value: Some(2), op: TensorGraphOp::Reduction { name: "sum_t".into() }, inputs: vec![1], output: TensorMetadata::new(TensorDType::Float, TensorShape::Ranked(vec![]), TensorDevice::Cpu), source },
+                    TensorGraphNode {
+                        id: 0,
+                        value: Some(0),
+                        op: TensorGraphOp::Parameter,
+                        inputs: vec![],
+                        output: TensorMetadata::unknown(),
+                        source: source.clone(),
+                    },
+                    TensorGraphNode {
+                        id: 1,
+                        value: Some(1),
+                        op: TensorGraphOp::Elementwise { name: "mul".into() },
+                        inputs: vec![0, 0],
+                        output: TensorMetadata::new(
+                            TensorDType::Float,
+                            TensorShape::Ranked(vec![Some(3)]),
+                            TensorDevice::Cpu,
+                        ),
+                        source: source.clone(),
+                    },
+                    TensorGraphNode {
+                        id: 2,
+                        value: Some(2),
+                        op: TensorGraphOp::Reduction {
+                            name: "sum_t".into(),
+                        },
+                        inputs: vec![1],
+                        output: TensorMetadata::new(
+                            TensorDType::Float,
+                            TensorShape::Ranked(vec![]),
+                            TensorDevice::Cpu,
+                        ),
+                        source,
+                    },
                 ],
             }],
         };
         let autodiff = AutodiffGraph::from_tensor_graph(&graph);
         let function = &autodiff.functions[0];
         assert_eq!(function.loss_node, Some(2));
-        assert!(function.backward.iter().any(|node| matches!(node.kind, AutodiffNodeKind::Gradient { target_node: 1, .. })));
-        assert!(function.backward.iter().any(|node| matches!(node.kind, AutodiffNodeKind::AccumulateGradient { .. })));
+        assert!(function
+            .backward
+            .iter()
+            .any(|node| matches!(node.kind, AutodiffNodeKind::Gradient { target_node: 1, .. })));
+        assert!(function
+            .backward
+            .iter()
+            .any(|node| matches!(node.kind, AutodiffNodeKind::AccumulateGradient { .. })));
         assert!(function.diagnostics.is_empty());
     }
 
@@ -479,25 +582,43 @@ mod tests {
             module: "test".into(),
             functions: vec![TensorGraphFunction {
                 name: "loss".into(),
-                nodes: vec![TensorGraphNode {
-                    id: 0,
-                    value: Some(0),
-                    op: TensorGraphOp::Elementwise { name: "tanh_f".into() },
-                    inputs: vec![],
-                    output: TensorMetadata::unknown(),
-                    source: TensorGraphSource { block: 0, instruction: 0, host: None },
-                }, TensorGraphNode {
-                    id: 1,
-                    value: Some(1),
-                    op: TensorGraphOp::Loss { name: "mse_loss".into() },
-                    inputs: vec![0],
-                    output: TensorMetadata::unknown(),
-                    source: TensorGraphSource { block: 0, instruction: 1, host: None },
-                }],
+                nodes: vec![
+                    TensorGraphNode {
+                        id: 0,
+                        value: Some(0),
+                        op: TensorGraphOp::Elementwise {
+                            name: "tanh_f".into(),
+                        },
+                        inputs: vec![],
+                        output: TensorMetadata::unknown(),
+                        source: TensorGraphSource {
+                            block: 0,
+                            instruction: 0,
+                            host: None,
+                        },
+                    },
+                    TensorGraphNode {
+                        id: 1,
+                        value: Some(1),
+                        op: TensorGraphOp::Loss {
+                            name: "mse_loss".into(),
+                        },
+                        inputs: vec![0],
+                        output: TensorMetadata::unknown(),
+                        source: TensorGraphSource {
+                            block: 0,
+                            instruction: 1,
+                            host: None,
+                        },
+                    },
+                ],
             }],
         };
         let autodiff = AutodiffGraph::from_tensor_graph(&graph);
-        assert!(autodiff.functions[0].backward.iter().any(|node| matches!(node.kind, AutodiffNodeKind::BackwardSeed { .. })));
+        assert!(autodiff.functions[0]
+            .backward
+            .iter()
+            .any(|node| matches!(node.kind, AutodiffNodeKind::BackwardSeed { .. })));
         assert_eq!(autodiff.functions[0].diagnostics[0].code, "E3004");
     }
 }

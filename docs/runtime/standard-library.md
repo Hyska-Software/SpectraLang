@@ -5,10 +5,10 @@ functions. The functions are grouped by namespace and can be installed by callin
 `spectra_runtime::register_standard_library()` (or invoking `spectra_rt_std_register` once it is
 gated through the CLI).
 
-The maturity contract is split by surface: scalar core helpers are stable,
-while typed collection accessors, `Option`/`Result` transformations, and
-exact-width numeric ABI behavior remain beta until their complete cross-target
-evidence is available. The public collection names that can miss (`list_get`,
+The maturity contract is split by surface: scalar core helpers and the
+certified exact-width numeric ABI are stable, while typed collection accessors
+and `Option`/`Result` transformations remain beta until their complete
+cross-target evidence is available. The public collection names that can miss (`list_get`,
 `list_pop`, `list_pop_front`, `list_remove_at`, `map_get`, and `map_remove`)
 return tagged `Option<T>` values. Legacy sentinel-returning calls are retained
 only under the explicit `std.compat.collections` namespace.
@@ -30,8 +30,8 @@ R-2901 adds explicit exact-width scalar representations. Host-call slots remain
 canonical 64-bit values, while the compiler/backend materialize `i8`/`i16`/
 `i32`/`i64` and `f32`/`f64` values with their declared width. Signed values are
 sign-extended and unsigned values must be zero-extended at the ABI boundary.
-The feature remains in progress until all checked narrowing and C interop
-validation gates pass.
+The checked narrowing, AOT/interop, and C ABI validation gates for this scalar
+matrix pass in R-2901. Scalar forms outside this matrix remain deferred.
 
 ## math namespace
 

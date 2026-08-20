@@ -3,6 +3,8 @@ module std.api.http
 module std.api.server
 module std.api.client
 module std.api.json
+module std.api.jwt
+module std.api.oauth
 module std.api.tls
 module std.api.routing
 module std.api.query
@@ -11,7 +13,12 @@ module std.api.multipart
 module std.api.handler
 module std.api.cors
 module std.api.middleware
+module std.api.validation
 module std.api.errors
+module std.api.security
+module std.api.session
+module std.api.websocket
+module std.api.sse
 type std.api.http.Request: record Request
 type std.api.http.Response: record Response
 type std.api.http.Method: record Method
@@ -23,6 +30,8 @@ type std.api.http.Body: record Body
 type std.api.server.Server: record Server
 type std.api.client.Client: record Client
 type std.api.json.JsonValue: record JsonValue
+type std.api.oauth.OAuthClient: record OAuthClient
+type std.api.oauth.OAuthToken: record OAuthToken
 type std.api.tls.TlsConfig: record TlsConfig
 type std.api.routing.Route: record Route
 type std.api.routing.Router: record Router
@@ -42,8 +51,21 @@ type std.api.middleware.MiddlewareChain: record MiddlewareChain
 type std.api.middleware.MiddlewareHandle: record MiddlewareHandle
 type std.api.middleware.AsyncMiddlewareHandle: record AsyncMiddlewareHandle
 type std.api.middleware.MiddlewareTrace: record MiddlewareTrace
+type std.api.validation.ValidationSchema: record ValidationSchema
+type std.api.validation.ValidationResult: record ValidationResult
 type std.api.cors.CorsPolicy: record CorsPolicy
 type std.api.errors.ApiError: record ApiError
+type std.api.security.CsrfPolicy: record CsrfPolicy
+type std.api.security.SsrfPolicy: record SsrfPolicy
+type std.api.session.SessionStore: record SessionStore
+type std.api.session.Session: record Session
+type std.api.websocket.WebSocketServer: record WebSocketServer
+type std.api.websocket.WebSocketClient: record WebSocketClient
+type std.api.websocket.WebSocket: record WebSocket
+type std.api.websocket.WebSocketMessage: record WebSocketMessage
+type std.api.sse.SseServer: record SseServer
+type std.api.sse.SseConnection: record SseConnection
+type std.api.sse.SseEvent: record SseEvent
 func std.api.http.method_name: func(int) returns string
 func std.api.http.method_allows_body: func(int) returns bool
 func std.api.http.method_is_safe: func(int) returns bool
@@ -85,8 +107,10 @@ func std.api.http.request: func(int, string) returns Request
 func std.api.http.request_new: func(int) returns Request
 func std.api.http.request_method: func(Request) returns int
 func std.api.http.request_path: func(Request) returns string
+func std.api.http.request_body: func(Request) returns string
 func std.api.http.request_header: func(Request, string) returns string
 func std.api.http.request_with_header: func(Request, string, string) returns Request
+func std.api.http.request_with_body: func(Request, string) returns Request
 func std.api.http.request_cookie: func(Request, string) returns string
 func std.api.http.response: func(int) returns Response
 func std.api.http.response_new: func(int) returns Response
@@ -99,6 +123,20 @@ func std.api.http.header_value: func(Header) returns string
 func std.api.http.cookie: func(string, string) returns Cookie
 func std.api.http.cookie_name: func(Cookie) returns string
 func std.api.http.cookie_value: func(Cookie) returns string
+func std.api.http.cookie_with_options: func(string, string, string, string, int, bool, bool, int) returns Cookie
+func std.api.http.cookie_path: func(Cookie) returns string
+func std.api.http.cookie_domain: func(Cookie) returns string
+func std.api.http.cookie_max_age: func(Cookie) returns int
+func std.api.http.cookie_secure: func(Cookie) returns bool
+func std.api.http.cookie_http_only: func(Cookie) returns bool
+func std.api.http.cookie_same_site: func(Cookie) returns int
+func std.api.http.cookie_header: func(Cookie) returns string
+func std.api.http.response_with_cookie: func(Response, Cookie) returns Response
+func std.api.http.cookie_sign: func(Cookie, string) returns Cookie
+func std.api.http.cookie_verify: func(Cookie, string) returns bool
+func std.api.http.cookie_is_expired: func(Cookie) returns bool
+func std.api.http.cookie_error_code: func() returns int
+func std.api.http.cookie_error_message: func() returns string
 func std.api.http.status: func(int) returns Status
 func std.api.server.new: func() returns Server
 func std.api.server.listen: func(Server, int) returns bool
@@ -108,13 +146,30 @@ func std.api.server.shutdown: func(Server) returns bool
 func std.api.server.local_port: func(Server) returns int
 func std.api.server.signal: func(Server, int) returns bool
 func std.api.server.stats: func(Server, int) returns int
+func std.api.server.set_max_body_bytes: func(Server, int) returns bool
+func std.api.server.set_read_timeout: func(Server, int) returns bool
+func std.api.server.set_idle_timeout: func(Server, int) returns bool
 func std.api.client.new: func() returns Client
 func std.api.client.request: func(Client, Request) returns task<Response>
 func std.api.client.timeout_ms: func(Client) returns int
+func std.api.client.set_ssrf_policy: func(Client, SsrfPolicy) returns bool
 func std.api.json.validate: func(string) returns bool
 func std.api.json.kind: func(string) returns int
 func std.api.json.encode: func(unknown) returns string
 func std.api.json.decode: func(string) returns JsonValue
+func std.api.jwt.sign: func(string, string, string) returns string
+func std.api.jwt.verify: func(string, string, string, string, string, int) returns bool
+func std.api.oauth.client_new: func(string, string, string, string, string, string) returns OAuthClient
+func std.api.oauth.client_set_revocation_url: func(OAuthClient, string) returns bool
+func std.api.oauth.authorization_url: func(OAuthClient, string) returns string
+func std.api.oauth.exchange_code: func(OAuthClient, string, string) returns OAuthToken
+func std.api.oauth.refresh: func(OAuthClient, OAuthToken) returns OAuthToken
+func std.api.oauth.revoke: func(OAuthClient, OAuthToken) returns bool
+func std.api.oauth.token_access_token: func(OAuthToken) returns string
+func std.api.oauth.token_refresh_token: func(OAuthToken) returns string
+func std.api.oauth.token_type: func(OAuthToken) returns string
+func std.api.oauth.token_expires_at_ms: func(OAuthToken) returns int
+func std.api.oauth.token_scope: func(OAuthToken) returns string
 func std.api.tls.config_new: func(int) returns TlsConfig
 func std.api.tls.config_mode: func(TlsConfig) returns int
 func std.api.tls.server_config: func(string, string) returns TlsConfig
@@ -209,6 +264,8 @@ func std.api.handler.error_message: func(HandlerError) returns string
 func std.api.handler.last_error_message: func() returns string
 func std.api.handler.register_sync: func(int, Response) returns HandlerHandle
 func std.api.handler.register_async: func(int, Response) returns AsyncHandlerHandle
+func std.api.handler.register_sync_callback: func(int, fn(Request) returns Response) returns HandlerHandle
+func std.api.handler.register_async_callback: func(int, fn(Request) returns Task<Response>) returns AsyncHandlerHandle
 func std.api.handler.dispatch_sync: func(HandlerHandle, Request) returns Response
 func std.api.handler.dispatch_async: func(AsyncHandlerHandle, Request) returns Response
 func std.api.cors.policy: func() returns CorsPolicy
@@ -231,6 +288,19 @@ func std.api.middleware.register_sync: func(string, string) returns MiddlewareHa
 func std.api.middleware.register_sync_short_circuit: func(string, string, Response) returns MiddlewareHandle
 func std.api.middleware.register_async: func(string, string) returns AsyncMiddlewareHandle
 func std.api.middleware.register_async_short_circuit: func(string, string, Response) returns AsyncMiddlewareHandle
+func std.api.middleware.register_logging: func(string) returns MiddlewareHandle
+func std.api.middleware.logging_len: func(MiddlewareHandle) returns int
+func std.api.middleware.logging_line: func(MiddlewareHandle, int) returns string
+func std.api.middleware.logging_request_id: func(MiddlewareHandle, int) returns string
+func std.api.middleware.register_rate_limit: func(string, int, int, string, bool) returns MiddlewareHandle
+func std.api.middleware.rate_limit_update: func(MiddlewareHandle, int, int) returns bool
+func std.api.middleware.register_api_key: func(string) returns MiddlewareHandle
+func std.api.middleware.api_key_add: func(MiddlewareHandle, string, int) returns bool
+func std.api.middleware.api_key_revoke: func(MiddlewareHandle, string) returns bool
+func std.api.middleware.register_security_headers: func() returns MiddlewareHandle
+func std.api.middleware.register_compression: func(int) returns MiddlewareHandle
+func std.api.middleware.security_headers_configure: func(MiddlewareHandle, string, string, bool, bool, bool) returns bool
+func std.api.middleware.security_headers_route: func(MiddlewareHandle, string, string, string) returns bool
 func std.api.middleware.use_sync: func(MiddlewareChain, MiddlewareHandle) returns MiddlewareChain
 func std.api.middleware.use_async: func(MiddlewareChain, AsyncMiddlewareHandle) returns MiddlewareChain
 func std.api.middleware.execute_sync: func(MiddlewareChain, Request, Response) returns Response
@@ -239,5 +309,92 @@ func std.api.middleware.last_trace: func() returns MiddlewareTrace
 func std.api.middleware.trace_len: func(MiddlewareTrace) returns int
 func std.api.middleware.trace_event: func(MiddlewareTrace, int) returns string
 func std.api.middleware.trace_short_circuited: func(MiddlewareTrace) returns bool
+func std.api.validation.schema: func() returns ValidationSchema
+func std.api.validation.field: func(ValidationSchema, string, int, bool) returns ValidationSchema
+func std.api.validation.min_length: func(ValidationSchema, string, int) returns ValidationSchema
+func std.api.validation.max_length: func(ValidationSchema, string, int) returns ValidationSchema
+func std.api.validation.range: func(ValidationSchema, string, int, int) returns ValidationSchema
+func std.api.validation.regex: func(ValidationSchema, string, string) returns ValidationSchema
+func std.api.validation.validate_json: func(ValidationSchema, string) returns ValidationResult
+func std.api.validation.validate_form: func(ValidationSchema, Form) returns ValidationResult
+func std.api.validation.result_ok: func(ValidationResult) returns bool
+func std.api.validation.result_count: func(ValidationResult) returns int
+func std.api.validation.result_field: func(ValidationResult, int) returns string
+func std.api.validation.result_code: func(ValidationResult, int) returns string
+func std.api.validation.result_message: func(ValidationResult, int) returns string
+func std.api.validation.result_problem_json: func(ValidationResult) returns string
+func std.api.validation.result_response: func(ValidationResult) returns Response
+func std.api.validation.error_code: func() returns int
+func std.api.validation.error_message: func() returns string
+func std.api.errors.new: func(int, string, string) returns ApiError
+func std.api.errors.internal_error: func(string, string) returns ApiError
+func std.api.errors.status: func(ApiError) returns int
+func std.api.errors.code: func(ApiError) returns string
+func std.api.errors.message: func(ApiError) returns string
+func std.api.errors.response: func(ApiError) returns Response
+func std.api.errors.exception_middleware: func(int, string, string) returns MiddlewareHandle
 func std.api.errors.last_code: func() returns int
 func std.api.errors.last_message: func() returns string
+func std.api.security.csrf_policy: func() returns CsrfPolicy
+func std.api.security.csrf_allow_origin: func(CsrfPolicy, string) returns CsrfPolicy
+func std.api.security.csrf_origin_count: func(CsrfPolicy) returns int
+func std.api.security.csrf_middleware: func(CsrfPolicy) returns MiddlewareHandle
+func std.api.security.ssrf_policy: func() returns SsrfPolicy
+func std.api.security.ssrf_allow_private_networks: func(SsrfPolicy, bool) returns SsrfPolicy
+func std.api.security.ssrf_allows: func(SsrfPolicy, string) returns bool
+func std.api.session.memory_store: func() returns SessionStore
+func std.api.session.redis_store: func(RedisConnection, string) returns SessionStore
+func std.api.session.store_kind: func(SessionStore) returns string
+func std.api.session.create: func(SessionStore, string, int, int, bool) returns Session
+func std.api.session.lookup: func(SessionStore, string) returns Session
+func std.api.session.id: func(Session) returns string
+func std.api.session.value: func(Session) returns string
+func std.api.session.created_at_ms: func(Session) returns int
+func std.api.session.expires_at_ms: func(Session) returns int
+func std.api.session.is_valid: func(Session) returns bool
+func std.api.session.revoke: func(SessionStore, string) returns bool
+func std.api.session.error_code: func() returns int
+func std.api.session.error_message: func() returns string
+func std.api.websocket.client_new: func() returns WebSocketClient
+func std.api.websocket.client_set_per_message_deflate: func(WebSocketClient, bool) returns bool
+func std.api.websocket.client_set_max_message_bytes: func(WebSocketClient, int) returns bool
+func std.api.websocket.client_set_reconnect: func(WebSocketClient, int, int) returns bool
+func std.api.websocket.client_allow_private_networks: func(WebSocketClient, bool) returns bool
+func std.api.websocket.client_connect: func(WebSocketClient, string) returns task<WebSocket>
+func std.api.websocket.server_new: func() returns WebSocketServer
+func std.api.websocket.server_listen: func(WebSocketServer, int) returns bool
+func std.api.websocket.server_local_port: func(WebSocketServer) returns int
+func std.api.websocket.server_set_per_message_deflate: func(WebSocketServer, bool) returns bool
+func std.api.websocket.server_set_max_message_bytes: func(WebSocketServer, int) returns bool
+func std.api.websocket.server_accept: func(WebSocketServer) returns task<WebSocket>
+func std.api.websocket.connection_peer_port: func(WebSocket) returns int
+func std.api.websocket.connection_receive: func(WebSocket) returns task<WebSocketMessage>
+func std.api.websocket.connection_send_text: func(WebSocket, string) returns task<int>
+func std.api.websocket.connection_send_binary_base64: func(WebSocket, string) returns task<int>
+func std.api.websocket.connection_ping: func(WebSocket, string) returns task<int>
+func std.api.websocket.connection_close: func(WebSocket, int, string) returns task<int>
+func std.api.websocket.message_kind: func(WebSocketMessage) returns int
+func std.api.websocket.message_len: func(WebSocketMessage) returns int
+func std.api.websocket.message_text: func(WebSocketMessage) returns string
+func std.api.websocket.message_base64: func(WebSocketMessage) returns string
+func std.api.websocket.message_release: func(WebSocketMessage) returns bool
+func std.api.sse.server_new: func() returns SseServer
+func std.api.sse.server_response: func(SseServer) returns Response
+func std.api.sse.server_listen: func(SseServer, int) returns bool
+func std.api.sse.server_local_port: func(SseServer) returns int
+func std.api.sse.server_set_heartbeat_interval: func(SseServer, int) returns bool
+func std.api.sse.server_set_replay_capacity: func(SseServer, int) returns bool
+func std.api.sse.server_set_max_event_bytes: func(SseServer, int) returns bool
+func std.api.sse.server_accept: func(SseServer) returns task<SseConnection>
+func std.api.sse.server_publish: func(SseServer, SseEvent) returns task<int>
+func std.api.sse.event_new: func(string, string, string, int) returns SseEvent
+func std.api.sse.event_id: func(SseEvent) returns string
+func std.api.sse.event_type: func(SseEvent) returns string
+func std.api.sse.event_data: func(SseEvent) returns string
+func std.api.sse.event_retry_ms: func(SseEvent) returns int
+func std.api.sse.event_release: func(SseEvent) returns bool
+func std.api.sse.connection_peer_port: func(SseConnection) returns int
+func std.api.sse.connection_last_event_id: func(SseConnection) returns string
+func std.api.sse.connection_send: func(SseConnection, SseEvent) returns task<int>
+func std.api.sse.connection_heartbeat: func(SseConnection) returns task<int>
+func std.api.sse.connection_close: func(SseConnection) returns task<int>
