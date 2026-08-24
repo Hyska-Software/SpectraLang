@@ -208,6 +208,16 @@ fn routed_handler(router: routing::Router) -> DispatchHandler {
                 return HandlerResult::Ready(ServerResponse::text(400, "invalid route path"))
             }
         };
+        if let Some(upgrade) = crate::websocket::routed_upgrade_for_route(route_match.route_id) {
+            return if crate::websocket::is_upgrade_request(&request) {
+                HandlerResult::WebSocket(upgrade)
+            } else {
+                HandlerResult::Ready(ServerResponse::text(
+                    426,
+                    "WebSocket upgrade required",
+                ))
+            };
+        }
         let Some(request_handle) = request_handle_from_parsed(&request) else {
             return HandlerResult::Ready(ServerResponse::text(500, "invalid request"));
         };

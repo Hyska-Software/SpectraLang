@@ -186,6 +186,9 @@ fn lookup_std_api_host_function(module: &str, function: &str) -> Option<HostFunc
             Some(host_task_int("spectra.api.websocket.client_connect"))
         }
         ("websocket", "server_new") => Some(host_int("spectra.api.websocket.server_new")),
+        ("websocket", "server_route") => {
+            Some(host_bool("spectra.api.websocket.server_route"))
+        }
         ("websocket", "server_listen") => {
             Some(host_bool("spectra.api.websocket.server_listen"))
         }

@@ -1817,9 +1817,9 @@ baselines.
   `std.api.*`, `spectra.api.*` host calls, `packages/spectra-api`,
   HTTP/1.1-first delivery, `rustls`, and Phase 21 async dependencies)
 - `R-2202` `spectra-api` Rust crate and host call registration (complete;
-  `packages/spectra-api` links against `spectra-runtime`, registers 414 public
+  `packages/spectra-api` links against `spectra-runtime`, registers 415 public
   `spectra.api.*` host calls through the runtime host-call registry, satisfies
-  the runtime's 346-name required namespace, exposes
+  the runtime's 347-name required namespace, exposes
   `spectra_api_register_host_calls`, and is validated by
   `scripts/validate_r2202_spectra_api_hostcalls.py`)
 - `R-2203` `std.api.*` semantic and tooling surface (complete; virtual
@@ -2014,20 +2014,22 @@ baselines.
 
 ### Phase 24 — Advanced API Features
 
-- `R-2401` WebSocket server (in progress; the dedicated `std.api.websocket`
-  listener now implements the RFC 6455 handshake, strict frame parsing,
+- `R-2401` WebSocket server (complete; the dedicated `std.api.websocket`
+  listener implements the RFC 6455 handshake, strict frame parsing,
   fragmentation, ping/pong, close validation, message limits, and negotiated
-  `permessage-deflate`, with the typed surface and 17 host calls validated by
-  `tests/validation/343_api_websocket.spectra` and
-  `scripts/validate_r2401_websocket.py`; HTTP-router upgrade integration and
-  the 10k concurrent-connections soak remain before completion)
-- `R-2402` WebSocket client (in progress; `WebSocketClient` now implements
+  `permessage-deflate`; 18 host calls now include `server_route` for GET-route
+  upgrades through the real `std.api.server` loop, with the typed fixture,
+  routed integration test, and 10k concurrent-connections soak validated by
+  `scripts/validate_r2401_websocket.py`)
+- `R-2402` WebSocket client (complete; `WebSocketClient` now implements
   masked `ws://`/`wss://` handshakes, `Sec-WebSocket-Accept` validation, the
   project `rustls`/WebPKI trust path, SSRF policy, per-message deflate, bounded
   reconnect/backoff, and typed async host calls, validated by native
   round-trip/reconnect/TLS tests and
-  `tests/validation/344_api_websocket_client.spectra`; external echo-server
-  certification remains)
+  `tests/validation/344_api_websocket_client.spectra`; external text/binary
+  echo interoperability also passes against
+  `wss://testserver.host/ws/no-subprotocol/echo` through the dedicated
+  validator)
 - `R-2403` Server-Sent Events (SSE) (complete; dedicated
   `std.api.sse` transport now performs HTTP/1.1 event-stream handshakes,
   bounded multiline event serialization, automatic heartbeats, `retry` hints,
@@ -2039,8 +2041,15 @@ baselines.
   graceful shutdown; rustls advertises `http/1.1` plus `h2` and the listener
   requires negotiated `h2`; validated by native TLS/multiplexing tests and
   `scripts/validate_r2404_http2.py`)
-- `R-2405` HTTP/2 client
-- `R-2406` HTTP/3 and QUIC
+- `R-2405` HTTP/2 client (complete; native `h2` client provides connection
+  reuse, bounded flow-controlled request/response bodies, secure rustls + `h2`
+  ALPN negotiation, default SSRF blocking, and a server-push callback; local
+  multiplexing/HTTPS evidence and the recorded `https://nghttp2.org` external
+  round-trip passed)
+- `R-2406` HTTP/3 and QUIC (complete as a scope decision; ADR 0014 defers
+  implementation until a maintained compatible QUIC stack, cross-platform
+  HTTP/3 interoperability evidence, migration/cancellation coverage, and a
+  reviewed async API integration are available; re-evaluate 2026-11-30)
 - `R-2407` API versioning (path, header, query)
 - `R-2408` Pagination (cursor, offset, RFC 5988 Link header)
 - `R-2409` Content negotiation (JSON, XML, MessagePack, CBOR)

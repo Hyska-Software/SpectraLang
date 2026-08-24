@@ -18,6 +18,10 @@ use std::fmt;
 use std::io::{Read, Write};
 use std::collections::HashSet;
 use std::net::{Shutdown, SocketAddr, TcpStream};
+#[cfg(unix)]
+use std::os::unix::io::{FromRawFd, IntoRawFd};
+#[cfg(windows)]
+use std::os::windows::io::{FromRawSocket, IntoRawSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
@@ -47,6 +51,7 @@ pub(crate) enum HandlerResult {
     Ready(ServerResponse),
     Pending(PendingResponse),
     Sse(Arc<crate::sse::RoutedSseResponse>),
+    WebSocket(Arc<crate::websocket::RoutedUpgradeState>),
 }
 
 pub(crate) type DispatchHandler =
@@ -285,7 +290,7 @@ impl Drop for HttpServer {
 
 struct Connection {
     token: Token,
-    stream: MioTcpStream,
+    stream: Option<MioTcpStream>,
     parser: Http1Parser,
     write_buf: Vec<u8>,
     write_pos: usize,
@@ -315,7 +320,7 @@ impl Connection {
         stream.set_nodelay(true)?;
         Ok(Self {
             token,
-            stream,
+            stream: Some(stream),
             parser: Http1Parser::request_with_config(parser_config),
             write_buf: Vec::new(),
             write_pos: 0,
@@ -427,8 +432,10 @@ fn run_accept_loop(
         if let Some(pending) = connection.pending_response.take() {
             let _ = spectra_runtime::stdlib::cancel_task_handle(pending.task);
         }
-        let _ = poll.registry().deregister(&mut connection.stream);
-        let _ = connection.stream.shutdown(Shutdown::Both);
+        if let Some(mut stream) = connection.stream.take() {
+            let _ = poll.registry().deregister(&mut stream);
+            let _ = stream.shutdown(Shutdown::Both);
+        }
         record_cancel(&stats);
     }
 }
@@ -529,13 +536,21 @@ fn accept_ready_connections(listener: &mut MioTcpListener, context: &mut AcceptC
                 ) {
                     Ok(connection) => {
                         let mut connection = connection;
-                        if context
-                            .poll
-                            .registry()
-                            .register(&mut connection.stream, token, Interest::READABLE)
-                            .is_err()
-                        {
-                            let _ = connection.stream.shutdown(Shutdown::Both);
+                        let registered = connection
+                            .stream
+                            .as_mut()
+                            .map(|stream| {
+                                context
+                                    .poll
+                                    .registry()
+                                    .register(stream, token, Interest::READABLE)
+                                    .is_ok()
+                            })
+                            .unwrap_or(false);
+                        if !registered {
+                            if let Some(stream) = connection.stream.take() {
+                                let _ = stream.shutdown(Shutdown::Both);
+                            }
                             let mut stats =
                                 context.stats.lock().unwrap_or_else(|e| e.into_inner());
                             stats.rejected_connections += 1;
@@ -597,46 +612,73 @@ fn service_connections(
             health,
             metrics,
         );
-        if action == ConnectionAction::Close {
-            let mut connection = connections.swap_remove(idx);
-            if let Some(pending) = connection.pending_response.take() {
-                let _ = spectra_runtime::stdlib::cancel_task_handle(pending.task);
-            }
-            let _ = poll.registry().deregister(&mut connection.stream);
-            let graceful = draining || shutdown.load(Ordering::SeqCst);
-            let _ = connection.stream.shutdown(if graceful {
-                Shutdown::Write
-            } else {
-                Shutdown::Both
-            });
-            record_close(stats, graceful);
-        } else {
-            let connection = &mut connections[idx];
-            let interest = if connection.has_pending_write() {
-                Interest::READABLE.add(Interest::WRITABLE)
-            } else {
-                Interest::READABLE
-            };
-            if poll
-                .registry()
-                .reregister(&mut connection.stream, connection.token, interest)
-                .is_err()
-            {
+        match action {
+            ConnectionAction::Close => {
                 let mut connection = connections.swap_remove(idx);
                 if let Some(pending) = connection.pending_response.take() {
                     let _ = spectra_runtime::stdlib::cancel_task_handle(pending.task);
                 }
-                let _ = poll.registry().deregister(&mut connection.stream);
-                let graceful = draining || shutdown.load(Ordering::SeqCst);
-                let _ = connection.stream.shutdown(if graceful {
-                    Shutdown::Write
-                } else {
-                    Shutdown::Both
-                });
-                record_close(stats, graceful);
-                continue;
+                if let Some(mut stream) = connection.stream.take() {
+                    let _ = poll.registry().deregister(&mut stream);
+                    let graceful = draining || shutdown.load(Ordering::SeqCst);
+                    let _ = stream.shutdown(if graceful {
+                        Shutdown::Write
+                    } else {
+                        Shutdown::Both
+                    });
+                }
+                record_close(stats, draining || shutdown.load(Ordering::SeqCst));
             }
-            idx += 1;
+            ConnectionAction::Upgrade(mut upgrade) => {
+                let mut connection = connections.swap_remove(idx);
+                if let Some(pending) = connection.pending_response.take() {
+                    let _ = spectra_runtime::stdlib::cancel_task_handle(pending.task);
+                }
+                let _ = poll.registry().deregister(&mut upgrade.stream);
+                if let Ok(stream) = mio_stream_into_std(upgrade.stream) {
+                    let _ = crate::websocket::enqueue_routed_upgrade(
+                        stream,
+                        upgrade.request,
+                        upgrade.buffered,
+                        upgrade.state,
+                    );
+                }
+            }
+            ConnectionAction::Keep => {
+                let connection = &mut connections[idx];
+                let interest = if connection.has_pending_write() {
+                    Interest::READABLE.add(Interest::WRITABLE)
+                } else {
+                    Interest::READABLE
+                };
+                let registered = connection
+                    .stream
+                    .as_mut()
+                    .map(|stream| {
+                        poll.registry()
+                            .reregister(stream, connection.token, interest)
+                            .is_ok()
+                    })
+                    .unwrap_or(false);
+                if !registered {
+                    let mut connection = connections.swap_remove(idx);
+                    if let Some(pending) = connection.pending_response.take() {
+                        let _ = spectra_runtime::stdlib::cancel_task_handle(pending.task);
+                    }
+                    if let Some(mut stream) = connection.stream.take() {
+                        let _ = poll.registry().deregister(&mut stream);
+                        let graceful = draining || shutdown.load(Ordering::SeqCst);
+                        let _ = stream.shutdown(if graceful {
+                            Shutdown::Write
+                        } else {
+                            Shutdown::Both
+                        });
+                    }
+                    record_close(stats, draining || shutdown.load(Ordering::SeqCst));
+                    continue;
+                }
+                idx += 1;
+            }
         }
     }
     stats
@@ -646,10 +688,17 @@ fn service_connections(
     metric_gauge(metrics, "spectra_http_active_connections", connections.len() as f64, &[]);
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PendingWebSocketUpgrade {
+    stream: MioTcpStream,
+    request: ParsedRequest,
+    buffered: Vec<u8>,
+    state: Arc<crate::websocket::RoutedUpgradeState>,
+}
+
 enum ConnectionAction {
     Keep,
     Close,
+    Upgrade(PendingWebSocketUpgrade),
 }
 
 struct ResponseCompletion<'a> {
@@ -896,7 +945,12 @@ fn service_connection(
     if connection.sse.is_some() {
         if ready {
             let mut probe = [0_u8; 1];
-            match connection.stream.read(&mut probe) {
+            match connection
+                .stream
+                .as_mut()
+                .expect("SSE connection retains its stream")
+                .read(&mut probe)
+            {
                 Ok(0) => {
                     if let Some(stream) = connection.sse.take() {
                         stream.close();
@@ -978,7 +1032,12 @@ fn service_connection(
 
     let mut read_buf = [0_u8; 8192];
     loop {
-        match connection.stream.read(&mut read_buf) {
+        match connection
+            .stream
+            .as_mut()
+            .expect("HTTP connection retains its stream")
+            .read(&mut read_buf)
+        {
             Ok(0) => return ConnectionAction::Close,
             Ok(n) => {
                 connection.last_activity = Instant::now();
@@ -1069,6 +1128,42 @@ fn service_connection(
                         }
                         break;
                     }
+                    HandlerResult::WebSocket(state) => {
+                        metric_counter(
+                            metrics,
+                            "spectra_http_requests_total",
+                            &[("method", &method), ("status", "101")],
+                            1.0,
+                        );
+                        metric_histogram(
+                            metrics,
+                            "spectra_http_request_duration_seconds",
+                            &[("method", &method)],
+                            request_started.elapsed().as_secs_f64(),
+                        );
+                        if let Some(id) = trace_span {
+                            let _ = tracing::span_set_attribute_int(
+                                id,
+                                "http.response.status_code",
+                                101,
+                            );
+                            let _ = tracing::span_set_status(id, SpanStatus::Ok);
+                            let _ = tracing::span_end(id);
+                        }
+                        stats
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .completed_requests += 1;
+                        let Some(stream) = connection.stream.take() else {
+                            return ConnectionAction::Close;
+                        };
+                        return ConnectionAction::Upgrade(PendingWebSocketUpgrade {
+                            stream,
+                            request: request_for_stream,
+                            buffered: connection.parser.take_buffered(),
+                            state,
+                        });
+                    }
                     HandlerResult::Pending(pending) => {
                         connection.pending_response = Some(PendingConnectionResponse {
                             task: pending.task,
@@ -1115,6 +1210,8 @@ fn write_pending(connection: &mut Connection) -> std::io::Result<()> {
     while connection.write_pos < connection.write_buf.len() {
         match connection
             .stream
+            .as_mut()
+            .expect("HTTP connection retains its stream while writing")
             .write(&connection.write_buf[connection.write_pos..])
         {
             Ok(0) => break,
@@ -1131,6 +1228,19 @@ fn write_pending(connection: &mut Connection) -> std::io::Result<()> {
         connection.write_pos = 0;
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn mio_stream_into_std(stream: MioTcpStream) -> std::io::Result<TcpStream> {
+    // Mio owns the descriptor until this conversion; transferring the raw
+    // descriptor avoids cloning the connection and preserves any bytes that
+    // the HTTP parser has already removed from the socket.
+    Ok(unsafe { TcpStream::from_raw_fd(stream.into_raw_fd()) })
+}
+
+#[cfg(windows)]
+fn mio_stream_into_std(stream: MioTcpStream) -> std::io::Result<TcpStream> {
+    Ok(unsafe { TcpStream::from_raw_socket(stream.into_raw_socket()) })
 }
 
 fn queue_response(

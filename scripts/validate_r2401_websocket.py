@@ -13,10 +13,11 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 414
-RUNTIME_REQUIRED_HOST_CALL_COUNT = 346
+PACKAGE_HOST_CALL_COUNT = 415
+RUNTIME_REQUIRED_HOST_CALL_COUNT = 347
 WEBSOCKET_CALLS = [
     "server_new",
+    "server_route",
     "server_listen",
     "server_local_port",
     "server_set_per_message_deflate",
@@ -74,6 +75,7 @@ def run_command(args: list[str], timeout: int = 120) -> str:
 
 def validate_native_surface() -> None:
     websocket = read("packages/spectra-api/src/websocket.rs")
+    server = read("packages/spectra-api/src/server_tests.rs")
     for term in [
         "FrameRole",
         "WebSocketFrame",
@@ -83,11 +85,14 @@ def validate_native_surface() -> None:
         "fragmented_message",
         "ping_is_answered_with_pong_and_close_is_validated",
         "per_message_deflate_is_negotiated_and_round_trips",
+        "pub extern \"C\" fn server_route",
+        "r2401_routed_websocket_upgrade_round_trips_through_http_server",
+        "r2401_routed_websocket_10k_concurrent_connections_soak",
         "pub extern \"C\" fn server_accept",
         "pub extern \"C\" fn connection_receive",
         "pub extern \"C\" fn message_release",
     ]:
-        require(term in websocket, f"websocket implementation missing {term}")
+        require(term in (websocket + server), f"websocket implementation missing {term}")
 
     handles = read("runtime/src/handles/mod.rs")
     for term in ["ApiWebSocketServer = 81", "ApiWebSocket = 82", "ApiWebSocketMessage = 83"]:
@@ -120,6 +125,7 @@ def validate_language_surface() -> None:
         '"WebSocket"',
         '"WebSocketMessage"',
         '"std.api.websocket"',
+        '"std.api.websocket.server_route"',
         '"std.api.websocket.server_accept"',
     ]:
         require(term in core + services + contract, f"semantic contract missing {term}")
@@ -138,6 +144,8 @@ def validate_docs_and_catalog() -> None:
         "permessage-deflate",
         "fragment",
         "10 mil conexões",
+        "server_route",
+        "r2401_routed_websocket_upgrade_round_trips_through_http_server",
         "343_api_websocket.spectra",
         "validate_r2401_websocket.py",
     ]:
@@ -162,7 +170,7 @@ def validate_planning() -> None:
     items = {item["id"]: item for item in roadmap["items"]}
     item = items.get("R-2401")
     require(item is not None, "R-2401 missing from roadmap")
-    require(item.get("status") == "in_progress", "R-2401 must remain in_progress before soak/integration")
+    require(item.get("status") == "complete", "R-2401 must be complete after router and soak evidence")
     require(item.get("owner") == "web", "R-2401 owner changed")
     acceptance = "\n".join(item.get("acceptance", []))
     for term in ["RFC 6455", "per-message deflate", "10k concurrent connections soak"]:
@@ -172,10 +180,11 @@ def validate_planning() -> None:
     require("## R-2401 WebSocket Server" in backlog, "backlog is missing R-2401")
     block = backlog.split("## R-2401 WebSocket Server", 1)[1].split("## R-2402", 1)[0]
     for term in [
-        "Status: `in_progress`",
+        "Status: `complete`",
         "RFC 6455",
         "343_api_websocket.spectra",
         "validate_r2401_websocket.py",
+        "r2401_routed_websocket_10k_concurrent_connections_soak",
         "10k",
     ]:
         require(term in block, f"backlog R-2401 missing {term}")
@@ -208,8 +217,41 @@ def main() -> None:
             "--test-threads=1",
         ]
     )
+    run_command(
+        [
+            cargo_cmd(),
+            "test",
+            "-q",
+            "-p",
+            "spectra-api",
+            "--lib",
+            "server::tests::r2401_routed_websocket_upgrade_round_trips_through_http_server",
+            "--offline",
+            "--",
+            "--test-threads=1",
+        ]
+    )
+    run_command(
+        [
+            cargo_cmd(),
+            "test",
+            "-q",
+            "-p",
+            "spectra-api",
+            "--lib",
+            "server::tests::r2401_routed_websocket_10k_concurrent_connections_soak",
+            "--offline",
+            "--",
+            "--ignored",
+            "--test-threads=1",
+        ],
+        timeout=300,
+    )
     run_command([cargo_cmd(), "test", "-q", "-p", "spectra-compiler", "--test", "snapshot_tests", "--offline"])
-    run_command([cargo_cmd(), "build", "-q", "-p", "spectra-cli", "--bin", "spectralang", "--offline"])
+    run_command(
+        [cargo_cmd(), "build", "-q", "-p", "spectra-cli", "--bin", "spectralang", "--offline"],
+        timeout=300,
+    )
     run_command([str(binary), "check", "tests/validation/343_api_websocket.spectra"])
     run_command([str(binary), "run", "tests/validation/343_api_websocket.spectra"])
     validate_planning()

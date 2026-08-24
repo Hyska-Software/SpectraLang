@@ -345,14 +345,16 @@ fn post_form(
     url: &str,
     fields: Vec<(&'static str, String)>,
 ) -> Result<crate::client::ClientResponse, OAuthError> {
-    let mut config = ClientConfig::default();
-    config.max_redirects = 0;
+    let config = ClientConfig {
+        max_redirects: 0,
+        ..ClientConfig::default()
+    };
     #[cfg(test)]
-    {
+    let config = {
         // OAuth unit tests use a loopback mock server; production OAuth
         // requests retain the default SSRF-deny policy.
-        config = config.allow_private_networks(true);
-    }
+        config.allow_private_networks(true)
+    };
     let client = HttpClient::new(config);
     let request = ClientRequest::new("POST", url)
         .with_header("Content-Type", "application/x-www-form-urlencoded")

@@ -1256,6 +1256,10 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
         function: websocket::server_new,
     },
     HostCallSpec {
+        name: "spectra.api.websocket.server_route",
+        function: websocket::server_route,
+    },
+    HostCallSpec {
         name: "spectra.api.websocket.server_listen",
         function: websocket::server_listen,
     },

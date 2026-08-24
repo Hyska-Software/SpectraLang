@@ -246,6 +246,7 @@ pub const REQUIRED_HOST_CALLS: &[&str] = &[
     "spectra.api.websocket.client_allow_private_networks",
     "spectra.api.websocket.client_connect",
     "spectra.api.websocket.server_new",
+    "spectra.api.websocket.server_route",
     "spectra.api.websocket.server_listen",
     "spectra.api.websocket.server_local_port",
     "spectra.api.websocket.server_set_per_message_deflate",
@@ -371,6 +372,6 @@ mod tests {
             assert!(name.starts_with(HOST_PREFIX), "{name}");
             assert!(seen.insert(*name), "{name}");
         }
-        assert_eq!(required_host_call_count(), 346);
+        assert_eq!(required_host_call_count(), 347);
     }
 }

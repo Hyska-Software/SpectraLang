@@ -8,6 +8,8 @@
 //! through a cancellable runtime task.
 
 use crate::handles::ApiHandleTable;
+use crate::http::ParsedRequest;
+use crate::routing;
 use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use flate2::read::DeflateDecoder;
 use flate2::write::DeflateEncoder;
@@ -22,10 +24,13 @@ use spectra_runtime::ffi::{
 };
 use spectra_runtime::handles::HandleKind;
 use spectra_runtime::stdlib::CancellationToken;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, SyncSender, TrySendError};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -145,7 +150,7 @@ impl Default for WebSocketConfig {
 #[derive(Debug)]
 enum WebSocketTransport {
     Tcp(TcpStream),
-    Tls(StreamOwned<ClientConnection, TcpStream>),
+    Tls(Box<StreamOwned<ClientConnection, TcpStream>>),
 }
 
 impl Read for WebSocketTransport {
@@ -324,7 +329,7 @@ impl WebSocketClient {
                     format!("failed to create WebSocket TLS connection: {error}"),
                 )
             })?;
-            WebSocketTransport::Tls(StreamOwned::new(connection, stream))
+            WebSocketTransport::Tls(Box::new(StreamOwned::new(connection, stream)))
         } else {
             WebSocketTransport::Tcp(stream)
         };
@@ -724,9 +729,166 @@ impl WebSocketConnection {
     }
 }
 
+/// State shared by a WebSocket route attached to the HTTP server.  The
+/// connection queue is deliberately separate from the dedicated listener:
+/// both surfaces expose the same `WebSocketServer`/`server_accept` contract,
+/// while only the HTTP server owns the listening socket for a routed upgrade.
+pub(crate) struct RoutedUpgradeState {
+    config: Mutex<WebSocketConfig>,
+    pending: Mutex<VecDeque<WebSocketConnection>>,
+    ready: Condvar,
+    closed: AtomicBool,
+}
+
+impl RoutedUpgradeState {
+    fn new(config: WebSocketConfig) -> Self {
+        Self {
+            config: Mutex::new(config),
+            pending: Mutex::new(VecDeque::new()),
+            ready: Condvar::new(),
+            closed: AtomicBool::new(false),
+        }
+    }
+
+    fn config(&self) -> WebSocketConfig {
+        self.config
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    fn update_config(&self, config: WebSocketConfig) {
+        *self
+            .config
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = config;
+    }
+
+    fn enqueue(&self, connection: WebSocketConnection) {
+        if self.closed.load(Ordering::Acquire) {
+            return;
+        }
+        self.pending
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push_back(connection);
+        self.ready.notify_one();
+    }
+
+    fn accept(
+        &self,
+        cancellation: &CancellationToken,
+    ) -> Result<WebSocketConnection, WebSocketError> {
+        loop {
+            if cancellation.load(Ordering::Acquire) {
+                return Err(WebSocketError::new(
+                    WebSocketErrorKind::Cancelled,
+                    "routed WebSocket accept was cancelled",
+                ));
+            }
+            if self.closed.load(Ordering::Acquire) {
+                return Err(WebSocketError::new(
+                    WebSocketErrorKind::Closed,
+                    "routed WebSocket server is closed",
+                ));
+            }
+            let mut pending = self
+                .pending
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Some(connection) = pending.pop_front() {
+                return Ok(connection);
+            }
+            let (guard, _) = self
+                .ready
+                .wait_timeout(pending, Duration::from_millis(25))
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            drop(guard);
+        }
+    }
+}
+
+struct RoutedUpgradeJob {
+    stream: TcpStream,
+    request: ParsedRequest,
+    buffered: Vec<u8>,
+    state: Arc<RoutedUpgradeState>,
+}
+
+fn routed_upgrade_workers() -> &'static SyncSender<RoutedUpgradeJob> {
+    static WORKERS: OnceLock<SyncSender<RoutedUpgradeJob>> = OnceLock::new();
+    WORKERS.get_or_init(|| {
+        // Handshake work is bounded and short, but it may still block on a
+        // slow peer while the 101 response is written.  Keep it off mio's
+        // reactor and cap the worker count so a connection flood cannot
+        // create an unbounded number of operating-system threads.
+        let (sender, receiver) = mpsc::sync_channel::<RoutedUpgradeJob>(16_384);
+        let receiver = Arc::new(Mutex::new(receiver));
+        for index in 0..4 {
+            let receiver = Arc::clone(&receiver);
+            thread::Builder::new()
+                .name(format!("spectra-websocket-upgrade-{index}"))
+                .spawn(move || loop {
+                    let job = receiver
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .recv();
+                    let Ok(job) = job else {
+                        break;
+                    };
+                    let config = job.state.config();
+                    let _ = job.stream.set_nonblocking(false);
+                    let _ = job.stream.set_read_timeout(Some(config.read_timeout));
+                    let _ = job.stream.set_write_timeout(Some(config.write_timeout));
+                    let Ok(peer) = job.stream.peer_addr() else {
+                        continue;
+                    };
+                    if let Ok(connection) = accept_handshake_request(
+                        job.stream,
+                        peer,
+                        config,
+                        job.request,
+                        job.buffered,
+                    ) {
+                        job.state.enqueue(connection);
+                    }
+                })
+                .expect("routed WebSocket upgrade worker");
+        }
+        sender
+    })
+}
+
+/// Queues a parsed HTTP upgrade for the bounded handshake workers.
+pub(crate) fn enqueue_routed_upgrade(
+    stream: TcpStream,
+    request: ParsedRequest,
+    buffered: Vec<u8>,
+    state: Arc<RoutedUpgradeState>,
+) -> Result<(), WebSocketError> {
+    match routed_upgrade_workers().try_send(RoutedUpgradeJob {
+        stream,
+        request,
+        buffered,
+        state,
+    }) {
+        Ok(()) => Ok(()),
+        Err(TrySendError::Full(_)) => Err(WebSocketError::new(
+            WebSocketErrorKind::Io,
+            "WebSocket upgrade queue is full",
+        )),
+        Err(TrySendError::Disconnected(_)) => Err(WebSocketError::new(
+            WebSocketErrorKind::Io,
+            "WebSocket upgrade workers are unavailable",
+        )),
+    }
+}
+
 pub struct WebSocketServer {
     listener: Option<TcpListener>,
     config: WebSocketConfig,
+    routed: bool,
+    routed_state: Arc<RoutedUpgradeState>,
 }
 
 impl fmt::Debug for WebSocketServer {
@@ -740,17 +902,20 @@ impl fmt::Debug for WebSocketServer {
 
 impl WebSocketServer {
     pub fn new() -> Self {
+        let config = WebSocketConfig::default();
         Self {
             listener: None,
-            config: WebSocketConfig::default(),
+            routed: false,
+            routed_state: Arc::new(RoutedUpgradeState::new(config.clone())),
+            config,
         }
     }
 
     pub fn listen(&mut self, port: u16) -> Result<(), WebSocketError> {
-        if self.listener.is_some() {
+        if self.listener.is_some() || self.routed {
             return Err(WebSocketError::new(
                 WebSocketErrorKind::InvalidArgument,
-                "WebSocket server is already listening",
+                "WebSocket server is already listening or attached to an HTTP route",
             ));
         }
         let listener = TcpListener::bind(("127.0.0.1", port))?;
@@ -779,6 +944,7 @@ impl WebSocketServer {
             ));
         }
         self.config.per_message_deflate = enabled;
+        self.routed_state.update_config(self.config.clone());
         Ok(())
     }
 
@@ -797,19 +963,39 @@ impl WebSocketServer {
         }
         self.config.max_message_bytes = max_bytes;
         self.config.max_frame_bytes = self.config.max_frame_bytes.min(max_bytes);
+        self.routed_state.update_config(self.config.clone());
         Ok(())
+    }
+
+    fn attach_to_http_route(&mut self) -> Result<Arc<RoutedUpgradeState>, WebSocketError> {
+        if self.listener.is_some() || self.routed {
+            return Err(WebSocketError::new(
+                WebSocketErrorKind::InvalidArgument,
+                "WebSocket server is already listening or attached to an HTTP route",
+            ));
+        }
+        self.routed = true;
+        self.routed_state.update_config(self.config.clone());
+        Ok(Arc::clone(&self.routed_state))
+    }
+
+    fn detach_from_http_route(&mut self) {
+        self.routed = false;
     }
 
     pub fn accept(
         &self,
         cancellation: &CancellationToken,
     ) -> Result<WebSocketConnection, WebSocketError> {
-        let listener = self.listener.as_ref().ok_or_else(|| {
-            WebSocketError::new(
+        let Some(listener) = self.listener.as_ref() else {
+            if self.routed {
+                return self.routed_state.accept(cancellation);
+            }
+            return Err(WebSocketError::new(
                 WebSocketErrorKind::InvalidArgument,
-                "WebSocket server is not listening",
-            )
-        })?;
+                "WebSocket server is not listening or attached to an HTTP route",
+            ));
+        };
         loop {
             if cancellation.load(std::sync::atomic::Ordering::Acquire) {
                 return Err(WebSocketError::new(
@@ -974,6 +1160,17 @@ fn accept_handshake(
             format!("invalid WebSocket HTTP handshake: {error}"),
         )
     })?;
+    let remaining = buffered.split_off(header_end);
+    accept_handshake_request(stream, peer, config, request, remaining)
+}
+
+fn accept_handshake_request(
+    mut stream: TcpStream,
+    peer: SocketAddr,
+    config: WebSocketConfig,
+    request: ParsedRequest,
+    buffered: Vec<u8>,
+) -> Result<WebSocketConnection, WebSocketError> {
     if request.method != "GET" || request.version.major != 1 || request.version.minor != 1 {
         return Err(WebSocketError::new(
             WebSocketErrorKind::Handshake,
@@ -1035,17 +1232,24 @@ fn accept_handshake(
     response.push_str("\r\n");
     stream.write_all(response.as_bytes())?;
     stream.flush()?;
-    let remaining = buffered.split_off(header_end);
     Ok(WebSocketConnection {
         stream: WebSocketTransport::Tcp(stream),
         peer,
         config,
         role: FrameRole::Server,
         per_message_deflate,
-        buffered: remaining,
+        buffered,
         fragments: None,
         closed: false,
     })
+}
+
+pub(crate) fn is_upgrade_request(request: &ParsedRequest) -> bool {
+    request.method == "GET"
+        && request.version.major == 1
+        && request.version.minor == 1
+        && header_contains_token(&request.headers, "Upgrade", "websocket")
+        && header_contains_token(&request.headers, "Connection", "upgrade")
 }
 
 fn client_handshake(
@@ -1412,6 +1616,7 @@ struct WebSocketStore {
     servers: ApiHandleTable<Arc<Mutex<WebSocketServer>>>,
     connections: ApiHandleTable<Arc<Mutex<WebSocketConnection>>>,
     messages: ApiHandleTable<WebSocketMessage>,
+    routed: HashMap<SpectraHostValue, Arc<RoutedUpgradeState>>,
 }
 
 impl WebSocketStore {
@@ -1421,6 +1626,7 @@ impl WebSocketStore {
             servers: ApiHandleTable::new(HandleKind::ApiWebSocketServer),
             connections: ApiHandleTable::new(HandleKind::ApiWebSocket),
             messages: ApiHandleTable::new(HandleKind::ApiWebSocketMessage),
+            routed: HashMap::new(),
         }
     }
 }
@@ -1428,6 +1634,57 @@ impl WebSocketStore {
 fn store() -> &'static Mutex<WebSocketStore> {
     static STORE: OnceLock<Mutex<WebSocketStore>> = OnceLock::new();
     STORE.get_or_init(|| Mutex::new(WebSocketStore::new()))
+}
+
+pub(crate) fn routed_upgrade_for_route(
+    route_id: SpectraHostValue,
+) -> Option<Arc<RoutedUpgradeState>> {
+    store()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .routed
+        .get(&route_id)
+        .cloned()
+}
+
+pub(crate) fn register_server_route(
+    server: Arc<Mutex<WebSocketServer>>,
+    route_id: SpectraHostValue,
+) -> Result<(), WebSocketError> {
+    if routing::route_method(route_id) != Some(routing::RouteMethod::Get) {
+        return Err(WebSocketError::new(
+            WebSocketErrorKind::InvalidArgument,
+            "WebSocket HTTP upgrades require a GET route",
+        ));
+    }
+    if store()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .routed
+        .contains_key(&route_id)
+    {
+        return Err(WebSocketError::new(
+            WebSocketErrorKind::InvalidArgument,
+            "HTTP route is already attached to a WebSocket server",
+        ));
+    }
+    let state = server
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .attach_to_http_route()?;
+    let mut store = store().lock().unwrap_or_else(|error| error.into_inner());
+    if store.routed.contains_key(&route_id) {
+        server
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .detach_from_http_route();
+        return Err(WebSocketError::new(
+            WebSocketErrorKind::InvalidArgument,
+            "HTTP route is already attached to a WebSocket server",
+        ));
+    }
+    store.routed.insert(route_id, state);
+    Ok(())
 }
 
 pub extern "C" fn server_new(ctx: *mut SpectraHostCallContext) -> i32 {
@@ -1572,6 +1829,21 @@ pub extern "C" fn server_listen(ctx: *mut SpectraHostCallContext) -> i32 {
         .lock()
         .unwrap_or_else(|error| error.into_inner())
         .listen(port);
+    write_result(ctx, i64::from(result.is_ok()))
+}
+
+pub extern "C" fn server_route(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let server = {
+        let store = store().lock().unwrap_or_else(|error| error.into_inner());
+        let Some(server) = store.servers.get(&args[0]) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        Arc::clone(server)
+    };
+    let result = register_server_route(server, args[1]);
     write_result(ctx, i64::from(result.is_ok()))
 }
 
@@ -1837,6 +2109,7 @@ mod tests {
     use super::*;
     use rcgen::generate_simple_self_signed;
     use rustls::{ServerConnection, StreamOwned};
+    use std::env;
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
     use std::sync::atomic::AtomicBool;
@@ -2167,6 +2440,39 @@ mod tests {
                 .ip(),
             address.ip()
         );
+    }
+
+    #[test]
+    #[ignore = "requires a known external WebSocket echo server in SPECTRA_WEBSOCKET_EXTERNAL_URL"]
+    fn client_external_echo_server_round_trips_text_and_binary() {
+        let url = env::var("SPECTRA_WEBSOCKET_EXTERNAL_URL")
+            .expect("SPECTRA_WEBSOCKET_EXTERNAL_URL must contain a ws:// or wss:// endpoint");
+        let mut client = WebSocketClient::new();
+        client.set_per_message_deflate(true);
+        let cancellation = Arc::new(AtomicBool::new(false));
+        let mut connection = client
+            .connect(&url, &cancellation)
+            .expect("connect external WebSocket echo server");
+        connection
+            .send_text("spectralang-external-echo")
+            .expect("send external text");
+        assert_eq!(
+            connection.receive_message().expect("receive external text"),
+            Some(WebSocketMessage::Text(
+                "spectralang-external-echo".to_string()
+            ))
+        );
+        let binary = b"spectralang-binary-echo".to_vec();
+        connection
+            .send_binary(binary.clone())
+            .expect("send external binary");
+        assert_eq!(
+            connection
+                .receive_message()
+                .expect("receive external binary"),
+            Some(WebSocketMessage::Binary(binary))
+        );
+        connection.close(1000, "done").expect("close external echo");
     }
 
     #[test]

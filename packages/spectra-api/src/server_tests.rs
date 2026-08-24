@@ -253,6 +253,137 @@ mod tests {
     }
 
     #[test]
+    fn r2401_routed_websocket_upgrade_round_trips_through_http_server() {
+        let websocket_server = Arc::new(Mutex::new(crate::websocket::WebSocketServer::new()));
+        let mut router = routing::Router::default();
+        let route = router
+            .add(routing::RouteMethod::Get, "/socket")
+            .expect("routed WebSocket route");
+        crate::websocket::register_server_route(Arc::clone(&websocket_server), route)
+            .expect("attach WebSocket route");
+        let mut server = HttpServer::start_with_dispatcher(
+            ServerConfig {
+                shutdown_grace_period: Duration::from_millis(200),
+                poll_interval: Duration::from_millis(1),
+                ..ServerConfig::default()
+            },
+            routed_handler(router),
+        )
+        .expect("start routed WebSocket HTTP server");
+
+        let accept_server = Arc::clone(&websocket_server);
+        let server_thread = thread::spawn(move || {
+            let cancellation = Arc::new(AtomicBool::new(false));
+            let mut connection = accept_server
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .accept(&cancellation)
+                .expect("accept routed WebSocket connection");
+            assert_eq!(
+                connection
+                    .receive_message()
+                    .expect("receive routed WebSocket message"),
+                Some(crate::websocket::WebSocketMessage::Text("routed".to_string()))
+            );
+            connection
+                .send_text("routed-echo")
+                .expect("send routed WebSocket echo");
+            connection.close(1000, "done").expect("close routed WebSocket");
+        });
+
+        let mut client = crate::websocket::WebSocketClient::new();
+        client.allow_private_networks(true);
+        let cancellation = Arc::new(AtomicBool::new(false));
+        let mut connection = client
+            .connect(
+                &format!("ws://127.0.0.1:{}/socket", server.local_addr().port()),
+                &cancellation,
+            )
+            .expect("connect routed WebSocket client");
+        connection.send_text("routed").expect("send routed message");
+        assert_eq!(
+            connection
+                .receive_message()
+                .expect("receive routed echo"),
+            Some(crate::websocket::WebSocketMessage::Text(
+                "routed-echo".to_string()
+            ))
+        );
+        connection.close(1000, "done").expect("close routed client");
+        server_thread.join().expect("routed WebSocket thread");
+
+        let stats = server.shutdown().expect("shutdown routed WebSocket server");
+        assert_eq!(stats.completed_requests, 1);
+        assert_eq!(stats.active_connections, 0);
+    }
+
+    #[test]
+    #[ignore = "release soak: opens 10,000 routed WebSocket connections"]
+    fn r2401_routed_websocket_10k_concurrent_connections_soak() {
+        const CONNECTIONS: usize = 10_000;
+        let websocket_server = Arc::new(Mutex::new(crate::websocket::WebSocketServer::new()));
+        let mut router = routing::Router::default();
+        let route = router
+            .add(routing::RouteMethod::Get, "/socket")
+            .expect("routed WebSocket soak route");
+        crate::websocket::register_server_route(Arc::clone(&websocket_server), route)
+            .expect("attach WebSocket soak route");
+        let mut server = HttpServer::start_with_dispatcher(
+            ServerConfig {
+                max_connections: CONNECTIONS,
+                shutdown_grace_period: Duration::from_millis(500),
+                poll_interval: Duration::from_millis(1),
+                ..ServerConfig::default()
+            },
+            routed_handler(router),
+        )
+        .expect("start routed WebSocket soak server");
+
+        let mut clients = Vec::with_capacity(CONNECTIONS);
+        for _ in 0..CONNECTIONS {
+            let mut client = TcpStream::connect(server.local_addr()).expect("connect soak client");
+            client
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .expect("set soak read timeout");
+            client
+                .set_write_timeout(Some(Duration::from_secs(10)))
+                .expect("set soak write timeout");
+            client
+                .write_all(
+                    b"GET /socket HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
+                )
+                .expect("write soak handshake");
+            let mut response = Vec::new();
+            let mut buffer = [0_u8; 512];
+            while !response.windows(4).any(|window| window == b"\r\n\r\n") {
+                let count = client.read(&mut buffer).expect("read soak handshake");
+                assert!(count > 0, "soak peer closed before upgrade");
+                response.extend_from_slice(&buffer[..count]);
+            }
+            assert!(
+                response.starts_with(b"HTTP/1.1 101 Switching Protocols\r\n"),
+                "unexpected soak upgrade response: {}",
+                String::from_utf8_lossy(&response)
+            );
+            clients.push(client);
+        }
+
+        let cancellation = Arc::new(AtomicBool::new(false));
+        for _ in 0..CONNECTIONS {
+            let connection = websocket_server
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .accept(&cancellation)
+                .expect("accept every routed soak connection");
+            drop(connection);
+        }
+        assert_eq!(server.stats().accepted_connections, CONNECTIONS);
+        drop(clients);
+        let stats = server.shutdown().expect("shutdown routed WebSocket soak server");
+        assert_eq!(stats.active_connections, 0);
+    }
+
+    #[test]
     fn r2216_shutdown_drains_in_flight_keep_alive_request() {
         let handler_entered = Arc::new(AtomicBool::new(false));
         let handler_entered_for_handler = Arc::clone(&handler_entered);

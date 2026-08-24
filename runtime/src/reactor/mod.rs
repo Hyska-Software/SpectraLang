@@ -546,8 +546,37 @@ mod tests {
         assert_eq!(backend, BackendKind::LinuxEpoll);
         #[cfg(target_os = "windows")]
         assert_eq!(backend, BackendKind::WindowsIocp);
-        #[cfg(target_os = "macos")]
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "dragonfly"
+        ))]
         assert_eq!(backend, BackendKind::MacosKqueue);
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "windows",
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "dragonfly"
+        )))]
+        assert_eq!(backend, BackendKind::Fallback);
+    }
+
+    #[cfg(any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
+    #[test]
+    fn bsd_kqueue_backend_is_selected() {
+        assert_eq!(Reactor::new().backend(), BackendKind::MacosKqueue);
     }
 
     #[test]

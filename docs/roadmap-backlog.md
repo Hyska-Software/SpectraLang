@@ -4500,7 +4500,7 @@ that `std.api.*` will dispatch into.
 
 - Added the `packages/spectra-api` Rust crate and the `spectra.api` package
   manifest at `packages/spectra-api/spectra.toml`.
-- Added 414 public `spectra.api.*` host calls covering the Phase 22, R-2301, R-2302, R-2303, R-2304, R-2305, R-2306, R-2307, R-2308, R-2309, R-2312, R-2313, R-2314, R-2316, R-2317, R-2311, R-2401, R-2402, and R-2403 registration
+- Added 415 public `spectra.api.*` host calls covering the Phase 22, R-2301, R-2302, R-2303, R-2304, R-2305, R-2306, R-2307, R-2308, R-2309, R-2312, R-2313, R-2314, R-2316, R-2317, R-2311, R-2401, R-2402, and R-2403 registration
   surface for version metadata, HTTP method/status/header helpers, request and
   response handles, server/client handles, JSON classification, TLS config
   handles, routing handles, error metadata, and sync/async handler callback
@@ -4510,7 +4510,7 @@ that `std.api.*` will dispatch into.
   `spectra_api::register()`, and the crate exports
   `spectra_api_register_host_calls` for native integration.
 - Added `runtime/src/api/mod.rs` as the runtime-side namespace contract for the
-  required 346-name `spectra.api.*` namespace; the package registry may expose
+  required 347-name `spectra.api.*` namespace; the package registry may expose
   additional public calls beyond that runtime-required subset.
 - Added stable `request_body` and `request_with_body` bridges so handlers and
   clients can read and construct UTF-8 request payloads through `std.api.http`.
@@ -5810,7 +5810,7 @@ negotiation, and other production API features.
 
 ## R-2401 WebSocket Server (RFC 6455)
 
-- Status: `in_progress`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5833,20 +5833,24 @@ RFC 6455 handshake, strict frame validation, masking direction, fragmented
 text/binary messages, automatic pong, close validation, configurable message
 limits, and negotiated `permessage-deflate`. The typed `std.api.websocket`
 surface is wired through semantic analysis, lowering, runtime handle kinds,
-and 17 host calls. `tests/validation/343_api_websocket.spectra` passes
-through the normal CLI path, and the focused native tests plus
-`scripts/validate_r2401_websocket.py` are the reproducible evidence gate.
+and 18 host calls, including `server_route` for GET-route upgrades through the
+real `std.api.server` mio loop. `tests/validation/343_api_websocket.spectra`
+passes through the normal CLI path; the routed integration test and the real
+10k concurrent-connection soak both pass, and
+`scripts/validate_r2401_websocket.py` is the reproducible evidence gate.
 
-### Remaining before completion
+### Completion evidence
 
-The public API is currently a dedicated WebSocket listener. R-2401 remains
-`in_progress` until the HTTP server/router upgrade path is integrated and a
-real 10k concurrent-connections soak is executed and recorded; those gates
-must not be inferred from the focused protocol tests.
+The dedicated listener remains available, while `server_route` attaches a
+`Route` created by `std.api.routing.get` to the HTTP router. A routed handshake
+is consumed by the HTTP server, queued to `server_accept`, and preserves bytes
+received with the request. The focused native tests, routed integration test,
+CLI fixture, compiler snapshot, and `r2401_routed_websocket_10k_concurrent_connections_soak`
+passed on 2026-08-20. The gate is registered in `run_tests.ps1`.
 
 ## R-2402 WebSocket Client
 
-- Status: `in_progress`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5870,11 +5874,17 @@ secure endpoints, supports per-message deflate, bounded reconnect with
 cancellation, and typed async host calls. Native tests cover text/binary
 round-trip, a TLS round-trip with an explicit trust root, and a retry after a
 failed first handshake. Fixture 344 validates the configuration surface
-through the CLI (`tests/validation/344_api_websocket_client.spectra`).
+through the CLI (`tests/validation/344_api_websocket_client.spectra`). The
+ignored interoperability test also passes text and binary round-trips against
+`wss://testserver.host/ws/no-subprotocol/echo` on 2026-08-20.
 
-### Remaining before completion
+### Completion evidence
 
-R-2402 remains `in_progress` until the implementation passes an external echo-server certification. The native `wss://` test proves the local rustls transport and is not promoted to external interoperability evidence.
+The external echo-server certification is reproducible with
+`python scripts/validate_r2402_websocket_client.py --require-external
+--external-url wss://testserver.host/ws/no-subprotocol/echo`; the normal gate
+keeps the recorded endpoint in the planning/docs contract and reruns the
+external test only when `--require-external` is requested.
 
 ## R-2403 Server-Sent Events (SSE)
 
@@ -5952,7 +5962,7 @@ HTTP/1.1 surface until an HTTP/2-aware callback adapter is specified.
 
 ## R-2405 HTTP/2 Client
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `high`
@@ -5962,13 +5972,37 @@ HTTP/1.1 surface until an HTTP/2-aware callback adapter is specified.
 
 - The client connects to a known external h2 endpoint and round-trips
   requests.
+- HTTPS uses rustls with explicit `h2` ALPN negotiation and configurable trust
+  roots.
 - Multiple concurrent requests on a single connection are multiplexed.
+- Request and response bodies use bounded h2 flow control and configured
+  limits; resolved addresses are checked against the default SSRF policy before
+  connect.
 - Server push is accepted and exposed through a callback.
-- Tests cover multiplexing and server push.
+- Native tests cover multiplexing, HTTPS/ALPN, flow-controlled requests, and
+  server push.
+- `scripts/validate_r2405_http2_client.py` passes and is wired into
+  `run_tests.ps1`.
+- The ignored interoperability test passed against
+  `https://nghttp2.org` on 2026-08-20 with
+  PowerShell `$env:SPECTRA_HTTP2_EXTERNAL_URL = "https://nghttp2.org"` followed
+  by `cargo test -q -p spectra-api --lib
+  http2::tests::known_external_http2_endpoint_round_trips --offline --
+  --ignored --test-threads=1`.
+
+The native `Http2Client` now supports `http://` and `https://`, connection
+reuse, bounded request/response flow control, default SSRF blocking, explicit
+rustls trust roots, h2-only ALPN for secure connections, and a server-push
+callback. The public transport remains deliberately separate from the
+HTTP/1.1 `std.api.client.request` language contract until a typed HTTP/2
+client surface and a concurrent routed callback adapter are specified.
+R-2405 is `complete`; the external round-trip was certified in addition to the
+local native evidence. The external command remains an appropriate release
+revalidation gate because public endpoint behavior can change.
 
 ## R-2406 HTTP/3 and QUIC
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P3`
 - Owner: `web`
 - Risk: `high`
@@ -5978,10 +6012,19 @@ HTTP/1.1 surface until an HTTP/2-aware callback adapter is specified.
 
 - The decision is documented: include HTTP/3 only when a stable Rust QUIC
   implementation is available.
-- If implemented, the server and client negotiate HTTP/3 over QUIC and
-  exchange a request/response.
-- If deferred, the rationale and the re-evaluation date are documented in
-  the ADR.
+- HTTP/1.1 and HTTP/2 remain the stable protocol surfaces while HTTP/3 is
+  deferred.
+- If deferred, the rationale, entry criteria, and the 2026-11-30 re-evaluation
+  date are documented in ADR 0014.
+- `scripts/validate_r2406_http3_decision.py` passes and is wired into
+  `run_tests.ps1`.
+
+R-2406 is complete as a scope decision, not as an HTTP/3 implementation.
+ADR 0014 records the missing production prerequisites: a maintained compatible
+QUIC stack, independent HTTP/3 peers, Linux/Windows/macOS/BSD evidence,
+cancellation and connection-migration coverage, and a reviewed integration
+with the existing async API contracts. No HTTP/3 capability is exposed until
+those gates are met.
 
 ## R-2407 API Versioning (Path, Header, Query)
 

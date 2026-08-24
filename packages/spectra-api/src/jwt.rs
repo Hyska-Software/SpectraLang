@@ -203,9 +203,9 @@ fn numeric_date(value: &Value) -> Option<i64> {
 }
 
 fn validate_string_claim(claims: &serde_json::Map<String, Value>, name: &str) -> bool {
-    claims.get(name).map_or(true, |value| {
-        value.as_str().is_some_and(|value| !value.is_empty())
-    })
+    claims
+        .get(name)
+        .is_none_or(|value| value.as_str().is_some_and(|value| !value.is_empty()))
 }
 
 fn validate_audience(claims: &serde_json::Map<String, Value>, expected: &str) -> bool {

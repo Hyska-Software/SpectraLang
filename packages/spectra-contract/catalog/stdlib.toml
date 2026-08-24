@@ -8209,6 +8209,20 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/343_api_websocket.spectra"
 
 [[entry]]
+path = "std.api.websocket.server_route"
+kind = "function"
+namespace = "std.api.websocket"
+signature = "fn(WebSocketServer, Route) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.websocket.server_route"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/343_api_websocket.spectra"
+
+[[entry]]
 path = "std.api.websocket.server_set_max_message_bytes"
 kind = "function"
 namespace = "std.api.websocket"

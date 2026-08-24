@@ -2224,7 +2224,7 @@ dependencies = ["R-2201"]
 summary = "Add a new workspace crate `spectra-api` that hosts the Rust implementation of HTTP parsing, server, client, JSON, TLS, and registers the host calls that `std.api.*` will dispatch into."
 acceptance = [
   "`packages/spectra-api` compiles in the workspace and links against the existing `spectra-runtime` crate",
-  "414 public `spectra.api.*` host calls are registered through the runtime host-call registry by `spectra_api::register()`, including the runtime's 346-name required namespace, the real `spectra.api.client.request` task bridge, sync/async handler callback bridges, structured request logging, token-bucket/sliding-window rate limiting, API-key authentication, response compression, security headers, JWT signing/verification, OAuth2 authorization-code, PKCE, refresh, and revocation flows, the typed HMAC-signed cookie API, request validation with RFC 7807 responses, unified errors with exception middleware, default-deny CSRF/SSRF threat mitigations with configurable body limits and timeouts, stable request-body construction/reading, pluggable memory/Redis server-side sessions with sliding expiration and forced revocation, and the native WebSocket/SSE transport surfaces",
+  "415 public `spectra.api.*` host calls are registered through the runtime host-call registry by `spectra_api::register()`, including the runtime's 347-name required namespace, the real `spectra.api.client.request` task bridge, sync/async handler callback bridges, structured request logging, token-bucket/sliding-window rate limiting, API-key authentication, response compression, security headers, JWT signing/verification, OAuth2 authorization-code, PKCE, refresh, and revocation flows, the typed HMAC-signed cookie API, request validation with RFC 7807 responses, unified errors with exception middleware, default-deny CSRF/SSRF threat mitigations with configurable body limits and timeouts, stable request-body construction/reading, pluggable memory/Redis server-side sessions with sliding expiration and forced revocation, and the native WebSocket/SSE transport surfaces",
   "`cargo test -p spectra-api` covers the registered host functions and registry behavior",
   "`runtime/src/api/mod.rs` records the required host-call namespace contract",
   "`scripts/validate_r2202_spectra_api_hostcalls.py` verifies host call naming, registration count, CLI integration, package metadata, and planning sync",
@@ -2920,7 +2920,7 @@ title = "WebSocket Server (RFC 6455)"
 phase = "phase_24"
 owner = "web"
 priority = "P0"
-status = "in_progress"
+status = "complete"
 risk = "high"
 dependencies = ["R-2210", "R-2215"]
 summary = "Implement a WebSocket server compatible with RFC 6455: handshake, fragmented messages, ping/pong, and per-message deflate."
@@ -2929,9 +2929,9 @@ acceptance = [
   "fragmented messages are reassembled and ping/pong are handled",
   "per-message deflate is supported and negotiated via the extension header",
   "tests cover handshake, fragmented messages, ping/pong, and a 10k concurrent connections soak",
-  "the typed std.api.websocket surface is wired through semantic analysis, lowering, runtime handles, and 17 registered host calls",
+  "the typed std.api.websocket surface is wired through semantic analysis, lowering, runtime handles, and 18 registered host calls, including GET-route upgrades through std.api.server",
   "tests/validation/343_api_websocket.spectra and scripts/validate_r2401_websocket.py pass",
-  "the remaining HTTP-router upgrade integration and 10k concurrent connections soak are recorded before status can become complete"
+  "the HTTP-router upgrade integration and real 10k concurrent connections soak pass through the routed WebSocket server test"
 ]
 
 [[items]]
@@ -2940,7 +2940,7 @@ title = "WebSocket Client"
 phase = "phase_24"
 owner = "web"
 priority = "P0"
-status = "in_progress"
+status = "complete"
 risk = "high"
 dependencies = ["R-2401"]
 summary = "Implement a WebSocket client that performs the handshake, sends and receives text/binary frames, and supports per-message deflate."
@@ -2951,7 +2951,8 @@ acceptance = [
   "tests cover handshake, frame round-trip, and reconnect",
   "the typed std.api.websocket client surface is wired through semantic analysis, lowering, runtime handles, and registered host calls",
   "tests/validation/344_api_websocket_client.spectra and the focused native client tests pass",
-  "wss:// TLS support is implemented and covered by a native rustls round-trip; external echo-server certification remains before status can become complete"
+  "wss:// TLS support is implemented and covered by a native rustls round-trip",
+  "external echo-server certification passes against wss://testserver.host/ws/no-subprotocol/echo and is reproducible with scripts/validate_r2402_websocket_client.py --require-external"
 ]
 
 [[items]]
@@ -2999,15 +3000,20 @@ title = "HTTP/2 Client"
 phase = "phase_24"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2404", "R-2206"]
-summary = "Add HTTP/2 support to the client: connection reuse, stream prioritization, and server push reception."
+summary = "Add a bounded native HTTP/2 client with connection reuse, flow-controlled streams, TLS/ALPN, SSRF policy, and server-push reception."
 acceptance = [
   "the client connects to a known external h2 endpoint and round-trips requests",
+  "HTTPS uses rustls with explicit h2 ALPN negotiation and configurable trust roots",
   "multiple concurrent requests on a single connection are multiplexed",
+  "request and response bodies use bounded h2 flow control and configured limits",
+  "resolved addresses are checked against the default SSRF policy before connect",
   "server push is accepted and exposed through a callback",
-  "tests cover multiplexing and server push"
+  "native tests cover multiplexing, HTTPS/ALPN, flow-controlled requests, and server push",
+  "scripts/validate_r2405_http2_client.py passes and is wired into run_tests.ps1",
+  "the ignored interoperability test passes against the recorded external h2 endpoint"
 ]
 
 [[items]]
@@ -3016,14 +3022,15 @@ title = "HTTP/3 and QUIC"
 phase = "phase_24"
 owner = "web"
 priority = "P3"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2404"]
-summary = "Optionally add HTTP/3 over QUIC for low-latency and connection-migration use cases."
+summary = "Record the production decision to defer HTTP/3/QUIC until a maintained implementation and cross-platform interoperability evidence are available."
 acceptance = [
   "the decision is documented: include HTTP/3 only when a stable Rust QUIC implementation is available",
-  "if implemented, the server and client negotiate HTTP/3 over QUIC and exchange a request/response",
-  "if deferred, the rationale and the re-evaluation date are documented in the ADR"
+  "HTTP/1.1 and HTTP/2 remain the stable protocol surfaces while HTTP/3 is deferred",
+  "if deferred, the rationale, entry criteria, and the 2026-11-30 re-evaluation date are documented in ADR 0014",
+  "scripts/validate_r2406_http3_decision.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]

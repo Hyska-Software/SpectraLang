@@ -343,6 +343,7 @@ impl Cookie {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn with_options(
         name: impl Into<String>,
         value: impl Into<String>,
@@ -781,6 +782,14 @@ impl Http1Parser {
 
     pub fn buffered_len(&self) -> usize {
         self.buffer.len()
+    }
+
+    /// Transfers bytes that arrived after the parsed HTTP message to the
+    /// protocol that owns the connection after an upgrade (for example,
+    /// WebSocket).  The HTTP parser must not discard those bytes because a
+    /// client may pipeline the first WebSocket frame with its handshake.
+    pub(crate) fn take_buffered(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.buffer)
     }
 
     pub fn parse_next_request(&mut self) -> Result<Option<ParsedRequest>, ParseError> {

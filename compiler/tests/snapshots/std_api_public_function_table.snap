@@ -362,6 +362,7 @@ func std.api.websocket.client_set_reconnect: func(WebSocketClient, int, int) ret
 func std.api.websocket.client_allow_private_networks: func(WebSocketClient, bool) returns bool
 func std.api.websocket.client_connect: func(WebSocketClient, string) returns task<WebSocket>
 func std.api.websocket.server_new: func() returns WebSocketServer
+func std.api.websocket.server_route: func(WebSocketServer, Route) returns bool
 func std.api.websocket.server_listen: func(WebSocketServer, int) returns bool
 func std.api.websocket.server_local_port: func(WebSocketServer) returns int
 func std.api.websocket.server_set_per_message_deflate: func(WebSocketServer, bool) returns bool

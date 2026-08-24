@@ -88,7 +88,13 @@ impl CodeGenerator {
             InstructionKind::Rem { result, lhs, rhs } => {
                 let lhs_val = get_value(lhs)?;
                 let rhs_val = get_value(rhs)?;
-                let result_val = builder.ins().srem(lhs_val, rhs_val);
+                let (lhs_val, rhs_val, is_float) =
+                    promote_float_operands(builder, lhs_val, rhs_val);
+                let result_val = if is_float {
+                    builder.ins().frem(lhs_val, rhs_val)
+                } else {
+                    builder.ins().srem(lhs_val, rhs_val)
+                };
                 value_map.insert(result.id, result_val);
             }
 
@@ -152,7 +158,9 @@ impl CodeGenerator {
             InstructionKind::Gt { result, lhs, rhs } => {
                 let lhs_val = get_value(lhs)?;
                 let rhs_val = get_value(rhs)?;
-                let result_val = if builder.func.dfg.value_type(lhs_val) == types::F64 {
+                let (lhs_val, rhs_val, is_float) =
+                    promote_float_operands(builder, lhs_val, rhs_val);
+                let result_val = if is_float {
                     builder.ins().fcmp(FloatCC::GreaterThan, lhs_val, rhs_val)
                 } else {
                     builder
@@ -165,7 +173,9 @@ impl CodeGenerator {
             InstructionKind::Ge { result, lhs, rhs } => {
                 let lhs_val = get_value(lhs)?;
                 let rhs_val = get_value(rhs)?;
-                let result_val = if builder.func.dfg.value_type(lhs_val) == types::F64 {
+                let (lhs_val, rhs_val, is_float) =
+                    promote_float_operands(builder, lhs_val, rhs_val);
+                let result_val = if is_float {
                     builder
                         .ins()
                         .fcmp(FloatCC::GreaterThanOrEqual, lhs_val, rhs_val)

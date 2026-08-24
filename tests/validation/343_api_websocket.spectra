@@ -2,7 +2,8 @@
 // and its listener configuration crosses the host-call boundary.
 module api_websocket
 
-from std.api.websocket import WebSocketServer, server_new, server_listen, server_local_port, server_set_max_message_bytes, server_set_per_message_deflate
+from std.api.routing import Route, Router, get, router_new
+from std.api.websocket import WebSocketServer, server_new, server_listen, server_local_port, server_route, server_set_max_message_bytes, server_set_per_message_deflate
 
 public func main() returns int {
     let server: WebSocketServer = server_new()
@@ -17,6 +18,12 @@ public func main() returns int {
     }
     if server_local_port(server) <= 0 {
         return 40
+    }
+    let router: Router = router_new()
+    let route: Route = get(router, "/socket")
+    let routed_server: WebSocketServer = server_new()
+    if server_route(routed_server, route) != true {
+        return 50
     }
     return 0
 }

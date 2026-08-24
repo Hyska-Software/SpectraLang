@@ -9,10 +9,11 @@ Rust; o programa Spectra recebe uma superfície tipada e assíncrona.
 ## Superfície pública
 
 ```spectra
+from std.api.routing import Route, Router, get, router_new
 from std.api.websocket import (
     WebSocketServer, WebSocket, WebSocketMessage,
     server_new, server_listen, server_local_port,
-    server_set_per_message_deflate, server_set_max_message_bytes,
+    server_route, server_set_per_message_deflate, server_set_max_message_bytes,
     server_accept, connection_peer_port, connection_receive,
     connection_send_text, connection_send_binary_base64,
     connection_ping, connection_close,
@@ -38,6 +39,26 @@ async func echo_once(server: WebSocketServer) returns int {
 }
 ```
 
+Para integrar o WebSocket ao roteador HTTP, crie uma rota `GET`, associe-a com
+`server_route` e entregue o mesmo `Router` a `std.api.server.serve`. Nesse modo
+`server_listen` não deve ser chamado nesse `WebSocketServer`; o listener é o
+`std.api.server` e `server_accept` recebe as conexões depois do upgrade:
+
+```spectra
+let router: Router = router_new()
+let socket_route: Route = get(router, "/socket")
+let websocket: WebSocketServer = server_new()
+server_route(websocket, socket_route)
+let http: Server = server_new()
+await serve(http, router)
+let socket: WebSocket = await server_accept(websocket)
+```
+
+Somente rotas `GET` podem ser associadas. Uma requisição sem os cabeçalhos de
+upgrade recebe `426 Upgrade Required`; o handshake `101` é processado pelo
+worker limitado do host e os bytes que chegaram junto com o cabeçalho são
+preservados para o codec RFC 6455.
+
 `message_kind` retorna `1` para texto e `2` para binário. A representação
 binária da linguagem é base64 (`connection_send_binary_base64` e
 `message_base64`) para manter a fronteira de strings UTF-8 explícita.
@@ -58,11 +79,10 @@ binária da linguagem é base64 (`connection_send_binary_base64` e
   runtime. O handle de mensagem deve ser liberado com `message_release` após o
   consumo.
 
-O módulo é deliberadamente separado do `std.api.server` HTTP nesta etapa. A
-integração de uma rota HTTP que faça o upgrade e o teste de carga de 10 mil conexões
-concorrentes ainda são critérios de fechamento do R-2401; portanto o
-item permanece `in_progress` mesmo com o núcleo RFC 6455 e a superfície
-tipada já implementados.
+O listener dedicado continua disponível para serviços que não precisam de
+roteamento HTTP. A integração por rota HTTP agora é coberta pelo teste nativo
+`r2401_routed_websocket_upgrade_round_trips_through_http_server`; o soak de 10 mil conexões
+concorrentes passou como gate de release.
 
 ## Evidência
 
@@ -71,7 +91,8 @@ do exemplo RFC 6455, mensagens fragmentadas, ping/pong, close validation,
 mascaramento de frames de cliente e negociação/round-trip de
 `permessage-deflate`. O fixture
 `tests/validation/343_api_websocket.spectra` valida a exposição do módulo,
-configuração do listener e execução pela CLI. O gate reproduzível é
+configuração do listener, associação de uma rota HTTP e execução pela CLI. O
+teste nativo roteado e o soak de 10 mil conexões passam no gate reproduzível
 `scripts/validate_r2401_websocket.py`.
 
 ## Cliente WebSocket
@@ -102,7 +123,15 @@ integrações embutidas.
 
 O fixture `tests/validation/344_api_websocket_client.spectra` exercita a
 configuração tipada sem abrir uma conexão externa. Os testes nativos cobrem
-handshake, round-trip texto/binário, `wss://` com raiz de confiança explícita e
-uma segunda conexão após uma tentativa de handshake falha. A certificação
-contra um echo server externo ainda é obrigatória antes de marcar o R-2402 como
-completo.
+handshake, round-trip texto/binário, `wss://` com raiz de confiança explícita,
+uma segunda conexão após uma tentativa de handshake falha e um round-trip
+externo contra `wss://testserver.host/ws/no-subprotocol/echo`. A evidência é
+reproduzível com:
+
+```powershell
+$env:SPECTRA_WEBSOCKET_EXTERNAL_URL = "wss://testserver.host/ws/no-subprotocol/echo"
+python scripts/validate_r2402_websocket_client.py --require-external --external-url $env:SPECTRA_WEBSOCKET_EXTERNAL_URL
+```
+
+O endpoint público é usado somente como interoperabilidade de release; os
+testes locais permanecem a base determinística do gate normal.

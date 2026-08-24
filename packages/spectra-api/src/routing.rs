@@ -3,7 +3,7 @@ use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
 };
-use spectra_runtime::handles::{HandleKind, HandleTable};
+use spectra_runtime::handles::{HandleId, HandleKind, HandleTable};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Mutex, OnceLock};
@@ -141,7 +141,7 @@ impl Router {
         let pattern = pattern.into();
         let segments = parse_pattern(&pattern)?;
         detect_conflict(&self.root, &self.routes, method, &segments, &pattern, 0)?;
-        let id = next_route_id();
+        let id = next_route_id(method);
         insert_route(&mut self.root, method, &segments, id, 0);
         self.routes.insert(
             id,
@@ -172,13 +172,16 @@ impl Router {
     }
 }
 
-fn next_route_id() -> SpectraHostValue {
-    static ROUTES: OnceLock<Mutex<HandleTable<()>>> = OnceLock::new();
-    ROUTES
-        .get_or_init(|| Mutex::new(HandleTable::new(HandleKind::ApiRoute)))
+fn route_handles() -> &'static Mutex<HandleTable<RouteMethod>> {
+    static ROUTES: OnceLock<Mutex<HandleTable<RouteMethod>>> = OnceLock::new();
+    ROUTES.get_or_init(|| Mutex::new(HandleTable::new(HandleKind::ApiRoute)))
+}
+
+fn next_route_id(method: RouteMethod) -> SpectraHostValue {
+    route_handles()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .insert(())
+        .insert(method)
         .raw()
 }
 
@@ -214,6 +217,28 @@ fn store() -> &'static Mutex<RouterStore> {
 pub(crate) fn clone_router(handle: SpectraHostValue) -> Option<Router> {
     let store = store().lock().unwrap_or_else(|e| e.into_inner());
     store.routers.get(&handle).cloned()
+}
+
+pub(crate) fn route_method(route_id: SpectraHostValue) -> Option<RouteMethod> {
+    if let Ok(handle) = HandleId::from_raw(route_id) {
+        if handle.kind() == HandleKind::ApiRoute {
+            if let Some(method) = route_handles()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .get(handle)
+                .ok()
+                .copied()
+            {
+                return Some(method);
+            }
+        }
+    }
+    let store = store().lock().unwrap_or_else(|e| e.into_inner());
+    let method = store
+        .routers
+        .iter()
+        .find_map(|(_, router)| router.routes.get(&route_id).map(|route| route.method));
+    method
 }
 
 pub fn parse_pattern(pattern: &str) -> Result<Vec<RouteSegment>, RouteError> {

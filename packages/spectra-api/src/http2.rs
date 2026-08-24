@@ -364,12 +364,14 @@ impl Http2Client {
         }
         let h2_request = self.build_request(&request)?;
         let body = request.body;
-        let mut sender = self
-            .inner
-            .sender
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        let sender = {
+            self.inner
+                .sender
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone()
+        };
+        let mut sender = sender
             .ready()
             .await
             .map_err(|error| Http2ClientError::Protocol(error.to_string()))?;
@@ -389,28 +391,24 @@ impl Http2Client {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
         let max_body_bytes = self.inner.max_body_bytes;
-        tokio::spawn(async move {
-            while let Some(result) = push_promises.push_promise().await {
-                let Ok(promise) = result else { break };
-                let (request, response_future) = promise.into_parts();
-                let Ok(response) = response_future.await else {
-                    continue;
-                };
-                let (parts, body) = response.into_parts();
-                let Ok(body) = collect_h2_body(body, max_body_bytes).await else {
-                    continue;
-                };
-                let request = http2_request_from_h2(request);
-                let response = http2_response_from_h2(parts, body);
-                if let Some(callback) = callback.as_ref() {
-                    callback(Http2Push { request, response });
-                }
+        let mut push_stream_open = true;
+        tokio::pin!(response_future);
+        let response = loop {
+            if !push_stream_open {
+                break response_future.await;
             }
-        });
-
-        let response = response_future
-            .await
-            .map_err(|error| Http2ClientError::Protocol(error.to_string()))?;
+            tokio::select! {
+                result = &mut response_future => break result,
+                push = push_promises.push_promise() => match push {
+                    Some(Ok(promise)) => spawn_h2_push(promise, callback.clone(), max_body_bytes),
+                    Some(Err(_)) | None => push_stream_open = false,
+                },
+            }
+        }
+        .map_err(|error| Http2ClientError::Protocol(error.to_string()))?;
+        if push_stream_open {
+            tokio::spawn(collect_h2_pushes(push_promises, callback, max_body_bytes));
+        }
         let (parts, body) = response.into_parts();
         let body = collect_h2_body(body, self.inner.max_body_bytes).await?;
         Ok(http2_response_from_h2(parts, body))
@@ -452,6 +450,39 @@ impl Http2Client {
         builder
             .body(())
             .map_err(|error| Http2ClientError::InvalidUrl(error.to_string()))
+    }
+}
+
+fn spawn_h2_push(
+    promise: client::PushPromise,
+    callback: Option<Http2PushCallback>,
+    max_body_bytes: usize,
+) {
+    tokio::spawn(async move {
+        let (request, response_future) = promise.into_parts();
+        let Ok(response) = response_future.await else {
+            return;
+        };
+        let (parts, body) = response.into_parts();
+        let Ok(body) = collect_h2_body(body, max_body_bytes).await else {
+            return;
+        };
+        let request = http2_request_from_h2(request);
+        let response = http2_response_from_h2(parts, body);
+        if let Some(callback) = callback {
+            callback(Http2Push { request, response });
+        }
+    });
+}
+
+async fn collect_h2_pushes(
+    mut push_promises: client::PushPromises,
+    callback: Option<Http2PushCallback>,
+    max_body_bytes: usize,
+) {
+    while let Some(result) = push_promises.push_promise().await {
+        let Ok(promise) = result else { break };
+        spawn_h2_push(promise, callback.clone(), max_body_bytes);
     }
 }
 
@@ -637,11 +668,11 @@ async fn resolve_http2_endpoint(
     endpoint: &Http2Endpoint,
     allow_private_networks: bool,
 ) -> Result<SocketAddr, Http2ClientError> {
-    let mut addresses = lookup_host((endpoint.host.as_str(), endpoint.port))
+    let addresses = lookup_host((endpoint.host.as_str(), endpoint.port))
         .await
         .map_err(|error| Http2ClientError::Resolve(error.to_string()))?;
     let mut first_blocked = None;
-    while let Some(address) = addresses.next() {
+    for address in addresses {
         if allow_private_networks || !crate::security::is_private_or_link_local(address.ip()) {
             return Ok(address);
         }
@@ -769,26 +800,24 @@ async fn run_accept_loop(
                 let max_header_list_size = config.max_header_list_size;
                 connections.spawn(async move {
                     if let Some(acceptor) = tls_acceptor {
-                        match acceptor.accept(stream).await {
-                            Ok(tls_stream) => {
-                                if tls_stream
-                                    .get_ref()
-                                    .1
-                                    .alpn_protocol()
-                                    .is_none_or(|protocol| protocol != ALPN_HTTP2)
-                                {
-                                    return;
-                                }
-                                serve_h2_connection(
-                                    tls_stream,
-                                    handler,
-                                    max_body_bytes,
-                                    max_concurrent_streams,
-                                    max_header_list_size,
-                                    Arc::clone(&connection_stats),
-                                ).await;
+                        if let Ok(tls_stream) = acceptor.accept(stream).await {
+                            if tls_stream
+                                .get_ref()
+                                .1
+                                .alpn_protocol()
+                                .is_none_or(|protocol| protocol != ALPN_HTTP2)
+                            {
+                                return;
                             }
-                            Err(_) => {}
+                            serve_h2_connection(
+                                tls_stream,
+                                handler,
+                                max_body_bytes,
+                                max_concurrent_streams,
+                                max_header_list_size,
+                                Arc::clone(&connection_stats),
+                            )
+                            .await;
                         }
                     } else {
                         serve_h2_connection(
@@ -938,10 +967,8 @@ async fn serve_h2_stream(
     let Ok(mut sender) = respond.send_response(response, end_stream) else {
         return;
     };
-    if !end_stream {
-        if sender.send_data(Bytes::from(body), true).is_err() {
-            return;
-        }
+    if !end_stream && sender.send_data(Bytes::from(body), true).is_err() {
+        return;
     }
     stats
         .lock()
@@ -963,6 +990,7 @@ mod tests {
     use http::Request;
     use rcgen::generate_simple_self_signed;
     use rustls::pki_types::ServerName;
+    use std::env;
     use std::net::TcpListener as StdTcpListener;
     use tokio::net::TcpStream;
     use tokio::runtime::Builder;
@@ -1119,6 +1147,141 @@ mod tests {
     }
 
     #[test]
+    fn client_https_negotiates_h2_with_explicit_trust_root() {
+        let certified =
+            generate_simple_self_signed(vec!["localhost".to_string(), "127.0.0.1".to_string()])
+                .expect("self-signed HTTP/2 client certificate");
+        let server_config = crate::tls::TlsServerConfig::new(
+            vec![certified.cert.der().to_vec()],
+            certified.key_pair.serialize_der(),
+        )
+        .build()
+        .expect("HTTP/2 client test server TLS config");
+        let client_config =
+            crate::tls::TlsClientConfig::with_roots(vec![certified.cert.der().to_vec()])
+                .with_alpn_protocols(vec![ALPN_HTTP2.to_vec()])
+                .build()
+                .expect("HTTP/2 client trust-root config");
+        let handler: Http2Handler = Arc::new(|request| {
+            Http2Response::text(200, format!("{} {}", request.method, request.target))
+        });
+        let mut server = Http2Server::start(
+            Http2Config {
+                shutdown_grace_period: Duration::from_millis(100),
+                tls_config: Some(server_config),
+                ..Http2Config::default()
+            },
+            handler,
+        )
+        .expect("start HTTPS HTTP/2 server");
+        let port = server.local_addr().port();
+        let runtime = Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .expect("HTTPS HTTP/2 client runtime");
+        let client = runtime
+            .block_on(Http2Client::connect(
+                &format!("https://127.0.0.1:{port}"),
+                Http2ClientConfig::default()
+                    .with_tls_config(client_config)
+                    .allow_private_networks(true),
+            ))
+            .expect("connect HTTPS HTTP/2 client");
+        let response = runtime
+            .block_on(client.request(Http2Request {
+                method: "GET".to_string(),
+                target: "/secure-client".to_string(),
+                headers: Vec::new(),
+                body: Vec::new(),
+            }))
+            .expect("HTTPS HTTP/2 client response");
+        assert_eq!(response.status_code, 200);
+        assert_eq!(response.body, b"GET /secure-client".to_vec());
+        drop(client);
+        let stats = server.shutdown().expect("shutdown HTTPS HTTP/2 server");
+        assert_eq!(stats.completed_streams, 1);
+        assert_eq!(stats.active_connections, 0);
+    }
+
+    #[test]
+    fn client_sends_request_body_with_stream_flow_control() {
+        let handler: Http2Handler = Arc::new(|request| Http2Response {
+            status_code: 200,
+            headers: Vec::new(),
+            body: request.body,
+        });
+        let mut server = Http2Server::start(
+            Http2Config {
+                shutdown_grace_period: Duration::from_millis(100),
+                ..Http2Config::default()
+            },
+            handler,
+        )
+        .expect("start HTTP/2 body server");
+        let port = server.local_addr().port();
+        let runtime = Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .expect("HTTP/2 body client runtime");
+        let client = runtime
+            .block_on(Http2Client::connect(
+                &format!("http://127.0.0.1:{port}"),
+                Http2ClientConfig::default().allow_private_networks(true),
+            ))
+            .expect("connect HTTP/2 body client");
+        let body = (0..50_000)
+            .map(|value| (value % 251) as u8)
+            .collect::<Vec<_>>();
+        let response = runtime
+            .block_on(client.request(Http2Request {
+                method: "POST".to_string(),
+                target: "/upload".to_string(),
+                headers: vec![Http2Header {
+                    name: "content-type".to_string(),
+                    value: "application/octet-stream".to_string(),
+                }],
+                body: body.clone(),
+            }))
+            .expect("HTTP/2 body response");
+        assert_eq!(response.status_code, 200);
+        assert_eq!(response.body, body);
+        drop(client);
+        let stats = server.shutdown().expect("shutdown HTTP/2 body server");
+        assert_eq!(stats.completed_streams, 1);
+        assert_eq!(stats.active_connections, 0);
+    }
+
+    #[test]
+    #[ignore = "requires a known external h2 endpoint in SPECTRA_HTTP2_EXTERNAL_URL"]
+    fn known_external_http2_endpoint_round_trips() {
+        let url = env::var("SPECTRA_HTTP2_EXTERNAL_URL")
+            .expect("SPECTRA_HTTP2_EXTERNAL_URL must contain an https h2 endpoint");
+        let runtime = Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .expect("external HTTP/2 client runtime");
+        let client = runtime
+            .block_on(Http2Client::connect(&url, Http2ClientConfig::default()))
+            .expect("connect external HTTP/2 endpoint");
+        let response = runtime
+            .block_on(client.request(Http2Request {
+                method: "GET".to_string(),
+                target: "/".to_string(),
+                headers: Vec::new(),
+                body: Vec::new(),
+            }))
+            .expect("external HTTP/2 response");
+        assert!(
+            (200..500).contains(&response.status_code),
+            "unexpected external HTTP/2 status {}",
+            response.status_code
+        );
+    }
+
+    #[test]
     fn client_accepts_server_push_and_invokes_callback() {
         let listener = StdTcpListener::bind("127.0.0.1:0").expect("bind push server");
         listener
@@ -1148,21 +1311,22 @@ mod tests {
                     .expect("read push request")
                     .is_some()
                 {}
+                let driver = tokio::spawn(async move {
+                    let _ = tokio::time::timeout(Duration::from_millis(500), async {
+                        while let Some(result) = connection.accept().await {
+                            let _ = result;
+                        }
+                    })
+                    .await;
+                });
                 let pushed_request = Request::builder()
                     .method("GET")
-                    .uri("/asset.js")
+                    .uri(format!("http://127.0.0.1:{port}/asset.js"))
                     .body(())
                     .expect("push request");
                 let mut pushed = respond
                     .push_request(pushed_request)
                     .expect("send push promise");
-                let response = H2Response::builder()
-                    .status(200)
-                    .body(())
-                    .expect("main push response");
-                respond
-                    .send_response(response, true)
-                    .expect("send main push response");
                 let pushed_response = H2Response::builder()
                     .status(200)
                     .header("content-type", "application/javascript")
@@ -1174,10 +1338,17 @@ mod tests {
                 pushed_stream
                     .send_data(Bytes::from_static(b"console.log('push');"), true)
                     .expect("send pushed body");
-                let _ = tokio::time::timeout(Duration::from_millis(500), async {
-                    while connection.accept().await.is_some() {}
-                })
-                .await;
+                let response = H2Response::builder()
+                    .status(200)
+                    .body(())
+                    .expect("main push response");
+                let mut main_stream = respond
+                    .send_response(response, false)
+                    .expect("send main push response");
+                main_stream
+                    .send_data(Bytes::from_static(b"index"), true)
+                    .expect("send main push body");
+                driver.await.expect("join push server driver");
             });
         });
 

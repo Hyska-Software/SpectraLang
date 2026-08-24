@@ -566,6 +566,7 @@ fn make_std_api_websocket(prefix: &str) -> ModuleExports {
     );
     let server = api_type("WebSocketServer");
     let client = api_type("WebSocketClient");
+    let route = api_type("Route");
     let connection = api_type("WebSocket");
     let message = api_type("WebSocketMessage");
     let functions = [
@@ -596,6 +597,11 @@ fn make_std_api_websocket(prefix: &str) -> ModuleExports {
             api_task(connection.clone()),
         ),
         ("server_new", vec![], server.clone()),
+        (
+            "server_route",
+            vec![server.clone(), route],
+            Type::Bool,
+        ),
         (
             "server_listen",
             vec![server.clone(), Type::Int],

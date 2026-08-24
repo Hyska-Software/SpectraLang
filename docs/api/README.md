@@ -40,6 +40,8 @@ Reference pages:
 - [WebSocket server](std-api-websocket.md)
 - [Server-Sent Events](std-api-sse.md)
 - [HTTP/2 server transport](std-api-http2.md)
+- [HTTP/2 client transport](std-api-http2-client.md)
+- [HTTP/3 and QUIC decision](std-api-http3.md)
 - [Server lifecycle](std-api-server-lifecycle.md)
 - `std.api.client.request(Client, Request)` returns a `Task<Response>` and
   accepts an absolute `http://` or `https://` URL in the request path for

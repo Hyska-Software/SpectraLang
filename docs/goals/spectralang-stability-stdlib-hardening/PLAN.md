@@ -1227,22 +1227,23 @@ snapshot semântico, catálogo, build/check/run de
 Redis 7 externo continua certificado pelo gate independente de R-2507; uma
 execução sem serviço Redis não é promovida a evidência de infraestrutura.
 
-## Atualização R-2401: servidor WebSocket RFC 6455 (2026-08-19)
+## Atualização R-2401: servidor WebSocket RFC 6455 (2026-08-20)
 
 Foi implementado o núcleo nativo de `std.api.websocket` em
 `packages/spectra-api/src/websocket.rs`, incluindo handshake `101`, validação
 de frames RFC 6455, máscaras, fragmentação de mensagens texto/binário,
 ping/pong, close codes, limites de payload e negociação de
-`permessage-deflate`. A superfície possui 17 host calls, handles próprios e
+`permessage-deflate`. A superfície possui 18 host calls, handles próprios e
 funções assíncronas canceláveis; o fixture `tests/validation/343_api_websocket.spectra`
 passa no caminho normal da CLI.
 
-O item permanece `in_progress`: ainda faltam a integração do upgrade com o
-roteador HTTP existente e a evidência real de soak para 10 mil conexões
-concorrentes. `scripts/validate_r2401_websocket.py` foi adicionado ao gate
-dedicado e preserva explicitamente esses critérios restantes.
+Além do listener dedicado, `server_route` associa uma rota `GET` existente ao
+`std.api.server`; o loop HTTP processa o upgrade e `server_accept` recebe a
+conexão já atualizada. O teste nativo de integração e o soak real de 10 mil
+conexões concorrentes passaram em 2026-08-20, junto com o fixture, snapshot e
+o gate `scripts/validate_r2401_websocket.py`. R-2401 foi marcado `complete`.
 
-## Atualização R-2402: cliente WebSocket (2026-08-19)
+## Atualização R-2402: cliente WebSocket (2026-08-20)
 
 `WebSocketClient` foi adicionado ao módulo `std.api.websocket`. O cliente
 gera nonce criptográfico por tentativa, valida a resposta `101`, impõe
@@ -1253,9 +1254,12 @@ round-trip TLS com raiz explícita e a segunda tentativa após um handshake
 falho; `tests/validation/344_api_websocket_client.spectra` valida a
 configuração pela CLI.
 
-R-2402 permanece `in_progress`: falta obter certificação contra um echo server
-externo. O teste nativo de `wss://` comprova o transporte local, mas não
-substitui interoperabilidade externa.
+R-2402 foi marcado `complete` após o teste ignorado de interoperabilidade
+externa executar round-trip de texto e binário contra
+`wss://testserver.host/ws/no-subprotocol/echo`. O comando reproduzível é
+`python scripts/validate_r2402_websocket_client.py --require-external
+--external-url wss://testserver.host/ws/no-subprotocol/echo`; o gate normal
+mantém essa evidência registrada e não depende de rede externa.
 
 ## Atualização R-2403: Server-Sent Events (2026-08-19)
 
@@ -1284,3 +1288,69 @@ pacote passa e `scripts/validate_r2404_http2.py` foi ligado ao runner como
 Group 8.78. O item entrega o transporte nativo; o contrato roteado existente
 de `std.api.server` continua sendo HTTP/1.1 até haver uma especificação de
 callback/router para streams HTTP/2 concorrentes.
+
+## Atualização R-2405: cliente HTTP/2 nativo (2026-08-20)
+
+Foi adicionado o `Http2Client` em `packages/spectra-api/src/http2.rs`. O
+cliente reutiliza uma conexão para streams concorrentes, usa flow-control
+limitado para corpos, aplica o bloqueio SSRF depois do DNS, negocia somente
+`h2` em HTTPS com rustls e aceita raízes explícitas para certificados de teste.
+Também expõe callback para server push, com validação nativa de multiplexação,
+HTTPS/ALPN e promessa de recurso.
+
+Evidência: `cargo test -p spectra-api --lib http2 --offline --
+--test-threads=1`, `cargo check -p spectra-api --offline`,
+`scripts/validate_r2405_http2_client.py` e o teste ignorado contra
+`https://nghttp2.org`, executado em 2026-08-20 com
+PowerShell `$env:SPECTRA_HTTP2_EXTERNAL_URL = "https://nghttp2.org"` e
+`cargo test -q -p spectra-api --lib
+http2::tests::known_external_http2_endpoint_round_trips --offline --
+--ignored --test-threads=1`. R-2405 foi marcado `complete`; a certificação
+externa deve ser revalidada no gate de release porque o endpoint público pode
+mudar.
+
+## Atualização R-2406: decisão HTTP/3/QUIC (2026-08-20)
+
+R-2406 foi concluído como decisão de escopo, não como implementação parcial.
+O ADR 0014 mantém HTTP/1.1 e HTTP/2 como superfícies estáveis e adia HTTP/3
+até existir uma implementação QUIC Rust mantida e compatível, conformance com
+pares independentes, evidência Linux/Windows/macOS/BSD, migração de conexão,
+cancelamento e integração revisada com `Task<T>`/`Stream<T>`. A reavaliação foi
+fixada para 2026-11-30.
+
+Evidência: `scripts/validate_r2406_http3_decision.py` valida o ADR, o catálogo
+de decisões, os três documentos de planejamento e o runner. Nenhum capability
+ou host call HTTP/3 foi exposto.
+
+## Atualização da cobertura BSD/kqueue (2026-08-20)
+
+O contrato do reactor foi reforçado para afirmar explicitamente todos os alvos
+BSD suportados (`freebsd`, `openbsd`, `netbsd` e `dragonfly`) tanto na seleção
+de backend quanto no teste de fallback para alvos desconhecidos. O validator
+`scripts/validate_r2104_reactor.py` agora verifica esses alvos, o teste
+`bsd_kqueue_backend_is_selected` e a lane CI dedicada
+`.github/workflows/r2104-freebsd-kqueue.yml`.
+
+A lane usa uma VM FreeBSD nativa via `vmactions/freebsd-vm@v1` e executa os
+testes reais do reactor e da STD async. Essa alteração fecha a lacuna de
+automação do gate, mas K-09/K-12 continuam `in_progress` até a lane executar
+com sucesso em CI e a execução macOS/kqueue também produzir evidência para o
+estado atual do código. Nenhuma execução BSD/macOS é reivindicada a partir
+deste workspace Windows.
+
+## Auditoria dos gates externos após a rodada (2026-08-20)
+
+Os gates remotos foram consultados sem disparar novos workflows. O run
+PostgreSQL `31755959845` passou no commit remoto auditado. Os runs Redis
+`31755959785` e `30826110028` chegaram ao Redis 7 e passaram o probe RESP
+independente, mas falharam no teste de pub/sub em
+`real_redis_commands_ttl_and_pubsub`: `DB2507_SERVER` com
+`Resource temporarily unavailable (os error 11)` após o timeout de leitura.
+
+Esse erro não foi reproduzido no estado local atual: com um Redis 7 temporário,
+o teste de integração passou cinco vezes consecutivas e
+`validate_r2507_redis.py --require-redis` passou com probe independente,
+fixture CLI, integração Rust e verificação de segredo. Como a execução local
+não substitui o CI requerido, R-2507/K-11/K-12 não são promovidos por essa
+prova; o próximo run remoto deve confirmar se o EAGAIN foi transitório ou se
+exige uma correção adicional no transporte pub/sub.

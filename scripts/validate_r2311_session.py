@@ -13,8 +13,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 414
-RUNTIME_REQUIRED_HOST_CALL_COUNT = 346
+PACKAGE_HOST_CALL_COUNT = 415
+RUNTIME_REQUIRED_HOST_CALL_COUNT = 347
 SESSION_CALLS = [
     "memory_store",
     "redis_store",

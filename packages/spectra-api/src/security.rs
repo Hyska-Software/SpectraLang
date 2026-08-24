@@ -96,17 +96,9 @@ fn is_state_changing(method: Method) -> bool {
 /// SSRF policy applied after DNS resolution and before a client socket is
 /// opened. The default rejects loopback, RFC1918, link-local, unspecified,
 /// multicast, and IPv6 unique-local addresses.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SsrfPolicy {
     allow_private_networks: bool,
-}
-
-impl Default for SsrfPolicy {
-    fn default() -> Self {
-        Self {
-            allow_private_networks: false,
-        }
-    }
 }
 
 impl SsrfPolicy {

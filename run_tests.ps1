@@ -2679,6 +2679,32 @@ if ($r2404Http2.Status -eq "PASSOU") {
 $results += [PSCustomObject]@{ Diretorio = "phase24-api"; Teste = "validate_r2404_http2"; Status = $r2404Http2.Status; Detalhe = $r2404Http2.Detail }
 
 # ---------------------------------------------------------------------------
+# Grupo 8.79: R-2405 HTTP/2 client
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2405 HTTP/2 client ---" -ForegroundColor Yellow
+$r2405Http2Client = Invoke-HostCommand -name "validate_r2405_http2_client" -fileName "python" -arguments @("scripts\validate_r2405_http2_client.py") -workingDir (Get-Location).Path
+if ($r2405Http2Client.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase24-api"; Teste = "validate_r2405_http2_client"; Status = $r2405Http2Client.Status; Detalhe = $r2405Http2Client.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.80: R-2406 HTTP/3 and QUIC scope decision
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2406 HTTP/3 and QUIC scope decision ---" -ForegroundColor Yellow
+$r2406Http3Decision = Invoke-HostCommand -name "validate_r2406_http3_decision" -fileName "python" -arguments @("scripts\validate_r2406_http3_decision.py") -workingDir (Get-Location).Path
+if ($r2406Http3Decision.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase24-api"; Teste = "validate_r2406_http3_decision"; Status = $r2406Http3Decision.Status; Detalhe = $r2406Http3Decision.Detail }
+
+# ---------------------------------------------------------------------------
 # Grupo 9: Phase 12 security evidence and stress/soak smoke
 # ---------------------------------------------------------------------------
 Write-Host ""

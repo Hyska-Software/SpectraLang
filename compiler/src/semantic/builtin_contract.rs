@@ -1028,6 +1028,10 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "func() returns WebSocketServer",
     ),
     (
+        "std.api.websocket.server_route",
+        "func(WebSocketServer, Route) returns bool",
+    ),
+    (
         "std.api.websocket.server_listen",
         "func(WebSocketServer, int) returns bool",
     ),
