@@ -26,6 +26,15 @@ impl LanguageServer for Backend {
                 document_symbol_provider: Some(OneOf::Left(true)),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
                 document_formatting_provider: Some(OneOf::Left(true)),
+                // On-type formatting is intentionally NOT enabled
+                // (no documentOnTypeFormattingProvider): the only formatter is
+                // the external `spectralang fmt --stdin` subprocess, measured
+                // at ~300 ms per invocation on a warm cache (5 sequential runs
+                // = 1.52 s) on this class of hardware. Firing a full-document
+                // process round-trip on every `}` keystroke would visibly lag
+                // typing, and partial sources mid-edit make the result
+                // unreliable. Revisit only if formatting becomes an in-process
+                // library call.
                 signature_help_provider: Some(SignatureHelpOptions {
                     trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
                     retrigger_characters: Some(vec![",".to_string()]),
@@ -65,7 +74,11 @@ impl LanguageServer for Backend {
                         supported: Some(true),
                         change_notifications: Some(OneOf::Left(true)),
                     }),
-                    ..Default::default()
+                    file_operations: Some(WorkspaceFileOperationsServerCapabilities {
+                        will_rename: Some(spectra_file_operation_registration()),
+                        did_rename: Some(spectra_file_operation_registration()),
+                        ..Default::default()
+                    }),
                 }),
                 ..Default::default()
             },
@@ -734,6 +747,7 @@ impl LanguageServer for Backend {
             })
             .collect();
         items.extend(std_api_completion_items());
+        items.extend(snippet_completion_items());
 
         if let Some(document) = document {
             if let Some(module) = &document.analysis.module {
@@ -745,6 +759,43 @@ impl LanguageServer for Backend {
         }
 
         Ok(Some(CompletionResponse::Array(items)))
+    }
+
+    async fn will_rename_files(&self, params: RenameFilesParams) -> Result<Option<WorkspaceEdit>> {
+        let documents = self.state.documents.read().await;
+        let changes = will_rename_import_edits(&documents, &params.files);
+        drop(documents);
+
+        if changes.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(WorkspaceEdit {
+            changes: Some(changes),
+            document_changes: None,
+            change_annotations: None,
+        }))
+    }
+
+    async fn did_rename_files(&self, params: RenameFilesParams) {
+        for file in &params.files {
+            let (Ok(old_uri), Ok(new_uri)) = (Url::parse(&file.old_uri), Url::parse(&file.new_uri))
+            else {
+                continue;
+            };
+            // Drop every stale handle keyed by the old URI; the client
+            // re-sends didOpen/didChange for the new URI and
+            // ensure_workspace_cache picks the file up from disk.
+            if let Some(old) = self.state.debounce_handles.lock().await.remove(&old_uri) {
+                old.abort();
+            }
+            self.state.documents.write().await.remove(&old_uri);
+            self.state.workspace_cache.write().await.remove(&old_uri);
+            self.client
+                .publish_diagnostics(old_uri, Vec::new(), None)
+                .await;
+            self.refresh_cache_from_disk(&new_uri).await;
+        }
     }
 
     async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<Value>> {

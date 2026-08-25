@@ -29,6 +29,7 @@ use spectra_compiler::{
     lint::LintDiagnostic,
     span::Span,
     CompilationOptions, DebugInfoMode, Lexer, LintOptions, LintRule, Parser,
+    analyze_document, collect_let_inlay_hints,
 };
 use spectra_db::{migrations::SqliteMigrator, sqlite::SqliteConnection};
 use std::collections::{BTreeMap, HashSet};
@@ -253,6 +254,7 @@ include!("cli_parse_package.rs");
 include!("cli_build.rs");
 include!("cli_bench.rs");
 include!("cli_aot.rs");
+include!("repl_session.rs");
 include!("cli_repl_project.rs");
 include!("cli_package.rs");
 include!("cli_diagnostics.rs");

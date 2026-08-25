@@ -15,7 +15,7 @@ use spectra_compiler::{
     CompilerError,
 };
 use spectra_midend::{
-    ir::{pretty::format_module, Module as IRModule},
+    ir::{pretty::format_module, Module as IRModule, Type as IRType},
     lowering::ASTLowering,
     passes::{
         concurrent_spawn_join_fusion::ConcurrentSpawnJoinFusion, constant_folding::ConstantFolding,
@@ -226,6 +226,11 @@ pub struct NativeDebugFunction {
     /// Span-derived `(machine offset relative to function start, 1-based
     /// source line)` rows captured by AOT codegen from IR `source_span`s.
     pub line_rows: Vec<(u32, u32)>,
+    /// IR type per entry of `locals`, index-aligned; drives real CodeView
+    /// type indices and DWARF type DIEs.
+    pub local_types: Vec<IRType>,
+    /// Real stack-frame size captured from Cranelift's finalized layout.
+    pub frame_size: u32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -250,6 +255,12 @@ fn native_debug_metadata(module: &IRModule, executable: bool) -> NativeDebugMeta
                 .collect(),
             local_offsets: vec![None; function.locals.len()],
             local_locations: vec![Vec::new(); function.locals.len()],
+            local_types: function
+                .locals
+                .iter()
+                .map(|local| local.ty.clone())
+                .collect(),
+            frame_size: 0,
             line_rows: Vec::new(),
         })
         .collect::<Vec<_>>();

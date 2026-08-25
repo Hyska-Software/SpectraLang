@@ -1,0 +1,5 @@
+module sem_field_on_int
+public func main() returns int {
+    let x = 42
+    return x.foo.bar(1, 2).baz
+}

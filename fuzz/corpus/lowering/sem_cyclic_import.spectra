@@ -1,0 +1,4 @@
+module sem_cyclic_import
+import sem_cyclic_import.main
+from nonexistent.module import everything
+public func main() returns int { return main() }

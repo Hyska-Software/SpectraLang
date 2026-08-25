@@ -111,10 +111,18 @@ fn print_repl_help() {
     println!("                           Compatibility no-op for older scripts (no active experimental language gates)");
     println!();
     println!("Interactive commands:");
-    println!("    :load <paths>...       Compile modules without executing");
-    println!("    :run <paths>...        Compile and execute modules");
-    println!("    :check <paths>...      Type-check modules only");
-    println!("    :compile <paths>...    Alias for :load");
+    println!("    <declaration>          Append a func/record/enum/import/... to the session buffer");
+    println!("                           (validated by recompiling the whole buffer; rejected");
+    println!("                           input never changes the buffer)");
+    println!("    <expression>           Evaluate immediately and print the value");
+    println!("    :{{ ... }}:              Paste a multi-line block, processed as one input");
+    println!("    :type <expr>           Show the inferred type of an expression");
+    println!("    :buffer                Print the current session module source");
+    println!("    :reset                 Clear the session buffer");
+    println!("    :save <path>           Write the session buffer to a file");
+    println!("    :load <path>           Merge a file into the session buffer (module header stripped)");
+    println!("    :run/:check/:compile <paths>...");
+    println!("                           Compile external files without touching the buffer");
     println!("    :help                  Show this help text");
     println!("    :quit                  Exit the REPL");
 }

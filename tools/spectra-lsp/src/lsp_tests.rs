@@ -209,4 +209,204 @@ public async func handle(request: std.api.http.Request)  returns  std.api.http.R
         assert!(result.contains("let value_extra = 2"));
         assert!(result.contains("return renamed + value_extra"));
     }
+
+    /// Expands LSP snippet markers so snippet bodies can be checked against
+    /// the real parser: `${N:default}` keeps its default text, `$N` and `$0`
+    /// vanish.
+    fn expand_snippet(body: &str) -> String {
+        let mut expanded = String::with_capacity(body.len());
+        let mut chars = body.chars().peekable();
+        while let Some(current) = chars.next() {
+            if current != '$' {
+                expanded.push(current);
+                continue;
+            }
+            match chars.peek() {
+                Some('{') => {
+                    chars.next();
+                    let mut inner = String::new();
+                    for nested in chars.by_ref() {
+                        if nested == '}' {
+                            break;
+                        }
+                        inner.push(nested);
+                    }
+                    // `N:default` -> default; bare `N` -> nothing.
+                    match inner.split_once(':') {
+                        Some((_, default)) => expanded.push_str(default),
+                        None => {}
+                    }
+                }
+                _ => {
+                    // bare tabstop like `$0` or `$1`: drop it.
+                    if matches!(chars.peek(), Some(digit) if digit.is_ascii_digit()) {
+                        chars.next();
+                    } else {
+                        expanded.push('$');
+                    }
+                }
+            }
+        }
+        expanded
+    }
+
+    fn placeholder_numbers(body: &str) -> Vec<u32> {
+        let mut numbers = Vec::new();
+        let bytes = body.as_bytes();
+        let mut index = 0;
+        while index < bytes.len() {
+            if bytes[index] == b'$' && index + 1 < bytes.len() && bytes[index + 1] == b'{' {
+                let mut cursor = index + 2;
+                let mut number = 0u32;
+                while cursor < bytes.len() && bytes[cursor].is_ascii_digit() {
+                    number = number * 10 + u32::from(bytes[cursor] - b'0');
+                    cursor += 1;
+                }
+                numbers.push(number);
+                index = cursor;
+            } else {
+                index += 1;
+            }
+        }
+        numbers
+    }
+
+    #[test]
+    fn snippet_completions_use_snippet_format_with_ordered_placeholders() {
+        let items = snippet_completion_items();
+        assert!(items.len() >= 7, "expected the documented snippet set");
+
+        for item in &items {
+            assert_eq!(
+                item.insert_text_format,
+                Some(InsertTextFormat::SNIPPET),
+                "snippet '{}' must declare InsertTextFormat=2",
+                item.label
+            );
+            assert_eq!(item.kind, Some(CompletionItemKind::SNIPPET));
+            let body = item.insert_text.as_deref().unwrap_or_default();
+            assert!(body.contains("$0"), "snippet '{}' lacks a final tabstop", item.label);
+            let numbers = placeholder_numbers(body);
+            if numbers.is_empty() {
+                // Tabstop-only snippet (e.g. `async block`); nothing to order.
+                continue;
+            }
+            let mut sorted = numbers.clone();
+            sorted.sort_unstable();
+            assert_eq!(
+                (numbers.first().copied(), sorted.first().copied()),
+                (Some(1), Some(1)),
+                "snippet '{}' must start at ${{1:..}}",
+                item.label
+            );
+        }
+
+        let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
+        for expected in ["func", "record", "enum", "match", "if let", "for"] {
+            assert!(labels.contains(&expected), "missing snippet '{expected}'");
+        }
+
+        // Plain keyword completions stay plaintext (no InsertTextFormat).
+        let keyword_item = CompletionItem {
+            label: "func".to_string(),
+            kind: Some(CompletionItemKind::KEYWORD),
+            ..Default::default()
+        };
+        assert_eq!(keyword_item.insert_text_format, None);
+    }
+
+    #[test]
+    fn snippet_bodies_expand_to_parseable_spectra() {
+        for item in snippet_completion_items() {
+            let body = item.insert_text.as_deref().expect("snippet text");
+            let expanded = expand_snippet(body);
+            // Declaration snippets (record/enum) live at module level;
+            // statement/expression snippets (match/if let/for/async block)
+            // live inside a function body. Either context must parse.
+            let top_level = format!("module snippet_check\n\n{}\n", expanded);
+            let in_function = format!(
+                "module snippet_check\n\npublic func main() returns int {{\n{}\n    return 0\n}}\n",
+                expanded
+            );
+            let top = analyzed_document(&top_level).analysis.module.is_some();
+            let inner = analyzed_document(&in_function).analysis.module.is_some();
+            assert!(
+                top || inner,
+                "snippet '{}' does not parse in any context.\nexpanded:\n{}",
+                item.label,
+                expanded
+            );
+        }
+    }
+
+
+    #[test]
+    fn will_rename_updates_imports_in_open_documents() {
+        let consumer_source = "module consumer\n\nfrom util import helper\n";
+        let namespace_source = "module namespace_user\n\nimport util as u\n";
+        let renamed_source = "module util\n\npublic func helper() returns unit {\n}\n";
+
+        let old_uri = Url::from_file_path("D:/ws/util.spectra").expect("old uri");
+        let new_uri = Url::from_file_path("D:/ws/utils.spectra").expect("new uri");
+        let consumer_uri = Url::from_file_path("D:/ws/consumer.spectra").expect("consumer uri");
+        let namespace_uri =
+            Url::from_file_path("D:/ws/namespace_user.spectra").expect("namespace uri");
+
+        let mut documents = HashMap::new();
+        documents.insert(consumer_uri.clone(), analyzed_document(consumer_source));
+        documents.insert(namespace_uri.clone(), analyzed_document(namespace_source));
+        documents.insert(old_uri.clone(), analyzed_document(renamed_source));
+
+        let files = vec![FileRename {
+            old_uri: old_uri.to_string(),
+            new_uri: new_uri.to_string(),
+        }];
+        let changes = will_rename_import_edits(&documents, &files);
+
+        let consumer_edits = changes
+            .get(&consumer_uri)
+            .expect("consumer document must receive import edits");
+        assert_eq!(consumer_edits.len(), 1);
+        assert_eq!(consumer_edits[0].new_text, "utils");
+        assert_eq!(
+            apply_text_edits(consumer_source, consumer_edits),
+            "module consumer\n\nfrom utils import helper\n"
+        );
+
+        let namespace_edits = changes
+            .get(&namespace_uri)
+            .expect("aliased import must be updated too");
+        assert_eq!(namespace_edits[0].new_text, "utils");
+        assert_eq!(
+            apply_text_edits(namespace_source, namespace_edits),
+            "module namespace_user\n\nimport utils as u\n"
+        );
+
+        // The renamed document itself never receives edits.
+        assert!(!changes.contains_key(&old_uri) && !changes.contains_key(&new_uri));
+    }
+
+    #[test]
+    fn will_rename_without_module_change_yields_no_edits() {
+        let source = "module util\n\npublic func helper() returns unit {\n}\n";
+        let old_uri = Url::from_file_path("D:/ws/util.spectra").expect("old uri");
+        let new_uri = Url::from_file_path("D:/ws/util_v2.spectra").expect("new uri");
+        let mut documents = HashMap::new();
+        documents.insert(old_uri.clone(), analyzed_document(source));
+
+        let files = vec![FileRename {
+            old_uri: old_uri.to_string(),
+            new_uri: new_uri.to_string(),
+        }];
+        assert!(will_rename_import_edits(&documents, &files).is_empty());
+    }
+
+    #[test]
+    fn cli_default_resolves_spectralang_binary() {
+        assert_eq!(
+            ServerConfig::default().cli_path,
+            "spectralang",
+            "server-side CLI default must target the real binary name"
+        );
+    }
 }

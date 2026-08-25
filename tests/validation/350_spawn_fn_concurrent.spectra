@@ -1,0 +1,43 @@
+module validation_350_spawn_fn_concurrent
+
+import std.concurrent as concurrent
+import std.time as time
+
+public func main() returns int {
+    concurrent.reset()
+
+    // Two task_spawn_fn closures each sleeping ~150ms on the runtime worker
+    // pool. If the closures ran sequentially (cosmetic concurrency), the wall
+    // time between spawn and join would be >= 300ms.
+    let start = time.monotonic_millis()
+    let first = concurrent.task_spawn_fn(| value: int | {
+        time.sleep_ms(150)
+        value + 10
+    }, 1)
+    let second = concurrent.task_spawn_fn(| value: int | {
+        time.sleep_ms(150)
+        value + 20
+    }, 2)
+
+    let first_result = concurrent.task_join(first)
+    let second_result = concurrent.task_join(second)
+    let elapsed = time.monotonic_millis() - start
+
+    if first_result != 11 {
+        return 1
+    }
+    if second_result != 22 {
+        return 2
+    }
+    // Parallel workers overlap the two sleeps: measured wall time must stay
+    // below 300ms (the sequential lower bound).
+    if elapsed >= 290 {
+        return 3
+    }
+    if concurrent.stats_tasks_spawned() != 2 {
+        return 4
+    }
+
+    concurrent.reset()
+    return 0
+}

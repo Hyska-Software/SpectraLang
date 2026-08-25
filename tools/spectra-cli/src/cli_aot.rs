@@ -156,35 +156,33 @@ fn attach_native_codeview(
         ));
     }
     for function in &mut ranged_functions {
-        function.locals = debug_metadata.functions.iter()
+        if let Some(metadata) = debug_metadata
+            .functions
+            .iter()
             .find(|metadata| metadata.name == function.name)
-            .map(|metadata| metadata.locals.clone())
-            .unwrap_or_default();
-        function.local_offsets = debug_metadata.functions.iter()
-            .find(|metadata| metadata.name == function.name)
-            .map(|metadata| metadata.local_offsets.clone())
-            .unwrap_or_default();
-        function.local_locations = debug_metadata.functions.iter()
-            .find(|metadata| metadata.name == function.name)
-            .map(|metadata| metadata.local_locations.clone())
-            .unwrap_or_default();
-        function.line_rows = debug_metadata.functions.iter()
-            .find(|metadata| metadata.name == function.name)
-            .map(|metadata| metadata.line_rows.clone())
-            .unwrap_or_default();
+        {
+            function.locals = metadata.locals.clone();
+            function.local_offsets = metadata.local_offsets.clone();
+            function.local_locations = metadata.local_locations.clone();
+            function.line_rows = metadata.line_rows.clone();
+            function.local_types = metadata.local_types.clone();
+            function.frame_size = metadata.frame_size;
+        }
     }
-    let records = spectra_backend::debug::codeview_section_with_ranges(
+    let source = fs::read_to_string(source_path)
+        .map_err(|e| CliError::io(format!("Cannot read source for debug lines: {e}")))?;
+    let sections = spectra_backend::debug::codeview_sections(
         &source_path.to_string_lossy(),
         &ranged_functions,
-        &fs::read_to_string(source_path).map_err(|e| CliError::io(format!("Cannot read source for debug lines: {e}")))?,
+        &source,
     );
-    let rewritten = spectra_backend::debug::append_coff_section(
-        &object_bytes,
-        ".debug$S",
-        &records,
-        0x4230_0040,
-    )
-    .map_err(CliError::compilation)?;
+    // Attach the C13 stream and, when real type information exists, the
+    // matching type stream; S_LOCAL/S_GPROC32 indices resolve against it.
+    let mut rewritten = object_bytes;
+    for (name, data) in &sections {
+        rewritten = spectra_backend::debug::append_coff_section(&rewritten, name, data, 0x4230_0040)
+            .map_err(CliError::compilation)?;
+    }
     fs::write(object_path, rewritten)
         .map_err(|e| CliError::io(format!("Cannot write CodeView-enabled object: {}", e)))
 }
@@ -209,22 +207,18 @@ fn attach_native_dwarf(object_path: &Path, source_path: &Path, debug_metadata: &
         ));
     }
     for function in &mut functions {
-        function.locals = debug_metadata.functions.iter()
+        if let Some(metadata) = debug_metadata
+            .functions
+            .iter()
             .find(|metadata| metadata.name == function.name)
-            .map(|metadata| metadata.locals.clone())
-            .unwrap_or_default();
-        function.local_offsets = debug_metadata.functions.iter()
-            .find(|metadata| metadata.name == function.name)
-            .map(|metadata| metadata.local_offsets.clone())
-            .unwrap_or_default();
-        function.local_locations = debug_metadata.functions.iter()
-            .find(|metadata| metadata.name == function.name)
-            .map(|metadata| metadata.local_locations.clone())
-            .unwrap_or_default();
-        function.line_rows = debug_metadata.functions.iter()
-            .find(|metadata| metadata.name == function.name)
-            .map(|metadata| metadata.line_rows.clone())
-            .unwrap_or_default();
+        {
+            function.locals = metadata.locals.clone();
+            function.local_offsets = metadata.local_offsets.clone();
+            function.local_locations = metadata.local_locations.clone();
+            function.line_rows = metadata.line_rows.clone();
+            function.local_types = metadata.local_types.clone();
+            function.frame_size = metadata.frame_size;
+        }
     }
     let source = fs::read_to_string(source_path)
         .map_err(|e| CliError::io(format!("Cannot read source for DWARF lines: {e}")))?;

@@ -477,3 +477,142 @@ fn workspace_definition_locations(
     locations
 }
 
+
+fn spectra_file_operation_registration() -> FileOperationRegistrationOptions {
+    FileOperationRegistrationOptions {
+        filters: vec![FileOperationFilter {
+            scheme: Some("file".to_string()),
+            pattern: FileOperationPattern {
+                glob: "**/*.spectra".to_string(),
+                matches: None,
+                options: None,
+            },
+        }],
+    }
+}
+
+/// Module name the renamed file declares. Prefers the document's own `module`
+/// declaration (open documents are analyzed); falls back to the file stem so a
+/// closed-but-cached rename still works when module and stem agree.
+fn declared_or_stem_module(documents: &HashMap<Url, DocumentState>, uri: &Url) -> Option<String> {
+    if let Some(document) = documents.get(uri) {
+        if let Some(module) = &document.analysis.module {
+            return Some(module.name.clone());
+        }
+    }
+    uri_file_stem(uri)
+}
+
+fn uri_file_stem(uri: &Url) -> Option<String> {
+    uri.to_file_path()
+        .ok()?
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().to_string())
+}
+
+/// willRenameFiles support: for every *other* open document whose imports
+/// reference the renamed module, produce edits that rewrite the import path
+/// segment to the new name. Only the dotted path inside each matching import
+/// statement is touched; aliases and named-import lists are preserved.
+fn will_rename_import_edits(
+    documents: &HashMap<Url, DocumentState>,
+    files: &[FileRename],
+) -> HashMap<Url, Vec<TextEdit>> {
+    let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
+
+    for file in files {
+        let Ok(old_uri) = Url::parse(&file.old_uri) else {
+            continue;
+        };
+        let Ok(new_uri) = Url::parse(&file.new_uri) else {
+            continue;
+        };
+        let Some(old_module) = declared_or_stem_module(documents, &old_uri) else {
+            continue;
+        };
+        let Some(new_module) = uri_file_stem(&new_uri) else {
+            continue;
+        };
+        if old_module == new_module {
+            continue;
+        }
+
+        for (uri, document) in documents {
+            if *uri == old_uri || *uri == new_uri {
+                continue;
+            }
+            let edits = import_update_edits_for_document(document, &old_module, &new_module);
+            if !edits.is_empty() {
+                changes.insert(uri.clone(), edits);
+            }
+        }
+    }
+
+    changes
+}
+
+
+fn import_update_edits_for_document(
+    document: &DocumentState,
+    old_module: &str,
+    new_module: &str,
+) -> Vec<TextEdit> {
+    let mut edits = Vec::new();
+    let mut seen = HashSet::new();
+    let Some(module) = &document.analysis.module else {
+        return edits;
+    };
+
+    for item in &module.items {
+        let spectra_compiler::ast::Item::Import(import) = item else {
+            continue;
+        };
+        if !import.path.iter().any(|segment| segment == old_module) {
+            continue;
+        }
+
+        // The import path is spelled dotted in source (`import util` /
+        // `from std.util import x`). Locate that exact text within the
+        // statement span so only the path is replaced.
+        let dotted = import.path.join(".");
+        let span_start = import.span.start.min(document.text.len());
+        let span_end = import.span.end.min(document.text.len());
+        if span_start >= span_end {
+            continue;
+        }
+        let Some(relative) = document.text[span_start..span_end].find(&dotted) else {
+            continue;
+        };
+
+        let start_offset = span_start + relative;
+        let end_offset = start_offset + dotted.len();
+        let key = format!("{}:{}", start_offset, end_offset);
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let updated_path = import
+            .path
+            .iter()
+            .map(|segment| {
+                if segment == old_module {
+                    new_module.to_string()
+                } else {
+                    segment.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(".");
+
+        edits.push(TextEdit {
+            range: Range {
+                start: offset_to_position(&document.text, start_offset),
+                end: offset_to_position(&document.text, end_offset),
+            },
+            new_text: updated_path,
+        });
+    }
+
+    edits.sort_by_key(|edit| edit.range.start);
+    edits
+}

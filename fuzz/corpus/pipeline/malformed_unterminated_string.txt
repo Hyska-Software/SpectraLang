@@ -1,0 +1,3 @@
+module m
+let s = "no closing quote
+let t = 1

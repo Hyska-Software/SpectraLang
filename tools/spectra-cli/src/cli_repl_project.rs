@@ -12,7 +12,7 @@ fn execute_repl(options: ReplOptions) -> CliResult<()> {
         return execute_repl_json(base_options, preload);
     }
 
-    let session = ReplSession::new(base_options, autorun, show_pipeline_summary, verbose);
+    let mut session = ReplSession::new(base_options, autorun, show_pipeline_summary, verbose);
 
     if !preload.is_empty() {
         if let Err(error) = session.compile_entries(preload, session.default_command(), true) {
@@ -23,11 +23,16 @@ fn execute_repl(options: ReplOptions) -> CliResult<()> {
     session.run()
 }
 
+/// Interactive session shell over [`ReplBuffer`]. See repl_session.rs for the
+/// persistence model: declarations accumulate and are validated as a whole
+/// before commit; expressions are evaluated through a temporary entry point.
 struct ReplSession {
     base_options: CompilationOptions,
     autorun: bool,
     show_pipeline_summary: bool,
     verbose: bool,
+    buffer: ReplBuffer,
+    scratch_path: PathBuf,
 }
 
 impl ReplSession {
@@ -42,6 +47,11 @@ impl ReplSession {
             autorun,
             show_pipeline_summary,
             verbose,
+            buffer: ReplBuffer::new(),
+            scratch_path: env::temp_dir().join(format!(
+                "spectra-repl-session-{}.spectra",
+                process::id()
+            )),
         }
     }
 
@@ -85,13 +95,26 @@ impl ReplSession {
         )
     }
 
-    fn run(&self) -> CliResult<()> {
-        println!("SpectraLang REPL (type ':help' for commands)");
+    fn run(&mut self) -> CliResult<()> {
+        println!("SpectraLang session REPL");
+        println!(
+            "  declarations accumulate in module '{}' and are recompiled as a whole;",
+            REPL_MODULE_NAME
+        );
+        println!(
+            "  bare expressions evaluate immediately. Type ':help' for commands."
+        );
 
         let stdin = io::stdin();
+        let mut block_lines: Option<Vec<String>> = None;
 
         loop {
-            print!("spectra> ");
+            let prompt = if block_lines.is_some() {
+                "   ....> "
+            } else {
+                "spectra> "
+            };
+            print!("{}", prompt);
             io::stdout()
                 .flush()
                 .map_err(|error| CliError::io(format!("Failed to flush prompt: {}", error)))?;
@@ -107,7 +130,27 @@ impl ReplSession {
             }
 
             let trimmed = line.trim();
+
+            if let Some(lines) = block_lines.as_mut() {
+                if trimmed == "}:" {
+                    let block = lines.join("\n");
+                    block_lines = None;
+                    self.process_input(&block);
+                } else if !trimmed.is_empty() {
+                    lines.push(trimmed.to_string());
+                }
+                continue;
+            }
+
             if trimmed.is_empty() {
+                continue;
+            }
+
+            if trimmed == ":{" {
+                block_lines = Some(Vec::new());
+                println!(
+                    "  multi-line input; finish with '}}:' on its own line, processed as one unit"
+                );
                 continue;
             }
 
@@ -118,81 +161,149 @@ impl ReplSession {
                 continue;
             }
 
-            let entries: Vec<PathBuf> = trimmed.split_whitespace().map(PathBuf::from).collect();
-
-            if let Err(error) = self.compile_entries(entries, self.default_command(), true) {
-                log_error(&error.message);
-            }
+            self.process_input(trimmed);
         }
 
+        let _ = fs::remove_file(&self.scratch_path);
         Ok(())
     }
 
-    fn handle_command(&self, input: &str) -> CliResult<bool> {
+    fn process_input(&mut self, text: &str) {
+        if repl_is_declaration(text) {
+            match self.buffer.append_checked(text, &self.base_options) {
+                Ok(()) => println!("  appended to session buffer"),
+                Err(diagnostics) => {
+                    println!("  rejected; buffer unchanged:");
+                    for diagnostic in &diagnostics {
+                        println!("    {}", diagnostic);
+                    }
+                }
+            }
+            return;
+        }
+
+        self.evaluate_expression(text);
+    }
+
+    fn evaluate_expression(&self, expression: &str) {
+        // Front-end gate first so broken expressions never reach the JIT.
+        let snapshot = self.buffer.expression_snapshot(expression);
+        let diagnostics = repl_session_diagnostics(&snapshot, &self.base_options);
+        if !diagnostics.is_empty() {
+            for diagnostic in &diagnostics {
+                println!("  {}", diagnostic);
+            }
+            return;
+        }
+
+        if let Err(error) = fs::write(&self.scratch_path, &snapshot) {
+            log_error(&format!(
+                "Failed to write REPL session scratch file: {}",
+                error
+            ));
+            return;
+        }
+
+        if let Err(error) =
+            self.compile_entries(vec![self.scratch_path.clone()], BuildCommand::Run, false)
+        {
+            log_error(&error.message);
+        }
+    }
+
+    /// Returns `false` when the loop should exit (`:quit`).
+    fn handle_command(&mut self, input: &str) -> CliResult<bool> {
         let command = input[1..].trim();
         if command.is_empty() {
             print_repl_help();
             return Ok(true);
         }
 
-        let mut parts = command.split_whitespace();
-        let keyword = parts.next().unwrap();
-        let args: Vec<PathBuf> = parts.map(PathBuf::from).collect();
+        let (keyword, rest) = match command.find(char::is_whitespace) {
+            Some(index) => (&command[..index], command[index..].trim()),
+            None => (command, ""),
+        };
 
         match keyword {
             "help" | "h" => {
                 print_repl_help();
-                Ok(true)
             }
-            "quit" | "q" | "exit" => Ok(false),
+            "quit" | "q" | "exit" => return Ok(false),
+            "reset" => {
+                self.buffer.clear();
+                println!("  session buffer cleared");
+            }
+            "buffer" | "b" => {
+                println!("{}", self.buffer.source());
+            }
+            "save" | "s" => {
+                if rest.is_empty() {
+                    println!("Usage: :save <path>");
+                    return Ok(true);
+                }
+                match fs::write(rest, self.buffer.source()) {
+                    Ok(()) => println!("     Saved session buffer to {}", rest),
+                    Err(error) => println!("  failed to save '{}': {}", rest, error),
+                }
+            }
             "load" | "l" => {
-                if args.is_empty() {
-                    println!("Usage: :load <paths>...");
+                if rest.is_empty() {
+                    println!("Usage: :load <path>   (merges the file into the session buffer)");
                     return Ok(true);
                 }
-                if let Err(error) = self.compile_entries(args, BuildCommand::Compile, true) {
-                    log_error(&error.message);
+                match fs::read_to_string(rest) {
+                    Ok(contents) => {
+                        match self.buffer.merge_checked(&contents, &self.base_options) {
+                            Ok(()) => println!("  merged {} into the session buffer", rest),
+                            Err(diagnostics) => {
+                                println!("  merge rejected; buffer unchanged:");
+                                for diagnostic in &diagnostics {
+                                    println!("    {}", diagnostic);
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => println!("  failed to read '{}': {}", rest, error),
                 }
-                Ok(true)
             }
-            "run" => {
-                if args.is_empty() {
-                    println!("Usage: :run <paths>...");
+            "type" | "t" => {
+                if rest.is_empty() {
+                    println!("Usage: :type <expression>");
                     return Ok(true);
                 }
-                if let Err(error) = self.compile_entries(args, BuildCommand::Run, true) {
-                    log_error(&error.message);
+                match repl_infer_expression_type(self.buffer.source(), rest, &self.base_options) {
+                    Ok(inferred) => println!("  {}", inferred),
+                    Err(diagnostics) => {
+                        for diagnostic in &diagnostics {
+                            println!("  {}", diagnostic);
+                        }
+                    }
                 }
-                Ok(true)
             }
-            "check" => {
-                if args.is_empty() {
-                    println!("Usage: :check <paths>...");
+            "run" | "check" | "compile" | "build" => {
+                let entries: Vec<PathBuf> = rest.split_whitespace().map(PathBuf::from).collect();
+                if entries.is_empty() {
+                    println!("Usage: :{} <paths>...", keyword);
                     return Ok(true);
                 }
-                if let Err(error) = self.compile_entries(args, BuildCommand::Check, true) {
+                let command = match keyword {
+                    "run" => BuildCommand::Run,
+                    "check" => BuildCommand::Check,
+                    _ => BuildCommand::Compile,
+                };
+                if let Err(error) = self.compile_entries(entries, command, true) {
                     log_error(&error.message);
                 }
-                Ok(true)
-            }
-            "compile" | "build" => {
-                if args.is_empty() {
-                    println!("Usage: :compile <paths>...");
-                    return Ok(true);
-                }
-                if let Err(error) = self.compile_entries(args, BuildCommand::Compile, true) {
-                    log_error(&error.message);
-                }
-                Ok(true)
             }
             unknown => {
                 println!(
                     "Unknown REPL command ':{}'. Type ':help' for assistance.",
                     unknown
                 );
-                Ok(true)
             }
         }
+
+        Ok(true)
     }
 }
 

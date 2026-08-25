@@ -29,7 +29,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(outputChannel);
 
   // Propagate extensionPath to config so getCliPath() can find the bundled
-  // binary in server/spectra-cli.exe even when it is not on PATH.
+  // binary (server/<platform>/spectralang.exe) even when it is not on PATH.
   setExtensionPath(context.extensionPath);
 
   // Register all commands first; they do not depend on LSP availability.

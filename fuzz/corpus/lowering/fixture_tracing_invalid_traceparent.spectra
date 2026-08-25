@@ -1,0 +1,9 @@
+module tracing_invalid_traceparent
+
+from std.api.trace import extract
+
+public func main() returns int {
+    if extract("00-00000000000000000000000000000000-0000000000000000-01") == true { return 1
+    }
+    return 0
+}

@@ -381,3 +381,74 @@ fn expression_path(expr: &spectra_compiler::ast::Expression) -> Option<String> {
     }
 }
 
+
+/// Frequent-pattern completion snippets. Only the items built here carry
+/// `InsertTextFormat::SNIPPET` (2); plain keyword/std-api/symbol completions
+/// stay plaintext.
+///
+/// Documented list (bodies use the canonical surface — no semicolons, no
+/// legacy `fn`/`->`):
+/// - `func`        declaration template with `$1`/`$2` params and returns
+/// - `record`      record declaration with name/field placeholders
+/// - `enum`        enum declaration with variant placeholder
+/// - `match`       match expression using canonical `when .. then` /
+///                 `otherwise` arms
+/// - `if let`      if-let statement with pattern and scrutinee placeholders
+/// - `for`         for-in loop over a collection
+/// - `async block` async block expression
+///
+/// There is deliberately no `test` snippet: the language surface has no test
+/// item or keyword (`KEYWORDS` / `ast::Item` have none), so any body would be
+/// invented syntax.
+fn snippet_completion_items() -> Vec<CompletionItem> {
+    fn snippet(label: &str, detail: &str, body: &str) -> CompletionItem {
+        CompletionItem {
+            label: label.to_string(),
+            kind: Some(CompletionItemKind::SNIPPET),
+            detail: Some(detail.to_string()),
+            insert_text: Some(body.to_string()),
+            insert_text_format: Some(InsertTextFormat::SNIPPET),
+            ..Default::default()
+        }
+    }
+
+    vec![
+        snippet(
+            "func",
+            "function template",
+            "func ${1:name}(${2:param}: int) returns ${3:int} {\n    $0\n}",
+        ),
+        snippet(
+            "record",
+            "record template",
+            "record ${1:Name} {\n    ${2:field}: int\n    $0\n}",
+        ),
+        snippet(
+            "enum",
+            "enum template",
+            "enum ${1:Name} {\n    ${2:Variant},\n    $0\n}",
+        ),
+        snippet(
+            "match",
+            "match with when/otherwise arms",
+            "match ${1:value} {\n    when ${2:pattern} then ${3:expr}\n    otherwise ${4:expr}\n    $0\n}",
+        ),
+        snippet(
+            "if let",
+            "if-let statement",
+            // Constructor patterns need the qualified `Enum::Variant(data)`
+            // form, and the scrutinee placeholder uses a call shape because
+            // `identifier { ... }` is ambiguous with a struct literal while
+            // the body is still empty.
+            "if let ${1:Enum::Variant(value)} = ${2:compute()} {\n    $0\n}",
+        ),
+        snippet(
+            "for",
+            "for-in loop",
+            // Call-shaped iterable: `identifier { ... }` would be ambiguous
+            // with a struct literal while the loop body is still empty.
+            "for ${1:item} in ${2:items()} {\n    $0\n}",
+        ),
+        snippet("async block", "async block expression", "async {\n    $0\n}"),
+    ]
+}

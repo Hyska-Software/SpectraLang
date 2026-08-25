@@ -1,0 +1,31 @@
+module hybrid_wide_match
+func f(x: int) returns int {
+    return match x {
+        when 1 then 1,
+        when 2 then 2,
+        when 3 then 3,
+        when 4 then 4,
+        when 5 then 5,
+        when 6 then 6,
+        when 7 then 7,
+        when 8 then 8,
+        when 9 then 9,
+        when 10 then 10,
+        when 11 then 11,
+        when 12 then 12,
+        when 13 then 13,
+        when 14 then 14,
+        when 15 then 15,
+        when 16 then 16,
+        when 17 then 17,
+        when 18 then 18,
+        when 19 then 19,
+        when 20 then 20,
+        when 21 then 21,
+        when 22 then 22,
+        when 23 then 23,
+        when 24 then 24,
+        when _ then 0
+    }
+}
+public func main() returns int { return f(1) }

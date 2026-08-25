@@ -124,7 +124,7 @@ impl SpectraCompiler {
         let metadata = native_debug_metadata(&report.artifacts.ir_module, false);
 
         let aot = AotCodeGenerator::new();
-        let (bytes, debug_locations, batch_stats, debug_line_rows) = aot
+        let (bytes, debug_locations, batch_stats, debug_line_rows, debug_frame_sizes) = aot
             .compile_to_object_with_locations_and_stats(
                 &report.artifacts.ir_module,
                 &AotOptions {
@@ -174,6 +174,15 @@ impl SpectraCompiler {
                 function.line_rows.push((offset, line));
             }
         }
+        for (function_name, frame_size) in debug_frame_sizes {
+            if let Some(function) = metadata
+                .functions
+                .iter_mut()
+                .find(|f| f.name == function_name)
+            {
+                function.frame_size = frame_size;
+            }
+        }
         Ok((bytes, metadata))
     }
 
@@ -202,7 +211,7 @@ impl SpectraCompiler {
         let metadata = native_debug_metadata(&report.artifacts.ir_module, true);
 
         let aot = AotCodeGenerator::new();
-        let (bytes, debug_locations, batch_stats, debug_line_rows) = aot
+        let (bytes, debug_locations, batch_stats, debug_line_rows, debug_frame_sizes) = aot
             .compile_to_object_with_locations_and_stats(
                 &report.artifacts.ir_module,
                 &AotOptions {
@@ -267,6 +276,20 @@ impl SpectraCompiler {
                 .find(|f| f.name == metadata_name)
             {
                 function.line_rows.push((offset, line));
+            }
+        }
+        for (function_name, frame_size) in debug_frame_sizes {
+            let metadata_name = if function_name == "main" {
+                "spectra_user_main".to_string()
+            } else {
+                function_name
+            };
+            if let Some(function) = metadata
+                .functions
+                .iter_mut()
+                .find(|f| f.name == metadata_name)
+            {
+                function.frame_size = frame_size;
             }
         }
         Ok((bytes, metadata))

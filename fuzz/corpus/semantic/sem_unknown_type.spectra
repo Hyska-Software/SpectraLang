@@ -1,0 +1,6 @@
+module sem_unknown_type
+func f(x: MysteryType) returns int { return 0 }
+public func main() returns int {
+    let v: Ghost<int> = f(1)
+    return v.field
+}

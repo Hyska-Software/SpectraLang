@@ -1,0 +1,7 @@
+module sem_mut_const
+const LIMIT: int = 10
+public func main() returns int {
+    LIMIT = 20
+    let mut unit = ()
+    return LIMIT
+}

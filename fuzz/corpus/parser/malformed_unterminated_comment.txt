@@ -1,0 +1,3 @@
+module m
+/* this comment never ends
+let x = 1

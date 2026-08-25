@@ -1,0 +1,5 @@
+module sem_duplicate_defs
+func f() returns int { return 1 }
+func f() returns string { return "dup" }
+record R { public x: int }
+record R { public y: int }

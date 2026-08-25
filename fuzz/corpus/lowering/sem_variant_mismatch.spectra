@@ -1,0 +1,8 @@
+module sem_variant_mismatch
+enum Color { Red, Green, Blue(int) }
+func f(c: Color) returns int {
+    return match c {
+        when Color::Red then 1,
+        when Color::Purple then 2
+    }
+}

@@ -1,0 +1,4 @@
+module sem_trait_missing_impl
+trait Show { func show(self) returns string }
+record Point { public x: int }
+func f(p: Point) returns string { return p.show() }

@@ -1,0 +1,8 @@
+module sem_match_nonexhaustive
+enum E { A, B, C }
+func f(e: E) returns int {
+    return match e {
+        when E::A then 1,
+        when E::B then 2
+    }
+}

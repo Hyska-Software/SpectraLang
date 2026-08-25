@@ -1,0 +1,5 @@
+module sem_wrong_arity
+func add(a: int, b: int) returns int { return a + b }
+public func main() returns int {
+    return add(1)
+}

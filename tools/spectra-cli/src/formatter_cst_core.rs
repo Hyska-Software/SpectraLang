@@ -1,6 +1,7 @@
     use super::{
-        count_brace_transitions, count_leading_closing_braces, finalize_output, normalize_spacing,
-        FormattedLine, FormatterConfig,
+        count_brace_transitions, count_leading_closing_braces, finalize_output,
+        is_wrapped_continuation_line, net_round_bracket_delta, normalize_spacing, FormattedLine,
+        FormatterConfig,
     };
     use spectra_compiler::ast::{
         Block, Enum, Expression, ExpressionKind, Function, ImplBlock, Import, Item, Method, Module,
@@ -23,6 +24,8 @@
 
         let mut formatted = Vec::new();
         let mut indent_level = 0usize;
+        let mut anchor_indent = 0usize;
+        let mut pending_open: i32 = 0;
 
         for line in lines {
             match line {
@@ -43,12 +46,27 @@
                     if dedent > indent_level {
                         dedent = indent_level;
                     }
-                    let indent_for_line = indent_level.saturating_sub(dedent);
+                    let delta = net_round_bracket_delta(trimmed);
+                    // Operator continuations only apply at bracket depth
+                    // zero; inside a multi-line delimited group the paren
+                    // machinery already indents.
+                    let continuation =
+                        pending_open <= 0 && is_wrapped_continuation_line(&normalized);
+                    let indent_for_line = if continuation {
+                        anchor_indent + 1
+                    } else {
+                        indent_level.saturating_sub(dedent)
+                    };
 
                     let (opens, closes) = count_brace_transitions(trimmed, dedent);
                     formatted.push(FormattedLine::new(indent_for_line, normalized));
-                    indent_level = indent_for_line + opens;
+                    pending_open = (pending_open + delta).max(0);
+                    let level_base = if continuation { anchor_indent } else { indent_for_line };
+                    indent_level = level_base + opens;
                     indent_level = indent_level.saturating_sub(closes);
+                    if !continuation {
+                        anchor_indent = indent_for_line;
+                    }
                 }
             }
         }

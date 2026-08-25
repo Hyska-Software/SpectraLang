@@ -1,11 +1,8 @@
-#![no_main]
-
-use libfuzzer_sys::fuzz_target;
 use spectra_compiler::{Lexer, Parser};
 use spectra_midend::ASTLowering;
 use std::collections::HashSet;
 
-fuzz_target!(|data: &[u8]| {
+fn run(data: &[u8]) {
     let Ok(source) = std::str::from_utf8(data) else {
         return;
     };
@@ -19,4 +16,14 @@ fuzz_target!(|data: &[u8]| {
         return;
     };
     let _ = ASTLowering::new().lower_module(&module);
+}
+
+#[cfg(fuzzing)]
+libfuzzer_sys::fuzz_target!(|data: &[u8]| {
+    run(data);
 });
+
+#[cfg(not(fuzzing))]
+fn main() {
+    spectralang_fuzz::replay_main(run);
+}

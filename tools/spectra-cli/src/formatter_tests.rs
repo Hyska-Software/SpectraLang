@@ -169,4 +169,172 @@ mod tests {
         assert_eq!(summary.config_cache_hits, 1);
         assert_eq!(summary.config_cache_misses, 0);
     }
+
+
+    fn assert_idempotent(input: &str, config: &FormatterConfig) -> String {
+        let once = format_source(input, config);
+        let twice = format_source(&once, config);
+        assert_eq!(once, twice, "formatter is not idempotent");
+        once
+    }
+
+    #[test]
+    fn wraps_long_call_arguments_one_per_line() {
+        let input = "func demo() {\n    let values = collect_measurements(alpha_measurement_value, beta_measurement_value, gamma_measurement_value)\n}\n";
+        let output = assert_idempotent(input, &FormatterConfig::default());
+        assert!(
+            output.contains("let values = collect_measurements("),
+            "head must keep the callee prefix:\n{output}"
+        );
+        for argument in [
+            "alpha_measurement_value,", "beta_measurement_value,", "gamma_measurement_value,",
+        ] {
+            assert!(
+                output.lines().any(|line| line.trim() == argument),
+                "expected one-arg-per-line with trailing comma:\n{output}"
+            );
+        }
+        // Closing paren back at the statement's base indentation.
+        assert!(
+            output.lines().any(|line| line == "    )"),
+            "closing paren must sit at base indent:\n{output}"
+        );
+    }
+
+    #[test]
+    fn wraps_long_array_literal_one_per_line_without_trailing_comma() {
+        let input = "func demo() {\n    let matrix = [first_row_of_the_largest_matrix, second_row_of_largest_matrix, third_row_of_largest]\n}\n";
+        let output = assert_idempotent(input, &FormatterConfig::default());
+        assert!(output.contains("let matrix = ["), "array head:\n{output}");
+        let lines: Vec<&str> = output.lines().collect();
+        assert!(
+            lines.contains(&"        third_row_of_largest"),
+            "last element without trailing comma:\n{output}"
+        );
+        assert!(
+            lines.contains(&"    ]"),
+            "closing bracket at base indent (parser rejects trailing commas in arrays):\n{output}"
+        );
+    }
+
+    #[test]
+    fn wraps_long_binary_expression_in_return() {
+        let input = "func demo() -> int {\n    return left_hand_side_operand_value * right_hand_side_operand_value + adjustment_constant_offset_value\n}\n";
+        let output = assert_idempotent(input, &FormatterConfig::default());
+        let lines: Vec<&str> = output.lines().collect();
+        assert!(
+            lines.contains(&"    return left_hand_side_operand_value"),
+            "return head:\n{output}"
+        );
+        assert!(lines.contains(&"        * right_hand_side_operand_value"));
+        assert!(
+            output.lines().any(|line| line.trim_start().starts_with("+ adjustment_constant_offset_value")),
+            "return continuation:\n{output}"
+        );
+    }
+    #[test]
+    fn wraps_long_binary_expression_before_operators_in_let() {
+        let input = "func demo() {\n    let grand_total_value = first_component_value + second_component_value + third_component_value_sum\n}\n";
+        let output = assert_idempotent(input, &FormatterConfig::default());
+        assert!(
+            output.contains("let grand_total_value = first_component_value"),
+            "head keeps lhs:\n{output}"
+        );
+        assert!(
+            output.lines().any(|line| line.trim_start().starts_with("+ second_component_value")),
+            "break before operator:\n{output}"
+        );
+        assert!(
+            output.lines().any(|line| line.starts_with("        + third_component_value_sum")),
+            "continuations sit one level deeper than the statement:\n{output}"
+        );
+    }
+
+    #[test]
+    fn does_not_wrap_short_lines_or_lines_without_safe_breaks() {
+        let config = FormatterConfig::default();
+        let short = "func demo() {\n    let values = collect(alpha, beta)\n}\n";
+        assert_eq!(format_source(short, &config), short);
+
+        // Single argument (no top-level comma): no safe break point even
+        // though the rendered line exceeds the limit.
+        let single = "func demo() {\n    let text = render_with_a_single_argument(one_enormously_long_argument_name_exceeding_one_hundred_chars_total)\n}\n";
+        assert_eq!(format_source(single, &config), single);
+
+        let idempotent_single = assert_idempotent(single, &config);
+        assert_eq!(idempotent_single, single);
+    }
+
+    #[test]
+    fn never_breaks_inside_string_literals() {
+        let config = FormatterConfig::default();
+        let input = "func demo() {\n    let banner = render_label(\"call(a, b) and also [x, y] stay completely glued\", trailing_argument)\n}\n";
+        let output = format_source(input, &config);
+        assert!(
+            output.contains("\"call(a, b) and also [x, y] stay completely glued\""),
+            "string contents must survive intact:\n{output}"
+        );
+        assert_eq!(format_source(&output, &config), output);
+    }
+
+    #[test]
+    fn wrapped_output_survives_full_reformat_with_surroundings() {
+        let input = concat!(
+            "module demo\n\n",
+            "func process(flag: bool) {\n",
+            "    let values = collect_measurements(alpha_value, beta_value, gamma_value, delta_value)\n",
+            "    let total = first_component_value + second_component_value + third_component_value\n",
+            "    if flag {\n",
+            "        return total\n",
+            "    }\n",
+            "    return 0\n",
+            "}\n"
+        );
+        assert_idempotent(input, &FormatterConfig::default());
+    }
+
+    #[test]
+    fn formatting_is_idempotent_over_validation_corpus() {
+        let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/validation");
+        if !corpus.is_dir() {
+            eprintln!("tests/validation not found; skipping corpus idempotency check");
+            return;
+        }
+
+        let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&corpus)
+            .expect("read validation corpus")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "spectra"))
+            .collect();
+        files.sort();
+
+        let mut checked = 0usize;
+        let mut failures = Vec::new();
+        for path in &files {
+            let Ok(original) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let once = format_source(&original, &FormatterConfig::default());
+            let twice = format_source(&once, &FormatterConfig::default());
+            checked += 1;
+            if once != twice {
+                failures.push(
+                    path.file_name()
+                        .map(|name| name.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path.display().to_string()),
+                );
+            }
+        }
+
+        eprintln!("idempotency validated over {checked} validation files");
+        assert!(!failures.is_empty() || checked > 0);
+        assert!(
+            failures.is_empty(),
+            "non-idempotent files ({}/{}):\n{}",
+            failures.len(),
+            checked,
+            failures.join("\n")
+        );
+    }
 }

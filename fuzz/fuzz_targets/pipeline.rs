@@ -1,9 +1,6 @@
-#![no_main]
-
-use libfuzzer_sys::fuzz_target;
 use spectra_compiler::{CompilationOptions, CompilationPipeline};
 
-fuzz_target!(|data: &[u8]| {
+fn run(data: &[u8]) {
     let Ok(source) = std::str::from_utf8(data) else {
         return;
     };
@@ -12,4 +9,14 @@ fuzz_target!(|data: &[u8]| {
     }
     let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
     let _ = pipeline.compile(source, "<fuzz>.spectra");
+}
+
+#[cfg(fuzzing)]
+libfuzzer_sys::fuzz_target!(|data: &[u8]| {
+    run(data);
 });
+
+#[cfg(not(fuzzing))]
+fn main() {
+    spectralang_fuzz::replay_main(run);
+}

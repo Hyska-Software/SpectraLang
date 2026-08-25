@@ -1,0 +1,4 @@
+module sem_undefined_calls
+public func main() returns int {
+    return compute(a, b) + helper(1, 2, 3, 4)
+}
