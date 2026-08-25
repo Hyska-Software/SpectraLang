@@ -4,6 +4,8 @@ pub fn keep_fast_symbols() {
     // Concurrent: spawn a task we never join, then drop the channel we open.
     let task = spectra_rt_concurrent_spawn_fast(0);
     let _ = spectra_rt_concurrent_join_fast(task);
+    let spawn_fn_task = spectra_rt_concurrent_spawn_fn_fast(0, 0);
+    let _ = spectra_rt_concurrent_join_fast(spawn_fn_task);
     let channel = spectra_rt_channel_new_fast();
     let _ = spectra_rt_channel_len_fast(channel);
     let _ = spectra_rt_channel_recv_fast(channel);

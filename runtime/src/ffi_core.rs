@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::{mem, ptr, slice, str};
 
@@ -34,6 +34,32 @@ struct ManualAllocation {
     _storage: ManualBox<Vec<u8>>,
 }
 
+/// Maximum number of tombstones retained in the free quarantine (FIFO).
+/// This bounds the stale-pointer detection window and its memory cost:
+/// at most [`QUARANTINE_CAPACITY`] buffers stay resident-but-unreachable
+/// at any time. Tune together with typical allocation churn.
+pub(crate) const QUARANTINE_CAPACITY: usize = 64;
+
+/// Tombstone left behind when a tracked manual allocation is freed.
+///
+/// The backing heap block is deliberately kept alive for the whole
+/// quarantine window: while the tombstone exists, the system allocator
+/// cannot hand the same address to `spectra_rt_manual_alloc` again, so a
+/// stale pointer freed inside the window is reliably detected as
+/// [`HOST_STATUS_INVALID_ARGUMENT`] instead of silently releasing an
+/// unrelated live object (wrong-free). The buffer's live-statistics are
+/// released at free time; only the raw block stays resident until the
+/// entry is evicted from the FIFO.
+struct QuarantineEntry {
+    ptr_value: usize,
+    /// Monotonic counter value at the moment the pointer was freed. Purely
+    /// diagnostic today (FIFO eviction is order-based), but lets debug
+    /// tooling reason about how long an address has been quarantined.
+    freed_epoch: u64,
+    /// Kept alive to pin the address; dropped on eviction.
+    _storage: Vec<u8>,
+}
+
 struct Frame {
     id: usize,
     allocations: Vec<usize>,
@@ -43,7 +69,12 @@ struct AllocationTable {
     allocations: HashMap<usize, ManualAllocation>,
     frames: Vec<Frame>,
     next_frame: usize,
+    /// Freed-but-recently-live addresses (FIFO, bounded by
+    /// [`QUARANTINE_CAPACITY`]). See [`QuarantineEntry`].
+    quarantine: VecDeque<QuarantineEntry>,
+    next_freed_epoch: u64,
 }
+
 
 impl AllocationTable {
     fn new() -> Self {
@@ -54,6 +85,8 @@ impl AllocationTable {
                 allocations: Vec::new(),
             }],
             next_frame: 1,
+            quarantine: VecDeque::new(),
+            next_freed_epoch: 0,
         }
     }
 
@@ -121,6 +154,63 @@ impl AllocationTable {
             allocations: Vec::new(),
         });
         self.next_frame = 1;
+        // A full clear also drops every tombstone: after
+        // `spectra_rt_manual_clear` there is no live state left to protect,
+        // and retaining pinned blocks across a reset would leak them for
+        // the rest of the process.
+        self.quarantine.clear();
+        self.next_freed_epoch = 0;
+    }
+
+    /// Frees the tracked allocation at `ptr_value`, leaving a quarantine
+    /// tombstone behind so the address cannot be reused (and a stale free
+    /// of it is detected) for at least [`QUARANTINE_CAPACITY`] subsequent
+    /// frees.
+    ///
+    /// Returns [`HOST_STATUS_SUCCESS`] on success or
+    /// [`HOST_STATUS_INVALID_ARGUMENT`] when `ptr_value` is unknown or
+    /// already quarantined (double free / stale pointer inside the window).
+    pub(crate) fn free_tracked(&mut self, ptr_value: usize) -> i32 {
+        let Some(entry) = self.allocations.remove(&ptr_value) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+
+        // `into_inner` releases the live-statistics accounting while
+        // keeping the heap block itself alive inside the tombstone, which
+        // pins the address against reuse by `spectra_rt_manual_alloc`.
+        let storage = entry._storage.into_inner();
+        self.remove_from_frame(entry.frame_id, ptr_value);
+        crate::stdlib::forget_string_value(ptr_value);
+
+        let freed_epoch = self.next_freed_epoch;
+        self.next_freed_epoch = self.next_freed_epoch.wrapping_add(1);
+        self.quarantine.push_back(QuarantineEntry {
+            ptr_value,
+            freed_epoch,
+            _storage: storage,
+        });
+        self.evict_quarantine_overflow();
+
+        HOST_STATUS_SUCCESS
+    }
+
+    /// Drops the oldest tombstones once the FIFO exceeds its capacity.
+    ///
+    /// After eviction the address becomes legally reusable. A stale free
+    /// targeting an evicted address degrades to the generic unknown-address
+    /// path (`HOST_STATUS_INVALID_ARGUMENT`): still a detectable error,
+    /// never a silent wrong-free, but the double-free-specific signal is
+    /// lost once the entry leaves the window.
+    fn evict_quarantine_overflow(&mut self) {
+        while self.quarantine.len() > QUARANTINE_CAPACITY {
+            self.quarantine.pop_front();
+        }
+    }
+
+    /// Current number of retained tombstones (bounded by
+    /// [`QUARANTINE_CAPACITY`]).
+    pub(crate) fn quarantine_len(&self) -> usize {
+        self.quarantine.len()
     }
 
     fn check_invariants(&self) -> bool {
@@ -145,10 +235,46 @@ impl AllocationTable {
             }
         }
 
-        self.allocations.iter().all(|(ptr, allocation)| {
+        if !self.allocations.iter().all(|(ptr, allocation)| {
             frame_allocations.contains(ptr) && frame_ids.contains(&allocation.frame_id)
+        }) {
+            return false;
+        }
+
+        // Quarantine tombstones must be disjoint from live allocations and
+        // frames, and their epochs must strictly increase from oldest to
+        // newest (FIFO order).
+        let mut previous_epoch = None;
+        self.quarantine.iter().all(|entry| {
+            if self.allocations.contains_key(&entry.ptr_value)
+                || frame_allocations.contains(&entry.ptr_value)
+            {
+                return false;
+            }
+            match previous_epoch {
+                Some(epoch) if entry.freed_epoch <= epoch => return false,
+                _ => {}
+            }
+            previous_epoch = Some(entry.freed_epoch);
+            true
         })
     }
+}
+
+/// Status recorded by the most recent `spectra_rt_manual_free` call.
+///
+/// The JIT import keeps its historical `void` signature (no ABI change), so
+/// detection of invalid frees is out-of-band: callers and debug tooling read
+/// this via `spectra_rt_manual_free_last_status`. Process-wide by design —
+/// the allocation table itself is process-global.
+static LAST_MANUAL_FREE_STATUS: AtomicI32 = AtomicI32::new(HOST_STATUS_SUCCESS);
+
+pub(crate) fn record_manual_free_status(status: i32) {
+    LAST_MANUAL_FREE_STATUS.store(status, Ordering::Release);
+}
+
+pub(crate) fn last_manual_free_status() -> i32 {
+    LAST_MANUAL_FREE_STATUS.load(Ordering::Acquire)
 }
 
 fn allocation_table() -> &'static Mutex<AllocationTable> {

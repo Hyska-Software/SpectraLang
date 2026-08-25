@@ -185,11 +185,24 @@ extern "C" fn std_ml_metrics_ranking(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
+// ── StatsEmbed ──
+//
+// Real generative perplexity when per-token log-probs are supplied:
+// perplexity = exp(-mean(logp)). Log-probs must be f64 <= 0 (NaN rejected);
+// -inf propagates honestly as an infinite perplexity (JSON null downstream).
+// Without log-probs no fake number is invented: `perplexity` renders null and
+// the old lexical proxy value stays available under its honest name
+// `answer_overlap_score` for existing callers.
 extern "C" fn std_ml_metrics_generation(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
-        let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
+        if ctx.is_null() {
             return HOST_STATUS_INVALID_ARGUMENT;
-        };
+        }
+        let ctx_ref = &mut *ctx;
+        if ctx_ref.arg_len != 2 && ctx_ref.arg_len != 3 {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
         let Some(output) = ml_read_path_arg(args[0]) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
@@ -204,21 +217,36 @@ extern "C" fn std_ml_metrics_generation(ctx: *mut SpectraHostCallContext) -> i32
         } else {
             0.0
         };
-        let perplexity_proxy = if overlap_f1 <= 0.0 {
+        let answer_overlap_score = if overlap_f1 <= 0.0 {
             f64::INFINITY
         } else {
             (-overlap_f1.ln()).exp()
         };
-        let payload = ml_metrics_json(
-            "generation",
-            &[
-                ("output_tokens", output_tokens.len().to_string()),
-                ("reference_tokens", reference_tokens.len().to_string()),
-                ("exact_match", ml_float_json(exact_match)),
-                ("token_f1", ml_float_json(overlap_f1)),
-                ("perplexity", ml_float_json(perplexity_proxy)),
-            ],
-        );
+        let mut perplexity_field = "null".to_string();
+        let mut extra_fields: Vec<(&str, String)> = Vec::new();
+        if ctx_ref.arg_len == 3 {
+            let Some((_, logprobs, _)) = ml_tensor_float_data(args[2] as usize) else {
+                return HOST_STATUS_NOT_FOUND;
+            };
+            let Some((token_count, mean_logprob, perplexity)) =
+                ml_perplexity_from_logprobs(&logprobs)
+            else {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            };
+            extra_fields.push(("logprob_tokens", token_count.to_string()));
+            extra_fields.push(("logprob_mean", ml_float_json(mean_logprob)));
+            perplexity_field = ml_float_json(perplexity);
+        }
+        let mut fields: Vec<(&str, String)> = vec![
+            ("output_tokens", output_tokens.len().to_string()),
+            ("reference_tokens", reference_tokens.len().to_string()),
+            ("exact_match", ml_float_json(exact_match)),
+            ("token_f1", ml_float_json(overlap_f1)),
+            ("answer_overlap_score", ml_float_json(answer_overlap_score)),
+            ("perplexity", perplexity_field),
+        ];
+        fields.extend(extra_fields);
+        let payload = ml_metrics_json("generation", &fields);
         tensor_result(ctx_ref, alloc_spectra_string(&payload))
     }
 }
@@ -323,3 +351,23 @@ extern "C" fn std_ml_evaluation_report(ctx: *mut SpectraHostCallContext) -> i32 
     }
 }
 
+
+// ── StatsEmbed ──
+/// Real perplexity from per-token log-probs: exp(-mean(logp)).
+/// Returns (token_count, mean_logprob, perplexity); None when the slice is
+/// empty or any entry is NaN / positive (log-probs are <= 0 by definition).
+/// -inf entries propagate honestly: mean = -inf → perplexity = +inf.
+fn ml_perplexity_from_logprobs(logprobs: &[f64]) -> Option<(usize, f64, f64)> {
+    if logprobs.is_empty() {
+        return None;
+    }
+    let mut sum = 0.0f64;
+    for &logprob in logprobs {
+        if logprob.is_nan() || logprob > 0.0 {
+            return None;
+        }
+        sum += logprob;
+    }
+    let mean = sum / logprobs.len() as f64;
+    Some((logprobs.len(), mean, (-mean).exp()))
+}

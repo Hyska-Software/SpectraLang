@@ -694,6 +694,155 @@ mod tests {
 
         spectra_rt_manual_clear();
     }
+
+    // ── Free quarantine (stale/double-free detection) ────────────────────
+
+    #[test]
+    fn double_free_reports_invalid_argument_status() {
+        let _lock = test_guard();
+        spectra_rt_manual_clear();
+
+        let ptr = spectra_rt_manual_alloc(32);
+        assert!(!ptr.is_null());
+
+        spectra_rt_manual_free(ptr);
+        assert_eq!(spectra_rt_manual_free_last_status(), HOST_STATUS_SUCCESS);
+
+        // Second free of the same pointer: the tombstone is still inside
+        // the quarantine window, so this must be a detectable error rather
+        // than a silent wrong-free.
+        spectra_rt_manual_free(ptr);
+        assert_eq!(
+            spectra_rt_manual_free_last_status(),
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+
+        spectra_rt_manual_clear();
+    }
+
+    #[test]
+    fn free_of_unknown_pointer_reports_invalid_argument_status() {
+        let _lock = test_guard();
+        spectra_rt_manual_clear();
+
+        // A live allocation unknown to the manual table: freeing it must be
+        // reported as an error instead of being silently ignored.
+        let foreign = Box::new([0u8; 64]);
+        let foreign_ptr = foreign.as_ptr() as *mut u8;
+        spectra_rt_manual_free(foreign_ptr);
+        assert_eq!(
+            spectra_rt_manual_free_last_status(),
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+
+        // Null free remains a legal no-op.
+        spectra_rt_manual_free(std::ptr::null_mut());
+        assert_eq!(spectra_rt_manual_free_last_status(), HOST_STATUS_SUCCESS);
+
+        spectra_rt_manual_clear();
+    }
+
+    #[test]
+    fn quarantine_blocks_address_reuse_within_window() {
+        let _lock = test_guard();
+        spectra_rt_manual_clear();
+
+        let first = spectra_rt_manual_alloc(32);
+        assert!(!first.is_null());
+        spectra_rt_manual_free(first);
+        assert!(spectra_rt_manual_quarantine_len() >= 1);
+
+        // While the tombstone is quarantined its heap block stays pinned,
+        // so a same-size reallocation cannot legally hand back `first`.
+        let second = spectra_rt_manual_alloc(32);
+        assert!(!second.is_null());
+        assert_ne!(second, first, "quarantined address was reused");
+
+        // Freeing the stale `first` inside the window is detected.
+        spectra_rt_manual_free(first);
+        assert_eq!(
+            spectra_rt_manual_free_last_status(),
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+
+        // The fresh allocation frees normally.
+        spectra_rt_manual_free(second);
+        assert_eq!(spectra_rt_manual_free_last_status(), HOST_STATUS_SUCCESS);
+
+        spectra_rt_manual_clear();
+    }
+
+    #[test]
+    fn quarantine_eviction_restores_legal_reuse_after_full_window() {
+        let _lock = test_guard();
+        spectra_rt_manual_clear();
+
+        // Distinct sizes keep every freed address distinct and FIFO-ordered.
+        let mut evicted_addr = 0usize;
+        for index in 0..=QUARANTINE_CAPACITY {
+            let size = 32 + index;
+            let ptr = spectra_rt_manual_alloc(size);
+            assert!(!ptr.is_null());
+            if index == 0 {
+                evicted_addr = ptr as usize;
+            }
+            spectra_rt_manual_free(ptr);
+        }
+
+        // Window full: exactly QUARANTINE_CAPACITY tombstones survive; the
+        // oldest (the size-32 block) has been evicted and its memory
+        // released for normal reuse.
+        assert_eq!(spectra_rt_manual_quarantine_len(), QUARANTINE_CAPACITY);
+
+        // Reuse of the evicted address is legal again. A stale free of it
+        // now degrades to the generic unknown-address error path — still
+        // detectable, never a silent wrong-free (documented trade-off).
+        let reused = spectra_rt_manual_alloc(32);
+        assert!(!reused.is_null());
+        spectra_rt_manual_free(reused);
+        assert_eq!(spectra_rt_manual_free_last_status(), HOST_STATUS_SUCCESS);
+
+        spectra_rt_manual_clear();
+        assert_eq!(spectra_rt_manual_quarantine_len(), 0);
+    }
+
+    #[test]
+    fn alloc_free_pressure_maintains_invariants_and_stats() {
+        let _lock = test_guard();
+        spectra_rt_manual_clear();
+
+        let baseline = manual_stats().manual;
+
+        // Churn well past the quarantine capacity with mixed sizes and an
+        // escape in the middle; every step must leave the table consistent.
+        for round in 0..4 * QUARANTINE_CAPACITY {
+            let frame = spectra_rt_manual_frame_enter();
+            let a = spectra_rt_manual_alloc(16 + round % 7);
+            assert!(!a.is_null());
+            let b = spectra_rt_manual_alloc(48 + round % 5);
+            assert!(!b.is_null());
+            spectra_rt_manual_escape(a, frame);
+            spectra_rt_manual_frame_exit(frame);
+
+            if round % 16 == 0 {
+                assert!(spectra_rt_debug_invariants_check());
+            }
+        }
+        assert!(spectra_rt_debug_invariants_check());
+        assert!(spectra_rt_manual_quarantine_len() <= QUARANTINE_CAPACITY);
+
+        // Quarantined buffers release their statistics at free time, so the
+        // only live accounting left is the escaped allocation (one per
+        // round).
+        let after = manual_stats().manual;
+        assert_eq!(
+            after.allocations,
+            baseline.allocations + 4 * QUARANTINE_CAPACITY
+        );
+
+        spectra_rt_manual_clear();
+        assert!(spectra_rt_debug_invariants_check());
+    }
 }
 
 // ── Fast-path symbol retention ────────────────────────────────────────────────

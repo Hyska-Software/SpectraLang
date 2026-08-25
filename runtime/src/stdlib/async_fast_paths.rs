@@ -10,6 +10,19 @@ pub fn concurrent_spawn_fast(value: SpectraHostValue) -> SpectraHostValue {
     spawn_concurrent_task(value).unwrap_or(0)
 }
 
+/// Fast-path helper for `concurrent.task_spawn_fn(closure, arg)`. Dispatches
+/// a real JIT closure onto the persistent executor worker pool. Returns the
+/// task_id, or 0 on internal error (poisoned mutex / null closure pointer).
+pub fn concurrent_spawn_fn_fast(
+    fn_ptr: SpectraHostValue,
+    arg: SpectraHostValue,
+) -> SpectraHostValue {
+    match spawn_concurrent_task_fn(fn_ptr, arg) {
+        Ok(task_id) => task_id,
+        Err(_) => 0,
+    }
+}
+
 /// Fast-path helper for `concurrent.task_join(task_id)`. Returns the value
 /// written by the matching `task_spawn`, or 0 if the task_id is invalid
 /// (out of range, recycled, or never existed).

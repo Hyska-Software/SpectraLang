@@ -1,18 +1,53 @@
 /// Releases a manual allocation previously returned by `spectra_rt_manual_alloc`.
+///
+/// The freed address is NOT immediately reusable: it becomes a quarantine
+/// tombstone (bounded FIFO window, see `QUARANTINE_CAPACITY`) whose backing
+/// block stays pinned so `spectra_rt_manual_alloc` cannot hand the same
+/// address out while the tombstone is retained. This turns stale/double
+/// frees into detectable errors instead of silent wrong-frees.
+///
+/// Invalid frees (unknown address, or an address still inside the
+/// quarantine window) do not release anything; they are reported through
+/// [`spectra_rt_manual_free_last_status`] with
+/// [`HOST_STATUS_INVALID_ARGUMENT`](crate::ffi::HOST_STATUS_INVALID_ARGUMENT).
+/// This entry keeps its historical `void` signature — JIT import ABI is
+/// unchanged.
 #[no_mangle]
 pub extern "C" fn spectra_rt_manual_free(ptr: *mut u8) {
     if ptr.is_null() {
+        // Freeing null is a legal no-op (C convention), not an error.
+        crate::ffi::record_manual_free_status(HOST_STATUS_SUCCESS);
         return;
     }
 
     let ptr_value = ptr as usize;
     let table = allocation_table();
     let mut guard = table.lock().unwrap_or_else(|e| e.into_inner());
+    let status = guard.free_tracked(ptr_value);
+    crate::ffi::record_manual_free_status(status);
+}
 
-    if let Some(entry) = guard.allocations.remove(&ptr_value) {
-        guard.remove_from_frame(entry.frame_id, ptr_value);
-        crate::stdlib::forget_string_value(ptr_value);
-    }
+/// Returns the host status code recorded by the most recent
+/// [`spectra_rt_manual_free`] call: `HOST_STATUS_SUCCESS` when the pointer
+/// was a live tracked allocation, `HOST_STATUS_INVALID_ARGUMENT` when it was
+/// null-free-adjacent garbage — unknown to the table or still quarantined
+/// from a previous free (double free / stale pointer).
+///
+/// Process-wide, like the allocation table itself. Intended for debug
+/// tooling and validation harnesses; generated code does not branch on it.
+#[no_mangle]
+pub extern "C" fn spectra_rt_manual_free_last_status() -> i32 {
+    crate::ffi::last_manual_free_status()
+}
+
+/// Returns the number of tombstones currently held in the free quarantine
+/// (bounded by `QUARANTINE_CAPACITY`). Introspection for tests and soak
+/// tooling.
+#[no_mangle]
+pub extern "C" fn spectra_rt_manual_quarantine_len() -> usize {
+    let table = allocation_table();
+    let guard = table.lock().unwrap_or_else(|e| e.into_inner());
+    guard.quarantine_len()
 }
 
 /// Moves a manual allocation from the current function's frame to its parent frame,
@@ -337,22 +372,32 @@ pub unsafe extern "C" fn spectra_rt_invoke_closure(
     if code_ptr == 0 {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
-    let returned: i64 = match n_args {
-        0 => {
-            let f: unsafe extern "C" fn(i64) -> i64 = mem::transmute(code_ptr as usize);
-            f(fn_ptr)
+    let invoke_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        match n_args {
+            0 => {
+                let f: unsafe extern "C" fn(i64) -> i64 = mem::transmute(code_ptr as usize);
+                Ok(f(fn_ptr))
+            }
+            1 => {
+                let f: unsafe extern "C" fn(i64, i64) -> i64 = mem::transmute(code_ptr as usize);
+                Ok(f(fn_ptr, if args.is_null() { 0 } else { *args }))
+            }
+            2 => {
+                let f: unsafe extern "C" fn(i64, i64, i64) -> i64 = mem::transmute(code_ptr as usize);
+                let a0 = if args.is_null() { 0 } else { *args };
+                let a1 = if args.is_null() { 0 } else { *args.add(1) };
+                Ok(f(fn_ptr, a0, a1))
+            }
+            _ => return Err(HOST_STATUS_INTERNAL_ERROR),
         }
-        1 => {
-            let f: unsafe extern "C" fn(i64, i64) -> i64 = mem::transmute(code_ptr as usize);
-            f(fn_ptr, if args.is_null() { 0 } else { *args })
-        }
-        2 => {
-            let f: unsafe extern "C" fn(i64, i64, i64) -> i64 = mem::transmute(code_ptr as usize);
-            let a0 = if args.is_null() { 0 } else { *args };
-            let a1 = if args.is_null() { 0 } else { *args.add(1) };
-            f(fn_ptr, a0, a1)
-        }
-        _ => return HOST_STATUS_INTERNAL_ERROR,
+    }));
+    // Boundary catch_unwind: a panicking JIT closure (e.g. one dispatched on
+    // a concurrent worker thread) becomes a host status instead of unwinding
+    // through foreign frames or aborting the process.
+    let returned: i64 = match invoke_result {
+        Ok(Ok(returned)) => returned,
+        Ok(Err(status)) => return status,
+        Err(_) => return HOST_STATUS_INTERNAL_ERROR,
     };
     if !result.is_null() {
         *result = returned;

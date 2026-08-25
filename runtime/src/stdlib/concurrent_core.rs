@@ -153,6 +153,12 @@ enum ConcurrentJob {
         value: SpectraHostValue,
         queued_at: StdInstant,
     },
+    Closure {
+        task: Arc<ConcurrentTask>,
+        fn_ptr: SpectraHostValue,
+        arg: SpectraHostValue,
+        queued_at: StdInstant,
+    },
     BatchLane {
         batch: Arc<ConcurrentBatch>,
         first_value: SpectraHostValue,
@@ -215,6 +221,43 @@ impl ConcurrentExecutor {
                                 notify_concurrent_completion();
                             }
                         }
+                        ConcurrentJob::Closure {
+                            task,
+                            fn_ptr,
+                            arg,
+                            queued_at,
+                        } => {
+                            let execution_started = StdInstant::now();
+                            if let Some(data) = concurrent_diagnostics() {
+                                data.tasks_executed.fetch_add(1, Ordering::Relaxed);
+                            }
+                            // Real user code runs here: the worker thread calls
+                            // back into the JIT-compiled closure through the
+                            // same boundary HOFs use (spectra_rt_invoke_closure,
+                            // catch_unwind inside). A panicking closure marks
+                            // the task FAILED; it never aborts the process.
+                            let outcome = invoke_concurrent_closure(fn_ptr, arg);
+                            let completed = match outcome {
+                                Ok(value) => task.complete(value),
+                                Err(()) => task.fail(),
+                            };
+                            if completed {
+                                if let Some(data) = concurrent_diagnostics() {
+                                    data.task_wakeups.fetch_add(1, Ordering::Relaxed);
+                                    data.pending_tasks.fetch_sub(1, Ordering::Relaxed);
+                                    data.scheduler_ns.fetch_add(
+                                        queued_at.elapsed().as_nanos().min(u64::MAX as u128) as u64,
+                                        Ordering::Relaxed,
+                                    );
+                                    data.execution_ns.fetch_add(
+                                        execution_started.elapsed().as_nanos().min(u64::MAX as u128)
+                                            as u64,
+                                        Ordering::Relaxed,
+                                    );
+                                }
+                                notify_concurrent_completion();
+                            }
+                        }
                         ConcurrentJob::BatchLane {
                             batch,
                             first_value,
@@ -238,6 +281,7 @@ impl ConcurrentExecutor {
                                     data.pending_tasks.fetch_sub(1, Ordering::Relaxed);
                                 }
                             }
+
                             let completed_last = batch.finish_lane(lane_total, completed);
                             if let Some(data) = concurrent_diagnostics() {
                                 data.scheduler_ns.fetch_add(
@@ -269,6 +313,21 @@ impl ConcurrentExecutor {
             .send(ConcurrentJob::Single {
                 task,
                 value,
+                queued_at: StdInstant::now(),
+            })
+            .map_err(|_| ())
+    }
+    fn submit_closure(
+        &self,
+        task: Arc<ConcurrentTask>,
+        fn_ptr: SpectraHostValue,
+        arg: SpectraHostValue,
+    ) -> Result<(), ()> {
+        self.sender
+            .send(ConcurrentJob::Closure {
+                task,
+                fn_ptr,
+                arg,
                 queued_at: StdInstant::now(),
             })
             .map_err(|_| ())
@@ -350,9 +409,11 @@ impl<T> ConcurrentHandleTable<T> {
 }
 
 struct ConcurrentRegistry {
-    // task_spawn receives an already-evaluated Spectra value, but completion
-    // is scheduled on the persistent executor. This preserves the public API
-    // while making fan-out/fan-in observable without one OS thread per task.
+    // task_spawn receives an already-evaluated Spectra value; task_spawn_fn
+    // instead dispatches a real JIT closure onto the worker pool. Both
+    // schedule completion on the persistent executor, preserving the public
+    // API while making fan-out/fan-in observable without one OS thread per
+    // task.
     tasks: ConcurrentHandleTable<Arc<ConcurrentTask>>,
     batches: ConcurrentHandleTable<Arc<ConcurrentBatch>>,
     channels: ConcurrentHandleTable<Arc<Mutex<ConcurrentChannel>>>,
@@ -506,6 +567,66 @@ fn spawn_concurrent_task(value: SpectraHostValue) -> Result<SpectraHostValue, i3
     record_concurrent_task_created();
     if concurrent_executor()
         .submit(Arc::clone(&task), value)
+        .is_err()
+    {
+        if task.fail() {
+            if let Some(data) = concurrent_diagnostics() {
+                data.tasks_failed.fetch_add(1, Ordering::Relaxed);
+                data.pending_tasks.fetch_sub(1, Ordering::Relaxed);
+            }
+        }
+        return Err(HOST_STATUS_INTERNAL_ERROR);
+    }
+    Ok(task_id)
+}
+
+/// Invokes a JIT-compiled Spectra closure on a worker thread through the
+/// same boundary the higher-order stdlib functions use
+/// (`spectra_rt_invoke_closure`, which carries its own catch_unwind).
+///
+/// Returns `Ok(value)` with the closure result, or `Err(())` when the
+/// invocation fails (null fn pointer, bad arity, panicking closure). The
+/// error never propagates as a Rust panic: a failing user closure must turn
+/// into a FAILED task, not abort the worker.
+fn invoke_concurrent_closure(
+    fn_ptr: SpectraHostValue,
+    arg: SpectraHostValue,
+) -> Result<SpectraHostValue, ()> {
+    if fn_ptr == 0 {
+        return Err(());
+    }
+    let args = [arg];
+    let mut out: SpectraHostValue = 0;
+    // SAFETY: fn_ptr is the closure handle produced by the backend (slot 0 =
+    // code pointer) and `args` lives for the duration of the call.
+    let status = unsafe {
+        crate::ffi::spectra_rt_invoke_closure(fn_ptr, args.as_ptr(), 1, &mut out)
+    };
+    if status == HOST_STATUS_SUCCESS {
+        Ok(out)
+    } else {
+        Err(())
+    }
+}
+
+/// `concurrent.task_spawn_fn(closure_handle, arg) -> task_id`.
+///
+/// The task handle is allocated and registered BEFORE the job is dispatched,
+/// so `task_is_done` / `task_join` observe it immediately. The closure runs
+/// on a persistent executor worker; its return value becomes the task's
+/// value (join returns it), and a panic inside the closure marks the task
+/// FAILED (join reports an internal-error status) instead of aborting.
+fn spawn_concurrent_task_fn(
+    fn_ptr: SpectraHostValue,
+    arg: SpectraHostValue,
+) -> Result<SpectraHostValue, i32> {
+    let (task_id, task) = {
+        let mut registry = lock_concurrent_registry()?;
+        registry.allocate_task()
+    };
+    record_concurrent_task_created();
+    if concurrent_executor()
+        .submit_closure(Arc::clone(&task), fn_ptr, arg)
         .is_err()
     {
         if task.fail() {

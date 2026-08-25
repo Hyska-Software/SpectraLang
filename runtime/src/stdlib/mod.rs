@@ -73,11 +73,16 @@ include!("ml_dataset_access.rs");
 
 include!("ml_experiments_distributed.rs");
 
+include!("ml_distributed_tcp.rs");
+
 include!("ml_onnx_bindings.rs");
 
 include!("ml_tokenization_retrieval.rs");
 
+include!("ml_tokenizer_training.rs");
+
 include!("ml_metrics.rs");
+include!("ml_text_embedding_model.rs");
 
 include!("tensor_runtime_extras.rs");
 

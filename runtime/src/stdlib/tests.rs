@@ -1674,35 +1674,22 @@
         let checkpoint = dir.join("checkpoint.json");
         std::fs::create_dir_all(&dir).expect("create temp distributed dir");
 
+        // Real data-parallel training: 2 OS-thread workers over disjoint
+        // shards, actual forward/backward gradients, ALLREDUCE averaging.
         let (status, session) = call_host(
-            ML_DISTRIBUTED_SESSION_START,
+            ML_DISTRIBUTED_TRAIN_MULTITHREAD,
             &[
-                test_string("single-machine-reference"),
+                test_string("checkpoint-reference"),
                 test_string(dir.to_string_lossy().as_ref()),
+                2,
+                25,
+                0.4f64.to_bits() as i64,
                 3,
+                32,
                 2026,
             ],
         );
         assert_eq!(status, HOST_STATUS_SUCCESS);
-
-        for worker_id in 0..3 {
-            assert_eq!(
-                call_host(
-                    ML_DISTRIBUTED_WORKER_STEP,
-                    &[
-                        session,
-                        worker_id,
-                        8,
-                        (0.25f64 + worker_id as f64).to_bits() as i64
-                    ],
-                ),
-                (HOST_STATUS_SUCCESS, 1)
-            );
-        }
-        assert_eq!(
-            call_host(ML_DISTRIBUTED_GLOBAL_STEP, &[session]),
-            (HOST_STATUS_SUCCESS, 1)
-        );
 
         let (status, checkpoint_ptr) = call_host(
             ML_DISTRIBUTED_CHECKPOINT_SAVE,
@@ -1716,39 +1703,35 @@
         let checkpoint_path =
             unsafe { read_spectra_string(checkpoint_ptr) }.expect("checkpoint path string");
         let checkpoint_text = std::fs::read_to_string(&checkpoint_path).expect("checkpoint exists");
-        assert!(checkpoint_text.contains("\"schema\":\"spectra.ml.distributed_checkpoint.v1\""));
+        assert!(checkpoint_text.contains("\"schema\":\"spectra.ml.distributed_checkpoint.v2\""));
         assert!(checkpoint_text.contains("\"interrupted_worker\":1"));
-        assert!(checkpoint_text.contains("\"topology\":\"single-machine-simulated-workers\""));
+        assert!(checkpoint_text.contains("\"topology\":\"multi-thread\""));
+        assert!(!checkpoint_text.contains("simulated"));
 
         let (status, resumed) = call_host(
             ML_DISTRIBUTED_RESUME,
             &[test_string(checkpoint_path.as_str())],
         );
         assert_eq!(status, HOST_STATUS_SUCCESS);
-        assert_eq!(
-            call_host(ML_DISTRIBUTED_WORKER_STEP_COUNT, &[resumed, 1]),
-            (HOST_STATUS_SUCCESS, 1)
-        );
-        for worker_id in 0..3 {
+        for worker_id in 0..2 {
             assert_eq!(
-                call_host(
-                    ML_DISTRIBUTED_WORKER_STEP,
-                    &[resumed, worker_id, 4, 0.1f64.to_bits() as i64],
-                ),
-                (HOST_STATUS_SUCCESS, 2)
+                call_host(ML_DISTRIBUTED_WORKER_STEP_COUNT, &[resumed, worker_id]),
+                (HOST_STATUS_SUCCESS, 25)
             );
         }
         assert_eq!(
             call_host(ML_DISTRIBUTED_GLOBAL_STEP, &[resumed]),
-            (HOST_STATUS_SUCCESS, 2)
+            (HOST_STATUS_SUCCESS, 25)
         );
 
         let (status, summary_ptr) = call_host(ML_DISTRIBUTED_SUMMARY, &[resumed]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
         let summary = unsafe { read_spectra_string(summary_ptr) }.expect("summary string");
-        assert!(summary.contains("\"schema\":\"spectra.ml.distributed_summary.v1\""));
-        assert!(summary.contains("\"global_step\":2"));
-        assert!(summary.contains("\"total_samples\":36"));
+        assert!(summary.contains("\"schema\":\"spectra.ml.distributed_summary.v2\""));
+        assert!(summary.contains("\"topology\":\"multi-thread\""));
+        assert!(summary.contains("\"global_step\":25"));
+        assert!(summary.contains("\"total_samples\":32"));
+        assert!(!summary.contains("simulated"));
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -4638,6 +4621,9 @@
             call_host(SERVE_SERVER_IS_WARM, &[server]),
             (HOST_STATUS_SUCCESS, 0)
         );
+        // ServeReal: inference now runs a REAL served model; register the
+        // dense equivalent of the historical seed (y = 3x, ReLU).
+        serve_real_register_scalar_model(server, 3.0);
 
         let (status, first) = call_host(SERVE_SERVER_ENQUEUE, &[server, 10]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
@@ -4709,6 +4695,9 @@
             call_host(SERVE_SERVER_WARMUP, &[server]),
             (HOST_STATUS_SUCCESS, 1)
         );
+        // ServeReal: real served model y = 3x so accepted requests run an
+        // actual forward pass through the guardrails.
+        serve_real_register_scalar_model(server, 3.0);
 
         let (status, ok_request) = call_host(SERVE_SERVER_ENQUEUE, &[server, 10]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
@@ -4792,6 +4781,8 @@
             call_host(SERVE_SERVER_WARMUP, &[server]),
             (HOST_STATUS_SUCCESS, 1)
         );
+        // ServeReal: real served model y = 2x for monitoring/drift fixtures.
+        serve_real_register_scalar_model(server, 2.0);
         let (status, first) = call_host(SERVE_SERVER_ENQUEUE, &[server, 10]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
         let (status, second) = call_host(SERVE_SERVER_ENQUEUE, &[server, 20]);
@@ -4827,6 +4818,7 @@
             call_host(SERVE_SERVER_WARMUP, &[live_server]).0,
             HOST_STATUS_SUCCESS
         );
+        serve_real_register_scalar_model(live_server, 2.0);
         assert_eq!(
             call_host(SERVE_SERVER_ENQUEUE, &[live_server, 110]).0,
             HOST_STATUS_SUCCESS
@@ -5325,4 +5317,1244 @@
         assert_eq!(free_tag, 1);
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ── TokenizerTrainer ────────────────────────────────────────────────────
+
+    fn trained_vocab_lines(name: &str, host: &str, corpus: &str, vocab_size: i64) -> Vec<String> {
+        let (status, handle) = call_host(host, &[test_string(corpus), vocab_size]);
+        assert_eq!(status, HOST_STATUS_SUCCESS, "{name}: training failed");
+        let (status, spec_ptr) = call_host(ML_TOKENIZER_VOCAB, &[handle]);
+        assert_eq!(status, HOST_STATUS_SUCCESS, "{name}: vocab export failed");
+        let spec = unsafe { read_spectra_string(spec_ptr) }.expect("vocab spec");
+        spec.lines().map(str::to_owned).collect()
+    }
+
+    #[test]
+    fn ml_tokenizer_training_bpe_learns_expected_merges_and_roundtrips() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+
+        // Classic BPE toy corpus with provably deterministic merges under the
+        // documented lexicographic tie-break:
+        // iter 1: (e,s)=8 ties (s,t)=8 → "es"; iter 2: (es,t)=8 → "est";
+        // iter 3: (l,o)=6 ties (o,w)=6 → "lo" → "low"; later "ew", "ewest",
+        // "newest", "dest", "idest", "widest", "er", "lower".
+        let corpus = "low low low low lower lower \
+                      newest newest newest newest newest widest widest widest";
+        let lines_a = trained_vocab_lines("bpe", ML_TOKENIZER_TRAIN_BPE, corpus, 64);
+        let tokens: Vec<&str> = lines_a
+            .iter()
+            .map(|line| line.split_once(':').expect("token:id line").0)
+            .collect();
+        for expected in [
+            "[UNK]", "es", "##es", "est", "##est", "lo", "##lo", "low", "##low",
+            "ewest", "##ewest", "newest", "##newest", "widest", "##widest",
+            "lower", "##lower",
+        ] {
+            assert!(
+                tokens.contains(&expected),
+                "bpe vocab missing merge {expected}; got {tokens:?}"
+            );
+        }
+
+        // Determinism: retraining produces the identical vocabulary with
+        // identical stable ids.
+        let lines_b = trained_vocab_lines("bpe-retrain", ML_TOKENIZER_TRAIN_BPE, corpus, 64);
+        assert_eq!(lines_a, lines_b);
+
+        // The trained handle works with the EXISTING encode/decode hosts and
+        // roundtrips a corpus sentence without UNK.
+        let (status, tokenizer) =
+            call_host(ML_TOKENIZER_TRAIN_BPE, &[test_string(corpus), 64]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, ids) = call_host(
+            ML_TOKENIZER_ENCODE,
+            &[tokenizer, test_string("newest widest")],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        for index in 0..call_host(TENSOR_LEN, &[ids]).1 {
+            assert_ne!(call_host(TENSOR_GET, &[ids, index]).1, 0, "unexpected UNK");
+        }
+        let (status, decoded_ptr) = call_host(ML_TOKENIZER_DECODE, &[tokenizer, ids]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let decoded = unsafe { read_spectra_string(decoded_ptr) }.expect("decoded");
+        assert_eq!(decoded, "newest widest");
+    }
+
+    #[test]
+    fn ml_tokenizer_training_wordpiece_scores_base_coverage_and_roundtrip() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+
+        let corpus = "o rato roeu a roupa do rei de roma\n\
+                      a rainha raivosa rasgou a roupa do rato\n\
+                      o rei de roma mandou rodar a roupa do rato";
+        let lines = trained_vocab_lines(
+            "wordpiece",
+            ML_TOKENIZER_TRAIN_WORDPIECE,
+            corpus,
+            400,
+        );
+        let tokens: Vec<String> = lines
+            .iter()
+            .map(|line| line.split_once(':').expect("token:id line").0.to_owned())
+            .collect();
+
+        // Every base single-char symbol of the corpus enters the initial vocab,
+        // in both plain and continuation form.
+        let mut base_chars: Vec<char> = corpus
+            .chars()
+            .filter(|ch| ch.is_alphanumeric())
+            .map(|ch| ch.to_ascii_lowercase())
+            .collect();
+        base_chars.sort_unstable();
+        base_chars.dedup();
+        for ch in base_chars {
+            assert!(tokens.contains(&ch.to_string()), "missing base char {ch}");
+            assert!(
+                tokens.contains(&format!("##{}", ch)),
+                "missing continuation char ##{ch}"
+            );
+        }
+
+        // WordPiece scoring actually learned multi-character continuations
+        // marked with '##'.
+        assert!(
+            tokens.iter().any(|token| {
+                token.starts_with("##") && token.chars().count() > 3
+            }),
+            "no multi-char continuation learned; got {tokens:?}"
+        );
+
+        // Encode a corpus sentence: no UNK anywhere, decode restores it.
+        let (status, tokenizer) =
+            call_host(ML_TOKENIZER_TRAIN_WORDPIECE, &[test_string(corpus), 400]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let sentence = "o rei de roma";
+        let (status, ids) = call_host(
+            ML_TOKENIZER_ENCODE,
+            &[tokenizer, test_string(sentence)],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let len = call_host(TENSOR_LEN, &[ids]).1;
+        assert!(len > 0);
+        for index in 0..len {
+            assert_ne!(call_host(TENSOR_GET, &[ids, index]).1, 0, "unexpected UNK");
+        }
+        let (status, decoded_ptr) = call_host(ML_TOKENIZER_DECODE, &[tokenizer, ids]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let decoded = unsafe { read_spectra_string(decoded_ptr) }.expect("decoded");
+        assert_eq!(decoded, sentence);
+
+        // Roundtrip property over several corpus sentences.
+        for text in ["a roupa do rato", "rainha raivosa mandou rodar"] {
+            let (_, ids) = call_host(ML_TOKENIZER_ENCODE, &[tokenizer, test_string(text)]);
+            let (_, ptr) = call_host(ML_TOKENIZER_DECODE, &[tokenizer, ids]);
+            let back = unsafe { read_spectra_string(ptr) }.expect("roundtrip text");
+            assert_eq!(back, text, "encode(decode(v)) != v for {text:?}");
+        }
+    }
+
+    #[test]
+    fn ml_tokenizer_training_ptbr_corpus_encodes_without_unk() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+
+        let corpus = "o rato roeu a roupa da rainha de roma\n\
+                      o rei mandou rodar a roupa do rato\n\
+                      a rainha raivosa rasgou a roupa do rei de roma";
+        for (host, name) in [
+            (ML_TOKENIZER_TRAIN_BPE, "bpe"),
+            (ML_TOKENIZER_TRAIN_WORDPIECE, "wordpiece"),
+        ] {
+            let (status, tokenizer) =
+                call_host(host, &[test_string(corpus), 300]);
+            assert_eq!(status, HOST_STATUS_SUCCESS, "{name}");
+            let sentence = "o rei de roma";
+            let (status, ids) = call_host(
+                ML_TOKENIZER_ENCODE,
+                &[tokenizer, test_string(sentence)],
+            );
+            assert_eq!(status, HOST_STATUS_SUCCESS, "{name}");
+            let len = call_host(TENSOR_LEN, &[ids]).1;
+            assert!(len > 0, "{name}: empty encoding");
+            for index in 0..len {
+                assert_ne!(
+                    call_host(TENSOR_GET, &[ids, index]).1,
+                    0,
+                    "{name}: UNK in corpus sentence"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ml_tokenizer_training_artifact_save_load_is_idempotent() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+
+        let corpus = "low low low low lower lower newest newest newest newest widest widest widest";
+        let (status, handle_a) =
+            call_host(ML_TOKENIZER_TRAIN_BPE, &[test_string(corpus), 64]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        // Export the trained vocab through the standard host and package it as
+        // a wordpiece v1 artifact using only existing artifact hosts.
+        let (status, spec_ptr) = call_host(ML_TOKENIZER_VOCAB, &[handle_a]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let spec = unsafe { read_spectra_string(spec_ptr) }.expect("vocab spec");
+        let tokens: Vec<serde_json::Value> = spec
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .enumerate()
+            .map(|(index, line)| {
+                let (token, id) = line.split_once(':').expect("token:id line");
+                assert_eq!(id.parse::<i64>().expect("dense id"), index as i64);
+                serde_json::json!({ "id": index, "token": token })
+            })
+            .collect();
+        let token_count = tokens.len() as i64;
+        let vocab_json = serde_json::json!({
+            "tokens": tokens,
+            "special_tokens": { "unk": 0 },
+            "lowercase": true,
+            "continuation_prefix": "##",
+        })
+        .to_string();
+
+        let dir = temp_test_dir("tokenizer_training_artifact");
+        std::fs::create_dir_all(&dir).expect("create temp artifact dir");
+        let path = dir.join("trained-tokenizer.spar");
+        let path_text = path.to_string_lossy().into_owned();
+
+        let build_and_save = |save_path: String| -> SpectraHostValue {
+            let (status, artifact) = call_host(
+                ML_ARTIFACT_NEW,
+                &[test_string("trained-tokenizer"), test_string("v1"), test_string("multi_array")],
+            );
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            for (key, value) in [
+                ("tokenizer_type", "wordpiece"),
+                ("tokenizer_version", "v1"),
+            ] {
+                let (status, _) = call_host(
+                    ML_ARTIFACT_SET_METADATA,
+                    &[artifact, test_string(key), test_string(value)],
+                );
+                assert_eq!(status, HOST_STATUS_SUCCESS);
+            }
+            let (status, _) = call_host(
+                ML_ARTIFACT_SET_METADATA,
+                &[artifact, test_string("vocab_json"), test_string(&vocab_json)],
+            );
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            let (status, ids_tensor) = call_host(TENSOR_ARANGE, &[0, token_count, 1]);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            let (status, _) = call_host(
+                ML_ARTIFACT_ADD_TENSOR,
+                &[artifact, test_string("token_ids"), ids_tensor],
+            );
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            let (status, _) = call_host(ML_ARTIFACT_SAVE, &[artifact, test_string(&save_path)]);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            artifact
+        };
+        build_and_save(path_text.clone());
+
+        let (status, handle_b) = call_host(ML_TOKENIZER_LOAD, &[test_string(&path_text)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        // Idempotency: saving again and reloading yields an equivalent
+        // tokenizer with identical encodings.
+        let second_path = dir.join("trained-tokenizer-again.spar");
+        build_and_save(second_path.to_string_lossy().into_owned());
+        let (status, handle_c) =
+            call_host(ML_TOKENIZER_LOAD, &[test_string(second_path.to_string_lossy().as_ref())]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        let text = "newest widest";
+        let (_, ids_a) = call_host(ML_TOKENIZER_ENCODE, &[handle_a, test_string(text)]);
+        let (_, ids_b) = call_host(ML_TOKENIZER_ENCODE, &[handle_b, test_string(text)]);
+        let (_, ids_c) = call_host(ML_TOKENIZER_ENCODE, &[handle_c, test_string(text)]);
+        let len = call_host(TENSOR_LEN, &[ids_a]).1;
+        assert!(len > 0);
+        for index in 0..len {
+            assert_ne!(
+                call_host(TENSOR_GET, &[ids_a, index]).1,
+                0,
+                "unexpected UNK encoding {text:?}"
+            );
+        }
+        for index in 0..len {
+            assert_eq!(call_host(TENSOR_GET, &[ids_a, index]).1, call_host(TENSOR_GET, &[ids_b, index]).1);
+            assert_eq!(call_host(TENSOR_GET, &[ids_a, index]).1, call_host(TENSOR_GET, &[ids_c, index]).1);
+        }
+        let (_, decoded_ptr) = call_host(ML_TOKENIZER_DECODE, &[handle_b, ids_b]);
+        let decoded = unsafe { read_spectra_string(decoded_ptr) }.expect("decoded");
+        assert_eq!(decoded, text);
+
+        // Exported spec of the loaded handle matches the original training
+        // output byte-for-byte (stable ids across the artifact boundary).
+        let (_, spec_b_ptr) = call_host(ML_TOKENIZER_VOCAB, &[handle_b]);
+        let spec_b = unsafe { read_spectra_string(spec_b_ptr) }.expect("loaded spec");
+        assert_eq!(spec_b, spec);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ── StatsEmbed ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn ml_metrics_generation_real_perplexity_from_logprobs() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        // Without log-probs: the lexical proxy is published under its honest
+        // name and no fake perplexity number is invented.
+        let (status, plain_ptr) = call_host(
+            ML_METRICS_GENERATION,
+            &[
+                test_string("alpha beta"),
+                test_string("alpha gamma"),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let plain = unsafe { read_spectra_string(plain_ptr) }.expect("generation json");
+        assert!(plain.contains("\"answer_overlap_score\""), "{plain}");
+        assert!(!plain.contains("\"answer_overlap_score\":null"), "{plain}");
+        assert!(plain.contains("\"perplexity\":null"), "{plain}");
+        assert!(plain.contains("\"token_f1\""), "{plain}");
+
+        // Real perplexity: mean([-1, -3]) = -2 → exp(2) ≈ 7.389056.
+        let bits = [-1.0f64, -3.0].map(|value| value.to_bits() as i64);
+        let (status, logprobs) =
+            call_host(TENSOR_LITERAL_F, &[2, bits[0], bits[1]]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, real_ptr) = call_host(
+            ML_METRICS_GENERATION,
+            &[
+                test_string("alpha beta"),
+                test_string("alpha beta"),
+                logprobs,
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let real = unsafe { read_spectra_string(real_ptr) }.expect("generation json");
+        let expected = 2.0f64.exp();
+        let expected_json = format!("\"perplexity\":{expected:.6}");
+        assert!(real.contains(&expected_json), "{real} vs {expected_json}");
+        assert!(real.contains("\"logprob_tokens\":2"), "{real}");
+        assert!(real.contains("\"logprob_mean\":-2.000000"), "{real}");
+        assert!(real.contains("\"exact_match\":1.000000"), "{real}");
+
+        // evaluation_report passes the generation payload through verbatim:
+        // the report carries the real perplexity when log-probs are present.
+        let dir = temp_test_dir("generation_perplexity");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let report_path = dir.join("report.json");
+        let (status, _report_ptr) = call_host(
+            ML_EVALUATION_REPORT,
+            &[
+                test_string(report_path.to_string_lossy().as_ref()),
+                test_string("perplexity-check"),
+                test_string("{}"),
+                test_string("{}"),
+                test_string("{}"),
+                test_string(&real),
+                test_string("{}"),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let written = std::fs::read_to_string(report_path).expect("report file");
+        assert!(written.contains(&expected_json), "{written}");
+        std::fs::remove_dir_all(&dir).ok();
+
+        // -inf propagates honestly: mean = -inf → perplexity = +inf → null.
+        let neg_inf = f64::NEG_INFINITY.to_bits() as i64;
+        let (status, infinite) = call_host(TENSOR_LITERAL_F, &[1, neg_inf]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, inf_ptr) = call_host(
+            ML_METRICS_GENERATION,
+            &[test_string("alpha"), test_string("alpha"), infinite],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let inf_json = unsafe { read_spectra_string(inf_ptr) }.expect("generation json");
+        assert!(inf_json.contains("\"perplexity\":null"), "{inf_json}");
+        assert!(inf_json.contains("\"logprob_mean\":null"), "{inf_json}");
+
+        // Positive and NaN log-probs are rejected; empty tensors too.
+        let positive = 0.5f64.to_bits() as i64;
+        let (status, bad_pos) = call_host(TENSOR_LITERAL_F, &[1, positive]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(
+                ML_METRICS_GENERATION,
+                &[test_string("alpha"), test_string("alpha"), bad_pos]
+            )
+            .0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        let nan = f64::NAN.to_bits() as i64;
+        let (status, bad_nan) = call_host(TENSOR_LITERAL_F, &[1, nan]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(
+                ML_METRICS_GENERATION,
+                &[test_string("alpha"), test_string("alpha"), bad_nan]
+            )
+            .0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+    }
+
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn ml_text_embed_model_matches_manual_masked_pooling() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        let dir = temp_test_dir("text_embed_model");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let model_path = dir.join("embed.onnx");
+        std::fs::write(&model_path, ml_text_embed_fixture_proto())
+            .expect("write fixture model");
+
+        let vocab = "[UNK]:0\nhello:1\nworld:2\nmachine:3\nlearning:4\n##s:5\n##ing:6\ndeep:7";
+        let (status, tokenizer) = call_host(ML_TOKENIZER_WORDPIECE, &[test_string(vocab)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, session) = call_host(
+            ML_TEXT_EMBED_MODEL_SESSION,
+            &[test_string(model_path.to_string_lossy().as_ref())],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        fn pooled_reference(rows: &[Vec<f64>]) -> Vec<f64> {
+            let hidden = rows[0].len();
+            let mut pooled = vec![0.0f64; hidden];
+            for row in rows {
+                for h in 0..hidden {
+                    pooled[h] += row[h];
+                }
+            }
+            for value in &mut pooled {
+                *value /= rows.len() as f64;
+            }
+            let norm = pooled.iter().map(|v| v * v).sum::<f64>().sqrt();
+            for value in &mut pooled {
+                *value /= norm;
+            }
+            pooled
+        }
+
+        // hello=1 world=2 deep=7 with a full attention mask.
+        let e1 = ml_embed_fixture_row(1);
+        let e2 = ml_embed_fixture_row(2);
+        let e7 = ml_embed_fixture_row(7);
+        let full_expected = pooled_reference(&[e1.clone(), e2.clone(), e7.clone()]);
+        let (status, out) = call_host(
+            ML_TEXT_EMBED_MODEL,
+            &[session, tokenizer, test_string("hello world deep")],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (_, values, _) =
+            ml_tensor_float_data(out as usize).expect("embedding tensor data");
+        assert_eq!(values.len(), ML_TEXT_EMBED_FIXTURE_HIDDEN);
+        for (actual, want) in values.iter().zip(full_expected.iter()) {
+            assert!(
+                (actual - want).abs() < 1e-4,
+                "full mask pooling {actual} vs manual {want}"
+            );
+        }
+        let unit_norm: f64 = values.iter().map(|v| v * v).sum::<f64>().sqrt();
+        assert!((unit_norm - 1.0).abs() < 1e-6, "not L2 normalized: {unit_norm}");
+
+        // Deterministic across calls.
+        let (status, out_again) = call_host(
+            ML_TEXT_EMBED_MODEL,
+            &[session, tokenizer, test_string("hello world deep")],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (_, values_again, _) =
+            ml_tensor_float_data(out_again as usize).expect("second embedding");
+        assert_eq!(values, values_again);
+
+        // Explicit attention mask [1,0,1]: the masked position must not
+        // contribute to the pooled vector.
+        let (status, mask) = call_host(TENSOR_ONES, &[3]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        // TENSOR_SET mutates in place and returns no handle.
+        assert_eq!(call_host(TENSOR_SET, &[mask, 1, 0]).0, HOST_STATUS_SUCCESS);
+        let masked_expected = pooled_reference(&[e1, e7]);
+        let (status, out_masked) = call_host(
+            ML_TEXT_EMBED_MODEL,
+            &[
+                session,
+                tokenizer,
+                test_string("hello world deep"),
+                mask,
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (_, values_masked, _) =
+            ml_tensor_float_data(out_masked as usize).expect("masked embedding");
+        for (actual, want) in values_masked.iter().zip(masked_expected.iter()) {
+            assert!(
+                (actual - want).abs() < 1e-4,
+                "masked pooling {actual} vs manual {want}"
+            );
+        }
+
+        // Wrong mask length and non-binary mask entries are rejected.
+        let (status, wrong_len) = call_host(TENSOR_ONES, &[2]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(
+                ML_TEXT_EMBED_MODEL,
+                &[
+                    session,
+                    tokenizer,
+                    test_string("hello world deep"),
+                    wrong_len
+                ]
+            )
+            .0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        let (status, bad_values) = call_host(TENSOR_ARANGE, &[0, 3, 1]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(
+                ML_TEXT_EMBED_MODEL,
+                &[
+                    session,
+                    tokenizer,
+                    test_string("hello world deep"),
+                    bad_values
+                ]
+            )
+            .0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+
+        // Unknown session handles are not found.
+        assert_eq!(
+            call_host(
+                ML_TEXT_EMBED_MODEL,
+                &[999_999, tokenizer, test_string("hello")]
+            )
+            .0,
+            HOST_STATUS_NOT_FOUND
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(not(feature = "onnx"))]
+    #[test]
+    fn ml_text_embed_model_without_feature_returns_typed_error() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        let dir = temp_test_dir("text_embed_unavailable");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let model_path = dir.join("embed.onnx");
+        std::fs::write(&model_path, b"not-a-real-model").expect("write placeholder");
+
+        // Session creation degrades to a typed Error record.
+        let (status, tagged) = call_host(
+            ML_TEXT_EMBED_MODEL_SESSION,
+            &[test_string(model_path.to_string_lossy().as_ref())],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (tag, error) = unsafe { tagged_result_parts(tagged) };
+        assert_eq!(tag, 1, "expected Err tag, got payload {error}");
+        let (message_status, message_ptr) =
+            call_host("spectra.std.error.message", &[error]);
+        assert_eq!(message_status, HOST_STATUS_SUCCESS);
+        let message = unsafe { read_spectra_string(message_ptr) }.expect("error message");
+        assert!(message.contains("--features onnx"), "{message}");
+
+        // The embedding host itself degrades the same way (args validated
+        // first so the failure is unambiguously the missing feature).
+        let vocab = "[UNK]:0\nhello:1\nworld:2";
+        let (status, tokenizer) = call_host(ML_TOKENIZER_WORDPIECE, &[test_string(vocab)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (run_status, run_tagged) = call_host(
+            ML_TEXT_EMBED_MODEL,
+            &[1, tokenizer, test_string("hello world")],
+        );
+        assert_eq!(run_status, HOST_STATUS_SUCCESS);
+        let (run_tag, _) = unsafe { tagged_result_parts(run_tagged) };
+        assert_eq!(run_tag, 1);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ── DistTCP ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn ml_disttcp_protocol_frame_roundtrip_byte_by_byte() {
+        let _lock = test_guard();
+
+        // HELLO: exact byte layout — magic, type, LE length, LE payload.
+        let hello = dist_encode_hello(3);
+        assert_eq!(&hello[..4], b"SPDW");
+        assert_eq!(hello[4], ML_DIST_MSG_HELLO);
+        assert_eq!(u32::from_le_bytes(hello[5..9].try_into().expect("len")), 8);
+        assert_eq!(u32::from_le_bytes(hello[9..13].try_into().expect("ver")), 1);
+        assert_eq!(
+            u32::from_le_bytes(hello[13..17].try_into().expect("worker")),
+            3
+        );
+        assert_eq!(hello.len(), ML_DIST_FRAME_HEADER_LEN + 8);
+
+        // GRADIENTS roundtrip with exact f64 payload recovery.
+        let gradients = dist_encode_gradients(0.125, &[0.5, -0.25], &[0.75]);
+        let (msg_type, consumed) = dist_decode_frame(&gradients).expect("complete frame");
+        assert_eq!(msg_type, ML_DIST_MSG_GRADIENTS);
+        assert_eq!(consumed, gradients.len());
+        let decoded = dist_decode_gradients(
+            &gradients[ML_DIST_FRAME_HEADER_LEN..consumed],
+        )
+        .expect("gradient payload");
+        assert_eq!(decoded.loss, 0.125);
+        assert_eq!(decoded.w_grad, vec![0.5, -0.25]);
+        assert_eq!(decoded.b_grad, vec![0.75]);
+
+        // ACK roundtrip.
+        let ack = dist_encode_ack(&[1.5, -2.5, 3.5], &[-4.25]);
+        let (msg_type, consumed) = dist_decode_frame(&ack).expect("ack frame");
+        assert_eq!(msg_type, ML_DIST_MSG_ACK);
+        let (w_grad, b_grad) =
+            dist_decode_ack(&ack[ML_DIST_FRAME_HEADER_LEN..consumed]).expect("ack payload");
+        assert_eq!(w_grad, vec![1.5, -2.5, 3.5]);
+        assert_eq!(b_grad, vec![-4.25]);
+
+        // DONE roundtrip: i64 step + f64 mean loss.
+        let done = dist_encode_done(41, 0.0009765625);
+        let (msg_type, consumed) = dist_decode_frame(&done).expect("done frame");
+        assert_eq!(msg_type, ML_DIST_MSG_DONE);
+        let payload = &done[ML_DIST_FRAME_HEADER_LEN..consumed];
+        assert_eq!(payload.len(), 16);
+        assert_eq!(i64::from_le_bytes(payload[0..8].try_into().expect("step")), 41);
+        let mut cursor = 8usize;
+        assert_eq!(
+            dist_read_f64(payload, &mut cursor).expect("mean loss"),
+            0.0009765625
+        );
+
+        // ASSIGN tensor payloads roundtrip shape + values exactly.
+        let assign = dist_encode_assign(&[2, 3], &[1.0, -2.0, 3.0, 4.0, -5.0, 6.0], &[2, 1], &[7.5, -8.5]);
+        let (msg_type, consumed) = dist_decode_frame(&assign).expect("assign frame");
+        assert_eq!(msg_type, ML_DIST_MSG_ASSIGN);
+        let mut cursor = 0usize;
+        let assign_payload = &assign[ML_DIST_FRAME_HEADER_LEN..consumed];
+        let (x_shape, x_values) =
+            dist_decode_tensor_payload(assign_payload, &mut cursor).expect("x tensor");
+        let (y_shape, y_values) =
+            dist_decode_tensor_payload(assign_payload, &mut cursor).expect("y tensor");
+        assert_eq!(x_shape, vec![2, 3]);
+        assert_eq!(x_values, vec![1.0, -2.0, 3.0, 4.0, -5.0, 6.0]);
+        assert_eq!(y_shape, vec![2, 1]);
+        assert_eq!(y_values, vec![7.5, -8.5]);
+        assert_eq!(cursor, assign_payload.len());
+
+        // Malformed input is rejected: truncated header, short body, bad
+        // magic, unknown message type.
+        assert_eq!(dist_decode_frame(&gradients[..8]), None);
+        assert_eq!(dist_decode_frame(&gradients[..gradients.len() - 1]), None);
+        let mut bad_magic = gradients.clone();
+        bad_magic[2] ^= 0xFF;
+        assert_eq!(dist_decode_frame(&bad_magic), None);
+        let mut unknown = dist_encode_hello(0);
+        unknown[4] = 0x7F;
+        assert_eq!(dist_decode_frame(&unknown), None);
+    }
+
+    #[test]
+    fn ml_disttcp_multithread_four_workers_disjoint_shards_converge() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        let dir = std::env::temp_dir().join(format!(
+            "spectra_distmt_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+
+        let (status, session) = call_host(
+            ML_DISTRIBUTED_TRAIN_MULTITHREAD,
+            &[
+                test_string("four-worker-convergence"),
+                test_string(dir.to_string_lossy().as_ref()),
+                4,
+                400,
+                0.4f64.to_bits() as i64,
+                3,
+                64,
+                42,
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        // Every worker really ran every step on its own disjoint shard
+        // (4 workers x 16 samples = 64 total).
+        for worker_id in 0..4 {
+            assert_eq!(
+                call_host(ML_DISTRIBUTED_WORKER_STEP_COUNT, &[session, worker_id]),
+                (HOST_STATUS_SUCCESS, 400)
+            );
+        }
+        assert_eq!(
+            call_host(ML_DISTRIBUTED_GLOBAL_STEP, &[session]),
+            (HOST_STATUS_SUCCESS, 400)
+        );
+
+        let (status, summary_ptr) = call_host(ML_DISTRIBUTED_SUMMARY, &[session]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let summary = unsafe { read_spectra_string(summary_ptr) }.expect("summary string");
+        assert!(summary.contains("\"topology\":\"multi-thread\""));
+        assert!(summary.contains("\"total_samples\":64"));
+        assert!(summary.contains("\"global_step\":400"));
+
+        let loss_start = summary.find("\"last_loss\":").expect("loss field")
+            + "\"last_loss\":".len();
+        let loss_end = loss_start
+            + summary[loss_start..]
+                .find(',')
+                .expect("loss field terminator");
+        let last_loss: f64 = summary[loss_start..loss_end].trim().parse().expect("loss value");
+        assert!(
+            last_loss < 0.01,
+            "expected converged loss below 0.01, got {last_loss} ({summary})"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn ml_disttcp_tcp_loopback_end_to_end() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        let dir = std::env::temp_dir().join(format!(
+            "spectra_disttcp_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+
+        let (status, session) = call_host(
+            ML_DISTRIBUTED_TRAIN_TCP,
+            &[
+                test_string("loopback-workers"),
+                test_string(dir.to_string_lossy().as_ref()),
+                3,
+                200,
+                0.4f64.to_bits() as i64,
+                3,
+                48,
+                7,
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        for worker_id in 0..3 {
+            assert_eq!(
+                call_host(ML_DISTRIBUTED_WORKER_STEP_COUNT, &[session, worker_id]),
+                (HOST_STATUS_SUCCESS, 200)
+            );
+        }
+
+        let (status, summary_ptr) = call_host(ML_DISTRIBUTED_SUMMARY, &[session]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let summary = unsafe { read_spectra_string(summary_ptr) }.expect("summary string");
+        assert!(summary.contains("\"schema\":\"spectra.ml.distributed_summary.v2\""));
+        assert!(summary.contains("\"topology\":\"tcp-workers\""));
+        assert!(summary.contains("\"total_samples\":48"));
+        assert!(summary.contains("\"global_step\":200"));
+
+        let loss_start = summary.find("\"last_loss\":").expect("loss field")
+            + "\"last_loss\":".len();
+        let loss_end = loss_start
+            + summary[loss_start..]
+                .find(',')
+                .expect("loss field terminator");
+        let last_loss: f64 = summary[loss_start..loss_end].trim().parse().expect("loss value");
+        assert!(
+            last_loss < 0.01,
+            "expected TCP-trained loss below 0.01, got {last_loss} ({summary})"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn ml_disttcp_v1_checkpoint_upgrades_transparently() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        let dir = std::env::temp_dir().join(format!(
+            "spectra_v1up_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let checkpoint = dir.join("v1.json");
+        let legacy = "{\"schema\":\"spectra.ml.distributed_checkpoint.v1\",\"name\":\"legacy\",\"topology\":\"single-machine-simulated-workers\",\"seed\":7,\"worker_count\":2,\"global_step\":5,\"interrupted_worker\":null,\"last_checkpoint_path\":null,\"workers\":[{\"worker_id\":0,\"step_count\":5,\"sample_count\":10,\"accumulator\":1.5,\"active\":true},{\"worker_id\":1,\"step_count\":5,\"sample_count\":10,\"accumulator\":2.5,\"active\":false}]}";
+        std::fs::write(&checkpoint, legacy).expect("write v1 checkpoint");
+
+        let (status, resumed) =
+            call_host(ML_DISTRIBUTED_RESUME, &[test_string(checkpoint.to_string_lossy().as_ref())]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        for worker_id in 0..2 {
+            assert_eq!(
+                call_host(ML_DISTRIBUTED_WORKER_STEP_COUNT, &[resumed, worker_id]),
+                (HOST_STATUS_SUCCESS, 5)
+            );
+        }
+        let (status, summary_ptr) = call_host(ML_DISTRIBUTED_SUMMARY, &[resumed]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let summary = unsafe { read_spectra_string(summary_ptr) }.expect("summary string");
+        // The v1 simulated topology is upgraded transparently on read; the
+        // resumed session carries the real multi-thread topology instead.
+        assert!(summary.contains("\"topology\":\"multi-thread\""));
+        assert!(summary.contains("\"global_step\":5"));
+        assert!(summary.contains("\"total_samples\":20"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+// ── ServeReal ────────────────────────────────────────────────────────────────
+
+fn serve_real_bits(value: f64) -> SpectraHostValue {
+    value.to_bits() as i64
+}
+
+/// Registers a single dense layer `y = relu(scale * x)` as the server's real
+/// served model (the dense equivalent of the historical seed constant).
+fn serve_real_register_scalar_model(server: SpectraHostValue, scale: f64) {
+    let (status, weights) = call_host(TENSOR_LITERAL2_F, &[1, 1, serve_real_bits(scale)]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (status, biases) = call_host(TENSOR_LITERAL_F, &[1, serve_real_bits(0.0)]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (status, ok) = call_host(
+        SERVE_SERVER_REGISTER_MODEL_LINEAR,
+        &[server, weights, biases, 0],
+    );
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(ok, 1);
+}
+
+#[test]
+fn serve_real_linear_forward_matches_manual_reference() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    crate::ffi::spectra_rt_manual_clear();
+
+    assert_eq!(call_host(SERVE_RESET, &[]).0, HOST_STATUS_SUCCESS);
+    let (status, server) = call_host(SERVE_SERVER_NEW, &[1]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+
+    // Two dense layers over scalar input x = 4:
+    //   layer 1: h = relu([[2]] @ x + [1])      = relu(9)          = 9
+    //   layer 2: o = tanh([[3],[-1]] @ h + [0.5, -0.25])
+    //            = tanh(27.5), tanh(-9.25)
+    let (status, w1) = call_host(TENSOR_LITERAL2_F, &[1, 1, serve_real_bits(2.0)]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (status, b1) = call_host(TENSOR_LITERAL_F, &[1, serve_real_bits(1.0)]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (status, w2) = call_host(
+        TENSOR_LITERAL2_F,
+        &[2, 1, serve_real_bits(3.0), serve_real_bits(-1.0)],
+    );
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (status, b2) = call_host(
+        TENSOR_LITERAL_F,
+        &[2, serve_real_bits(0.5), serve_real_bits(-0.25)],
+    );
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(
+        call_host(
+            SERVE_SERVER_REGISTER_MODEL_LINEAR,
+            &[server, w1, b1, 0, w2, b2, 2]
+        ),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+
+    let (status, request) = call_host(SERVE_SERVER_ENQUEUE, &[server, 4]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(
+        call_host(SERVE_SERVER_WARMUP, &[server]),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+    assert_eq!(
+        call_host(SERVE_SERVER_PROCESS_BATCH, &[server, 1]),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+
+    // Scalar projection: round(tanh(27.5)) = round(0.99999...) = 1.
+    let expected_first = (27.5f64).tanh();
+    assert_eq!(
+        call_host(SERVE_SERVER_RESULT, &[server, request]),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+
+    // Exact float output vector must match the manual forward pass.
+    let (status, vector_handle) =
+        call_host(SERVE_SERVER_RESULT_VECTOR, &[server, request]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (_, values, _) = ml_tensor_float_data(vector_handle as usize).expect("output vector");
+    let expected_second = (-9.25f64).tanh();
+    assert_eq!(values.len(), 2);
+    assert!((values[0] - expected_first).abs() < 1e-9, "got {}", values[0]);
+    assert!((values[1] - expected_second).abs() < 1e-9, "got {}", values[1]);
+}
+
+#[test]
+fn serve_real_drift_psi_zero_for_identical_and_flags_known_shift() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    crate::ffi::spectra_rt_manual_clear();
+
+    assert_eq!(call_host(SERVE_RESET, &[]).0, HOST_STATUS_SUCCESS);
+    fn run_identity_server(inputs: &[SpectraHostValue]) -> String {
+        let (status, server) = call_host(SERVE_SERVER_NEW, &[1]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        serve_real_register_scalar_model(server, 1.0);
+        assert_eq!(
+            call_host(SERVE_SERVER_WARMUP, &[server]).0,
+            HOST_STATUS_SUCCESS
+        );
+        for input in inputs {
+            assert_eq!(call_host(SERVE_SERVER_ENQUEUE, &[server, *input]).0, HOST_STATUS_SUCCESS);
+        }
+        assert_eq!(
+            call_host(SERVE_SERVER_PROCESS_BATCH, &[server, inputs.len() as i64]),
+            (HOST_STATUS_SUCCESS, inputs.len() as SpectraHostValue)
+        );
+        let (status, ptr) = call_host(SERVE_SERVER_DISTRIBUTION_SUMMARY, &[server]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        unsafe { read_spectra_string(ptr) }.expect("distribution summary")
+    }
+
+    let reference = run_identity_server(&[10, 20]);
+    let identical = run_identity_server(&[10, 20]);
+    let shifted = run_identity_server(&[110, 120]);
+
+    // Identical histograms: every PSI term is (p-p)*ln(p/p) = 0 exactly.
+    let (status, drift_ptr) = call_host(
+        SERVE_DRIFT_CHECK,
+        &[test_string(&reference), test_string(&identical), 0],
+    );
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let no_drift = unsafe { read_spectra_string(drift_ptr) }.expect("drift");
+    assert!(no_drift.contains("spectra.serve.drift_check.v1"));
+    assert!(no_drift.contains("\"score_per_mille\":0"), "{}", no_drift);
+    assert!(no_drift.contains("\"drifted\":false"));
+
+    // Known shift: disjoint bins drive PSI ~ 2*ln(1/eps) per feature, far
+    // above the per-mille threshold.
+    let (status, drift_ptr) = call_host(
+        SERVE_DRIFT_CHECK,
+        &[test_string(&reference), test_string(&shifted), 100],
+    );
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let drift = unsafe { read_spectra_string(drift_ptr) }.expect("drift");
+    assert!(drift.contains("\"drifted\":true"), "{}", drift);
+}
+
+#[test]
+fn serve_real_latency_measured_positive_and_grows_with_compute() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    crate::ffi::spectra_rt_manual_clear();
+
+    assert_eq!(call_host(SERVE_RESET, &[]).0, HOST_STATUS_SUCCESS);
+
+    // Light server: one trivial dense layer.
+    let (status, light_server) = call_host(SERVE_SERVER_NEW, &[1]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    serve_real_register_scalar_model(light_server, 1.0);
+
+    // Heavy server: dense layer with a 400x400 weight matrix (row-major),
+    // forcing ~160k multiply-adds per inference instead of any synthetic
+    // latency formula.
+    let (status, heavy_server) = call_host(SERVE_SERVER_NEW, &[1]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let mut heavy_w1_args = vec![400i64, 1i64];
+    heavy_w1_args.extend((0..400).map(|_| serve_real_bits(0.5)));
+    let (status, heavy_w1) = call_host(TENSOR_LITERAL2_F, &heavy_w1_args);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let mut heavy_b1_args = vec![400i64];
+    heavy_b1_args.extend((0..400).map(|_| serve_real_bits(0.0)));
+    let (status, heavy_b1) = call_host(TENSOR_LITERAL_F, &heavy_b1_args);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let mut heavy_w2_args = vec![400i64, 400i64];
+    heavy_w2_args.extend((0..160_000).map(|index| {
+        serve_real_bits(if index % 7 == 0 { 0.125 } else { 0.0 })
+    }));
+    let (status, heavy_w2) = call_host(TENSOR_LITERAL2_F, &heavy_w2_args);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let mut heavy_b2_args = vec![400i64];
+    heavy_b2_args.extend((0..400).map(|_| serve_real_bits(0.0)));
+    let (status, heavy_b2) = call_host(TENSOR_LITERAL_F, &heavy_b2_args);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(
+        call_host(
+            SERVE_SERVER_REGISTER_MODEL_LINEAR,
+            &[heavy_server, heavy_w1, heavy_b1, 0, heavy_w2, heavy_b2, 0]
+        ),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+
+    for server in [light_server, heavy_server] {
+        assert_eq!(
+            call_host(SERVE_SERVER_WARMUP, &[server]).0,
+            HOST_STATUS_SUCCESS
+        );
+        for input in 1..=4 {
+            assert_eq!(
+                call_host(SERVE_SERVER_ENQUEUE, &[server, input]).0,
+                HOST_STATUS_SUCCESS
+            );
+        }
+        assert_eq!(
+            call_host(SERVE_SERVER_PROCESS_BATCH, &[server, 4]),
+            (HOST_STATUS_SUCCESS, 4)
+        );
+    }
+
+    let latency_of = |server: SpectraHostValue| -> f64 {
+        let (status, ptr) = call_host(SERVE_SERVER_MONITORING_SNAPSHOT, &[server]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let snapshot = unsafe { read_spectra_string(ptr) }.expect("snapshot");
+        serve_json_number(&snapshot, "\"latency_avg_ms\":").expect("measured latency")
+    };
+    let light_latency = latency_of(light_server);
+    let heavy_latency = latency_of(heavy_server);
+    assert!(light_latency > 0.0, "light latency {} not positive", light_latency);
+    assert!(
+        heavy_latency > light_latency * 10.0,
+        "heavy latency {} did not grow over light {}",
+        heavy_latency,
+        light_latency
+    );
+}
+
+#[test]
+fn serve_real_rejects_inference_without_registered_model() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    crate::ffi::spectra_rt_manual_clear();
+
+    assert_eq!(call_host(SERVE_RESET, &[]).0, HOST_STATUS_SUCCESS);
+    let (status, server) = call_host(SERVE_SERVER_NEW, &[7]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(
+        call_host(SERVE_SERVER_WARMUP, &[server]),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+    let (status, request) = call_host(SERVE_SERVER_ENQUEUE, &[server, 5]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+
+    // No served model: batch processing refuses to fabricate outputs.
+    assert_eq!(
+        call_host(SERVE_SERVER_PROCESS_BATCH, &[server, 1]).0,
+        HOST_STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        call_host(SERVE_SERVER_BENCHMARK, &[server, 4, 2]).0,
+        HOST_STATUS_INVALID_ARGUMENT
+    );
+    // The vector accessor only answers requests completed by real inference.
+    assert_eq!(
+        call_host(SERVE_SERVER_RESULT_VECTOR, &[server, request]).0,
+        HOST_STATUS_NOT_FOUND
+    );
+
+    // After registering a REAL model, the same hosts succeed end-to-end.
+    serve_real_register_scalar_model(server, 7.0);
+    assert_eq!(
+        call_host(SERVE_SERVER_PROCESS_BATCH, &[server, 1]),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+    // y = 7 * 5 = 35 through the actual dense layer.
+    assert_eq!(
+        call_host(SERVE_SERVER_RESULT, &[server, request]),
+        (HOST_STATUS_SUCCESS, 35)
+    );
+
+    let (status, bench_server) = call_host(SERVE_SERVER_NEW, &[1]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    serve_real_register_scalar_model(bench_server, 1.0);
+    assert_eq!(
+        call_host(SERVE_SERVER_BENCHMARK, &[bench_server, 4, 2]),
+        (HOST_STATUS_SUCCESS, 4)
+    );
+}
+
+
+    // ── concurrent.task_spawn_fn: real JIT-closure concurrency ─────────────
+
+    /// Fake JIT closure object: slot 0 = code pointer, slot 1 = capture.
+    /// `spectra_rt_invoke_closure` reads slot 0 and calls it as
+    /// `fn(env = closure_ptr, arg) -> i64`, exactly like generated closures.
+    fn heap_closure(code_ptr: usize, _capture: i64) -> SpectraHostValue {
+        Box::into_raw(Box::new([code_ptr as SpectraHostValue, _capture]))
+            as SpectraHostValue
+    }
+
+    extern "C" fn spawn_fn_test_closure(_env: i64, arg: i64) -> i64 {
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        arg + 7
+    }
+
+    extern "C" fn spawn_fn_recording_closure(_env: i64, arg: i64) -> i64 {
+        let start = std::time::Instant::now();
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        SPAWN_FN_INTERVALS
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .push((start, std::time::Instant::now()));
+        arg * 2
+    }
+
+    extern "C-unwind" fn spawn_fn_panicking_closure(_env: i64, _arg: i64) -> i64 {
+        panic!("spawn_fn closure panic must become a failed task, not an abort");
+    }
+
+    static SPAWN_FN_INTERVALS: std::sync::Mutex<Vec<(std::time::Instant, std::time::Instant)>> =
+        std::sync::Mutex::new(Vec::new());
+
+    #[test]
+    fn concurrent_task_spawn_fn_runs_closure_on_worker_and_joins_value() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        assert_eq!(call_host(CONCURRENT_RESET, &[]).0, HOST_STATUS_SUCCESS);
+
+        let closure = heap_closure(spawn_fn_test_closure as *const () as usize, 0);
+        let started = std::time::Instant::now();
+        let (status, task) = call_host(CONCURRENT_TASK_SPAWN_FN, &[closure, 23]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        // The handle exists before the closure finishes: poll must succeed.
+        assert_eq!(
+            call_host(CONCURRENT_TASK_IS_DONE, &[task]).0,
+            HOST_STATUS_SUCCESS
+        );
+
+        // Value-carrying join: closure result becomes the task value.
+        assert_eq!(
+            call_host(CONCURRENT_TASK_JOIN, &[task]),
+            (HOST_STATUS_SUCCESS, 30)
+        );
+        // The worker really executed the body (80ms sleep), not the caller.
+        assert!(started.elapsed() >= std::time::Duration::from_millis(80));
+        // Joined tasks are released.
+        assert_eq!(
+            call_host(CONCURRENT_TASK_JOIN, &[task]).0,
+            HOST_STATUS_NOT_FOUND
+        );
+    }
+
+    #[test]
+    fn concurrent_task_spawn_fn_tasks_run_in_parallel() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        assert_eq!(call_host(CONCURRENT_RESET, &[]).0, HOST_STATUS_SUCCESS);
+        SPAWN_FN_INTERVALS
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear();
+
+        let closure_a = heap_closure(spawn_fn_recording_closure as *const () as usize, 0);
+        let closure_b = heap_closure(spawn_fn_recording_closure as *const () as usize, 0);
+        let wall_start = std::time::Instant::now();
+        let (_, task_a) = call_host(CONCURRENT_TASK_SPAWN_FN, &[closure_a, 21]);
+        let (_, task_b) = call_host(CONCURRENT_TASK_SPAWN_FN, &[closure_b, 21]);
+        assert_eq!(
+            call_host(CONCURRENT_TASK_JOIN, &[task_a]),
+            (HOST_STATUS_SUCCESS, 42)
+        );
+        assert_eq!(
+            call_host(CONCURRENT_TASK_JOIN, &[task_b]),
+            (HOST_STATUS_SUCCESS, 42)
+        );
+        let wall = wall_start.elapsed();
+
+        // Two sequential 150ms closures would need >= 300ms. Real parallel
+        // dispatch on the two persistent workers finishes well under that.
+        assert!(
+            wall < std::time::Duration::from_millis(290),
+            "spawn_fn tasks did not overlap: wall={wall:?}"
+        );
+
+        // Direct proof of overlap: execution intervals intersect.
+        let intervals = SPAWN_FN_INTERVALS
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        assert_eq!(intervals.len(), 2);
+        let (first, second) = (&intervals[0], &intervals[1]);
+        assert!(
+            first.0 < second.1 && second.0 < first.1,
+            "execution intervals must overlap for real concurrency: {first:?} vs {second:?}"
+        );
+    }
+
+    #[test]
+    fn concurrent_task_spawn_fn_panicking_closure_fails_task_without_abort() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        assert_eq!(call_host(CONCURRENT_RESET, &[]).0, HOST_STATUS_SUCCESS);
+
+        let closure = heap_closure(spawn_fn_panicking_closure as *const () as usize, 0);
+        let (_, task) = call_host(CONCURRENT_TASK_SPAWN_FN, &[closure, 1]);
+        // Panic inside the closure surfaces as a failed-task status on join.
+        assert_eq!(
+            call_host(CONCURRENT_TASK_JOIN, &[task]).0,
+            HOST_STATUS_INTERNAL_ERROR
+        );
+        // The process is still alive and the registry is usable.
+        let (status, fresh_task) = call_host(CONCURRENT_TASK_SPAWN, &[5]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(CONCURRENT_TASK_JOIN, &[fresh_task]),
+            (HOST_STATUS_SUCCESS, 5)
+        );
     }

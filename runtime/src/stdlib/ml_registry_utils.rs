@@ -75,6 +75,8 @@ struct MlDistributedSession {
     interrupted_worker: Option<usize>,
     workers: Vec<MlDistributedWorker>,
     last_checkpoint_path: Option<String>,
+    topology: String,
+    last_loss: f64,
 }
 
 #[derive(Clone)]

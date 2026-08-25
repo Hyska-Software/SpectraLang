@@ -22,6 +22,8 @@ pub fn register() {
     register_concurrent();
     register_async();
     register_serve();
+    register_serve_real(); // ── ServeReal ──
+    register_ml_text_embedding_model(); // StatsEmbed
     // Anchor the fast-path extern "C" symbols so the JIT symbol resolver
     // can find them at runtime. See `ffi::keep_fast_symbols` for details.
     crate::ffi::keep_fast_symbols();
@@ -746,7 +748,6 @@ fn register_ml() {
         ML_DISTRIBUTED_SESSION_START,
         std_ml_distributed_session_start,
     );
-    register_host_function(ML_DISTRIBUTED_WORKER_STEP, std_ml_distributed_worker_step);
     register_host_function(ML_DISTRIBUTED_GLOBAL_STEP, std_ml_distributed_global_step);
     register_host_function(
         ML_DISTRIBUTED_WORKER_STEP_COUNT,
@@ -758,6 +759,12 @@ fn register_ml() {
     );
     register_host_function(ML_DISTRIBUTED_RESUME, std_ml_distributed_resume);
     register_host_function(ML_DISTRIBUTED_SUMMARY, std_ml_distributed_summary);
+    // ── DistTCP ──
+    register_host_function(
+        ML_DISTRIBUTED_TRAIN_MULTITHREAD,
+        std_ml_distributed_train_multithread,
+    );
+    register_host_function(ML_DISTRIBUTED_TRAIN_TCP, std_ml_distributed_train_tcp);
     register_host_function(ML_ONNX_EXPORT, std_ml_onnx_export);
     register_host_function(ML_ONNX_IMPORT_SUMMARY, std_ml_onnx_import_summary);
     register_host_function(ML_ONNX_VALIDATE, std_ml_onnx_validate);
@@ -811,10 +818,16 @@ fn register_ml() {
     register_host_function(ML_ARTIFACT_METADATA, std_ml_artifact_metadata);
     register_host_function(ML_ARTIFACT_VALIDATE, std_ml_artifact_validate);
     register_host_function(ML_ARTIFACT_FREE, std_ml_artifact_free);
+
+    // ── TokenizerTrainer ──
+    register_host_function(ML_TOKENIZER_TRAIN_BPE, std_ml_train_bpe);
+    register_host_function(ML_TOKENIZER_TRAIN_WORDPIECE, std_ml_train_wordpiece);
+    register_host_function(ML_TOKENIZER_VOCAB, std_ml_tokenizer_vocab);
 }
 
 fn register_concurrent() {
     register_host_function(CONCURRENT_TASK_SPAWN, std_concurrent_task_spawn);
+    register_host_function(CONCURRENT_TASK_SPAWN_FN, std_concurrent_task_spawn_fn);
     register_host_function(CONCURRENT_TASK_JOIN, std_concurrent_task_join);
     register_host_function(CONCURRENT_TASK_SPAWN_JOIN, std_concurrent_task_spawn_join);
     register_host_function(CONCURRENT_TASK_SPAWN_BATCH, std_concurrent_task_spawn_batch);
@@ -1006,4 +1019,23 @@ fn register_env() {
     register_host_function(ENV_ARG_OPTION, std_env_arg_option);
     register_host_function(ENV_GET_COMPAT, std_env_get);
     register_host_function(ENV_ARG_COMPAT, std_env_arg);
+}
+
+// ── StatsEmbed ───────────────────────────────────────────────────────────────
+fn register_ml_text_embedding_model() {
+    register_host_function(ML_TEXT_EMBED_MODEL_SESSION, std_ml_text_embed_model_session);
+    register_host_function(ML_TEXT_EMBED_MODEL, std_ml_text_embed_model);
+}
+
+// ── ServeReal ────────────────────────────────────────────────────────────────
+fn register_serve_real() {
+    register_host_function(
+        SERVE_SERVER_REGISTER_MODEL_LINEAR,
+        std_serve_server_register_model_linear,
+    );
+    register_host_function(
+        SERVE_SERVER_REGISTER_MODEL_ONNX,
+        std_serve_server_register_model_onnx,
+    );
+    register_host_function(SERVE_SERVER_RESULT_VECTOR, std_serve_server_result_vector);
 }

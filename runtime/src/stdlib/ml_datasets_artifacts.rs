@@ -412,13 +412,15 @@ fn ml_distributed_session_json(session: &MlDistributedSession) -> String {
         .map(|worker_id| worker_id.to_string())
         .unwrap_or_else(|| "null".to_string());
     format!(
-        "{{\"schema\":\"spectra.ml.distributed_checkpoint.v1\",\"name\":{},\"topology\":\"single-machine-simulated-workers\",\"seed\":{},\"worker_count\":{},\"global_step\":{},\"interrupted_worker\":{},\"last_checkpoint_path\":{},\"workers\":[{}]}}",
+        "{{\"schema\":\"spectra.ml.distributed_checkpoint.v2\",\"name\":{},\"topology\":{},\"seed\":{},\"worker_count\":{},\"global_step\":{},\"interrupted_worker\":{},\"last_checkpoint_path\":{},\"last_loss\":{},\"workers\":[{}]}}",
         ml_json_string(&session.name),
+        ml_json_string(&session.topology),
         session.seed,
         session.worker_count,
         session.global_step,
         interrupted_json,
         checkpoint_json,
+        ml_float_json(session.last_loss),
         workers_json
     )
 }
@@ -431,12 +433,14 @@ fn ml_distributed_summary_json(session: &MlDistributedSession) -> String {
         .sum();
     let total_worker_steps: i64 = session.workers.iter().map(|worker| worker.step_count).sum();
     format!(
-        "{{\"schema\":\"spectra.ml.distributed_summary.v1\",\"name\":{},\"topology\":\"single-machine-simulated-workers\",\"worker_count\":{},\"global_step\":{},\"total_worker_steps\":{},\"total_samples\":{},\"checkpoint\":{}}}",
+        "{{\"schema\":\"spectra.ml.distributed_summary.v2\",\"name\":{},\"topology\":{},\"worker_count\":{},\"global_step\":{},\"total_worker_steps\":{},\"total_samples\":{},\"last_loss\":{},\"checkpoint\":{}}}",
         ml_json_string(&session.name),
+        ml_json_string(&session.topology),
         session.worker_count,
         session.global_step,
         total_worker_steps,
         total_samples,
+        ml_float_json(session.last_loss),
         session
             .last_checkpoint_path
             .as_ref()
@@ -510,9 +514,15 @@ fn ml_distributed_session_from_checkpoint(
     source: &str,
     checkpoint_path: String,
 ) -> Option<MlDistributedSession> {
-    if !source.contains("\"schema\":\"spectra.ml.distributed_checkpoint.v1\"") {
+    // v2 is native; v1 checkpoints upgrade transparently to the multi-thread
+    // topology (the old simulated counters map onto the same worker fields).
+    let version = if source.contains("\"schema\":\"spectra.ml.distributed_checkpoint.v2\"") {
+        2
+    } else if source.contains("\"schema\":\"spectra.ml.distributed_checkpoint.v1\"") {
+        1
+    } else {
         return None;
-    }
+    };
     let name = ml_checkpoint_string(source, "\"name\"")?;
     let seed = ml_checkpoint_number(source, "\"seed\"")?;
     let worker_count = ml_checkpoint_number(source, "\"worker_count\"")? as usize;
@@ -552,5 +562,13 @@ fn ml_distributed_session_from_checkpoint(
         interrupted_worker,
         workers,
         last_checkpoint_path: Some(checkpoint_path),
+        topology: if version >= 2 {
+            ml_checkpoint_string(source, "\"topology\"")?
+        } else {
+            "multi-thread".to_string()
+        },
+        last_loss: ml_manifest_section(source, "\"last_loss\"")
+            .and_then(|value| value.trim().parse::<f64>().ok())
+            .unwrap_or(0.0),
     })
 }

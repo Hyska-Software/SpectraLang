@@ -113,10 +113,12 @@ pub enum RuntimeImport {
     /// Fatal runtime error reporter used by Div/Rem zero checks and failed
     /// host calls. Prints `runtime error: <message>` and exits with 101.
     SpectraPanic,
+    /// Real-concurrency spawn of a JIT closure onto the worker pool.
+    ConcurrentSpawnFn,
 }
 
 impl RuntimeImport {
-    pub const COUNT: usize = 43;
+    pub const COUNT: usize = 44;
 
     pub const ALL: &'static [Self] = &[
         Self::ManualAlloc,
@@ -162,6 +164,7 @@ impl RuntimeImport {
         Self::HostInvokeCached,
         Self::HostInvokeCachedBatch,
         Self::SpectraPanic,
+        Self::ConcurrentSpawnFn,
     ];
 
     pub const fn index(self) -> usize {
@@ -182,6 +185,7 @@ impl RuntimeImport {
             Self::ConcurrentSpawnBatch => "spectra_rt_concurrent_spawn_batch_fast",
             Self::ConcurrentJoinBatchSum => "spectra_rt_concurrent_join_batch_sum_fast",
             Self::ConcurrentSpawnJoin => "spectra_rt_concurrent_spawn_join_fast",
+            Self::ConcurrentSpawnFn => "spectra_rt_concurrent_spawn_fn_fast",
             Self::ConcurrentReset => "spectra_rt_concurrent_reset_fast",
             Self::BuilderNew => "spectra_rt_builder_new",
             Self::BuilderPush => "spectra_rt_builder_push",
@@ -233,6 +237,7 @@ impl RuntimeImport {
             Self::ConcurrentJoinBatchSum => (I64, I64),
             Self::ConcurrentSpawnJoin => (I64, I64),
             Self::ConcurrentReset => (EMPTY, I64),
+            Self::ConcurrentSpawnFn => (I64_I64, I64),
             Self::BuilderNew => (I64, I64),
             Self::BuilderPush => (I64_I64, EMPTY),
             Self::BuilderLen => (I64, I64),
@@ -284,6 +289,7 @@ impl RuntimeImport {
             Self::ConcurrentJoinBatchSum => {
                 ffi::spectra_rt_concurrent_join_batch_sum_fast as *const u8
             }
+            Self::ConcurrentSpawnFn => ffi::spectra_rt_concurrent_spawn_fn_fast as *const u8,
             Self::ConcurrentSpawnJoin => ffi::spectra_rt_concurrent_spawn_join_fast as *const u8,
             Self::ConcurrentReset => ffi::spectra_rt_concurrent_reset_fast as *const u8,
             Self::BuilderNew => ffi::spectra_rt_builder_new as *const u8,
@@ -388,10 +394,11 @@ pub enum FastHostCall {
     TensorBackward,
     MlSgdStep,
     TensorFullF,
+    ConcurrentSpawnFn,
 }
 
 impl FastHostCall {
-    pub const COUNT: usize = 31;
+    pub const COUNT: usize = 32;
 
     pub const ALL: &'static [Self] = &[
         Self::ConcurrentReset,
@@ -425,6 +432,7 @@ impl FastHostCall {
         Self::TensorBackward,
         Self::MlSgdStep,
         Self::TensorFullF,
+        Self::ConcurrentSpawnFn,
     ];
 
     pub const fn index(self) -> usize {
@@ -464,6 +472,7 @@ impl FastHostCall {
             Self::TensorBackward => "spectra.std.tensor.backward",
             Self::MlSgdStep => "spectra.std.ml.sgd_step",
             Self::TensorFullF => "spectra.std.tensor.full_f",
+            Self::ConcurrentSpawnFn => "spectra.std.concurrent.task_spawn_fn",
         }
     }
 
@@ -500,6 +509,7 @@ impl FastHostCall {
             Self::TensorBackward => RuntimeImport::TensorBackward,
             Self::MlSgdStep => RuntimeImport::MlSgdStep,
             Self::TensorFullF => RuntimeImport::TensorFullF,
+            Self::ConcurrentSpawnFn => RuntimeImport::ConcurrentSpawnFn,
         }
     }
 

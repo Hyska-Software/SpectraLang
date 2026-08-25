@@ -31,8 +31,10 @@ pub extern "C" fn spectra_rt_manual_frame_exit(frame_id: usize) {
     let allocations = guard.pop_frame(frame_id);
 
     for ptr in allocations {
-        guard.allocations.remove(&ptr);
-        crate::stdlib::forget_string_value(ptr);
+        // Quarantine-aware free: leaves a tombstone so a stale pointer to
+        // frame-local memory cannot silently free an unrelated object
+        // after address reuse.
+        guard.free_tracked(ptr);
     }
 }
 
@@ -177,6 +179,22 @@ pub extern "C" fn spectra_rt_string_char_at(
 #[inline(never)]
 pub extern "C" fn spectra_rt_concurrent_spawn_fast(value: SpectraHostValue) -> SpectraHostValue {
     crate::stdlib::concurrent_spawn_fast(value)
+}
+
+/// Fast ABI entry for `concurrent.task_spawn_fn(closure, arg)`.
+///
+/// Skips the generic host-call dispatch. Called directly from JIT code when
+/// the backend inlines the `task_spawn_fn` call.
+///
+/// Returns the new task_id (>0 on success) or 0 on internal error (poisoned
+/// registry mutex or null closure pointer). Task 0 is the invalid sentinel.
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_concurrent_spawn_fn_fast(
+    fn_ptr: SpectraHostValue,
+    arg: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::concurrent_spawn_fn_fast(fn_ptr, arg)
 }
 
 /// Fast ABI entry for `concurrent.task_join(task_id)`.

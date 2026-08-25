@@ -13,6 +13,20 @@ extern "C" fn std_concurrent_task_spawn(ctx: *mut SpectraHostCallContext) -> i32
     }
 }
 
+extern "C" fn std_concurrent_task_spawn_fn(ctx: *mut SpectraHostCallContext) -> i32 {
+    let (args, results) = match host_call_args(ctx, 2) {
+        Ok(parts) => parts,
+        Err(status) => return status,
+    };
+    match spawn_concurrent_task_fn(args[0], args[1]) {
+        Ok(task_id) => {
+            results[0] = task_id;
+            HOST_STATUS_SUCCESS
+        }
+        Err(status) => status,
+    }
+}
+
 extern "C" fn std_concurrent_task_join(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,

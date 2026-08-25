@@ -462,7 +462,6 @@ const ML_EXPERIMENT_MANIFEST_PATH: &str = "spectra.std.ml.experiment_manifest_pa
 const ML_EXPERIMENT_REPRO_COMMAND: &str = "spectra.std.ml.experiment_repro_command";
 const ML_EXPERIMENT_COMPARE_MANIFESTS: &str = "spectra.std.ml.experiment_compare_manifests";
 const ML_DISTRIBUTED_SESSION_START: &str = "spectra.std.ml.distributed_session_start";
-const ML_DISTRIBUTED_WORKER_STEP: &str = "spectra.std.ml.distributed_worker_step";
 const ML_DISTRIBUTED_GLOBAL_STEP: &str = "spectra.std.ml.distributed_global_step";
 const ML_DISTRIBUTED_WORKER_STEP_COUNT: &str = "spectra.std.ml.distributed_worker_step_count";
 const ML_DISTRIBUTED_CHECKPOINT_SAVE: &str = "spectra.std.ml.distributed_checkpoint_save";
@@ -520,6 +519,7 @@ const ML_ARTIFACT_VALIDATE: &str = "spectra.std.ml.artifact_validate";
 const ML_ARTIFACT_FREE: &str = "spectra.std.ml.artifact_free";
 
 const CONCURRENT_TASK_SPAWN: &str = "spectra.std.concurrent.task_spawn";
+const CONCURRENT_TASK_SPAWN_FN: &str = "spectra.std.concurrent.task_spawn_fn";
 const CONCURRENT_TASK_JOIN: &str = "spectra.std.concurrent.task_join";
 const CONCURRENT_TASK_SPAWN_JOIN: &str = "spectra.std.concurrent.task_spawn_join";
 const CONCURRENT_TASK_SPAWN_BATCH: &str = "spectra.std.concurrent.task_spawn_batch";
@@ -737,3 +737,23 @@ const SERVE_RESET: &str = "spectra.std.serve.reset";
 // ── std.io (novos) ───────────────────────────────────────────────────────────
 const IO_INPUT: &str = "spectra.std.io.input";
 const NUMERIC_CHECKED_F32: &str = "spectra.std.numeric.checked_f32";
+
+// ── TokenizerTrainer ─────────────────────────────────────────────────────────
+const ML_TOKENIZER_TRAIN_BPE: &str = "spectra.std.ml.train_bpe";
+const ML_TOKENIZER_TRAIN_WORDPIECE: &str = "spectra.std.ml.train_wordpiece";
+const ML_TOKENIZER_VOCAB: &str = "spectra.std.ml.tokenizer_vocab";
+
+// ── StatsEmbed ───────────────────────────────────────────────────────────────
+const ML_TEXT_EMBED_MODEL: &str = "spectra.std.ml.text_embed_model";
+const ML_TEXT_EMBED_MODEL_SESSION: &str = "spectra.std.ml.text_embed_model_session";
+
+// ── DistTCP ──────────────────────────────────────────────────────────────────
+const ML_DISTRIBUTED_TRAIN_MULTITHREAD: &str = "spectra.std.ml.distributed_train_multithread";
+const ML_DISTRIBUTED_TRAIN_TCP: &str = "spectra.std.ml.distributed_train_tcp";
+
+// ── ServeReal ────────────────────────────────────────────────────────────────
+const SERVE_SERVER_REGISTER_MODEL_LINEAR: &str =
+    "spectra.std.serve.server_register_model_linear";
+const SERVE_SERVER_REGISTER_MODEL_ONNX: &str =
+    "spectra.std.serve.server_register_model_onnx";
+const SERVE_SERVER_RESULT_VECTOR: &str = "spectra.std.serve.server_result_vector";
