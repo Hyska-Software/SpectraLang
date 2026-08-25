@@ -496,6 +496,16 @@ fn lockfile_for_workspace(workspace: &ResolvedWorkspace) -> Lockfile {
                 git_url: package.source.git_url(),
                 git_ref: package.source.git_ref(),
                 resolved_rev: package.source.git_resolved(),
+                git_warning: match &package.source {
+                    PackageSource::Git {
+                        floating: true, ..
+                    } => Some(
+                        "resolved from mutable git HEAD; pin tag/rev/branch or declare \
+                         'allow-floating-git = true' to acknowledge"
+                            .to_string(),
+                    ),
+                    _ => None,
+                },
                 manifest_hash: package.manifest_hash.clone(),
                 dependencies: package
                     .dependencies

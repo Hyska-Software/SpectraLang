@@ -592,6 +592,7 @@ fn execute_package_command(invocation: PackageInvocation) -> CliResult<()> {
             rev,
             branch,
             catalog,
+            allow_floating_git,
         } => {
             let lock_path = package::add_dependency(
                 &invocation.root,
@@ -604,6 +605,7 @@ fn execute_package_command(invocation: PackageInvocation) -> CliResult<()> {
                 rev.as_deref(),
                 branch.as_deref(),
                 catalog.as_deref(),
+                allow_floating_git,
             )
             .map_err(|error| CliError::io(error.to_string()))?;
             println!("     Added {}", name);
@@ -651,13 +653,21 @@ fn execute_package_command(invocation: PackageInvocation) -> CliResult<()> {
         PackageCommand::Catalog(command) => {
             execute_package_catalog_command(&invocation.root, command)
         }
+        // APPEND-ONLY (RemoteRegistry): --registry accepts a local path or an http(s) URL.
         PackageCommand::Publish { registry } => {
             let workspace = package::resolve(&invocation.root)
                 .map_err(|error| CliError::io(error.to_string()))?;
             emit_package_deprecation_warnings(&workspace);
-            let package_path = package::publish(&invocation.root, &registry)
-                .map_err(|error| CliError::io(error.to_string()))?;
-            println!("     Published {}", package_path.display());
+            let registry_text = registry.to_string_lossy();
+            if package::is_remote_registry(&registry_text) {
+                let published_url = package::publish_remote(&invocation.root, &registry_text)
+                    .map_err(|error| CliError::io(error.to_string()))?;
+                println!("     Published {}", published_url);
+            } else {
+                let package_path = package::publish(&invocation.root, &registry)
+                    .map_err(|error| CliError::io(error.to_string()))?;
+                println!("     Published {}", package_path.display());
+            }
             Ok(())
         }
     }

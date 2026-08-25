@@ -155,6 +155,11 @@ pub struct CodeGenerator {
     #[allow(clippy::vec_box)]
     host_call_cache_storage: Vec<Box<SpectraHostCallCache>>,
     hostcall_batch_stats: HostCallBatchStats,
+    /// Per-function JIT debug sidecar entries (see
+    /// [`crate::debug::JitDebugVariable`]), collected from Cranelift's proven
+    /// value-label data during `define_function` and drained by the run path
+    /// via [`CodeGenerator::take_jit_debug_functions`].
+    jit_debug_functions: Vec<(String, Vec<crate::debug::JitDebugVariable>)>,
     /// Test-only copy of the most recently finalized Cranelift function, so
     /// tests can inspect native IR before module finalization.
     #[cfg(test)]

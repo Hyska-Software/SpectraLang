@@ -58,7 +58,7 @@ def require_contains(path: Path, needles: list[str]) -> None:
 def main() -> int:
     require_contains(
         ROOT / "midend" / "src" / "ir.rs",
-        ["AsyncSuspend", "AsyncResume", "AsyncReady", "Task {"],
+        ["AsyncReady", "Task {"],
     )
     require_contains(
         ROOT / "runtime" / "src" / "stdlib" / "mod.rs",
@@ -95,8 +95,6 @@ def main() -> int:
         dump.stdout,
         [
             "fn add_one() -> Task<int>",
-            "async.suspend",
-            "async.resume",
             "async.ready<int>",
             "spectra.async.task.wait",
             "spectra.async.task.result",

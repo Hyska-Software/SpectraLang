@@ -282,6 +282,19 @@ impl FullPipelineBackend {
             quiet_execution: false,
         }
     }
+
+    /// Drain the JIT debug sidecar entries collected by the backend during
+    /// code generation (see [`spectra_backend::debug::JitDebugVariable`]).
+    /// The CLI run path serializes them via
+    /// [`spectra_backend::debug::write_jit_debug_sidecar`].
+    pub(crate) fn take_jit_debug_functions(
+        &mut self,
+    ) -> Vec<(String, Vec<spectra_backend::debug::JitDebugVariable>)> {
+        match self.codegen.as_mut() {
+            Some(codegen) => codegen.take_jit_debug_functions(),
+            None => Vec::new(),
+        }
+    }
 }
 
 impl BackendDriver for FullPipelineBackend {

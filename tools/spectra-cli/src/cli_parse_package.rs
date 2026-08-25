@@ -18,6 +18,7 @@ where
     let mut out: Option<PathBuf> = None;
     let mut offline = false;
     let mut locked = false;
+    let mut allow_floating_git = false;
     let mut extra_positionals: Vec<String> = Vec::new();
     let mut test_filter: Option<String> = None;
     let mut test_list = false;
@@ -91,6 +92,9 @@ where
             "--locked" => {
                 locked = true;
             }
+            "--allow-floating-git" => {
+                allow_floating_git = true;
+            }
             "--filter" if subcommand == "test" => {
                 test_filter = Some(
                     args.next()
@@ -157,6 +161,7 @@ where
             tag,
             rev,
             branch,
+            allow_floating_git,
             catalog,
         },
         "register" => PackageCommand::Register {
@@ -205,7 +210,7 @@ where
         }
         "publish" => PackageCommand::Publish {
             registry: registry
-                .ok_or_else(|| usage_error("package publish requires --registry <path>."))?,
+                .ok_or_else(|| usage_error("package publish requires --registry <path|url>."))?,
         },
         other => {
             return Err(usage_error(&format!(

@@ -149,6 +149,8 @@ compatibility = "spectralang-0.1"
             Some("v1.0.0"),
             None,
             None,
+            false,
+            None,
             true,
         );
         let error = match result {
@@ -223,5 +225,138 @@ compatibility = "spectralang-0.1"
         assert_eq!(loaded.catalogs[0].name, "alpha");
         assert_eq!(loaded.catalogs[0].index_hash, "b".repeat(64));
         let _ = fs::remove_dir_all(root);
+    }
+
+    fn unique_git_policy_dir(label: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+        std::env::temp_dir().join(format!(
+            "spectralang-gitref-{}-{}-{}",
+            label, nonce, id
+        ))
+    }
+
+    fn init_git_repo(path: &Path, package_name: &str) {
+        fs::create_dir_all(path).expect("upstream dir");
+        fs::write(
+            path.join("spectra.toml"),
+            format!("[project]\nname = \"{}\"\nversion = \"0.1.0\"\n", package_name),
+        )
+        .expect("upstream manifest");
+        run_git(&["init"], path).expect("git init");
+        run_git(&["config", "user.email", "test@example.com"], path).expect("git email");
+        run_git(&["config", "user.name", "spectra-test"], path).expect("git name");
+    }
+
+    fn commit_all(path: &Path, message: &str) -> String {
+        run_git(&["add", "."], path).expect("git add");
+        run_git(
+            &["commit", "--quiet", "--allow-empty", "-m", message],
+            path,
+        )
+        .expect("git commit");
+        git_output(&["rev-parse", "HEAD"], path).expect("git rev-parse")
+    }
+
+    fn write_consumer_manifest(root: &Path, upstream: &Path, floating: bool) {
+        let upstream_text = upstream.to_string_lossy().replace('\\', "/");
+        let opt_in = if floating {
+            "\nallow-floating-git = true\n"
+        } else {
+            ""
+        };
+        fs::write(
+            root.join("spectra.toml"),
+            format!(
+                "[project]\nname = \"consumer\"\nversion = \"0.1.0\"\n\n\
+                 [dependencies.floatdemo]\nversion = \"0.1.0\"\ngit = \"{}\"{}\n",
+                upstream_text, opt_in
+            ),
+        )
+        .expect("consumer manifest");
+    }
+
+    #[test]
+    fn floating_git_dependency_requires_a_fixed_ref() {
+        let upstream = unique_git_policy_dir("upstream-a");
+        init_git_repo(&upstream, "floatdemo");
+        commit_all(&upstream, "initial");
+        let root = unique_git_policy_dir("workspace-a");
+        fs::create_dir_all(&root).expect("workspace dir");
+        write_consumer_manifest(&root, &upstream, false);
+
+        let error = fetch(&root, false, false).expect_err("floating HEAD must be rejected");
+        let message = error.to_string();
+        assert!(message.contains("stable ref"), "unexpected error: {}", message);
+        assert!(message.contains("tag"), "error must suggest pinning: {}", message);
+
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(upstream);
+    }
+
+    #[test]
+    fn allow_floating_git_resolves_head_and_records_warning_in_lock() {
+        let upstream = unique_git_policy_dir("upstream-b");
+        init_git_repo(&upstream, "floatdemo");
+        let head = commit_all(&upstream, "initial");
+        let root = unique_git_policy_dir("workspace-b");
+        fs::create_dir_all(&root).expect("workspace dir");
+        write_consumer_manifest(&root, &upstream, true);
+
+        let lock_path = fetch(&root, false, false).expect("floating install must succeed");
+        let lock_text = fs::read_to_string(&lock_path).expect("lockfile read");
+        assert!(lock_text.contains("git_ref = \"HEAD\""), "lock: {}", lock_text);
+        assert!(lock_text.contains(&head), "lock must record resolved rev: {}", lock_text);
+        assert!(
+            lock_text.contains("mutable git HEAD"),
+            "lock must warn about floating checkout: {}",
+            lock_text
+        );
+
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(upstream);
+    }
+
+    #[test]
+    fn existing_lock_anchors_git_dependency_without_manifest_ref() {
+        let upstream = unique_git_policy_dir("upstream-c");
+        init_git_repo(&upstream, "floatdemo");
+        let first = commit_all(&upstream, "initial");
+
+        // First resolve opts into a floating checkout and records the anchor.
+        let root = unique_git_policy_dir("workspace-c");
+        fs::create_dir_all(&root).expect("workspace dir");
+        write_consumer_manifest(&root, &upstream, true);
+        fetch(&root, false, false).expect("initial floating resolve");
+
+        // Drop caches so the next resolve must reinstall from the remote.
+        fs::remove_dir_all(root.join(".spectra")).expect("drop caches");
+        // Upstream advances; the locked revision must not move.
+        let second = commit_all(&upstream, "advance");
+
+        // Manifest no longer allows floating; only the lock anchors the install.
+        write_consumer_manifest(&root, &upstream, false);
+        let lock_path = fetch(&root, false, false).expect("locked resolve must succeed");
+        let lock_text = fs::read_to_string(&lock_path).expect("lockfile read");
+        assert!(
+            lock_text.contains(&first) && !lock_text.contains(&second),
+            "lock must stay anchored at the previously resolved rev:\nfirst={}\nsecond={}\n{}",
+            first,
+            second,
+            lock_text
+        );
+        assert!(
+            !lock_text.contains("mutable git HEAD"),
+            "anchored installs must not carry the floating warning: {}",
+            lock_text
+        );
+
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(upstream);
     }
 }

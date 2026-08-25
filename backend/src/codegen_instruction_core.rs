@@ -82,9 +82,7 @@ impl CodeGenerator {
                 stack_array_lengths,
                 string_literal_lengths,
             ),
-            InstructionKind::AsyncSuspend { .. }
-            | InstructionKind::AsyncResume { .. }
-            | InstructionKind::AsyncReady { .. } => {
+            InstructionKind::AsyncReady { .. } => {
                 Self::generate_async_instruction(builder, kind, value_map)
             }
             InstructionKind::FuncAddr { .. } | InstructionKind::CallIndirect { .. } => {

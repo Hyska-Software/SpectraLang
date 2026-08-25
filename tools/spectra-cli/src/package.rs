@@ -36,6 +36,7 @@ pub enum PackageCommand {
         rev: Option<String>,
         branch: Option<String>,
         catalog: Option<PathBuf>,
+        allow_floating_git: bool,
     },
     Update,
     Fetch {
@@ -185,6 +186,7 @@ pub enum PackageSource {
         url: String,
         requested: String,
         resolved: String,
+        floating: bool,
     },
 }
 
@@ -254,6 +256,15 @@ pub enum PackageError {
     },
     InvalidManifest {
         path: PathBuf,
+        message: String,
+    },
+    // APPEND-ONLY (RemoteRegistry): typed failures for the HTTP(S) registry protocol.
+    RemoteHttp {
+        status: u16,
+        url: String,
+    },
+    RemoteTransport {
+        url: String,
         message: String,
     },
     Registry(String),
@@ -372,6 +383,17 @@ impl fmt::Display for PackageError {
                 write!(f, "invalid manifest '{}': {}", path.display(), message)
             }
             PackageError::Registry(message) => write!(f, "registry error: {}", message),
+            // APPEND-ONLY (RemoteRegistry): typed remote-registry failures.
+            PackageError::RemoteHttp { status, url } => write!(
+                f,
+                "remote registry request to '{}' failed with HTTP status {}",
+                url, status
+            ),
+            PackageError::RemoteTransport { url, message } => write!(
+                f,
+                "remote registry request to '{}' failed: {}",
+                url, message
+            ),
         }
     }
 }
@@ -389,6 +411,9 @@ struct Manifest {
     package: PackageSection,
     #[serde(default)]
     dependencies: BTreeMap<String, DependencySpec>,
+    // APPEND-ONLY (RemoteRegistry): optional [registry] section with a remote base URL.
+    #[serde(default)]
+    registry: Option<RegistryConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -413,6 +438,13 @@ struct PackageSection {
     catalogs: BTreeMap<String, String>,
 }
 
+// APPEND-ONLY (RemoteRegistry): `[registry]` manifest section.
+#[derive(Debug, Default, Deserialize)]
+struct RegistryConfig {
+    #[serde(default)]
+    remote: Option<String>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 enum DependencySpec {
@@ -425,6 +457,12 @@ enum DependencySpec {
         tag: Option<String>,
         rev: Option<String>,
         branch: Option<String>,
+        #[serde(
+            rename = "allow-floating-git",
+            alias = "allow_floating_git",
+            default
+        )]
+        allow_floating_git: Option<bool>,
         checksum: Option<String>,
     },
 }
@@ -449,6 +487,8 @@ struct LockPackage {
     checksum: String,
     #[serde(default)]
     git_url: Option<String>,
+    #[serde(default)]
+    git_warning: Option<String>,
     #[serde(default)]
     git_ref: Option<String>,
     #[serde(default)]
@@ -480,6 +520,9 @@ struct RegistryMetadata {
     checksum: String,
     #[serde(default)]
     source_path: String,
+    // APPEND-ONLY (RemoteRegistry): payload file list for HTTP installs.
+    #[serde(default)]
+    files: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -529,6 +572,8 @@ struct InstalledGitPackage {
     checksum: String,
 }
 
+// APPEND-ONLY (GitPinned): Debug needed by package_remote.rs expect_err tests.
+#[derive(Debug)]
 struct InstalledRegistryPackage {
     canonical_name: String,
     version: String,
@@ -542,4 +587,5 @@ include!("package_git.rs");
 include!("package_catalog_resolution.rs");
 include!("package_cache.rs");
 include!("package_public_api.rs");
+include!("package_remote.rs");
 include!("package_tests.rs");

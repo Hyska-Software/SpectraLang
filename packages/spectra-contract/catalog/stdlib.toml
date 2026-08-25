@@ -11261,6 +11261,20 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
 
 [[entry]]
+path = "std.ml.onnx_run_multi"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(int, List, List) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.onnx_run_multi"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+
+[[entry]]
 path = "std.ml.onnx_session_free"
 kind = "function"
 namespace = "std.ml"
@@ -15641,3 +15655,17 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.ml.generate"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(int, int_tensor, int, int) -> int_tensor"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.generate"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/97_ml_phase18_rag_toolkit.spectra"

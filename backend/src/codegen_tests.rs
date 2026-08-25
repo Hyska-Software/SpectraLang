@@ -893,7 +893,7 @@ mod tests {
     }
 
     #[test]
-    fn test_async_ready_suspend_resume_codegen() {
+    fn test_async_ready_codegen() {
         use spectra_midend::ir::{InstructionKind, Terminator, Value};
 
         let mut codegen = CodeGenerator::new();
@@ -920,8 +920,6 @@ mod tests {
             value: Some(payload),
             output_type: IRType::Int,
         });
-        entry_block.add_instruction(InstructionKind::AsyncSuspend { task, state: 0 });
-        entry_block.add_instruction(InstructionKind::AsyncResume { task, state: 0 });
         entry_block.set_terminator(Terminator::Return { value: Some(task) });
 
         assert!(codegen.declare_function(&func).is_ok());
@@ -1294,5 +1292,85 @@ mod tests {
             .compile_to_object(&module, &crate::AotOptions::default())
             .expect("AOT compile of tail-recursive module");
         assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn jit_sidecar_collected_and_written_when_env_requested() {
+        use crate::debug::{JIT_DEBUG_ENV, write_jit_debug_sidecar};
+        use spectra_midend::ir::{LocalDebugInfo, SourceSpan};
+
+        // `main() -> int { let answer = 42; return answer; }`: the local is
+        // returned, so Cranelift must prove at least one live range for its
+        // labelled value.
+        let mut function = IRFunction::new("main", vec![], IRType::Int);
+        let entry = function.add_block("entry");
+        function
+            .get_block_mut(entry)
+            .unwrap()
+            .add_instruction(InstructionKind::ConstInt {
+                result: IRValue { id: 1 },
+                value: 42,
+            });
+        let block = function.get_block_mut(entry).unwrap();
+        block.set_terminator(Terminator::Return {
+            value: Some(IRValue { id: 1 }),
+        });
+        function.locals.push(LocalDebugInfo {
+            name: "answer".to_string(),
+            ty: IRType::Int,
+            value_id: Some(1),
+            declaration: Some(SourceSpan {
+                file: "fixture.spectra".to_string(),
+                start_line: 3,
+                start_column: 9,
+                end_line: 3,
+                end_column: 24,
+            }),
+            scope_start: None,
+            scope_end: None,
+        });
+
+        std::env::set_var(JIT_DEBUG_ENV, "1");
+        let mut codegen = CodeGenerator::new();
+        assert!(codegen.declare_function(&function).is_ok());
+        assert!(
+            codegen
+                .define_function(&function, &std::collections::HashMap::new())
+                .is_ok()
+        );
+        let collected = codegen.take_jit_debug_functions();
+
+        assert_eq!(collected.len(), 1, "main must report sidecar variables");
+        assert_eq!(collected[0].0, "main");
+        let vars = &collected[0].1;
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].name, "answer");
+        assert_eq!(vars[0].type_name, "int");
+        assert_eq!(vars[0].line, Some(3));
+        assert!(
+            !vars[0].ranges.is_empty(),
+            "Cranelift must prove at least one live range for the labelled local"
+        );
+
+        let source = std::env::temp_dir().join(format!(
+            "spectra_jit_sidecar_test_{}.spectra",
+            std::process::id()
+        ));
+        let source = source.to_str().unwrap();
+        let written = write_jit_debug_sidecar(source, &collected, false)
+            .expect("sidecar write must not fail")
+            .expect("SPECTRA_JIT_DEBUG=1 must produce the sidecar");
+        assert_eq!(
+            written,
+            crate::debug::jit_debug_sidecar_path(source),
+            "sidecar is written next to the source"
+        );
+        let contents = std::fs::read_to_string(&written).unwrap();
+        assert!(contents.contains("\"main\""), "{contents}");
+        assert!(contents.contains("\"name\":\"answer\""), "{contents}");
+        assert!(contents.contains("\"line\":3"), "{contents}");
+        assert!(contents.contains("\"ranges\":["), "{contents}");
+        std::fs::remove_file(&written).ok();
+        std::env::remove_var(JIT_DEBUG_ENV);
     }
 }

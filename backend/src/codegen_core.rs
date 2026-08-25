@@ -40,11 +40,22 @@ impl CodeGenerator {
             host_call_sites: HashMap::new(),
             host_name_storage: Vec::new(),
             host_call_cache_storage: Vec::new(),
+            jit_debug_functions: Vec::new(),
             #[cfg(test)]
             last_finalized_func: None,
         }
     }
 
+
+    /// Drain the JIT debug sidecar entries collected during code generation:
+    /// one `(function name, variables)` pair per function that had at least
+    /// one compiler-proven variable range. The CLI run path serializes this
+    /// via [`crate::debug::write_jit_debug_sidecar`].
+    pub fn take_jit_debug_functions(
+        &mut self,
+    ) -> Vec<(String, Vec<crate::debug::JitDebugVariable>)> {
+        std::mem::take(&mut self.jit_debug_functions)
+    }
     /// Returns the hostcall batching plan emitted by the most recent module.
     pub fn hostcall_batch_stats(&self) -> HostCallBatchStats {
         self.hostcall_batch_stats
@@ -327,6 +338,11 @@ impl CodeGenerator {
 
         // Create function builder
         let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_context);
+        // Enable value-label tracking so Cranelift's post-allocation pass can
+        // resolve compiler-proven live ranges for IR values. This mirrors the
+        // AOT path (`aot.rs`) and feeds the JIT debug sidecar; it never alters
+        // generated machine code.
+        builder.func.collect_debug_info();
 
         // Create entry block
         let entry_block = builder.create_block();
@@ -458,6 +474,34 @@ impl CodeGenerator {
             }
         }
 
+        // Attach Cranelift value labels before finalization so the register
+        // allocator resolves them to real register or CFA-relative locations
+        // in the compiled machine code — the same collection the AOT path
+        // performs.
+        for local in &ir_func.locals {
+            if let Some(value_id) = local.value_id {
+                if let Some(value) = value_map.get(value_id) {
+                    builder.set_val_label(
+                        value,
+                        cranelift_codegen::ir::ValueLabel::from_u32(value_id as u32),
+                    );
+                }
+            }
+        }
+        for ir_block in &ir_func.blocks {
+            for instr in &ir_block.instructions {
+                let Some(result) = crate::aot::instruction_result_value(&instr.kind) else {
+                    continue;
+                };
+                if let Some(value) = value_map.get(result.id) {
+                    builder.set_val_label(
+                        value,
+                        cranelift_codegen::ir::ValueLabel::from_u32(result.id as u32),
+                    );
+                }
+            }
+        }
+
         // Finalize function
         builder.finalize();
 
@@ -471,6 +515,34 @@ impl CodeGenerator {
                 ))
             })?;
 
+
+        // Collect the sidecar data while this function's compiled code is
+        // still available: name/type/line come from the IR local's debug
+        // info and declaration span; ranges from the shared value-label
+        // extraction (`aot::value_label_ranges`). Offsets are relative to the
+        // start of the compiled function body.
+        if let Some(compiled) = self.ctx.compiled_code() {
+            let mut variables = Vec::new();
+            for local in &ir_func.locals {
+                let Some(value_id) = local.value_id else {
+                    continue;
+                };
+                let ranges =
+                    crate::aot::value_label_ranges(&compiled.value_labels_ranges, value_id);
+                if ranges.is_empty() {
+                    continue;
+                }
+                variables.push(crate::debug::JitDebugVariable {
+                    name: local.name.clone(),
+                    type_name: crate::debug::ir_type_debug_name(&local.ty),
+                    line: local.declaration.as_ref().map(|span| span.start_line),
+                    ranges,
+                });
+            }
+            if !variables.is_empty() {
+                self.jit_debug_functions.push((ir_func.name.clone(), variables));
+            }
+        }
         // Test-only snapshot: keep the finalized Cranelift IR inspectable
         // before the shared context is released.
         #[cfg(test)]

@@ -2,23 +2,22 @@
 // Translates Spectra IR to native object files (.o / .obj) that can be linked
 // with the Spectra runtime static library to produce standalone executables.
 //
-// Native debug metadata (line rows, value locations, frame sizes, types) is
-// collected ONLY on this AOT path. The JIT execution path used by
-// `run`/`run --timings` compiles through `cranelift_jit::JITModule`, which
-// never materializes an object container: there are no section symbols, no
-// final function addresses and no post-link layout to anchor records to. All
-// span-derived data this module exports is keyed by machine-code offsets that
-// only exist after object emission, so reusing "the same span collection" in
-// the JIT path would mean fabricating offsets that do not correspond to any
-// executable mapping. Emitting a `.spectra-debug.json` sidecar from such data
-// would violate the project rule that debug records are compiler-proven, not
-// guessed; therefore `run --timings` intentionally reports timings only and
-// native debug sidecars stay exclusive to `build --debug-info=native` AOT
-// artifacts.
+// Native debug metadata (line rows, value locations, frame sizes, types) with
+// machine-code anchors is collected ONLY on this AOT path. The JIT execution
+// path used by `run`/`run --timings` compiles through `cranelift_jit::JITModule`,
+// which never materializes an object container: there are no section symbols,
+// no final function addresses and no post-link layout to anchor native
+// CodeView/DWARF records to; those sections therefore stay exclusive to
+// `build --debug-info=native` AOT artifacts.
 //
-// If a future need requires debug data for JIT runs, the technically honest
-// route is to run the AOT object pipeline alongside JIT execution (double
-// compilation) and emit its sidecar; that cost is not paid speculatively here.
+// The JIT path DOES share this module's span/label collection: Cranelift's
+// post-allocation value-label pass yields compiler-proven ranges relative to
+// the start of each compiled function regardless of the module kind
+// (see `value_label_ranges`). The JSON sidecar written on `run`
+// (`<source>.spectra-jit-debug.json`, gated by `--timings` or
+// `SPECTRA_JIT_DEBUG=1`) is built exclusively from that proven data via
+// `CodeGenerator::take_jit_debug_functions`; it supplements and never replaces
+// the native artifact.
 use cranelift::prelude::*;
 use cranelift_codegen::{ir::ValueLabel, LabelValueLoc};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
@@ -958,9 +957,9 @@ impl AotCodeGenerator {
 
 /// The single SSA value produced by an instruction, when its kind defines
 /// exactly one result.
-fn instruction_result_value(kind: &InstructionKind) -> Option<IRValue> {
+pub(crate) fn instruction_result_value(kind: &InstructionKind) -> Option<IRValue> {
     match kind {
-        InstructionKind::Add { result, .. }
+        | InstructionKind::Add { result, .. }
         | InstructionKind::Sub { result, .. }
         | InstructionKind::Mul { result, .. }
         | InstructionKind::Div { result, .. }
@@ -1000,9 +999,7 @@ fn instruction_result_value(kind: &InstructionKind) -> Option<IRValue> {
         | InstructionKind::CallIndirect { result, .. } => *result,
         InstructionKind::Not { .. }
         | InstructionKind::Store { .. }
-        | InstructionKind::EscapeManualAlloc { .. }
-        | InstructionKind::AsyncSuspend { .. }
-        | InstructionKind::AsyncResume { .. } => None,
+        | InstructionKind::EscapeManualAlloc { .. } => None,
     }
 }
 
@@ -1022,6 +1019,29 @@ fn spanned_instruction_lines(ir_func: &IRFunction) -> HashMap<usize, u32> {
         }
     }
     lines
+}
+
+
+/// Machine-code live ranges of one labelled IR value: `(start, end)` offset
+/// pairs relative to the start of the compiled function's body.
+///
+/// This is the single collection point shared by the AOT native-debug path
+/// and the JIT sidecar: both read Cranelift's post-allocation
+/// `value_labels_ranges` map, so every emitted range is compiler-proven.
+pub(crate) fn value_label_ranges(
+    value_labels_ranges: &HashMap<ValueLabel, Vec<cranelift_codegen::ValueLocRange>>,
+    value_id: usize,
+) -> Vec<(u32, u32)> {
+    let label = ValueLabel::from_u32(value_id as u32);
+    value_labels_ranges
+        .get(&label)
+        .map(|ranges| {
+            ranges
+                .iter()
+                .map(|range| (range.start, range.end))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

@@ -227,6 +227,8 @@ fn execute_plan_with_sources(
         }
     }
 
+    // Captured before `options` moves into the compiler.
+    let collect_metrics = options.collect_metrics;
     let mut compiler = SpectraCompiler::new(options);
     if let Some(name) = package_name {
         compiler.set_package_name(name);
@@ -245,6 +247,30 @@ fn execute_plan_with_sources(
 
     let (has_failures, summaries) =
         compile_plan(kind, &mut compiler, &plan, show_pipeline_summary, verbose);
+
+    // JIT debug sidecar: on `run`, write `<source>.spectra-jit-debug.json`
+    // next to the entry source when `--timings` is active or the user set
+    // SPECTRA_JIT_DEBUG=1. The records are compiler-proven value-label data;
+    // a write failure is a warning, never fatal.
+    if kind == BuildCommand::Run {
+        let collected = compiler.take_jit_debug_functions();
+        if !collected.is_empty() {
+            let entry_source = plan.modules()[0].path.display().to_string();
+            match spectra_backend::debug::write_jit_debug_sidecar(
+                &entry_source,
+                &collected,
+                collect_metrics,
+            ) {
+                Ok(Some(path)) => {
+                    if verbose || collect_metrics {
+                        println!("JIT debug sidecar written to {}", path.display());
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => eprintln!("warning: {error}"),
+            }
+        }
+    }
 
     if show_aggregate_summary {
         compiler.print_aggregate_summary();

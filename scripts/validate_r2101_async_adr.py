@@ -33,7 +33,7 @@ REQUIRED_SECTIONS = [
 ]
 
 REQUIRED_TERMS = [
-    "Status: Accepted",
+    "Status: Superseded by docs/adr/0015-async-execution-model.md",
     "Roadmap item: R-2101",
     "async func",
     "async {",

@@ -273,10 +273,6 @@ impl CodeGenerator {
                 Self::mark_scalar_alloca_value(candidate_mask, escaped, fn_ptr);
                 Self::mark_scalar_alloca_values(candidate_mask, escaped, args);
             }
-            InstructionKind::AsyncSuspend { task, .. }
-            | InstructionKind::AsyncResume { task, .. } => {
-                Self::mark_scalar_alloca_value(candidate_mask, escaped, task)
-            }
             InstructionKind::AsyncReady { value, .. } => {
                 if let Some(value) = value {
                     Self::mark_scalar_alloca_value(candidate_mask, escaped, value);

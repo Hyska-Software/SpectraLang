@@ -15,7 +15,7 @@ use gimli::{constants, Encoding, Format, LineEncoding, LittleEndian};
 
 use crate::aot::NativeValueLocation;
 use crate::debug::CodeViewFunction;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use spectra_midend::ir::{FloatWidth, IntWidth, Type as IRType};
 
@@ -96,6 +96,7 @@ pub fn sections_for_functions(
     // Interned type DIEs, shared across every function in the unit. The key
     // is the debug-format rendering of the IR type.
     let mut type_cache: HashMap<String, gimli::write::UnitEntryId> = HashMap::new();
+    let mut in_progress: HashSet<String> = HashSet::new();
 
     for function in functions {
         let subprogram = dwarf.unit.add(root, constants::DW_TAG_subprogram);
@@ -142,7 +143,8 @@ pub fn sections_for_functions(
         );
         if let Some(return_type) = &function.return_type {
             if !matches!(return_type, IRType::Void | IRType::Unknown) {
-                let type_die = intern_type_die(&mut dwarf.unit, return_type, &mut type_cache);
+                let type_die =
+                    intern_type_die(&mut dwarf.unit, return_type, &mut type_cache, &mut in_progress);
                 dwarf
                     .unit
                     .get_mut(subprogram)
@@ -170,7 +172,8 @@ pub fn sections_for_functions(
                 .set(constants::DW_AT_decl_line, AttributeValue::Udata(1));
             if let Some(local_type) = function.local_types.get(local_index) {
                 if !matches!(local_type, IRType::Void | IRType::Unknown) {
-                    let type_die = intern_type_die(&mut dwarf.unit, local_type, &mut type_cache);
+                    let type_die =
+                        intern_type_die(&mut dwarf.unit, local_type, &mut type_cache, &mut in_progress);
                     dwarf
                         .unit
                         .get_mut(local)
@@ -250,23 +253,32 @@ fn _register_expression(hw_enc: u8) -> Option<Expression> {
 
 /// Create (or reuse) the DIE describing one IR type.
 ///
-/// Primitive types become `DW_TAG_base_type` entries; aggregates become a
-/// declaration-only `DW_TAG_structure_type` carrying the real type name behind
-/// a `DW_TAG_pointer_type`, mirroring the backend's pointer representation and
-/// the CodeView forward-reference UDT emission in `debug.rs`.
+/// Primitive types become `DW_TAG_base_type` entries. A `Struct` whose fields
+/// are known in the IR becomes a complete `DW_TAG_structure_type` (byte size
+/// and one `DW_TAG_member` child per field, with byte offsets from the
+/// mid-end layout module — the same offsets the CodeView `LF_MEMBER` records
+/// use); every other aggregate keeps the declaration-only form behind a
+/// `DW_TAG_pointer_type`, mirroring the backend's pointer representation.
+///
+/// `in_progress` guards self-referential types: while a struct definition is
+/// being built, a re-entry of the same type falls back to the declaration-only
+/// form; the debugger links both by name.
 fn intern_type_die(
     unit: &mut gimli::write::Unit,
     ty: &IRType,
     cache: &mut HashMap<String, gimli::write::UnitEntryId>,
+    in_progress: &mut HashSet<String>,
 ) -> gimli::write::UnitEntryId {
     let key = format!("{ty:?}");
     if let Some(&existing) = cache.get(&key) {
         return existing;
     }
     let id = match ty {
-        IRType::Generic { representation, .. } => intern_type_die(unit, representation, cache),
+        IRType::Generic { representation, .. } => {
+            intern_type_die(unit, representation, cache, in_progress)
+        }
         IRType::Pointer(inner) => {
-            let pointee = intern_type_die(unit, inner, cache);
+            let pointee = intern_type_die(unit, inner, cache, in_progress);
             let pointer = unit.add(unit.root(), constants::DW_TAG_pointer_type);
             unit
                 .get_mut(pointer)
@@ -275,7 +287,7 @@ fn intern_type_die(
         }
         IRType::Array { element_type, .. } => {
             // Arrays lower to raw element pointers on this target.
-            let element = intern_type_die(unit, element_type, cache);
+            let element = intern_type_die(unit, element_type, cache, in_progress);
             let pointer = unit.add(unit.root(), constants::DW_TAG_pointer_type);
             unit
                 .get_mut(pointer)
@@ -289,7 +301,9 @@ fn intern_type_die(
         | IRType::Bool
         | IRType::Char) => {
             let entry = unit.add(unit.root(), constants::DW_TAG_base_type);
-            let (name, byte_size, encoding) = primitive_base_type(primitive);
+            let Some((name, byte_size, encoding)) = primitive_base_type(primitive) else {
+                unreachable!("primitive match arm guarantees a base-type mapping");
+            };
             unit
                 .get_mut(entry)
                 .set(constants::DW_AT_name, AttributeValue::String(name));
@@ -301,14 +315,52 @@ fn intern_type_die(
                 .set(constants::DW_AT_encoding, AttributeValue::Encoding(encoding));
             entry
         }
+        IRType::Struct { name, fields }
+            if !fields.is_empty() && !in_progress.contains(&key) =>
+        {
+            in_progress.insert(key.clone());
+            let layout = spectra_midend::layout::layout_of(fields.iter().map(|(_, ty)| ty));
+            let structure = unit.add(unit.root(), constants::DW_TAG_structure_type);
+            unit.get_mut(structure).set(
+                constants::DW_AT_name,
+                AttributeValue::String(name.clone().into_bytes()),
+            );
+            unit.get_mut(structure).set(
+                constants::DW_AT_byte_size,
+                AttributeValue::Udata(layout.size as u64),
+            );
+            for ((field_name, field_ty), &offset) in fields.iter().zip(&layout.offsets) {
+                let member_type = intern_type_die(unit, field_ty, cache, in_progress);
+                let member = unit.add(structure, constants::DW_TAG_member);
+                unit.get_mut(member).set(
+                    constants::DW_AT_name,
+                    AttributeValue::String(field_name.clone().into_bytes()),
+                );
+                unit.get_mut(member).set(
+                    constants::DW_AT_type,
+                    AttributeValue::UnitRef(member_type),
+                );
+                unit.get_mut(member).set(
+                    constants::DW_AT_data_member_location,
+                    AttributeValue::Udata(offset as u64),
+                );
+            }
+            in_progress.remove(&key);
+            // Locals of aggregate types hold pointers at the ABI level.
+            let pointer = unit.add(unit.root(), constants::DW_TAG_pointer_type);
+            unit
+                .get_mut(pointer)
+                .set(constants::DW_AT_type, AttributeValue::UnitRef(structure));
+            pointer
+        }
         aggregate => {
+            // Declaration-only: full member layout is not available in the IR.
             let name = crate::debug::aggregate_udt_name(aggregate);
             let structure = unit.add(unit.root(), constants::DW_TAG_structure_type);
             unit.get_mut(structure).set(
                 constants::DW_AT_name,
                 AttributeValue::String(name.into_bytes()),
             );
-            // Declaration-only: full member layout is runtime-owned.
             unit
                 .get_mut(structure)
                 .set(constants::DW_AT_declaration, AttributeValue::Flag(true));
@@ -324,10 +376,14 @@ fn intern_type_die(
 }
 
 
-fn primitive_base_type(ty: &IRType) -> (Vec<u8>, u64, constants::DwAte) {
+
+/// Fixed DWARF base-type description for primitive IR types, or `None` for
+/// types that need a structured DIE (aggregates, pointers).
+
+pub(crate) fn primitive_base_type(ty: &IRType) -> Option<(Vec<u8>, u64, constants::DwAte)> {
     match ty {
-        IRType::Int => (b"int".to_vec(), 8, constants::DW_ATE_signed),
-        IRType::Float => (b"double".to_vec(), 8, constants::DW_ATE_float),
+        IRType::Int => Some((b"int".to_vec(), 8, constants::DW_ATE_signed)),
+        IRType::Float => Some((b"double".to_vec(), 8, constants::DW_ATE_float)),
         IRType::ExactInt { signed, width } => {
             let size = match width {
                 IntWidth::I8 => 1u64,
@@ -348,7 +404,7 @@ fn primitive_base_type(ty: &IRType) -> (Vec<u8>, u64, constants::DwAte) {
                 (false, IntWidth::Usize) => b"usize",
                 _ => b"isize",
             };
-            (
+            Some((
                 name.to_vec(),
                 size,
                 if *signed {
@@ -356,15 +412,15 @@ fn primitive_base_type(ty: &IRType) -> (Vec<u8>, u64, constants::DwAte) {
                 } else {
                     constants::DW_ATE_unsigned
                 },
-            )
+            ))
         }
         IRType::ExactFloat { width } => match width {
-            FloatWidth::F32 => (b"f32".to_vec(), 4, constants::DW_ATE_float),
-            FloatWidth::F64 => (b"f64".to_vec(), 8, constants::DW_ATE_float),
+            FloatWidth::F32 => Some((b"f32".to_vec(), 4, constants::DW_ATE_float)),
+            FloatWidth::F64 => Some((b"f64".to_vec(), 8, constants::DW_ATE_float)),
         },
-        IRType::Bool => (b"bool".to_vec(), 1, constants::DW_ATE_boolean),
-        IRType::Char => (b"char".to_vec(), 4, constants::DW_ATE_UTF),
-        _ => (b"unknown".to_vec(), 1, constants::DW_ATE_unsigned),
+        IRType::Bool => Some((b"bool".to_vec(), 1, constants::DW_ATE_boolean)),
+        IRType::Char => Some((b"char".to_vec(), 4, constants::DW_ATE_UTF)),
+        _ => None,
     }
 }
 #[cfg(test)]
@@ -430,5 +486,98 @@ mod tests {
             .1;
         assert!(debug_info.windows(14).any(|w| w == b"spectra_string"));
         assert!(debug_info.windows(3).any(|w| w == b"f64"));
+    }
+
+    #[test]
+    fn struct_local_emits_dwarf_members_with_layout_offsets() {
+        use gimli::{constants, read, LittleEndian};
+
+        let point = Type::Struct {
+            name: "Point".to_string(),
+            fields: vec![
+                ("x".to_string(), Type::Int),
+                ("y".to_string(), Type::Float),
+                ("z".to_string(), Type::ExactInt { signed: true, width: spectra_midend::ir::IntWidth::I32 }),
+            ],
+        };
+        let functions = vec![CodeViewFunction {
+            name: "typed".to_string(),
+            offset: 0,
+            size: 16,
+            section: 1,
+            locals: vec!["origin".to_string()],
+            local_offsets: vec![Some(-8)],
+            local_locations: vec![Vec::new(); 1],
+            frame_size: 8,
+            local_types: vec![point],
+            return_type: None,
+            line_rows: Vec::new(),
+        }];
+        let sections = sections_for_functions("fixture.spectra", "fn typed() {}", &functions)
+            .expect("DWARF writer should accept a valid unit");
+        let section = |name: &str| {
+            &sections
+                .iter()
+                .find(|(section, _)| section == name)
+                .expect("required DWARF section")
+                .1
+        };
+        let info = read::DebugInfo::new(section(".debug_info"), LittleEndian);
+        let abbrev = read::DebugAbbrev::new(section(".debug_abbrev"), LittleEndian);
+        let mut units = info.units();
+        let unit = units.next().expect("one compilation unit").unwrap();
+
+        type Entry<'a> = gimli::read::DebuggingInformationEntry<
+            gimli::read::EndianSlice<'a, LittleEndian>,
+            usize,
+        >;
+        fn die_name(entry: &Entry<'_>) -> Option<String> {
+            match entry.attr_value(constants::DW_AT_name)? {
+                gimli::read::AttributeValue::String(bytes) => {
+                    Some(String::from_utf8_lossy(bytes.slice()).into_owned())
+                }
+                _ => None,
+            }
+        }
+        fn uint_attr(entry: &Entry<'_>, attr: constants::DwAt) -> Option<u64> {
+            entry.attr_value(attr)?.udata_value()
+        }
+
+        // Locate the defining structure DIE for Point and validate members.
+        let abbrevs = unit.abbreviations(&abbrev).expect("parse abbreviations");
+        let mut entries = unit.entries(&abbrevs);
+        let mut structure_offset = None;
+        while let Some(entry) = entries.next_dfs().expect("DIE tree walk") {
+            if entry.tag() == constants::DW_TAG_structure_type
+                && die_name(entry).as_deref() == Some("Point")
+                && uint_attr(entry, constants::DW_AT_byte_size) == Some(24)
+            {
+                structure_offset = Some(entry.offset());
+                break;
+            }
+        }
+        let structure_offset =
+            structure_offset.expect("defining DW_TAG_structure_type for Point");
+        let mut tree = unit
+            .entries_tree(&abbrevs, Some(structure_offset))
+            .expect("structure DIE tree");
+        let structure_node = tree.root().expect("structure root node");
+        let mut members: Vec<(String, u64)> = Vec::new();
+        let mut children = structure_node.children();
+        while let Some(child) = children.next().expect("member DIE") {
+            let entry = child.entry();
+            assert_eq!(entry.tag(), constants::DW_TAG_member);
+            let location = uint_attr(entry, constants::DW_AT_data_member_location)
+                .expect("member must carry a data member location");
+            members.push((die_name(entry).expect("member name"), location));
+
+            // Each member's type resolves to the stored-representation DIE.
+            let type_ref = match entry.attr_value(constants::DW_AT_type) {
+                Some(gimli::read::AttributeValue::UnitRef(offset)) => offset,
+                other => panic!("unexpected DW_AT_type: {other:?}"),
+            };
+            let member_type = unit.entry(&abbrevs, type_ref).unwrap();
+            assert_eq!(member_type.tag(), constants::DW_TAG_base_type);
+        }
     }
 }

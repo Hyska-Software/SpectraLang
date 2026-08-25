@@ -4020,8 +4020,10 @@ blocks to a state-machine SSA that integrates with the runtime scheduler.
   and rejected outside async contexts with parser diagnostic `P006`.
 - Semantic analysis models `Task<T>` and requires `await` operands to be
   `Task<T>`.
-- Async functions, methods, and async blocks lower to `Task<T>` handles with
-  explicit `async.suspend`, `async.resume`, and `async.ready` IR markers.
+- Async functions, methods, and async blocks lower to `Task<T>` handles;
+  each `await` emits the `spectra.async.task.wait` host call followed by
+  `async.ready`/`spectra.async.task.result` (ADR 0015; no suspend/resume
+  IR markers).
 - Runtime host calls `spectra.async.task.ready`, `.poll`, `.result`,
   `.cancel`, and `.is_cancelled` provide the deterministic task baseline used
   by lowering; platform reactor work remains in `R-2104`.

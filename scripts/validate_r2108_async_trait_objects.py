@@ -100,7 +100,6 @@ def main() -> int:
         "fn drive_stream(dyn Stream stream) -> Task<int>",
         "fn drive_worker(dyn AsyncWorker worker) -> Task<int>",
         "call_indirect",
-        "async.suspend",
         "hostcall spectra.async.task.result",
     ]:
         if needle not in ir:

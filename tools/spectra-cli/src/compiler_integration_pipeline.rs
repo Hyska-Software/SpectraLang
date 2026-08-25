@@ -351,6 +351,15 @@ impl SpectraCompiler {
         self.pipeline.backend_mut().quiet_execution = quiet;
     }
 
+    /// Drain the JIT debug sidecar entries accumulated by the JIT backend
+    /// during code generation. The run path writes them via
+    /// [`spectra_backend::debug::write_jit_debug_sidecar`].
+    pub fn take_jit_debug_functions(
+        &mut self,
+    ) -> Vec<(String, Vec<spectra_backend::debug::JitDebugVariable>)> {
+        self.pipeline.backend_mut().take_jit_debug_functions()
+    }
+
     pub fn compile_for_diagnostics(
         &mut self,
         source: &str,

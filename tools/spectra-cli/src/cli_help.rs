@@ -204,13 +204,13 @@ fn print_package_help() {
     println!("    publish-metadata  Write package catalog metadata");
     println!("    catalog    Manage local catalog references");
     println!("    update     Refresh spectra.lock from current manifests");
-    println!("    publish    Publish the root package into a local registry directory");
+    println!("    publish    Publish the root package to a local registry dir or http(s) registry URL");
     println!();
     println!("OPTIONS:");
     println!("    --root <path>          Package or workspace root (default: .)");
     println!("    --path <path>          Local dependency path for 'add'");
     println!("    --version <version>    Dependency version for 'add'");
-    println!("    --registry <path>      Local registry path for 'add' or 'publish'");
+    println!("    --registry <path|url>  Local registry path or remote http(s) registry URL for 'add' or 'publish'");
     println!("    --git <url>            Git package source for 'add' or 'register'");
     println!("    --tag <tag>            Git tag for package source");
     println!("    --rev <sha>            Git commit/revision for package source");
@@ -219,6 +219,7 @@ fn print_package_help() {
     println!("    --out <path>           Output path for 'publish-metadata'");
     println!("    --offline              Use only restored package caches (package commands)");
     println!("    --locked               Require an existing, unmodified spectra.lock");
+    println!("    --allow-floating-git   Allow 'add --git' without tag/rev/branch (mutable HEAD)");
     println!("    --list                 List async tests for 'test'");
     println!("    --filter <text>        Run or list async tests whose name/path contains text");
     println!("    --json                 Emit JSON report for 'test'");

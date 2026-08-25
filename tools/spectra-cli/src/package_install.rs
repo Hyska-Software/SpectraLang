@@ -39,6 +39,11 @@ fn load_package(manifest_path: &Path) -> Result<LoadedPackage, PackageError> {
             .collect()
     };
 
+    // APPEND-ONLY (RemoteRegistry): optional [registry].remote base URL.
+    let remote_registry = manifest
+        .registry
+        .as_ref()
+        .and_then(|section| section.remote.clone());
     Ok(LoadedPackage {
         name: manifest.project.name,
         version: manifest.project.version,
@@ -50,6 +55,7 @@ fn load_package(manifest_path: &Path) -> Result<LoadedPackage, PackageError> {
         workspace_members: manifest.workspace.members,
         package_catalogs: manifest.package.catalogs,
         dependency_specs: manifest.dependencies,
+        remote_registry,
         manifest_hash: stable_hash_hex(text.as_bytes()),
     })
 }
@@ -148,6 +154,8 @@ fn install_from_git(
     tag: Option<&str>,
     rev: Option<&str>,
     branch: Option<&str>,
+    allow_floating: bool,
+    anchor_rev: Option<&str>,
     offline: bool,
 ) -> Result<InstalledGitPackage, PackageError> {
     validate_package_name(name)?;
@@ -157,6 +165,17 @@ fn install_from_git(
     }
     if let Some(value) = rev {
         validate_git_ref_text("rev", value).map_err(PackageError::Registry)?;
+    }
+    if tag.is_none() && rev.is_none() && branch.is_none() && anchor_rev.is_none() && !allow_floating
+    {
+        return Err(PackageError::Registry(format!(
+            "git dependency '{}' does not pin a stable ref and would track the mutable \
+             upstream HEAD; declare 'tag', 'rev', or 'branch' in the manifest, pass \
+             '--allow-floating-git' (or set 'allow-floating-git = true' on the dependency) \
+             to accept a floating checkout, or restore spectra.lock so its recorded \
+             resolved_rev can anchor the install",
+            name
+        )));
     }
     if let Some(value) = branch {
         validate_git_ref_text("branch", value).map_err(PackageError::Registry)?;
@@ -204,6 +223,10 @@ fn install_from_git(
             run_git(&["checkout", "--quiet", tag], &staging)?;
         } else if let Some(branch) = branch {
             run_git(&["checkout", "--quiet", branch], &staging)?;
+        } else if let Some(anchor) = anchor_rev {
+            // Locked install: the lockfile's resolved_rev anchors the checkout even
+            // though the manifest itself declares no fixed ref.
+            run_git(&["checkout", "--quiet", anchor], &staging)?;
         }
         reject_git_symlinks(&staging, name)?;
         let resolved = git_output(&["rev-parse", "HEAD"], &staging)?;

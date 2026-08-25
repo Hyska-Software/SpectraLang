@@ -7,8 +7,7 @@
 //! as a substitute for the native artifact.
 
 use crate::aot::{NativeValueLocation, NativeValueLocationRange};
-
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use spectra_midend::ir::{FloatWidth, IntWidth, Type as IRType};
 
@@ -33,6 +32,8 @@ pub const T_UINT8: u32 = 0x0077;
 
 const LF_POINTER: u16 = 0x1002;
 const LF_STRUCTURE: u16 = 0x1505;
+const LF_FIELDLIST: u16 = 0x1203;
+const LF_MEMBER: u16 = 0x150D;
 const CV_IS_FWDREF: u8 = 0x80;
 /// First type index available for `.debug$T` user records; everything below
 /// is reserved for simple types.
@@ -208,17 +209,25 @@ pub fn aggregate_udt_name(ty: &IRType) -> String {
 }
 
 /// Builder for the `.debug$T` CodeView type stream.
-///
-/// Primitive types use their fixed simple indices and emit no records; every
-/// aggregate interns a minimal forward-reference `LF_STRUCTURE` (carrying its
-/// real name) followed by an `LF_POINTER` to it, which matches how the backend
-/// represents aggregates (as pointers) while keeping full UDT definitions out
-/// of the compiler's scope. Indices are assigned monotonically from 0x1000.
+/// Primitive types use their fixed simple indices and emit no records. An
+/// aggregate whose IR definition carries no field list (or any non-struct
+/// aggregate) interns a minimal forward-reference `LF_STRUCTURE` (carrying
+/// its real name) followed by an `LF_POINTER` to it, matching the pointer
+/// representation aggregates have at the ABI level. A `Struct` whose fields
+/// are known in the IR instead emits a full definition: one `LF_FIELDLIST`
+/// holding an `LF_MEMBER` per field (byte offsets from the mid-end's shared
+/// layout module) plus the defining `LF_STRUCTURE` record, so debuggers can
+/// render members directly. Indices are assigned monotonically from 0x1000.
 #[derive(Debug)]
 pub struct CodeViewTypeTable {
     records: Vec<u8>,
     next_index: u32,
     cache: HashMap<String, u32>,
+    /// Type keys currently being defined. Guards against infinite recursion
+    /// for self-referential types (`Pointer` back to the same struct): while
+    /// a definition is in progress a re-entry falls back to the
+    /// declaration-only form; the debugger links both by type name.
+    in_progress: HashSet<String>,
 }
 
 impl Default for CodeViewTypeTable {
@@ -233,6 +242,7 @@ impl CodeViewTypeTable {
             records: Vec::new(),
             next_index: FIRST_USER_TYPE_INDEX,
             cache: HashMap::new(),
+            in_progress: HashSet::new(),
         }
     }
 
@@ -260,6 +270,21 @@ impl CodeViewTypeTable {
                 // Arrays lower to raw element pointers on this target.
                 let element = self.index_for(element_type);
                 self.push_pointer(element)
+            }
+            IRType::Struct { name, fields } if !fields.is_empty() => {
+                if self.in_progress.contains(&key) {
+                    // Self-referential type reached through one of its own
+                    // members: fall back to the declaration-only form. The
+                    // debugger resolves the forward reference by name once
+                    // the defining record is interned.
+                    let forward = self.push_forward_ref_structure(name);
+                    self.push_pointer(forward)
+                } else {
+                    self.in_progress.insert(key.clone());
+                    let structure = self.push_struct_definition(name, fields);
+                    self.in_progress.remove(&key);
+                    self.push_pointer(structure)
+                }
             }
             other => {
                 let forward = self.push_forward_ref_structure(&aggregate_udt_name(other));
@@ -307,11 +332,184 @@ impl CodeViewTypeTable {
         payload.extend_from_slice(&0u32.to_le_bytes()); // field list
         payload.extend_from_slice(&0u32.to_le_bytes()); // derivation list
         payload.extend_from_slice(&0u32.to_le_bytes()); // vshape table
-        payload.extend_from_slice(&0u32.to_le_bytes()); // size unknown
+        payload.extend_from_slice(&0u64.to_le_bytes()); // size unknown
         payload.extend_from_slice(name.as_bytes());
         payload.push(0);
         push_type_record(&mut self.records, LF_STRUCTURE, &payload);
         index
+    }
+    /// Emit a full user-defined-type definition for a `Struct` whose fields
+    /// are known in the IR: an `LF_FIELDLIST` with one public `LF_MEMBER` per
+    /// field (byte offsets and total size from the mid-end layout module,
+    /// the same source the backend's field-access lowering uses), followed by
+    /// the defining `LF_STRUCTURE` record. Member types that are themselves
+    /// aggregates resolve to pointer records, matching their 8-byte stored
+    /// representation.
+    fn push_struct_definition(&mut self, name: &str, fields: &[(String, IRType)]) -> u32 {
+        let layout = spectra_midend::layout::layout_of(fields.iter().map(|(_, ty)| ty));
+        let mut fieldlist_payload = Vec::new();
+        for ((field_name, field_ty), &offset) in fields.iter().zip(&layout.offsets) {
+            let member_type = self.index_for(field_ty);
+            let mut payload = Vec::new();
+            payload.extend_from_slice(&3u16.to_le_bytes()); // attr: public access
+            payload.extend_from_slice(&0u16.to_le_bytes()); // padding
+            payload.extend_from_slice(&member_type.to_le_bytes());
+            payload.extend_from_slice(&(offset as u16).to_le_bytes());
+            payload.extend_from_slice(field_name.as_bytes());
+            payload.push(0);
+            push_type_record(&mut fieldlist_payload, LF_MEMBER, &payload);
+        }
+        let fieldlist_index = self.next_index;
+        self.next_index += 1;
+        push_type_record(&mut self.records, LF_FIELDLIST, &fieldlist_payload);
+
+        let structure_index = self.next_index;
+        self.next_index += 1;
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&(fields.len() as u16).to_le_bytes()); // member count
+        payload.push(0); // properties: fully defined, not a forward reference
+        payload.push(0); // padding
+        payload.extend_from_slice(&fieldlist_index.to_le_bytes());
+        payload.extend_from_slice(&0u32.to_le_bytes()); // derivation list
+        payload.extend_from_slice(&0u32.to_le_bytes()); // vshape table
+        payload.extend_from_slice(&(layout.size as u64).to_le_bytes());
+        payload.extend_from_slice(name.as_bytes());
+        payload.push(0);
+        push_type_record(&mut self.records, LF_STRUCTURE, &payload);
+        structure_index
+    }
+}
+
+
+/// Environment variable that requests the JIT debug sidecar on `run`.
+pub const JIT_DEBUG_ENV: &str = "SPECTRA_JIT_DEBUG";
+
+/// One variable entry of the JIT debug sidecar.
+///
+/// Every field is compiler-proven: `name`/`type_name` come from the IR
+/// local's debug info, `line` from its declaration span, and each
+/// `(start, end)` range is a machine-code offset pair (relative to the start
+/// of the compiled function) resolved by Cranelift's post-allocation
+/// value-label pass — the exact collection also feeding AOT native debug
+/// emission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JitDebugVariable {
+    pub name: String,
+    pub type_name: String,
+    pub line: Option<u32>,
+    pub ranges: Vec<(u32, u32)>,
+}
+
+/// True when `SPECTRA_JIT_DEBUG=1` requests the sidecar. Callers with an
+/// explicit `--timings` flag pass `force = true` to [`write_jit_debug_sidecar`]
+/// instead of relying on this check.
+pub fn jit_debug_requested() -> bool {
+    std::env::var(JIT_DEBUG_ENV).is_ok_and(|value| value == "1")
+}
+
+/// Sidecar path convention: `<source>.spectra-jit-debug.json` next to the
+/// source file.
+pub fn jit_debug_sidecar_path(source_file: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(format!("{source_file}.spectra-jit-debug.json"))
+}
+
+/// Render the sidecar JSON: `{ "<function>": [ {"name", "type", "line",
+/// "ranges": [[start, end], ...]}, ... ] }`. Functions are sorted by name so
+/// output is deterministic across runs. Hand-rolled serialization keeps the
+/// backend free of a JSON dependency; strings are minimally escaped.
+pub fn jit_debug_sidecar_json(functions: &[(String, Vec<JitDebugVariable>)]) -> String {
+    fn escape(value: &str) -> String {
+        let mut out = String::with_capacity(value.len() + 2);
+        for ch in value.chars() {
+            match ch {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                c if (c as u32) < 0x20 => {
+                    out.push_str(&format!("\\u{:04x}", c as u32));
+                }
+                c => out.push(c),
+            }
+        }
+        out
+    }
+
+    let mut ordered: Vec<&(String, Vec<JitDebugVariable>)> = functions.iter().collect();
+    ordered.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    let mut out = String::from("{");
+    for (index, (function, variables)) in ordered.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push('"');
+        out.push_str(&escape(function));
+        out.push_str("\":[");
+        for (var_index, var) in variables.iter().enumerate() {
+            if var_index > 0 {
+                out.push(',');
+            }
+            let line = match var.line {
+                Some(line) => line.to_string(),
+                None => "null".to_string(),
+            };
+            let ranges = var
+                .ranges
+                .iter()
+                .map(|(start, end)| format!("[{start},{end}]"))
+                .collect::<Vec<_>>()
+                .join(",");
+            out.push_str(&format!(
+                "{{\"name\":\"{}\",\"type\":\"{}\",\"line\":{line},\"ranges\":[{ranges}]}}",
+                escape(&var.name),
+                escape(&var.type_name),
+            ));
+        }
+        out.push(']');
+    }
+    out.push('}');
+    out
+}
+
+/// Write `<source>.spectra-jit-debug.json` when requested.
+///
+/// The sidecar is produced only from Cranelift's proven value-label data
+/// collected during JIT compilation (see [`JitDebugVariable`]); nothing here
+/// reconstructs records from source text or guesses offsets. It supplements
+/// but never replaces native CodeView/DWARF artifacts.
+///
+/// Writes when `force` is set (`--timings`) or `SPECTRA_JIT_DEBUG=1`;
+/// otherwise returns `Ok(None)` without touching the filesystem. A write
+/// failure returns `Err`, which callers treat as a non-fatal warning.
+pub fn write_jit_debug_sidecar(
+    source_file: &str,
+    functions: &[(String, Vec<JitDebugVariable>)],
+    force: bool,
+) -> Result<Option<std::path::PathBuf>, String> {
+    if !force && !jit_debug_requested() {
+        return Ok(None);
+    }
+    if functions.is_empty() {
+        return Ok(None);
+    }
+    let path = jit_debug_sidecar_path(source_file);
+    std::fs::write(&path, jit_debug_sidecar_json(functions)).map_err(|error| {
+        format!("failed to write JIT debug sidecar {}: {error}", path.display())
+    })?;
+    Ok(Some(path))
+}
+
+/// Human-readable name of one IR type, used in the sidecar's `type` field.
+/// Primitives use their DWARF base-type names, aggregates keep their real
+/// IR names (see [`aggregate_udt_name`]).
+pub fn ir_type_debug_name(ty: &IRType) -> String {
+    if let IRType::Generic { representation, .. } = ty {
+        return ir_type_debug_name(representation);
+    }
+    match crate::dwarf::primitive_base_type(ty) {
+        Some((name, _, _)) => String::from_utf8_lossy(&name).into_owned(),
+        None => aggregate_udt_name(ty),
     }
 }
 
@@ -948,6 +1146,7 @@ mod tests {
                 bytes[cursor + 2],
                 bytes[cursor + 3],
             ]);
+
             let length = u32::from_le_bytes([
                 bytes[cursor + 4],
                 bytes[cursor + 5],
@@ -979,6 +1178,173 @@ mod tests {
             cursor = cursor.div_ceil(4) * 4;
         }
         records
+    }
+    /// Walk the `.debug$T` stream (after its version signature) and return
+    /// every type record as `(leaf id, payload)`.
+    fn debug_t_records(bytes: &[u8]) -> Vec<(u16, Vec<u8>)> {
+        let mut records = Vec::new();
+        let mut cursor = 4usize; // version signature
+        while cursor + 4 <= bytes.len() {
+            let length =
+                u16::from_le_bytes([bytes[cursor], bytes[cursor + 1]]) as usize;
+            if length < 2 || cursor + 2 + length > bytes.len() {
+                break;
+            }
+            let leaf = u16::from_le_bytes([bytes[cursor + 2], bytes[cursor + 3]]);
+            records.push((leaf, bytes[cursor + 4..cursor + 2 + length].to_vec()));
+            cursor = (cursor + 2 + length).div_ceil(4) * 4;
+        }
+        records
+    }
+
+    fn point_struct_ir() -> Type {
+        Type::Struct {
+            name: "Point".to_string(),
+            fields: vec![
+                ("x".to_string(), Type::Int),
+                ("y".to_string(), Type::Float),
+                (
+                    "z".to_string(),
+                    Type::ExactInt {
+                        signed: true,
+                        width: IntWidth::I32,
+                    },
+                ),
+            ],
+        }
+    }
+
+    #[test]
+    fn struct_with_fields_emits_full_codeview_udt_definition() {
+        // Replace one local's type with the 3-field Point struct.
+        let mut function = function_with_types();
+        function.locals = vec!["origin".to_string()];
+        function.local_offsets = vec![Some(-8)];
+        function.local_locations = vec![Vec::new(); 1];
+        function.local_types = vec![point_struct_ir()];
+        let sections = codeview_sections("fixture.spectra", &[function], "fn typed() {}");
+        let type_stream = &sections
+            .iter()
+            .find(|(name, _)| *name == ".debug$T")
+            .expect("struct local must produce a .debug$T stream")
+            .1;
+
+        let records = debug_t_records(type_stream);
+
+        // Defining LF_STRUCTURE named "Point": 3 members, defined properties,
+        // real field-list back-reference, padded size 8+8+4 -> 24.
+        let point_structure = records
+            .iter()
+            .find(|(leaf, payload)| {
+                *leaf == super::LF_STRUCTURE && payload.ends_with(b"Point\0")
+            })
+            .map(|(_, payload)| payload)
+            .expect("defining LF_STRUCTURE for Point must be present");
+        assert_eq!(u16::from_le_bytes([point_structure[0], point_structure[1]]), 3);
+        assert_eq!(point_structure[2] & super::CV_IS_FWDREF, 0);
+        let fieldlist_index = u32::from_le_bytes([
+            point_structure[4],
+            point_structure[5],
+            point_structure[6],
+            point_structure[7],
+        ]);
+        assert_ne!(fieldlist_index, 0);
+        let size = u64::from_le_bytes(point_structure[16..24].try_into().unwrap());
+        assert_eq!(size, 24);
+
+        // The referenced LF_FIELDLIST carries one LF_MEMBER per field with
+        // mid-end layout offsets 0/8/16 and stored-representation types.
+        let fieldlist = records
+            .iter()
+            .find(|(leaf, _)| *leaf == super::LF_FIELDLIST)
+            .map(|(_, payload)| payload)
+            .expect("LF_FIELDLIST must be present");
+        const EXPECTED: [(&str, u32, u16); 3] = [
+            ("x", super::T_INT8, 0),
+            ("y", super::T_REAL64, 8),
+            ("z", super::T_INT4, 16),
+        ];
+        let mut members = Vec::new();
+        let mut cursor = 0usize;
+        while cursor + 4 <= fieldlist.len() {
+            let length =
+                u16::from_le_bytes([fieldlist[cursor], fieldlist[cursor + 1]]) as usize;
+            if length < 2 || cursor + 2 + length > fieldlist.len() {
+                break;
+            }
+            let leaf = u16::from_le_bytes([fieldlist[cursor + 2], fieldlist[cursor + 3]]);
+            let payload = fieldlist[cursor + 4..cursor + 2 + length].to_vec();
+            cursor = (cursor + 2 + length).div_ceil(4) * 4;
+            if leaf != super::LF_MEMBER {
+                continue;
+            }
+            let name = String::from_utf8_lossy(&payload[10..])
+                .trim_end_matches('\0')
+                .to_string();
+            let member_type = u32::from_le_bytes(payload[4..8].try_into().unwrap());
+            let offset = u16::from_le_bytes([payload[8], payload[9]]);
+            members.push((name, member_type, offset));
+        }
+        assert_eq!(
+            members,
+            EXPECTED
+                .iter()
+                .map(|(name, ty, off)| ((*name).to_string(), *ty, *off))
+                .collect::<Vec<_>>()
+        );
+        // Member attributes: public access.
+        assert_eq!(u16::from_le_bytes([fieldlist[4], fieldlist[5]]), 3);
+
+        // The `.debug$S` S_LOCAL for `origin` references the pointer record
+        // that points at the defining structure.
+        let symbol_records = c13_symbol_records(
+            &sections
+                .iter()
+                .find(|(name, _)| *name == ".debug$S")
+                .map(|(_, bytes)| bytes)
+                .unwrap(),
+        );
+        const S_LOCAL_KIND: u16 = 0x113E;
+        let origin_index = symbol_records
+            .iter()
+            .filter(|(kind, _)| *kind == S_LOCAL_KIND)
+            .find(|(_, payload)| payload[6..].starts_with(b"origin"))
+            .map(|(_, payload)| {
+                u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]])
+            })
+            .expect("S_LOCAL for origin must exist");
+        assert!(origin_index >= super::FIRST_USER_TYPE_INDEX);
+        let pointer_payload = records
+            .iter()
+            .find(|(leaf, _)| *leaf == super::LF_POINTER)
+            .map(|(_, payload)| payload)
+            .expect("pointer record for the aggregate must exist");
+        assert_eq!(
+            u32::from_le_bytes(pointer_payload[..4].try_into().unwrap()),
+            fieldlist_index.wrapping_add(1),
+            "the pointer must target the defining LF_STRUCTURE"
+        );
+    }
+
+    #[test]
+    fn jit_debug_sidecar_json_is_deterministic_and_escaped() {
+        let functions = vec![
+            (
+                "b_fn".to_string(),
+                vec![super::JitDebugVariable {
+                    name: "va\"l".to_string(),
+                    type_name: "int".to_string(),
+                    line: Some(7),
+                    ranges: vec![(0, 12), (20, 48)],
+                }],
+            ),
+            ("a_fn".to_string(), Vec::new()),
+        ];
+        let json = super::jit_debug_sidecar_json(&functions);
+        assert_eq!(
+            json,
+            "{\"a_fn\":[],\"b_fn\":[{\"name\":\"va\\\"l\",\"type\":\"int\",\"line\":7,\"ranges\":[[0,12],[20,48]]}]}"
+        );
     }
 
     #[test]

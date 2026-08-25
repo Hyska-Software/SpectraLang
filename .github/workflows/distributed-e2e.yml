@@ -1,0 +1,27 @@
+name: distributed-e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dist-tcp-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: runtime
+      - name: Multi-process TCP e2e (coordinator + 2 worker OS processes)
+        shell: bash
+        run: |
+          cargo test -p spectra-runtime --lib \
+            -- --exact 'stdlib::dist_tcp_fault_tests::dist_tcp_e2e_two_os_processes_over_real_tcp' \
+            --nocapture --test-threads=1

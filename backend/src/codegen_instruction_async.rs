@@ -11,7 +11,6 @@ impl CodeGenerator {
         };
 
         match kind {
-            InstructionKind::AsyncSuspend { .. } | InstructionKind::AsyncResume { .. } => {}
             InstructionKind::AsyncReady {
                 result,
                 value,

@@ -41,6 +41,7 @@ pub fn add_dependency(
     rev: Option<&str>,
     branch: Option<&str>,
     catalog: Option<&Path>,
+    allow_floating_git: bool,
 ) -> Result<PathBuf, PackageError> {
     let root = canonicalize_existing(root)?;
     let manifest_path = find_manifest(&root)?;
@@ -56,7 +57,13 @@ pub fn add_dependency(
             )
         } else if let Some(registry) = registry {
             let version = parsed.version.as_deref().unwrap_or("0.1.0");
-            let installed = install_from_registry(&root, registry, &parsed.name, version)?;
+            // APPEND-ONLY (RemoteRegistry): --registry accepts a local path or an http(s) URL.
+            let registry_text = registry.to_string_lossy();
+            let installed = if is_remote_registry(&registry_text) {
+                install_from_remote_registry(&root, &registry_text, &parsed.name, version)?
+            } else {
+                install_from_registry(&root, registry, &parsed.name, version)?
+            };
             (
                 installed.canonical_name,
                 installed.version,
@@ -72,6 +79,8 @@ pub fn add_dependency(
                 tag,
                 rev,
                 branch,
+                allow_floating_git,
+                None,
                 false,
             )?;
             (
@@ -83,12 +92,18 @@ pub fn add_dependency(
                     tag: tag.map(str::to_string),
                     rev: rev.map(str::to_string),
                     branch: branch.map(str::to_string),
+                    allow_floating_git: allow_floating_git.then_some(true),
                     checksum: Some(installed.checksum),
                 },
             )
         } else {
+            // Catalog entries published with a fixed ref carry their resolved_rev;
+            // it anchors the install when the entry declares no tag/rev/branch.
             let entry =
                 resolve_catalog_entry(&root, &parsed.name, parsed.version.as_deref(), catalog)?;
+            let anchor = (entry.tag.is_none() && entry.rev.is_none() && entry.branch.is_none())
+                .then(|| entry.resolved_rev.clone())
+                .flatten();
             let installed = install_from_git(
                 &root,
                 &entry.name,
@@ -97,6 +112,8 @@ pub fn add_dependency(
                 entry.tag.as_deref(),
                 entry.rev.as_deref(),
                 entry.branch.as_deref(),
+                false,
+                anchor.as_deref(),
                 false,
             )?;
             (
@@ -108,6 +125,7 @@ pub fn add_dependency(
                     tag: entry.tag,
                     rev: entry.rev,
                     branch: entry.branch,
+                    allow_floating_git: None,
                     checksum: Some(installed.checksum),
                 },
             )
@@ -148,6 +166,7 @@ enum DependencyManifestSource {
         rev: Option<String>,
         branch: Option<String>,
         checksum: Option<String>,
+        allow_floating_git: Option<bool>,
     },
 }
 
@@ -201,6 +220,7 @@ fn write_dependency_to_manifest(
             tag,
             rev,
             branch,
+            allow_floating_git,
             checksum,
         } => {
             table["git"] = value(git.as_str());
@@ -212,6 +232,9 @@ fn write_dependency_to_manifest(
             }
             if let Some(branch) = branch {
                 table["branch"] = value(branch.as_str());
+            }
+            if *allow_floating_git == Some(true) {
+                table["allow-floating-git"] = value(true);
             }
             if let Some(checksum) = checksum {
                 table["checksum"] = value(checksum.as_str());
@@ -247,6 +270,10 @@ pub fn publish(root: &Path, registry: &Path) -> Result<PathBuf, PackageError> {
 
     copy_package_payload(&package.root, &payload_dir)?;
     let checksum = directory_checksum(&payload_dir)?;
+    // APPEND-ONLY (RemoteRegistry): payload file list so HTTP installs can fetch each file.
+    let mut payload_files = Vec::new();
+    collect_files(&payload_dir, &payload_dir, &mut payload_files)?;
+    payload_files.sort_by(|left, right| left.0.cmp(&right.0));
     let metadata = RegistryMetadata {
         name: package.name.clone(),
         version: package.version.clone(),
@@ -256,6 +283,10 @@ pub fn publish(root: &Path, registry: &Path) -> Result<PathBuf, PackageError> {
         migration: package.release.migration.clone(),
         checksum,
         source_path: package.root.to_string_lossy().replace('\\', "/"),
+        files: payload_files
+            .iter()
+            .map(|(relative, _)| relative.to_string_lossy().replace('\\', "/"))
+            .collect(),
     };
     let metadata_text = toml::to_string_pretty(&metadata).map_err(PackageError::Serialize)?;
     let metadata_path = package_dir.join("package.toml");
@@ -321,6 +352,8 @@ struct LoadedPackage {
     workspace_members: Vec<String>,
     package_catalogs: BTreeMap<String, String>,
     dependency_specs: BTreeMap<String, DependencySpec>,
+    // APPEND-ONLY (RemoteRegistry): optional [registry].remote base URL.
+    remote_registry: Option<String>,
     manifest_hash: String,
 }
 
@@ -378,8 +411,16 @@ fn collect_package(
                 ..
             } => {
                 let version = version.as_deref().unwrap_or("0.1.0");
-                let installed =
-                    install_from_registry(workspace_root, &root.join(path), dep_name, version)?;
+                // APPEND-ONLY (RemoteRegistry): remote-first resolution with local fallback.
+                let installed = install_registry_dependency(
+                    workspace_root,
+                    &root,
+                    loaded.remote_registry.as_deref(),
+                    path,
+                    dep_name,
+                    version,
+                    options.offline,
+                )?;
                 (
                     installed.path.clone(),
                     PackageSource::Registry {
@@ -395,8 +436,21 @@ fn collect_package(
                 rev,
                 branch,
                 checksum,
+                allow_floating_git,
                 ..
             } => {
+                let explicit_ref = tag.is_some() || rev.is_some() || branch.is_some();
+                // A pre-existing lockfile is the reproducibility anchor: a dependency
+                // that declares no fixed ref is checked out at the locked resolved_rev
+                // instead of floating on upstream HEAD.
+                let anchor = if explicit_ref {
+                    None
+                } else {
+                    locked_git_anchor(workspace_root, dep_name, git)?
+                };
+                let allow_floating = !explicit_ref
+                    && anchor.is_none()
+                    && matches!(allow_floating_git, Some(true));
                 let installed = install_from_git(
                     workspace_root,
                     dep_name,
@@ -405,6 +459,8 @@ fn collect_package(
                     tag.as_deref(),
                     rev.as_deref(),
                     branch.as_deref(),
+                    allow_floating,
+                    anchor.as_deref(),
                     options.offline,
                 )?;
                 (
@@ -417,6 +473,7 @@ fn collect_package(
                             branch.as_deref(),
                         ),
                         resolved: installed.resolved,
+                        floating: allow_floating,
                     },
                     checksum.clone().or(Some(installed.checksum)),
                 )
@@ -539,3 +596,33 @@ fn topo_sort(packages: Vec<ResolvedPackage>) -> Result<Vec<ResolvedPackage>, Pac
     Ok(ordered)
 }
 
+
+/// Looks up the resolved revision recorded for a git dependency in the existing
+/// workspace lockfile. Returns `None` when there is no lockfile or no matching
+/// entry, leaving the caller free to enforce the fixed-ref policy.
+fn locked_git_anchor(
+    workspace_root: &Path,
+    dep_name: &str,
+    git_url: &str,
+) -> Result<Option<String>, PackageError> {
+    let lock_path = workspace_root.join(LOCKFILE_NAME);
+    if !lock_path.is_file() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&lock_path).map_err(|error| PackageError::Io {
+        path: lock_path.clone(),
+        error,
+    })?;
+    let lockfile: Lockfile = toml::from_str(&text).map_err(|error| PackageError::AtomicWrite {
+        path: lock_path,
+        message: format!("invalid lockfile: {}", error),
+    })?;
+    Ok(lockfile
+        .packages
+        .iter()
+        .find(|package| {
+            package.name == dep_name && package.git_url.as_deref() == Some(git_url)
+        })
+        .and_then(|package| package.resolved_rev.clone())
+        .filter(|rev| is_hex_sha(rev, 40)))
+}
