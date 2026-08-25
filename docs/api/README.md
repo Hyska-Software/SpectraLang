@@ -50,3 +50,4 @@ Reference pages:
   provide explicit roots through `ClientConfig::with_tls_config`.
 - [REST + SQLite CRUD](std-api-sqlite-crud.md)
 - [SQLite migrations](std-api-migrations.md)
+- [SQLite connection pool and language-level migrations](std-api-db-pool.md)

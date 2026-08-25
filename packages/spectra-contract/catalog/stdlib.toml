@@ -551,6 +551,118 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/149_api_cors_middleware.spectra"
 
 [[entry]]
+path = "std.api.db.migrate"
+kind = "module"
+namespace = "std.api.db"
+signature = "module spectra.std.api.db.migrate"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.api.db.migrate"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-db-pool.md"
+fixture = "tests/validation/349_api_db_pool_migrations.spectra"
+
+[[entry]]
+path = "std.api.db.migrate.apply_sqlite"
+kind = "function"
+namespace = "std.api.db.migrate"
+signature = "fn(SqliteConnection, string) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host", "mutation"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.migrate.apply_sqlite"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-db-pool.md"
+fixture = "tests/validation/349_api_db_pool_migrations.spectra"
+
+[[entry]]
+path = "std.api.db.migrate.status_sqlite"
+kind = "function"
+namespace = "std.api.db.migrate"
+signature = "fn(SqliteConnection, string) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.migrate.status_sqlite"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-db-pool.md"
+fixture = "tests/validation/349_api_db_pool_migrations.spectra"
+
+[[entry]]
+path = "std.api.db.pool"
+kind = "module"
+namespace = "std.api.db"
+signature = "module spectra.std.api.db.pool"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.api.db.pool"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-db-pool.md"
+fixture = "tests/validation/349_api_db_pool_migrations.spectra"
+
+[[entry]]
+path = "std.api.db.pool.Pool"
+kind = "type"
+namespace = "std.api.db.pool"
+signature = "record Pool {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.api.db.pool.Pool"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-db-pool.md"
+fixture = "tests/validation/349_api_db_pool_migrations.spectra"
+
+[[entry]]
+path = "std.api.db.pool.close"
+kind = "function"
+namespace = "std.api.db.pool"
+signature = "fn(Pool) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.pool.close"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-db-pool.md"
+fixture = "tests/validation/349_api_db_pool_migrations.spectra"
+
+[[entry]]
+path = "std.api.db.pool.sqlite_open"
+kind = "function"
+namespace = "std.api.db.pool"
+signature = "fn(string, int) -> Pool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.pool.sqlite_open"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-db-pool.md"
+fixture = "tests/validation/349_api_db_pool_migrations.spectra"
+
+[[entry]]
+path = "std.api.db.pool.with_connection"
+kind = "function"
+namespace = "std.api.db.pool"
+signature = "fn(Pool) -> SqliteConnection"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.pool.with_connection"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-db-pool.md"
+fixture = "tests/validation/349_api_db_pool_migrations.spectra"
+
+[[entry]]
 path = "std.api.db.postgres"
 kind = "module"
 namespace = "std.api.db"
@@ -10961,6 +11073,48 @@ abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.std.ml.onnx_validate"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+
+[[entry]]
+path = "std.ml.onnx_session_from_bytes"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(string) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.onnx_session_from_bytes"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+
+[[entry]]
+path = "std.ml.onnx_run"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(int, int, string) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.onnx_run"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+
+[[entry]]
+path = "std.ml.onnx_session_free"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.onnx_session_free"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
