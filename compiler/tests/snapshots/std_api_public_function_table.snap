@@ -24,6 +24,8 @@ module std.api.health
 module std.api.db.sqlite
 module std.api.db.postgres
 module std.api.db.redis
+module std.api.db.pool
+module std.api.db.migrate
 type std.api.http.Request: record Request
 type std.api.http.Response: record Response
 type std.api.http.Method: record Method

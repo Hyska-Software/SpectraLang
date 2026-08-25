@@ -162,6 +162,11 @@ fn register_std_api_modules(registry: &mut ModuleRegistry, prefix: &str) {
     registry.register_module(format!("{prefix}.db.sqlite"), make_std_api_db_sqlite(prefix));
     registry.register_module(format!("{prefix}.db.postgres"), make_std_api_db_postgres(prefix));
     registry.register_module(format!("{prefix}.db.redis"), make_std_api_db_redis(prefix));
+    registry.register_module(format!("{prefix}.db.pool"), make_std_api_db_pool(prefix));
+    registry.register_module(
+        format!("{prefix}.db.migrate"),
+        make_std_api_db_migrate(prefix),
+    );
 }
 
 fn stdlib_segments(prefix: &str) -> Vec<String> {
@@ -879,6 +884,46 @@ fn make_std_api_multipart(prefix: &str) -> ModuleExports {
         ("file_spool_to", vec![part, Type::String], Type::Bool),
         ("error_code", vec![], Type::Int),
         ("error_message", vec![], Type::String),
+    ];
+    for (name, params, return_type) in functions {
+        exports
+            .functions
+            .insert(name.to_string(), pub_fn(params, return_type));
+    }
+    exports
+}
+fn make_std_api_db_pool(prefix: &str) -> ModuleExports {
+    let mut exports = api_module(&format!("{prefix}.db.pool"), None);
+    let pool = api_type("Pool");
+    let connection = api_type("SqliteConnection");
+    exports.types.insert("Pool".to_string(), public_type(&[]));
+    let functions = [
+        (
+            "sqlite_open",
+            vec![Type::String, Type::Int],
+            pool.clone(),
+        ),
+        ("close", vec![pool.clone()], Type::Bool),
+        ("with_connection", vec![pool], connection),
+    ];
+    for (name, params, return_type) in functions {
+        exports
+            .functions
+            .insert(name.to_string(), pub_fn(params, return_type));
+    }
+    exports
+}
+
+fn make_std_api_db_migrate(prefix: &str) -> ModuleExports {
+    let mut exports = api_module(&format!("{prefix}.db.migrate"), None);
+    let connection = api_type("SqliteConnection");
+    let functions = [
+        ("apply_sqlite", vec![connection.clone(), Type::String], Type::Int),
+        (
+            "status_sqlite",
+            vec![connection, Type::String],
+            Type::String,
+        ),
     ];
     for (name, params, return_type) in functions {
         exports

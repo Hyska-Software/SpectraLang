@@ -248,6 +248,8 @@ pub const STD_API_MODULE_PATHS: &[&str] = &[
     "std.api.db.sqlite",
     "std.api.db.postgres",
     "std.api.db.redis",
+    "std.api.db.pool",
+    "std.api.db.migrate",
 ];
 
 pub const STD_API_PUBLIC_TYPES: &[(&str, &str)] = &[
