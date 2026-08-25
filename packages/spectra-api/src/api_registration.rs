@@ -68,7 +68,9 @@ pub(crate) fn read_spectra_string(ptr_value: SpectraHostValue) -> Option<String>
     if ptr_value == 0 {
         return None;
     }
-    let ptr = ptr_value as *const i64;
+    // Strings cross the ABI as NUL-terminated packed UTF-8 byte buffers
+    // (one byte per address unit — see runtime/src/ffi_fast_paths.rs).
+    let ptr = ptr_value as *const u8;
     if ptr.is_null() {
         return None;
     }
@@ -80,10 +82,7 @@ pub(crate) fn read_spectra_string(ptr_value: SpectraHostValue) -> Option<String>
             if value == 0 {
                 break;
             }
-            if !(0..=255).contains(&value) {
-                return None;
-            }
-            bytes.push(value as u8);
+            bytes.push(value);
             offset += 1;
             if offset > 1_048_576 {
                 return None;
@@ -94,16 +93,13 @@ pub(crate) fn read_spectra_string(ptr_value: SpectraHostValue) -> Option<String>
 }
 
 pub(crate) fn alloc_spectra_string(value: &str) -> SpectraHostValue {
-    let len = value.len() + 1;
-    let bytes = len * std::mem::size_of::<i64>();
-    let ptr = spectra_runtime::ffi::spectra_rt_manual_alloc(bytes) as *mut i64;
+    let total = value.len() + 1; // payload + single NUL terminator byte
+    let ptr = spectra_runtime::ffi::spectra_rt_manual_alloc(total) as *mut u8;
     if ptr.is_null() {
         return 0;
     }
     unsafe {
-        for (idx, byte) in value.bytes().enumerate() {
-            *ptr.add(idx) = byte as i64;
-        }
+        std::ptr::copy_nonoverlapping(value.as_ptr(), ptr, value.len());
         *ptr.add(value.len()) = 0;
     }
     ptr as SpectraHostValue

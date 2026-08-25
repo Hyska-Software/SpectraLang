@@ -115,7 +115,7 @@ unsafe fn string(value: i64) -> Option<String> {
     if value == 0 {
         return None;
     }
-    let ptr = value as *const i64;
+    let ptr = value as *const u8;
     let mut bytes = Vec::new();
     for index in 0..4096 {
         let byte = *ptr.add(index) as u8;

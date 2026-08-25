@@ -32,16 +32,30 @@ pub extern "C" fn sqlite_close(ctx: *mut SpectraHostCallContext) -> i32 {
         if a.len() != 1 {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let connection = store().lock().unwrap().connections.remove(&a[0]);
+        let (connection, leased) = {
+            let mut state = store().lock().unwrap();
+            (state.connections.remove(&a[0]), state.pool_leases.contains_key(&a[0]))
+        };
         let Some(connection) = connection else {
             return fail(r, spectra_db::sqlite::SqliteError::invalid_handle());
         };
-        let span = operation_span("db.sqlite.close");
-        let result = connection.close();
-        finish_span(span, result.is_ok());
-        match result {
-            Ok(()) => bool_result(r, true),
-            Err(error) => fail(r, error),
+        // A pooled lease goes back to its pool instead of being closed; the
+        // underlying physical connection stays alive inside the pool.
+        if leased {
+            drop(connection);
+            if release_lease(a[0]) {
+                bool_result(r, true)
+            } else {
+                fail(r, spectra_db::sqlite::SqliteError::new("DB2504_POOL", "pool lease was already released"))
+            }
+        } else {
+            let span = operation_span("db.sqlite.close");
+            let result = connection.close();
+            finish_span(span, result.is_ok());
+            match result {
+                Ok(()) => bool_result(r, true),
+                Err(error) => fail(r, error),
+            }
         }
     }
 }

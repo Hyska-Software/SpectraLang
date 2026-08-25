@@ -138,4 +138,198 @@ mod tests {
         assert!(tracing::config_shutdown(config).is_ok());
         let _ = std::fs::remove_file(path);
     }
+    use spectra_runtime::ffi::{
+        SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
+        HOST_STATUS_SUCCESS,
+    };
+
+    fn call_host(name: &str, args: &[SpectraHostValue]) -> (i32, SpectraHostValue) {
+        let func = spectra_runtime::ffi::lookup_host_function(name).expect("host registered");
+        let mut result = [0_i64];
+        let mut ctx = SpectraHostCallContext {
+            args: args.as_ptr(),
+            arg_len: args.len(),
+            results: result.as_mut_ptr(),
+            result_len: result.len(),
+            invoke_fn: None,
+        };
+        let status = func(&mut ctx as *mut _);
+        (status, result[0])
+    }
+
+    fn unique_temp_path(label: &str) -> std::path::PathBuf {
+        let mut path = env::temp_dir();
+        path.push(format!(
+            "spectralang-pool-{}-{}-{}",
+            label,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        path
+    }
+
+    #[test]
+    fn pool_hosts_lease_connections_concurrently_and_close_cleanly() {
+        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        spectra_runtime::ffi::clear_host_functions();
+        crate::register();
+
+        let database = unique_temp_path("conc");
+        let database_string = database.to_string_lossy().into_owned();
+        let path_arg = crate::alloc_spectra_string(&database_string);
+        let max_size = 2_i64;
+        let (status, pool) = call_host(
+            "spectra.api.db.pool.sqlite_open",
+            &[path_arg, max_size],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS, "pool open failed");
+        assert_ne!(pool, 0);
+
+        let errors = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut workers = Vec::new();
+        for _ in 0..4 {
+            let errors = errors.clone();
+            workers.push(std::thread::spawn(move || {
+                // Each worker leases the only two pooled connections in turn;
+                // acquisition must block instead of failing.
+                for _round in 0..4u32 {
+                    let (lease_status, conn) =
+                        call_host("spectra.api.db.pool.with_connection", &[pool]);
+                    if lease_status != HOST_STATUS_SUCCESS {
+                        errors.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        return;
+                    }
+                    let table_sql = "CREATE TABLE IF NOT EXISTS leases(w INTEGER)";
+                    let sql_arg = crate::alloc_spectra_string(table_sql);
+                    let (prepare_status, statement) =
+                        call_host("spectra.api.db.sqlite.prepare", &[conn, sql_arg]);
+                    if prepare_status != HOST_STATUS_SUCCESS {
+                        errors.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        return;
+                    }
+                    let (step_status, stepped) =
+                        call_host("spectra.api.db.sqlite.step", &[statement]);
+                    if step_status != HOST_STATUS_SUCCESS || stepped != 2 {
+                        errors.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        return;
+                    }
+                    call_host("spectra.api.db.sqlite.finalize", &[statement]);
+                    // Returning the lease must succeed on every round.
+                    let (close_status, closed) =
+                        call_host("spectra.api.db.sqlite.close", &[conn]);
+                    if close_status != HOST_STATUS_SUCCESS || closed != 1 {
+                        errors.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        return;
+                    }
+                }
+            }));
+        }
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        assert_eq!(errors.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+        let (close_status, closed) = call_host("spectra.api.db.pool.close", &[pool]);
+        assert_eq!(close_status, HOST_STATUS_SUCCESS);
+        assert_eq!(closed, 1, "pool shutdown timed out; leases leaked");
+
+        // After close the pool handle must be gone.
+        let (reacquire_status, reacquired) =
+            call_host("spectra.api.db.pool.with_connection", &[pool]);
+        assert_eq!(reacquire_status, HOST_STATUS_SUCCESS);
+        assert_eq!(reacquired, 0, "closed pool must not hand out connections");
+
+        let _ = std::fs::remove_file(&database_string);
+        spectra_runtime::ffi::spectra_rt_manual_clear();
+        spectra_runtime::ffi::clear_host_functions();
+    }
+
+    #[test]
+    fn migration_hosts_apply_up_set_report_status_and_roll_back_in_tmpdir() {
+        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        spectra_runtime::ffi::clear_host_functions();
+        crate::register();
+
+        let root = unique_temp_path("migrations");
+        let migrations_dir = root.join("migrations");
+        std::fs::create_dir_all(&migrations_dir).unwrap();
+        std::fs::write(
+            migrations_dir.join("0001_create_users.up.sql"),
+            "CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT NOT NULL);",
+        )
+        .unwrap();
+        std::fs::write(
+            migrations_dir.join("0001_create_users.down.sql"),
+            "DROP TABLE users;",
+        )
+        .unwrap();
+        std::fs::write(
+            migrations_dir.join("0002_add_users_email.up.sql"),
+            "ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT '';",
+        )
+        .unwrap();
+        std::fs::write(
+            migrations_dir.join("0002_add_users_email.down.sql"),
+            "ALTER TABLE users DROP COLUMN email;",
+        )
+        .unwrap();
+
+        let database = root.join("state.sqlite");
+        let path_arg = crate::alloc_spectra_string(&database.to_string_lossy());
+        let dir_arg = crate::alloc_spectra_string(&migrations_dir.to_string_lossy());
+
+        let (open_status, connection) =
+            call_host("spectra.api.db.sqlite.open", &[path_arg]);
+        assert_eq!(open_status, HOST_STATUS_SUCCESS);
+
+        // Apply N_up = 2 versions.
+        let (apply_status, applied) =
+            call_host("spectra.api.db.migrate.apply_sqlite", &[connection, dir_arg]);
+        assert_eq!(apply_status, HOST_STATUS_SUCCESS, "apply failed");
+        assert_eq!(applied, 2, "expected both pending migrations to apply");
+
+        // Re-applying is a no-op.
+        let (reapply_status, reapplied) =
+            call_host("spectra.api.db.migrate.apply_sqlite", &[connection, dir_arg]);
+        assert_eq!(reapply_status, HOST_STATUS_SUCCESS);
+        assert_eq!(reapplied, 0, "applied migrations must not re-apply");
+
+        // Status reports the applied set with no drift or pending work.
+        let (report_status, report) =
+            call_host("spectra.api.db.migrate.status_sqlite", &[connection, dir_arg]);
+        assert_eq!(report_status, HOST_STATUS_SUCCESS);
+        let report_text = unsafe { string(report) }.expect("status report string");
+        assert!(report_text.starts_with("applied=2 pending=0 drift=0"), "{report_text}");
+        assert!(report_text.contains("applied 1 create_users"), "{report_text}");
+        assert!(report_text.contains("applied 2 add_users_email"), "{report_text}");
+
+        // Down set: roll back both versions through the migrator directly and
+        // confirm status returns to an empty ledger.
+        {
+            let migrator = spectra_db::migrations::SqliteMigrator::from_directory(
+                store()
+                    .lock()
+                    .unwrap()
+                    .connections
+                    .get(&connection)
+                    .cloned()
+                    .unwrap(),
+                &migrations_dir,
+            )
+            .unwrap();
+            let rolled_back = migrator.rollback(2).unwrap();
+            assert_eq!(rolled_back.len(), 2);
+            assert!(rolled_back.iter().all(|entry| entry.action == "rolled_back"));
+            let status = migrator.status().unwrap();
+            assert!(status.applied.is_empty() && status.pending.len() == 2);
+        }
+
+        call_host("spectra.api.db.sqlite.close", &[connection]);
+        let _ = std::fs::remove_dir_all(&root);
+        spectra_runtime::ffi::spectra_rt_manual_clear();
+        spectra_runtime::ffi::clear_host_functions();
+    }
 }

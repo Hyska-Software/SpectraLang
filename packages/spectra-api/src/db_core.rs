@@ -11,6 +11,7 @@ use spectra_runtime::ffi::{
 use crate::handles::ApiHandleTable;
 use spectra_runtime::handles::HandleKind;
 use spectra_runtime::tracing::{self, SpanKind, SpanStatus};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -24,6 +25,8 @@ struct Store {
     postgres_channels: ApiHandleTable<Arc<Mutex<NotificationListener>>>,
     postgres_notifications: ApiHandleTable<Notification>,
     redis_connections: ApiHandleTable<RedisConnection>,
+    pools: ApiHandleTable<Arc<spectra_db::sqlite::SqlitePool>>,
+    pool_leases: HashMap<i64, PoolLease>,
 }
 fn store() -> &'static Mutex<Store> {
     static STORE: OnceLock<Mutex<Store>> = OnceLock::new();
@@ -36,6 +39,8 @@ fn store() -> &'static Mutex<Store> {
             postgres_channels: ApiHandleTable::new(HandleKind::DatabasePostgresChannel),
             postgres_notifications: ApiHandleTable::new(HandleKind::DatabasePostgresNotification),
             redis_connections: ApiHandleTable::new(HandleKind::DatabaseRedisConnection),
+            pools: ApiHandleTable::new(HandleKind::Database),
+            pool_leases: HashMap::new(),
         })
     })
 }
@@ -55,7 +60,7 @@ unsafe fn string(value: i64) -> Option<String> {
     if value == 0 {
         return None;
     }
-    let ptr = value as *const i64;
+    let ptr = value as *const u8;
     let mut bytes = Vec::new();
     for index in 0..4096 {
         let byte = *ptr.add(index) as u8;

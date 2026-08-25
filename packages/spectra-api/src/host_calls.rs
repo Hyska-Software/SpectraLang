@@ -1581,4 +1581,9 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
     HostCallSpec { name: "spectra.api.db.redis.expire", function: db::redis_expire },
     HostCallSpec { name: "spectra.api.db.redis.incr", function: db::redis_incr },
     HostCallSpec { name: "spectra.api.db.redis.exists", function: db::redis_exists },
+    HostCallSpec { name: "spectra.api.db.pool.sqlite_open", function: db::pool_sqlite_open },
+    HostCallSpec { name: "spectra.api.db.pool.close", function: db::pool_close },
+    HostCallSpec { name: "spectra.api.db.pool.with_connection", function: db::pool_with_connection },
+    HostCallSpec { name: "spectra.api.db.migrate.apply_sqlite", function: db::migrate_apply_sqlite },
+    HostCallSpec { name: "spectra.api.db.migrate.status_sqlite", function: db::migrate_status_sqlite },
 ];
