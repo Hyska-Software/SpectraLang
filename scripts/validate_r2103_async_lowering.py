@@ -65,6 +65,8 @@ def main() -> int:
         [
             "spectra.async.task.ready",
             "spectra.async.task.poll",
+            "spectra.async.task.wait",
+            "std_async_task_wait",
             "spectra.async.task.result",
             "spectra.async.task.cancel",
             "std_async_task_cancel",
@@ -96,9 +98,26 @@ def main() -> int:
             "async.suspend",
             "async.resume",
             "async.ready<int>",
-            "spectra.async.task.poll",
+            "spectra.async.task.wait",
             "spectra.async.task.result",
         ],
+    )
+
+    # Real-wait regression: out-of-order awaits with a ~200 ms task.
+    # `spectralang run` propagates the program's exit code, so 0 means the
+    # values survived the waits and the slow task really elapsed >= 200 ms
+    # (the fixture itself asserts that via time.monotonic_millis).
+    run(
+        [
+            "cargo",
+            "run",
+            "-q",
+            "-p",
+            "spectra-cli",
+            "--",
+            "run",
+            "tests/validation/349_async_wait_out_of_order.spectra",
+        ]
     )
 
     run(
