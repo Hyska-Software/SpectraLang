@@ -144,6 +144,27 @@ impl CodeGenerator {
 
                 if matches!(
                     fast_hostcall,
+                    HostCallClass::Fast(FastHostCall::ConcurrentSpawnFn)
+                ) && args.len() == 2
+                {
+                    let fn_ptr = get_value(&args[0])?;
+                    let arg = get_value(&args[1])?;
+                    let func_ref = module.declare_func_in_func(
+                        hostcall.fast_func(FastHostCall::ConcurrentSpawnFn),
+                        builder.func,
+                    );
+                    let call = builder.ins().call(func_ref, &[fn_ptr, arg]);
+                    let results = builder.inst_results(call);
+                    if let Some(result_value) = result {
+                        if let Some(ret) = results.first() {
+                            value_map.insert(result_value.id, *ret);
+                        }
+                    }
+                    return Ok(());
+                }
+
+                if matches!(
+                    fast_hostcall,
                     HostCallClass::Fast(FastHostCall::ConcurrentJoinBatchSum)
                 ) && args.len() == 1
                 {

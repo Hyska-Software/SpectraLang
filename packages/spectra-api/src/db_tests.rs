@@ -309,14 +309,16 @@ mod tests {
         // Down set: roll back both versions through the migrator directly and
         // confirm status returns to an empty ledger.
         {
+            let cell = store()
+                .lock()
+                .unwrap()
+                .connections
+                .get(&connection)
+                .cloned()
+                .unwrap();
+            let native = cell.value.lock().unwrap().clone();
             let migrator = spectra_db::migrations::SqliteMigrator::from_directory(
-                store()
-                    .lock()
-                    .unwrap()
-                    .connections
-                    .get(&connection)
-                    .cloned()
-                    .unwrap(),
+                native,
                 &migrations_dir,
             )
             .unwrap();
@@ -329,6 +331,392 @@ mod tests {
 
         call_host("spectra.api.db.sqlite.close", &[connection]);
         let _ = std::fs::remove_dir_all(&root);
+        spectra_runtime::ffi::spectra_rt_manual_clear();
+        spectra_runtime::ffi::clear_host_functions();
+    }
+    #[test]
+    fn sqlite_execute_async_returns_task_int_awaited_via_block_on() {
+        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        spectra_runtime::ffi::clear_host_functions();
+        crate::register();
+
+        let database = unique_temp_path("async-task");
+        let path_arg = crate::alloc_spectra_string(&database.to_string_lossy());
+        let (open_status, connection) =
+            call_host("spectra.api.db.sqlite.open", &[path_arg]);
+        assert_eq!(open_status, HOST_STATUS_SUCCESS);
+
+        // CREATE TABLE affects zero rows and must round-trip through the
+        // Task<int> protocol exactly like postgres.execute_async.
+        let create_sql = crate::alloc_spectra_string("CREATE TABLE t(a INTEGER)");
+        let (task_status, task) =
+            call_host("spectra.api.db.sqlite.execute_async", &[connection, create_sql]);
+        assert_eq!(task_status, HOST_STATUS_SUCCESS);
+        assert_ne!(task, 0, "execute_async must return a real task handle");
+        let created = spectra_runtime::stdlib::block_on_task_value(task);
+        assert_eq!(created, Ok(0), "CREATE TABLE reports zero affected rows");
+
+        let insert_sql = crate::alloc_spectra_string("INSERT INTO t VALUES (42)");
+        let (insert_status, insert_task) =
+            call_host("spectra.api.db.sqlite.execute_async", &[connection, insert_sql]);
+        assert_eq!(insert_status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            spectra_runtime::stdlib::block_on_task_value(insert_task),
+            Ok(1),
+            "single INSERT must report one affected row through the task"
+        );
+
+        // A failing statement fails the task and records the error on the
+        // connection handle's own slot.
+        let bad_sql = crate::alloc_spectra_string("THIS IS NOT SQL");
+        let (bad_status, bad_task) =
+            call_host("spectra.api.db.sqlite.execute_async", &[connection, bad_sql]);
+        assert_eq!(bad_status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            spectra_runtime::stdlib::wait_task_terminal_status(bad_task),
+            Ok(2),
+            "invalid SQL must fail the task (status 2)"
+        );
+        let (_, error_code_ptr) =
+            call_host("spectra.api.db.sqlite.last_error_code", &[connection]);
+        let error_code = unsafe { string(error_code_ptr) }.unwrap_or_default();
+        assert!(
+            error_code.starts_with("DB2504_"),
+            "per-handle last_error_code must surface the async failure: {error_code}"
+        );
+
+        call_host("spectra.api.db.sqlite.close", &[connection]);
+        let _ = std::fs::remove_file(&database);
+        spectra_runtime::ffi::spectra_rt_manual_clear();
+        spectra_runtime::ffi::clear_host_functions();
+    }
+
+    /// Deterministic CPU-bound query: sum of a recursive CTE. Runs entirely
+    /// inside `step`, so overlapping wall-clock windows prove two statements
+    /// executed simultaneously instead of queueing behind a global lock.
+    fn heavy_query(rows: i64) -> String {
+        format!(
+            "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x < {rows}) \
+             SELECT count(*) FROM c"
+        )
+    }
+
+    #[test]
+    fn concurrent_sqlite_statements_overlap_instead_of_serializing() {
+        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        spectra_runtime::ffi::clear_host_functions();
+        crate::register();
+
+        let sql_text = heavy_query(6_000_000);
+        let mut connections = Vec::new();
+        let mut statements = Vec::new();
+        let mut files = Vec::new();
+        for index in 0..2 {
+            let database = unique_temp_path("overlap");
+            files.push(database.clone());
+            let (open_status, connection) = call_host(
+                "spectra.api.db.sqlite.open",
+                &[crate::alloc_spectra_string(&database.to_string_lossy())],
+            );
+            assert_eq!(open_status, HOST_STATUS_SUCCESS);
+            let (prepare_status, statement) = call_host(
+                "spectra.api.db.sqlite.prepare",
+                &[connection, crate::alloc_spectra_string(&sql_text)],
+            );
+            assert_eq!(prepare_status, HOST_STATUS_SUCCESS);
+            connections.push(connection);
+            statements.push(statement);
+        }
+
+        type Window = std::sync::Arc<Mutex<(std::time::Instant, std::time::Instant)>>;
+        let run_step = |statement: i64, window: Window| {
+            std::thread::spawn(move || {
+                let started = std::time::Instant::now();
+                let (row_status, row) = call_host("spectra.api.db.sqlite.step", &[statement]);
+                assert_eq!(row_status, HOST_STATUS_SUCCESS);
+                assert_eq!(row, 1, "aggregate query must produce a row");
+                window.lock().unwrap().0 = started;
+                let finished = std::time::Instant::now();
+                let (done_status, done) = call_host("spectra.api.db.sqlite.step", &[statement]);
+                assert_eq!(done_status, HOST_STATUS_SUCCESS);
+                assert_eq!(done, 2);
+                let mut guard = window.lock().unwrap();
+                guard.1 = finished;
+            })
+        };
+
+        let first: Window = std::sync::Arc::new(Mutex::new((
+            std::time::Instant::now(),
+            std::time::Instant::now(),
+        )));
+        let second: Window = std::sync::Arc::new(Mutex::new((
+            std::time::Instant::now(),
+            std::time::Instant::now(),
+        )));
+        let worker_a = run_step(statements[0], std::sync::Arc::clone(&first));
+        let worker_b = run_step(statements[1], std::sync::Arc::clone(&second));
+        worker_a.join().unwrap();
+        worker_b.join().unwrap();
+
+        let (a_start, a_end) = *first.lock().unwrap();
+        let (b_start, b_end) = *second.lock().unwrap();
+        assert!(
+            a_start < b_end && b_start < a_end,
+            "the two statement steps must overlap in time \
+             (a={:?} b={:?}); serialization on the global store mutex leaked back in",
+            (a_start, a_end),
+            (b_start, b_end)
+        );
+
+        for statement in statements {
+            call_host("spectra.api.db.sqlite.finalize", &[statement]);
+        }
+        for connection in connections {
+            call_host("spectra.api.db.sqlite.close", &[connection]);
+        }
+        for file in files {
+            let _ = std::fs::remove_file(file);
+        }
+        spectra_runtime::ffi::spectra_rt_manual_clear();
+        spectra_runtime::ffi::clear_host_functions();
+    }
+
+    /// Minimal RESP2 server implementing exactly the commands the Redis host
+    /// surface exercises, so the async roundtrip runs against real socket I/O
+    /// without requiring an external Redis daemon.
+    fn spawn_fake_redis(delay_millis: u64) -> u16 {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            while let Ok((stream, _)) = listener.accept() {
+                std::thread::spawn(move || {
+                    let mut writer = match stream.try_clone() {
+                        Ok(writer) => writer,
+                        Err(_) => return,
+                    };
+                    let mut reader = BufReader::new(stream);
+                    let mut store: std::collections::HashMap<Vec<u8>, Vec<u8>> =
+                        std::collections::HashMap::new();
+                    loop {
+                        let mut header = String::new();
+                        if reader.read_line(&mut header).unwrap_or(0) == 0 {
+                            return;
+                        }
+                        let Some(argc) = header.trim().strip_prefix('*').and_then(|n| n.parse().ok()) else {
+                            continue;
+                        };
+                        let mut argv: Vec<Vec<u8>> = Vec::with_capacity(argc);
+                        for _ in 0..argc {
+                            let mut bulk = String::new();
+                            if reader.read_line(&mut bulk).unwrap_or(0) == 0 {
+                                return;
+                            }
+                            let len: usize = match bulk.trim().strip_prefix('$').and_then(|n| n.parse().ok()) {
+                                Some(len) => len,
+                                None => continue,
+                            };
+                            let mut payload = vec![0_u8; len];
+                            if reader.read_exact(&mut payload).is_err() {
+                                return;
+                            }
+                            let mut crlf = [0_u8; 2];
+                            if reader.read_exact(&mut crlf).is_err() {
+                                return;
+                            }
+                            argv.push(payload);
+                        }
+                        if argv.is_empty() {
+                            continue;
+                        }
+                        let command = String::from_utf8_lossy(&argv[0]).to_ascii_uppercase();
+                        if command == "GET" && delay_millis > 0 {
+                            std::thread::sleep(std::time::Duration::from_millis(delay_millis));
+                        }
+                        let reply = match command.as_str() {
+                            "PING" => b"+PONG\r\n".to_vec(),
+                            "SELECT" | "AUTH" | "CLIENT" => b"+OK\r\n".to_vec(),
+                            "SET" => {
+                                store.insert(argv[1].clone(), argv[2].clone());
+                                b"+OK\r\n".to_vec()
+                            }
+                            "GET" => match store.get(&argv[1]) {
+                                Some(value) => {
+                                    let mut frame = format!("${}\r\n", value.len()).into_bytes();
+                                    frame.extend_from_slice(value);
+                                    frame.extend_from_slice(b"\r\n");
+                                    frame
+                                }
+                                None => b"$-1\r\n".to_vec(),
+                            },
+                            "DEL" => {
+                                let removed = argv[1..]
+                                    .iter()
+                                    .filter(|key| store.remove(*key).is_some())
+                                    .count();
+                                format!(":{removed}\r\n").into_bytes()
+                            }
+                            "EXISTS" => {
+                                let present = argv[1..]
+                                    .iter()
+                                    .filter(|key| store.contains_key(*key))
+                                    .count();
+                                format!(":{present}\r\n").into_bytes()
+                            }
+                            "INCR" | "INCRBY" => {
+                                let delta: i64 = argv
+                                    .get(2)
+                                    .map(|raw| String::from_utf8_lossy(raw).parse().unwrap_or(1))
+                                    .unwrap_or(1);
+                                let entry = store
+                                    .entry(argv[1].clone())
+                                    .or_insert_with(|| b"0".to_vec());
+                                let current: i64 =
+                                    String::from_utf8_lossy(entry).parse().unwrap_or(0);
+                                let next = current + delta;
+                                *entry = next.to_string().into_bytes();
+                                format!(":{next}\r\n").into_bytes()
+                            }
+                            "EXPIRE" => {
+                                if store.contains_key(&argv[1]) {
+                                    b":1\r\n".to_vec()
+                                } else {
+                                    b":0\r\n".to_vec()
+                                }
+                            }
+                            _ => b"+OK\r\n".to_vec(),
+                        };
+                        if writer.write_all(&reply).is_err() {
+                            return;
+                        }
+                    }
+                });
+            }
+        });
+        port
+    }
+
+    #[test]
+    fn redis_async_hosts_roundtrip_over_real_socket_and_cancel() {
+        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        spectra_runtime::ffi::clear_host_functions();
+        crate::register();
+
+        let port = spawn_fake_redis(0);
+        let url = crate::alloc_spectra_string(&format!("redis://127.0.0.1:{port}/0"));
+        let (open_status, open_task) = call_host("spectra.api.db.redis.open_async", &[url]);
+        assert_eq!(open_status, HOST_STATUS_SUCCESS);
+        let connection = spectra_runtime::stdlib::block_on_task_value(open_task)
+            .expect("open_async must resolve to a connection handle");
+        assert_ne!(connection, 0);
+
+        // SET -> GET roundtrip through Task<string>.
+        let key = crate::alloc_spectra_string("spectra:async:key");
+        let value = crate::alloc_spectra_string("roundtrip");
+        let (set_status, set_task) = call_host(
+            "spectra.api.db.redis.set_async",
+            &[connection, key, value],
+        );
+        assert_eq!(set_status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            spectra_runtime::stdlib::block_on_task_value(set_task),
+            Ok(1),
+            "set_async must resolve true"
+        );
+        let (get_status, get_task) =
+            call_host("spectra.api.db.redis.get_async", &[connection, key]);
+        assert_eq!(get_status, HOST_STATUS_SUCCESS);
+        let fetched_ptr = spectra_runtime::stdlib::block_on_task_value(get_task)
+            .expect("get_async must resolve");
+        assert_eq!(
+            unsafe { string(fetched_ptr) }.as_deref(),
+            Some("roundtrip"),
+            "get_async must return the stored value"
+        );
+
+        // INCR twice, EXISTS, EXPIRE, DELETE through the task protocol.
+        let counter = crate::alloc_spectra_string("spectra:async:counter");
+        let five = 5_i64;
+        let (_, incr_task) =
+            call_host("spectra.api.db.redis.incr_async", &[connection, counter, five]);
+        assert_eq!(
+            spectra_runtime::stdlib::block_on_task_value(incr_task),
+            Ok(5),
+            "first incr_async applies the increment amount"
+        );
+        let one = 1_i64;
+        let (_, incr_again) =
+            call_host("spectra.api.db.redis.incr_async", &[connection, counter, one]);
+        assert_eq!(spectra_runtime::stdlib::block_on_task_value(incr_again), Ok(6));
+        let (_, exists_task) =
+            call_host("spectra.api.db.redis.exists_async", &[connection, key]);
+        assert_eq!(spectra_runtime::stdlib::block_on_task_value(exists_task), Ok(1));
+        let (_, expire_task) = call_host(
+            "spectra.api.db.redis.expire_async",
+            &[connection, key, 60_i64],
+        );
+        assert_eq!(spectra_runtime::stdlib::block_on_task_value(expire_task), Ok(1));
+        let (_, delete_task) =
+            call_host("spectra.api.db.redis.delete_async", &[connection, key]);
+        assert_eq!(spectra_runtime::stdlib::block_on_task_value(delete_task), Ok(1));
+        let (_, missing_task) =
+            call_host("spectra.api.db.redis.exists_async", &[connection, key]);
+        assert_eq!(
+            spectra_runtime::stdlib::block_on_task_value(missing_task),
+            Ok(0),
+            "deleted key must no longer exist"
+        );
+
+        // Blocking variants stay functional as the documented compat surface.
+        let compat_key = crate::alloc_spectra_string("spectra:blocking:key");
+        let compat_value = crate::alloc_spectra_string("compat");
+        let (blocking_set_status, blocking_set) = call_host(
+            "spectra.api.db.redis.set",
+            &[connection, compat_key, compat_value],
+        );
+        assert_eq!(blocking_set_status, HOST_STATUS_SUCCESS);
+        assert_eq!(blocking_set, 1);
+        let (_, blocking_get) =
+            call_host("spectra.api.db.redis.get", &[connection, compat_key]);
+        assert_eq!(unsafe { string(blocking_get) }.as_deref(), Some("compat"));
+
+        // Per-handle error slot: an invalid handle reports through the driver
+        // alias, not the sqlite global.
+        let (_, ghost_get) =
+            call_host("spectra.api.db.redis.get_async", &[0x7FFF_FFFF, key]);
+        assert_eq!(ghost_get, 0, "invalid handle must fail the call");
+
+        let (close_status, close_task) =
+            call_host("spectra.api.db.redis.close_async", &[connection]);
+        assert_eq!(close_status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            spectra_runtime::stdlib::block_on_task_value(close_task),
+            Ok(1),
+            "close_async must resolve true"
+        );
+
+        // Cancel path: a GET delayed long enough that it cannot finish before
+        // cancellation must report the cancelled terminal status (1).
+        let slow_port = spawn_fake_redis(30_000);
+        let slow_url =
+            crate::alloc_spectra_string(&format!("redis://127.0.0.1:{slow_port}/0"));
+        let (_, slow_open) = call_host("spectra.api.db.redis.open_async", &[slow_url]);
+        let slow_connection = spectra_runtime::stdlib::block_on_task_value(slow_open)
+            .expect("slow fake redis must accept the handshake");
+        let slow_key = crate::alloc_spectra_string("spectra:cancel:key");
+        let (_, slow_get) =
+            call_host("spectra.api.db.redis.get_async", &[slow_connection, slow_key]);
+        assert_ne!(slow_get, 0);
+        assert!(
+            spectra_runtime::stdlib::cancel_task_handle(slow_get),
+            "cancelling a pending redis task must succeed"
+        );
+        assert_eq!(
+            spectra_runtime::stdlib::wait_task_terminal_status(slow_get),
+            Ok(1),
+            "cancelled redis task must report terminal status 1"
+        );
+
         spectra_runtime::ffi::spectra_rt_manual_clear();
         spectra_runtime::ffi::clear_host_functions();
     }

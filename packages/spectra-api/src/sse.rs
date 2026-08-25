@@ -20,9 +20,10 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
-use std::thread::{self, JoinHandle};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::LazyLock;
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, Weak};
+use std::thread;
 use std::time::{Duration, Instant};
 
 const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
@@ -200,6 +201,149 @@ impl SseConfig {
     }
 }
 
+/// Upper bound on how long the shared heartbeat driver parks between sweeps.
+const HEARTBEAT_SWEEP_MAX_PARK: Duration = Duration::from_millis(250);
+
+/// One registered SSE connection slot. Slots hold their connection weakly so
+/// a closed or dropped connection leaves the sweep on its own.
+struct HeartbeatSlot {
+    connection: Weak<SseConnectionInner>,
+    interval: Duration,
+    next: Instant,
+}
+
+/// Shared heartbeat scheduler: a single driver thread sweeps every registered
+/// SSE connection and writes the heartbeat comments itself, replacing the
+/// historical thread-per-connection heartbeat. Registration and removal are
+/// O(1) map operations keyed by slot id.
+///
+/// The global reactor (`spectra_runtime::reactor`) is deliberately not reused
+/// here even though spectra-api depends on spectra-runtime: its readiness
+/// queue is owned by the language scheduler, whose host calls interpret timer
+/// tokens as task timeouts. SSE heartbeats write to sockets directly and must
+/// not inject events into that queue, so this transport keeps its own single
+/// driver thread instead.
+#[derive(Default)]
+struct HeartbeatScheduler {
+    slots: Mutex<HashMap<u64, HeartbeatSlot>>,
+    signal: Condvar,
+    next_id: AtomicU64,
+    driver_started: AtomicBool,
+}
+
+/// Live SSE heartbeat driver threads across the process; observability for
+/// the "one thread regardless of connection count" guarantee.
+static HEARTBEAT_DRIVER_THREADS: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(test)]
+fn heartbeat_driver_threads() -> usize {
+    HEARTBEAT_DRIVER_THREADS.load(Ordering::Acquire)
+}
+
+fn heartbeat_slots(
+    scheduler: &HeartbeatScheduler,
+) -> MutexGuard<'_, HashMap<u64, HeartbeatSlot>> {
+    scheduler
+        .slots
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+impl HeartbeatScheduler {
+    fn global() -> &'static Self {
+        static SCHEDULER: LazyLock<HeartbeatScheduler> =
+            LazyLock::new(HeartbeatScheduler::default);
+        &SCHEDULER
+    }
+
+    /// Register a live connection for periodic heartbeats; returns the O(1)
+    /// removal key that [`Self::unregister`] consumes.
+    fn register(&self, connection: &Arc<SseConnectionInner>, interval: Duration) -> u64 {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        heartbeat_slots(self).insert(
+            id,
+            HeartbeatSlot {
+                connection: Arc::downgrade(connection),
+                interval,
+                next: Instant::now() + interval,
+            },
+        );
+        self.signal.notify_one();
+        self.ensure_driver();
+        id
+    }
+
+    fn unregister(&self, id: u64) {
+        heartbeat_slots(self).remove(&id);
+        self.signal.notify_one();
+    }
+
+    fn ensure_driver(&self) {
+        if self.driver_started.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        HEARTBEAT_DRIVER_THREADS.fetch_add(1, Ordering::AcqRel);
+        let spawned = thread::Builder::new()
+            .name("spectra-api-sse-heartbeats".to_string())
+            .spawn(|| run_heartbeat_scheduler(Self::global()))
+            .is_ok();
+        if !spawned {
+            self.driver_started.store(false, Ordering::Release);
+            HEARTBEAT_DRIVER_THREADS.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+}
+
+/// Body of the single heartbeat-driver thread: prune dead slots, write one
+/// heartbeat per due connection without holding the slot lock across socket
+/// writes, then park until the nearest remaining deadline (bounded by
+/// [`HEARTBEAT_SWEEP_MAX_PARK`]) or until a registration notifies.
+fn run_heartbeat_scheduler(scheduler: &'static HeartbeatScheduler) {
+    loop {
+        let mut due = Vec::new();
+        {
+            let mut slots = heartbeat_slots(scheduler);
+            let now = Instant::now();
+            slots.retain(|id, slot| match slot.connection.upgrade() {
+                None => false,
+                Some(inner) if inner.closed.load(Ordering::Acquire) => false,
+                Some(inner) => {
+                    if slot.next <= now {
+                        due.push((*id, inner));
+                    }
+                    true
+                }
+            });
+        }
+        for (id, connection) in due {
+            let alive = connection.send_heartbeat().is_ok();
+            let mut slots = heartbeat_slots(scheduler);
+            if alive {
+                if let Some(slot) = slots.get_mut(&id) {
+                    slot.next = Instant::now() + slot.interval;
+                }
+            } else {
+                slots.remove(&id);
+            }
+        }
+        let wait = {
+            let slots = heartbeat_slots(scheduler);
+            let now = Instant::now();
+            slots
+                .values()
+                .map(|slot| slot.next.saturating_duration_since(now))
+                .min()
+                .unwrap_or(HEARTBEAT_SWEEP_MAX_PARK)
+                .min(HEARTBEAT_SWEEP_MAX_PARK)
+        };
+        let (guard, _) = scheduler
+            .signal
+            .wait_timeout(heartbeat_slots(scheduler), wait)
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        drop(guard);
+    }
+}
+
 struct SseConnectionInner {
     stream: Mutex<TcpStream>,
     closed: AtomicBool,
@@ -271,8 +415,7 @@ impl SseConnectionInner {
 
 pub struct SseConnection {
     inner: Arc<SseConnectionInner>,
-    heartbeat_stop: Arc<AtomicBool>,
-    heartbeat_thread: Option<JoinHandle<()>>,
+    heartbeat_id: Option<u64>,
 }
 
 impl fmt::Debug for SseConnection {
@@ -286,23 +429,10 @@ impl fmt::Debug for SseConnection {
 
 impl SseConnection {
     fn start(inner: Arc<SseConnectionInner>, heartbeat_interval: Duration) -> Self {
-        let heartbeat_stop = Arc::new(AtomicBool::new(false));
-        let thread_stop = Arc::clone(&heartbeat_stop);
-        let thread_inner = Arc::clone(&inner);
-        let heartbeat_thread = thread::Builder::new()
-            .name("spectra-api-sse-heartbeat".to_string())
-            .spawn(move || {
-                while !wait_for_stop(&thread_stop, heartbeat_interval) {
-                    if thread_inner.send_heartbeat().is_err() {
-                        break;
-                    }
-                }
-            })
-            .ok();
+        let heartbeat_id = HeartbeatScheduler::global().register(&inner, heartbeat_interval);
         Self {
             inner,
-            heartbeat_stop,
-            heartbeat_thread,
+            heartbeat_id: Some(heartbeat_id),
         }
     }
 
@@ -327,7 +457,9 @@ impl SseConnection {
     }
 
     pub fn close(&self) -> Result<(), SseError> {
-        self.heartbeat_stop.store(true, Ordering::Release);
+        if let Some(id) = self.heartbeat_id {
+            HeartbeatScheduler::global().unregister(id);
+        }
         self.inner.close();
         Ok(())
     }
@@ -335,11 +467,10 @@ impl SseConnection {
 
 impl Drop for SseConnection {
     fn drop(&mut self) {
-        self.heartbeat_stop.store(true, Ordering::Release);
-        self.inner.close();
-        if let Some(thread) = self.heartbeat_thread.take() {
-            let _ = thread.join();
+        if let Some(id) = self.heartbeat_id.take() {
+            HeartbeatScheduler::global().unregister(id);
         }
+        self.inner.close();
     }
 }
 
@@ -870,19 +1001,6 @@ fn header_value<'a>(headers: &'a [crate::http::Header], name: &str) -> Option<&'
         .map(|header| header.value.as_str())
 }
 
-fn wait_for_stop(stop: &AtomicBool, duration: Duration) -> bool {
-    let mut remaining = duration;
-    while !remaining.is_zero() {
-        if stop.load(Ordering::Acquire) {
-            return true;
-        }
-        let step = remaining.min(Duration::from_millis(25));
-        thread::sleep(step);
-        remaining = remaining.saturating_sub(step);
-    }
-    stop.load(Ordering::Acquire)
-}
-
 struct SseStore {
     servers: ApiHandleTable<Arc<Mutex<SseServer>>>,
     connections: ApiHandleTable<Arc<Mutex<SseConnection>>>,
@@ -1297,6 +1415,9 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
 
+    /// Serializes tests that observe process-global heartbeat driver state.
+    static HEARTBEAT_TEST_LOCK: Mutex<()> = Mutex::new(());
+
     fn request(last_event_id: Option<&str>) -> String {
         let mut value = String::from(
             "GET /events HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept: text/event-stream\r\n",
@@ -1441,5 +1562,76 @@ mod tests {
             .expect("receive replay connection");
         assert_eq!(connection.last_event_id().as_deref(), Some("2"));
         connection.close().expect("close replay connection");
+    }
+
+    #[test]
+    fn fifty_connections_share_a_single_heartbeat_driver_thread() {
+        let _heartbeat_guard = HEARTBEAT_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        const CONNECTIONS: usize = 50;
+        let baseline_drivers = heartbeat_driver_threads();
+
+        let mut server = SseServer::new();
+        server
+            .set_heartbeat_interval(Duration::from_millis(60))
+            .expect("configure SSE heartbeat");
+        server.listen(0).expect("listen SSE server");
+        let port = server.local_addr().expect("SSE server address").port();
+        let server = Arc::new(Mutex::new(server));
+        let cancellation = Arc::new(AtomicBool::new(false));
+
+        let accept_server = Arc::clone(&server);
+        let accept_cancel = Arc::clone(&cancellation);
+        let (connections_tx, connections_rx) = mpsc::channel();
+        thread::spawn(move || {
+            let mut accepted = Vec::with_capacity(CONNECTIONS);
+            for _ in 0..CONNECTIONS {
+                let connection = accept_server
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .accept(&accept_cancel)
+                    .expect("accept SSE client");
+                accepted.push(connection);
+            }
+            connections_tx
+                .send(accepted)
+                .expect("send SSE connections");
+        });
+
+        let mut clients = Vec::with_capacity(CONNECTIONS);
+        for _ in 0..CONNECTIONS {
+            let mut client =
+                TcpStream::connect(("127.0.0.1", port)).expect("connect SSE client");
+            client
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .expect("SSE client read timeout");
+            client
+                .write_all(request(None).as_bytes())
+                .expect("write SSE request");
+            let response = read_until(&mut client, b"\r\n\r\n");
+            assert!(String::from_utf8_lossy(&response).starts_with("HTTP/1.1 200 OK"));
+            clients.push(client);
+        }
+
+        let connections = connections_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("receive SSE connections");
+        assert_eq!(connections.len(), CONNECTIONS);
+        assert!(
+            heartbeat_driver_threads() <= baseline_drivers + 1,
+            "50 SSE connections must not explode heartbeat thread count"
+        );
+
+        for client in &mut clients {
+            let heartbeat = read_until(client, b": heartbeat");
+            assert!(String::from_utf8_lossy(&heartbeat).contains(": heartbeat"));
+        }
+        assert!(
+            heartbeat_driver_threads() <= baseline_drivers + 1,
+            "heartbeat driver count must stay constant across sweeps"
+        );
+
+        cancellation.store(true, Ordering::Release);
     }
 }

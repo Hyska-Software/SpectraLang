@@ -91,7 +91,7 @@ mod tests {
             assert!(spec.name.starts_with(HOST_PREFIX), "{}", spec.name);
             assert!(names.insert(spec.name), "duplicate {}", spec.name);
         }
-        assert_eq!(HOST_CALLS.len(), 432);
+        assert_eq!(HOST_CALLS.len(), 443);
         let registered_names: HashSet<_> = HOST_CALLS.iter().map(|spec| spec.name).collect();
         for (name, _) in db::POSTGRES_HOST_CALLS {
             assert!(
@@ -327,6 +327,62 @@ mod tests {
             call("spectra.api.server.stats", &[server, 12]),
             (HOST_STATUS_SUCCESS, 0)
         );
+
+        clear_host_functions();
+        spectra_rt_manual_clear();
+    }
+
+    #[test]
+    fn routes_export_openapi_emits_valid_spec_for_registered_routes() {
+        let _guard = test_guard();
+        clear_host_functions();
+        spectra_rt_manual_clear();
+        register();
+
+        let (_, router) = call("spectra.api.routing.router_new", &[]);
+        let get_route = call(
+            "spectra.api.routing.get",
+            &[router, alloc_spectra_string("/users/{id:int}")],
+        );
+        assert_eq!(get_route.0, HOST_STATUS_SUCCESS);
+        assert!(get_route.1 > 0);
+        let post_route = call(
+            "spectra.api.routing.post",
+            &[router, alloc_spectra_string("/users/{id:int}")],
+        );
+        assert_eq!(post_route.0, HOST_STATUS_SUCCESS);
+        assert!(post_route.1 > 0);
+
+        let (status, spec) = call(
+            "spectra.api.routing.routes_export_openapi",
+            &[
+                router,
+                alloc_spectra_string("Users API"),
+                alloc_spectra_string("1.0.0"),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let raw = read_spectra_string(spec).expect("spec string result");
+        let value: serde_json::Value = serde_json::from_str(&raw).expect("spec parses as JSON");
+
+        assert_eq!(value["openapi"], "3.1.0");
+        assert_eq!(value["info"]["title"], "Users API");
+        assert_eq!(value["info"]["version"], "1.0.0");
+        let users = &value["paths"]["/users/{id}"];
+        assert!(
+            users["get"].is_object(),
+            "GET operation present for /users/{{id}}"
+        );
+        assert!(
+            users["post"].is_object(),
+            "POST operation present for /users/{{id}}"
+        );
+        let id_param = &users["get"]["parameters"][0];
+        assert_eq!(id_param["name"], "id");
+        assert_eq!(id_param["in"], "path");
+        assert_eq!(id_param["required"], true);
+        assert_eq!(id_param["schema"]["type"], "integer");
+        assert_eq!(users["get"]["responses"]["200"]["description"], "OK");
 
         clear_host_functions();
         spectra_rt_manual_clear();

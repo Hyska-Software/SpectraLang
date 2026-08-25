@@ -6,7 +6,8 @@ use spectra_db::postgres::{
 use spectra_db::CompiledQuery;
 use spectra_db::redis::{RedisConfig, RedisConnection, RedisError, RedisValue};
 use spectra_runtime::ffi::{
-    HostFunction, SpectraHostCallContext, HOST_STATUS_INVALID_ARGUMENT, HOST_STATUS_SUCCESS,
+    HostFunction, SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
+    HOST_STATUS_SUCCESS,
 };
 use crate::handles::ApiHandleTable;
 use spectra_runtime::handles::HandleKind;
@@ -17,14 +18,94 @@ use std::time::Duration;
 
 const POSTGRES_COPY_OUT_TEXT_LIMIT: usize = 16 * 1024 * 1024;
 
+/// Per-handle last-error storage. Each driver handle owns a slot, and a
+/// statement shares the slot of the connection it was prepared from, so
+/// concurrent drivers never clobber each other's reported errors.
+#[derive(Default)]
+pub(crate) struct LastError {
+    slot: Mutex<Option<(String, String)>>,
+}
+
+impl LastError {
+    fn record<E: DriverError>(&self, error: &E) {
+        if let Ok(mut slot) = self.slot.lock() {
+            *slot = Some((
+                error.driver_code().to_string(),
+                error.driver_message().clone(),
+            ));
+        }
+    }
+    fn record_raw(&self, code: &'static str, message: impl Into<String>) {
+        if let Ok(mut slot) = self.slot.lock() {
+            *slot = Some((code.to_string(), message.into()));
+        }
+    }
+    fn snapshot(&self) -> Option<(String, String)> {
+        self.slot.lock().ok().and_then(|slot| slot.clone())
+    }
+}
+
+trait DriverError {
+    fn driver_code(&self) -> &'static str;
+    fn driver_message(&self) -> &String;
+}
+impl DriverError for spectra_db::sqlite::SqliteError {
+    fn driver_code(&self) -> &'static str {
+        self.code
+    }
+    fn driver_message(&self) -> &String {
+        &self.message
+    }
+}
+impl DriverError for spectra_db::postgres::PostgresError {
+    fn driver_code(&self) -> &'static str {
+        self.code
+    }
+    fn driver_message(&self) -> &String {
+        &self.message
+    }
+}
+impl DriverError for RedisError {
+    fn driver_code(&self) -> &'static str {
+        self.code
+    }
+    fn driver_message(&self) -> &String {
+        &self.message
+    }
+}
+
+/// A stored driver object plus its own error slot. The value mutex is
+/// per-handle: running one statement never holds up unrelated handles.
+pub(crate) struct DriverHandle<T> {
+    pub(crate) value: Mutex<T>,
+    pub(crate) last_error: Arc<LastError>,
+}
+
+impl<T> DriverHandle<T> {
+    fn boxed(value: T) -> Arc<Self> {
+        Arc::new(Self {
+            value: Mutex::new(value),
+            last_error: Arc::new(LastError::default()),
+        })
+    }
+    /// Create a handle that reports errors into an existing slot (a statement
+    /// inheriting its connection's slot).
+    fn boxed_with(value: T, last_error: Arc<LastError>) -> Arc<Self> {
+        Arc::new(Self {
+            value: Mutex::new(value),
+            last_error,
+        })
+    }
+}
+
 struct Store {
-    connections: ApiHandleTable<SqliteConnection>,
-    statements: ApiHandleTable<SqliteStatement>,
-    postgres_connections: ApiHandleTable<PostgresConnection>,
-    postgres_statements: ApiHandleTable<Arc<Mutex<PostgresStatement>>>,
-    postgres_channels: ApiHandleTable<Arc<Mutex<NotificationListener>>>,
+    connections: ApiHandleTable<Arc<DriverHandle<SqliteConnection>>>,
+    statements: ApiHandleTable<Arc<DriverHandle<SqliteStatement>>>,
+    postgres_connections: ApiHandleTable<Arc<DriverHandle<PostgresConnection>>>,
+    postgres_statements: ApiHandleTable<Arc<DriverHandle<PostgresStatement>>>,
+    postgres_channels: ApiHandleTable<Arc<DriverHandle<NotificationListener>>>,
     postgres_notifications: ApiHandleTable<Notification>,
-    redis_connections: ApiHandleTable<RedisConnection>,
+    redis_connections: ApiHandleTable<Arc<DriverHandle<RedisConnection>>>,
     pools: ApiHandleTable<Arc<spectra_db::sqlite::SqlitePool>>,
     pool_leases: HashMap<i64, PoolLease>,
 }
@@ -43,15 +124,6 @@ fn store() -> &'static Mutex<Store> {
             pool_leases: HashMap::new(),
         })
     })
-}
-fn last_error() -> &'static Mutex<Option<(String, String)>> {
-    static ERROR: OnceLock<Mutex<Option<(String, String)>>> = OnceLock::new();
-    ERROR.get_or_init(|| Mutex::new(None))
-}
-fn record_error(error: &spectra_db::sqlite::SqliteError) {
-    if let Ok(mut slot) = last_error().lock() {
-        *slot = Some((error.code.to_string(), error.message.clone()));
-    }
 }
 fn alloc(value: &str) -> i64 {
     unsafe { tracing::alloc_string(value) }
@@ -99,19 +171,25 @@ fn value(result: &mut [i64], value: i64) -> i32 {
 fn bool_result(result: &mut [i64], flag: bool) -> i32 {
     value(result, flag as i64)
 }
-fn fail(result: &mut [i64], error: spectra_db::sqlite::SqliteError) -> i32 {
-    record_error(&error);
+fn fail(result: &mut [i64], _error: spectra_db::sqlite::SqliteError) -> i32 {
     value(result, 0)
 }
-fn fail_postgres(result: &mut [i64], error: spectra_db::postgres::PostgresError) -> i32 {
-    record_postgres_error(&error);
+fn fail_postgres(result: &mut [i64], _error: spectra_db::postgres::PostgresError) -> i32 {
     value(result, 0)
 }
-fn record_postgres_error(error: &spectra_db::postgres::PostgresError) {
-    if let Ok(mut slot) = last_error().lock() {
-        *slot = Some((error.code.to_string(), error.message.clone()));
-    }
+
+fn sqlite_connection_cell(
+    id: i64,
+) -> Result<Arc<DriverHandle<SqliteConnection>>, spectra_db::sqlite::SqliteError> {
+    store()
+        .lock()
+        .map_err(|_| spectra_db::sqlite::SqliteError::new("DB2504_LOCK", "SQLite handle store lock poisoned"))?
+        .connections
+        .get(&id)
+        .cloned()
+        .ok_or_else(spectra_db::sqlite::SqliteError::invalid_handle)
 }
+
 fn finish_span(span: Option<u64>, success: bool) {
     if let Some(id) = span {
         let _ = tracing::span_set_attribute_bool(id, "db.error", !success);
@@ -151,4 +229,3 @@ fn annotate_redis_span(span: Option<u64>, connection: &RedisConnection) {
         let _ = tracing::span_set_attribute_int(id, "db.namespace", config.database as i64);
     }
 }
-

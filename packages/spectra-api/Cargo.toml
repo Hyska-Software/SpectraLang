@@ -16,7 +16,7 @@ mio = { version = "0.8", features = ["os-poll", "net"] }
 ring = "0.17"
 regex = "1.11"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["preserve_order"] }
 spectra-runtime = { path = "../../runtime" }
 spectra-db = { path = "../spectra-db" }
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "sync", "time"] }

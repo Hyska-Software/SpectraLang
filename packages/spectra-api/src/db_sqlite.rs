@@ -219,11 +219,18 @@ pub extern "C" fn sqlite_finalize(ctx: *mut SpectraHostCallContext) -> i32 {
         if a.len() != 1 {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let mut state = store().lock().unwrap();
-        let Some(mut statement) = state.statements.remove(&a[0]) else {
+        let Some(cell) = store().lock().unwrap().statements.remove(&a[0]) else {
             return fail(r, spectra_db::sqlite::SqliteError::invalid_handle());
         };
-        match statement.finalize() {
+        let result = cell
+            .value
+            .lock()
+            .map_err(|_| spectra_db::sqlite::SqliteError::new("DB2504_LOCK", "SQLite statement lock poisoned"))
+            .and_then(|mut statement| statement.finalize());
+        if let Err(error) = &result {
+            cell.last_error.record(error);
+        }
+        match result {
             Ok(()) => bool_result(r, true),
             Err(error) => fail(r, error),
         }
@@ -241,25 +248,23 @@ fn transaction(
         if a.len() != 1 {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let connection = store()
-            .lock()
-            .unwrap()
-            .connections
-            .get(&a[0])
-            .cloned();
-        let Some(connection) = connection else {
-            return fail(r, spectra_db::sqlite::SqliteError::invalid_handle());
+        let cell = match sqlite_connection_cell(a[0]) {
+            Ok(cell) => cell,
+            Err(error) => return fail(r, error),
         };
         let span = operation_span(operation);
-        match op(&connection) {
-            Ok(()) => {
-                finish_span(span, true);
-                bool_result(r, true)
-            }
-            Err(error) => {
-                finish_span(span, false);
-                fail(r, error)
-            }
+        let result = cell
+            .value
+            .lock()
+            .map_err(|_| spectra_db::sqlite::SqliteError::new("DB2504_LOCK", "SQLite connection lock poisoned"))
+            .and_then(|connection| op(&connection));
+        if let Err(error) = &result {
+            cell.last_error.record(error);
+        }
+        finish_span(span, result.is_ok());
+        match result {
+            Ok(()) => bool_result(r, true),
+            Err(error) => fail(r, error),
         }
     }
 }
@@ -274,29 +279,44 @@ pub extern "C" fn sqlite_rollback(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 pub extern "C" fn sqlite_last_error_code(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
-        let Some((_, r)) = args(ctx) else {
+        let Some((a, r)) = args(ctx) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let code = last_error()
-            .lock()
-            .ok()
-            .and_then(|v| v.as_ref().map(|x| x.0.clone()))
+        if a.len() != 1 {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let code = sqlite_last_error_slot(a[0])
+            .and_then(|slot| slot.snapshot())
+            .map(|error| error.0)
             .unwrap_or_default();
         value(r, alloc(&code))
     }
 }
 pub extern "C" fn sqlite_last_error_message(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
-        let Some((_, r)) = args(ctx) else {
+        let Some((a, r)) = args(ctx) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let message = last_error()
-            .lock()
-            .ok()
-            .and_then(|v| v.as_ref().map(|x| x.1.clone()))
+        if a.len() != 1 {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let message = sqlite_last_error_slot(a[0])
+            .and_then(|slot| slot.snapshot())
+            .map(|error| error.1)
             .unwrap_or_default();
         value(r, alloc(&message))
     }
+}
+
+/// Resolve the per-handle error slot for a SQLite connection or statement
+/// handle (statements share their connection's slot).
+fn sqlite_last_error_slot(id: i64) -> Option<Arc<LastError>> {
+    let state = store().lock().ok()?;
+    state
+        .connections
+        .get(&id)
+        .map(|cell| Arc::clone(&cell.last_error))
+        .or_else(|| state.statements.get(&id).map(|cell| Arc::clone(&cell.last_error)))
 }
 
 pub const HOST_CALLS: &[(&str, HostFunction)] = &[

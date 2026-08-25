@@ -883,7 +883,7 @@ fn make_std_api_db_sqlite(prefix: &str) -> ModuleExports {
         ("open", vec![Type::String], connection.clone()),
         ("close", vec![connection.clone()], Type::Bool),
         ("prepare", vec![connection.clone(), Type::String], statement.clone()),
-        ("execute_async", vec![connection.clone(), Type::String], Type::Int),
+        ("execute_async", vec![connection.clone(), Type::String], api_task(Type::Int)),
         ("bind_null", vec![statement.clone(), Type::Int], Type::Bool),
         ("bind_int", vec![statement.clone(), Type::Int, Type::Int], Type::Bool),
         ("bind_float", vec![statement.clone(), Type::Int, Type::Float], Type::Bool),
@@ -900,8 +900,8 @@ fn make_std_api_db_sqlite(prefix: &str) -> ModuleExports {
         ("begin", vec![connection.clone()], Type::Bool),
         ("commit", vec![connection.clone()], Type::Bool),
         ("rollback", vec![connection.clone()], Type::Bool),
-        ("last_error_code", vec![], Type::String),
-        ("last_error_message", vec![], Type::String),
+        ("last_error_code", vec![connection.clone()], Type::String),
+        ("last_error_message", vec![connection.clone()], Type::String),
     ] { exports.functions.insert(name.to_string(), pub_fn(params, return_type)); }
     exports
 }
@@ -949,8 +949,8 @@ fn make_std_api_db_postgres(prefix: &str) -> ModuleExports {
         ("notification_process_id", vec![notification.clone()], Type::Int),
         ("notification_free", vec![notification], Type::Bool),
         ("notification_close", vec![notification_channel], Type::Bool),
-        ("last_error_code", vec![], Type::String),
-        ("last_error_message", vec![], Type::String),
+        ("last_error_code", vec![connection.clone()], Type::String),
+        ("last_error_message", vec![connection.clone()], Type::String),
     ] { exports.functions.insert(name.to_string(), pub_fn(params, return_type)); }
     exports
 }
@@ -961,13 +961,23 @@ fn make_std_api_db_redis(prefix: &str) -> ModuleExports {
     exports.types.insert("RedisConnection".to_string(), public_type(&[]));
     for (name, params, return_type) in [
         ("open", vec![Type::String], connection.clone()),
+        ("open_async", vec![Type::String], api_task(Type::Int)),
         ("close", vec![connection.clone()], Type::Bool),
+        ("close_async", vec![connection.clone()], api_task(Type::Bool)),
         ("get", vec![connection.clone(), Type::String], Type::String),
+        ("get_async", vec![connection.clone(), Type::String], api_task(Type::String)),
         ("set", vec![connection.clone(), Type::String, Type::String], Type::Bool),
+        ("set_async", vec![connection.clone(), Type::String, Type::String], api_task(Type::Bool)),
         ("delete", vec![connection.clone(), Type::String], Type::Bool),
-        ("expire", vec![connection.clone(), Type::String, Type::Int], Type::Bool),
-        ("incr", vec![connection.clone(), Type::String, Type::Int], Type::Int),
+        ("delete_async", vec![connection.clone(), Type::String], api_task(Type::Bool)),
         ("exists", vec![connection.clone(), Type::String], Type::Bool),
+        ("exists_async", vec![connection.clone(), Type::String], api_task(Type::Bool)),
+        ("incr", vec![connection.clone(), Type::String, Type::Int], Type::Int),
+        ("incr_async", vec![connection.clone(), Type::String, Type::Int], api_task(Type::Int)),
+        ("expire", vec![connection.clone(), Type::String, Type::Int], Type::Bool),
+        ("expire_async", vec![connection.clone(), Type::String, Type::Int], api_task(Type::Bool)),
+        ("last_error_code", vec![connection.clone()], Type::String),
+        ("last_error_message", vec![connection.clone()], Type::String),
     ] { exports.functions.insert(name.to_string(), pub_fn(params, return_type)); }
     exports
 }

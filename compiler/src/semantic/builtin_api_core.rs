@@ -664,6 +664,11 @@ fn make_std_api_routing(prefix: &str) -> ModuleExports {
             Type::Int,
         ),
         ("last_conflict", vec![], Type::String),
+        (
+            "routes_export_openapi",
+            vec![router.clone(), Type::String, Type::String],
+            Type::String,
+        ),
     ];
     for name in ["get", "post", "put", "patch", "delete"] {
         functions.push((name, vec![router.clone(), Type::String], route.clone()));

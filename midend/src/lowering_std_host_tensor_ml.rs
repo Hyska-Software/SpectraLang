@@ -356,6 +356,9 @@ fn lookup_std_host_group_tensor_ml(module: &str, function: &str) -> Option<HostF
             // ── std.concurrent ───────────────────────────────────────────
             ("concurrent", "task_spawn") => Some(host_int("spectra.std.concurrent.task_spawn")),
             ("concurrent", "task_join") => Some(host_int("spectra.std.concurrent.task_join")),
+            ("concurrent", "task_spawn_fn") => {
+                Some(host_int("spectra.std.concurrent.task_spawn_fn"))
+            }
             ("concurrent", "task_spawn_batch") => {
                 Some(host_int("spectra.std.concurrent.task_spawn_batch"))
             }

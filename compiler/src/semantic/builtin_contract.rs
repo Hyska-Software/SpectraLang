@@ -561,6 +561,10 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
     ("std.api.routing.put", "func(Router, string) returns Route"),
     ("std.api.routing.patch", "func(Router, string) returns Route"),
     ("std.api.routing.delete", "func(Router, string) returns Route"),
+    (
+        "std.api.routing.routes_export_openapi",
+        "func(Router, string, string) returns string",
+    ),
     ("std.api.query.type_string", "func() returns int"),
     ("std.api.query.type_int", "func() returns int"),
     ("std.api.query.type_bool", "func() returns int"),

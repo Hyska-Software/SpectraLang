@@ -4,8 +4,9 @@ use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
 };
 use spectra_runtime::handles::{HandleId, HandleKind, HandleTable};
-use std::collections::HashMap;
+use serde_json::{json, Map, Value};
 use std::fmt;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
@@ -763,6 +764,163 @@ pub extern "C" fn last_conflict(ctx: *mut SpectraHostCallContext) -> i32 {
     write_result(ctx, alloc_spectra_string(&store.last_conflict))
 }
 
+/// OpenAPI 3.1 schema for a path-parameter constraint. Constraints are the
+/// regex-like patterns understood by the trie (`regex_like_matches`); the
+/// reserved keywords `int`/`float`/`string` map to schema types, numeric
+/// patterns map to `integer`, and anything else passes through honestly as a
+/// string with its `pattern`.
+fn openapi_param_schema(constraint: Option<&str>) -> Value {
+    match constraint {
+        None | Some("") => json!({ "type": "string" }),
+        Some("int") => json!({ "type": "integer" }),
+        Some("float") | Some("number") => json!({ "type": "number" }),
+        Some("string") => json!({ "type": "string" }),
+        Some(pattern) => {
+            let mut schema = Map::new();
+            let is_integer = matches!(pattern, r"\d+" | "[0-9]+");
+            schema.insert(
+                "type".to_string(),
+                Value::String(if is_integer { "integer" } else { "string" }.to_string()),
+            );
+            schema.insert("pattern".to_string(), json!(pattern));
+            Value::Object(schema)
+        }
+    }
+}
+
+fn openapi_path_template(segments: &[RouteSegment]) -> String {
+    let mut template = String::new();
+    for segment in segments {
+        template.push('/');
+        match segment {
+            RouteSegment::Literal(literal) => template.push_str(literal),
+            RouteSegment::Param { name, .. } | RouteSegment::Wildcard { name } => {
+                template.push('{');
+                template.push_str(name);
+                template.push('}');
+            }
+        }
+    }
+    if template.is_empty() {
+        template.push('/');
+    }
+    template
+}
+
+fn openapi_method_name(method: RouteMethod) -> &'static str {
+    match method {
+        RouteMethod::Get => "get",
+        RouteMethod::Head => "head",
+        RouteMethod::Post => "post",
+        RouteMethod::Put => "put",
+        RouteMethod::Patch => "patch",
+        RouteMethod::Delete => "delete",
+        RouteMethod::Options => "options",
+    }
+}
+
+const OPENAPI_METHOD_ORDER: [(RouteMethod, usize); 7] = [
+    (RouteMethod::Get, 0),
+    (RouteMethod::Head, 1),
+    (RouteMethod::Post, 2),
+    (RouteMethod::Put, 3),
+    (RouteMethod::Patch, 4),
+    (RouteMethod::Delete, 5),
+    (RouteMethod::Options, 6),
+];
+
+/// Export a router as a minimal but valid OpenAPI 3.1 JSON document: one path
+/// entry per registered route pattern, one operation per method, typed path
+/// parameters derived from the trie constraints, and a default `200` response.
+/// Handler bodies are not tracked by the trie, so `requestBody` is honestly
+/// omitted.
+pub fn export_openapi(router: &Router, title: &str, version: &str) -> String {
+    // Group routes by their OpenAPI path template; keep deterministic order.
+    let mut grouped: BTreeMap<String, Vec<(&Route, usize)>> = BTreeMap::new();
+    for route in router.routes.values() {
+        let template = openapi_path_template(&route.segments);
+        let order = OPENAPI_METHOD_ORDER
+            .iter()
+            .find(|(method, _)| *method == route.method)
+            .map(|(_, index)| *index)
+            .unwrap_or(usize::MAX);
+        grouped.entry(template).or_default().push((route, order));
+    }
+
+    let mut paths = Map::new();
+    for (template, mut routes) in grouped {
+        routes.sort_by_key(|(_, order)| *order);
+        let mut item = Map::new();
+        for (route, _) in routes {
+            let mut parameters = Vec::new();
+            for segment in &route.segments {
+                let (name, constraint, description) = match segment {
+                    RouteSegment::Param { name, constraint } => (
+                        name,
+                        constraint.as_deref(),
+                        None,
+                    ),
+                    RouteSegment::Wildcard { name } => (
+                        name,
+                        None,
+                        Some("matches the remaining path tail"),
+                    ),
+                    RouteSegment::Literal(_) => continue,
+                };
+                let mut parameter = Map::new();
+                parameter.insert("name".to_string(), json!(name));
+                parameter.insert("in".to_string(), json!("path"));
+                parameter.insert("required".to_string(), json!(true));
+                if let Some(description) = description {
+                    parameter.insert("description".to_string(), json!(description));
+                }
+                parameter.insert("schema".to_string(), openapi_param_schema(constraint));
+                parameters.push(Value::Object(parameter));
+            }
+            item.insert(
+                openapi_method_name(route.method).to_string(),
+                json!({
+                    "parameters": parameters,
+                    "responses": {
+                        "200": { "description": "OK" },
+                    },
+                }),
+            );
+        }
+        paths.insert(template, Value::Object(item));
+    }
+
+    let spec = json!({
+        "openapi": "3.1.0",
+        "info": {
+            "title": title,
+            "version": version,
+        },
+        "paths": Value::Object(paths),
+    });
+    serde_json::to_string(&spec).expect("OpenAPI spec serializes")
+}
+
+pub extern "C" fn routes_export_openapi(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 3) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(title) = read_spectra_string(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(version) = read_spectra_string(args[2]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let store = store().lock().unwrap_or_else(|e| e.into_inner());
+    let Some(router) = store.routers.get(&args[0]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    write_result(
+        ctx,
+        alloc_spectra_string(&export_openapi(router, &title, &version)),
+    )
+}
+
 pub fn benchmark_100k_lookup() -> Result<u128, RouteError> {
     let mut router = Router::default();
     for idx in 0..100_000 {
@@ -893,5 +1051,63 @@ mod tests {
             elapsed < 1_000,
             "100k route lookup took {elapsed}us, expected <1000us"
         );
+    }
+
+    #[test]
+    fn export_openapi_emits_paths_methods_typed_params_and_default_response() {
+        let mut router = Router::default();
+        router
+            .add(RouteMethod::Get, "/users/{id:int}")
+            .expect("get users");
+        router
+            .add(RouteMethod::Post, "/users/{id:int}")
+            .expect("post users");
+        router
+            .add(RouteMethod::Get, r"/orders/{ref:\d+}")
+            .expect("regex constraint");
+        router
+            .add(RouteMethod::Get, "/files/*path")
+            .expect("wildcard");
+
+        let spec = export_openapi(&router, "Demo API", "0.1.0");
+        let value: Value = serde_json::from_str(&spec).expect("spec parses as JSON");
+
+        assert_eq!(value["openapi"], "3.1.0");
+        assert_eq!(value["info"]["title"], "Demo API");
+        assert_eq!(value["info"]["version"], "0.1.0");
+
+        let users = &value["paths"]["/users/{id}"];
+        assert!(users["get"].is_object(), "GET /users/{{id}} exported");
+        assert!(users["post"].is_object(), "POST /users/{{id}} exported");
+        let id_param = &users["get"]["parameters"][0];
+        assert_eq!(id_param["name"], "id");
+        assert_eq!(id_param["in"], "path");
+        assert_eq!(id_param["required"], true);
+        assert_eq!(id_param["schema"]["type"], "integer");
+        assert_eq!(
+            users["get"]["responses"]["200"]["description"],
+            "OK",
+            "default 200 response"
+        );
+
+        // Regex-like numeric constraints from the trie export as integers.
+        let order_param = &value["paths"]["/orders/{ref}"]["get"]["parameters"][0];
+        assert_eq!(order_param["schema"]["type"], "integer");
+        assert_eq!(order_param["schema"]["pattern"], r"\d+");
+
+        // Wildcards become string path parameters covering the tail.
+        let tail_param = &value["paths"]["/files/{path}"]["get"]["parameters"][0];
+        assert_eq!(tail_param["name"], "path");
+        assert_eq!(tail_param["schema"]["type"], "string");
+    }
+
+    #[test]
+    fn export_openapi_is_deterministic_and_empty_router_yields_empty_paths() {
+        let router = Router::default();
+        let first = export_openapi(&router, "A", "1");
+        let second = export_openapi(&router, "A", "1");
+        assert_eq!(first, second);
+        let value: Value = serde_json::from_str(&first).expect("parses");
+        assert_eq!(value["paths"].as_object().map(Map::len), Some(0));
     }
 }

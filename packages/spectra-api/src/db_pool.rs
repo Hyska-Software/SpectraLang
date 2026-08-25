@@ -130,7 +130,7 @@ pub extern "C" fn pool_with_connection(ctx: *mut SpectraHostCallContext) -> i32 
                     }
                 };
                 let mut state = store().lock().unwrap();
-                let conn_raw = state.connections.insert(connection);
+                let conn_raw = state.connections.insert(DriverHandle::boxed(connection));
                 state.pool_leases.insert(
                     conn_raw,
                     PoolLease {
@@ -170,8 +170,13 @@ pub(crate) fn release_lease(conn_raw: i64) -> bool {
 unsafe fn resolve_migration_target(target: i64) -> Result<SqliteConnection, spectra_db::sqlite::SqliteError> {
     {
         let state = store().lock().unwrap_or_else(|error| error.into_inner());
-        if let Some(connection) = state.connections.get(&target) {
-            return Ok(connection.clone());
+        if let Some(cell) = state.connections.get(&target).cloned() {
+            drop(state);
+            let guard = cell
+                .value
+                .lock()
+                .map_err(|_| spectra_db::sqlite::SqliteError::new("DB2504_LOCK", "SQLite connection lock poisoned"))?;
+            return Ok(guard.clone());
         }
     }
     match string(target) {

@@ -2,6 +2,7 @@ use crate::handler::HandlerError;
 use crate::handles::ApiHandleTable;
 use crate::http::{self, Request, Response};
 use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
+use ring::rand::{SecureRandom, SystemRandom};
 use serde_json::json;
 use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
@@ -12,7 +13,7 @@ use std::future::Future;
 use std::io::Write;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -93,11 +94,35 @@ impl MiddlewareContext {
     }
 }
 
-static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+static REQUEST_ID_RNG: LazyLock<SystemRandom> = LazyLock::new(SystemRandom::new);
 
+/// Degraded-mode fallback used only if the OS entropy source fails; see
+/// [`next_request_id`].
+static REQUEST_ID_FALLBACK_SEQ: AtomicU64 = AtomicU64::new(1);
+
+/// Generates an unpredictable request identifier: `req-` followed by 32
+/// lowercase hex digits drawn from the OS CSPRNG
+/// (`ring::rand::SystemRandom`). Consumers treat the id as an opaque
+/// correlation token (log lines and `logging_request_id` pass it through),
+/// so replacing the previous predictable `req-<16-hex counter>` format is
+/// safe. If the entropy source fails — practically only on a broken OS — the
+/// identifier degrades to the old monotonic sequence rather than failing the
+/// request.
 fn next_request_id() -> String {
-    let sequence = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-    format!("req-{sequence:016x}")
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut bytes = [0_u8; 16];
+    let rng: &SystemRandom = &REQUEST_ID_RNG;
+    if rng.fill(&mut bytes).is_err() {
+        let sequence = REQUEST_ID_FALLBACK_SEQ.fetch_add(1, Ordering::Relaxed);
+        return format!("req-{sequence:016x}");
+    }
+    let mut id = String::with_capacity("req-".len() + 2 * bytes.len());
+    id.push_str("req-");
+    for byte in bytes {
+        id.push(HEX[(byte >> 4) as usize] as char);
+        id.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    id
 }
 
 pub trait Middleware: Send + Sync + 'static {
@@ -2121,6 +2146,8 @@ pub extern "C" fn trace_short_circuited(ctx: *mut SpectraHostCallContext) -> i32
 mod tests {
     use super::*;
     use crate::http::{Method, Status};
+    use regex::Regex;
+    use std::collections::HashSet;
     use std::io::Read;
 
     fn request() -> Request {
@@ -2670,5 +2697,17 @@ mod tests {
             .execute_sync(request, response(200))
             .expect("second authenticated request");
         assert_eq!(second.status.code(), 429);
+    }
+
+    #[test]
+    fn request_ids_are_random_unique_and_formatted() {
+        let pattern = Regex::new(r"^req-[0-9a-f]{32}$").expect("valid id regex");
+        let mut ids = HashSet::new();
+        for _ in 0..10_000 {
+            let id = next_request_id();
+            assert!(pattern.is_match(&id), "unexpected id format: {id}");
+            ids.insert(id);
+        }
+        assert_eq!(ids.len(), 10_000, "request ids must be unique");
     }
 }

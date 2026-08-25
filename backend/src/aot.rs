@@ -1,7 +1,24 @@
 // AOT (Ahead-of-Time) code generation using Cranelift ObjectModule.
 // Translates Spectra IR to native object files (.o / .obj) that can be linked
 // with the Spectra runtime static library to produce standalone executables.
-
+//
+// Native debug metadata (line rows, value locations, frame sizes, types) is
+// collected ONLY on this AOT path. The JIT execution path used by
+// `run`/`run --timings` compiles through `cranelift_jit::JITModule`, which
+// never materializes an object container: there are no section symbols, no
+// final function addresses and no post-link layout to anchor records to. All
+// span-derived data this module exports is keyed by machine-code offsets that
+// only exist after object emission, so reusing "the same span collection" in
+// the JIT path would mean fabricating offsets that do not correspond to any
+// executable mapping. Emitting a `.spectra-debug.json` sidecar from such data
+// would violate the project rule that debug records are compiler-proven, not
+// guessed; therefore `run --timings` intentionally reports timings only and
+// native debug sidecars stay exclusive to `build --debug-info=native` AOT
+// artifacts.
+//
+// If a future need requires debug data for JIT runs, the technically honest
+// route is to run the AOT object pipeline alongside JIT execution (double
+// compilation) and emit its sidecar; that cost is not paid speculatively here.
 use cranelift::prelude::*;
 use cranelift_codegen::{ir::ValueLabel, LabelValueLoc};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
@@ -42,6 +59,7 @@ pub struct NativeValueLocationRange {
 }
 
 pub type DebugLocation = (String, usize, NativeValueLocationRange);
+
 /// One collapsed, span-derived source-line row:
 /// `(function name, machine-code offset relative to the function start,
 /// 1-based source line)`. Offsets come from Cranelift's post-allocation
@@ -49,11 +67,17 @@ pub type DebugLocation = (String, usize, NativeValueLocationRange);
 /// `source_span`.
 pub type DebugLineRow = (String, u32, u32);
 
+/// Per-function real stack-frame size captured from Cranelift's finalized
+/// layout: `(function name, total sized-stack-slot bytes)`. Covers explicit
+/// allocas plus register-allocator spill slots.
+pub type DebugFrameSize = (String, u32);
+
 type AotCompileOutput = (
     Vec<u8>,
     Vec<DebugLocation>,
     HostCallBatchStats,
     Vec<DebugLineRow>,
+    Vec<DebugFrameSize>,
 );
 
 /// Options that control AOT code generation.
@@ -106,6 +130,9 @@ pub struct AotCodeGenerator {
     /// mirroring [`Self::debug_locations`]: the offset is compiler-proven by
     /// Cranelift's value-label pass, never guessed.
     debug_line_rows: Vec<DebugLineRow>,
+    /// Real stack-frame sizes captured from the finalized Cranelift layout,
+    /// one entry per defined function in definition order.
+    debug_frame_sizes: Vec<DebugFrameSize>,
 }
 
 impl AotCodeGenerator {
@@ -148,6 +175,7 @@ impl AotCodeGenerator {
 
         Self {
             module,
+            debug_frame_sizes: Vec::new(),
             ctx,
             builder_context: FunctionBuilderContext::new(),
             function_map: HashMap::new(),
@@ -169,7 +197,7 @@ impl AotCodeGenerator {
         ir_module: &IRModule,
         opts: &AotOptions,
     ) -> BackendResult<Vec<u8>> {
-        let (bytes, _, _, _) = self.compile_to_object_with_locations_and_stats(ir_module, opts)?;
+        let (bytes, _, _, _, _) = self.compile_to_object_with_locations_and_stats(ir_module, opts)?;
         Ok(bytes)
     }
 
@@ -178,7 +206,7 @@ impl AotCodeGenerator {
         ir_module: &IRModule,
         opts: &AotOptions,
     ) -> BackendResult<(Vec<u8>, Vec<DebugLocation>)> {
-        let (bytes, locations, _, _) =
+        let (bytes, locations, _, _, _) =
             self.compile_to_object_with_locations_and_stats(ir_module, opts)?;
         Ok((bytes, locations))
     }
@@ -261,6 +289,7 @@ impl AotCodeGenerator {
         // Emit the finished object.
         let debug_locations = self.take_debug_locations();
         let debug_line_rows = self.take_debug_line_rows();
+        let debug_frame_sizes = self.take_debug_frame_sizes();
         let product: ObjectProduct = self.module.finish();
 
         let bytes = product
@@ -271,6 +300,7 @@ impl AotCodeGenerator {
             debug_locations,
             self.hostcall_batch_stats,
             debug_line_rows,
+            debug_frame_sizes,
         ))
     }
 
@@ -309,6 +339,13 @@ impl AotCodeGenerator {
         rows.sort_unstable();
         rows.dedup();
         rows
+    }
+
+    /// Per-function real stack-frame sizes captured from Cranelift's
+    /// finalized layout. One entry per defined function; the byte count
+    /// covers explicit allocas plus register-allocator spill slots.
+    pub fn take_debug_frame_sizes(&mut self) -> Vec<DebugFrameSize> {
+        std::mem::take(&mut self.debug_frame_sizes)
     }
 
     fn declare_function(
@@ -537,6 +574,13 @@ impl AotCodeGenerator {
                     ir_func.name, e
                 ))
             })?;
+        // Cranelift computes the final stack-frame layout during legalization.
+        // After `define_function` the sum of all sized stack slots (explicit
+        // allocas plus spill slots) is authoritative for native debug
+        // consumers; the context is cleared below, so capture it now.
+        let frame_size = self.ctx.func.fixed_stack_size();
+        self.debug_frame_sizes
+            .push((ir_func.name.clone(), frame_size));
         if let Some(compiled) = self.ctx.compiled_code() {
             for local in &ir_func.locals {
                 let Some(value_id) = local.value_id else {
@@ -1055,6 +1099,42 @@ mod tests {
     }
 
     #[test]
+    fn aot_captures_real_frame_size_when_function_has_allocas() {
+        let mut module = IRModule::new("debug_frame_size");
+        let mut func = IRFunction::new("main", vec![], IRType::Void);
+        let entry = func.add_block("entry");
+        let block = func.get_block_mut(entry).unwrap();
+        // Array allocas are never scalar-promoted, so they force real sized
+        // stack slots into the finalized Cranelift layout.
+        block.add_instruction(InstructionKind::Alloca {
+            result: IRValue { id: 1 },
+            ty: IRType::Array { element_type: Box::new(IRType::Int), size: 8 },
+        });
+        block.add_instruction(InstructionKind::Alloca {
+            result: IRValue { id: 2 },
+            ty: IRType::Array { element_type: Box::new(IRType::Float), size: 4 },
+        });
+        block.set_terminator(Terminator::Return { value: None });
+        module.add_function(func);
+
+        let (_bytes, _locations, _stats, _rows, frame_sizes) =
+            AotCodeGenerator::new()
+                .compile_to_object_with_locations_and_stats(
+                    &module,
+                    &AotOptions::default(),
+                )
+                .expect("AOT compilation of alloca function should succeed");
+        let (_, main_frame) = frame_sizes
+            .iter()
+            .find(|(name, _)| name == "main")
+            .expect("compiled module must report a frame size for 'main'");
+        assert!(
+            *main_frame > 0,
+            "function with allocas must report a non-zero frame size"
+        );
+    }
+
+    #[test]
     fn spanned_instructions_map_results_to_source_lines() {
         // IR function with known spans: the lowering records `source_span`
         // per instruction; the line-table collector must map each
@@ -1137,7 +1217,7 @@ mod tests {
         });
         module.add_function(func);
 
-        let (_, _, _, line_rows) = AotCodeGenerator::new()
+        let (_, _, _, line_rows, _) = AotCodeGenerator::new()
             .compile_to_object_with_locations_and_stats(&module, &AotOptions::default())
             .expect("AOT compile should succeed");
         assert!(
@@ -1165,7 +1245,7 @@ mod tests {
         });
         module.add_function(func);
 
-        let (_, _, _, line_rows) = AotCodeGenerator::new()
+        let (_, _, _, line_rows, _) = AotCodeGenerator::new()
             .compile_to_object_with_locations_and_stats(&module, &AotOptions::default())
             .expect("AOT compile should succeed");
         assert!(

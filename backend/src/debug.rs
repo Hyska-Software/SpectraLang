@@ -8,6 +8,35 @@
 
 use crate::aot::{NativeValueLocation, NativeValueLocationRange};
 
+use std::collections::HashMap;
+
+use spectra_midend::ir::{FloatWidth, IntWidth, Type as IRType};
+
+/// CodeView simple (primitive) type indices, from the canonical `cvconst.h`
+/// table. `T_INT4 == 0x74` matches the historical placeholder this module
+/// used before real type mapping existed, so untyped locals keep the exact
+/// representation MSVC tooling already accepted.
+pub const T_VOID: u32 = 0x0003;
+pub const T_CHAR: u32 = 0x0010;
+pub const T_UCHAR: u32 = 0x0020;
+pub const T_BOOL08: u32 = 0x0030;
+pub const T_REAL32: u32 = 0x0040;
+pub const T_REAL64: u32 = 0x0042;
+pub const T_RCHAR: u32 = 0x0070;
+pub const T_WCHAR: u32 = 0x0071;
+pub const T_INT2: u32 = 0x0072;
+pub const T_UINT2: u32 = 0x0073;
+pub const T_INT4: u32 = 0x0074;
+pub const T_UINT4: u32 = 0x0075;
+pub const T_INT8: u32 = 0x0076;
+pub const T_UINT8: u32 = 0x0077;
+
+const LF_POINTER: u16 = 0x1002;
+const LF_STRUCTURE: u16 = 0x1505;
+const CV_IS_FWDREF: u8 = 0x80;
+/// First type index available for `.debug$T` user records; everything below
+/// is reserved for simple types.
+const FIRST_USER_TYPE_INDEX: u32 = 0x1000;
 /// CodeView subsection kinds used by the C13 debug stream.
 const DEBUG_S_SYMBOLS: u32 = 0xF1;
 const DEBUG_S_LINES: u32 = 0xF2;
@@ -37,6 +66,18 @@ pub struct CodeViewFunction {
     /// `local_offsets` remains as a compatibility fallback for callers that
     /// only have the older CFA-only metadata.
     pub local_locations: Vec<Vec<NativeValueLocationRange>>,
+    /// Real stack-frame size in bytes, captured from Cranelift's finalized
+    /// layout (`Function::fixed_stack_size` after legalization covers explicit
+    /// allocas plus spill slots). Zero means the function reserved no sized
+    /// stack slots. Emitted as `cbFrame` in the `S_FRAMEPROC` record.
+    pub frame_size: u32,
+    /// IR type of each entry of `locals`, index-aligned with it. Empty (or a
+    /// shorter vector) means type information was unavailable for the tail
+    /// entries and they fall back to `T_INT4`, exactly like pre-typing output.
+    pub local_types: Vec<IRType>,
+    /// Return type used for the procedure record's type index when present;
+    /// without it the procedure falls back to `T_INT4`.
+    pub return_type: Option<IRType>,
     /// Real source-line rows captured during codegen, sorted by offset:
     /// `(machine-code offset relative to this function's start, 1-based
     /// source line)`. Each row comes from an IR instruction whose lowering
@@ -114,6 +155,176 @@ pub fn codeview_x64_register(hw_enc: u8) -> Option<u16> {
         0x157, // R15
     ];
     REGISTERS.get(hw_enc as usize).copied()
+}
+
+/// Map a primitive IR type to its fixed CodeView simple index, or `None` when
+/// the type requires a `.debug$T` record (pointers, aggregates). The mapping
+/// mirrors `CodeGenerator::ir_type_to_cranelift`: `Int` is 64-bit, `Float` is
+/// 64-bit, and every aggregate is represented by a pointer at the ABI level.
+pub fn codeview_primitive_index(ty: &IRType) -> Option<u32> {
+    let index = match ty {
+        IRType::Int => T_INT8,
+        IRType::ExactInt { signed, width } => match (*signed, *width) {
+            (true, IntWidth::I8) => T_RCHAR,
+            (true, IntWidth::I16) => T_INT2,
+            (true, IntWidth::I32) => T_INT4,
+            // I64, Isize (the platform word is 64-bit on this target).
+            (true, _) => T_INT8,
+            (false, IntWidth::I8) => T_UCHAR,
+            (false, IntWidth::I16) => T_UINT2,
+            (false, IntWidth::I32) => T_UINT4,
+            (false, _) => T_UINT8,
+        },
+        IRType::Float => T_REAL64,
+        IRType::ExactFloat { width } => match width {
+            FloatWidth::F32 => T_REAL32,
+            FloatWidth::F64 => T_REAL64,
+        },
+        IRType::Bool => T_BOOL08,
+        IRType::Char => T_CHAR,
+        IRType::Void | IRType::Unknown => T_VOID,
+        _ => return None,
+    };
+    Some(index)
+}
+
+/// Name of the declaration-only user-defined type emitted for an aggregate.
+/// Real struct/enum names are preserved so a debugger can resolve them
+/// against the runtime's own type names; everything else gets a stable
+/// Spectra-prefixed name.
+pub fn aggregate_udt_name(ty: &IRType) -> String {
+    match ty {
+        IRType::Struct { name, .. } | IRType::Enum { name, .. } => name.clone(),
+        IRType::Generic { name, .. } => format!("{name}"),
+        IRType::String => "spectra_string".to_string(),
+        IRType::Tuple { elements } => format!("spectra_tuple{}", elements.len()),
+        IRType::DynTrait { trait_name, .. } => format!("dyn_{trait_name}"),
+        IRType::Task { .. } => "spectra_task".to_string(),
+        IRType::Range => "spectra_range".to_string(),
+        IRType::Tensor { .. } => "spectra_tensor".to_string(),
+        IRType::Function { .. } => "spectra_function".to_string(),
+        other => format!("spectra_aggregate_{:?}", std::mem::discriminant(other)),
+    }
+}
+
+/// Builder for the `.debug$T` CodeView type stream.
+///
+/// Primitive types use their fixed simple indices and emit no records; every
+/// aggregate interns a minimal forward-reference `LF_STRUCTURE` (carrying its
+/// real name) followed by an `LF_POINTER` to it, which matches how the backend
+/// represents aggregates (as pointers) while keeping full UDT definitions out
+/// of the compiler's scope. Indices are assigned monotonically from 0x1000.
+#[derive(Debug)]
+pub struct CodeViewTypeTable {
+    records: Vec<u8>,
+    next_index: u32,
+    cache: HashMap<String, u32>,
+}
+
+impl Default for CodeViewTypeTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CodeViewTypeTable {
+    pub fn new() -> Self {
+        Self {
+            records: Vec::new(),
+            next_index: FIRST_USER_TYPE_INDEX,
+            cache: HashMap::new(),
+        }
+    }
+
+    /// Resolve the CodeView type index for one IR type, interning aggregate
+    /// records on first use. The result is stable across calls.
+    pub fn index_for(&mut self, ty: &IRType) -> u32 {
+        if let Some(primitive) = codeview_primitive_index(ty) {
+            return primitive;
+        }
+        if let IRType::Generic { representation, .. } = ty {
+            // Generic applications carry their ABI form explicitly in IR;
+            // the debugger sees through to the representation.
+            return self.index_for(representation);
+        }
+        let key = format!("{ty:?}");
+        if let Some(&index) = self.cache.get(&key) {
+            return index;
+        }
+        let index = match ty {
+            IRType::Pointer(inner) => {
+                let pointee = self.index_for(inner);
+                self.push_pointer(pointee)
+            }
+            IRType::Array { element_type, .. } => {
+                // Arrays lower to raw element pointers on this target.
+                let element = self.index_for(element_type);
+                self.push_pointer(element)
+            }
+            other => {
+                let forward = self.push_forward_ref_structure(&aggregate_udt_name(other));
+                self.push_pointer(forward)
+            }
+        };
+        self.cache.insert(key, index);
+        index
+    }
+
+    /// True once at least one user-defined record has been interned; when
+    /// false the whole `.debug$T` section can be omitted because only simple
+    /// indices were referenced.
+    pub fn has_user_types(&self) -> bool {
+        !self.records.is_empty()
+    }
+
+    /// Serialized `.debug$T` contents: version signature then records.
+    pub fn finish(self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.records.len() + 4);
+        push_u32(&mut out, 4); // .debug$T version
+        out.extend_from_slice(&self.records);
+        out
+    }
+
+    fn push_pointer(&mut self, pointee: u32) -> u32 {
+        let index = self.next_index;
+        self.next_index += 1;
+        let mut payload = Vec::with_capacity(10);
+        payload.extend_from_slice(&pointee.to_le_bytes());
+        // Attributes: pointer mode Near64 (11) in bits 6..12; near pointer
+        // kind, no const/volatile qualifiers.
+        payload.extend_from_slice(&0x0000_02C0u32.to_le_bytes());
+        push_type_record(&mut self.records, LF_POINTER, &payload);
+        index
+    }
+
+    fn push_forward_ref_structure(&mut self, name: &str) -> u32 {
+        let index = self.next_index;
+        self.next_index += 1;
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&0u16.to_le_bytes()); // member count
+        payload.push(CV_IS_FWDREF); // properties: forward reference
+        payload.push(0); // padding
+        payload.extend_from_slice(&0u32.to_le_bytes()); // field list
+        payload.extend_from_slice(&0u32.to_le_bytes()); // derivation list
+        payload.extend_from_slice(&0u32.to_le_bytes()); // vshape table
+        payload.extend_from_slice(&0u32.to_le_bytes()); // size unknown
+        payload.extend_from_slice(name.as_bytes());
+        payload.push(0);
+        push_type_record(&mut self.records, LF_STRUCTURE, &payload);
+        index
+    }
+}
+
+/// Append one `.debug$T` leaf record: 16-bit length (excluding the length
+/// field), leaf id, payload, padded to a 4-byte stream boundary.
+fn push_type_record(out: &mut Vec<u8>, leaf: u16, payload: &[u8]) {
+    let length = 2usize.saturating_add(payload.len());
+    push_u16(out, length as u16);
+    push_u16(out, leaf);
+    out.extend_from_slice(payload);
+    while !out.len().is_multiple_of(4) {
+        out.push(0);
+    }
 }
 
 fn push_u16(out: &mut Vec<u8>, value: u16) {
@@ -239,14 +450,21 @@ fn local_location_ranges(
         .collect()
 }
 
-/// Build a C13 `.debug$S` section for a generated COFF object.
-///
 /// Build the symbols subsection for one function.  The COFF object currently
 /// emits one function section at a time, so the linker can relocate the
 /// section-relative procedure address.  The procedure metadata follows the
 /// CodeView C13 record layout, including the frame and local range records
 /// required by MSVC's PDB writer.
-fn function_symbols(function: &CodeViewFunction) -> Vec<u8> {
+///
+/// `proc_type_index` is the resolved CodeView type index for the return type
+/// and `local_type_indices` holds the per-local indices; both come from the
+/// shared [`CodeViewTypeTable`] built by [`codeview_sections`]. Missing entries
+/// fall back to `T_INT4`, the pre-typing placeholder.
+fn function_symbols(
+    function: &CodeViewFunction,
+    proc_type_index: u32,
+    local_type_indices: &[u32],
+) -> Vec<u8> {
     let mut symbols = Vec::new();
     let mut proc = Vec::new();
     push_u32(&mut proc, 0); // parent
@@ -255,7 +473,7 @@ fn function_symbols(function: &CodeViewFunction) -> Vec<u8> {
     push_u32(&mut proc, function.size.max(1));
     push_u32(&mut proc, 0); // debug start
     push_u32(&mut proc, function.size.max(1)); // debug end
-    push_u32(&mut proc, 0x74); // T_INT4; no .debug$T dependency
+    push_u32(&mut proc, proc_type_index);
     push_u32(&mut proc, function.offset); // section-relative offset
     push_u16(&mut proc, function.section);
     proc.push(0xC0); // noinline | optimized debug info
@@ -264,7 +482,9 @@ fn function_symbols(function: &CodeViewFunction) -> Vec<u8> {
     symbol_record(&mut symbols, S_GPROC32, &proc);
 
     let mut frame = Vec::new();
-    push_u32(&mut frame, 0); // frame size (the backend does not reserve locals yet)
+    // cbFrame: real stack-frame size captured from Cranelift's finalized
+    // layout (explicit allocas + spill slots).
+    push_u32(&mut frame, function.frame_size);
     push_u32(&mut frame, 0); // padding size
     push_u32(&mut frame, 0); // padding offset
     push_u32(&mut frame, 0); // reserved
@@ -275,7 +495,11 @@ fn function_symbols(function: &CodeViewFunction) -> Vec<u8> {
 
     for (local_index, local_name) in function.locals.iter().enumerate() {
         let mut local = Vec::new();
-        push_u32(&mut local, 0x74);
+        let type_index = local_type_indices
+            .get(local_index)
+            .copied()
+            .unwrap_or(T_INT4);
+        push_u32(&mut local, type_index);
         push_u16(&mut local, 0);
         local.extend_from_slice(local_name.as_bytes());
         local.push(0);
@@ -329,16 +553,49 @@ pub fn codeview_section(source_file: &str, functions: &[String], source: &str) -
             locals: vec!["debug_value".to_string()],
             local_offsets: vec![None],
             local_locations: vec![Vec::new()],
+            frame_size: 0,
+            local_types: Vec::new(),
+            return_type: None,
             line_rows: Vec::new(),
         })
         .collect::<Vec<_>>();
     codeview_section_with_ranges(source_file, &ranges, source)
 }
 
-pub fn codeview_section_with_ranges(
+
+/// Full native CodeView emission for one object.
+///
+/// Returns the C13 `.debug$S` stream and — when any function carries real
+/// type information — the matching `.debug$T` type stream. The two sections
+/// must be attached to the same COFF object so `S_LOCAL`/`S_GPROC32` type
+/// indices resolve. With no typed locals only `.debug$S` is produced, which
+/// is byte-identical to the historical primitives-only output.
+pub fn codeview_sections(
     source_file: &str,
     functions: &[CodeViewFunction],
     source: &str,
+) -> Vec<(&'static str, Vec<u8>)> {
+    let mut type_table = CodeViewTypeTable::new();
+    for function in functions {
+        if let Some(return_type) = &function.return_type {
+            type_table.index_for(return_type);
+        }
+        for local_type in &function.local_types {
+            type_table.index_for(local_type);
+        }
+    }
+    let mut sections = vec![(".debug$S", codeview_debug_s(source_file, functions, source, &mut type_table))];
+    if type_table.has_user_types() {
+        sections.push((".debug$T", type_table.finish()));
+    }
+    sections
+}
+
+fn codeview_debug_s(
+    source_file: &str,
+    functions: &[CodeViewFunction],
+    source: &str,
+    type_table: &mut CodeViewTypeTable,
 ) -> Vec<u8> {
     // The checksum is the real MD5 of the source text. The source path is
     // always resolvable by the AOT attach step (the CLI reads the file
@@ -364,7 +621,21 @@ pub fn codeview_section_with_ranges(
         objname.extend_from_slice(b"spectralang");
         objname.push(0);
         symbol_record(&mut symbols, S_OBJNAME, &objname);
-        symbols.extend_from_slice(&function_symbols(function));
+        let proc_type_index = function
+            .return_type
+            .as_ref()
+            .map(|ty| type_table.index_for(ty))
+            .unwrap_or(T_INT4);
+        let local_type_indices = (0..function.locals.len())
+            .map(|index| {
+                function
+                    .local_types
+                    .get(index)
+                    .map(|ty| type_table.index_for(ty))
+                    .unwrap_or(T_INT4)
+            })
+            .collect::<Vec<_>>();
+        symbols.extend_from_slice(&function_symbols(function, proc_type_index, &local_type_indices));
         subsection(&mut result, DEBUG_S_SYMBOLS, &symbols);
     }
     for function in functions {
@@ -394,6 +665,20 @@ pub fn codeview_section_with_ranges(
     // the C13 string table. This also makes independent structural auditing
     // possible without consulting the sidecar.
     result
+}
+
+/// Backward-compatible single-section variant of [`codeview_sections`]:
+/// returns only the C13 `.debug$S` stream bytes.
+pub fn codeview_section_with_ranges(
+    source_file: &str,
+    functions: &[CodeViewFunction],
+    source: &str,
+) -> Vec<u8> {
+    codeview_sections(source_file, functions, source)
+        .into_iter()
+        .find(|(name, _)| *name == ".debug$S")
+        .map(|(_, bytes)| bytes)
+        .expect("codeview_sections always emits .debug$S")
 }
 
 /// Read function symbols from a COFF object without relying on a platform
@@ -470,6 +755,9 @@ pub fn coff_function_ranges(object: &[u8]) -> Vec<CodeViewFunction> {
             locals: Vec::new(),
             local_offsets: Vec::new(),
             local_locations: Vec::new(),
+            frame_size: 0,
+            local_types: Vec::new(),
+            return_type: None,
             line_rows: Vec::new(),
         });
     }
@@ -516,6 +804,9 @@ pub fn native_function_ranges(bytes: &[u8]) -> Vec<CodeViewFunction> {
                 locals: Vec::new(),
                 local_offsets: Vec::new(),
                 local_locations: Vec::new(),
+                frame_size: 0,
+                local_types: Vec::new(),
+                return_type: None,
                 line_rows: Vec::new(),
             })
         })
@@ -615,17 +906,183 @@ pub fn append_coff_section(
     Ok(rewritten)
 }
 
-/// Minimal CodeView type stream containing the built-in signed 32-bit type.
-pub fn codeview_type_section() -> Vec<u8> {
-    // Primitive type indices (including T_INT4 = 0x74) do not need a type
-    // stream. Keep this API returning an empty section only for callers that
-    // explicitly request a type stream; the AOT path omits it for primitives.
-    Vec::new()
-}
 
 #[cfg(test)]
 mod tests {
+    use super::{
+        codeview_primitive_index, codeview_sections, CodeViewFunction, CodeViewTypeTable,
+        DEBUG_S_SYMBOLS,
+    };
     use super::codeview_section;
+    use spectra_midend::ir::{FloatWidth, IntWidth, Type};
+
+    fn function_with_types() -> CodeViewFunction {
+        CodeViewFunction {
+            name: "typed".to_string(),
+            offset: 0,
+            size: 32,
+            section: 1,
+            locals: vec!["ratio".to_string(), "label".to_string(), "count".to_string()],
+            local_offsets: vec![Some(-8), Some(-16), None],
+            local_locations: vec![Vec::new(); 3],
+            frame_size: 24,
+            local_types: vec![
+                Type::ExactFloat { width: FloatWidth::F64 },
+                Type::String,
+                Type::ExactInt { signed: true, width: IntWidth::I32 },
+            ],
+            return_type: Some(Type::Int),
+            line_rows: Vec::new(),
+        }
+    }
+
+    /// Walk the C13 stream and return every symbol record as `(kind, payload)`
+    /// across all `DEBUG_S_SYMBOLS` subsections.
+    fn c13_symbol_records(bytes: &[u8]) -> Vec<(u16, Vec<u8>)> {
+        let mut records = Vec::new();
+        let mut cursor = 4usize; // C13 version signature
+        while cursor + 8 <= bytes.len() {
+            let kind = u32::from_le_bytes([
+                bytes[cursor],
+                bytes[cursor + 1],
+                bytes[cursor + 2],
+                bytes[cursor + 3],
+            ]);
+            let length = u32::from_le_bytes([
+                bytes[cursor + 4],
+                bytes[cursor + 5],
+                bytes[cursor + 6],
+                bytes[cursor + 7],
+            ]) as usize;
+            let payload_start = cursor + 8;
+            if payload_start + length <= bytes.len() {
+                let payload = &bytes[payload_start..payload_start + length];
+                if kind == DEBUG_S_SYMBOLS {
+                    let mut inner = 0usize;
+                    while inner + 4 <= payload.len() {
+                        let record_len = u16::from_le_bytes([payload[inner], payload[inner + 1]])
+                            as usize;
+                        // The recorded length excludes the 2-byte length
+                        // field itself.
+                        let total = record_len + 2;
+                        if record_len < 2 || inner + total > payload.len() {
+                            break;
+                        }
+                        let kind = u16::from_le_bytes([payload[inner + 2], payload[inner + 3]]);
+                        records.push((kind, payload[inner + 4..inner + total].to_vec()));
+                        // Symbol records are 4-byte aligned within the stream.
+                        inner = (inner + total).div_ceil(4) * 4;
+                    }
+                }
+            }
+            cursor = payload_start + length;
+            cursor = cursor.div_ceil(4) * 4;
+        }
+        records
+    }
+
+    #[test]
+    fn typed_locals_emit_distinct_codeview_type_indices() {
+        let sections = codeview_sections("fixture.spectra", &[function_with_types()], "fn typed() {}");
+        assert!(
+            sections.iter().any(|(name, _)| *name == ".debug$S"),
+            "C13 symbols stream must always be present"
+        );
+        let type_stream = &sections
+            .iter()
+            .find(|(name, _)| *name == ".debug$T")
+            .expect("typed functions must produce a .debug$T stream")
+            .1;
+        assert!(type_stream.windows(15).any(|w| w == b"spectra_string\0"));
+
+        let records = c13_symbol_records(
+            &sections
+                .iter()
+                .find(|(name, _)| *name == ".debug$S")
+                .map(|(_, bytes)| bytes)
+                .unwrap(),
+        );
+        const S_LOCAL_KIND: u16 = 0x113E;
+        let mut locals = records
+            .iter()
+            .filter(|(kind, _)| *kind == S_LOCAL_KIND)
+            .map(|(_, payload)| {
+                (
+                    String::from_utf8_lossy(&payload[6..])
+                        .trim_end_matches('\0')
+                        .to_string(),
+                    u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]),
+                )
+            })
+            .collect::<Vec<_>>();
+        locals.sort();
+        // float local → T_REAL64; string local → pointer into .debug$T (not a
+        // simple index); i32 local → T_INT4. Three distinct indices, so the
+        // output is no longer "everything is T_INT4".
+        assert_eq!(locals[0], ("count".to_string(), super::T_INT4));
+        assert_eq!(locals[1], ("label".to_string(), 0x1001));
+        assert!(locals[1].1 >= 0x1000);
+        assert_eq!(locals[2], ("ratio".to_string(), super::T_REAL64));
+        let distinct = locals.iter().map(|(_, ti)| *ti).collect::<std::collections::HashSet<_>>();
+        assert!(distinct.len() >= 3);
+    }
+
+    #[test]
+    fn frame_size_is_emitted_in_s_frameproc() {
+        let sections = codeview_sections("fixture.spectra", &[function_with_types()], "fn typed() {}");
+        let records = c13_symbol_records(&sections[0].1);
+        const S_FRAMEPROC: u16 = 0x1012;
+        let frame = records
+            .iter()
+            .find(|(kind, _)| *kind == S_FRAMEPROC)
+            .expect("procedure must carry an S_FRAMEPROC record");
+        let cb_frame =
+            u32::from_le_bytes([frame.1[0], frame.1[1], frame.1[2], frame.1[3]]);
+        assert_eq!(cb_frame, 24);
+    }
+
+    #[test]
+    fn primitive_ir_types_map_to_fixed_codeview_indices() {
+        assert_eq!(codeview_primitive_index(&Type::Int), Some(super::T_INT8));
+        assert_eq!(codeview_primitive_index(&Type::Float), Some(super::T_REAL64));
+        assert_eq!(
+            codeview_primitive_index(&Type::ExactFloat { width: FloatWidth::F32 }),
+            Some(super::T_REAL32)
+        );
+        assert_eq!(
+            codeview_primitive_index(&Type::ExactInt { signed: false, width: IntWidth::Usize }),
+            Some(super::T_UINT8)
+        );
+        assert_eq!(codeview_primitive_index(&Type::Bool), Some(super::T_BOOL08));
+        assert_eq!(codeview_primitive_index(&Type::Char), Some(super::T_CHAR));
+        assert_eq!(codeview_primitive_index(&Type::String), None);
+    }
+
+    #[test]
+    fn type_table_interns_aggregates_once_and_keeps_primitives_simple() {
+        let mut table = CodeViewTypeTable::new();
+        assert_eq!(table.index_for(&Type::Int), super::T_INT8);
+        assert!(!table.has_user_types());
+        let first = table.index_for(&Type::String);
+        let second = table.index_for(&Type::String);
+        assert_eq!(first, second);
+        assert!(first >= 0x1000);
+        assert!(table.has_user_types());
+        let pointer = table.index_for(&Type::Pointer(Box::new(Type::Int)));
+        assert_ne!(pointer, first);
+        let finished = table.finish();
+        assert_eq!(&finished[..4], &4u32.to_le_bytes());
+    }
+
+    #[test]
+    fn untyped_functions_still_emit_without_debug_t() {
+        let mut f = function_with_types();
+        f.local_types.clear();
+        f.return_type = None;
+        let sections = codeview_sections("fixture.spectra", &[f], "fn typed() {}");
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].0, ".debug$S");
+    }
 
     #[test]
     fn emits_non_empty_c13_records_with_function_and_local_names() {

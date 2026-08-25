@@ -66,12 +66,20 @@ impl ASTLowering {
                 }
 
                 if let Some(descriptor) = self.host_function_descriptor_for_call(callee, arguments) {
-                    let callback_registration = matches!(
+                    if descriptor.runtime_name == "spectra.std.concurrent.task_spawn_fn" {
+                        if let Some(closure) = arg_values.first().copied() {
+                            // A worker thread retains and invokes this closure
+                            // after the current function returns, so move its
+                            // manual allocation to the base frame before the
+                            // host call stores the handle.
+                            self.builder
+                                .build_escape_manual_alloc(ir_func, closure);
+                        }
+                    } else if matches!(
                         descriptor.runtime_name,
                         "spectra.api.handler.register_sync_callback"
                             | "spectra.api.handler.register_async_callback"
-                    );
-                    if callback_registration {
+                    ) {
                         if let Some(callback) = arg_values.get(1).copied() {
                             // The server retains this closure after the current
                             // function returns, so move its manual allocation

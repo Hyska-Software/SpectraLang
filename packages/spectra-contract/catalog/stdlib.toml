@@ -946,7 +946,7 @@ fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 path = "std.api.db.postgres.last_error_code"
 kind = "function"
 namespace = "std.api.db.postgres"
-signature = "fn() -> string"
+signature = "fn(PostgresConnection) -> string"
 abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
@@ -960,7 +960,7 @@ fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 path = "std.api.db.postgres.last_error_message"
 kind = "function"
 namespace = "std.api.db.postgres"
-signature = "fn() -> string"
+signature = "fn(PostgresConnection) -> string"
 abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
@@ -1251,6 +1251,20 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.api.db.redis.close_async"
+kind = "function"
+namespace = "std.api.db.redis"
+signature = "fn(RedisConnection) -> Task<bool>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.redis.close_async"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
 path = "std.api.db.redis.delete"
 kind = "function"
 namespace = "std.api.db.redis"
@@ -1259,6 +1273,20 @@ abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.api.db.redis.delete"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.db.redis.delete_async"
+kind = "function"
+namespace = "std.api.db.redis"
+signature = "fn(RedisConnection, string) -> Task<bool>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.redis.delete_async"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
@@ -1279,6 +1307,20 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.api.db.redis.exists_async"
+kind = "function"
+namespace = "std.api.db.redis"
+signature = "fn(RedisConnection, string) -> Task<bool>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.redis.exists_async"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
 path = "std.api.db.redis.expire"
 kind = "function"
 namespace = "std.api.db.redis"
@@ -1287,6 +1329,20 @@ abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.api.db.redis.expire"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.db.redis.expire_async"
+kind = "function"
+namespace = "std.api.db.redis"
+signature = "fn(RedisConnection, string, int) -> Task<bool>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.redis.expire_async"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
@@ -1307,6 +1363,20 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.api.db.redis.get_async"
+kind = "function"
+namespace = "std.api.db.redis"
+signature = "fn(RedisConnection, string) -> Task<string>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.redis.get_async"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
 path = "std.api.db.redis.incr"
 kind = "function"
 namespace = "std.api.db.redis"
@@ -1315,6 +1385,62 @@ abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.api.db.redis.incr"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.db.redis.incr_async"
+kind = "function"
+namespace = "std.api.db.redis"
+signature = "fn(RedisConnection, string, int) -> Task<int>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.redis.incr_async"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.db.redis.last_error_code"
+kind = "function"
+namespace = "std.api.db.redis"
+signature = "fn(RedisConnection) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.redis.last_error_code"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.db.redis.last_error_message"
+kind = "function"
+namespace = "std.api.db.redis"
+signature = "fn(RedisConnection) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.redis.last_error_message"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.db.redis.open_async"
+kind = "function"
+namespace = "std.api.db.redis"
+signature = "fn(string) -> Task<int>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.redis.open_async"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
@@ -1348,6 +1474,21 @@ owner = "web"
 docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
+
+[[entry]]
+path = "std.api.db.redis.set_async"
+kind = "function"
+namespace = "std.api.db.redis"
+signature = "fn(RedisConnection, string, string) -> Task<bool>"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.redis.set_async"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
 [[entry]]
 path = "std.api.db.sqlite"
 kind = "module"
@@ -1361,7 +1502,6 @@ maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
 [[entry]]
 path = "std.api.db.sqlite.SqliteConnection"
 kind = "type"
@@ -1576,7 +1716,7 @@ fixture = "tests/validation/194_sqlite_driver.spectra"
 path = "std.api.db.sqlite.execute_async"
 kind = "function"
 namespace = "std.api.db.sqlite"
-signature = "fn(SqliteConnection, string) -> int"
+signature = "fn(SqliteConnection, string) -> Task<int>"
 abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
@@ -1604,7 +1744,7 @@ fixture = "tests/validation/194_sqlite_driver.spectra"
 path = "std.api.db.sqlite.last_error_code"
 kind = "function"
 namespace = "std.api.db.sqlite"
-signature = "fn() -> string"
+signature = "fn(SqliteConnection) -> string"
 abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
@@ -1618,7 +1758,7 @@ fixture = "tests/validation/194_sqlite_driver.spectra"
 path = "std.api.db.sqlite.last_error_message"
 kind = "function"
 namespace = "std.api.db.sqlite"
-signature = "fn() -> string"
+signature = "fn(SqliteConnection) -> string"
 abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
@@ -5473,6 +5613,20 @@ abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.api.routing.route_match"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/135_api_router_matching.spectra"
+
+[[entry]]
+path = "std.api.routing.routes_export_openapi"
+kind = "function"
+namespace = "std.api.routing"
+signature = "fn(Router, string, string) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.routing.routes_export_openapi"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"

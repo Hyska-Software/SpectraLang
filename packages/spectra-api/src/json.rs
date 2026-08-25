@@ -5,7 +5,6 @@ use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
     HOST_STATUS_SUCCESS,
 };
-use std::collections::BTreeMap;
 use std::sync::{LazyLock, Mutex};
 use std::fmt;
 use std::str::FromStr;
@@ -18,6 +17,16 @@ pub const JSON_KIND_STRING: SpectraHostValue = 4;
 pub const JSON_KIND_ARRAY: SpectraHostValue = 5;
 pub const JSON_KIND_OBJECT: SpectraHostValue = 6;
 
+/// Object keys preserve document insertion order: parsing `{"b":1,"a":2}`
+/// round-trips in the authored order and updating an existing key never moves
+/// its position.
+///
+/// Decision: [`serde_json`] is compiled with its `preserve_order` feature so
+/// the parser keeps document key order (without it, serde's `Map` sorts keys
+/// and the original order is lost before this code ever sees it), while
+/// [`JsonObject`] is a thin Vec-backed insertion-ordered map of our own —
+/// `serde_json::Map` itself only supports `serde_json::Value` payloads, so it
+/// cannot hold [`JsonValue`] directly.
 #[derive(Clone, Debug, PartialEq)]
 pub enum JsonValue {
     Null,
@@ -25,7 +34,70 @@ pub enum JsonValue {
     Number(JsonNumber),
     String(String),
     Array(Vec<JsonValue>),
-    Object(BTreeMap<String, JsonValue>),
+    Object(JsonObject),
+}
+
+/// Insertion-ordered string-keyed map backing [`JsonValue::Object`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct JsonObject {
+    entries: Vec<(String, JsonValue)>,
+}
+
+impl JsonObject {
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    /// Inserts a key/value pair. Inserting a key that already exists replaces
+    /// its value in place and never moves the entry's position.
+    pub fn insert(&mut self, key: String, value: JsonValue) -> Option<JsonValue> {
+        if let Some(slot) = self.entries.iter_mut().find(|(existing, _)| *existing == key) {
+            return Some(std::mem::replace(&mut slot.1, value));
+        }
+        self.entries.push((key, value));
+        None
+    }
+
+    pub fn get(&self, key: &str) -> Option<&JsonValue> {
+        self.entries
+            .iter()
+            .find(|(existing, _)| existing == key)
+            .map(|(_, value)| value)
+    }
+
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.get(key).is_some()
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &JsonValue)> {
+        self.entries
+            .iter()
+            .map(|(key, value)| (key.as_str(), value))
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &str> {
+        self.entries.iter().map(|(key, _)| key.as_str())
+    }
+}
+
+impl FromIterator<(String, JsonValue)> for JsonObject {
+    fn from_iter<I: IntoIterator<Item = (String, JsonValue)>>(iter: I) -> Self {
+        let mut object = JsonObject::new();
+        for (key, value) in iter {
+            object.insert(key, value);
+        }
+        object
+    }
 }
 
 impl JsonValue {
@@ -269,13 +341,11 @@ fn to_serde_value(value: &JsonValue) -> Result<Value, JsonEncodeError> {
             .map(to_serde_value)
             .collect::<Result<Vec<_>, _>>()
             .map(Value::Array),
-        JsonValue::Object(values) => {
-            let mut out = Map::new();
-            for (key, value) in values {
-                out.insert(key.clone(), to_serde_value(value)?);
-            }
-            Ok(Value::Object(out))
-        }
+        JsonValue::Object(values) => values
+            .iter()
+            .map(|(key, value)| Ok((key.to_string(), to_serde_value(value)?)))
+            .collect::<Result<Map<String, _>, JsonEncodeError>>()
+            .map(Value::Object),
     }
 }
 
@@ -569,6 +639,49 @@ mod tests {
         assert_eq!(reparsed, value);
     }
 
+
+    #[test]
+    fn parse_preserves_object_key_insertion_order() {
+        let decoded = parse_json(r#"{"b":1,"a":2}"#).expect("parse");
+        let encoded = encode_json(&decoded).expect("encode");
+        assert_eq!(encoded, r#"{"b":1,"a":2}"#);
+
+        let nested =
+            parse_json(r#"{"z":{"y":1,"x":2},"w":[{"d":1,"c":2}]}"#).expect("parse nested");
+        let JsonValue::Object(root) = &nested else {
+            panic!("expected object");
+        };
+        let keys: Vec<&str> = root.keys().collect();
+        assert_eq!(keys, ["z", "w"], "top-level key order must follow input");
+        let Some(JsonValue::Object(inner)) = root.get("z") else {
+            panic!("expected nested object");
+        };
+        let inner_keys: Vec<&str> = inner.keys().collect();
+        assert_eq!(inner_keys, ["y", "x"], "nested key order must follow input");
+    }
+
+    #[test]
+    fn updating_existing_object_key_preserves_position() {
+        let mut map = JsonObject::new();
+        map.insert(
+            "b".to_string(),
+            JsonValue::Number(JsonNumber::from_i64(1)),
+        );
+        map.insert(
+            "a".to_string(),
+            JsonValue::Number(JsonNumber::from_i64(2)),
+        );
+        map.insert(
+            "b".to_string(),
+            JsonValue::Number(JsonNumber::from_i64(9)),
+        );
+
+        let encoded = encode_json(&JsonValue::Object(map)).expect("encode");
+        assert_eq!(
+            encoded, r#"{"b":9,"a":2}"#,
+            "update must replace the value without moving the key"
+        );
+    }
     #[test]
     fn host_kind_uses_full_parser_not_balanced_braces() {
         assert_eq!(json_kind_of(r#"{"unterminated":["#), JSON_KIND_INVALID);

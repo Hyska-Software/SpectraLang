@@ -8,12 +8,11 @@ use crate::http::{
     HttpVersion, Method, ParseErrorKind, Status,
 };
 use crate::json::{
-    encode_json, json_kind_of, parse_json, JsonNumber, JsonValue, JSON_KIND_ARRAY, JSON_KIND_BOOL,
-    JSON_KIND_NULL, JSON_KIND_NUMBER, JSON_KIND_OBJECT, JSON_KIND_STRING,
+    encode_json, json_kind_of, parse_json, JsonObject, JsonNumber, JsonValue, JSON_KIND_ARRAY,
+    JSON_KIND_BOOL, JSON_KIND_NULL, JSON_KIND_NUMBER, JSON_KIND_OBJECT, JSON_KIND_STRING,
 };
 use crate::routing::{RouteMethod, Router};
 use serde_json::json;
-use std::collections::BTreeMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 pub const SUITE_ID: &str = "spectra.api.conformance.v0";
@@ -515,7 +514,7 @@ fn json_kind_matrix() -> Result<(), String> {
 }
 
 fn json_round_trip_nested_object() -> Result<(), String> {
-    let mut child = BTreeMap::new();
+    let mut child = JsonObject::new();
     child.insert(
         "items".to_string(),
         JsonValue::Array(vec![
@@ -524,7 +523,7 @@ fn json_round_trip_nested_object() -> Result<(), String> {
             JsonValue::Null,
         ]),
     );
-    let mut root = BTreeMap::new();
+    let mut root = JsonObject::new();
     root.insert("name".to_string(), JsonValue::String("Ada".to_string()));
     root.insert("meta".to_string(), JsonValue::Object(child));
     let value = JsonValue::Object(root);

@@ -467,9 +467,19 @@ fn make_std_concurrent() -> ModuleExports {
     let bool_ty = Type::Bool;
     let unit = Type::Unit;
 
+    let fn_int_to_int = Type::Fn {
+        params: vec![Type::Int],
+        return_type: Box::new(Type::Int),
+    };
+
     let functions = [
         ("task_spawn", vec![int.clone()], int.clone()),
         ("task_join", vec![int.clone()], int.clone()),
+        (
+            "task_spawn_fn",
+            vec![fn_int_to_int, int.clone()],
+            int.clone(),
+        ),
         (
             "task_spawn_batch",
             vec![int.clone(), int.clone()],
