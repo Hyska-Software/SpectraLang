@@ -421,15 +421,15 @@ extern "C" fn std_io_print(ctx: *mut SpectraHostCallContext) -> i32 {
             let value = args[i * 2 + 1];
             let ok = match tag {
                 PRINT_TAG_STR => {
-                    // String buffer stores each byte as a separate i64 slot
-                    let ptr = value as *const i64;
+                    // String buffer: packed UTF-8 bytes, NUL-terminated
+                    let ptr = value as *const u8;
                     if ptr.is_null() {
                         write!(stdout, "(null)").is_ok()
                     } else {
                         let mut bytes: Vec<u8> = Vec::new();
                         let mut offset = 0usize;
                         loop {
-                            let b = *ptr.add(offset) as u8;
+                            let b = *ptr.add(offset);
                             if b == 0 {
                                 break;
                             }
@@ -508,15 +508,15 @@ extern "C" fn std_io_eprint(ctx: *mut SpectraHostCallContext) -> i32 {
             let value = args[i * 2 + 1];
             let ok = match tag {
                 PRINT_TAG_STR => {
-                    // String buffer stores each byte as a separate i64 slot
-                    let ptr = value as *const i64;
+                    // String buffer: packed UTF-8 bytes, NUL-terminated
+                    let ptr = value as *const u8;
                     if ptr.is_null() {
                         write!(stderr, "(null)").is_ok()
                     } else {
                         let mut bytes: Vec<u8> = Vec::new();
                         let mut offset = 0usize;
                         loop {
-                            let b = *ptr.add(offset) as u8;
+                            let b = *ptr.add(offset);
                             if b == 0 {
                                 break;
                             }

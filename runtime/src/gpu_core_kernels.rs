@@ -336,6 +336,126 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
     dispatch_one_input(input, input.len(), &shader, [input.len() as u32, 1, 1])
 }
 
+// ===== Parallel tree reduction (two-stage, single-pass pair) =====
+//
+// The previous sum kernel ran one invocation with a serial O(len) loop
+// (workgroup_size(1)). That starved the GPU on every loss reduction.
+// The replacement is a classic two-phase tree reduction:
+//
+//   Stage 1 (`reduce`): workgroup_size(256). Each workgroup folds a
+//   strided tile of the input into per-thread accumulators, does a
+//   log2(256)=8-step shared-memory tree fold, and writes one partial
+//   sum per workgroup.
+//
+//   Stage 2 (`final_reduce`): one 256-wide workgroup grid-strides over
+//   the partials, repeats the shared-memory tree fold, and writes the
+//   final scalar.
+//
+// float atomicAdd is not portable in WGSL, hence the two-phase design.
+// Both stages share one bind group (input, partials, out); dispatching
+// them inside a single compute pass gives the required ordering, so
+// there is exactly one submit and (on the host path) one tiny readback.
+
+const REDUCTION_WORKGROUP_SIZE: u32 = 256;
+/// Input elements processed per stage-1 thread before the tree fold.
+const REDUCTION_ITEMS_PER_THREAD: u32 = 16;
+/// Cap on stage-1 workgroups (and therefore partials). Larger inputs
+/// simply make each thread walk more elements via the grid-stride loop.
+const REDUCTION_MAX_WORKGROUPS: u32 = 4096;
+
+/// Stage-1 workgroup plan: returns `(workgroups, total_threads,
+/// partials)`. `workgroups == partials`; `total_threads` is baked into
+/// the shader's grid-stride step.
+pub fn reduction_plan(len: usize) -> (u32, u32, u32) {
+    debug_assert!(len > 0);
+    let tile = u64::from(REDUCTION_WORKGROUP_SIZE) * u64::from(REDUCTION_ITEMS_PER_THREAD);
+    let mut workgroups = (((len as u64) + tile - 1) / tile) as u32;
+    workgroups = workgroups.clamp(1, REDUCTION_MAX_WORKGROUPS);
+    (
+        workgroups,
+        workgroups * REDUCTION_WORKGROUP_SIZE,
+        workgroups,
+    )
+}
+
+/// WGSL source for the two-entry-point parallel reduction. Shared by
+/// the host-materializing path (`dispatch_tree_reduction` in
+/// gpu_runtime.rs) and the device-buffer path (`sum_device` in
+/// gpu_device_dispatch.rs).
+fn reduction_shader(len: usize, total_threads: u32, partials: u32) -> String {
+    format!(
+        r#"
+@group(0) @binding(0) var<storage, read> input_values: array<f32>;
+@group(0) @binding(1) var<storage, read_write> partials: array<f32>;
+@group(0) @binding(2) var<storage, read_write> out: array<f32>;
+
+var<workgroup> scratch: array<f32, 256>;
+
+@compute @workgroup_size(256)
+fn reduce(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(local_invocation_id) lid: vec3<u32>,
+) {{
+    let count = {len}u;
+    let step = {total_threads}u;
+    var acc = 0.0;
+    var idx = gid.x;
+    while (idx < count) {{
+        acc = acc + input_values[idx];
+        idx = idx + step;
+    }}
+    scratch[lid.x] = acc;
+    workgroupBarrier();
+    var stride = 128u;
+    loop {{
+        if (lid.x < stride) {{
+            scratch[lid.x] = scratch[lid.x] + scratch[lid.x + stride];
+        }}
+        workgroupBarrier();
+        if (stride <= 1u) {{
+            break;
+        }}
+        stride = stride >> 1u;
+    }}
+    if (lid.x == 0u) {{
+        partials[wid.x] = scratch[0];
+    }}
+}}
+
+@compute @workgroup_size(256)
+fn final_reduce(@builtin(local_invocation_id) lid: vec3<u32>) {{
+    let count = {partials}u;
+    var acc = 0.0;
+    var i = lid.x;
+    while (i < count) {{
+        acc = acc + partials[i];
+        i = i + 256u;
+    }}
+    scratch[lid.x] = acc;
+    workgroupBarrier();
+    var stride = 128u;
+    loop {{
+        if (lid.x < stride) {{
+            scratch[lid.x] = scratch[lid.x] + scratch[lid.x + stride];
+        }}
+        workgroupBarrier();
+        if (stride <= 1u) {{
+            break;
+        }}
+        stride = stride >> 1u;
+    }}
+    if (lid.x == 0u) {{
+        out[0] = scratch[0];
+    }}
+}}
+"#,
+        len = len,
+        total_threads = total_threads,
+        partials = partials
+    )
+}
+
 pub fn sum(input: &[f32]) -> Result<f32, GpuError> {
     if input.is_empty() {
         return Err(GpuError::new(
@@ -343,23 +463,9 @@ pub fn sum(input: &[f32]) -> Result<f32, GpuError> {
             "gpu reduction requires at least one element",
         ));
     }
-    let shader = format!(
-        r#"
-@group(0) @binding(0) var<storage, read> input_values: array<f32>;
-@group(0) @binding(1) var<storage, read_write> out: array<f32>;
-
-@compute @workgroup_size(1)
-fn main() {{
-    var acc = 0.0;
-    for (var i = 0u; i < {len}u; i = i + 1u) {{
-        acc = acc + input_values[i];
-    }}
-    out[0] = acc;
-}}
-"#,
-        len = input.len()
-    );
-    dispatch_one_input(input, 1, &shader, [1, 1, 1]).map(|values| values[0])
+    // No GPU adapter -> `dispatch_tree_reduction` errors here and every
+    // caller falls back to its counted CPU path (unchanged behavior).
+    dispatch_tree_reduction(input).map(|values| values[0])
 }
 
 pub fn matmul(

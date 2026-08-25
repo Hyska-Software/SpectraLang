@@ -762,6 +762,9 @@ fn register_ml() {
     register_host_function(ML_ONNX_IMPORT_SUMMARY, std_ml_onnx_import_summary);
     register_host_function(ML_ONNX_VALIDATE, std_ml_onnx_validate);
     register_host_function(ML_ONNX_ROUNDTRIP, std_ml_onnx_roundtrip);
+    register_host_function(ML_ONNX_SESSION_FROM_BYTES, std_ml_onnx_session_from_bytes);
+    register_host_function(ML_ONNX_RUN, std_ml_onnx_run);
+    register_host_function(ML_ONNX_SESSION_FREE, std_ml_onnx_session_free);
     register_host_function(ML_EMBEDDING_LOOKUP, std_ml_embedding_lookup);
     register_host_function(ML_POSITIONAL_ENCODING, std_ml_positional_encoding);
     register_host_function(ML_LAYER_NORM, std_ml_layer_norm);
@@ -843,6 +846,7 @@ fn register_async() {
     register_host_function(ASYNC_TASK_BATCH_CHECKSUM, std_async_task_batch_checksum);
     register_host_function(ASYNC_TASK_POLL, std_async_task_poll);
     register_host_function(ASYNC_TASK_RESULT, std_async_task_result);
+    register_host_function(ASYNC_TASK_WAIT, std_async_task_wait);
     register_host_function(ASYNC_TASK_BLOCK_ON, std_async_task_block_on);
     register_host_function(ASYNC_TASK_JOIN, std_async_task_join);
     register_host_function(ASYNC_TASK_JOIN_STATUS, std_async_task_join_status);

@@ -47,15 +47,14 @@ impl StringBuilder {
     }
 
     fn push_spectra_string(&mut self, str_ptr: i64) {
-        let raw = str_ptr as *const i64;
+        let raw = str_ptr as *const u8;
         if raw.is_null() {
             return;
         }
         let mut offset = 0;
         loop {
-            let slot = unsafe { *raw.add(offset) };
-            // Spectra string: one byte per i64 slot, byte is in the lowest byte.
-            let byte = (slot & 0xFF) as u8;
+            // Spectra string: packed UTF-8 bytes, NUL-terminated.
+            let byte = unsafe { *raw.add(offset) };
             if byte == 0 {
                 break;
             }

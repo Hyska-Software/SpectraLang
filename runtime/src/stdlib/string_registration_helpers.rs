@@ -46,18 +46,19 @@ fn register_convert() {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Read a Spectra string (null-terminated i64 array) from a raw pointer value.
+/// Read a Spectra string (packed UTF-8 bytes with a single-byte NUL
+/// terminator) from a raw pointer value.
 /// Returns `None` if the pointer is null or the bytes are not valid UTF-8.
 unsafe fn read_spectra_string(ptr_val: SpectraHostValue) -> Option<String> {
     if ptr_val == 0 {
         return None;
     }
-    let raw = ptr_val as *const i64;
+    let raw = ptr_val as *const u8;
     let mut bytes: Vec<u8> = Vec::new();
     let mut offset = 0usize;
-    let limit = crate::ffi::string_scan_limit_slots(ptr_val);
+    let limit = crate::ffi::string_scan_limit_bytes(ptr_val);
     while offset < limit {
-        let b = *raw.add(offset) as u8;
+        let b = *raw.add(offset);
         if b == 0 {
             break;
         }
@@ -74,19 +75,18 @@ unsafe fn read_spectra_string(ptr_val: SpectraHostValue) -> Option<String> {
 }
 
 /// Allocate a new Spectra string using the runtime manual allocator.
-/// Each character is stored as one `i64` slot; the array is null-terminated.
+/// The UTF-8 bytes are packed one byte per byte; the buffer is terminated
+/// with a single NUL byte (`len + 1` bytes total).
 /// Returns the pointer cast to `i64`, or `0` on allocation failure.
 unsafe fn alloc_spectra_string(s: &str) -> SpectraHostValue {
     use crate::ffi::spectra_rt_manual_alloc;
     let bytes = s.as_bytes();
-    let total_bytes = (bytes.len() + 1) * std::mem::size_of::<i64>();
-    let raw = spectra_rt_manual_alloc(total_bytes) as *mut i64;
+    let total_bytes = bytes.len() + 1;
+    let raw = spectra_rt_manual_alloc(total_bytes) as *mut u8;
     if raw.is_null() {
         return 0;
     }
-    for (i, &b) in bytes.iter().enumerate() {
-        *raw.add(i) = b as i64;
-    }
+    std::ptr::copy_nonoverlapping(bytes.as_ptr(), raw, bytes.len());
     *raw.add(bytes.len()) = 0; // null terminator
     let pointer = raw as i64;
     register_string_value(pointer, s);
@@ -108,22 +108,20 @@ unsafe fn alloc_tagged_payload(tag: SpectraHostValue, payload: SpectraHostValue)
     raw as SpectraHostValue
 }
 
-/// Fast-path helper for `str.len(s)`.
-///
 /// Mirrors `std_string_len` but skips the generic host-call dispatch AND the
 /// unnecessary `String` allocation in `read_spectra_string`. Walks the
-/// null-terminated `i64` array directly to count bytes.
+/// NUL-terminated byte buffer directly to count bytes.
 ///
 /// Returns the string length (>0) or `0` for an invalid handle.
 pub fn string_len_fast(s: SpectraHostValue) -> SpectraHostValue {
     if s == 0 {
         return 0;
     }
-    let raw = s as *const i64;
-    let limit = crate::ffi::string_scan_limit_slots(s);
+    let raw = s as *const u8;
+    let limit = crate::ffi::string_scan_limit_bytes(s);
     let mut len: usize = 0;
     unsafe {
-        while len < limit && (*raw.add(len) as u8) != 0 {
+        while len < limit && *raw.add(len) != 0 {
             len += 1;
         }
     }
@@ -134,7 +132,7 @@ pub fn string_len_fast(s: SpectraHostValue) -> SpectraHostValue {
 ///
 /// Mirrors `std_string_char_at` but skips the generic host-call dispatch AND
 /// the unnecessary `String` allocation in `read_spectra_string`. Reads the
-/// byte at the given index directly from the null-terminated `i64` array.
+/// byte at the given index directly from the NUL-terminated byte buffer.
 ///
 /// Returns the byte value (0-255) on success or `-1` for an out-of-bounds
 /// access (null handle, negative index, or index past the null terminator).
@@ -143,17 +141,18 @@ pub fn string_char_at_fast(s: SpectraHostValue, index: SpectraHostValue) -> Spec
         return -1;
     }
     let idx = index as usize;
-    let raw = s as *const i64;
+    let raw = s as *const u8;
+
     unsafe {
-        let limit = crate::ffi::string_scan_limit_slots(s);
+        let limit = crate::ffi::string_scan_limit_bytes(s);
         let mut len: usize = 0;
-        while len < limit && (*raw.add(len) as u8) != 0 {
+        while len < limit && *raw.add(len) != 0 {
             len += 1;
         }
         if idx >= len {
             return -1;
         }
-        (*raw.add(idx) as u8) as SpectraHostValue
+        *raw.add(idx) as SpectraHostValue
     }
 }
 

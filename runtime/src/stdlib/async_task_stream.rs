@@ -266,10 +266,21 @@ pub fn task_result_value(task_id: SpectraHostValue) -> Result<SpectraHostValue, 
     Ok(task.value)
 }
 
-/// Blocks a non-event-loop caller until a task completes. The HTTP server
-/// uses `poll_task_once` instead; this helper only preserves the synchronous
-/// `dispatch_async` compatibility surface.
-pub fn block_on_task_value(task_id: SpectraHostValue) -> Result<SpectraHostValue, i32> {
+/// Upper bound for one reactor park while waiting on a pending task.
+///
+/// Completion, failure, and cancellation all enqueue a reactor `TaskWake`
+/// event (`complete_task` / `fail_task` / `cancel_task`), so the park is
+/// normally interrupted immediately by the OS multiplexer waker or the
+/// fallback condvar. The bound exists only as a safety net for events
+/// consumed by another waiter thread and to keep driving IO/timer
+/// readiness that only this thread can observe. This replaces the
+/// historical fixed 10 ms spin: an idle waiter now blocks inside the
+/// reactor instead of waking one hundred times per second.
+const TASK_WAIT_PARK: Duration = Duration::from_millis(50);
+
+/// Terminal join-status codes, mirroring `async_task_join_status`:
+/// 0 = completed with a value, 1 = cancelled, 2 = failed.
+pub fn wait_task_terminal_status(task_id: SpectraHostValue) -> Result<SpectraHostValue, i32> {
     loop {
         {
             let mut registry = lock_async_task_registry()?;
@@ -278,19 +289,38 @@ pub fn block_on_task_value(task_id: SpectraHostValue) -> Result<SpectraHostValue
             let Some(task) = registry.tasks.get(task_id) else {
                 return Err(HOST_STATUS_NOT_FOUND);
             };
-            if task.cancelled || task.failed {
-                return Err(HOST_STATUS_INVALID_ARGUMENT);
-            }
-            if task.completed {
-                return Ok(task.value);
+            match async_task_join_status(task) {
+                status @ (0 | 1 | 2) => return Ok(status),
+                _ => {}
             }
         }
 
-        if let Some(event) = reactor::global().poll(Some(Duration::from_millis(10))) {
+        // True park (no CPU spin): blocks inside the reactor until a task
+        // wake, IO readiness, timer, or the safety-net bound releases it.
+        if let Some(event) = reactor::global().poll(Some(TASK_WAIT_PARK)) {
             let mut registry = lock_async_task_registry()?;
             registry.process_reactor_event(event);
         }
     }
+}
+
+/// Blocks a non-event-loop caller until a task completes. The HTTP server
+/// uses `poll_task_once` instead; this helper only preserves the synchronous
+/// `dispatch_async` compatibility surface.
+pub fn block_on_task_value(task_id: SpectraHostValue) -> Result<SpectraHostValue, i32> {
+    if wait_task_terminal_status(task_id)? != 0 {
+        return Err(HOST_STATUS_INVALID_ARGUMENT);
+    }
+    let mut registry = lock_async_task_registry()?;
+    registry.process_due_timeouts();
+    registry.drive_pending_io_for_task(task_id);
+    let Some(task) = registry.tasks.get(task_id) else {
+        return Err(HOST_STATUS_NOT_FOUND);
+    };
+    if task.cancelled || task.failed || !task.completed {
+        return Err(HOST_STATUS_INVALID_ARGUMENT);
+    }
+    Ok(task.value)
 }
 
 /// Cancels a task owned by an event-driven service while it is removing the
@@ -329,34 +359,38 @@ extern "C" fn std_async_task_block_on(ctx: *mut SpectraHostCallContext) -> i32 {
         Ok(parts) => parts,
         Err(status) => return status,
     };
-    loop {
-        {
-            let mut registry = match lock_async_task_registry() {
-                Ok(registry) => registry,
-                Err(status) => return status,
-            };
-            registry.process_due_timeouts();
-            registry.drive_pending_io_for_task(args[0]);
-            let Some(task) = registry.tasks.get(args[0]) else {
-                return HOST_STATUS_NOT_FOUND;
-            };
-            if task.cancelled || task.failed {
-                return HOST_STATUS_INVALID_ARGUMENT;
-            }
-            if task.completed {
-                results[0] = task.value;
-                return HOST_STATUS_SUCCESS;
-            }
-        }
-
-        if let Some(event) = reactor::global().poll(Some(Duration::from_millis(10))) {
-            let mut registry = match lock_async_task_registry() {
-                Ok(registry) => registry,
-                Err(status) => return status,
-            };
-            registry.process_reactor_event(event);
-        }
+    // Parks inside the reactor via `wait_task_terminal_status` instead of
+    // spinning; see `TASK_WAIT_PARK` for the wakeup contract.
+    match wait_task_terminal_status(args[0]) {
+        Ok(0) => {}
+        Ok(_) => return HOST_STATUS_INVALID_ARGUMENT,
+        Err(status) => return status,
     }
+    let mut registry = match lock_async_task_registry() {
+        Ok(registry) => registry,
+        Err(status) => return status,
+    };
+    let Some(task) = registry.tasks.get(args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    results[0] = task.value;
+    HOST_STATUS_SUCCESS
+}
+
+/// Blocks the caller until the task reaches a terminal state and reports
+/// which one: 0 = completed with a value, 1 = cancelled, 2 = failed.
+/// This is the efficient readiness wait used by the lowered `await`
+/// expression (`spectra.async.task.wait`).
+extern "C" fn std_async_task_wait(ctx: *mut SpectraHostCallContext) -> i32 {
+    let (args, results) = match host_call_args(ctx, 1) {
+        Ok(parts) => parts,
+        Err(status) => return status,
+    };
+    results[0] = match wait_task_terminal_status(args[0]) {
+        Ok(status) => status,
+        Err(status) => return status,
+    };
+    HOST_STATUS_SUCCESS
 }
 
 fn async_task_join_status(task: &AsyncTask) -> SpectraHostValue {

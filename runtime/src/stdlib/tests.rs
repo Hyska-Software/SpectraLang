@@ -3129,6 +3129,98 @@
         assert!(bytes <= crate::gpu::MAX_FREE_PER_BUCKET as i64 * 16 * 4 * 2);
     }
 
+    /// Parallel two-stage sum reduction via device dispatch: 100k
+    /// deterministic pseudo-random f32 values summed on the GPU must
+    /// match the CPU reference within tolerance. Self-skips when no
+    /// WGPU adapter is available (repo default for gated tests).
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn tensor_runtime_gpu_parallel_sum_device_dispatch_matches_cpu() {
+        use crate::gpu::{
+            DeviceArena, PoolDevice, PoolDType, readback_scalar_device, sum_device,
+            with_device_queue,
+        };
+
+        if !crate::gpu::is_available() {
+            return;
+        }
+
+        // Deterministic xorshift-style LCG so failures reproduce exactly.
+        let n = 100_000usize;
+        let mut state: u32 = 0x1234_5678;
+        let data: Vec<f32> = (0..n)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                ((state >> 8) as f32 / 16_777_216.0) - 0.5
+            })
+            .collect();
+        let cpu_reference: f64 = data.iter().map(|&v| f64::from(v)).sum();
+
+        let gpu_sum = with_device_queue(|device, queue| -> Result<f32, crate::gpu::GpuError> {
+            let mut arena = DeviceArena::new();
+            let input_buf = arena.acquire(PoolDevice::Wgpu, PoolDType::Float, n, device);
+            queue.write_buffer(&input_buf.buffer, 0, bytemuck::cast_slice(&data));
+            let out_buf = arena.acquire(PoolDevice::Wgpu, PoolDType::Float, 1, device);
+            sum_device(&input_buf, &out_buf, device, queue)?;
+            readback_scalar_device(&out_buf, device, queue)
+        })
+        .expect("device queue must be available")
+        .expect("device sum dispatch must succeed when an adapter is present");
+
+        let abs_diff = (f64::from(gpu_sum) - cpu_reference).abs();
+        let tolerance = 1e-4 * cpu_reference.abs().max(1.0);
+        assert!(
+            abs_diff <= tolerance,
+            "gpu parallel sum {gpu_sum} vs cpu reference {cpu_reference} (diff {abs_diff})"
+        );
+    }
+
+    /// Boundary sizes for the reduction plan: single element, exact
+    /// tile edges around the 256-wide tree fold and the grid-stride
+    /// step. All must match the CPU reference.
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn tensor_runtime_gpu_parallel_sum_boundary_sizes_match_cpu() {
+        use crate::gpu::{
+            DeviceArena, PoolDevice, PoolDType, readback_scalar_device, reduction_plan,
+            sum_device, with_device_queue,
+        };
+
+        if !crate::gpu::is_available() {
+            return;
+        }
+
+        let sizes = [1usize, 2, 255, 256, 257, 4095, 4096, 4097, 65537];
+        let results = with_device_queue(|device, queue| -> Result<Vec<(usize, f64, f32)>, crate::gpu::GpuError> {
+            let mut arena = DeviceArena::new();
+            let mut out = Vec::new();
+            for &n in &sizes {
+                let data: Vec<f32> = (0..n).map(|i| ((i % 97) as f32) - 48.0).collect();
+                let cpu_reference: f64 = data.iter().map(|&v| f64::from(v)).sum();
+                let input_buf = arena.acquire(PoolDevice::Wgpu, PoolDType::Float, n, device);
+                queue.write_buffer(&input_buf.buffer, 0, bytemuck::cast_slice(&data));
+                let out_buf = arena.acquire(PoolDevice::Wgpu, PoolDType::Float, 1, device);
+                sum_device(&input_buf, &out_buf, device, queue)?;
+                let gpu_sum = readback_scalar_device(&out_buf, device, queue)?;
+                out.push((n, cpu_reference, gpu_sum));
+            }
+            Ok(out)
+        })
+        .expect("device queue must be available")
+        .expect("boundary sum dispatches must succeed");
+
+        assert_eq!(results.len(), sizes.len());
+        for (n, cpu_reference, gpu_sum) in results {
+            let (_, _, partials) = reduction_plan(n);
+            assert!(partials >= 1 && partials <= 4096, "plan for {n}: {partials}");
+            let abs_diff = (f64::from(gpu_sum) - cpu_reference).abs();
+            assert!(
+                abs_diff <= 1e-4 * cpu_reference.abs().max(1.0),
+                "n={n} gpu {gpu_sum} vs cpu {cpu_reference} (diff {abs_diff})"
+            );
+        }
+    }
+
     #[cfg(feature = "gpu")]
     #[test]
     fn tensor_runtime_r3052_full_resident_backward_accumulates_on_device() {
@@ -3678,6 +3770,70 @@
         assert_eq!(
             call_host(ASYNC_TASK_BLOCK_ON, &[task]),
             (HOST_STATUS_SUCCESS, 91)
+        );
+    }
+
+    #[test]
+    fn async_task_wait_reports_ready_and_cancelled_without_spinning() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        assert_eq!(call_host(ASYNC_TASK_RESET, &[]).0, HOST_STATUS_SUCCESS);
+
+        // Already-ready task: wait returns the completed status immediately.
+        let (status, ready_task) = call_host(ASYNC_TASK_READY, &[42]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(ASYNC_TASK_WAIT, &[ready_task]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+
+        // Cancelled task: terminal status 1, no hang.
+        let (status, cancelled_task) = call_host(ASYNC_TASK_READY, &[99]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(call_host(ASYNC_TASK_CANCEL, &[cancelled_task]).0, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(ASYNC_TASK_WAIT, &[cancelled_task]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        // Unknown handle surfaces as NOT_FOUND.
+        assert_eq!(
+            call_host(ASYNC_TASK_WAIT, &[999_999]).0,
+            HOST_STATUS_NOT_FOUND
+        );
+    }
+
+    #[test]
+    fn async_task_wait_blocks_until_background_task_completes() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        assert_eq!(call_host(ASYNC_TASK_RESET, &[]).0, HOST_STATUS_SUCCESS);
+        let task = spawn_background_task(|| {
+            std::thread::sleep(Duration::from_millis(60));
+            Ok(-7)
+        })
+        .expect("worker task should be allocated");
+
+        assert_eq!(
+            call_host(ASYNC_TASK_POLL, &[task]),
+            (HOST_STATUS_SUCCESS, 0),
+            "task must still be pending right after spawn"
+        );
+        let started = StdInstant::now();
+        assert_eq!(
+            call_host(ASYNC_TASK_WAIT, &[task]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= Duration::from_millis(50),
+            "wait must block until the worker finishes, elapsed {elapsed:?}"
+        );
+        assert_eq!(
+            call_host(ASYNC_TASK_RESULT, &[task]),
+            (HOST_STATUS_SUCCESS, -7)
         );
     }
 
@@ -4876,6 +5032,35 @@
     }
 
     #[test]
+    fn alloc_read_roundtrip_preserves_packed_multibyte_utf8() {
+        let _lock = test_guard();
+        crate::ffi::spectra_rt_manual_clear();
+
+        // Packed representation: `alloc_spectra_string` stores exactly
+        // `bytes.len() + 1` bytes (UTF-8 payload + NUL). The raw buffer must
+        // contain the exact UTF-8 bytes, and `read_spectra_string` must
+        // reconstruct the original string from them.
+        for s in ["á", "日", "🎉", "héllo wörld 日本語 🎉"] {
+            let ptr = unsafe { alloc_spectra_string(s) };
+            assert_ne!(ptr, 0);
+
+            let raw = ptr as *const u8;
+            let expected = s.as_bytes();
+            unsafe {
+                for (i, &b) in expected.iter().enumerate() {
+                    assert_eq!(*raw.add(i), b, "{s} byte {i}");
+                }
+                assert_eq!(*raw.add(expected.len()), 0, "{s} terminator");
+            }
+
+            let read_back = unsafe { read_spectra_string(ptr) }.expect("valid utf-8");
+            assert_eq!(read_back, s);
+        }
+
+        crate::ffi::spectra_rt_manual_clear();
+    }
+
+    #[test]
     fn math_abs_of_i64_min_reports_overflow_instead_of_wrapping() {
         let _lock = test_guard();
         clear_host_functions();
@@ -4937,4 +5122,207 @@
         let (status, value) = call_host(RAND_INT, &[i64::MIN, i64::MAX]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
         assert!(value >= i64::MIN && value < i64::MAX);
+    }
+
+    /// Manual reference for the exported `linear` template:
+    /// output[j] = x0 * W[0][j] + x1 * W[1][j] + bias[j], where W and bias
+    /// come from the same deterministic initializer stream as the export.
+    #[cfg(feature = "onnx")]
+    fn ml_onnx_linear_reference(x0: f64, x1: f64) -> Vec<f64> {
+        let weights = ml_onnx_deterministic_values(ml_onnx_seed("weight"), 6);
+        let bias = ml_onnx_deterministic_values(ml_onnx_seed("bias"), 3);
+        (0..3)
+            .map(|j| x0 * weights[j] as f64 + x1 * weights[3 + j] as f64 + bias[j] as f64)
+            .collect()
+    }
+
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn ml_onnx_exported_linear_weights_run_matches_manual_computation() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+
+        let dir = temp_test_dir("onnx_inference");
+        std::fs::create_dir_all(&dir).expect("create temp onnx dir");
+        let path = dir.join("linear.onnx");
+
+        // Export the template with real initializers baked in.
+        let (status, exported_ptr) = call_host(
+            ML_ONNX_EXPORT,
+            &[
+                test_string(path.to_string_lossy().as_ref()),
+                test_string("linear"),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let exported = unsafe { read_spectra_string(exported_ptr) }.expect("export path");
+
+        // Commit a real onnxruntime session from the exported bytes.
+        let (status, session) = call_host(
+            ML_ONNX_SESSION_FROM_BYTES,
+            &[test_string(&exported)],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!(session > 0, "session handle must be positive");
+
+        // Feed a [1,2] input tensor through the graph.
+        let input = tensor_alloc(
+            TensorDType::Float,
+            vec![1, 2],
+            f64_values_to_host(&[0.75, -1.25]),
+        )
+        .expect("alloc input tensor") as SpectraHostValue;
+        let (status, output) = call_host(
+            ML_ONNX_RUN,
+            &[session, input, test_string("output")],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!(output > 0, "output tensor handle must be positive");
+
+        let (_, values, _) = ml_tensor_float_data(output as usize).expect("output tensor data");
+        let expected = ml_onnx_linear_reference(0.75, -1.25);
+        assert_eq!(values.len(), 3);
+        for (actual, want) in values.iter().zip(expected.iter()) {
+            assert!(
+                (actual - want).abs() < 1e-4,
+                "onnx inference {actual} vs manual {want}"
+            );
+        }
+
+        // Unknown output names and stale session handles fail cleanly.
+        assert_eq!(
+            call_host(ML_ONNX_RUN, &[session, input, test_string("nope")]).0,
+            HOST_STATUS_NOT_FOUND
+        );
+        assert_eq!(
+            call_host(ML_ONNX_RUN, &[session + 9_999, input, test_string("output")]).0,
+            HOST_STATUS_NOT_FOUND
+        );
+
+        assert_eq!(
+            call_host(ML_ONNX_SESSION_FREE, &[session]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        assert_eq!(
+            call_host(ML_ONNX_RUN, &[session, input, test_string("output")]).0,
+            HOST_STATUS_NOT_FOUND
+        );
+
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn ml_onnx_roundtrip_summary_reflects_real_session_metadata() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        let dir = temp_test_dir("onnx_metadata");
+        std::fs::create_dir_all(&dir).expect("create temp onnx dir");
+        let path = dir.join("linear.onnx");
+        let (status, exported_ptr) = call_host(
+            ML_ONNX_EXPORT,
+            &[
+                test_string(path.to_string_lossy().as_ref()),
+                test_string("linear"),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let exported = unsafe { read_spectra_string(exported_ptr) }.expect("export path");
+
+        // Summary metadata comes from a committed onnxruntime session.
+        let (status, summary_ptr) =
+            call_host(ML_ONNX_IMPORT_SUMMARY, &[test_string(&exported)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let summary = unsafe { read_spectra_string(summary_ptr) }.expect("summary");
+        assert!(summary.contains("\"metadata\":\"onnxruntime-session\""), "{summary}");
+        // Real inventory: only `input` is a graph input; weight/bias are
+        // initializers with their true shapes from ORT itself.
+        assert!(
+            summary.contains("\"input_details\":[{\"name\":\"input\",\"dtype\":\"float32\",\"shape\":[1,2]}]"),
+            "{summary}"
+        );
+        assert!(
+            summary.contains("\"output_details\":[{\"name\":\"output\",\"dtype\":\"float32\",\"shape\":[1,3]}]"),
+            "{summary}"
+        );
+        assert!(summary.contains("\"Gemm\""), "{summary}");
+
+        // Roundtrip preserves a model that still loads and runs in ORT.
+        let roundtrip = dir.join("linear.roundtrip.onnx");
+        let (status, roundtrip_ptr) = call_host(
+            ML_ONNX_ROUNDTRIP,
+            &[
+                test_string(&exported),
+                test_string(roundtrip.to_string_lossy().as_ref()),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let roundtrip_path =
+            unsafe { read_spectra_string(roundtrip_ptr) }.expect("roundtrip path");
+        let (status, session) = call_host(
+            ML_ONNX_SESSION_FROM_BYTES,
+            &[test_string(&roundtrip_path)],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!(session > 0);
+        assert_eq!(
+            call_host(ML_ONNX_SESSION_FREE, &[session]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(not(feature = "onnx"))]
+    #[test]
+    fn ml_onnx_run_without_feature_returns_typed_error() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        // Session creation yields a tagged typed Error record. The file must
+        // exist (the path is read first); its bytes never reach ORT here.
+        let dir = temp_test_dir("onnx_unavailable");
+        std::fs::create_dir_all(&dir).expect("create temp onnx dir");
+        let path = dir.join("linear.onnx");
+        std::fs::write(&path, b"not-a-real-model").expect("write placeholder model");
+        let (status, tagged) = call_host(
+            ML_ONNX_SESSION_FROM_BYTES,
+            &[test_string(path.to_string_lossy().as_ref())],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (tag, error) = unsafe { tagged_result_parts(tagged) };
+        assert_eq!(tag, 1, "expected Err tag, got payload {error}");
+
+        // The Error record carries an explicit operation and message.
+        let (code_status, code) = call_host("spectra.std.error.code", &[error]);
+        assert_eq!(code_status, HOST_STATUS_SUCCESS);
+        assert_ne!(code, 0);
+        let (message_status, message_ptr) = call_host("spectra.std.error.message", &[error]);
+        assert_eq!(message_status, HOST_STATUS_SUCCESS);
+        let message = unsafe { read_spectra_string(message_ptr) }.expect("error message");
+        assert!(message.contains("--features onnx"), "{message}");
+
+        // run also degrades to a typed Error record instead of a mock result.
+        let (run_status, run_tagged) =
+            call_host(ML_ONNX_RUN, &[1, 1, test_string("output")]);
+        assert_eq!(run_status, HOST_STATUS_SUCCESS);
+        let (run_tag, _) = unsafe { tagged_result_parts(run_tagged) };
+        assert_eq!(run_tag, 1);
+
+        // session_free degrades the same way.
+        let (free_status, free_tagged) = call_host(ML_ONNX_SESSION_FREE, &[1]);
+        assert_eq!(free_status, HOST_STATUS_SUCCESS);
+        let (free_tag, _) = unsafe { tagged_result_parts(free_tagged) };
+        assert_eq!(free_tag, 1);
+
+        std::fs::remove_dir_all(&dir).ok();
     }

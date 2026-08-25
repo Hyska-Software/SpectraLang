@@ -249,8 +249,16 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
     )
 }
 
-/// Device-sum: writes 1 f32 into `out`. Caller is expected to read it
-/// back as the loss scalar (the only allowed readback in the hot path).
+/// Device-sum: parallel two-stage tree reduction writing 1 f32 into
+/// `out`. Stage one (`reduce`, workgroup_size 256) folds a strided tile
+/// per workgroup through an 8-step shared-memory tree and emits one
+/// partial per workgroup; stage two (`final_reduce`) folds the partials
+/// into the final scalar. A scratch partials buffer is allocated for
+/// the submission and dropped right after — `queue.submit` retains it
+/// for the duration of the GPU work. No intermediate readback: the
+/// caller reads only this final scalar (the one allowed readback in
+/// the hot path). Without a GPU adapter the context error propagates
+/// and callers fall back to their counted CPU path.
 pub fn sum_device(
     input: &DeviceBuffer,
     out: &DeviceBuffer,
@@ -263,29 +271,25 @@ pub fn sum_device(
             "gpu sum_device shape mismatch",
         ));
     }
-    let len = input.elements;
-    let shader = format!(
-        r#"
-@group(0) @binding(0) var<storage, read> input_values: array<f32>;
-@group(0) @binding(1) var<storage, read_write> out: array<f32>;
-
-@compute @workgroup_size(1)
-fn main() {{
-    var acc = 0.0;
-    for (var i = 0u; i < {len}u; i = i + 1u) {{
-        acc = acc + input_values[i];
-    }}
-    out[0] = acc;
-}}
-"#,
-        len = len
-    );
-    run_compute_no_readback(
+    let (workgroups, total_threads, partials_count) = reduction_plan(input.elements);
+    let shader = reduction_shader(input.elements, total_threads, partials_count);
+    let partials = Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("spectra-runtime-gpu-sum-partials"),
+        size: u64::from(partials_count) * std::mem::size_of::<f32>() as u64,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    }));
+    run_compute_two_stage_no_readback(
         device,
         queue,
         &shader,
-        &[(0, &input.buffer, true), (1, &out.buffer, false)],
-        [1, 1, 1],
+        &[
+            (0, &input.buffer, true),
+            (1, &partials, false),
+            (2, &out.buffer, false),
+        ],
+        ("reduce", [workgroups, 1, 1]),
+        ("final_reduce", [1, 1, 1]),
     )
 }
 

@@ -73,12 +73,13 @@ mod tests {
         let _lock = test_guard();
         spectra_rt_manual_clear();
 
-        let raw = spectra_rt_manual_alloc(4 * std::mem::size_of::<i64>()) as *mut i64;
+        // Packed layout: 3 bytes + one NUL terminator byte.
+        let raw = spectra_rt_manual_alloc(4) as *mut u8;
         assert!(!raw.is_null());
         unsafe {
-            *raw.add(0) = b'a' as i64;
-            *raw.add(1) = b'b' as i64;
-            *raw.add(2) = b'c' as i64;
+            *raw.add(0) = b'a';
+            *raw.add(1) = b'b';
+            *raw.add(2) = b'c';
             *raw.add(3) = 0;
         }
 
@@ -604,15 +605,15 @@ mod tests {
         let _lock = test_guard();
         spectra_rt_manual_clear();
 
-        // 4-slot allocation but the string ends after one byte: the table
+        // 4-byte allocation but the string ends after one byte: the table
         // bounds the scan while the NUL terminator still ends the string.
-        let raw = spectra_rt_manual_alloc(4 * std::mem::size_of::<i64>()) as *mut i64;
+        let raw = spectra_rt_manual_alloc(4) as *mut u8;
         assert!(!raw.is_null());
         unsafe {
-            *raw.add(0) = b'x' as i64;
+            *raw.add(0) = b'x';
             *raw.add(1) = 0;
-            *raw.add(2) = 0x7F7F_7F7F_7F7F_7F7F;
-            *raw.add(3) = 0x7F7F_7F7F_7F7F_7F7F;
+            *raw.add(2) = 0x7F;
+            *raw.add(3) = 0x7F;
         }
         let ptr = raw as SpectraHostValue;
 
@@ -635,13 +636,63 @@ mod tests {
 
         // Not allocated through spectra_rt_manual_alloc, so unknown to the
         // AllocationTable; the conservative bounded scan must still work.
-        let buf = [b'h' as i64, b'i' as i64, 0, 0];
+        let buf = [b'h', b'i', 0, 0];
         let ptr = buf.as_ptr() as SpectraHostValue;
 
         assert_eq!(spectra_rt_string_len(ptr), 2);
         assert_eq!(spectra_rt_string_char_at(ptr, 0), b'h' as i64);
         assert_eq!(spectra_rt_string_char_at(ptr, 1), b'i' as i64);
         assert_eq!(spectra_rt_string_char_at(ptr, 2), -1);
+    }
+
+    #[test]
+    fn string_packed_layout_roundtrip_multibyte_utf8() {
+        let _lock = test_guard();
+        spectra_rt_manual_clear();
+
+        // Packed layout: every string is `bytes.len() + 1` bytes, one byte
+        // per UTF-8 byte, NUL-terminated. Multibyte characters must survive
+        // the round trip byte-exactly.
+        for s in ["á", "日", "🎉", "héllo wörld 日本語 🎉"] {
+            let bytes = s.as_bytes();
+            let raw = spectra_rt_manual_alloc(bytes.len() + 1) as *mut u8;
+            assert!(!raw.is_null());
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), raw, bytes.len());
+                *raw.add(bytes.len()) = 0;
+            }
+            let ptr = raw as SpectraHostValue;
+
+            assert_eq!(spectra_rt_string_len(ptr), bytes.len() as i64, "{s}");
+            for (i, &b) in bytes.iter().enumerate() {
+                assert_eq!(spectra_rt_string_char_at(ptr, i as i64), b as i64, "{s}[{i}]");
+            }
+            assert_eq!(spectra_rt_string_char_at(ptr, bytes.len() as i64), -1);
+            assert_eq!(spectra_rt_string_char_at(ptr, 1 << 40), -1);
+
+            spectra_rt_manual_clear();
+        }
+    }
+
+    #[test]
+    fn string_allocation_size_is_packed_bytes_not_slots() {
+        let _lock = test_guard();
+        spectra_rt_manual_clear();
+
+        let baseline = manual_stats().manual;
+
+        // One 100_000-byte payload + 1 terminator byte. Under the previous
+        // slot layout this allocation cost (100_000 + 1) * 8 bytes; with
+        // packed strings the AllocationTable records exactly 100_001.
+        const PAYLOAD_BYTES: usize = 100_000;
+        let raw = spectra_rt_manual_alloc(PAYLOAD_BYTES + 1);
+        assert!(!raw.is_null());
+
+        let after = manual_stats().manual;
+        assert_eq!(after.allocations, baseline.allocations + 1);
+        assert_eq!(after.bytes, baseline.bytes + PAYLOAD_BYTES + 1);
+
+        spectra_rt_manual_clear();
     }
 }
 

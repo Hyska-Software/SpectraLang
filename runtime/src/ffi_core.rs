@@ -26,25 +26,12 @@ pub fn set_program_args(args: Vec<String>) {
 }
 use crate::memory::ManualBox;
 
-struct ManualRaw {
-    bytes: Vec<u8>,
-}
-
-impl ManualRaw {
-    fn new(size: usize) -> Self {
-        Self {
-            bytes: vec![0u8; size],
-        }
-    }
-
-    fn ptr(&mut self) -> *mut u8 {
-        self.bytes.as_mut_ptr()
-    }
-}
 
 struct ManualAllocation {
     frame_id: usize,
-    _storage: ManualBox<ManualRaw>,
+    /// Zero-initialised buffer of exactly the requested size. Statistics
+    /// and `manual_allocation_size` report its true length.
+    _storage: ManualBox<Vec<u8>>,
 }
 
 struct Frame {
