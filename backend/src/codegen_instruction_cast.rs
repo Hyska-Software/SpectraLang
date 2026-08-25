@@ -46,6 +46,20 @@ impl CodeGenerator {
                         types::I8 | types::I16 => builder.ins().uextend(types::I32, operand_val),
                         _ => operand_val,
                     },
+                    // Char into a packed byte slot (string element store):
+                    // truncate the codepoint value to its stored byte.
+                    (
+                        IRType::Char,
+                        IRType::ExactInt {
+                            width: spectra_midend::ir::IntWidth::I8,
+                            ..
+                        },
+                    ) => match operand_cl_ty {
+                        types::I64 => builder.ins().ireduce(types::I8, operand_val),
+                        types::I32 | types::I16 => builder.ins().ireduce(types::I8, operand_val),
+                        types::I8 => operand_val,
+                        _ => operand_val,
+                    },
                     (IRType::ExactInt { signed, .. }, IRType::ExactFloat { width: _ }) => {
                         let target = Self::ir_type_to_cranelift(to_ty)?;
                         if *signed {

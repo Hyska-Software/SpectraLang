@@ -80,8 +80,8 @@ pub(crate) struct HostNameRecord {
 /// bytes are allocated on the heap (in `string_literal_storage`) and `ptr`
 /// is the heap address. In AOT mode the bytes live in a `.rodata` data
 /// section and `data_id` is the Cranelift handle. Either way, the bytes
-/// are stored null-terminated, one byte per `i64` slot, and `len_with_null`
-/// is the total slot count (including the trailing null terminator).
+/// are stored as packed UTF-8 with a single-byte NUL terminator, and
+/// `len_with_null` is the total byte count (including the terminator).
 #[derive(Clone, Copy)]
 pub(crate) struct StringLiteralRecord {
     pub(crate) ptr: u64,
@@ -89,29 +89,27 @@ pub(crate) struct StringLiteralRecord {
     pub(crate) data_id: Option<DataId>,
 }
 
-/// Resolves a string literal to a stable pointer + length (R-3126).
-///
 /// In JIT mode (when the entry is not already interned) this allocates a
-/// null-terminated byte buffer on the heap and stores it in
+/// NUL-terminated packed byte buffer on the heap and stores it in
 /// `string_literal_storage` so the pointer outlives any JIT function that
-/// references it. The buffer is laid out as one byte per `i64` slot
-/// (matching the existing `IRType::Array{Int, N+1}` representation used
-/// by `emit_stack_string_char_at_inline` which indexes with `*8`).
+/// references it. The buffer is packed UTF-8: one byte per byte plus a
+/// single-byte terminator (matching the runtime's packed string layout and
+/// the stride-1 indexing in the inline `char_at`/`len` emitters).
 /// In AOT mode the entry is pre-populated by
 /// [`AotCodeGenerator::pre_intern_string_literals`] with a `data_id`, so
 /// the heap fallback never fires.
 pub(crate) fn intern_string_literal(
     string_literal_data: &mut HashMap<String, StringLiteralRecord>,
-    string_literal_storage: &mut Vec<Box<[i64]>>,
+    string_literal_storage: &mut Vec<Box<[u8]>>,
     value: &str,
 ) -> StringLiteralRecord {
     if let Some(record) = string_literal_data.get(value) {
         return *record;
     }
 
-    let mut slots: Vec<i64> = value.as_bytes().iter().map(|&b| b as i64).collect();
-    slots.push(0);
-    let boxed: Box<[i64]> = slots.into_boxed_slice();
+    let mut bytes: Vec<u8> = value.as_bytes().to_vec();
+    bytes.push(0);
+    let boxed: Box<[u8]> = bytes.into_boxed_slice();
     let ptr = boxed.as_ptr() as u64;
     let len_with_null = boxed.len() as i64;
     string_literal_storage.push(boxed);
@@ -148,10 +146,9 @@ pub struct CodeGenerator {
     /// Owned storage for JIT-mode string literal buffers (R-3126).
     /// Each `ConstString` IR instruction resolves to a stable pointer
     /// into one of these buffers. The buffers must outlive any JIT
-    /// function that references them. Layout is one byte per `i64`
-    /// slot (matches `IRType::Array{Int, N+1}` and the `*8` indexing
-    /// in `emit_stack_string_char_at_inline`).
-    string_literal_storage: Vec<Box<[i64]>>,
+    /// function that references them. Layout is packed UTF-8: one byte
+    /// per byte with a single-byte NUL terminator.
+    string_literal_storage: Vec<Box<[u8]>>,
     host_call_sites: HashMap<String, HostCallSiteRecord>,
     host_name_storage: Vec<Box<[u8]>>,
     // Box keeps cache addresses stable while the storage Vec grows.

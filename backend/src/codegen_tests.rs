@@ -1070,11 +1070,11 @@ mod tests {
             } else {
                 "integer division by zero"
             };
-            // Panic literals are embedded as null-terminated i64 slots (one
-            // byte per slot), so search for the slotted byte pattern.
+            // Panic literals are embedded as packed UTF-8 bytes with a
+            // single-byte NUL terminator, so search for the raw byte pattern.
             let expected: Vec<u8> = expected_message
                 .bytes()
-                .flat_map(|byte| (byte as i64).to_ne_bytes())
+                .chain(std::iter::once(0))
                 .collect();
             assert!(
                 bytes.windows(expected.len()).any(|window| window == expected),

@@ -7,6 +7,7 @@ impl CodeGenerator {
         let cursor_var = builder.declare_var(types::I64);
         let result_var = builder.declare_var(types::I64);
         let zero = builder.ins().iconst(types::I64, 0);
+        let zero_byte = builder.ins().iconst(types::I8, 0);
         let missing = builder.ins().iconst(types::I64, -1);
         builder.def_var(cursor_var, zero);
         builder.def_var(result_var, missing);
@@ -32,10 +33,10 @@ impl CodeGenerator {
 
         builder.switch_to_block(loop_block);
         let cursor = builder.use_var(cursor_var);
-        let offset = builder.ins().imul_imm(cursor, 8);
+        let offset = cursor;
         let addr = builder.ins().iadd(ptr, offset);
-        let slot = builder.ins().load(types::I64, MemFlags::new(), addr, 0);
-        let is_terminator = builder.ins().icmp(IntCC::Equal, slot, zero);
+        let slot = builder.ins().load(types::I8, MemFlags::new(), addr, 0);
+        let is_terminator = builder.ins().icmp(IntCC::Equal, slot, zero_byte);
         builder
             .ins()
             .brif(is_terminator, done_block, &[], target_check_block, &[]);
@@ -48,7 +49,9 @@ impl CodeGenerator {
         builder.seal_block(target_check_block);
 
         builder.switch_to_block(found_block);
-        let byte = builder.ins().band_imm(slot, 0xff);
+
+        let wide = builder.ins().sextend(types::I64, slot);
+        let byte = builder.ins().band_imm(wide, 0xff);
         builder.def_var(result_var, byte);
         builder.ins().jump(done_block, &[]);
         builder.seal_block(found_block);
@@ -73,6 +76,7 @@ impl CodeGenerator {
     ) -> Value {
         let result_var = builder.declare_var(types::I64);
         let zero = builder.ins().iconst(types::I64, 0);
+        let zero_byte = builder.ins().iconst(types::I8, 0);
         let missing = builder.ins().iconst(types::I64, -1);
         builder.def_var(result_var, missing);
 
@@ -100,17 +104,19 @@ impl CodeGenerator {
         builder.seal_block(bounds_block);
 
         builder.switch_to_block(load_block);
-        let offset = builder.ins().imul_imm(index, 8);
+        let offset = index;
         let addr = builder.ins().iadd(ptr, offset);
-        let slot = builder.ins().load(types::I64, MemFlags::new(), addr, 0);
-        let is_terminator = builder.ins().icmp(IntCC::Equal, slot, zero);
+        let slot = builder.ins().load(types::I8, MemFlags::new(), addr, 0);
+        let is_terminator = builder.ins().icmp(IntCC::Equal, slot, zero_byte);
         builder
             .ins()
             .brif(is_terminator, done_block, &[], value_block, &[]);
         builder.seal_block(load_block);
 
         builder.switch_to_block(value_block);
-        let byte = builder.ins().band_imm(slot, 0xff);
+
+        let wide = builder.ins().sextend(types::I64, slot);
+        let byte = builder.ins().band_imm(wide, 0xff);
         builder.def_var(result_var, byte);
         builder.ins().jump(done_block, &[]);
         builder.seal_block(value_block);
@@ -123,7 +129,7 @@ impl CodeGenerator {
     fn emit_string_len_inline(builder: &mut FunctionBuilder, ptr: Value) -> Value {
         let count_var = builder.declare_var(types::I64);
         let zero = builder.ins().iconst(types::I64, 0);
-        builder.def_var(count_var, zero);
+        let zero_byte = builder.ins().iconst(types::I8, 0);
 
         let loop_block = builder.create_block();
         let advance_block = builder.create_block();
@@ -135,16 +141,17 @@ impl CodeGenerator {
             .brif(is_null, done_block, &[], loop_block, &[]);
 
         builder.switch_to_block(loop_block);
-        let count = builder.use_var(count_var);
-        let offset = builder.ins().imul_imm(count, 8);
+
+        let offset = builder.use_var(count_var);
         let addr = builder.ins().iadd(ptr, offset);
-        let slot = builder.ins().load(types::I64, MemFlags::new(), addr, 0);
-        let is_terminator = builder.ins().icmp(IntCC::Equal, slot, zero);
+        let slot = builder.ins().load(types::I8, MemFlags::new(), addr, 0);
+        let is_terminator = builder.ins().icmp(IntCC::Equal, slot, zero_byte);
         builder
             .ins()
             .brif(is_terminator, done_block, &[], advance_block, &[]);
 
         builder.switch_to_block(advance_block);
+        let count = builder.use_var(count_var);
         let next = builder.ins().iadd_imm(count, 1);
         builder.def_var(count_var, next);
         builder.ins().jump(loop_block, &[]);

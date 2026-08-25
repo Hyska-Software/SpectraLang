@@ -94,8 +94,8 @@ pub struct AotCodeGenerator {
     /// this stays empty because every entry is pre-populated with a
     /// `data_id`; the field exists to satisfy the `generate_block`
     /// signature shared with the JIT path. Layout matches the JIT
-    /// side: one byte per `i64` slot.
-    string_literal_storage: Vec<Box<[i64]>>,
+    /// side: packed UTF-8 bytes with a single-byte NUL terminator.
+    string_literal_storage: Vec<Box<[u8]>>,
     host_call_sites: HashMap<String, HostCallSiteRecord>,
     hostcall_batch_stats: HostCallBatchStats,
     /// Locations produced by Cranelift's register allocator for labelled IR
@@ -872,21 +872,13 @@ impl AotCodeGenerator {
     /// value. Stores the resulting `StringLiteralRecord` (with
     /// `data_id = Some(...)`) in `self.string_literal_data`.
     fn create_string_literal_data(&mut self, value: &str) {
-        // Layout: one byte per `i64` slot (8 bytes each), null-terminated.
-        // This matches the JIT `Box<[i64]>` buffer and the `*8` indexing
-        // in `emit_stack_string_char_at_inline`.
-        let mut slots: Vec<i64> = value.as_bytes().iter().map(|&b| b as i64).collect();
-        slots.push(0);
-        let len_with_null = slots.len() as i64;
-        // Convert the i64 slots to a raw byte buffer for the data section.
-        // Safety: `i64` is `repr(i64)` and we want the same byte layout.
-        let bytes: Vec<u8> = unsafe {
-            std::slice::from_raw_parts(
-                slots.as_ptr() as *const u8,
-                slots.len() * std::mem::size_of::<i64>(),
-            )
-            .to_vec()
-        };
+        // Layout: packed UTF-8 bytes, NUL-terminated with a single byte.
+        // This matches the JIT `Box<[u8]>` buffer and the stride-1
+        // indexing in the inline `char_at`/`len` emitters.
+        let mut bytes: Vec<u8> = value.as_bytes().to_vec();
+        bytes.push(0);
+        let len_with_null = bytes.len() as i64;
+
         // Use a simple FNV-1a 64-bit hash for compact, deterministic naming
         // without depending on an external hash crate.
         let mut hash: u64 = 0xcbf29ce484222325;
@@ -905,12 +897,9 @@ impl AotCodeGenerator {
         };
 
         let mut data_ctx = DataDescription::new();
-        // Spectra strings are represented as null-terminated i64 slots.  The
-        // runtime reads them through `*const i64`, so the AOT data symbol must
-        // carry the same alignment as the JIT allocation.  Without this, a
-        // linked executable could place a literal at an arbitrary byte
-        // boundary and abort on the first string hostcall.
-        data_ctx.set_align(std::mem::align_of::<i64>() as u64);
+        // Spectra strings are packed byte buffers read through `*const u8`,
+        // so byte alignment (1) is sufficient and keeps `.rodata` compact.
+        data_ctx.set_align(std::mem::align_of::<u8>() as u64);
         data_ctx.define(bytes.into_boxed_slice());
         let _ = self.module.define_data(data_id, &data_ctx);
 

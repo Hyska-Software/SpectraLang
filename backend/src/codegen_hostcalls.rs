@@ -21,16 +21,12 @@ impl CodeGenerator {
         let record = match hostcall.string_literal_data.get(message) {
             Some(record) => *record,
             None => {
-                // Layout: one byte per `i64` slot, null-terminated. This
-                // matches every other Spectra string representation crossing
-                // the runtime ABI.
-                let slots: Vec<i64> = message
-                    .bytes()
-                    .map(|byte| byte as i64)
-                    .chain(std::iter::once(0))
-                    .collect();
-                let bytes: Vec<u8> = slots.iter().flat_map(|slot| slot.to_ne_bytes()).collect();
-                let len_with_null = slots.len() as i64;
+                // Layout: packed UTF-8 bytes with a single-byte NUL
+                // terminator. This matches every other Spectra string
+                // representation crossing the runtime ABI.
+                let mut bytes: Vec<u8> = message.bytes().collect();
+                bytes.push(0);
+                let len_with_null = bytes.len() as i64;
 
                 // Deterministic FNV-1a symbol so repeated sites deduplicate.
                 let mut hash: u64 = 0xcbf29ce484222325;
@@ -48,7 +44,7 @@ impl CodeGenerator {
                         ))
                     })?;
                 let mut data_ctx = DataDescription::new();
-                data_ctx.set_align(std::mem::align_of::<i64>() as u64);
+                data_ctx.set_align(std::mem::align_of::<u8>() as u64);
                 data_ctx.define(bytes.into_boxed_slice());
                 module.define_data(data_id, &data_ctx).map_err(|error| {
                     BackendCodegenError::cranelift(format!(
