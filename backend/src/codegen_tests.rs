@@ -313,6 +313,7 @@ mod tests {
                             result: None,
                             function: "consume_pointer".to_string(),
                             args: vec![IRValue { id: 0 }],
+                            is_tail: false,
                         },
                         source_span: None,
                     },
@@ -925,5 +926,373 @@ mod tests {
 
         assert!(codegen.declare_function(&func).is_ok());
         assert!(codegen.define_function(&func, &std::collections::HashMap::new()).is_ok());
+    }
+
+    #[test]
+    fn test_f32_gt_ge_rem_codegen() {
+        use spectra_midend::ir::{FloatWidth, InstructionKind, Terminator, Value};
+
+        let mut codegen = CodeGenerator::new();
+
+        // Create function: fn f32_ops(a: f32, b: f32) -> f32
+        let f32_ty = IRType::ExactFloat {
+            width: FloatWidth::F32,
+        };
+        let mut func = IRFunction::new(
+            "f32_ops",
+            vec![
+                Parameter {
+                    id: 0,
+                    name: "a".to_string(),
+                    ty: f32_ty.clone(),
+                },
+                Parameter {
+                    id: 1,
+                    name: "b".to_string(),
+                    ty: f32_ty.clone(),
+                },
+            ],
+            f32_ty,
+        );
+
+        let entry_block_id = func.add_block("entry");
+        let entry_block = func.get_block_mut(entry_block_id).unwrap();
+
+        // gt = a > b (F32 operands must lower to fcmp, not icmp)
+        let gt_value = Value { id: 2 };
+        entry_block.add_instruction(InstructionKind::Gt {
+            result: gt_value,
+            lhs: Value { id: 0 },
+            rhs: Value { id: 1 },
+        });
+
+        // ge = a >= b
+        let ge_value = Value { id: 3 };
+        entry_block.add_instruction(InstructionKind::Ge {
+            result: ge_value,
+            lhs: Value { id: 0 },
+            rhs: Value { id: 1 },
+        });
+
+        // rem = a % b (F32 must lower to frem, not srem)
+        let rem_value = Value { id: 4 };
+        entry_block.add_instruction(InstructionKind::Rem {
+            result: rem_value,
+            lhs: Value { id: 0 },
+            rhs: Value { id: 1 },
+        });
+
+        entry_block.set_terminator(Terminator::Return {
+            value: Some(rem_value),
+        });
+
+        // declare + define finalizes the function through Cranelift's verifier.
+        assert!(codegen.declare_function(&func).is_ok());
+        assert!(codegen.define_function(&func, &std::collections::HashMap::new()).is_ok());
+    }
+
+    /// Builds `fn name() -> int { let q = 1 <op> 0; return q }` so the
+    /// integer Div/Rem lowering must emit the zero-divisor check.
+    fn int_divrem_by_zero_function(name: &str, is_remainder: bool) -> IRFunction {
+        use spectra_midend::ir::{InstructionKind, Terminator, Value};
+
+        let mut func = IRFunction::new(name, vec![], IRType::Int);
+        let entry_block_id = func.add_block("entry");
+        let entry_block = func.get_block_mut(entry_block_id).unwrap();
+        let one = Value { id: 0 };
+        let zero = Value { id: 1 };
+        entry_block.add_instruction(InstructionKind::ConstInt {
+            result: one,
+            value: 1,
+        });
+        entry_block.add_instruction(InstructionKind::ConstInt {
+            result: zero,
+            value: 0,
+        });
+        let quotient = Value { id: 2 };
+        if is_remainder {
+            entry_block.add_instruction(InstructionKind::Rem {
+                result: quotient,
+                lhs: one,
+                rhs: zero,
+            });
+        } else {
+            entry_block.add_instruction(InstructionKind::Div {
+                result: quotient,
+                lhs: one,
+                rhs: zero,
+            });
+        }
+        entry_block.set_terminator(Terminator::Return {
+            value: Some(quotient),
+        });
+        func
+    }
+
+    #[test]
+    fn integer_div_by_zero_lowering_passes_verifier() {
+        // The JIT lowering must finalize (Cranelift verifier) with the
+        // zero-divisor branch and panic block in place.
+        let mut codegen = CodeGenerator::new();
+        let func = int_divrem_by_zero_function("div_by_zero", false);
+        assert!(codegen.declare_function(&func).is_ok());
+        assert!(codegen.define_function(&func, &std::collections::HashMap::new()).is_ok());
+
+        let mut codegen = CodeGenerator::new();
+        let func = int_divrem_by_zero_function("rem_by_zero", true);
+        assert!(codegen.declare_function(&func).is_ok());
+        assert!(codegen.define_function(&func, &std::collections::HashMap::new()).is_ok());
+    }
+
+    #[test]
+    fn aot_div_and_rem_by_zero_reference_spectra_rt_panic() {
+        for is_remainder in [false, true] {
+            let name = if is_remainder {
+                "aot_rem_by_zero"
+            } else {
+                "aot_div_by_zero"
+            };
+            let mut module = IRModule::new(name);
+            module.add_function(int_divrem_by_zero_function(name, is_remainder));
+
+            let bytes = crate::AotCodeGenerator::new()
+                .compile_to_object(&module, &crate::AotOptions::default())
+                .expect("AOT compile of div-by-zero module");
+            let haystack = String::from_utf8_lossy(&bytes);
+            // The object must carry the undefined import plus the interned
+            // panic message literal.
+            assert!(
+                haystack.contains("spectra_rt_panic"),
+                "AOT object does not reference spectra_rt_panic"
+            );
+            let expected_message = if is_remainder {
+                "integer remainder by zero"
+            } else {
+                "integer division by zero"
+            };
+            // Panic literals are embedded as null-terminated i64 slots (one
+            // byte per slot), so search for the slotted byte pattern.
+            let expected: Vec<u8> = expected_message
+                .bytes()
+                .flat_map(|byte| (byte as i64).to_ne_bytes())
+                .collect();
+            assert!(
+                bytes.windows(expected.len()).any(|window| window == expected),
+                "AOT object does not embed the panic message"
+            );
+        }
+    }
+    // -----------------------------------------------------------------------
+    // Self-tail-recursion → Cranelift `return_call` (Onda 3)
+    // -----------------------------------------------------------------------
+
+    /// Builds `fn loop_sum(n: int, acc: int) -> int`:
+    ///   if n <= 0 { return acc; }
+    ///   return loop_sum(n - 1, acc + n);  // marked tail self-call
+    fn tail_recursion_loop_sum() -> IRFunction {
+        let mut function = IRFunction::new(
+            "loop_sum",
+            vec![
+                Parameter {
+                    id: 0,
+                    name: "n".to_string(),
+                    ty: IRType::Int,
+                },
+                Parameter {
+                    id: 1,
+                    name: "acc".to_string(),
+                    ty: IRType::Int,
+                },
+            ],
+            IRType::Int,
+        );
+        let entry_block = function.add_block("entry");
+        let n = IRValue { id: 0 };
+        let acc = IRValue { id: 1 };
+
+        // zero = 0; cond = n <= zero
+        {
+            let block = function.get_block_mut(entry_block).unwrap();
+            block.add_instruction(InstructionKind::ConstInt {
+                result: IRValue { id: 2 },
+                value: 0,
+            });
+            block.add_instruction(InstructionKind::Le {
+                result: IRValue { id: 3 },
+                lhs: n,
+                rhs: IRValue { id: 2 },
+            });
+        }
+
+        let base = function.add_block("base");
+        let step = function.add_block("step");
+        function
+            .get_block_mut(entry_block)
+            .unwrap()
+            .set_terminator(Terminator::CondBranch {
+                condition: IRValue { id: 3 },
+                true_block: base,
+                false_block: step,
+            });
+
+        // base: return acc
+        function
+            .get_block_mut(base)
+            .unwrap()
+            .set_terminator(Terminator::Return { value: Some(acc) });
+
+        // step: nm1 = n - 1; accn = acc + n; r = loop_sum(nm1, accn); return r
+        {
+            let block = function.get_block_mut(step).unwrap();
+            block.add_instruction(InstructionKind::ConstInt {
+                result: IRValue { id: 5 },
+                value: 1,
+            });
+            block.add_instruction(InstructionKind::Sub {
+                result: IRValue { id: 4 },
+                lhs: n,
+                rhs: IRValue { id: 5 },
+            });
+            block.add_instruction(InstructionKind::Add {
+                result: IRValue { id: 6 },
+                lhs: acc,
+                rhs: n,
+            });
+            block.add_instruction(InstructionKind::Call {
+                result: Some(IRValue { id: 7 }),
+                function: "loop_sum".to_string(),
+                args: vec![IRValue { id: 4 }, IRValue { id: 6 }],
+                is_tail: true,
+            });
+            block.set_terminator(Terminator::Return {
+                value: Some(IRValue { id: 7 }),
+            });
+        }
+        function
+    }
+
+    #[test]
+    fn tail_self_call_compiles_to_cranelift_return_call() {
+        let mut codegen = CodeGenerator::new();
+        let mut module = IRModule::new("tail_recursion");
+        module.add_function(tail_recursion_loop_sum());
+        codegen.pre_intern_host_names(&module);
+
+        codegen.declare_function(&module.functions[0])
+            .expect("declaration should succeed");
+        let function_params: HashMap<String, Vec<IRType>> = HashMap::new();
+        codegen
+            .define_function(&module.functions[0], &function_params)
+            .expect("definition should succeed");
+
+        // Inspect the finalized Cranelift IR captured before the shared
+        // context is cleared (see `last_finalized_func`).
+        let func = codegen
+            .last_finalized_func
+            .as_ref()
+            .expect("define_function should snapshot the finalized IR");
+        let mut return_calls = 0;
+        let mut plain_returns = 0;
+        for block in func.layout.blocks() {
+            for inst in func.layout.block_insts(block) {
+                match func.dfg.insts[inst].opcode() {
+                    cranelift_codegen::ir::Opcode::ReturnCall => return_calls += 1,
+                    cranelift_codegen::ir::Opcode::Return => plain_returns += 1,
+                    _ => {}
+                }
+            }
+        }
+        assert_eq!(return_calls, 1, "expected exactly one native return_call");
+        assert!(
+            plain_returns >= 1,
+            "the base-case `ret` must survive as a normal return"
+        );
+        assert_eq!(func.signature.call_conv, isa::CallConv::Tail);
+    }
+
+    #[test]
+    fn deep_tail_recursion_runs_without_stack_overflow() {
+        let mut codegen = CodeGenerator::new();
+        let mut module = IRModule::new("tail_recursion_run");
+
+        // Recursive tail function.
+        module.add_function(tail_recursion_loop_sum());
+
+        // Platform-convention wrapper so the test can call through the normal
+        // JIT entry ABI: wrapper(n, acc) = loop_sum(n, acc).
+        let mut wrapper = IRFunction::new(
+            "wrapper",
+            vec![
+                Parameter {
+                    id: 0,
+                    name: "n".to_string(),
+                    ty: IRType::Int,
+                },
+                Parameter {
+                    id: 1,
+                    name: "acc".to_string(),
+                    ty: IRType::Int,
+                },
+            ],
+            IRType::Int,
+        );
+        let entry = wrapper.add_block("entry");
+        wrapper
+            .get_block_mut(entry)
+            .unwrap()
+            .add_instruction(InstructionKind::Call {
+                result: Some(IRValue { id: 2 }),
+                function: "loop_sum".to_string(),
+                args: vec![IRValue { id: 0 }, IRValue { id: 1 }],
+                is_tail: false,
+            });
+        wrapper
+            .get_block_mut(entry)
+            .unwrap()
+            .set_terminator(Terminator::Return {
+                value: Some(IRValue { id: 2 }),
+            });
+        module.add_function(wrapper);
+
+        codegen.pre_intern_host_names(&module);
+        for func in &module.functions {
+            codegen.declare_function(func).expect("declare");
+        }
+        let function_params: HashMap<String, Vec<IRType>> = module
+            .functions
+            .iter()
+            .map(|func| {
+                (
+                    func.name.clone(),
+                    func.params.iter().map(|param| param.ty.clone()).collect(),
+                )
+            })
+            .collect();
+        for func in &module.functions {
+            codegen.define_function(func, &function_params).expect("define");
+        }
+        codegen
+            .module
+            .finalize_definitions()
+            .expect("finalize definitions");
+
+        let wrapper_id = *codegen.function_map.get("wrapper").unwrap();
+        let ptr = codegen.module.get_finalized_function(wrapper_id) as usize;
+        let run: extern "C" fn(i64, i64) -> i64 = unsafe { std::mem::transmute(ptr) };
+
+        // ~100k recursion levels: without a native tail call this would blow
+        // the stack long before finishing. Sum of 1..=100_000.
+        const N: i64 = 100_000;
+        let expected = N * (N + 1) / 2;
+        assert_eq!(run(N, 0), expected);
+    }
+    #[test]
+    fn aot_compiles_tail_self_recursion() {
+        let mut module = IRModule::new("tail_recursion_aot");
+        module.add_function(tail_recursion_loop_sum());
+        let bytes = crate::AotCodeGenerator::new()
+            .compile_to_object(&module, &crate::AotOptions::default())
+            .expect("AOT compile of tail-recursive module");
+        assert!(!bytes.is_empty());
     }
 }

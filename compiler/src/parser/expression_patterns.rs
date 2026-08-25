@@ -1,5 +1,12 @@
 impl Parser {
     pub(super) fn parse_pattern(&mut self) -> Result<crate::ast::Pattern, ()> {
+        self.enter_parse_depth()?;
+        let result = self.parse_pattern_inner();
+        self.exit_parse_depth();
+        result
+    }
+
+    fn parse_pattern_inner(&mut self) -> Result<crate::ast::Pattern, ()> {
         let mut patterns = vec![self.parse_pattern_atom()?];
 
         while self.check_symbol('|') {

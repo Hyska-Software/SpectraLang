@@ -30,7 +30,7 @@ impl SemanticAnalyzer {
                 };
                 let binding_type = if let Some(declared_type) = declared_type {
                     if let Some(ref value) = let_stmt.value {
-                        if !self.types_match(&inferred_type, &declared_type)
+                        if !self.inferred_binding_types_match(&inferred_type, &declared_type)
                             && !self.tensor_literal_matches(value, &declared_type)
                         {
                             if let Some((code, message, hint)) =
@@ -184,7 +184,7 @@ impl SemanticAnalyzer {
                     );
                 }
 
-                if !self.types_match(&value_type, &target_type) {
+                if !self.inferred_binding_types_match(&value_type, &target_type) {
                     let hint = self.conversion_hint(&value_type, &target_type);
                     self.push_semantic_error_coded(
                         "E003",
@@ -437,6 +437,17 @@ impl SemanticAnalyzer {
         Some(self.type_annotation_to_type_with_substitutions(payload, &substitutions))
     }
 
+    /// Return-type resolver for the std Option/Result unwrap family.
+    ///
+    /// Their exported signatures carry generic parameters
+    /// (`option_unwrap: Option<T> -> T`), and unlike `option_map`/`result_map`
+    /// the payload comes from the *input's* enum application, not from another
+    /// argument, so `specialize_std_collection_signature` cannot infer it from
+    /// a closure. This resolves the payload from the first argument's
+    /// specialized/mangled enum type; when the input is itself unresolved it
+    /// falls back to the signature's type parameter, which the strict
+    /// `types_match` tolerates only through the explicit generic-compatibility
+    /// paths (`inferred_binding_types_match` / `generic_argument_types_match`).
     fn std_generic_unwrap_return(
         &mut self,
         function_name: &str,

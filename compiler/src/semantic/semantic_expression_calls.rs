@@ -57,6 +57,9 @@ impl SemanticAnalyzer {
                                 expr.span,
                             );
                         } else {
+                            let substitutions = self
+                                .infer_type_parameter_substitutions(&signature.params, arguments);
+
                             // Validate argument types
                             for (i, (arg, expected_type)) in
                                 arguments.iter().zip(&signature.params).enumerate()
@@ -75,24 +78,33 @@ impl SemanticAnalyzer {
                                         arg.span,
                                         "Add an explicit type annotation to resolve the argument type.",
                                     );
-                                } else if *expected_type != Type::Unknown
-                                    && !self.types_match(&arg_type, expected_type)
-                                {
-                                    self.error(
-                                        format!(
-                                            "Argument {} of function '{}' has type {}, expected {}",
-                                            i + 1,
-                                            name,
-                                            type_name(&arg_type),
-                                            type_name(expected_type)
-                                        ),
-                                        arg.span,
-                                    );
+                                } else if *expected_type != Type::Unknown {
+                                    // Instantiate the parameterized expectation with
+                                    // the arguments inferred so far: two occurrences of
+                                    // the same type parameter must agree concretely.
+                                    let specialized =
+                                        self.substitute_type_parameters(expected_type, &substitutions);
+                                    let compatible = self.types_match(&arg_type, &specialized)
+                                        || (Self::type_contains_parameter(&specialized)
+                                            && self.generic_argument_types_match(
+                                                &arg_type,
+                                                &specialized,
+                                            ));
+                                    if !compatible {
+                                        self.error(
+                                            format!(
+                                                "Argument {} of function '{}' has type {}, expected {}",
+                                                i + 1,
+                                                name,
+                                                type_name(&arg_type),
+                                                type_name(expected_type)
+                                            ),
+                                            arg.span,
+                                        );
+                                    }
                                 }
                             }
 
-                            let substitutions = self
-                                .infer_type_parameter_substitutions(&signature.params, arguments);
                             let type_params = self
                                 .function_type_params
                                 .get(name)
@@ -139,7 +151,7 @@ impl SemanticAnalyzer {
                                             "Add an explicit type annotation to resolve the argument type.",
                                         );
                                     } else if *expected_type != Type::Unknown
-                                        && !self.types_match(&arg_type, expected_type)
+                                    && !self.generic_argument_types_match(&arg_type, expected_type)
                                     {
                                         self.error(
                                             format!(

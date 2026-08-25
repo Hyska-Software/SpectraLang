@@ -46,17 +46,22 @@ pub fn sections_for_functions(
         directory,
         None,
     );
+    let source_line_count = source.lines().count().max(1) as u32;
     for function in functions {
         line_program.begin_sequence(Some(Address::Constant(function.offset as u64)));
-        let line_count = source.lines().count().max(1) as u32;
-        for line in 0..line_count {
+        // Real, span-derived rows when codegen captured them; the uniform
+        // heuristic remains the documented fallback otherwise (see
+        // `debug::line_table_rows`).
+        for (relative, line) in crate::debug::line_table_rows(
+            function.size,
+            source_line_count,
+            &function.line_rows,
+        ) {
             line_program.set_address(Address::Constant(
-                function.offset as u64
-                    + (function.size.saturating_sub(1) as u64 * line as u64)
-                        / line_count.saturating_sub(1).max(1) as u64,
+                function.offset as u64 + relative as u64,
             ));
             line_program.row().file = file;
-            line_program.row().line = line as u64 + 1;
+            line_program.row().line = line as u64;
             line_program.generate_row();
         }
         line_program.end_sequence(function.offset as u64 + function.size.max(1) as u64);
@@ -222,6 +227,7 @@ mod tests {
             locals: vec!["debug_value".to_string()],
             local_offsets: vec![Some(-8)],
             local_locations: vec![Vec::new()],
+            line_rows: Vec::new(),
         }];
         let sections = sections_for_functions("fixture.spectra", "fn helper() {}", &functions)
             .expect("DWARF writer should accept a valid unit");

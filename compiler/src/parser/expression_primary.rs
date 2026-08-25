@@ -26,7 +26,7 @@ impl Parser {
             return self.finish_lambda_expression(start_span, true, params);
         }
 
-        if self.check_keyword(Keyword::Func) {
+        if self.check_function_keyword() {
             self.push_error_coded(
                 "P005",
                 "`async func` is only valid as an item, method, or trait method declaration",
@@ -160,6 +160,54 @@ impl Parser {
                 condition,
                 then_block,
                 elif_blocks,
+                else_block,
+            },
+        })
+    }
+
+    /// Parses `unless <condition> { ... } else { ... }`.
+    ///
+    /// Mirrors `parse_if_expression` but emits [`ExpressionKind::Unless`]
+    /// (`if` with a negated condition). `elif`/`else if` chaining is not
+    /// part of the `unless` surface — rewrite as `if`/`elif` or nest blocks.
+    fn parse_unless_expression(&mut self) -> Result<Expression, ()> {
+        let start_span = self.consume_keyword(Keyword::Unless, "Expected 'unless'")?;
+
+        let condition = Box::new(self.parse_expression()?);
+        let then_block = self.parse_block()?;
+
+        // Parse optional else block
+        let else_block = if self.check_keyword(Keyword::Else) {
+            self.advance(); // consume 'else'
+            if self.check_keyword(Keyword::If) {
+                let span = self.current().span;
+                self.push_error_coded(
+                    "P001",
+                    "`unless` does not support `elif`/`else if` chains",
+                    span,
+                    Some(
+                        "Rewrite the chain with `if`/`elif`, or nest another `unless` inside the block."
+                            .to_string(),
+                    ),
+                    Some("`unless` is exactly an `if` with a negated condition".to_string()),
+                );
+                return Err(());
+            }
+            Some(self.parse_block()?)
+        } else {
+            None
+        };
+
+        let end_span = else_block
+            .as_ref()
+            .map(|b| b.span)
+            .unwrap_or(then_block.span);
+
+        Ok(Expression {
+            span: crate::span::span_union(start_span, end_span),
+            kind: ExpressionKind::Unless {
+                condition,
+                then_block,
                 else_block,
             },
         })

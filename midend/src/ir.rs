@@ -220,6 +220,12 @@ pub enum InstructionKind {
         result: Option<Value>,
         function: String,
         args: Vec<Value>,
+        /// True when this direct self-call sits in tail position: the only
+        /// remaining action of its block is returning this call's result.
+        /// The backend fuses it (plus the trailing `Return`) into a native
+        /// Cranelift tail call. Only *self*-recursion is marked; cross-function
+        /// tail calls are out of scope.
+        is_tail: bool,
     },
     // Host function invocation
     HostCall {

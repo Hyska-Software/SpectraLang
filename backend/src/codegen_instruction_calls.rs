@@ -7,7 +7,9 @@ impl CodeGenerator {
         builder: &mut FunctionBuilder,
         kind: &InstructionKind,
         value_map: &mut DenseValueMap,
+        emitted_tail_call: &mut bool,
     ) -> BackendResult<()> {
+        *emitted_tail_call = false;
         let get_value = |v: &IRValue| -> BackendResult<Value> {
             value_map
                 .get(v.id)
@@ -19,6 +21,7 @@ impl CodeGenerator {
                 result,
                 function,
                 args,
+                is_tail,
             } => {
                 let func_id = *function_map
                     .get(function)
@@ -39,6 +42,25 @@ impl CodeGenerator {
                     })
                     .collect();
                 let arg_values = arg_values?;
+
+                // Direct self-tail-recursion: fuse this call and the trailing
+                // `Return` of its result into Cranelift's native `return_call`.
+                // The verifier requires caller and callee to share a calling
+                // convention that supports tail calls; both are true because
+                // the declaration path switches self-recursive functions to
+                // `CallConv::Tail` (see `uses_tail_call_convention`). When any
+                // of that does not hold we fall back to the plain call below.
+                if *is_tail && builder.func.signature.call_conv.supports_tail_calls() {
+                    let callee_sig =
+                        builder.func.dfg.ext_funcs[func_ref].signature;
+                    if builder.func.dfg.signatures[callee_sig].call_conv
+                        == builder.func.signature.call_conv
+                    {
+                        builder.ins().return_call(func_ref, &arg_values);
+                        *emitted_tail_call = true;
+                        return Ok(());
+                    }
+                }
 
                 let call = builder.ins().call(func_ref, &arg_values);
 

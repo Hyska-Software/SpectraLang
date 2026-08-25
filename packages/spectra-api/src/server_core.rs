@@ -22,7 +22,9 @@ use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::os::unix::io::{FromRawFd, IntoRawFd};
 #[cfg(windows)]
 use std::os::windows::io::{FromRawSocket, IntoRawSocket};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -38,6 +40,7 @@ const DEFAULT_READ_TIMEOUT_MS: u64 = 5_000;
 const DEFAULT_IDLE_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_SHUTDOWN_GRACE_MS: u64 = 5_000;
 const DEFAULT_MAX_CONNECTIONS: usize = 10_000;
+const DEFAULT_MAX_WORKER_THREADS: usize = 8;
 const MAX_STREAM_WRITE_BUFFER: usize = 4 * 1024 * 1024;
 
 pub type Handler = Arc<dyn Fn(ParsedRequest) -> ServerResponse + Send + Sync + 'static>;
@@ -57,11 +60,57 @@ pub(crate) enum HandlerResult {
 pub(crate) type DispatchHandler =
     Arc<dyn Fn(ParsedRequest) -> HandlerResult + Send + Sync + 'static>;
 
+/// Monotonic per-server connection identity, assigned at accept time.
+static NEXT_CONNECTION_ID: AtomicU64 = AtomicU64::new(1);
+
+/// Parsed request handed to an off-thread handler worker.
+struct HandlerJob {
+    conn_id: u64,
+    request: ParsedRequest,
+}
+
+/// Handler outcome produced by a worker. SSE and WebSocket variants carry
+/// only the routed handle: `open`/upgrade touch the mio stream and MUST run
+/// on the event-loop thread.
+enum OffloadedOutcome {
+    Ready(ServerResponse),
+    Sse(Arc<crate::sse::RoutedSseResponse>),
+    WebSocket(Arc<crate::websocket::RoutedUpgradeState>),
+    Pending(PendingResponse),
+    Panicked,
+}
+
+struct HandlerCompletion {
+    conn_id: u64,
+    outcome: OffloadedOutcome,
+}
+
+/// Per-connection request state retained while a worker runs the handler.
+struct AwaitingWorker {
+    request: ParsedRequest,
+    method: String,
+    close: bool,
+    request_started: Instant,
+    trace_span: Option<u64>,
+}
+
+const HANDLER_JOB_CHANNEL_CAPACITY: usize = 16_384;
+
+fn offload_handler_result(result: HandlerResult) -> OffloadedOutcome {
+    match result {
+        HandlerResult::Ready(response) => OffloadedOutcome::Ready(response),
+        HandlerResult::Sse(route_response) => OffloadedOutcome::Sse(route_response),
+        HandlerResult::WebSocket(state) => OffloadedOutcome::WebSocket(state),
+        HandlerResult::Pending(pending) => OffloadedOutcome::Pending(pending),
+    }
+}
+
 const LISTENER_TOKEN: Token = Token(0);
 
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
     pub bind_addr: SocketAddr,
+    pub worker_threads: usize,
     pub max_header_bytes: usize,
     pub max_body_bytes: usize,
     pub max_chunk_bytes: usize,
@@ -70,6 +119,13 @@ pub struct ServerConfig {
     pub shutdown_grace_period: Duration,
     pub max_connections: usize,
     pub poll_interval: Duration,
+    /// When present, `serve` additionally starts a dedicated TLS gateway
+    /// listener next to the cleartext mio HTTP/1.1 listener. The gateway is a
+    /// tokio runtime thread performing TLS handshakes with ALPN fan-out:
+    /// `h2` connections are served by the HTTP/2 pipeline, `http/1.1`
+    /// connections by an async HTTP/1.1 loop that dispatches into the same
+    /// handler as the mio event loop.
+    pub tls_certificates: Option<Arc<crate::tls::TlsCertificateStore>>,
 }
 
 impl Default for ServerConfig {
@@ -86,6 +142,8 @@ impl Default for ServerConfig {
             shutdown_grace_period: Duration::from_millis(DEFAULT_SHUTDOWN_GRACE_MS),
             max_connections: DEFAULT_MAX_CONNECTIONS,
             poll_interval: Duration::from_millis(1),
+            worker_threads: default_worker_threads(),
+            tls_certificates: None,
         }
     }
 }
@@ -98,6 +156,14 @@ impl ServerConfig {
             max_chunk_bytes: self.max_chunk_bytes,
         }
     }
+}
+
+fn default_worker_threads() -> usize {
+    std::thread::available_parallelism()
+        .map(|parallelism| parallelism.get())
+        .unwrap_or(1)
+        .min(DEFAULT_MAX_WORKER_THREADS)
+        .max(1)
 }
 
 #[derive(Clone, Debug)]
@@ -201,6 +267,7 @@ pub struct HttpServer {
     join: Option<JoinHandle<()>>,
     health: Arc<Mutex<spectra_runtime::health::HealthRegistry>>,
     metrics: Arc<Mutex<MetricsRegistry>>,
+    tls_gateway: Option<crate::http2::TlsGateway>,
 }
 
 impl HttpServer {
@@ -217,6 +284,37 @@ impl HttpServer {
     ) -> Result<Self, ServerError> {
         let listener = MioTcpListener::bind(config.bind_addr)?;
         let local_addr = listener.local_addr()?;
+        // Topology note: the HTTP/1.1 pipeline is mio-based and cannot wrap
+        // TLS streams, while the h2 implementation is tokio-based. When TLS
+        // certificates are configured we therefore run two listeners:
+        //
+        //   * `bind_addr` — cleartext HTTP/1.1 on the mio event loop
+        //     (unchanged behavior, full SSE/WebSocket support).
+        //   * an OS-assigned port on the same host — the TLS gateway. It
+        //     negotiates ALPN per connection: `h2` is served by the existing
+        //     HTTP/2 pipeline; `http/1.1` (or no ALPN) is served by an async
+        //     HTTP/1.1 loop that dispatches through the same handler chain.
+        //
+        // `tls_local_addr` reports the gateway address and
+        // `spectra.api.server.tls_local_port` exposes it to programs.
+        let tls_gateway = match &config.tls_certificates {
+            Some(certificates) => {
+                let gateway_listener =
+                    std::net::TcpListener::bind(SocketAddr::new(local_addr.ip(), 0))?;
+                let options = crate::http2::TlsGatewayOptions {
+                    parser_config: config.parser_config(),
+                    read_timeout: config.read_timeout,
+                    shutdown_grace_period: config.shutdown_grace_period,
+                };
+                Some(crate::http2::spawn_tls_gateway(
+                    gateway_listener,
+                    Arc::clone(certificates),
+                    options,
+                    Arc::clone(&dispatcher),
+                )?)
+            }
+            None => None,
+        };
         let shutdown = Arc::new(AtomicBool::new(false));
         let stats = Arc::new(Mutex::new(ServerStats::default()));
         let loop_shutdown = Arc::clone(&shutdown);
@@ -247,6 +345,7 @@ impl HttpServer {
             join: Some(join),
             health,
             metrics,
+            tls_gateway,
         })
     }
 
@@ -267,11 +366,20 @@ impl HttpServer {
         self.local_addr
     }
 
+    /// Address of the TLS gateway listener, present only when the server was
+    /// started with TLS certificates configured.
+    pub fn tls_local_addr(&self) -> Option<SocketAddr> {
+        self.tls_gateway.as_ref().map(|gateway| gateway.local_addr())
+    }
+
     pub fn stats(&self) -> ServerStats {
         self.stats.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn shutdown(&mut self) -> Result<ServerStats, ServerError> {
+        if let Some(gateway) = self.tls_gateway.as_mut() {
+            gateway.shutdown();
+        }
         self.shutdown.store(true, Ordering::SeqCst);
         if let Some(join) = self.join.take() {
             let _ = TcpStream::connect(self.local_addr);
@@ -289,6 +397,7 @@ impl Drop for HttpServer {
 }
 
 struct Connection {
+    id: u64,
     token: Token,
     stream: Option<MioTcpStream>,
     parser: Http1Parser,
@@ -298,6 +407,7 @@ struct Connection {
     last_activity: Instant,
     close_after_write: bool,
     pending_response: Option<PendingConnectionResponse>,
+    awaiting_worker: Option<AwaitingWorker>,
     sse: Option<crate::sse::RoutedSseConnection>,
 }
 
@@ -319,6 +429,7 @@ impl Connection {
     ) -> std::io::Result<Self> {
         stream.set_nodelay(true)?;
         Ok(Self {
+            id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::SeqCst),
             token,
             stream: Some(stream),
             parser: Http1Parser::request_with_config(parser_config),
@@ -328,6 +439,7 @@ impl Connection {
             last_activity: now,
             close_after_write: false,
             pending_response: None,
+            awaiting_worker: None,
             sse: None,
         })
     }
@@ -357,6 +469,7 @@ fn run_accept_loop(
         return;
     }
 
+    let pool = HandlerPool::spawn(config.worker_threads, &handler);
     let mut connections = Vec::<Connection>::new();
     let mut next_token = 1usize;
     let parser_config = config.parser_config();
@@ -391,7 +504,6 @@ fn run_accept_loop(
         }
         service_connections(
             &config,
-            &handler,
             &stats,
             &shutdown,
             &mut connections,
@@ -400,6 +512,16 @@ fn run_accept_loop(
             &metrics,
             &ready_tokens,
             &mut poll,
+            &pool,
+        );
+        drain_handler_completions(
+            &pool,
+            &stats,
+            &mut connections,
+            &metrics,
+            &mut poll,
+            false,
+            &shutdown,
         );
         events.clear();
     }
@@ -415,7 +537,6 @@ fn run_accept_loop(
         let ready_tokens = events.iter().map(|event| event.token()).collect::<HashSet<_>>();
         service_connections(
             &config,
-            &handler,
             &stats,
             &shutdown,
             &mut connections,
@@ -424,6 +545,16 @@ fn run_accept_loop(
             &metrics,
             &ready_tokens,
             &mut poll,
+            &pool,
+        );
+        drain_handler_completions(
+            &pool,
+            &stats,
+            &mut connections,
+            &metrics,
+            &mut poll,
+            true,
+            &shutdown,
         );
         events.clear();
     }
@@ -438,6 +569,9 @@ fn run_accept_loop(
         }
         record_cancel(&stats);
     }
+    // Workers may still be finishing the last in-flight handlers; stop
+    // accepting jobs and join them before the loop thread exits.
+    pool.shutdown();
 }
 
 fn server_poll_timeout(configured: Duration) -> Duration {
@@ -445,6 +579,77 @@ fn server_poll_timeout(configured: Duration) -> Duration {
         Duration::from_millis(1)
     } else {
         configured
+    }
+}
+
+/// Fixed-size worker pool that runs request handlers off the mio event-loop
+/// thread. Workers consume jobs from a bounded channel and report outcomes
+/// back through an unbounded completion channel drained by the event loop.
+struct HandlerPool {
+    jobs: Option<mpsc::SyncSender<HandlerJob>>,
+    completions: mpsc::Receiver<HandlerCompletion>,
+    workers: Vec<JoinHandle<()>>,
+}
+
+impl HandlerPool {
+    fn spawn(worker_threads: usize, handler: &DispatchHandler) -> Self {
+        let (jobs, job_receiver) = mpsc::sync_channel::<HandlerJob>(HANDLER_JOB_CHANNEL_CAPACITY);
+        let (completion_sender, completions) = mpsc::channel::<HandlerCompletion>();
+        let job_receiver = Arc::new(Mutex::new(job_receiver));
+        let workers = (0..worker_threads.max(1))
+            .map(|index| {
+                let job_receiver = Arc::clone(&job_receiver);
+                let completion_sender = completion_sender.clone();
+                let handler = Arc::clone(handler);
+                thread::Builder::new()
+                    .name(format!("spectra-api-handler-{index}"))
+                    .spawn(move || loop {
+                        let Ok(job) = job_receiver
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .recv()
+                        else {
+                            // All senders dropped: the event loop is shutting down.
+                            break;
+                        };
+                        let outcome =
+                            catch_unwind(AssertUnwindSafe(|| handler(job.request)))
+                                .map(offload_handler_result)
+                                .unwrap_or(OffloadedOutcome::Panicked);
+                        let _ = completion_sender.send(HandlerCompletion {
+                            conn_id: job.conn_id,
+                            outcome,
+                        });
+                    })
+                    .expect("handler worker thread spawns")
+            })
+            .collect();
+        drop(completion_sender);
+        Self {
+            jobs: Some(jobs),
+            completions,
+            workers,
+        }
+    }
+
+    fn submit(
+        &self,
+        conn_id: u64,
+        request: ParsedRequest,
+    ) -> Result<(), mpsc::TrySendError<HandlerJob>> {
+        self.jobs
+            .as_ref()
+            .expect("handler pool submits only while running")
+            .try_send(HandlerJob { conn_id, request })
+    }
+
+    /// Stops accepting jobs, waits for in-flight handlers to finish, and
+    /// joins every worker. Called once the event loop finished draining.
+    fn shutdown(mut self) {
+        self.jobs.take();
+        for worker in self.workers.drain(..) {
+            let _ = worker.join();
+        }
     }
 }
 
@@ -589,7 +794,6 @@ fn accept_ready_connections(listener: &mut MioTcpListener, context: &mut AcceptC
 #[allow(clippy::too_many_arguments)]
 fn service_connections(
     config: &ServerConfig,
-    handler: &DispatchHandler,
     stats: &Arc<Mutex<ServerStats>>,
     shutdown: &Arc<AtomicBool>,
     connections: &mut Vec<Connection>,
@@ -598,19 +802,20 @@ fn service_connections(
     metrics: &Arc<Mutex<MetricsRegistry>>,
     ready_tokens: &HashSet<Token>,
     poll: &mut Poll,
+    pool: &HandlerPool,
 ) {
     let mut idx = 0usize;
     while idx < connections.len() {
         let ready = draining || ready_tokens.contains(&connections[idx].token);
         let action = service_connection(
             config,
-            handler,
             stats,
             &mut connections[idx],
             draining,
             ready,
             health,
             metrics,
+            pool,
         );
         match action {
             ConnectionAction::Close => {
@@ -629,20 +834,12 @@ fn service_connections(
                 }
                 record_close(stats, draining || shutdown.load(Ordering::SeqCst));
             }
-            ConnectionAction::Upgrade(mut upgrade) => {
+            ConnectionAction::Upgrade(upgrade) => {
                 let mut connection = connections.swap_remove(idx);
                 if let Some(pending) = connection.pending_response.take() {
                     let _ = spectra_runtime::stdlib::cancel_task_handle(pending.task);
                 }
-                let _ = poll.registry().deregister(&mut upgrade.stream);
-                if let Ok(stream) = mio_stream_into_std(upgrade.stream) {
-                    let _ = crate::websocket::enqueue_routed_upgrade(
-                        stream,
-                        upgrade.request,
-                        upgrade.buffered,
-                        upgrade.state,
-                    );
-                }
+                execute_websocket_upgrade(upgrade, poll);
             }
             ConnectionAction::Keep => {
                 let connection = &mut connections[idx];
@@ -701,12 +898,27 @@ enum ConnectionAction {
     Upgrade(PendingWebSocketUpgrade),
 }
 
+/// Hands a completed WebSocket handshake to the routed upgrade workers.
+/// Shared by the inline dispatch path and the offload completion path.
+fn execute_websocket_upgrade(mut upgrade: PendingWebSocketUpgrade, poll: &mut Poll) {
+    let _ = poll.registry().deregister(&mut upgrade.stream);
+    if let Ok(stream) = mio_stream_into_std(upgrade.stream) {
+        let _ = crate::websocket::enqueue_routed_upgrade(
+            stream,
+            upgrade.request,
+            upgrade.buffered,
+            upgrade.state,
+        );
+    }
+}
+
 struct ResponseCompletion<'a> {
     method: &'a str,
     close: bool,
     request_started: Instant,
     trace_span: Option<u64>,
     stats: &'a Arc<Mutex<ServerStats>>,
+
     metrics: &'a Arc<Mutex<MetricsRegistry>>,
 }
 
@@ -920,16 +1132,225 @@ fn service_pending_response(
     true
 }
 
+/// Returns `true` when the connection finished waiting (completed or timed
+/// out); `false` means it must keep waiting for its worker.
+fn service_awaiting_worker(
+    config: &ServerConfig,
+    connection: &mut Connection,
+    stats: &Arc<Mutex<ServerStats>>,
+    metrics: &Arc<Mutex<MetricsRegistry>>,
+) -> bool {
+    let Some(awaiting) = connection.awaiting_worker.as_ref() else {
+        return true;
+    };
+    if awaiting.request_started.elapsed() <= config.read_timeout {
+        return false;
+    }
+    let awaiting = connection.awaiting_worker.take().expect("connection awaits worker");
+    record_timeout(stats);
+    metric_counter(metrics, "spectra_http_timeouts_total", &[], 1.0);
+    complete_handled_response(
+        connection,
+        ServerResponse::text(504, "handler timeout"),
+        ResponseCompletion {
+            method: &awaiting.method,
+            close: true,
+            request_started: awaiting.request_started,
+            trace_span: awaiting.trace_span,
+            stats,
+            metrics,
+        },
+    );
+    // The worker's late completion is dropped: it no longer matches a
+    // connection with an active `awaiting_worker`.
+    true
+}
+
+/// Drains worker completions and finishes each response on the event-loop
+/// thread. Completions whose connection closed or timed out are dropped.
+#[allow(clippy::too_many_arguments)]
+fn drain_handler_completions(
+    pool: &HandlerPool,
+    stats: &Arc<Mutex<ServerStats>>,
+    connections: &mut Vec<Connection>,
+    metrics: &Arc<Mutex<MetricsRegistry>>,
+    poll: &mut Poll,
+    draining: bool,
+    shutdown: &Arc<AtomicBool>,
+) {
+    let graceful = draining || shutdown.load(Ordering::SeqCst);
+    while let Ok(completion) = pool.completions.try_recv() {
+        let Some(index) = connections.iter().position(|connection| {
+            connection.id == completion.conn_id && connection.awaiting_worker.is_some()
+        }) else {
+            continue;
+        };
+        let mut connection = connections.swap_remove(index);
+        let awaiting = connection
+            .awaiting_worker
+            .take()
+            .expect("matched connection awaits worker");
+        match completion.outcome {
+            OffloadedOutcome::Ready(response) => {
+                complete_handled_response(
+                    &mut connection,
+                    response,
+                    ResponseCompletion {
+                        method: &awaiting.method,
+                        close: awaiting.close,
+                        request_started: awaiting.request_started,
+                        trace_span: awaiting.trace_span,
+                        stats,
+                        metrics,
+                    },
+                );
+                if write_pending(&mut connection).is_err() {
+                    retire_connection(connection, poll, stats, graceful);
+                    continue;
+                }
+            }
+            OffloadedOutcome::Panicked => {
+                let mut response = ServerResponse::text(500, "handler panicked");
+                response.close = true;
+                complete_handled_response(
+                    &mut connection,
+                    response,
+                    ResponseCompletion {
+                        method: &awaiting.method,
+                        close: true,
+                        request_started: awaiting.request_started,
+                        trace_span: awaiting.trace_span,
+                        stats,
+                        metrics,
+                    },
+                );
+                if write_pending(&mut connection).is_err() {
+                    retire_connection(connection, poll, stats, graceful);
+                    continue;
+                }
+            }
+            OffloadedOutcome::Sse(route_response) => match route_response.open(&awaiting.request)
+            {
+                Ok((headers, stream)) => {
+                    complete_routed_sse_response(
+                        &mut connection,
+                        headers,
+                        stream,
+                        ResponseCompletion {
+                            method: &awaiting.method,
+                            close: awaiting.close,
+                            request_started: awaiting.request_started,
+                            trace_span: awaiting.trace_span,
+                            stats,
+                            metrics,
+                        },
+                    );
+                    if write_pending(&mut connection).is_err() {
+                        retire_connection(connection, poll, stats, graceful);
+                        continue;
+                    }
+                }
+                Err(error) => {
+                    complete_handled_response(
+                        &mut connection,
+                        ServerResponse::text(400, error.to_string()),
+                        ResponseCompletion {
+                            method: &awaiting.method,
+                            close: awaiting.close,
+                            request_started: awaiting.request_started,
+                            trace_span: awaiting.trace_span,
+                            stats,
+                            metrics,
+                        },
+                    );
+                    if write_pending(&mut connection).is_err() {
+                        retire_connection(connection, poll, stats, graceful);
+                        continue;
+                    }
+                }
+            },
+            OffloadedOutcome::WebSocket(state) => {
+                metric_counter(
+                    metrics,
+                    "spectra_http_requests_total",
+                    &[("method", &awaiting.method), ("status", "101")],
+                    1.0,
+                );
+                metric_histogram(
+                    metrics,
+                    "spectra_http_request_duration_seconds",
+                    &[("method", &awaiting.method)],
+                    awaiting.request_started.elapsed().as_secs_f64(),
+                );
+                if let Some(id) = awaiting.trace_span {
+                    let _ = tracing::span_set_attribute_int(id, "http.response.status_code", 101);
+                    let _ = tracing::span_set_status(id, SpanStatus::Ok);
+                    let _ = tracing::span_end(id);
+                }
+                stats
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .completed_requests += 1;
+                if let Some(stream) = connection.stream.take() {
+                    execute_websocket_upgrade(
+                        PendingWebSocketUpgrade {
+                            stream,
+                            request: awaiting.request,
+                            buffered: connection.parser.take_buffered(),
+                            state,
+                        },
+                        poll,
+                    );
+                    continue;
+                }
+                retire_connection(connection, poll, stats, graceful);
+                continue;
+            }
+            OffloadedOutcome::Pending(pending) => {
+                connection.pending_response = Some(PendingConnectionResponse {
+                    task: pending.task,
+                    request: awaiting.request,
+                    method: awaiting.method,
+                    close: awaiting.close,
+                    request_started: awaiting.request_started,
+                    trace_span: awaiting.trace_span,
+                });
+            }
+        }
+        connections.push(connection);
+    }
+}
+
+/// Closes a connection from outside the regular service pass.
+fn retire_connection(
+    mut connection: Connection,
+    poll: &mut Poll,
+    stats: &Arc<Mutex<ServerStats>>,
+    graceful: bool,
+) {
+    if let Some(pending) = connection.pending_response.take() {
+        let _ = spectra_runtime::stdlib::cancel_task_handle(pending.task);
+    }
+    if let Some(mut stream) = connection.stream.take() {
+        let _ = poll.registry().deregister(&mut stream);
+        let _ = stream.shutdown(if graceful {
+            Shutdown::Write
+        } else {
+            Shutdown::Both
+        });
+    }
+    record_close(stats, graceful);
+}
 #[allow(clippy::too_many_arguments)]
 fn service_connection(
     config: &ServerConfig,
-    handler: &DispatchHandler,
     stats: &Arc<Mutex<ServerStats>>,
     connection: &mut Connection,
     draining: bool,
     ready: bool,
     health: &Arc<Mutex<spectra_runtime::health::HealthRegistry>>,
     metrics: &Arc<Mutex<MetricsRegistry>>,
+    pool: &HandlerPool,
 ) -> ConnectionAction {
     if ready && write_pending(connection).is_err() {
         return ConnectionAction::Close;
@@ -938,7 +1359,15 @@ fn service_connection(
         return ConnectionAction::Close;
     }
 
-    if connection.pending_response.is_some() && !service_pending_response(config, connection, stats, metrics) {
+    if connection.pending_response.is_some()
+        && !service_pending_response(config, connection, stats, metrics)
+    {
+        return ConnectionAction::Keep;
+    }
+
+    if connection.awaiting_worker.is_some()
+        && !service_awaiting_worker(config, connection, stats, metrics)
+    {
         return ConnectionAction::Keep;
     }
 
@@ -1070,10 +1499,33 @@ fn service_connection(
                     let _ = tracing::span_set_attribute(id, "url.path", &request.target);
                 }
                 let request_for_stream = request.clone();
-                let result = reserved_metrics_response(&request, metrics)
+                let reserved = reserved_metrics_response(&request, metrics)
                     .or_else(|| reserved_health_response(&request, health))
-                    .map(HandlerResult::Ready)
-                    .unwrap_or_else(|| handler(request));
+                    .map(HandlerResult::Ready);
+                let result = match reserved {
+                    Some(result) => result,
+                    None => match pool.submit(connection.id, request) {
+                        Ok(()) => {
+                            connection.awaiting_worker = Some(AwaitingWorker {
+                                request: request_for_stream,
+                                method,
+                                close,
+                                request_started,
+                                trace_span,
+                            });
+                            // Response arrives through the completion channel;
+                            // buffered pipelined bytes stay in the parser until
+                            // this request finishes.
+                            break;
+                        }
+                        Err(_) => {
+                            let mut response =
+                                ServerResponse::text(503, "worker pool unavailable");
+                            response.close = true;
+                            HandlerResult::Ready(response)
+                        }
+                    },
+                };
                 match result {
                     HandlerResult::Ready(response) => {
                         complete_handled_response(
@@ -1261,7 +1713,7 @@ fn queue_error_response(connection: &mut Connection, status_code: u16, message: 
     queue_response(connection, response, false, true);
 }
 
-fn response_to_wire(mut response: ServerResponse, head_only: bool, close: bool) -> Vec<u8> {
+pub(crate) fn response_to_wire(mut response: ServerResponse, head_only: bool, close: bool) -> Vec<u8> {
     upsert_header(
         &mut response.headers,
         "Connection",

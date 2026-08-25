@@ -117,7 +117,8 @@ impl SemanticAnalyzer {
                         .collect::<Vec<_>>()
                         .join(", ");
 
-                    self.error(
+                    self.error_coded(
+                        "E031",
                         format!(
                             "Match expression is not exhaustive. Missing patterns: {}",
                             missing_str
@@ -140,7 +141,8 @@ impl SemanticAnalyzer {
 
                 if !missing_payload_guard.is_empty() {
                     let list = missing_payload_guard.join(", ");
-                    self.error(
+                    self.error_coded(
+                        "E031",
                         format!(
                             "Match on enum '{}' must include wildcard bindings for payload of variant(s): {}",
                             base_enum_name, list
@@ -158,7 +160,8 @@ impl SemanticAnalyzer {
                     .any(|arm| pattern_contains_bool_literal(&arm.pattern, false));
 
                 if !(has_true && has_false) {
-                    self.error(
+                    self.error_coded(
+                        "E031",
                         "Match on 'bool' is not exhaustive. Consider adding 'true', 'false', or a wildcard pattern (_).",
                         span,
                     );
@@ -215,16 +218,17 @@ impl SemanticAnalyzer {
                 }
 
                 if unsupported_pattern {
-                    self.error(
+                    self.error_coded(
+                        "E031",
                         "Match on tuple requires a wildcard (_) pattern to cover remaining combinations.",
                         span,
                     );
-                    return;
                 }
 
                 let expected = 1 << elements.len();
                 if bool_combinations.len() != expected {
-                    self.error(
+                    self.error_coded(
+                        "E031",
                         format!(
                             "Match on tuple of bools is not exhaustive. Expected {} combination(s).",
                             expected
@@ -239,7 +243,8 @@ impl SemanticAnalyzer {
                     .all(|arm| matches!(arm.pattern, Pattern::Literal(_)));
 
                 if only_literals {
-                    self.error(
+                    self.error_coded(
+                        "E031",
                         "Match expression with only literal patterns is not exhaustive. Consider adding a wildcard pattern (_).",
                         span,
                     );

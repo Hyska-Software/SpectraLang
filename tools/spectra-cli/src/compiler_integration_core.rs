@@ -223,6 +223,9 @@ pub struct NativeDebugFunction {
     pub locals: Vec<String>,
     pub local_offsets: Vec<Option<i64>>,
     pub local_locations: Vec<Vec<NativeValueLocationRange>>,
+    /// Span-derived `(machine offset relative to function start, 1-based
+    /// source line)` rows captured by AOT codegen from IR `source_span`s.
+    pub line_rows: Vec<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -247,6 +250,7 @@ fn native_debug_metadata(module: &IRModule, executable: bool) -> NativeDebugMeta
                 .collect(),
             local_offsets: vec![None; function.locals.len()],
             local_locations: vec![Vec::new(); function.locals.len()],
+            line_rows: Vec::new(),
         })
         .collect::<Vec<_>>();
     functions.retain(|function| !function.name.is_empty());

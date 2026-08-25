@@ -512,6 +512,7 @@ fn test_function_inlining_remaps_parameters() {
                                 result: Some(Value { id: 2 }),
                                 function: "add_pair".to_string(),
                                 args: vec![Value { id: 0 }, Value { id: 1 }],
+                                is_tail: false,
                             },
 
                             source_span: None,
@@ -669,6 +670,7 @@ fn test_function_inlining_allows_stack_safe_alloca_helpers() {
                                 result: Some(Value { id: 2 }),
                                 function: "store_sum".to_string(),
                                 args: vec![Value { id: 0 }, Value { id: 1 }],
+                                is_tail: false,
                             },
 
                             source_span: None,
@@ -710,5 +712,215 @@ fn test_function_inlining_allows_stack_safe_alloca_helpers() {
             .iter()
             .any(|instruction| matches!(instruction.kind, InstructionKind::Alloca { .. })),
         "stack-safe alloca should not block inlining"
+    );
+}
+
+#[test]
+fn test_dce_preserves_autodiff_step_with_unused_result() {
+    // AutodiffStep has side effects (accumulates gradients in the backward
+    // pass), so it must survive DCE even when `result` is None/unused and the
+    // Add result is only consumed by the AutodiffStep itself.
+    let mut module = Module {
+        name: "test".to_string(),
+        functions: vec![Function {
+            name: "test_func".to_string(),
+            params: vec![],
+            return_type: Type::Void,
+            next_value_id: 0,
+            next_block_id: 1,
+            source_span: None,
+            locals: vec![],
+            blocks: vec![BasicBlock {
+                id: 0,
+                label: "entry".to_string(),
+                instructions: vec![
+                    Instruction {
+                        id: 0,
+                        kind: InstructionKind::ConstInt {
+                            result: Value { id: 0 },
+                            value: 5,
+                        },
+                        source_span: None,
+                    },
+                    Instruction {
+                        id: 1,
+                        kind: InstructionKind::ConstInt {
+                            result: Value { id: 1 },
+                            value: 3,
+                        },
+                        source_span: None,
+                    },
+                    Instruction {
+                        id: 2,
+                        kind: InstructionKind::Add {
+                            result: Value { id: 2 },
+                            lhs: Value { id: 0 },
+                            rhs: Value { id: 1 },
+                        },
+                        source_span: None,
+                    },
+                    // Reverse-mode autodiff step: result unused, but the step
+                    // accumulates gradients — must never be eliminated.
+                    Instruction {
+                        id: 3,
+                        kind: InstructionKind::AutodiffStep {
+                            result: None,
+                            operation: "add".to_string(),
+                            output: Value { id: 2 },
+                            upstream: None,
+                            inputs: vec![Value { id: 0 }, Value { id: 1 }],
+                            targets: vec![],
+                        },
+                        source_span: None,
+                    },
+                ],
+                terminator: Some(Terminator::Return { value: None }),
+            }],
+        }],
+        external_functions: vec![],
+        globals: vec![],
+        source_file: None,
+    };
+
+    let modified = dead_code_elimination::run(&mut module);
+    assert!(!modified, "DCE must not remove side-effecting AutodiffStep");
+
+    let instructions = &module.functions[0].blocks[0].instructions;
+    assert_eq!(
+        instructions.len(),
+        4,
+        "ConstInt, Add and AutodiffStep must all survive"
+    );
+    assert!(
+        instructions
+            .iter()
+            .any(|i| matches!(i.kind, InstructionKind::AutodiffStep { .. })),
+        "AutodiffStep must survive DCE"
+    );
+}
+
+#[test]
+fn test_dce_preserves_async_suspend() {
+    // AsyncSuspend is an effectful async boundary: never eliminable.
+    let mut module = Module {
+        name: "test".to_string(),
+        functions: vec![Function {
+            name: "test_func".to_string(),
+            params: vec![],
+            return_type: Type::Void,
+            next_value_id: 0,
+            next_block_id: 1,
+            source_span: None,
+            locals: vec![],
+            blocks: vec![BasicBlock {
+                id: 0,
+                label: "entry".to_string(),
+                instructions: vec![
+                    Instruction {
+                        id: 0,
+                        kind: InstructionKind::ConstInt {
+                            result: Value { id: 0 },
+                            value: 1,
+                        },
+                        source_span: None,
+                    },
+                    Instruction {
+                        id: 1,
+                        kind: InstructionKind::AsyncSuspend {
+                            task: Value { id: 0 },
+                            state: 0,
+                        },
+                        source_span: None,
+                    },
+                ],
+                terminator: Some(Terminator::Return { value: None }),
+            }],
+        }],
+        external_functions: vec![],
+        globals: vec![],
+        source_file: None,
+    };
+
+    let modified = dead_code_elimination::run(&mut module);
+    assert!(!modified, "DCE must not remove effectful AsyncSuspend");
+
+    let instructions = &module.functions[0].blocks[0].instructions;
+    assert!(
+        instructions
+            .iter()
+            .any(|i| matches!(i.kind, InstructionKind::AsyncSuspend { .. })),
+        "AsyncSuspend must survive DCE"
+    );
+}
+
+#[test]
+fn test_dce_iterates_to_fixpoint() {
+    // First pass removes the unused Mul; only after that does the ConstInt
+    // feeding it become unused. A single-pass DCE would leave it behind.
+    let mut module = Module {
+        name: "test".to_string(),
+        functions: vec![Function {
+            name: "test_func".to_string(),
+            params: vec![],
+            return_type: Type::Int,
+            next_value_id: 0,
+            next_block_id: 1,
+            source_span: None,
+            locals: vec![],
+            blocks: vec![BasicBlock {
+                id: 0,
+                label: "entry".to_string(),
+                instructions: vec![
+                    Instruction {
+                        id: 0,
+                        kind: InstructionKind::ConstInt {
+                            result: Value { id: 0 },
+                            value: 7,
+                        },
+                        source_span: None,
+                    },
+                    Instruction {
+                        id: 1,
+                        kind: InstructionKind::Mul {
+                            result: Value { id: 1 },
+                            lhs: Value { id: 0 },
+                            rhs: Value { id: 0 },
+                        },
+                        source_span: None,
+                    },
+                    Instruction {
+                        id: 2,
+                        kind: InstructionKind::ConstInt {
+                            result: Value { id: 2 },
+                            value: 9,
+                        },
+                        source_span: None,
+                    },
+                ],
+                terminator: Some(Terminator::Return {
+                    value: Some(Value { id: 2 }),
+                }),
+            }],
+        }],
+        external_functions: vec![],
+        globals: vec![],
+        source_file: None,
+    };
+
+    let modified = dead_code_elimination::run(&mut module);
+    assert!(modified, "DCE should remove the dead chain");
+
+    let instructions = &module.functions[0].blocks[0].instructions;
+    assert_eq!(
+        instructions.len(),
+        1,
+        "fixpoint iteration should remove both the Mul and its now-unused producer"
+    );
+    assert!(
+        matches!(
+            &instructions[0].kind,
+            InstructionKind::ConstInt { value: 9, .. }
+        ),
+        "only the returned constant must remain"
     );
 }

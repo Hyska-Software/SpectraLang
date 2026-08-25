@@ -377,7 +377,7 @@ pub struct ForLoop {
     pub iterable: Expression,
     pub body: Block,
     pub span: Span,
-    // Note: both `for x in expr` and `for x of expr` have identical semantics.
+    // Note: only `for x in expr` is supported; `of` is not a keyword.
 }
 
 #[derive(Debug, Clone)]

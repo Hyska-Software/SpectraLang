@@ -62,7 +62,6 @@ impl ASTLowering {
     }
 
 
-    #[allow(dead_code)]
     fn lower_type(&self, ast_type: &ASTType) -> IRType {
         match ast_type {
             ASTType::Int => IRType::Int,

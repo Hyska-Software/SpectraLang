@@ -72,13 +72,18 @@ impl Parser {
                 }
                 self.parse_item_with_visibility(Visibility::Internal, attributes)
             }
-            crate::token::TokenKind::Keyword(Keyword::Func) => {
+            crate::token::TokenKind::Keyword(Keyword::Func)
+            | crate::token::TokenKind::Keyword(Keyword::Fn) => {
+                // `fn` is a surface alias of the canonical `func`.
                 self.parse_item_with_visibility(Visibility::Private, attributes)
             }
             crate::token::TokenKind::Keyword(Keyword::Async) => {
                 self.parse_item_with_visibility(Visibility::Private, attributes)
             }
-            crate::token::TokenKind::Keyword(Keyword::Record) => {
+            crate::token::TokenKind::Keyword(Keyword::Record)
+            | crate::token::TokenKind::Keyword(Keyword::Struct) => {
+                // `struct` is a surface alias of the canonical `record`;
+                // both produce the identical AST item.
                 self.parse_item_with_visibility(Visibility::Private, attributes)
             }
             crate::token::TokenKind::Keyword(Keyword::Enum) => {
@@ -230,7 +235,8 @@ impl Parser {
         attributes: Vec<Attribute>,
     ) -> Result<Item, ()> {
         match &self.current().kind {
-            crate::token::TokenKind::Keyword(Keyword::Func) => {
+            crate::token::TokenKind::Keyword(Keyword::Func)
+            | crate::token::TokenKind::Keyword(Keyword::Fn) => {
                 let function = self.parse_function(visibility, attributes)?;
                 Ok(Item::Function(function))
             }
@@ -238,7 +244,8 @@ impl Parser {
                 let function = self.parse_function(visibility, attributes)?;
                 Ok(Item::Function(function))
             }
-            crate::token::TokenKind::Keyword(Keyword::Record) => {
+            crate::token::TokenKind::Keyword(Keyword::Record)
+            | crate::token::TokenKind::Keyword(Keyword::Struct) => {
                 let struct_item = self.parse_struct(visibility, attributes)?;
                 Ok(Item::Struct(struct_item))
             }

@@ -84,7 +84,7 @@ impl SemanticAnalyzer {
                                         "Add an explicit type annotation to resolve the argument type.",
                                     );
                                 } else if *expected_type != Type::Unknown
-                                    && !self.types_match(&arg_type, expected_type)
+                                    && !self.generic_argument_types_match(&arg_type, expected_type)
                                 {
                                     self.error(
                                         format!(

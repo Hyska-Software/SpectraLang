@@ -47,8 +47,13 @@ fn make_std_option() -> ModuleExports {
                     return_type: Box::new(mapped),
                 },
             ],
-            Type::Enum {
+            Type::Applied {
                 name: "Option".to_string(),
+                // `U` is instantiated from the closure's return type at each
+                // call site by `specialize_std_collection_signature`.
+                args: vec![Type::TypeParameter {
+                    name: "U".to_string(),
+                }],
             },
         ),
     );
@@ -109,8 +114,18 @@ fn make_std_result() -> ModuleExports {
                     return_type: Box::new(mapped.clone()),
                 },
             ],
-            Type::Enum {
+            Type::Applied {
                 name: "Result".to_string(),
+                // `U` comes from the closure's return type; the error side
+                // keeps the input's `E`.
+                args: vec![
+                    Type::TypeParameter {
+                        name: "U".to_string(),
+                    },
+                    Type::TypeParameter {
+                        name: "E".to_string(),
+                    },
+                ],
             },
         ),
     );
@@ -128,8 +143,18 @@ fn make_std_result() -> ModuleExports {
                     return_type: Box::new(mapped),
                 },
             ],
-            Type::Enum {
+            Type::Applied {
                 name: "Result".to_string(),
+                // The value side keeps the input's `T`; `U` comes from the
+                // closure's return type.
+                args: vec![
+                    Type::TypeParameter {
+                        name: "T".to_string(),
+                    },
+                    Type::TypeParameter {
+                        name: "U".to_string(),
+                    },
+                ],
             },
         ),
     );

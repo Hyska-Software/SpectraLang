@@ -61,8 +61,19 @@ extern "C" fn std_string_pad_left(ctx: *mut SpectraHostCallContext) -> i32 {
                 if s.len() >= width {
                     alloc_spectra_string(&s)
                 } else {
-                    let padding: String = std::iter::repeat_n(pad_ch, width - s.len()).collect();
-                    alloc_spectra_string(&(padding + &s))
+                    let pad_count = width - s.len();
+                    // Guard against absurd widths: when the requested padding
+                    // is not addressable, return the input unchanged instead
+                    // of panicking inside the allocator.
+                    let fits = pad_count
+                        .checked_mul(pad_ch.len_utf8())
+                        .is_some_and(|total| total <= isize::MAX as usize);
+                    if !fits {
+                        alloc_spectra_string(&s)
+                    } else {
+                        let padding: String = std::iter::repeat_n(pad_ch, pad_count).collect();
+                        alloc_spectra_string(&(padding + &s))
+                    }
                 }
             }
             None => alloc_spectra_string(""),
@@ -96,8 +107,19 @@ extern "C" fn std_string_pad_right(ctx: *mut SpectraHostCallContext) -> i32 {
                 if s.len() >= width {
                     alloc_spectra_string(&s)
                 } else {
-                    let padding: String = std::iter::repeat_n(pad_ch, width - s.len()).collect();
-                    alloc_spectra_string(&(s + &padding))
+                    let pad_count = width - s.len();
+                    // Guard against absurd widths: when the requested padding
+                    // is not addressable, return the input unchanged instead
+                    // of panicking inside the allocator.
+                    let fits = pad_count
+                        .checked_mul(pad_ch.len_utf8())
+                        .is_some_and(|total| total <= isize::MAX as usize);
+                    if !fits {
+                        alloc_spectra_string(&s)
+                    } else {
+                        let padding: String = std::iter::repeat_n(pad_ch, pad_count).collect();
+                        alloc_spectra_string(&(s + &padding))
+                    }
                 }
             }
             None => alloc_spectra_string(""),

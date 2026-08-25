@@ -692,6 +692,7 @@ pub enum ParseErrorKind {
     InvalidChunkSize,
     InvalidChunkTerminator,
     UnsupportedTransferEncoding,
+    ConflictingFraming,
     ObsoleteLineFolding,
 }
 

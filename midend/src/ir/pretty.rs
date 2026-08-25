@@ -220,6 +220,7 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                 result,
                 function,
                 args,
+                ..
             } => {
                 let arg_list = args
                     .iter()

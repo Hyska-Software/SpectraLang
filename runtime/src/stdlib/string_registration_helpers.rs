@@ -55,13 +55,18 @@ unsafe fn read_spectra_string(ptr_val: SpectraHostValue) -> Option<String> {
     let raw = ptr_val as *const i64;
     let mut bytes: Vec<u8> = Vec::new();
     let mut offset = 0usize;
-    loop {
+    let limit = crate::ffi::string_scan_limit_slots(ptr_val);
+    while offset < limit {
         let b = *raw.add(offset) as u8;
         if b == 0 {
             break;
         }
         bytes.push(b);
         offset += 1;
+    }
+    if offset >= limit {
+        // No NUL terminator within the allocation/scan bound: treat as invalid.
+        return None;
     }
     let value = String::from_utf8(bytes).ok()?;
     register_string_value(ptr_val, &value);
@@ -115,9 +120,10 @@ pub fn string_len_fast(s: SpectraHostValue) -> SpectraHostValue {
         return 0;
     }
     let raw = s as *const i64;
+    let limit = crate::ffi::string_scan_limit_slots(s);
     let mut len: usize = 0;
     unsafe {
-        while (*raw.add(len) as u8) != 0 {
+        while len < limit && (*raw.add(len) as u8) != 0 {
             len += 1;
         }
     }
@@ -139,8 +145,9 @@ pub fn string_char_at_fast(s: SpectraHostValue, index: SpectraHostValue) -> Spec
     let idx = index as usize;
     let raw = s as *const i64;
     unsafe {
+        let limit = crate::ffi::string_scan_limit_slots(s);
         let mut len: usize = 0;
-        while (*raw.add(len) as u8) != 0 {
+        while len < limit && (*raw.add(len) as u8) != 0 {
             len += 1;
         }
         if idx >= len {

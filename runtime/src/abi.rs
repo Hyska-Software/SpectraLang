@@ -110,10 +110,13 @@ pub enum RuntimeImport {
     HostInvokeCached,
     /// Generic host batch dispatch using cache slots embedded in descriptors.
     HostInvokeCachedBatch,
+    /// Fatal runtime error reporter used by Div/Rem zero checks and failed
+    /// host calls. Prints `runtime error: <message>` and exits with 101.
+    SpectraPanic,
 }
 
 impl RuntimeImport {
-    pub const COUNT: usize = 42;
+    pub const COUNT: usize = 43;
 
     pub const ALL: &'static [Self] = &[
         Self::ManualAlloc,
@@ -158,6 +161,7 @@ impl RuntimeImport {
         Self::ChannelLen,
         Self::HostInvokeCached,
         Self::HostInvokeCachedBatch,
+        Self::SpectraPanic,
     ];
 
     pub const fn index(self) -> usize {
@@ -208,6 +212,7 @@ impl RuntimeImport {
             Self::ChannelLen => "spectra_rt_channel_len_fast",
             Self::HostInvokeCached => "spectra_rt_host_invoke_cached",
             Self::HostInvokeCachedBatch => "spectra_rt_host_invoke_cached_batch",
+            Self::SpectraPanic => "spectra_rt_panic",
         }
     }
 
@@ -255,6 +260,7 @@ impl RuntimeImport {
             Self::ChannelRecv => (I64, I64),
             Self::ChannelClose => (I64, I32),
             Self::ChannelLen => (I64, I64),
+            Self::SpectraPanic => (I64, EMPTY),
         };
         AbiSignature { params, returns }
     }
@@ -309,6 +315,7 @@ impl RuntimeImport {
             Self::ChannelLen => ffi::spectra_rt_channel_len_fast as *const u8,
             Self::HostInvokeCached => ffi::spectra_rt_host_invoke_cached as *const u8,
             Self::HostInvokeCachedBatch => ffi::spectra_rt_host_invoke_cached_batch as *const u8,
+            Self::SpectraPanic => crate::panic::spectra_rt_panic as *const u8,
         }
     }
 }

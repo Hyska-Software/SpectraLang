@@ -102,7 +102,7 @@ impl SemanticAnalyzer {
                             &substitutions,
                         );
 
-                        if !self.types_match(&value_type, &expected_type) {
+                        if !self.generic_argument_types_match(&value_type, &expected_type) {
                             let mut message = format!(
                                 "Field '{}' in struct '{}' has type {:?}, but {:?} was expected",
                                 field_name, name, value_type, expected_type

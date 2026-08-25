@@ -1,9 +1,12 @@
-use crate::{read_args, read_spectra_string, write_result};
+use crate::handles::ApiHandleTable;
+use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use serde_json::{Map, Number, Value};
 use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
+    HOST_STATUS_SUCCESS,
 };
 use std::collections::BTreeMap;
+use std::sync::{LazyLock, Mutex};
 use std::fmt;
 use std::str::FromStr;
 
@@ -315,6 +318,155 @@ pub extern "C" fn json_kind(ctx: *mut SpectraHostCallContext) -> i32 {
     write_result(ctx, kind)
 }
 
+struct JsonStore {
+    values: ApiHandleTable<Value>,
+}
+
+fn json_store() -> &'static Mutex<JsonStore> {
+    static STORE: LazyLock<Mutex<JsonStore>> = LazyLock::new(|| {
+        Mutex::new(JsonStore {
+            values: ApiHandleTable::new(spectra_runtime::handles::HandleKind::ApiJsonValue),
+        })
+    });
+    &STORE
+}
+
+fn insert_json_value(value: Value) -> SpectraHostValue {
+    match json_store().lock() {
+        Ok(mut store) => store.values.insert(value),
+        Err(_) => 0,
+    }
+}
+
+fn stored_json_value(raw: SpectraHostValue) -> Option<Value> {
+    let store = &mut *json_store().lock().ok()?;
+    store.values.get(&raw).cloned()
+}
+
+fn json_kind_of_serde(value: &Value) -> SpectraHostValue {
+    match value {
+        Value::Null => JSON_KIND_NULL,
+        Value::Bool(_) => JSON_KIND_BOOL,
+        Value::Number(_) => JSON_KIND_NUMBER,
+        Value::String(_) => JSON_KIND_STRING,
+        Value::Array(_) => JSON_KIND_ARRAY,
+        Value::Object(_) => JSON_KIND_OBJECT,
+    }
+}
+
+pub extern "C" fn json_parse(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let parsed = read_spectra_string(args[0])
+        .and_then(|text| parse_json(&text).ok())
+        .and_then(|value| to_serde_value(&value).ok());
+    let Some(value) = parsed else {
+        return write_result(ctx, 0);
+    };
+    write_result(ctx, insert_json_value(value))
+}
+
+pub extern "C" fn json_value_kind(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let kind = stored_json_value(args[0])
+        .map(|value| json_kind_of_serde(&value))
+        .unwrap_or(JSON_KIND_INVALID);
+    write_result(ctx, kind)
+}
+
+pub extern "C" fn json_value_len(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let len = stored_json_value(args[0])
+        .map(|value| match value {
+            Value::Array(values) => values.len() as SpectraHostValue,
+            Value::Object(values) => values.len() as SpectraHostValue,
+            _ => 0,
+        })
+        .unwrap_or(0);
+    write_result(ctx, len)
+}
+
+pub extern "C" fn json_value_get(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let child = read_spectra_string(args[1]).and_then(|key| {
+        stored_json_value(args[0]).and_then(|value| value.get(key).cloned())
+    });
+    write_result(ctx, child.map(insert_json_value).unwrap_or(0))
+}
+
+pub extern "C" fn json_value_at(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let child = stored_json_value(args[0]).and_then(|value| {
+        let index = usize::try_from(args[1]).ok()?;
+        value.get(index).cloned()
+    });
+    write_result(ctx, child.map(insert_json_value).unwrap_or(0))
+}
+
+pub extern "C" fn json_value_text(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let text = stored_json_value(args[0])
+        .and_then(|value| value.as_str().map(str::to_string))
+        .unwrap_or_default();
+    write_result(ctx, alloc_spectra_string(&text))
+}
+
+pub extern "C" fn json_value_number_bits(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let bits = stored_json_value(args[0])
+        .and_then(|value| value.as_f64())
+        .map(|number| number.to_bits() as i64)
+        .unwrap_or(0);
+    write_result(ctx, bits)
+}
+
+pub extern "C" fn json_value_bool(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let flag = stored_json_value(args[0])
+        .map(|value| match value {
+            Value::Bool(true) => 1,
+            Value::Bool(false) => 0,
+            _ => -1,
+        })
+        .unwrap_or(-1);
+    write_result(ctx, flag)
+}
+
+pub extern "C" fn json_value_free(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    if let Ok(mut store) = json_store().lock() {
+        store.values.remove(&args[0]);
+    }
+    HOST_STATUS_SUCCESS
+}
+
+pub extern "C" fn json_stringify(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let encoded = stored_json_value(args[0])
+        .and_then(|value| serde_json::to_string(&value).ok())
+        .unwrap_or_default();
+    write_result(ctx, alloc_spectra_string(&encoded))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -423,5 +575,182 @@ mod tests {
         assert_eq!(json_kind_of(r#"[{"ok":true}, null]"#), JSON_KIND_ARRAY);
         assert_eq!(json_kind_of(r#""hello""#), JSON_KIND_STRING);
         assert_eq!(json_kind_of("-3.5e+7"), JSON_KIND_NUMBER);
+    }
+
+
+    fn call_json_host(
+        function: extern "C" fn(*mut SpectraHostCallContext) -> i32,
+        args: &[SpectraHostValue],
+    ) -> (i32, SpectraHostValue) {
+        let mut result = [0_i64];
+        let mut ctx = SpectraHostCallContext {
+            args: args.as_ptr(),
+            arg_len: args.len(),
+            results: result.as_mut_ptr(),
+            result_len: result.len(),
+            invoke_fn: None,
+        };
+        let status = function(&mut ctx);
+        (status, result[0])
+    }
+
+    fn call_json_host_no_result(
+        function: extern "C" fn(*mut SpectraHostCallContext) -> i32,
+        args: &[SpectraHostValue],
+    ) -> i32 {
+        let mut ctx = SpectraHostCallContext {
+            args: args.as_ptr(),
+            arg_len: args.len(),
+            results: std::ptr::null_mut(),
+            result_len: 0,
+            invoke_fn: None,
+        };
+        function(&mut ctx)
+    }
+
+    const SAMPLE: &str = r#"{"name":"Ada","count":2,"ratio":2.5,"flag":true,"off":false,"none":null,"tags":[10,20,30]}"#;
+
+    #[test]
+    fn host_parse_accepts_valid_and_rejects_invalid_documents() {
+        let text = alloc_spectra_string(SAMPLE);
+        let (status, handle) = call_json_host(json_parse, &[text]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!(handle != 0, "valid document must yield a nonzero handle");
+
+        let bad = alloc_spectra_string("{\"unterminated\":");
+        let (status, handle) = call_json_host(json_parse, &[bad]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(handle, 0, "invalid document must yield the zero handle");
+
+        let mut ctx = SpectraHostCallContext {
+            args: std::ptr::null(),
+            arg_len: 0,
+            results: std::ptr::null_mut(),
+            result_len: 0,
+            invoke_fn: None,
+        };
+        assert_eq!(json_parse(&mut ctx), HOST_STATUS_INVALID_ARGUMENT);
+    }
+
+    #[test]
+    fn host_navigation_walks_objects_arrays_and_reports_lengths() {
+        let (_, root) = call_json_host(json_parse, &[alloc_spectra_string(SAMPLE)]);
+
+        let (status, kind) = call_json_host(json_value_kind, &[root]);
+        assert_eq!((status, kind), (HOST_STATUS_SUCCESS, JSON_KIND_OBJECT));
+        let (_, len) = call_json_host(json_value_len, &[root]);
+        assert_eq!(len, 7);
+
+        let (_, tags) = call_json_host(
+            json_value_get,
+            &[root, alloc_spectra_string("tags")],
+        );
+        assert!(tags != 0);
+        let (_, tags_kind) = call_json_host(json_value_kind, &[tags]);
+        assert_eq!(tags_kind, JSON_KIND_ARRAY);
+        let (_, tags_len) = call_json_host(json_value_len, &[tags]);
+        assert_eq!(tags_len, 3);
+
+        let (_, first) = call_json_host(json_value_at, &[tags, 0]);
+        let (_, first_bits) = call_json_host(json_value_number_bits, &[first]);
+        assert_eq!(f64::from_bits(first_bits as u64), 10.0);
+        let (_, third) = call_json_host(json_value_at, &[tags, 2]);
+        assert!(third != 0);
+        assert_eq!(
+            call_json_host(json_value_at, &[tags, 3]).1,
+            0,
+            "out-of-range index must yield the zero handle"
+        );
+        assert_eq!(
+            call_json_host(json_value_at, &[tags, -1]).1,
+            0,
+            "negative index must yield the zero handle"
+        );
+
+        assert_eq!(
+            call_json_host(json_value_get, &[root, alloc_spectra_string("missing")]).1,
+            0
+        );
+
+        let (_, name) = call_json_host(
+            json_value_get,
+            &[root, alloc_spectra_string("name")],
+        );
+        let (_, name_ptr) = call_json_host(json_value_text, &[name]);
+        assert_eq!(read_spectra_string(name_ptr).as_deref(), Some("Ada"));
+    }
+
+    #[test]
+    fn host_accessors_report_sentinels_for_wrong_value_types() {
+        let (_, root) = call_json_host(json_parse, &[alloc_spectra_string(SAMPLE)]);
+
+        let flag = call_json_host(json_value_get, &[root, alloc_spectra_string("flag")]).1;
+        assert_eq!(call_json_host(json_value_bool, &[flag]).1, 1);
+        let off = call_json_host(json_value_get, &[root, alloc_spectra_string("off")]).1;
+        assert_eq!(call_json_host(json_value_bool, &[off]).1, 0);
+        let none = call_json_host(json_value_get, &[root, alloc_spectra_string("none")]).1;
+        assert_eq!(call_json_host(json_value_bool, &[none]).1, -1);
+        assert_eq!(
+            call_json_host(json_value_bool, &[root]).1,
+            -1,
+            "non-bool values must report -1"
+        );
+
+        let ratio = call_json_host(json_value_get, &[root, alloc_spectra_string("ratio")]).1;
+        assert_eq!(
+            f64::from_bits(call_json_host(json_value_number_bits, &[ratio]).1 as u64),
+            2.5
+        );
+        assert_eq!(
+            call_json_host(json_value_number_bits, &[root]).1,
+            0,
+            "non-number values must report zero bits"
+        );
+
+        assert_eq!(
+            read_spectra_string(call_json_host(json_value_text, &[root]).1).as_deref(),
+            Some("")
+        );
+
+        let (_, count) = call_json_host(json_value_get, &[root, alloc_spectra_string("count")]);
+        assert_eq!(call_json_host(json_value_len, &[count]).1, 0);
+    }
+
+    #[test]
+    fn host_stringify_round_trips_parsed_documents() {
+        let (_, root) = call_json_host(json_parse, &[alloc_spectra_string(SAMPLE)]);
+        let (_, encoded_ptr) = call_json_host(json_stringify, &[root]);
+        let encoded = read_spectra_string(encoded_ptr).expect("stringify returns a string");
+
+        let reparsed: Value = serde_json::from_str(&encoded).expect("compact output is JSON");
+        assert_eq!(reparsed["name"], "Ada");
+        assert_eq!(reparsed["tags"].as_array().map(Vec::len), Some(3));
+
+        let (_, second) = call_json_host(json_parse, &[alloc_spectra_string(&encoded)]);
+        let (_, second_encoded_ptr) = call_json_host(json_stringify, &[second]);
+        assert_eq!(
+            read_spectra_string(second_encoded_ptr).as_deref(),
+            Some(encoded.as_str())
+        );
+
+        assert_eq!(
+            read_spectra_string(call_json_host(json_stringify, &[0]).1).as_deref(),
+            Some(""),
+            "invalid handles stringify to the empty string"
+        );
+    }
+
+    #[test]
+    fn host_free_invalidates_handles() {
+        let (_, root) = call_json_host(json_parse, &[alloc_spectra_string(SAMPLE)]);
+        let status = call_json_host_no_result(json_value_free, &[root]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_json_host(json_value_kind, &[root]).1,
+            JSON_KIND_INVALID,
+            "freed handles must classify as invalid"
+        );
+        // Freeing an unknown handle is a no-op that still succeeds.
+        assert_eq!(call_json_host_no_result(json_value_free, &[0]), HOST_STATUS_SUCCESS);
     }
 }

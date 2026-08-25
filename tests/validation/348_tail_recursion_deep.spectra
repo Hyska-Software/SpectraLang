@@ -1,0 +1,27 @@
+// Teste 348: recursão profunda em posição de cauda (self-recursion).
+//
+// loop_sum(100000, 0) desce ~100.000 níveis de recursão somando 1..n.
+// Antes da fusão return_call no backend, cada nível consumia um frame real
+// e o programa estourava a pilha (stack overflow). Com a marcação is_tail
+// no IR, o backend emite Cranelift `return_call` e o frame é reutilizado.
+//
+// Execução correta: main retorna 0 (soma 1..=100000 = 5000050000).
+module tail_recursion_deep
+
+func loop_sum(n: int, acc: int) returns int {
+    if n <= 0 {
+        return acc
+    }
+
+    return loop_sum(n - 1, acc + n)
+}
+
+func main() returns int {
+    let result = loop_sum(100000, 0)
+
+    if result == 5000050000 {
+        return 0
+    }
+
+    return 1
+}

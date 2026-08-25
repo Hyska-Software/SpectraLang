@@ -329,4 +329,47 @@ mod tests {
             .expect_err("unsupported transfer encoding");
         assert_eq!(err.kind, ParseErrorKind::UnsupportedTransferEncoding);
     }
+
+    #[test]
+    fn rejects_conflicting_transfer_encoding_and_content_length() {
+        let err = parse_request(
+            b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\nContent-Length: 5\r\n\r\n0\r\n\r\n",
+        )
+        .expect_err("TE + CL must be rejected");
+        assert_eq!(err.kind, ParseErrorKind::ConflictingFraming);
+    }
+
+    #[test]
+    fn accepts_chunked_transfer_encoding_alone() {
+        let request =
+            parse_request(b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n")
+                .expect("chunked-only request must parse");
+        assert!(request.body.chunked);
+        assert_eq!(request.body.bytes(), b"hello");
+    }
+
+    #[test]
+    fn accepts_content_length_alone() {
+        let request = parse_request(b"POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello")
+            .expect("content-length-only request must parse");
+        assert!(!request.body.chunked);
+        assert_eq!(request.body.bytes(), b"hello");
+    }
+
+    #[test]
+    fn rejects_duplicate_divergent_transfer_encoding() {
+        let err = parse_request(
+            b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: gzip\r\n\r\n0\r\n\r\n",
+        )
+        .expect_err("divergent duplicate TE must be rejected");
+        assert_eq!(err.kind, ParseErrorKind::UnsupportedTransferEncoding);
+    }
+
+    #[test]
+    fn rejects_multiple_divergent_content_length_on_request() {
+        let err =
+            parse_request(b"POST / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 7\r\n\r\nhello")
+                .expect_err("divergent CL values must be rejected");
+        assert_eq!(err.kind, ParseErrorKind::BodyLengthMismatch);
+    }
 }

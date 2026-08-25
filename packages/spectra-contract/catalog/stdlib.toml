@@ -1587,1000 +1587,6 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/194_sqlite_driver.spectra"
 
 [[entry]]
-path = "std.api.db_postgres.PostgresConnection"
-kind = "type"
-namespace = "std.api.db_postgres"
-signature = "record PostgresConnection {  }"
-abi = "semantic descriptor"
-effects = []
-error_model = "none"
-binding = "spectra.type.std.api.db_postgres.PostgresConnection"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.PostgresNotification"
-kind = "type"
-namespace = "std.api.db_postgres"
-signature = "record PostgresNotification {  }"
-abi = "semantic descriptor"
-effects = []
-error_model = "none"
-binding = "spectra.type.std.api.db_postgres.PostgresNotification"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.PostgresNotificationChannel"
-kind = "type"
-namespace = "std.api.db_postgres"
-signature = "record PostgresNotificationChannel {  }"
-abi = "semantic descriptor"
-effects = []
-error_model = "none"
-binding = "spectra.type.std.api.db_postgres.PostgresNotificationChannel"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.PostgresStatement"
-kind = "type"
-namespace = "std.api.db_postgres"
-signature = "record PostgresStatement {  }"
-abi = "semantic descriptor"
-effects = []
-error_model = "none"
-binding = "spectra.type.std.api.db_postgres.PostgresStatement"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.begin"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresConnection) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.begin"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.bind_float"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresStatement, int, float) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.bind_float"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.bind_int"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresStatement, int, int) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.bind_int"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.bind_null"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresStatement, int) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.bind_null"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.bind_text"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresStatement, int, string) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.bind_text"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.close"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresConnection) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.close"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.column_count"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresStatement) -> int"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.column_count"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.column_int"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresStatement, int) -> int"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.column_int"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.column_text"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresStatement, int) -> string"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.column_text"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.column_type"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresStatement, int) -> int"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.column_type"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.commit"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresConnection) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.commit"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.copy_in_text_async"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresConnection, string, string) -> Task<int>"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.copy_in_text_async"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.copy_out_text_async"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresConnection, string) -> Task<string>"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.copy_out_text_async"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.execute_async"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresConnection, string) -> Task<int>"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.execute_async"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.finalize"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresStatement) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.finalize"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.last_error_code"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn() -> string"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.last_error_code"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.last_error_message"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn() -> string"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.last_error_message"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.listen"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresConnection, string) -> PostgresNotificationChannel"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.listen"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.notification_channel"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresNotification) -> string"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.notification_channel"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.notification_close"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresNotificationChannel) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.notification_close"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.notification_free"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresNotification) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.notification_free"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.notification_next_async"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresNotificationChannel, int) -> Task<PostgresNotification>"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.notification_next_async"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.notification_payload"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresNotification) -> string"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.notification_payload"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.notification_process_id"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresNotification) -> int"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.notification_process_id"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.notify_async"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresConnection, string, string) -> Task<bool>"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.notify_async"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.open"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(string) -> PostgresConnection"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.open"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.prepare"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresConnection, string) -> PostgresStatement"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.prepare"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.release_savepoint"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresConnection, string) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.release_savepoint"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.reset"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresStatement) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.reset"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.rollback"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresConnection) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.rollback"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.rollback_to"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresConnection, string) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.rollback_to"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.savepoint"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresConnection, string) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.savepoint"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.step"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresStatement) -> int"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.step"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_postgres.step_async"
-kind = "function"
-namespace = "std.api.db_postgres"
-signature = "fn(PostgresStatement) -> Task<int>"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_postgres.step_async"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_redis.RedisConnection"
-kind = "type"
-namespace = "std.api.db_redis"
-signature = "record RedisConnection {  }"
-abi = "semantic descriptor"
-effects = []
-error_model = "none"
-binding = "spectra.type.std.api.db_redis.RedisConnection"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_redis.close"
-kind = "function"
-namespace = "std.api.db_redis"
-signature = "fn(RedisConnection) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_redis.close"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_redis.delete"
-kind = "function"
-namespace = "std.api.db_redis"
-signature = "fn(RedisConnection, string) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_redis.delete"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_redis.exists"
-kind = "function"
-namespace = "std.api.db_redis"
-signature = "fn(RedisConnection, string) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_redis.exists"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_redis.expire"
-kind = "function"
-namespace = "std.api.db_redis"
-signature = "fn(RedisConnection, string, int) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_redis.expire"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_redis.get"
-kind = "function"
-namespace = "std.api.db_redis"
-signature = "fn(RedisConnection, string) -> string"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_redis.get"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_redis.incr"
-kind = "function"
-namespace = "std.api.db_redis"
-signature = "fn(RedisConnection, string, int) -> int"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_redis.incr"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_redis.open"
-kind = "function"
-namespace = "std.api.db_redis"
-signature = "fn(string) -> RedisConnection"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_redis.open"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_redis.set"
-kind = "function"
-namespace = "std.api.db_redis"
-signature = "fn(RedisConnection, string, string) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_redis.set"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.SqliteConnection"
-kind = "type"
-namespace = "std.api.db_sqlite"
-signature = "record SqliteConnection {  }"
-abi = "semantic descriptor"
-effects = []
-error_model = "none"
-binding = "spectra.type.std.api.db_sqlite.SqliteConnection"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.SqliteStatement"
-kind = "type"
-namespace = "std.api.db_sqlite"
-signature = "record SqliteStatement {  }"
-abi = "semantic descriptor"
-effects = []
-error_model = "none"
-binding = "spectra.type.std.api.db_sqlite.SqliteStatement"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.begin"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteConnection) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.begin"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.bind_blob"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteStatement, int, string) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.bind_blob"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.bind_float"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteStatement, int, float) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.bind_float"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.bind_int"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteStatement, int, int) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.bind_int"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.bind_null"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteStatement, int) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.bind_null"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.bind_text"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteStatement, int, string) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.bind_text"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.close"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteConnection) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.close"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.column_count"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteStatement) -> int"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.column_count"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.column_float"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteStatement, int) -> float"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.column_float"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.column_int"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteStatement, int) -> int"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.column_int"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.column_text"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteStatement, int) -> string"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.column_text"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.column_type"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteStatement, int) -> int"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.column_type"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.commit"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteConnection) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.commit"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.execute_async"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteConnection, string) -> int"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.execute_async"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.finalize"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteStatement) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.finalize"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.last_error_code"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn() -> string"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.last_error_code"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.last_error_message"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn() -> string"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.last_error_message"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.open"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(string) -> SqliteConnection"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.open"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.prepare"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteConnection, string) -> SqliteStatement"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.prepare"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.reset"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteStatement) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.reset"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.rollback"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteConnection) -> bool"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.rollback"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.db_sqlite.step"
-kind = "function"
-namespace = "std.api.db_sqlite"
-signature = "fn(SqliteStatement) -> int"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.db_sqlite.step"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
 path = "std.api.errors"
 kind = "module"
 namespace = "std.api"
@@ -4625,34 +3631,6 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
-path = "std.api.json.decode"
-kind = "function"
-namespace = "std.api.json"
-signature = "fn(string) -> JsonValue"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.json.decode"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.json.encode"
-kind = "function"
-namespace = "std.api.json"
-signature = "fn(T) -> string"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.json.encode"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
 path = "std.api.json.kind"
 kind = "function"
 namespace = "std.api.json"
@@ -4679,6 +3657,146 @@ maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.json.parse"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(string) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.parse"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/json_roundtrip.spectra"
+
+[[entry]]
+path = "std.api.json.value_kind"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.value_kind"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/json_roundtrip.spectra"
+
+[[entry]]
+path = "std.api.json.value_len"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.value_len"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/json_roundtrip.spectra"
+
+[[entry]]
+path = "std.api.json.value_get"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(int, string) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.value_get"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/json_roundtrip.spectra"
+
+[[entry]]
+path = "std.api.json.value_at"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(int, int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.value_at"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/json_roundtrip.spectra"
+
+[[entry]]
+path = "std.api.json.value_text"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(int) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.value_text"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/json_roundtrip.spectra"
+
+[[entry]]
+path = "std.api.json.value_number_bits"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.value_number_bits"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/json_roundtrip.spectra"
+
+[[entry]]
+path = "std.api.json.value_bool"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.value_bool"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/json_roundtrip.spectra"
+
+[[entry]]
+path = "std.api.json.value_free"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(int) -> unit"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.value_free"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/json_roundtrip.spectra"
+
+[[entry]]
+path = "std.api.json.stringify"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(int) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.stringify"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/json_roundtrip.spectra"
 
 [[entry]]
 path = "std.api.jwt"
@@ -6249,20 +5367,6 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/135_api_router_matching.spectra"
 
 [[entry]]
-path = "std.api.routing.router"
-kind = "function"
-namespace = "std.api.routing"
-signature = "fn() -> Router"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.routing.router"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/135_api_router_matching.spectra"
-
-[[entry]]
 path = "std.api.routing.router_new"
 kind = "function"
 namespace = "std.api.routing"
@@ -6543,6 +5647,20 @@ docs = "docs/api/std-api-security.md"
 fixture = "tests/validation/341_api_security.spectra"
 
 [[entry]]
+path = "std.api.server.set_tls_certificate"
+kind = "function"
+namespace = "std.api.server"
+signature = "fn(Server, string, string) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.server.set_tls_certificate"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-server-lifecycle.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
 path = "std.api.server.shutdown"
 kind = "function"
 namespace = "std.api.server"
@@ -6596,6 +5714,20 @@ binding = "spectra.api.server.stats"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.server.tls_local_port"
+kind = "function"
+namespace = "std.api.server"
+signature = "fn(Server) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.server.tls_local_port"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-server-lifecycle.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
@@ -7223,20 +6355,6 @@ abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.api.tls.config_new"
-maturity = "stable"
-owner = "web"
-docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.api.tls.server_config"
-kind = "function"
-namespace = "std.api.tls"
-signature = "fn(string, string) -> TlsConfig"
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.api.tls.server_config"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
@@ -10085,6 +9203,34 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.fs.copy"
+kind = "function"
+namespace = "std.fs"
+signature = "fn(string, string) -> Result_int_Error"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["filesystem", "mutation"]
+error_model = "Result<int, Error>"
+binding = "spectra.std.fs.copy"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/fs_directories.spectra"
+
+[[entry]]
+path = "std.fs.create_dir_all"
+kind = "function"
+namespace = "std.fs"
+signature = "fn(string) -> Result_bool_Error"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["filesystem", "mutation"]
+error_model = "Result<bool, Error>"
+binding = "spectra.std.fs.create_dir_all"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/fs_directories.spectra"
+
+[[entry]]
 path = "std.fs.fs_append"
 kind = "function"
 namespace = "std.fs"
@@ -10153,6 +9299,48 @@ maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/321_stdlib_io_fs_env.spectra"
+
+[[entry]]
+path = "std.fs.read_dir"
+kind = "function"
+namespace = "std.fs"
+signature = "fn(string) -> Result_List_string_Error"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["filesystem"]
+error_model = "Result<List<string>, Error>"
+binding = "spectra.std.fs.read_dir"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/fs_directories.spectra"
+
+[[entry]]
+path = "std.fs.remove_dir"
+kind = "function"
+namespace = "std.fs"
+signature = "fn(string) -> Result_bool_Error"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["filesystem", "mutation"]
+error_model = "Result<bool, Error>"
+binding = "spectra.std.fs.remove_dir"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/fs_directories.spectra"
+
+[[entry]]
+path = "std.fs.rename"
+kind = "function"
+namespace = "std.fs"
+signature = "fn(string, string) -> Result_bool_Error"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["filesystem", "mutation"]
+error_model = "Result<bool, Error>"
+binding = "spectra.std.fs.rename"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/fs_directories.spectra"
 
 [[entry]]
 path = "std.io"

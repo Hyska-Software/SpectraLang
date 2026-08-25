@@ -19,6 +19,7 @@ impl CodeGenerator {
         current_block_id: usize,
         block_map: &HashMap<usize, Block>,
         phi_map: &HashMap<usize, Vec<PhiDescriptor>>,
+        emitted_tail_call: &mut bool,
     ) -> BackendResult<()> {
         let kind = &instr.kind;
         match kind {
@@ -36,7 +37,7 @@ impl CodeGenerator {
             | InstructionKind::And { .. }
             | InstructionKind::Or { .. }
             | InstructionKind::Not { .. } => {
-                Self::generate_arithmetic_instruction(builder, kind, value_map)
+                Self::generate_arithmetic_instruction(module, hostcall, builder, kind, value_map)
             }
             InstructionKind::ManualAlloc { .. }
             | InstructionKind::EscapeManualAlloc { .. }
@@ -69,6 +70,7 @@ impl CodeGenerator {
                     builder,
                     kind,
                     value_map,
+                    emitted_tail_call,
                 )
             }
             InstructionKind::HostCall { .. } => Self::generate_host_instruction(

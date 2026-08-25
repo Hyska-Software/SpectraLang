@@ -1,9 +1,18 @@
 impl Parser {
     pub(super) fn parse_expression(&mut self) -> Result<Expression, ()> {
-        let expr = self.parse_logical_or()?;
+        self.enter_parse_depth()?;
+        let result = self.parse_expression_inner();
+        self.exit_parse_depth();
+        result
+    }
 
-        // Handle range operators at expression level (lowest after logical)
-        if matches!(
+    fn parse_expression_inner(&mut self) -> Result<Expression, ()> {
+        let mut expr = self.parse_logical_or()?;
+
+        // Range operators bind loosest, Rust style. Chained ranges
+        // (`a..b..c`) associate deterministically to the left: `(a..b)..c`.
+        let mut built_range = false;
+        while matches!(
             &self.current().kind,
             TokenKind::Operator(Operator::Range) | TokenKind::Operator(Operator::RangeInclusive)
         ) {
@@ -12,19 +21,104 @@ impl Parser {
                 TokenKind::Operator(Operator::RangeInclusive)
             );
             self.advance();
-            let end = self.parse_logical_or()?;
+            // Bind the range end at the comparison rung so logical-level
+            // operators (`or`/`and`/equality/comparison) stay outside the
+            // range and can wrap it afterwards.
+            let end = self.parse_comparison()?;
             let span = crate::span::span_union(expr.span, end.span);
-            return Ok(Expression {
+            expr = Expression {
                 span,
                 kind: ExpressionKind::Range {
                     start: Box::new(expr),
                     end: Box::new(end),
                     inclusive,
                 },
-            });
+            };
+            built_range = true;
+        }
+
+        // After building a range, keep consuming operators at the logical
+        // level so `1..2 == x` parses as `(1..2) == x`. The type checker may
+        // still reject such a comparison later — that is a semantic
+        // diagnostic, not a syntax error.
+        if built_range {
+            expr = self.parse_logical_level_rest(expr)?;
         }
 
         Ok(expr)
+    }
+
+    /// Continues consuming logical-level binary operators (`or`, `and`,
+    /// equality, comparison) with an already-parsed left-hand side. Each arm
+    /// parses its right operand one rung tighter, preserving the same
+    /// precedence ladder as the main chain builders above.
+    fn parse_logical_level_rest(&mut self, mut left: Expression) -> Result<Expression, ()> {
+        loop {
+            if matches!(
+                &self.current().kind,
+                TokenKind::Operator(Operator::Or) | TokenKind::Keyword(Keyword::OrWord)
+            ) {
+                self.advance();
+                let right = self.parse_logical_and()?;
+                let span = crate::span::span_union(left.span, right.span);
+                left = Expression {
+                    span,
+                    kind: ExpressionKind::Binary {
+                        left: Box::new(left),
+                        operator: BinaryOperator::Or,
+                        right: Box::new(right),
+                    },
+                };
+                continue;
+            }
+
+            if matches!(
+                &self.current().kind,
+                TokenKind::Operator(Operator::And) | TokenKind::Keyword(Keyword::AndWord)
+            ) {
+                self.advance();
+                let right = self.parse_equality()?;
+                let span = crate::span::span_union(left.span, right.span);
+                left = Expression {
+                    span,
+                    kind: ExpressionKind::Binary {
+                        left: Box::new(left),
+                        operator: BinaryOperator::And,
+                        right: Box::new(right),
+                    },
+                };
+                continue;
+            }
+
+            let operator = match &self.current().kind {
+                TokenKind::Operator(Operator::EqualEqual) => Some(BinaryOperator::Equal),
+                TokenKind::Operator(Operator::NotEqual) => Some(BinaryOperator::NotEqual),
+                TokenKind::Symbol('<') => Some(BinaryOperator::Less),
+                TokenKind::Symbol('>') => Some(BinaryOperator::Greater),
+                TokenKind::Operator(Operator::LessEqual) => Some(BinaryOperator::LessEqual),
+                TokenKind::Operator(Operator::GreaterEqual) => Some(BinaryOperator::GreaterEqual),
+                _ => None,
+            };
+
+            if let Some(operator) = operator {
+                self.advance();
+                let right = self.parse_addition()?;
+                let span = crate::span::span_union(left.span, right.span);
+                left = Expression {
+                    span,
+                    kind: ExpressionKind::Binary {
+                        left: Box::new(left),
+                        operator,
+                        right: Box::new(right),
+                    },
+                };
+                continue;
+            }
+
+            break;
+        }
+
+        Ok(left)
     }
 
     // Logical OR (lowest precedence)
@@ -467,6 +561,7 @@ impl Parser {
                 })
             }
             TokenKind::Keyword(Keyword::If) => self.parse_if_expression(),
+            TokenKind::Keyword(Keyword::Unless) => self.parse_unless_expression(),
             TokenKind::Keyword(Keyword::Match) => self.parse_match_expression(),
             TokenKind::Keyword(Keyword::Async) => self.parse_async_expression(),
             TokenKind::Keyword(Keyword::Await) => self.parse_unary(),

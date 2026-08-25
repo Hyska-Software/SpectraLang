@@ -7,7 +7,13 @@ impl CodeGenerator {
         // measurably slower native code. See `cranelift-codegen` settings
         // for the full list of options.
         let mut builder = JITBuilder::with_flags(
-            &[("opt_level", "speed")],
+            &[
+                ("opt_level", "speed"),
+                // Cranelift's x64 `return_call` implementation restores the
+                // caller's frame pointer, so it requires frame pointers to be
+                // preserved (see emit_return_call_common_sequence).
+                ("preserve_frame_pointers", "true"),
+            ],
             cranelift_module::default_libcall_names(),
         )
         .expect("Failed to create JIT builder");
@@ -29,11 +35,13 @@ impl CodeGenerator {
             finalized_function_ptrs: HashMap::new(),
             runtime_bindings,
             string_literal_data: HashMap::new(),
+            hostcall_batch_stats: HostCallBatchStats::default(),
             string_literal_storage: Vec::new(),
             host_call_sites: HashMap::new(),
             host_name_storage: Vec::new(),
             host_call_cache_storage: Vec::new(),
-            hostcall_batch_stats: HostCallBatchStats::default(),
+            #[cfg(test)]
+            last_finalized_func: None,
         }
     }
 
@@ -231,9 +239,41 @@ impl CodeGenerator {
         self.pre_intern_host_names(&module);
     }
 
+    /// Whether `ir_func` must be declared with `CallConv::Tail`.
+    ///
+    /// Functions containing a marked self-tail-call (`InstructionKind::Call`
+    /// with `is_tail`) need it: Cranelift's verifier accepts a native
+    /// `return_call` only when caller and callee share a calling convention
+    /// that supports tail calls, and only `CallConv::Tail` does. Entry points
+    /// and functions that need the manual allocation frame keep the platform
+    /// default — a tail jump would skip the `frame_exit` cleanup those
+    /// functions rely on, and external callers expect the native ABI.
+    pub(crate) fn uses_tail_call_convention(ir_func: &IRFunction) -> bool {
+        ir_func.name != "main"
+            && ir_func.blocks.iter().any(|block| {
+                block.instructions.iter().any(|instruction| {
+                    matches!(
+                        &instruction.kind,
+                        InstructionKind::Call {
+                            function: callee,
+                            is_tail: true,
+                            ..
+                        } if *callee == ir_func.name
+                    )
+                })
+            })
+            && !Self::function_needs_manual_frame(
+                ir_func,
+                &Self::collect_stack_allocas(ir_func),
+            )
+    }
+
     /// Declare a function signature
     fn declare_function(&mut self, ir_func: &IRFunction) -> BackendResult<FuncId> {
         let mut sig = self.module.make_signature();
+        if Self::uses_tail_call_convention(ir_func) {
+            sig.call_conv = isa::CallConv::Tail;
+        }
 
         // Add parameters
         for param in &ir_func.params {
@@ -375,6 +415,7 @@ impl CodeGenerator {
 
         // Generate code for each block
         let blocks = ir_func.blocks.clone();
+        let mut emitted_tail_call = false;
         let mut hostcall = HostCallLoweringContext {
             bindings: &self.runtime_bindings,
             host_call_sites: &self.host_call_sites,
@@ -403,6 +444,7 @@ impl CodeGenerator {
                 manual_frame_active,
                 ir_block.id,
                 &phi_map,
+                &mut emitted_tail_call,
             )?;
         }
 
@@ -429,6 +471,12 @@ impl CodeGenerator {
                 ))
             })?;
 
+        // Test-only snapshot: keep the finalized Cranelift IR inspectable
+        // before the shared context is released.
+        #[cfg(test)]
+        {
+            self.last_finalized_func = Some(self.ctx.func.clone());
+        }
         // Clear context
         self.module.clear_context(&mut self.ctx);
 

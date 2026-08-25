@@ -360,7 +360,7 @@ dependente da evidência oficial Linux de R-3102.
 **Arquivo principal:** `runtime/src/lib.rs`
 
 O runtime é inicializado uma única vez por processo (`OnceLock<RuntimeState>`):
-- **Memória**: `HybridMemory` combina alocação manual (via `spectra_rt_manual_alloc`) com um garbage collector traçado.
+- **Memória**: `ManualMemory` gerencia o heap manual (`spectra_rt_manual_alloc`) com telemetria por alocação; não há garbage collector no runtime.
 - **Host calls**: Funções da stdlib (I/O, math, collections) são registradas como callbacks invocáveis pelo nome via os entry points genérico legado ou cacheado.
 - **Args**: `set_program_args` configura `std.env.env_arg` / `std.env.env_args_count`.
 - **Execution**: Após JIT, o resultado de `main()` (se houver) é propagado como exit code do processo.

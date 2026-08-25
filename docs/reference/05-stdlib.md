@@ -1390,6 +1390,54 @@ que não sejam ausência retornam `Err`.
 let removido = fs.fs_remove("temp.txt")
 ```
 
+
+#### `create_dir_all(path: string) -> Result<bool, Error>`
+
+Cria o diretório e todos os pais que faltarem. Retorna `Ok(true)` em sucesso.
+
+```spectra
+let criado = fs.create_dir_all("target/artefatos/2026/agosto")
+```
+
+#### `remove_dir(path: string) -> Result<bool, Error>`
+
+Remove um diretório **vazio**. Diretórios com conteúdo produzem `Err`
+(`ErrorCode::Io`); use `fs_remove` para arquivos individuais.
+
+```spectra
+let removido = fs.remove_dir("target/artefatos/2026/agosto")
+```
+
+#### `rename(from: string, to: string) -> Result<bool, Error>`
+
+Move (ou renomeia) arquivos e diretórios.
+
+```spectra
+let movido = fs.rename("rascunho.txt", "final.txt")
+```
+
+#### `copy(from: string, to: string) -> Result<int, Error>`
+
+Copia o arquivo e retorna `Ok(bytes_copiados)`.
+
+```spectra
+let bytes = fs.copy("entrada.bin", "backup.bin")
+```
+
+#### `read_dir(path: string) -> Result<List<string>, Error>`
+
+Lista os **nomes** das entradas do diretório (não caminhos completos), em
+ordem determinística (ordenação lexicográfica dos nomes).
+
+```spectra
+let listagem = fs.read_dir("target/artefatos")
+if let Result::Ok(nomes) = listagem {
+    for nome in nomes {
+        io.println(nome)
+    }
+}
+```
+
 ---
 
 ## 8.1. std.error — Erros estruturados / Structured Errors

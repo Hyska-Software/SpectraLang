@@ -469,6 +469,107 @@ mod tests {
     }
 
     #[test]
+    fn r2216_slow_handler_offloads_and_fast_connection_answers_first() {
+        let mut server = HttpServer::start(
+            ServerConfig {
+                read_timeout: Duration::from_secs(5),
+                idle_timeout: Duration::from_secs(5),
+                poll_interval: Duration::from_millis(1),
+                worker_threads: 2,
+                ..ServerConfig::default()
+            },
+            Arc::new(|request| match request.target.as_str() {
+                "/slow" => {
+                    thread::sleep(Duration::from_millis(500));
+                    ServerResponse::text(200, "slow")
+                }
+                _ => ServerResponse::text(200, "fast"),
+            }),
+        )
+        .expect("server starts");
+
+        // Client A fires the slow request first.
+        let mut slow = TcpStream::connect(server.local_addr()).expect("connect slow client");
+        slow.write_all(b"GET /slow HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .expect("write slow request");
+        // Give the event loop time to parse and dispatch A to a worker.
+        thread::sleep(Duration::from_millis(100));
+
+        // Client B must receive its fast response while A is still in flight.
+        let started = Instant::now();
+        let fast = request(
+            server.local_addr(),
+            b"GET /fast HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        let elapsed = started.elapsed();
+        let fast = parse_response(&fast).expect("fast response parses");
+        assert_eq!(fast.status_code, 200);
+        assert_eq!(fast.body.bytes(), b"fast");
+        assert!(
+            elapsed < Duration::from_millis(200),
+            "fast connection blocked behind the slow handler for {elapsed:?}"
+        );
+
+        slow.set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("set slow read timeout");
+        let mut raw = Vec::new();
+        let mut buf = [0_u8; 1024];
+        loop {
+            match slow.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => raw.extend_from_slice(&buf[..n]),
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::ConnectionReset && !raw.is_empty() =>
+                {
+                    break
+                }
+                Err(error) => panic!("read slow response: {error}"),
+            }
+        }
+        let slow_response = parse_response(&raw).expect("slow response parses");
+        assert_eq!(slow_response.status_code, 200);
+        assert_eq!(slow_response.body.bytes(), b"slow");
+
+        server.shutdown().expect("shutdown");
+    }
+
+    #[test]
+    fn r2216_panicking_handler_returns_500_and_server_survives() {
+        let mut server = HttpServer::start(
+            ServerConfig {
+                idle_timeout: Duration::from_millis(200),
+                poll_interval: Duration::from_millis(1),
+                ..ServerConfig::default()
+            },
+            Arc::new(|request| {
+                if request.target == "/panic" {
+                    panic!("handler exploded");
+                }
+                ServerResponse::text(200, "ok")
+            }),
+        )
+        .expect("server starts");
+
+        let raw = request(
+            server.local_addr(),
+            b"GET /panic HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        let response = parse_response(&raw).expect("panicked response parses");
+        assert_eq!(response.status_code, 500);
+
+        // The worker pool and event loop survive the panic.
+        let raw = request(
+            server.local_addr(),
+            b"GET /alive HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        let response = parse_response(&raw).expect("post-panic response parses");
+        assert_eq!(response.status_code, 200);
+        assert_eq!(response.body.bytes(), b"ok");
+
+        server.shutdown().expect("shutdown");
+    }
+
+    #[test]
     fn connection_limiter_survives_10k_concurrent_slots_without_threads() {
         let mut limiter = ConnectionLimiter::new(10_000);
         for _ in 0..10_000 {
@@ -481,6 +582,135 @@ mod tests {
             limiter.close();
         }
         assert_eq!(limiter.active, 0);
+    }
+
+    #[test]
+    fn tls_gateway_serves_h2_and_http11_on_the_same_tls_port() {
+        use crate::tls::{TlsCertificateStore, TlsClientConfig, TlsServerConfig};
+        use rcgen::generate_simple_self_signed;
+        use rustls::pki_types::ServerName;
+        use tokio::net::TcpStream;
+        use tokio::runtime::Builder;
+        use tokio_rustls::TlsConnector;
+
+        let certified = generate_simple_self_signed(vec![
+            "localhost".to_string(),
+            "127.0.0.1".to_string(),
+        ])
+        .expect("self-signed gateway certificate");
+        let cert_der = certified.cert.der().to_vec();
+        let certificates = TlsCertificateStore::new(TlsServerConfig::new(
+            vec![cert_der.clone()],
+            certified.key_pair.serialize_der(),
+        ))
+        .expect("TLS certificate store");
+
+        let mut server = HttpServer::start(
+            ServerConfig {
+                tls_certificates: Some(std::sync::Arc::new(certificates)),
+                ..ServerConfig::default()
+            },
+            Arc::new(|request| {
+                ServerResponse::text(200, format!("{} {}", request.method, request.target))
+            }),
+        )
+        .expect("TLS-enabled server starts");
+        let cleartext_addr = server.local_addr();
+        let tls_addr = server.tls_local_addr().expect("TLS gateway address");
+        assert_ne!(cleartext_addr.port(), tls_addr.port());
+
+        let runtime = Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .expect("gateway test runtime");
+        runtime.block_on(async move {
+            // HTTP/2 leg: ALPN h2 on the TLS port.
+            let client_config = TlsClientConfig::with_roots(vec![cert_der.clone()])
+                .with_alpn_protocols(vec![b"h2".to_vec()])
+                .build()
+                .expect("h2 client config");
+            let stream = TcpStream::connect(tls_addr).await.expect("connect h2");
+            let connector = TlsConnector::from(client_config);
+            let name = ServerName::try_from("localhost").expect("server name");
+            let tls_stream = connector
+                .connect(name, stream)
+                .await
+                .expect("h2 TLS handshake");
+            assert_eq!(tls_stream.get_ref().1.alpn_protocol(), Some(&b"h2"[..]));
+            let (mut h2_client, h2_connection) =
+                h2::client::handshake(tls_stream).await.expect("h2 handshake");
+            tokio::spawn(async move {
+                let _ = h2_connection.await;
+            });
+            let request = ::http::Request::builder()
+                .method("GET")
+                .uri("/secure-h2")
+                .body(())
+                .expect("h2 request");
+            let (response, _) = h2_client
+                .send_request(request, true)
+                .expect("h2 stream");
+            let response = response.await.expect("h2 response");
+            assert_eq!(response.status(), 200);
+            assert!(response.headers().get("content-type").is_some());
+            let mut body_stream = response.into_body();
+            let mut body = Vec::new();
+            while let Some(chunk) = body_stream.data().await {
+                let chunk = chunk.expect("h2 body chunk");
+                body.extend_from_slice(&chunk);
+                let _ = body_stream.flow_control().release_capacity(chunk.len());
+            }
+            assert_eq!(body, b"GET /secure-h2");
+
+            // HTTP/1.1 leg: ALPN http/1.1 on the SAME TLS port.
+            let client_config = TlsClientConfig::with_roots(vec![cert_der])
+                .with_alpn_protocols(vec![b"http/1.1".to_vec()])
+                .build()
+                .expect("http/1.1 client config");
+            let stream = TcpStream::connect(tls_addr)
+                .await
+                .expect("connect http/1.1 over TLS");
+            let connector = TlsConnector::from(client_config);
+            let name = ServerName::try_from("localhost").expect("server name");
+            let mut tls_stream = connector
+                .connect(name, stream)
+                .await
+                .expect("http/1.1 TLS handshake");
+            assert_eq!(
+                tls_stream.get_ref().1.alpn_protocol(),
+                Some(&b"http/1.1"[..])
+            );
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            tls_stream
+                .write_all(
+                    b"GET /secure-http11 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .expect("write http/1.1 request");
+            let mut raw = Vec::new();
+            let mut buffer = [0_u8; 8_192];
+            loop {
+                match tls_stream.read(&mut buffer).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(read) => raw.extend_from_slice(&buffer[..read]),
+                }
+            }
+            let response = parse_response(&raw).expect("http/1.1 response parses");
+            assert_eq!(response.status_code, 200);
+            assert_eq!(response.body.bytes(), b"GET /secure-http11");
+        });
+
+        // Cleartext HTTP/1.1 keeps working on the original mio port.
+        let raw = request(
+            cleartext_addr,
+            b"GET /hello HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        let response = parse_response(&raw).expect("cleartext response parses");
+        assert_eq!(response.status_code, 200);
+        assert_eq!(response.body.bytes(), b"GET /hello");
+
+        server.shutdown().expect("shutdown TLS server");
     }
 
     fn wait_until(timeout: Duration, mut condition: impl FnMut() -> bool) {

@@ -87,12 +87,26 @@ impl ASTLowering {
             }
         }
 
-        // Analyze which variables are assigned to (need memory allocation)
-        let assigned_vars = self.find_assigned_variables(&ast_func.body.statements);
-
-        // Allocate memory for mutable variables
+        // Analyze which variables are assigned to (need memory allocation).
+        // Slots are typed from a syntactic hint so promoted scalars in the
+        // backend match their stored value types (a blanket `Int` slot makes
+        // `bool`/`float` locals panic in the Cranelift frontend when mutated
+        // across blocks).
+        let mut slot_hints: std::collections::HashMap<String, IRType> = params
+            .iter()
+            .filter(|param| param.ty != IRType::Void)
+            .map(|param| (param.name.clone(), param.ty.clone()))
+            .collect();
+        let assigned_vars = {
+            let assigned =
+                self.find_assigned_variables_with_types(&ast_func.body.statements, &mut slot_hints);
+            let mut names: Vec<String> = assigned.into_iter().collect();
+            names.sort();
+            names
+        };
         for var_name in &assigned_vars {
-            let alloca_value = self.builder.build_alloca(&mut ir_func, IRType::Int);
+            let slot_type = slot_hints.get(var_name).cloned().unwrap_or(IRType::Int);
+            let alloca_value = self.builder.build_alloca(&mut ir_func, slot_type);
             self.alloca_map.insert(var_name.clone(), alloca_value);
         }
 
@@ -278,10 +292,23 @@ impl ASTLowering {
             }
         }
 
-        // Allocate slots for variables that are assigned inside the body.
-        let assigned_vars = self.find_assigned_variables(&method.body.statements);
+        // Allocate slots for variables that are assigned inside the body,
+        // typed from syntactic hints (see the function-level pre-pass).
+        let mut slot_hints: std::collections::HashMap<String, IRType> = params
+            .iter()
+            .filter(|param| param.ty != IRType::Void)
+            .map(|param| (param.name.clone(), param.ty.clone()))
+            .collect();
+        let assigned_vars = {
+            let assigned =
+                self.find_assigned_variables_with_types(&method.body.statements, &mut slot_hints);
+            let mut names: Vec<String> = assigned.into_iter().collect();
+            names.sort();
+            names
+        };
         for var_name in &assigned_vars {
-            let alloca_value = self.builder.build_alloca(&mut ir_func, IRType::Int);
+            let slot_type = slot_hints.get(var_name).cloned().unwrap_or(IRType::Int);
+            let alloca_value = self.builder.build_alloca(&mut ir_func, slot_type);
             self.alloca_map.insert(var_name.clone(), alloca_value);
         }
 
@@ -477,8 +504,6 @@ impl ASTLowering {
                 .builder
                 .build_load_typed(&mut lambda_func, ptr, capture.ty.clone());
             self.value_map.insert(capture.name.clone(), value);
-            self.variable_types
-                .insert(capture.name.clone(), capture.ty.clone());
         }
 
         // Map explicit parameters into value/type maps
@@ -491,14 +516,29 @@ impl ASTLowering {
             }
         }
 
-        // Pre-allocate mutable slots for any variables assigned inside the body
+        // Pre-allocate mutable slots for any variables assigned inside the
+        // body, typed from syntactic hints (see the function-level pre-pass).
+        let mut lambda_slot_hints: std::collections::HashMap<String, IRType> = ir_params
+            .iter()
+            .skip(1)
+            .filter(|param| param.ty != IRType::Void)
+            .map(|param| (param.name.clone(), param.ty.clone()))
+            .collect();
         let assigned_vars = if let ExpressionKind::Block(block) = &body.kind {
-            self.find_assigned_variables(&block.statements)
+            let assigned = self
+                .find_assigned_variables_with_types(&block.statements, &mut lambda_slot_hints);
+            let mut names: Vec<String> = assigned.into_iter().collect();
+            names.sort();
+            names
         } else {
-            std::collections::HashSet::new()
+            Vec::new()
         };
         for var_name in &assigned_vars {
-            let alloca_value = self.builder.build_alloca(&mut lambda_func, IRType::Int);
+            let slot_type = lambda_slot_hints
+                .get(var_name)
+                .cloned()
+                .unwrap_or(IRType::Int);
+            let alloca_value = self.builder.build_alloca(&mut lambda_func, slot_type);
             self.alloca_map.insert(var_name.clone(), alloca_value);
         }
 

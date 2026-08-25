@@ -168,6 +168,10 @@ fn attach_native_codeview(
             .find(|metadata| metadata.name == function.name)
             .map(|metadata| metadata.local_locations.clone())
             .unwrap_or_default();
+        function.line_rows = debug_metadata.functions.iter()
+            .find(|metadata| metadata.name == function.name)
+            .map(|metadata| metadata.line_rows.clone())
+            .unwrap_or_default();
     }
     let records = spectra_backend::debug::codeview_section_with_ranges(
         &source_path.to_string_lossy(),
@@ -216,6 +220,10 @@ fn attach_native_dwarf(object_path: &Path, source_path: &Path, debug_metadata: &
         function.local_locations = debug_metadata.functions.iter()
             .find(|metadata| metadata.name == function.name)
             .map(|metadata| metadata.local_locations.clone())
+            .unwrap_or_default();
+        function.line_rows = debug_metadata.functions.iter()
+            .find(|metadata| metadata.name == function.name)
+            .map(|metadata| metadata.line_rows.clone())
             .unwrap_or_default();
     }
     let source = fs::read_to_string(source_path)

@@ -117,6 +117,34 @@ fn lookup_std_host_group_legacy(module: &str, function: &str) -> Option<HostFunc
                 return_type: builtin_result_ir_type(IRType::Bool),
                 returns_value: true,
             }),
+            ("fs", "create_dir_all") => Some(HostFunctionDescriptor {
+                runtime_name: spectra_contract::STD_FS_CREATE_DIR_ALL_BINDING,
+                return_type: builtin_result_ir_type(IRType::Bool),
+                returns_value: true,
+            }),
+            ("fs", "remove_dir") => Some(HostFunctionDescriptor {
+                runtime_name: spectra_contract::STD_FS_REMOVE_DIR_BINDING,
+                return_type: builtin_result_ir_type(IRType::Bool),
+                returns_value: true,
+            }),
+            ("fs", "rename") => Some(HostFunctionDescriptor {
+                runtime_name: spectra_contract::STD_FS_RENAME_BINDING,
+                return_type: builtin_result_ir_type(IRType::Bool),
+                returns_value: true,
+            }),
+            ("fs", "copy") => Some(HostFunctionDescriptor {
+                runtime_name: spectra_contract::STD_FS_COPY_BINDING,
+                return_type: builtin_result_ir_type(IRType::Int),
+                returns_value: true,
+            }),
+            ("fs", "read_dir") => Some(HostFunctionDescriptor {
+                runtime_name: spectra_contract::STD_FS_READ_DIR_BINDING,
+                return_type: builtin_result_ir_type(IRType::Struct {
+                    name: "List_string".to_string(),
+                    fields: Vec::new(),
+                }),
+                returns_value: true,
+            }),
             // ── std.env ───────────────────────────────────────────────────
             ("env", "env_get") => Some(HostFunctionDescriptor {
                 runtime_name: spectra_contract::STD_ENV_ENV_GET_BINDING,

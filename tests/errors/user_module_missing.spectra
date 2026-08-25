@@ -1,0 +1,7 @@
+module user_module_missing
+
+import does_not_exist
+
+public func main() returns int {
+    return 0
+}

@@ -124,7 +124,7 @@ impl SpectraCompiler {
         let metadata = native_debug_metadata(&report.artifacts.ir_module, false);
 
         let aot = AotCodeGenerator::new();
-        let (bytes, debug_locations, batch_stats) = aot
+        let (bytes, debug_locations, batch_stats, debug_line_rows) = aot
             .compile_to_object_with_locations_and_stats(
                 &report.artifacts.ir_module,
                 &AotOptions {
@@ -165,6 +165,15 @@ impl SpectraCompiler {
                 }
             }
         }
+        for (function_name, offset, line) in debug_line_rows {
+            if let Some(function) = metadata
+                .functions
+                .iter_mut()
+                .find(|f| f.name == function_name)
+            {
+                function.line_rows.push((offset, line));
+            }
+        }
         Ok((bytes, metadata))
     }
 
@@ -193,7 +202,7 @@ impl SpectraCompiler {
         let metadata = native_debug_metadata(&report.artifacts.ir_module, true);
 
         let aot = AotCodeGenerator::new();
-        let (bytes, debug_locations, batch_stats) = aot
+        let (bytes, debug_locations, batch_stats, debug_line_rows) = aot
             .compile_to_object_with_locations_and_stats(
                 &report.artifacts.ir_module,
                 &AotOptions {
@@ -243,6 +252,21 @@ impl SpectraCompiler {
                         function.local_locations[index].push(location);
                     }
                 }
+            }
+        }
+        for (function_name, offset, line) in debug_line_rows {
+            // The executable shim renames the user's `main`; translate back.
+            let metadata_name = if function_name == "main" {
+                "spectra_user_main".to_string()
+            } else {
+                function_name
+            };
+            if let Some(function) = metadata
+                .functions
+                .iter_mut()
+                .find(|f| f.name == metadata_name)
+            {
+                function.line_rows.push((offset, line));
             }
         }
         Ok((bytes, metadata))

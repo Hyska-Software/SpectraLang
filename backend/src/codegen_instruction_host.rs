@@ -702,9 +702,12 @@ impl CodeGenerator {
                     );
                     builder.ins().call(free_ref, &[ptr]);
                 }
-                builder
-                    .ins()
-                    .trap(cranelift::codegen::ir::TrapCode::user(1).unwrap());
+                Self::emit_runtime_panic(
+                    module,
+                    hostcall,
+                    builder,
+                    &format!("host call '{host}' failed"),
+                )?;
                 builder.seal_block(failure_block);
 
                 builder.switch_to_block(success_block);

@@ -301,7 +301,7 @@ fn route_method_from_request(method: &str) -> Option<routing::RouteMethod> {
     }
 }
 
-fn server_response_from_http(response: Response) -> ServerResponse {
+pub(crate) fn server_response_from_http(response: Response) -> ServerResponse {
     ServerResponse {
         status_code: response.status.code(),
         reason: response.status.reason().to_string(),
@@ -345,4 +345,149 @@ fn ready_task(value: SpectraHostValue) -> Option<SpectraHostValue> {
     } else {
         None
     }
+}
+
+use crate::read_spectra_string;
+
+// ---------------------------------------------------------------------------
+// TLS surface
+//
+// `spectra.api.server.set_tls_certificate` attaches a PEM certificate chain
+// and private key to a stopped server. On `serve`, the mio listener keeps
+// serving cleartext HTTP/1.1 on the configured port while a dedicated tokio
+// gateway listener (OS-assigned port, same host) terminates TLS with ALPN
+// fan-out: `h2` connections are served by the HTTP/2 pipeline and `http/1.1`
+// connections by the async HTTP/1.1 loop sharing the same router/handlers.
+// `spectra.api.server.tls_local_port` reports the gateway port once serving.
+// ---------------------------------------------------------------------------
+
+const PEM_BEGIN_MARKER: &str = "-----BEGIN ";
+
+pub extern "C" fn server_set_tls_certificate(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 3) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let (Some(certificate_pem), Some(private_key_pem)) = (
+        read_spectra_string(args[1]),
+        read_spectra_string(args[2]),
+    ) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let (Some(certificate_chain), Some(private_key)) = (
+        pem_certificate_chain(&certificate_pem),
+        pem_private_key_der(&private_key_pem),
+    ) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Ok(certificates) = crate::tls::TlsCertificateStore::new(
+        crate::tls::TlsServerConfig::new(certificate_chain, private_key),
+    ) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut store = store().lock().unwrap_or_else(|e| e.into_inner());
+    let Some(entry) = store.entries.get_mut(&args[0]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    if matches!(entry.state, SERVER_STATE_RUNNING | SERVER_STATE_STOPPING) {
+        return write_result(ctx, 0);
+    }
+    entry.config.tls_certificates = Some(Arc::new(certificates));
+    write_result(ctx, 1)
+}
+
+pub extern "C" fn server_tls_local_port(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let store = store().lock().unwrap_or_else(|e| e.into_inner());
+    let Some(entry) = store.entries.get(&args[0]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let port = entry
+        .server
+        .as_ref()
+        .and_then(HttpServer::tls_local_addr)
+        .map(|address| address.port() as SpectraHostValue)
+        .unwrap_or(0);
+    write_result(ctx, port)
+}
+
+fn pem_certificate_chain(pem: &str) -> Option<Vec<Vec<u8>>> {
+    let chain: Option<Vec<Vec<u8>>> = pem_sections(pem)
+        .into_iter()
+        .filter(|(label, _)| label == "CERTIFICATE")
+        .map(|(_, payload)| base64_decode_standard(&payload))
+        .collect();
+    let chain = chain?;
+    if chain.is_empty() {
+        None
+    } else {
+        Some(chain)
+    }
+}
+
+fn pem_private_key_der(pem: &str) -> Option<Vec<u8>> {
+    pem_sections(pem)
+        .into_iter()
+        .find(|(label, _)| label.ends_with("PRIVATE KEY"))
+        .and_then(|(_, payload)| base64_decode_standard(&payload))
+}
+
+/// Splits a PEM document into `(label, base64 payload)` sections.
+fn pem_sections(pem: &str) -> Vec<(String, String)> {
+    let mut sections = Vec::new();
+    let mut rest = pem;
+    while let Some(start) = rest.find(PEM_BEGIN_MARKER) {
+        let after_begin = &rest[start + PEM_BEGIN_MARKER.len()..];
+        let Some(label_end) = after_begin.find("-----") else {
+            break;
+        };
+        let label = &after_begin[..label_end];
+        let payload_start = label_end + "-----".len();
+        let end_marker = format!("-----END {label}-----");
+        let Some(payload_end) = after_begin[payload_start..].find(&end_marker) else {
+            break;
+        };
+        sections.push((
+            label.to_string(),
+            after_begin[payload_start..payload_start + payload_end].to_string(),
+        ));
+        rest = &after_begin[payload_start + payload_end + end_marker.len()..];
+    }
+    sections
+}
+
+fn base64_value(byte: u8) -> Option<u32> {
+    match byte {
+        b'A'..=b'Z' => Some((byte - b'A') as u32),
+        b'a'..=b'z' => Some((byte - b'a') as u32 + 26),
+        b'0'..=b'9' => Some((byte - b'0') as u32 + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    }
+}
+
+/// Standard-alphabet base64 decoder for PEM payloads. Whitespace is ignored
+/// and `=` padding terminates the data.
+fn base64_decode_standard(text: &str) -> Option<Vec<u8>> {
+    let mut decoded = Vec::with_capacity(text.len() / 4 * 3);
+    let mut accumulator: u32 = 0;
+    let mut bits: u32 = 0;
+    for character in text.chars() {
+        if character.is_whitespace() {
+            continue;
+        }
+        if character == '=' {
+            break;
+        }
+        let value = base64_value(character as u8)?;
+        accumulator = (accumulator << 6) | value;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            decoded.push(((accumulator >> bits) & 0xFF) as u8);
+        }
+    }
+    Some(decoded)
 }

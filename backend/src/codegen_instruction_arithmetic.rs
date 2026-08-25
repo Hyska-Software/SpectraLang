@@ -1,5 +1,7 @@
 impl CodeGenerator {
-    fn generate_arithmetic_instruction(
+    fn generate_arithmetic_instruction<M: Module>(
+        module: &mut M,
+        hostcall: &mut HostCallLoweringContext<'_>,
         builder: &mut FunctionBuilder,
         kind: &InstructionKind,
         value_map: &mut DenseValueMap,
@@ -80,7 +82,15 @@ impl CodeGenerator {
                 let result_val = if is_float {
                     builder.ins().fdiv(lhs_val, rhs_val)
                 } else {
-                    builder.ins().sdiv(lhs_val, rhs_val)
+                    Self::emit_checked_int_divrem(
+                        module,
+                        hostcall,
+                        builder,
+                        lhs_val,
+                        rhs_val,
+                        "integer division by zero",
+                        false,
+                    )?
                 };
                 value_map.insert(result.id, result_val);
             }
@@ -91,9 +101,18 @@ impl CodeGenerator {
                 let (lhs_val, rhs_val, is_float) =
                     promote_float_operands(builder, lhs_val, rhs_val);
                 let result_val = if is_float {
-                    builder.ins().frem(lhs_val, rhs_val)
+                    // fmod(x, 0) is IEEE 754 NaN: no zero-divisor check.
+                    Self::emit_float_remainder(module, builder, lhs_val, rhs_val)?
                 } else {
-                    builder.ins().srem(lhs_val, rhs_val)
+                    Self::emit_checked_int_divrem(
+                        module,
+                        hostcall,
+                        builder,
+                        lhs_val,
+                        rhs_val,
+                        "integer remainder by zero",
+                        true,
+                    )?
                 };
                 value_map.insert(result.id, result_val);
             }
@@ -211,5 +230,41 @@ impl CodeGenerator {
             _ => unreachable!("arithmetic instruction category mismatch"),
         }
         Ok(())
+    }
+
+    /// Lowers float remainder (`Rem` on F32/F64 operands).
+    ///
+    /// Cranelift has no `frem` instruction, so remainder is emitted as a call
+    /// to the platform C runtime: `fmodf` for F32 and `fmod` for F64. The
+    /// import is declared with `Linkage::Import`, which the JIT resolves
+    /// against loaded modules (UCRT/glibc) and AOT leaves to the native
+    /// linker. Declarations are idempotent, so repeated `Rem` sites reuse the
+    /// same `FuncId`.
+    fn emit_float_remainder<M: Module>(
+        module: &mut M,
+        builder: &mut FunctionBuilder,
+        lhs: Value,
+        rhs: Value,
+    ) -> BackendResult<Value> {
+        let ty = builder.func.dfg.value_type(lhs);
+        let (symbol, scalar_ty) = if ty == types::F32 {
+            ("fmodf", types::F32)
+        } else {
+            ("fmod", types::F64)
+        };
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(scalar_ty));
+        sig.params.push(AbiParam::new(scalar_ty));
+        sig.returns.push(AbiParam::new(scalar_ty));
+        let func_id = module
+            .declare_function(symbol, Linkage::Import, &sig)
+            .map_err(|e| {
+                BackendCodegenError::cranelift(format!(
+                    "Failed to declare '{symbol}' import: {e:?}"
+                ))
+            })?;
+        let func_ref = module.declare_func_in_func(func_id, builder.func);
+        let call = builder.ins().call(func_ref, &[lhs, rhs]);
+        Ok(builder.inst_results(call)[0])
     }
 }

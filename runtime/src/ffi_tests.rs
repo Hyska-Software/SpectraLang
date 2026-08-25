@@ -598,6 +598,51 @@ mod tests {
             HOST_STATUS_INVALID_ARGUMENT
         );
     }
+
+    #[test]
+    fn string_fast_abi_uses_allocation_table_bounds() {
+        let _lock = test_guard();
+        spectra_rt_manual_clear();
+
+        // 4-slot allocation but the string ends after one byte: the table
+        // bounds the scan while the NUL terminator still ends the string.
+        let raw = spectra_rt_manual_alloc(4 * std::mem::size_of::<i64>()) as *mut i64;
+        assert!(!raw.is_null());
+        unsafe {
+            *raw.add(0) = b'x' as i64;
+            *raw.add(1) = 0;
+            *raw.add(2) = 0x7F7F_7F7F_7F7F_7F7F;
+            *raw.add(3) = 0x7F7F_7F7F_7F7F_7F7F;
+        }
+        let ptr = raw as SpectraHostValue;
+
+        assert_eq!(spectra_rt_string_len(ptr), 1);
+        assert_eq!(spectra_rt_string_char_at(ptr, 0), b'x' as i64);
+        // Terminator respected even though the allocation has spare slots.
+        assert_eq!(spectra_rt_string_char_at(ptr, 1), -1);
+        // In-range for the allocation but past the terminator.
+        assert_eq!(spectra_rt_string_char_at(ptr, 3), -1);
+        // Far out of range: rejected without dereferencing.
+        assert_eq!(spectra_rt_string_char_at(ptr, 1 << 40), -1);
+
+        spectra_rt_manual_clear();
+    }
+
+    #[test]
+    fn string_fast_abi_falls_back_to_limited_scan_for_untracked_pointers() {
+        let _lock = test_guard();
+        spectra_rt_manual_clear();
+
+        // Not allocated through spectra_rt_manual_alloc, so unknown to the
+        // AllocationTable; the conservative bounded scan must still work.
+        let buf = [b'h' as i64, b'i' as i64, 0, 0];
+        let ptr = buf.as_ptr() as SpectraHostValue;
+
+        assert_eq!(spectra_rt_string_len(ptr), 2);
+        assert_eq!(spectra_rt_string_char_at(ptr, 0), b'h' as i64);
+        assert_eq!(spectra_rt_string_char_at(ptr, 1), b'i' as i64);
+        assert_eq!(spectra_rt_string_char_at(ptr, 2), -1);
+    }
 }
 
 // ── Fast-path symbol retention ────────────────────────────────────────────────

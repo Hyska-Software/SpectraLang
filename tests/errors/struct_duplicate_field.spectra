@@ -1,0 +1,11 @@
+// Negative regression: a duplicated field in a record must fail with E030.
+module struct_duplicate_field
+
+record Config {
+    retries: int,
+    retries: int,
+}
+
+public func main() returns int {
+    return 0
+}

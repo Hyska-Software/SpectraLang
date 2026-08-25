@@ -121,7 +121,8 @@ impl SemanticAnalyzer {
                     let mut fields_map = HashMap::new();
                     for field in &struct_def.fields {
                         if fields_map.contains_key(&field.name) {
-                            self.error(
+                            self.error_coded(
+                                "E030",
                                 format!(
                                     "Field '{}' is duplicated in struct '{}'",
                                     field.name, struct_def.name
@@ -156,7 +157,8 @@ impl SemanticAnalyzer {
                         .insert(struct_def.name.clone(), struct_info)
                         .is_some()
                     {
-                        self.error(
+                        self.error_coded(
+                            "E030",
                             format!("Struct '{}' is already defined", struct_def.name),
                             struct_def.span,
                         );
@@ -191,7 +193,8 @@ impl SemanticAnalyzer {
 
                     for variant in &enum_def.variants {
                         if variants_map.contains_key(&variant.name) {
-                            self.error(
+                            self.error_coded(
+                                "E030",
                                 format!(
                                     "Variant '{}' is duplicated in enum '{}'",
                                     variant.name, enum_def.name
@@ -224,7 +227,8 @@ impl SemanticAnalyzer {
                         .is_some()
                         && !shadows_builtin_generic
                     {
-                        self.error(
+                        self.error_coded(
+                            "E030",
                             format!("Enum '{}' is already defined", enum_def.name),
                             enum_def.span,
                         );

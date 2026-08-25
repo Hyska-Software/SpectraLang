@@ -19,7 +19,12 @@ extern "C" fn std_math_abs(ctx: *mut SpectraHostCallContext) -> i32 {
 
         let args = slice::from_raw_parts(args_ptr, args_len);
         let results = slice::from_raw_parts_mut(results_ptr, results_len);
-        results[0] = args[0].abs();
+        match args[0].checked_abs() {
+            Some(abs) => results[0] = abs,
+            // i64::MIN has no positive counterpart; report a structured
+            // arithmetic-overflow error instead of silently wrapping.
+            None => return numeric_checked_error("E2902", "math.abs arithmetic overflow"),
+        }
     }
 
     HOST_STATUS_SUCCESS

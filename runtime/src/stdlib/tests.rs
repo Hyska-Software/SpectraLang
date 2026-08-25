@@ -509,6 +509,147 @@
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    unsafe fn tagged_result_parts(
+        tagged: SpectraHostValue,
+    ) -> (SpectraHostValue, SpectraHostValue) {
+        let raw = tagged as *const i64;
+        (*raw, *raw.add(1))
+    }
+
+    #[test]
+    fn fs_directory_surface_create_rename_copy_and_readdir() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        let root = temp_test_dir("fs_directories");
+        std::fs::remove_dir_all(&root).ok();
+        let nested = root.join("level1").join("level2");
+        let nested_arg = test_string(nested.to_string_lossy().as_ref());
+
+        // create_dir_all -> Result::Ok(true)
+        let (status, tagged) = call_host(FS_CREATE_DIR_ALL, &[nested_arg]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(unsafe { tagged_result_parts(tagged) }, (0, 1));
+        assert!(nested.is_dir());
+
+        // read_dir on the freshly created empty directory -> Ok(empty list)
+        let (status, tagged) = call_host(FS_READ_DIR, &[nested_arg]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (tag, payload) = unsafe { tagged_result_parts(tagged) };
+        assert_eq!(tag, 0);
+        let empty_handle = payload as usize;
+        assert_eq!(
+            with_list_registry(|reg| reg.len(empty_handle)),
+            Ok(0usize)
+        );
+
+        // Two files written in non-sorted order.
+        let beta = nested.join("beta.txt");
+        let alpha = nested.join("alpha.txt");
+        for path in [&beta, &alpha] {
+            assert_eq!(
+                call_host(
+                    FS_WRITE_COMPAT,
+ &[test_string(path.to_string_lossy().as_ref()), test_string("payload")],
+                ),
+                (HOST_STATUS_SUCCESS, 1)
+            );
+        }
+
+        // rename(beta -> gamma)
+        let gamma = nested.join("gamma.txt");
+        let (status, tagged) = call_host(
+            FS_RENAME,
+            &[
+                test_string(beta.to_string_lossy().as_ref()),
+                test_string(gamma.to_string_lossy().as_ref()),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(unsafe { tagged_result_parts(tagged) }, (0, 1));
+        assert!(!beta.exists());
+        assert!(gamma.exists());
+
+        // copy(alpha -> alpha-copy); result is the copied byte count.
+        let source_bytes = "payload".len() as SpectraHostValue;
+        let copy_target = nested.join("alpha-copy.txt");
+        let (status, tagged) = call_host(
+            FS_COPY,
+            &[
+                test_string(alpha.to_string_lossy().as_ref()),
+                test_string(copy_target.to_string_lossy().as_ref()),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            unsafe { tagged_result_parts(tagged) },
+            (0, source_bytes)
+        );
+        assert_eq!(
+            std::fs::read_to_string(&copy_target).expect("copied content"),
+            "payload"
+        );
+
+        // read_dir now yields entry NAMES sorted deterministically.
+        let (status, tagged) = call_host(FS_READ_DIR, &[nested_arg]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (tag, payload) = unsafe { tagged_result_parts(tagged) };
+        assert_eq!(tag, 0);
+        let handle = payload as usize;
+        assert_eq!(with_list_registry(|reg| reg.len(handle)), Ok(3usize));
+        let mut names = Vec::new();
+        for index in 0..3_i64 {
+            let ptr = with_list_registry(|reg| reg.get(handle, index))
+                .expect("list element");
+            names.push(unsafe { read_spectra_string(ptr) }.expect("entry name"));
+        }
+        assert_eq!(
+            names,
+            vec![
+                "alpha-copy.txt".to_string(),
+                "alpha.txt".to_string(),
+                "gamma.txt".to_string()
+            ]
+        );
+
+        // remove_dir fails on a non-empty directory with an Err record.
+        let (status, tagged) = call_host(FS_REMOVE_DIR, &[nested_arg]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (tag, _payload) = unsafe { tagged_result_parts(tagged) };
+        assert_eq!(tag, 1);
+        assert!(nested.is_dir());
+
+        // remove_dir succeeds on an empty directory...
+        let empty_child = root.join("empty-child");
+        assert_eq!(
+            call_host(FS_CREATE_DIR_ALL, &[test_string(empty_child.to_string_lossy().as_ref())]).0,
+            HOST_STATUS_SUCCESS
+        );
+        let (status, tagged) =
+            call_host(FS_REMOVE_DIR, &[test_string(empty_child.to_string_lossy().as_ref())]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(unsafe { tagged_result_parts(tagged) }, (0, 1));
+        assert!(!empty_child.exists());
+
+        // ...and invalid paths produce tagged errors instead of panics.
+        let empty = test_string("");
+        for name in [FS_CREATE_DIR_ALL, FS_REMOVE_DIR, FS_READ_DIR] {
+            let (status, tagged) = call_host(name, &[empty]);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            assert_eq!(unsafe { tagged_result_parts(tagged) }.0, 1);
+        }
+        let (status, tagged) = call_host(FS_RENAME, &[empty, empty]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(unsafe { tagged_result_parts(tagged) }.0, 1);
+        let missing_copy = call_host(FS_COPY, &[empty, empty]);
+        assert_eq!(missing_copy.0, HOST_STATUS_SUCCESS);
+        assert_eq!(unsafe { tagged_result_parts(missing_copy.1) }.0, 1);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
     #[test]
     fn collections_list_lifecycle() {
         let _lock = test_guard();
@@ -4670,4 +4811,130 @@
             HOST_STATUS_INVALID_ARGUMENT
         );
         let _ = call_host(TENSOR_FREE_ALL, &[]);
+    }
+
+    #[test]
+    fn substring_byte_semantics_multibyte_boundaries() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+
+        // "héllo": h(0), é(1..3), l(3), l(4), o(5); byte length 6.
+        let s = test_string("h\u{e9}llo");
+        let substring = |start: i64, end: i64| {
+            let (status, ptr) = call_host(STR_SUBSTRING, &[s, start, end]);
+            (
+                status,
+                unsafe { read_spectra_string(ptr) }
+                    .expect("substring must return a readable string"),
+            )
+        };
+
+        assert_eq!(substring(0, 1), (HOST_STATUS_SUCCESS, "h".to_string()));
+        assert_eq!(substring(0, 3), (HOST_STATUS_SUCCESS, "hé".to_string()));
+        assert_eq!(substring(3, 5), (HOST_STATUS_SUCCESS, "ll".to_string()));
+        assert_eq!(
+            substring(1, 99),
+            (HOST_STATUS_SUCCESS, "éllo".to_string())
+        );
+
+        // Indices inside the two-byte 'é' must yield the documented empty
+        // string instead of panicking on a non-boundary slice.
+        assert_eq!(substring(2, 3), (HOST_STATUS_SUCCESS, String::new()));
+        assert_eq!(substring(1, 2), (HOST_STATUS_SUCCESS, String::new()));
+        assert_eq!(substring(2, 2), (HOST_STATUS_SUCCESS, String::new()));
+    }
+
+    #[test]
+    fn char_at_returns_bytes_and_rejects_invalid_indexes() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+
+        let s = test_string("h\u{e9}llo");
+        assert_eq!(call_host(STR_CHAR_AT, &[s, 0]), (HOST_STATUS_SUCCESS, b'h' as i64));
+        assert_eq!(
+            call_host(STR_CHAR_AT, &[s, 1]),
+            (HOST_STATUS_SUCCESS, 0xC3 as i64)
+        );
+        assert_eq!(call_host(STR_CHAR_AT, &[s, 3]), (HOST_STATUS_SUCCESS, b'l' as i64));
+
+        // Inside the multi-byte sequence (not a char boundary).
+        assert_eq!(
+            call_host(STR_CHAR_AT, &[s, 2]).0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        // Out of bounds: one past the end and far beyond.
+        assert_eq!(
+            call_host(STR_CHAR_AT, &[s, 6]).0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            call_host(STR_CHAR_AT, &[s, -1]).0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+    }
+
+    #[test]
+    fn math_abs_of_i64_min_reports_overflow_instead_of_wrapping() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+
+        assert_eq!(call_host(MATH_ABS, &[42]), (HOST_STATUS_SUCCESS, 42));
+        assert_eq!(
+            call_host(MATH_ABS, &[i64::MIN]).0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+    }
+
+    #[test]
+    fn random_int_stays_in_range_without_modulo_bias() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+
+        let (seed_status, _) = call_host(RAND_SEED, &[0x5EED_2026_0824_u64 as i64]);
+        assert_eq!(seed_status, HOST_STATUS_SUCCESS);
+
+        let func = lookup_host_function(RAND_INT).expect("random_int not registered");
+        let args = [0_i64, 10_i64];
+        let mut results = [0_i64];
+        let mut ctx = SpectraHostCallContext {
+            args: args.as_ptr(),
+            arg_len: 2,
+            results: results.as_mut_ptr(),
+            result_len: 1,
+            invoke_fn: None,
+        };
+
+        const SAMPLES: usize = 100_000;
+        let mut buckets = [0_u64; 10];
+        for _ in 0..SAMPLES {
+            assert_eq!(func(&mut ctx), HOST_STATUS_SUCCESS);
+            let value = results[0];
+            assert!((0..10).contains(&value), "value {} outside range", value);
+            buckets[value as usize] += 1;
+        }
+
+        // Uniform expectation is 10_000 per bucket (~sigma 95); allow generous
+        // bounds that a biased `% range` generator would violate.
+        for (index, &count) in buckets.iter().enumerate() {
+            assert!(
+                count > 9_000 && count < 11_000,
+                "bucket {} count {} outside plausible uniform range: {:?}",
+                index,
+                count,
+                buckets
+            );
+        }
+
+        // Documented degenerate contract: min >= max yields min exactly.
+        assert_eq!(call_host(RAND_INT, &[7, 7]), (HOST_STATUS_SUCCESS, 7));
+        assert_eq!(call_host(RAND_INT, &[9, 3]), (HOST_STATUS_SUCCESS, 9));
+
+        // Full-span draw must succeed and stay inside [i64::MIN, i64::MAX).
+        let (status, value) = call_host(RAND_INT, &[i64::MIN, i64::MAX]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!(value >= i64::MIN && value < i64::MAX);
     }

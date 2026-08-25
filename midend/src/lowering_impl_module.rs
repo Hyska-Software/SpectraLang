@@ -561,6 +561,10 @@ impl ASTLowering {
             ir_module.add_function(lambda_func);
         }
 
+        // Mark direct self-tail-recursion so the backend can emit native
+        // Cranelift `return_call`s (see passes::tail_call_marking).
+        crate::passes::tail_call_marking::mark_tail_self_recursion(&mut ir_module);
+
         if self.errors.is_empty() {
             Ok(ir_module)
         } else {

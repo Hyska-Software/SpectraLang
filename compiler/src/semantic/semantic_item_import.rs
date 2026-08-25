@@ -71,20 +71,48 @@ impl SemanticAnalyzer {
             .cloned();
 
         let Some(exports) = exports_cloned else {
-            // Unknown module — emit a diagnostic but don't hard-fail so that
-            // user-defined modules compiled later can still register.
-            // We emit a warning-level message by recording it as an error only
-            // when the module path doesn't look like a user module that will
-            // be resolved later.  For now: always emit a warning if stdlib.
+            // Unknown module. Classify the failure precisely instead of
+            // staying silent:
+            //
+            // - stdlib paths get E033 with a did-you-mean suggestion computed
+            //   over the registered stdlib module names;
+            // - a module importing itself is a circular import (E028);
+            // - any other unregistered user module does not exist in this
+            //   compilation (E029). This is safe to reject because every
+            //   legitimate resolution path guarantees registration first:
+            //   `analyze_modules` analyzes dependency modules before their
+            //   importers, and project builds order modules dependency-first
+            //   (rejecting missing sources at the plan level), so an
+            //   unregistered non-stdlib import can no longer be resolved.
             if module_path.starts_with("std.") || module_path.starts_with("spectra.std.") {
-                self.error_with_hint(
+                let available = self.registered_std_module_list();
+                let hint = match self.closest_registered_std_module(&module_path) {
+                    Some(suggestion) => format!("Did you mean '{}'? Available stdlib modules: {}", suggestion, available),
+                    None => format!("Available stdlib modules: {}", available),
+                };
+                self.error_coded_with_hint(
+                    "E033",
                     format!("Unknown standard library module '{}'", module_path),
                     import.span,
-                    "Available stdlib modules include std.io, std.math, std.collections, std.tensor, std.ml, std.concurrent, std.serve, std.api.http, std.api.server, std.api.client, std.api.json, std.api.tls, std.api.routing, std.api.query, std.api.form, std.api.multipart, std.api.handler, std.api.cors, std.api.middleware, std.api.validation, std.api.errors, std.api.security",
+                    hint,
                 );
+                return aliases;
             }
-            // For user modules: silently skip — they may be registered in a
-            // subsequent iteration of analyze_modules.
+            if self.current_module_name.as_deref() == Some(module_path.as_str()) {
+                self.error_coded_with_hint(
+                    "E028",
+                    format!("Circular import: module '{}' imports itself", module_path),
+                    import.span,
+                    format!("Remove the self-import of '{}' from module '{}'", module_path, module_path),
+                );
+                return aliases;
+            }
+            self.error_coded_with_hint(
+                "E029",
+                format!("User module '{}' does not exist", module_path),
+                import.span,
+                "Check the spelling of the module path; the module must be declared as a source file in the same project or package",
+            );
             return aliases;
         };
 
@@ -785,4 +813,35 @@ impl SemanticAnalyzer {
             .or_insert(signature_map);
     }
 
+    /// Closest registered stdlib module name by Levenshtein distance, for
+    /// did-you-mean suggestions on unknown stdlib imports (E033).
+    fn closest_registered_std_module(&self, module_path: &str) -> Option<String> {
+        let registry = self.registry.read().unwrap_or_else(|p| p.into_inner());
+        let mut best: Option<(usize, &str)> = None;
+        for name in registry.iter_modules().map(|(path, _)| path) {
+            if name == module_path
+                || !(name.starts_with("std.") || name.starts_with("spectra.std."))
+            {
+                continue;
+            }
+            let distance = levenshtein_distance(module_path, name);
+            if best.is_none() || distance < best.expect("checked above").0 {
+                best = Some((distance, name));
+            }
+        }
+        let (distance, name) = best?;
+        (distance <= 3).then(|| name.to_string())
+    }
+
+    /// Sorted list of registered stdlib module paths, for E033 hints.
+    fn registered_std_module_list(&self) -> String {
+        let registry = self.registry.read().unwrap_or_else(|p| p.into_inner());
+        let mut names: Vec<&str> = registry
+            .iter_modules()
+            .map(|(path, _)| path)
+            .filter(|path| path.starts_with("std.") || path.starts_with("spectra.std."))
+            .collect();
+        names.sort_unstable();
+        names.join(", ")
+    }
 }

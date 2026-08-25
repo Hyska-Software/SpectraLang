@@ -109,13 +109,45 @@ fn random_state() -> &'static Mutex<u64> {
     })
 }
 
-/// Linear Congruential Generator step (Knuth constants). Returns total state.
+/// xorshift64* step. Returns the new 64-bit state.
+///
+/// Replaces the earlier LCG; the historical helper name is kept because it is
+/// shared by other stdlib modules. The public seeding API and post-seed
+/// determinism are unchanged: a given seed always produces the same sequence.
 #[inline]
 fn lcg_next(state: &mut u64) -> u64 {
-    *state = state
-        .wrapping_mul(6364136223846793005)
-        .wrapping_add(1442695040888963407);
-    *state
+    // xorshift64* never escapes the zero state, so substitute the golden
+    // ratio constant when seeded with 0 to keep the stream alive.
+    let mut x = if *state == 0 {
+        0x9E37_79B9_7F4A_7C15
+    } else {
+        *state
+    };
+    x ^= x >> 12;
+    x ^= x << 25;
+    x ^= x >> 27;
+    *state = x;
+    x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+}
+
+/// Draws an unbiased value in `[0, range)` via Lemire's method: 128-bit
+/// multiply with rejection, avoiding the modulo bias of `rand % range`.
+/// Returns `0` when `range` is 0.
+#[inline]
+fn unbiased_below(state: &mut u64, range: u64) -> u64 {
+    if range == 0 {
+        return 0;
+    }
+    let mut m = (lcg_next(state) as u128) * (range as u128);
+    let mut low = m as u64;
+    if low < range {
+        let threshold = range.wrapping_neg() % range;
+        while low < threshold {
+            m = (lcg_next(state) as u128) * (range as u128);
+            low = m as u64;
+        }
+    }
+    (m >> 64) as u64
 }
 
 #[inline]
@@ -169,9 +201,12 @@ extern "C" fn std_random_int(ctx: *mut SpectraHostCallContext) -> i32 {
         let result = if min >= max {
             min
         } else {
-            let range = (max - min) as u64;
-            let rand = lcg_next(&mut lock_unpoisoned(random_state()));
-            min + (rand % range) as i64
+            // Compute in i128 so the span and the final offset stay in
+            // range even when [min, max) covers nearly all of i64; the
+            // span of two i64 values always fits in a u64.
+            let range = ((max as i128) - (min as i128)) as u64;
+            let value = unbiased_below(&mut lock_unpoisoned(random_state()), range) as i128;
+            ((min as i128) + value) as i64
         };
         let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);
         results[0] = result;

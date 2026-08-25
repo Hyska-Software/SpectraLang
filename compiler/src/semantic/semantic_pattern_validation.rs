@@ -20,7 +20,7 @@ impl SemanticAnalyzer {
                     return;
                 }
 
-                if !self.types_match(&literal_type, scrutinee_type) {
+                if !self.generic_argument_types_match(&literal_type, scrutinee_type) {
                     self.error(
                         format!(
                             "Pattern literal of type {:?} cannot match value of type {:?}",

@@ -103,6 +103,7 @@ pub fn analyze_document(
     };
 
     let mut semantic = SemanticAnalyzer::new_with_registry(registry, package_name);
+    semantic.set_current_module_name(Some(module.name.clone()));
     let semantic_errors = semantic.analyze_module(&mut module);
     analysis.symbols = semantic.symbol_resolutions.clone();
     analysis.definitions = build_definition_index(&module);

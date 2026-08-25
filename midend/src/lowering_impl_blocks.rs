@@ -426,6 +426,133 @@ impl ASTLowering {
         assigned
     }
 
+    /// Best-effort IR type for a stack slot derived purely from syntax.
+    /// Anything not recognized keeps the historical `Int` slot.
+    fn syntactic_ir_type_hint(expr: &Expression) -> Option<IRType> {
+        match &expr.kind {
+            ExpressionKind::BoolLiteral(_) => Some(IRType::Bool),
+            ExpressionKind::StringLiteral(_) => Some(IRType::String),
+            ExpressionKind::CharLiteral(_) => Some(IRType::Char),
+            ExpressionKind::NumberLiteral(text) => {
+                if text.contains('.') {
+                    Some(IRType::Float)
+                } else {
+                    Some(IRType::Int)
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Like [`Self::find_assigned_variables`], but also records a best-effort
+    /// IR type per mutated binding so its stack slot is allocated with the
+    /// right type instead of a blanket `Int`. A wrong slot type makes the
+    /// backend promote the alloca to a Cranelift variable of the declared
+    /// type while stores carry the real value type, which panics in the
+    /// Cranelift frontend (e.g. a `bool` mutated inside a loop).
+    fn find_assigned_variables_with_types(
+        &self,
+        statements: &[Statement],
+        hints: &mut std::collections::HashMap<String, IRType>,
+    ) -> std::collections::HashSet<String> {
+        use std::collections::HashSet;
+        let mut assigned = HashSet::new();
+
+        for stmt in statements {
+            match &stmt.kind {
+                StatementKind::Let(let_stmt) => {
+                    if let (
+                        spectra_compiler::ast::Pattern::Identifier(name),
+                        Some(value),
+                    ) = (&let_stmt.pattern, &let_stmt.value)
+                    {
+                        if !hints.contains_key(name) {
+                            if let Some(ty) = Self::syntactic_ir_type_hint(value) {
+                                hints.insert(name.clone(), ty);
+                            }
+                        }
+                        self.collect_assigned_variables_in_expr(value, &mut assigned);
+                    }
+                }
+                StatementKind::Assignment(assign) => {
+                    if let spectra_compiler::ast::LValue::Identifier(name) = &assign.target {
+                        assigned.insert(name.clone());
+                        if !hints.contains_key(name) {
+                            if let Some(ty) = Self::syntactic_ir_type_hint(&assign.value) {
+                                hints.insert(name.clone(), ty);
+                            }
+                        }
+                    }
+                    self.collect_assigned_variables_in_expr(&assign.value, &mut assigned);
+                }
+                StatementKind::While(while_stmt) => {
+                    self.collect_assigned_variables_in_expr(&while_stmt.condition, &mut assigned);
+                    assigned.extend(
+                        self.find_assigned_variables_with_types(&while_stmt.body.statements, hints),
+                    );
+                }
+                StatementKind::DoWhile(do_while) => {
+                    self.collect_assigned_variables_in_expr(&do_while.condition, &mut assigned);
+                    assigned.extend(
+                        self.find_assigned_variables_with_types(&do_while.body.statements, hints),
+                    );
+                }
+                StatementKind::For(for_stmt) => {
+                    self.collect_assigned_variables_in_expr(&for_stmt.iterable, &mut assigned);
+                    assigned.extend(
+                        self.find_assigned_variables_with_types(&for_stmt.body.statements, hints),
+                    );
+                }
+                StatementKind::Loop(loop_stmt) => {
+                    assigned.extend(
+                        self.find_assigned_variables_with_types(&loop_stmt.body.statements, hints),
+                    );
+                }
+                StatementKind::WhileLet(while_let) => {
+                    self.collect_assigned_variables_in_expr(&while_let.value, &mut assigned);
+                    assigned.extend(
+                        self.find_assigned_variables_with_types(&while_let.body.statements, hints),
+                    );
+                }
+                StatementKind::IfLet(if_let) => {
+                    self.collect_assigned_variables_in_expr(&if_let.value, &mut assigned);
+                    assigned.extend(
+                        self.find_assigned_variables_with_types(&if_let.then_block.statements, hints),
+                    );
+                    if let Some(else_b) = &if_let.else_block {
+                        assigned.extend(
+                            self.find_assigned_variables_with_types(&else_b.statements, hints),
+                        );
+                    }
+                }
+                StatementKind::Switch(switch) => {
+                    self.collect_assigned_variables_in_expr(&switch.value, &mut assigned);
+                    for case in &switch.cases {
+                        assigned.extend(
+                            self.find_assigned_variables_with_types(&case.body.statements, hints),
+                        );
+                    }
+                    if let Some(default) = &switch.default {
+                        assigned.extend(
+                            self.find_assigned_variables_with_types(&default.statements, hints),
+                        );
+                    }
+                }
+                StatementKind::Expression(expr) => {
+                    self.collect_assigned_variables_in_expr(expr, &mut assigned);
+                }
+                StatementKind::Return(ret) => {
+                    if let Some(value) = &ret.value {
+                        self.collect_assigned_variables_in_expr(value, &mut assigned);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        assigned
+    }
+
     fn collect_assigned_variables_in_expr(
         &self,
         expr: &Expression,

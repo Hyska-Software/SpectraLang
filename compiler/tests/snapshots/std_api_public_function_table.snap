@@ -19,6 +19,11 @@ module std.api.security
 module std.api.session
 module std.api.websocket
 module std.api.sse
+module std.api.trace
+module std.api.health
+module std.api.db.sqlite
+module std.api.db.postgres
+module std.api.db.redis
 type std.api.http.Request: record Request
 type std.api.http.Response: record Response
 type std.api.http.Method: record Method
@@ -149,14 +154,24 @@ func std.api.server.stats: func(Server, int) returns int
 func std.api.server.set_max_body_bytes: func(Server, int) returns bool
 func std.api.server.set_read_timeout: func(Server, int) returns bool
 func std.api.server.set_idle_timeout: func(Server, int) returns bool
+func std.api.server.set_tls_certificate: func(Server, string, string) returns bool
+func std.api.server.tls_local_port: func(Server) returns int
 func std.api.client.new: func() returns Client
 func std.api.client.request: func(Client, Request) returns task<Response>
 func std.api.client.timeout_ms: func(Client) returns int
 func std.api.client.set_ssrf_policy: func(Client, SsrfPolicy) returns bool
 func std.api.json.validate: func(string) returns bool
 func std.api.json.kind: func(string) returns int
-func std.api.json.encode: func(unknown) returns string
-func std.api.json.decode: func(string) returns JsonValue
+func std.api.json.parse: func(string) returns int
+func std.api.json.value_kind: func(int) returns int
+func std.api.json.value_len: func(int) returns int
+func std.api.json.value_get: func(int, string) returns int
+func std.api.json.value_at: func(int, int) returns int
+func std.api.json.value_text: func(int) returns string
+func std.api.json.value_number_bits: func(int) returns int
+func std.api.json.value_bool: func(int) returns int
+func std.api.json.value_free: func(int) returns unit
+func std.api.json.stringify: func(int) returns string
 func std.api.jwt.sign: func(string, string, string) returns string
 func std.api.jwt.verify: func(string, string, string, string, string, int) returns bool
 func std.api.oauth.client_new: func(string, string, string, string, string, string) returns OAuthClient
@@ -172,7 +187,6 @@ func std.api.oauth.token_expires_at_ms: func(OAuthToken) returns int
 func std.api.oauth.token_scope: func(OAuthToken) returns string
 func std.api.tls.config_new: func(int) returns TlsConfig
 func std.api.tls.config_mode: func(TlsConfig) returns int
-func std.api.tls.server_config: func(string, string) returns TlsConfig
 func std.api.tls.client_config: func() returns TlsConfig
 func std.api.routing.router: func() returns Router
 func std.api.routing.router_new: func() returns Router

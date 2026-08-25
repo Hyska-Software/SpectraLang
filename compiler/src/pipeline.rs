@@ -214,6 +214,7 @@ where
             Arc::clone(&self.registry),
             self.package_name.clone(),
         );
+        semantic.set_current_module_name(Some(ast.name.clone()));
         let semantic_start = collect_metrics.then(Instant::now);
         let semantic_errors = semantic.analyze_module(&mut ast);
         if let (Some(metrics), Some(start)) = (metrics.as_mut(), semantic_start) {

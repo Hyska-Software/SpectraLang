@@ -212,7 +212,16 @@ extern "C" fn std_string_repeat(ctx: *mut SpectraHostCallContext) -> i32 {
         let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
         let n = args[1].max(0) as usize;
         let ptr = match read_spectra_string(args[0]) {
-            Some(s) => alloc_spectra_string(&s.repeat(n)),
+            Some(s) => {
+                // Guard against `capacity overflow` panics for absurd repeat
+                // counts: fall back to the empty string when the requested
+                // size is not even addressable.
+                match s.len().checked_mul(n).filter(|&total| total <= isize::MAX as usize)
+                {
+                    Some(_) => alloc_spectra_string(&s.repeat(n)),
+                    None => alloc_spectra_string(""),
+                }
+            }
             None => 0,
         };
         if ctx_ref.result_len > 0 && !ctx_ref.results.is_null() {

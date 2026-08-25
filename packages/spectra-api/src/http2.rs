@@ -983,6 +983,383 @@ fn is_forbidden_http2_header(name: &str) -> bool {
     )
 }
 
+// ---------------------------------------------------------------------------
+// TLS gateway: ALPN fan-out listener for TLS-terminated servers.
+//
+// Topology: `h2` is tokio-based while the HTTP/1.1 pipeline is a mio state
+// machine that cannot wrap TLS streams. A TLS-enabled `HttpServer` therefore
+// keeps serving cleartext HTTP/1.1 from its mio loop on `bind_addr` and starts
+// this gateway on an additional OS-assigned port on the same host. The gateway
+// terminates TLS, inspects the negotiated ALPN protocol, and fans out:
+//
+//   * `h2`           -> HTTP/2 pipeline (`serve_gateway_h2_connection`)
+//   * `http/1.1`/none -> async HTTP/1.1 loop over the TLS stream that calls
+//                        the same dispatcher chain as the mio event loop
+//
+// Limitations of the gateway's HTTP/1.1 leg: SSE and WebSocket upgrades need
+// the mio connection surface and answer 501 there; everything else (sync and
+// async handlers included) behaves like the cleartext pipeline.
+// ---------------------------------------------------------------------------
+
+pub(crate) struct TlsGatewayOptions {
+    pub(crate) parser_config: crate::http::ParserConfig,
+    pub(crate) read_timeout: Duration,
+    pub(crate) shutdown_grace_period: Duration,
+}
+
+pub(crate) struct TlsGateway {
+    local_addr: SocketAddr,
+    shutdown: watch::Sender<bool>,
+    join: Option<JoinHandle<()>>,
+}
+
+impl TlsGateway {
+    pub(crate) fn local_addr(&self) -> SocketAddr {
+        self.local_addr
+    }
+
+    pub(crate) fn shutdown(&mut self) {
+        if let Some(join) = self.join.take() {
+            let _ = self.shutdown.send(true);
+            let _ = join.join();
+        }
+    }
+}
+
+impl Drop for TlsGateway {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+pub(crate) fn spawn_tls_gateway(
+    listener: TcpListener,
+    certificates: Arc<crate::tls::TlsCertificateStore>,
+    options: TlsGatewayOptions,
+    dispatcher: crate::server::DispatchHandler,
+) -> Result<TlsGateway, io::Error> {
+    listener.set_nonblocking(true)?;
+    let local_addr = listener.local_addr()?;
+    let (shutdown, receiver) = watch::channel(false);
+    let join = thread::Builder::new()
+        .name("spectra-api-tls-gateway".to_string())
+        .spawn(move || {
+            let Ok(runtime) = Builder::new_current_thread()
+                .enable_io()
+                .enable_time()
+                .build()
+            else {
+                return;
+            };
+            runtime.block_on(run_tls_gateway_loop(
+                listener,
+                certificates,
+                options,
+                dispatcher,
+                receiver,
+            ));
+        })?;
+    Ok(TlsGateway {
+        local_addr,
+        shutdown,
+        join: Some(join),
+    })
+}
+
+async fn run_tls_gateway_loop(
+    listener: TcpListener,
+    certificates: Arc<crate::tls::TlsCertificateStore>,
+    options: TlsGatewayOptions,
+    dispatcher: crate::server::DispatchHandler,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    let Ok(listener) = TokioTcpListener::from_std(listener) else {
+        return;
+    };
+    let mut connections = JoinSet::new();
+
+    loop {
+        tokio::select! {
+            accepted = listener.accept() => {
+                let Ok((stream, _peer)) = accepted else { continue };
+                let task_certificates = Arc::clone(&certificates);
+                let task_dispatcher = Arc::clone(&dispatcher);
+                let parser_config = options.parser_config.clone();
+                let read_timeout = options.read_timeout;
+                connections.spawn(async move {
+                    // Read the certificate store per connection so rotations
+                    // apply to subsequent handshakes.
+                    let Ok(tls_config) = task_certificates.current() else {
+                        return;
+                    };
+                    let acceptor = TlsAcceptor::from(tls_config);
+                    let Ok(tls_stream) = acceptor.accept(stream).await else {
+                        return;
+                    };
+                    match tls_stream.get_ref().1.alpn_protocol() {
+                        Some(protocol) if protocol == ALPN_HTTP2 => {
+                            serve_gateway_h2_connection(
+                                tls_stream,
+                                task_dispatcher,
+                                read_timeout,
+                            )
+                            .await;
+                        }
+                        _ => {
+                            serve_http11_over_tls(
+                                tls_stream,
+                                task_dispatcher,
+                                parser_config,
+                                read_timeout,
+                            )
+                            .await;
+                        }
+                    }
+                });
+            }
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    break;
+                }
+            }
+        }
+    }
+
+    let deadline = tokio::time::sleep(options.shutdown_grace_period);
+    tokio::pin!(deadline);
+    while !connections.is_empty() {
+        tokio::select! {
+            joined = connections.join_next() => {
+                if joined.is_none() { break; }
+            }
+            _ = &mut deadline => {
+                connections.abort_all();
+                break;
+            }
+        }
+    }
+}
+
+async fn serve_gateway_h2_connection<I>(
+    io: I,
+    dispatcher: crate::server::DispatchHandler,
+    read_timeout: Duration,
+) where
+    I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let mut builder = h2::server::Builder::new();
+    builder.max_concurrent_streams(DEFAULT_MAX_CONCURRENT_STREAMS);
+    builder.max_header_list_size(DEFAULT_MAX_HEADER_LIST_SIZE);
+    let Ok(mut connection) = builder.handshake(io).await else {
+        return;
+    };
+    let max_body_bytes = DEFAULT_MAX_BODY_BYTES;
+    let mut streams = JoinSet::new();
+    while let Some(result) = connection.accept().await {
+        let Ok((request, mut respond)) = result else {
+            break;
+        };
+        let dispatcher = Arc::clone(&dispatcher);
+        streams.spawn(async move {
+            let (parts, body_stream) = request.into_parts();
+            match collect_h2_stream_body(body_stream, max_body_bytes).await {
+                Ok(body) => {
+                    let response =
+                        dispatch_to_http2_response(&dispatcher, parts, body, read_timeout).await;
+                    send_gateway_h2_response(respond, response);
+                }
+                Err(()) => {
+                    let response = H2Response::builder()
+                        .status(413)
+                        .body(())
+                        .expect("HTTP/2 413 response is valid");
+                    let _ = respond.send_response(response, true);
+                }
+            }
+        });
+    }
+    while streams.join_next().await.is_some() {}
+}
+
+async fn collect_h2_stream_body(
+    mut body_stream: h2::RecvStream,
+    max_body_bytes: usize,
+) -> Result<Vec<u8>, ()> {
+    let mut body = Vec::new();
+    while let Some(result) = body_stream.data().await {
+        let chunk = result.map_err(|_| ())?;
+        if body.len().saturating_add(chunk.len()) > max_body_bytes {
+            return Err(());
+        }
+        body.extend_from_slice(&chunk);
+        let _ = body_stream.flow_control().release_capacity(chunk.len());
+    }
+    Ok(body)
+}
+
+async fn dispatch_to_http2_response(
+    dispatcher: &crate::server::DispatchHandler,
+    parts: http::request::Parts,
+    body: Vec<u8>,
+    read_timeout: Duration,
+) -> Http2Response {
+    let request = crate::http::ParsedRequest {
+        method: parts.method.to_string(),
+        target: parts
+            .uri
+            .path_and_query()
+            .map(|value| value.as_str().to_string())
+            .unwrap_or_else(|| "/".to_string()),
+        version: crate::http::HttpVersion::HTTP_11,
+        headers: parts
+            .headers
+            .iter()
+            .filter_map(|(name, value)| {
+                Some(crate::http::Header {
+                    name: name.as_str().to_string(),
+                    value: value.to_str().ok()?.to_string(),
+                })
+            })
+            .collect(),
+        body: crate::http::HttpBody::from_bytes(body),
+        keep_alive: true,
+    };
+    let response = resolve_dispatch_result(dispatcher, request, read_timeout).await;
+    Http2Response {
+        status_code: response.status_code,
+        headers: response
+            .headers
+            .into_iter()
+            .map(|header| Http2Header {
+                name: header.name,
+                value: header.value,
+            })
+            .collect(),
+        body: response.body.bytes(),
+    }
+}
+
+/// Resolves a dispatcher outcome into a concrete response for the TLS
+/// gateway's protocol legs. Mirrors the mio pipeline semantics for `Ready`
+/// and `Pending`; SSE and WebSocket outcomes require the mio connection
+/// surface and are refused here.
+async fn resolve_dispatch_result(
+    dispatcher: &crate::server::DispatchHandler,
+    request: crate::http::ParsedRequest,
+    read_timeout: Duration,
+) -> crate::server::ServerResponse {
+    match dispatcher(request) {
+        crate::server::HandlerResult::Ready(response) => response,
+        crate::server::HandlerResult::Sse(_) | crate::server::HandlerResult::WebSocket(_) => {
+            crate::server::ServerResponse::text(
+                501,
+                "streaming responses are not served over the TLS gateway",
+            )
+        }
+        crate::server::HandlerResult::Pending(pending) => {
+            let deadline = std::time::Instant::now() + read_timeout;
+            loop {
+                match spectra_runtime::stdlib::poll_task_once(pending.task) {
+                    Err(_) => {
+                        return crate::server::ServerResponse::text(500, "async handler failed")
+                    }
+                    Ok(true) => break,
+                    Ok(false) => {}
+                }
+                if std::time::Instant::now() >= deadline {
+                    let _ = spectra_runtime::stdlib::cancel_task_handle(pending.task);
+                    return crate::server::ServerResponse::text(504, "async handler timeout");
+                }
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+            let response = spectra_runtime::stdlib::task_result_value(pending.task)
+                .ok()
+                .and_then(crate::http::clone_response)
+                .map(crate::server::server_response_from_http);
+            response
+                .unwrap_or_else(|| crate::server::ServerResponse::text(500, "async handler failed"))
+        }
+    }
+}
+
+fn send_gateway_h2_response(mut respond: SendResponse<Bytes>, response: Http2Response) {
+    let status = http::StatusCode::from_u16(response.status_code)
+        .unwrap_or(http::StatusCode::INTERNAL_SERVER_ERROR);
+    let mut builder = H2Response::builder().status(status);
+    for header in &response.headers {
+        if is_forbidden_http2_header(&header.name) {
+            continue;
+        }
+        if let (Ok(name), Ok(value)) = (
+            http::header::HeaderName::try_from(header.name.as_str()),
+            http::header::HeaderValue::try_from(header.value.as_str()),
+        ) {
+            builder = builder.header(name, value);
+        }
+    }
+    let body = response.body;
+    let end_stream = body.is_empty();
+    let built = match builder.body(()) {
+        Ok(built) => built,
+        Err(_) => return,
+    };
+    let Ok(mut sender) = respond.send_response(built, end_stream) else {
+        return;
+    };
+    if !end_stream {
+        let _ = sender.send_data(Bytes::from(body), true);
+    }
+}
+
+async fn serve_http11_over_tls<I>(
+    mut io: I,
+    dispatcher: crate::server::DispatchHandler,
+    parser_config: crate::http::ParserConfig,
+    read_timeout: Duration,
+) where
+    I: AsyncRead + AsyncWrite + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut parser = crate::http::Http1Parser::request_with_config(parser_config);
+    let mut buffer = [0_u8; 8_192];
+    loop {
+        let request = loop {
+            match parser.parse_next_request() {
+                Ok(Some(request)) => break Some(request),
+                Ok(None) => {}
+                Err(_) => {
+                    let mut bad_request =
+                        crate::server::ServerResponse::text(400, "bad request");
+                    bad_request.close = true;
+                    let wire = crate::server::response_to_wire(bad_request, false, true);
+                    let _ = io.write_all(&wire).await;
+                    return;
+                }
+            }
+            let read = tokio::time::timeout(read_timeout, io.read(&mut buffer)).await;
+            match read {
+                Ok(Ok(0)) | Err(_) | Ok(Err(_)) => return,
+                Ok(Ok(read)) => parser.push(&buffer[..read]),
+            }
+        };
+        let Some(request) = request else {
+            return;
+        };
+        let head_only = request.method == "HEAD";
+        let keep_alive = request.keep_alive;
+        let response = resolve_dispatch_result(&dispatcher, request, read_timeout).await;
+        let close = !keep_alive || response.close;
+        let wire = crate::server::response_to_wire(response, head_only, close);
+        if io.write_all(&wire).await.is_err() {
+            return;
+        }
+        if close {
+            return;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

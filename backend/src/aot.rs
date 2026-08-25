@@ -7,7 +7,8 @@ use cranelift_codegen::{ir::ValueLabel, LabelValueLoc};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule, ObjectProduct};
 use spectra_midend::ir::{
-    ExternalFunction, Function as IRFunction, InstructionKind, Module as IRModule, Type as IRType,
+    ExternalFunction, Function as IRFunction, InstructionKind, Module as IRModule,
+    Type as IRType, Value as IRValue,
 };
 use std::collections::HashMap;
 
@@ -41,7 +42,19 @@ pub struct NativeValueLocationRange {
 }
 
 pub type DebugLocation = (String, usize, NativeValueLocationRange);
-type AotCompileOutput = (Vec<u8>, Vec<DebugLocation>, HostCallBatchStats);
+/// One collapsed, span-derived source-line row:
+/// `(function name, machine-code offset relative to the function start,
+/// 1-based source line)`. Offsets come from Cranelift's post-allocation
+/// value-label ranges; the line from the defining instruction's
+/// `source_span`.
+pub type DebugLineRow = (String, u32, u32);
+
+type AotCompileOutput = (
+    Vec<u8>,
+    Vec<DebugLocation>,
+    HostCallBatchStats,
+    Vec<DebugLineRow>,
+);
 
 /// Options that control AOT code generation.
 #[derive(Debug, Clone, Default)]
@@ -89,6 +102,10 @@ pub struct AotCodeGenerator {
     /// values. These are intentionally collected from compiled machine code,
     /// never guessed from source or sidecar text.
     debug_locations: Vec<DebugLocation>,
+    /// Span-derived source-line rows collected from compiled machine code,
+    /// mirroring [`Self::debug_locations`]: the offset is compiler-proven by
+    /// Cranelift's value-label pass, never guessed.
+    debug_line_rows: Vec<DebugLineRow>,
 }
 
 impl AotCodeGenerator {
@@ -103,6 +120,12 @@ impl AotCodeGenerator {
         settings_builder
             .set("opt_level", "speed")
             .expect("failed to set cranelift opt_level to speed");
+        // Cranelift's x64 `return_call` implementation restores the caller's
+        // frame pointer, so it requires frame pointers to be preserved
+        // (see emit_return_common_sequence in cranelift x64 emit).
+        settings_builder
+            .set("preserve_frame_pointers", "true")
+            .expect("failed to enable preserve_frame_pointers");
         let isa = cranelift_native::builder()
             .expect("Failed to create native ISA builder")
             .finish(settings::Flags::new(settings_builder))
@@ -129,6 +152,7 @@ impl AotCodeGenerator {
             builder_context: FunctionBuilderContext::new(),
             function_map: HashMap::new(),
             global_data: HashMap::new(),
+            debug_line_rows: Vec::new(),
             runtime_bindings,
             host_call_sites: HashMap::new(),
             hostcall_batch_stats: HostCallBatchStats::default(),
@@ -145,7 +169,7 @@ impl AotCodeGenerator {
         ir_module: &IRModule,
         opts: &AotOptions,
     ) -> BackendResult<Vec<u8>> {
-        let (bytes, _, _) = self.compile_to_object_with_locations_and_stats(ir_module, opts)?;
+        let (bytes, _, _, _) = self.compile_to_object_with_locations_and_stats(ir_module, opts)?;
         Ok(bytes)
     }
 
@@ -154,7 +178,7 @@ impl AotCodeGenerator {
         ir_module: &IRModule,
         opts: &AotOptions,
     ) -> BackendResult<(Vec<u8>, Vec<DebugLocation>)> {
-        let (bytes, locations, _) =
+        let (bytes, locations, _, _) =
             self.compile_to_object_with_locations_and_stats(ir_module, opts)?;
         Ok((bytes, locations))
     }
@@ -236,12 +260,18 @@ impl AotCodeGenerator {
 
         // Emit the finished object.
         let debug_locations = self.take_debug_locations();
+        let debug_line_rows = self.take_debug_line_rows();
         let product: ObjectProduct = self.module.finish();
 
         let bytes = product
             .emit()
             .map_err(|e| BackendCodegenError::cranelift(format!("Object emit error: {}", e)))?;
-        Ok((bytes, debug_locations, self.hostcall_batch_stats))
+        Ok((
+            bytes,
+            debug_locations,
+            self.hostcall_batch_stats,
+            debug_line_rows,
+        ))
     }
 
     fn declare_external_function(&mut self, external: &ExternalFunction) -> BackendResult<FuncId> {
@@ -271,12 +301,29 @@ impl AotCodeGenerator {
         std::mem::take(&mut self.debug_locations)
     }
 
+    /// Collapsed, span-derived `(function, offset, line)` rows collected
+    /// during compilation. Sorted and deduplicated; offsets are relative to
+    /// the start of each function's machine code.
+    pub fn take_debug_line_rows(&mut self) -> Vec<DebugLineRow> {
+        let mut rows = std::mem::take(&mut self.debug_line_rows);
+        rows.sort_unstable();
+        rows.dedup();
+        rows
+    }
+
     fn declare_function(
         &mut self,
         ir_func: &IRFunction,
         rename_main: bool,
     ) -> BackendResult<FuncId> {
         let mut sig = self.module.make_signature();
+        if CodeGenerator::uses_tail_call_convention(ir_func) {
+            // Self-tail-recursive functions need `CallConv::Tail` so the
+            // backend can emit Cranelift's native `return_call`. The exported
+            // symbol ABI differs from the platform default, which is safe
+            // because only Spectra-compiled code calls these functions.
+            sig.call_conv = isa::CallConv::Tail;
+        }
         for param in &ir_func.params {
             let cl_type = CodeGenerator::ir_type_to_cranelift(&param.ty)?;
             sig.params.push(AbiParam::new(cl_type));
@@ -415,6 +462,7 @@ impl AotCodeGenerator {
         }
 
         let blocks = ir_func.blocks.clone();
+        let mut emitted_tail_call = false;
         let mut hostcall = HostCallLoweringContext {
             bindings: &self.runtime_bindings,
             host_call_sites: &self.host_call_sites,
@@ -443,6 +491,7 @@ impl AotCodeGenerator {
                 manual_frame_active,
                 ir_block.id,
                 &phi_map,
+                &mut emitted_tail_call,
             )?;
         }
 
@@ -461,6 +510,20 @@ impl AotCodeGenerator {
             if let Some(value_id) = local.value_id {
                 if let Some(value) = value_map.get(value_id) {
                     builder.set_val_label(value, ValueLabel::from_u32(value_id as u32));
+                }
+            }
+        }
+        // Label every instruction result as well, mirroring the local labels
+        // above. Cranelift's post-allocation value-label pass then yields a
+        // machine-code range per defining instruction, which becomes a real
+        // source-line row when the lowering recorded a `source_span`.
+        for ir_block in &ir_func.blocks {
+            for instr in &ir_block.instructions {
+                let Some(result) = instruction_result_value(&instr.kind) else {
+                    continue;
+                };
+                if let Some(value) = value_map.get(result.id) {
+                    builder.set_val_label(value, ValueLabel::from_u32(result.id as u32));
                 }
             }
         }
@@ -502,6 +565,19 @@ impl AotCodeGenerator {
                                 location,
                             },
                         ));
+                    }
+                }
+            }
+            // Span-derived line rows: one row per live range of each labelled
+            // instruction result. Instructions without a span (compiler-
+            // generated or optimized-out values) simply produce no row and
+            // fall back to the uniform heuristic at emission time.
+            for (value_id, line) in &spanned_instruction_lines(ir_func) {
+                let label = ValueLabel::from_u32(*value_id as u32);
+                if let Some(ranges) = compiled.value_labels_ranges.get(&label) {
+                    for range in ranges {
+                        self.debug_line_rows
+                            .push((ir_func.name.clone(), range.start, *line));
                     }
                 }
             }
@@ -661,7 +737,7 @@ impl AotCodeGenerator {
             .declare_func_in_func(user_main_func_id, builder.func);
         builder.ins().call(user_main_ref, &[]);
 
-        // Call spectra_rt_maybe_pause() — pauses when running via double-click.
+        // Call spectra_rt_maybe_pause() — no-op unless SPECTRA_PAUSE_ON_EXIT=1.
         let pause_sig = self.module.make_signature();
         let pause_func_id = self
             .module
@@ -847,11 +923,83 @@ impl AotCodeGenerator {
     }
 }
 
+/// The single SSA value produced by an instruction, when its kind defines
+/// exactly one result.
+fn instruction_result_value(kind: &InstructionKind) -> Option<IRValue> {
+    match kind {
+        InstructionKind::Add { result, .. }
+        | InstructionKind::Sub { result, .. }
+        | InstructionKind::Mul { result, .. }
+        | InstructionKind::Div { result, .. }
+        | InstructionKind::Rem { result, .. }
+        | InstructionKind::Eq { result, .. }
+        | InstructionKind::Ne { result, .. }
+        | InstructionKind::Lt { result, .. }
+        | InstructionKind::Le { result, .. }
+        | InstructionKind::Gt { result, .. }
+        | InstructionKind::Ge { result, .. }
+        | InstructionKind::And { result, .. }
+        | InstructionKind::Or { result, .. }
+        | InstructionKind::Alloca { result, .. }
+        | InstructionKind::GlobalAddr { result, .. }
+        | InstructionKind::ManualAlloc { result, .. }
+        | InstructionKind::Load { result, .. }
+        | InstructionKind::GetElementPtr { result, .. }
+        | InstructionKind::FieldPtr { result, .. }
+        | InstructionKind::FuncAddr { result, .. }
+        | InstructionKind::AsyncReady { result, .. }
+        | InstructionKind::Phi { result, .. }
+        | InstructionKind::Copy { result, .. }
+        | InstructionKind::ConstInt { result, .. }
+        | InstructionKind::ConstIntTyped { result, .. }
+        | InstructionKind::ConstFloat { result, .. }
+        | InstructionKind::ConstFloatTyped { result, .. }
+        | InstructionKind::ConstBool { result, .. }
+        | InstructionKind::ConstString { result, .. }
+        | InstructionKind::Cast { result, .. }
+        | InstructionKind::MakeDynFatPtr { result, .. }
+        | InstructionKind::LoadDynDataPtr { result, .. }
+        | InstructionKind::LoadDynVtablePtr { result, .. }
+        | InstructionKind::LoadVtableSlot { result, .. } => Some(*result),
+        InstructionKind::Call { result, .. }
+        | InstructionKind::HostCall { result, .. }
+        | InstructionKind::AutodiffStep { result, .. }
+        | InstructionKind::CallIndirect { result, .. } => *result,
+        InstructionKind::Not { .. }
+        | InstructionKind::Store { .. }
+        | InstructionKind::EscapeManualAlloc { .. }
+        | InstructionKind::AsyncSuspend { .. }
+        | InstructionKind::AsyncResume { .. } => None,
+    }
+}
+
+/// Map each instruction-result SSA value id to the 1-based source line of
+/// the instruction that defines it, using the spans recorded by lowering.
+fn spanned_instruction_lines(ir_func: &IRFunction) -> HashMap<usize, u32> {
+    let mut lines = HashMap::new();
+    for block in &ir_func.blocks {
+        for instr in &block.instructions {
+            let Some(span) = &instr.source_span else {
+                continue;
+            };
+            let Some(result) = instruction_result_value(&instr.kind) else {
+                continue;
+            };
+            lines.entry(result.id).or_insert(span.start_line);
+        }
+    }
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::BackendErrorKind;
-    use spectra_midend::ir::{Function as IRFunction, InstructionKind, Terminator, Type as IRType};
+    use spectra_midend::ir::{
+        Function as IRFunction, InstructionKind, Parameter, SourceSpan, Terminator,
+        Type as IRType,
+    };
+
 
     #[test]
     fn r3104_aot_preinterns_duplicate_host_names_once() {
@@ -916,4 +1064,126 @@ mod tests {
         assert_eq!(err.kind(), &BackendErrorKind::MissingBlock);
         assert!(err.message().contains("42"));
     }
+
+    #[test]
+    fn spanned_instructions_map_results_to_source_lines() {
+        // IR function with known spans: the lowering records `source_span`
+        // per instruction; the line-table collector must map each
+        // instruction-result value to that line.
+        let mut func = IRFunction::new("main", vec![], IRType::Void);
+        let entry = func.add_block("entry");
+        let block = func.get_block_mut(entry).unwrap();
+        block.add_instruction(InstructionKind::ConstInt {
+            result: IRValue { id: 10 },
+            value: 1,
+        });
+        block.add_instruction(InstructionKind::ConstInt {
+            result: IRValue { id: 11 },
+            value: 2,
+        });
+        block.add_instruction(InstructionKind::Add {
+            result: IRValue { id: 12 },
+            lhs: IRValue { id: 10 },
+            rhs: IRValue { id: 11 },
+        });
+        let span_for_line = |line: u32| SourceSpan {
+            file: "fixture.spectra".to_string(),
+            start_line: line,
+            start_column: 5,
+            end_line: line,
+            end_column: 10,
+        };
+        block.instructions[0].source_span = Some(span_for_line(3));
+        block.instructions[1].source_span = Some(span_for_line(4));
+        block.instructions[2].source_span = Some(span_for_line(5));
+        block.set_terminator(Terminator::Return {
+            value: Some(IRValue { id: 12 }),
+        });
+
+        let lines = spanned_instruction_lines(&func);
+        assert_eq!(lines.get(&10), Some(&3));
+        assert_eq!(lines.get(&11), Some(&4));
+        assert_eq!(lines.get(&12), Some(&5));
+    }
+
+    #[test]
+    fn aot_compile_produces_real_line_rows_from_known_spans() {
+        // `main(a, b) { return a + b; }` with a span on the Add. The add must
+        // materialize (operands are parameters), so Cranelift's value-label
+        // pass yields at least one machine range whose row carries the span's
+        // line.
+        let mut module = IRModule::new("aot_line_rows");
+        let mut func = IRFunction::new(
+            "main",
+            vec![
+                Parameter {
+                    id: 0,
+                    name: "a".to_string(),
+                    ty: IRType::Int,
+                },
+                Parameter {
+                    id: 1,
+                    name: "b".to_string(),
+                    ty: IRType::Int,
+                },
+            ],
+            IRType::Int,
+        );
+        let entry = func.add_block("entry");
+        let block = func.get_block_mut(entry).unwrap();
+        block.add_instruction(InstructionKind::Add {
+            result: IRValue { id: 2 },
+            lhs: IRValue { id: 0 },
+            rhs: IRValue { id: 1 },
+        });
+        block.instructions[0].source_span = Some(SourceSpan {
+            file: "fixture.spectra".to_string(),
+            start_line: 7,
+            start_column: 1,
+            end_line: 7,
+            end_column: 12,
+        });
+        block.set_terminator(Terminator::Return {
+            value: Some(IRValue { id: 2 }),
+        });
+        module.add_function(func);
+
+        let (_, _, _, line_rows) = AotCodeGenerator::new()
+            .compile_to_object_with_locations_and_stats(&module, &AotOptions::default())
+            .expect("AOT compile should succeed");
+        assert!(
+            line_rows.iter().any(|(name, _, line)| name == "main" && *line == 7),
+            "expected a real line row for main at source line 7, got {line_rows:?}"
+        );
+    }
+
+    #[test]
+    fn instructions_without_spans_yield_no_line_rows() {
+        let mut module = IRModule::new("aot_no_span_rows");
+        let mut func = IRFunction::new(
+            "main",
+            vec![Parameter {
+                id: 0,
+                name: "a".to_string(),
+                ty: IRType::Int,
+            }],
+            IRType::Int,
+        );
+        let entry = func.add_block("entry");
+        let block = func.get_block_mut(entry).unwrap();
+        block.set_terminator(Terminator::Return {
+            value: Some(IRValue { id: 0 }),
+        });
+        module.add_function(func);
+
+        let (_, _, _, line_rows) = AotCodeGenerator::new()
+            .compile_to_object_with_locations_and_stats(&module, &AotOptions::default())
+            .expect("AOT compile should succeed");
+        assert!(
+            !line_rows.iter().any(|(name, _, _)| name == "main"),
+            "no span means no real rows (uniform fallback applies), got {line_rows:?}"
+        );
+    }
 }
+
+

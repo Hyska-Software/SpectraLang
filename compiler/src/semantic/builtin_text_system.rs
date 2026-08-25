@@ -264,6 +264,9 @@ fn make_std_fs() -> ModuleExports {
     let result_bool_error = Type::Enum {
         name: "Result_bool_Error".to_string(),
     };
+    let result_int_error = Type::Enum {
+        name: "Result_int_Error".to_string(),
+    };
     exports
         .functions
         .insert("fs_read".to_string(), pub_fn(vec![Type::String], result_string_error));
@@ -277,6 +280,47 @@ fn make_std_fs() -> ModuleExports {
             .functions
             .insert(name.to_string(), pub_fn(params, result_bool_error.clone()));
     }
+    // Directory-management surface mirroring the fs_read Result contract.
+    exports.functions.insert(
+        "create_dir_all".to_string(),
+        pub_fn(vec![Type::String], result_bool_error.clone()),
+    );
+    exports.functions.insert(
+        "remove_dir".to_string(),
+        pub_fn(vec![Type::String], result_bool_error.clone()),
+    );
+    exports.functions.insert(
+        "rename".to_string(),
+        pub_fn(
+            vec![Type::String, Type::String],
+            result_bool_error.clone(),
+        ),
+    );
+    // copy(from, to) -> Result<int, Error> (bytes copied)
+    exports.functions.insert(
+        "copy".to_string(),
+        pub_fn(vec![Type::String, Type::String], result_int_error),
+    );
+    // read_dir(path) -> Result<List<string>, Error> (entry names, sorted).
+    // The structural `Result<...>` application keeps the `Ok` payload a real
+    // `List<string>` instead of an unparseable mangled enum name.
+    let list_of_string = Type::Applied {
+        name: "List".to_string(),
+        args: vec![Type::String],
+    };
+    let std_error = Type::Struct {
+        name: "Error".to_string(),
+    };
+    exports.functions.insert(
+        "read_dir".to_string(),
+        pub_fn(
+            vec![Type::String],
+            Type::Applied {
+                name: "Result".to_string(),
+                args: vec![list_of_string, std_error],
+            },
+        ),
+    );
 
     exports
 }

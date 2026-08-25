@@ -37,6 +37,7 @@ The following set is the current stable Phase 1 table for high-frequency diagnos
 | `P004` | parser | future experimental feature disabled | rerun with the documented feature gate once an active experimental feature exists |
 | `P005` | parser | misplaced or incomplete `async` syntax | use `async func` in declaration position, `async { ... }`, or `async |...| ...` |
 | `P006` | parser | `await` outside async context | move the expression into `async func`, `async { ... }`, or an async closure |
+| `P013` | parser | nesting too deep | reduce nesting of expressions, statements, blocks, or patterns (parser recursion guard) |
 | `P999` | parser | generic syntax failure | inspect nearby syntax; parser context and hint should narrow the issue |
 | `E001` | semantic | undefined variable or function | declare/import the symbol or fix the name |
 | `E002` | semantic | argument count mismatch | pass the expected number of arguments |
@@ -74,6 +75,20 @@ records, traits, impl blocks, and `dyn` casts.
 | `E024` | semantic | `self` receiver appears after other parameters | move the `self` receiver to the first parameter position |
 | `E025` | semantic | impl type arguments do not match the target type's type parameters | use the type parameters declared by the generic record, in order |
 | `E027` | semantic | module-qualified inherent impl target cannot be resolved | import or declare the module and use an exported struct or enum as the `impl module::Type` target |
+
+## Module, Exhaustiveness, and Receiver Diagnostics (E028-E033)
+
+The following codes cover module resolution, duplicate declarations,
+`match` exhaustiveness, and method receiver validation.
+
+| Code | Phase | Meaning | Expected hint/action |
+| --- | --- | --- | --- |
+| `E028` | semantic | circular import detected (including a module importing itself) | break the cycle by removing or restructuring one of the imports in the reported chain |
+| `E029` | semantic | user (non-stdlib) module does not exist | check the spelling of the module path; the module must be declared as a source file in the same project or package |
+| `E030` | semantic | duplicate declaration (struct/enum already defined, or duplicated struct field / enum variant) | remove the duplicate declaration, rename it, or drop the repeated field/variant |
+| `E031` | semantic | `match` expression is not exhaustive (missing enum variants or missing wildcard bindings for payload variants) | add patterns for the listed `Enum::Variant` arms or a wildcard arm with payload bindings |
+| `E032` | semantic | method receiver mismatch (receiver type differs from the declared `self` type, or a `self`-less method called on a value) | convert or borrow the receiver to match the signature, or call it as `Type::method(...)` |
+| `E033` | semantic | unknown standard library module in an import | use one of the registered stdlib modules; the diagnostic includes a did-you-mean suggestion when close |
 
 ## Phase 21 Async Diagnostics
 

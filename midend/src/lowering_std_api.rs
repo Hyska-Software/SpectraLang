@@ -100,6 +100,16 @@ fn lookup_std_api_host_function(module: &str, function: &str) -> Option<HostFunc
         ("http", "status") => Some(host_int("spectra.api.http.status")),
         ("json", "validate") => Some(host_bool("spectra.api.json.validate")),
         ("json", "kind") => Some(host_int("spectra.api.json.kind")),
+        ("json", "parse") => Some(host_int("spectra.api.json.parse")),
+        ("json", "value_kind") => Some(host_int("spectra.api.json.value_kind")),
+        ("json", "value_len") => Some(host_int("spectra.api.json.value_len")),
+        ("json", "value_get") => Some(host_int("spectra.api.json.value_get")),
+        ("json", "value_at") => Some(host_int("spectra.api.json.value_at")),
+        ("json", "value_text") => Some(host_string("spectra.api.json.value_text")),
+        ("json", "value_number_bits") => Some(host_int("spectra.api.json.value_number_bits")),
+        ("json", "value_bool") => Some(host_int("spectra.api.json.value_bool")),
+        ("json", "value_free") => Some(host_void("spectra.api.json.value_free")),
+        ("json", "stringify") => Some(host_string("spectra.api.json.stringify")),
         ("jwt", "sign") => Some(host_string("spectra.api.jwt.sign")),
         ("jwt", "verify") => Some(host_bool("spectra.api.jwt.verify")),
         ("oauth", "client_new") => Some(host_int("spectra.api.oauth.client_new")),
@@ -293,6 +303,12 @@ fn lookup_std_api_host_function(module: &str, function: &str) -> Option<HostFunc
         }
         ("server", "set_idle_timeout") => {
             Some(host_bool("spectra.api.server.set_idle_timeout"))
+        }
+        ("server", "set_tls_certificate") => {
+            Some(host_bool("spectra.api.server.set_tls_certificate"))
+        }
+        ("server", "tls_local_port") => {
+            Some(host_int("spectra.api.server.tls_local_port"))
         }
         ("client", "new") => Some(host_int("spectra.api.client.new")),
         ("client", "request") => Some(host_task_int("spectra.api.client.request")),
@@ -597,5 +613,12 @@ fn lookup_std_api_host_function(module: &str, function: &str) -> Option<HostFunc
         ("cors", "allowed_origin") => Some(host_string("spectra.api.cors.allowed_origin")),
         _ => None,
     }
+}
+
+/// Contract introspection: resolves the registered host-call name the
+/// `std.api.<module>.<function>` lowering would target, without exposing the
+/// internal descriptor type. Used by cross-crate contract drift tests.
+pub fn std_api_host_call_target(module: &str, function: &str) -> Option<&'static str> {
+    lookup_std_api_host_function(module, function).map(|d| d.runtime_name)
 }
 

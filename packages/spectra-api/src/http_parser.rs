@@ -304,6 +304,13 @@ impl BodyMeta {
     fn from_headers(headers: &[Header], absolute_base: usize) -> Result<Self, ParseError> {
         let transfer_encoding = header_values(headers, "transfer-encoding");
         if !transfer_encoding.is_empty() {
+            if !header_values(headers, "content-length").is_empty() {
+                return Err(ParseError::new(
+                    ParseErrorKind::ConflictingFraming,
+                    absolute_base,
+                    "Transfer-Encoding and Content-Length cannot coexist",
+                ));
+            }
             let codings = transfer_encoding
                 .iter()
                 .flat_map(|value| value.split(','))

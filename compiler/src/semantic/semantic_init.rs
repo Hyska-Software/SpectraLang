@@ -129,6 +129,7 @@ impl SemanticAnalyzer {
             generic_param_bounds: Vec::new(),
             registry,
             current_package: package_name,
+            current_module_name: None,
             symbol_resolutions: HashMap::new(),
             module_namespaces: HashSet::new(),
             stdlib_namespace_aliases: HashMap::new(),

@@ -1,7 +1,11 @@
 // ── std.string extras ────────────────────────────────────────────────────────
 
 /// Returns a substring from `start` (inclusive) to `end` (exclusive).
-/// Clamps indices to valid range; returns empty string on invalid input.
+///
+/// Indices are BYTE offsets into the UTF-8 encoding of `s`, not character
+/// offsets. Indices are clamped to `[0, byte_len]`. Returns an empty string
+/// on invalid input: when `start > end`, or when either clamped index falls
+/// inside a multi-byte UTF-8 sequence (not on a char boundary).
 extern "C" fn std_string_substring(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
@@ -19,7 +23,10 @@ extern "C" fn std_string_substring(ctx: *mut SpectraHostCallContext) -> i32 {
                 let len = s.len() as i64;
                 let s_start = start.clamp(0, len) as usize;
                 let s_end = end.clamp(0, len) as usize;
-                let slice = if s_start <= s_end {
+                let slice = if s_start <= s_end
+                    && s.is_char_boundary(s_start)
+                    && s.is_char_boundary(s_end)
+                {
                     &s[s_start..s_end]
                 } else {
                     ""

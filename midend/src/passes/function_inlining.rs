@@ -214,7 +214,7 @@ fn find_inline_call(
             if let InstructionKind::Call {
                 function,
                 args,
-                result: _,
+                ..
             } = &instruction.kind
             {
                 if let Some(candidate) = candidates.get(function) {
@@ -240,6 +240,7 @@ fn inline_call(
             result,
             function,
             args,
+            ..
         } => (*result, function.clone(), args.clone()),
         _ => unreachable!("inline_call called for non-call"),
     };

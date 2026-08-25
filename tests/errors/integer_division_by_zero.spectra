@@ -1,0 +1,10 @@
+module integer_division_by_zero
+
+// Expected behavior: JIT/AOT execution prints
+//   runtime error: integer division by zero
+// to stderr and terminates the process with exit code 101
+// (spectra_rt_panic), instead of dying on an opaque native trap.
+public func main() returns int {
+    let x = 1 / 0
+    return x
+}

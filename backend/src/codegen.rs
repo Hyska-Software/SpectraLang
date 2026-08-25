@@ -158,6 +158,10 @@ pub struct CodeGenerator {
     #[allow(clippy::vec_box)]
     host_call_cache_storage: Vec<Box<SpectraHostCallCache>>,
     hostcall_batch_stats: HostCallBatchStats,
+    /// Test-only copy of the most recently finalized Cranelift function, so
+    /// tests can inspect native IR before module finalization.
+    #[cfg(test)]
+    last_finalized_func: Option<cranelift_codegen::ir::Function>,
 }
 
 /// Describes a PHI node so that the backend can emit Cranelift block parameters.

@@ -423,8 +423,6 @@
                 | Keyword::When
                 | Keyword::Then
                 | Keyword::Otherwise
-                | Keyword::Elif
-                | Keyword::ElseIf
                 | Keyword::While
                 | Keyword::For
                 | Keyword::In
@@ -455,14 +453,11 @@
             Keyword::Return
                 | Keyword::If
                 | Keyword::Else
-                | Keyword::Elif
-                | Keyword::ElseIf
                 | Keyword::While
                 | Keyword::For
                 | Keyword::Match
                 | Keyword::Switch
                 | Keyword::Unless
                 | Keyword::Case
-                | Keyword::Cond
         )
     }

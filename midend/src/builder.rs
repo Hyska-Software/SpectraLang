@@ -304,6 +304,7 @@ impl IRBuilder {
             result,
             function: function_name,
             args,
+            is_tail: false,
         });
         result
     }

@@ -167,8 +167,9 @@ impl SemanticAnalyzer {
         }
 
         if let Some(expected_self_type) = signature.params.first() {
-            if !self.types_match(receiver_type, expected_self_type) {
-                self.error_with_details(
+            if !self.generic_argument_types_match(receiver_type, expected_self_type) {
+                self.error_coded_with_details(
+                    "E032",
                     format!(
                         "Method '{}' expects receiver of type {:?}, but found {:?}",
                         method_name, expected_self_type, receiver_type
@@ -202,7 +203,7 @@ impl SemanticAnalyzer {
             let arg_type = self.infer_expression_type(arg);
             let expected_index = i + arg_offset;
             if let Some(expected_type) = signature.params.get(expected_index) {
-                if !self.types_match(&arg_type, expected_type) {
+                if !self.generic_argument_types_match(&arg_type, expected_type) {
                     let hint = self.conversion_hint(&arg_type, expected_type);
                     self.push_semantic_error(
                         format!(

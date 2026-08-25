@@ -1,0 +1,7 @@
+module circular_import
+
+import circular_import
+
+public func main() returns int {
+    return 0
+}

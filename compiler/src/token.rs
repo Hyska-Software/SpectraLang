@@ -36,33 +36,25 @@ pub enum Keyword {
     Match,
     Switch,
     Case,
-    Cond,
     If,
     Else,
     When,
     Then,
     Otherwise,
-    Elif,
-    ElseIf,
     Unless,
 
     // Control flow - loops
     While,
     Do,
     For,
-    Foreach,
     In,
     Of,
-    Repeat,
-    Until,
     Loop,
 
     // Control flow - jumps
     Return,
     Break,
     Continue,
-    Yield,
-    Goto,
 
     // Word-form logical operators
     AndWord,
@@ -119,33 +111,24 @@ impl Keyword {
             "match" => Some(Self::Match),
             "switch" => Some(Self::Switch),
             "case" => Some(Self::Case),
-            "cond" => Some(Self::Cond),
             "if" => Some(Self::If),
             "else" => Some(Self::Else),
             "when" => Some(Self::When),
             "then" => Some(Self::Then),
             "otherwise" => Some(Self::Otherwise),
-            "elif" => Some(Self::Elif),
-            "elseif" => Some(Self::ElseIf),
             "unless" => Some(Self::Unless),
 
             // Control flow - loops
             "while" => Some(Self::While),
             "do" => Some(Self::Do),
             "for" => Some(Self::For),
-            "foreach" => Some(Self::Foreach),
             "in" => Some(Self::In),
             "of" => Some(Self::Of),
-            "repeat" => Some(Self::Repeat),
-            "until" => Some(Self::Until),
             "loop" => Some(Self::Loop),
-
             // Control flow - jumps
             "return" => Some(Self::Return),
             "break" => Some(Self::Break),
             "continue" => Some(Self::Continue),
-            "yield" => Some(Self::Yield),
-            "goto" => Some(Self::Goto),
 
             // Word-form logical operators
             "and" => Some(Self::AndWord),
@@ -206,33 +189,24 @@ impl fmt::Display for Keyword {
             Keyword::Match => "match",
             Keyword::Switch => "switch",
             Keyword::Case => "case",
-            Keyword::Cond => "cond",
             Keyword::If => "if",
             Keyword::Else => "else",
             Keyword::When => "when",
             Keyword::Then => "then",
             Keyword::Otherwise => "otherwise",
-            Keyword::Elif => "elif",
-            Keyword::ElseIf => "elseif",
             Keyword::Unless => "unless",
 
             // Control flow - loops
             Keyword::While => "while",
             Keyword::Do => "do",
             Keyword::For => "for",
-            Keyword::Foreach => "foreach",
             Keyword::In => "in",
             Keyword::Of => "of",
-            Keyword::Repeat => "repeat",
-            Keyword::Until => "until",
             Keyword::Loop => "loop",
-
             // Control flow - jumps
             Keyword::Return => "return",
             Keyword::Break => "break",
             Keyword::Continue => "continue",
-            Keyword::Yield => "yield",
-            Keyword::Goto => "goto",
 
             // Word-form logical operators
             Keyword::AndWord => "and",

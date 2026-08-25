@@ -65,11 +65,36 @@ pub extern "C" fn spectra_rt_manual_alloc(size: usize) -> *mut u8 {
 
 const SPECTRA_STRING_SCAN_LIMIT: usize = 16 * 1024 * 1024;
 
+/// Returns the size in bytes recorded by the manual AllocationTable for the
+/// allocation starting at `ptr_val`, or `None` when the pointer is unknown
+/// (e.g. memory not allocated through `spectra_rt_manual_alloc`).
+pub(crate) fn manual_allocation_size(ptr_val: SpectraHostValue) -> Option<usize> {
+    let table = allocation_table();
+    let guard = table.lock().unwrap_or_else(|e| e.into_inner());
+    let allocation = guard.allocations.get(&(ptr_val as usize))?;
+    Some(allocation._storage.bytes.len())
+}
+
+/// Returns the scan ceiling in i64 slots for a string pointer: the exact slot
+/// count of the tracked allocation when known, otherwise the conservative
+/// global scan limit.
+pub(crate) fn string_scan_limit_slots(ptr_val: SpectraHostValue) -> usize {
+    match manual_allocation_size(ptr_val) {
+        Some(bytes) => bytes / std::mem::size_of::<i64>(),
+        None => SPECTRA_STRING_SCAN_LIMIT,
+    }
+}
+
 /// Fast ABI entry for `std.string.len`.
 ///
 /// Spectra strings are null-terminated buffers with one byte per i64 slot.
 /// This keeps the hot path out of the generic host-call dispatcher while
 /// preserving the same null handling as the stdlib host function.
+///
+/// The scan is bounded: when the pointer is tracked by the AllocationTable,
+/// only slots inside that allocation are read; otherwise the scan is capped
+/// at [`SPECTRA_STRING_SCAN_LIMIT`] slots, so reads never run past 16 MiB of
+/// slots.
 #[no_mangle]
 pub extern "C" fn spectra_rt_string_len(ptr_val: SpectraHostValue) -> SpectraHostValue {
     if ptr_val == 0 {
@@ -77,7 +102,10 @@ pub extern "C" fn spectra_rt_string_len(ptr_val: SpectraHostValue) -> SpectraHos
     }
 
     let raw = ptr_val as *const i64;
-    for offset in 0..SPECTRA_STRING_SCAN_LIMIT {
+    let limit = string_scan_limit_slots(ptr_val);
+    for offset in 0..limit {
+        // SAFETY: offset stays within the tracked allocation (when known) or
+        // within the documented scan limit (otherwise).
         let slot = unsafe { *raw.add(offset) };
         if slot == 0 {
             return offset as SpectraHostValue;
@@ -91,6 +119,10 @@ pub extern "C" fn spectra_rt_string_len(ptr_val: SpectraHostValue) -> SpectraHos
 ///
 /// Returns -1 for null strings, negative indexes, and indexes at or after the
 /// null terminator, matching the public stdlib contract.
+///
+/// The string length is derived with a bounded scan (see
+/// [`spectra_rt_string_len`]) BEFORE the indexed slot is dereferenced, so an
+/// out-of-range index never touches memory beyond the terminator.
 #[no_mangle]
 pub extern "C" fn spectra_rt_string_char_at(
     ptr_val: SpectraHostValue,
@@ -101,22 +133,27 @@ pub extern "C" fn spectra_rt_string_char_at(
     }
 
     let target = index as usize;
-    if target >= SPECTRA_STRING_SCAN_LIMIT {
+    let raw = ptr_val as *const i64;
+    let limit = string_scan_limit_slots(ptr_val);
+
+    // Derive the length first without ever reading past the scan limit.
+    let mut len = 0usize;
+    while len < limit {
+        // SAFETY: len < limit stays within the tracked allocation (when
+        // known) or within the documented scan limit (otherwise).
+        let slot = unsafe { *raw.add(len) };
+        if slot == 0 {
+            break;
+        }
+        len += 1;
+    }
+
+    if target >= len {
         return -1;
     }
-
-    let raw = ptr_val as *const i64;
-    for offset in 0..=target {
-        let slot = unsafe { *raw.add(offset) };
-        if slot == 0 {
-            return -1;
-        }
-        if offset == target {
-            return (slot as u8) as SpectraHostValue;
-        }
-    }
-
-    -1
+    // SAFETY: target < len <= limit, inside the readable region.
+    let slot = unsafe { *raw.add(target) };
+    (slot as u8) as SpectraHostValue
 }
 
 /// Fast ABI entry for `concurrent.task_spawn(value)`.

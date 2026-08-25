@@ -68,6 +68,8 @@ Interpretation rules for roadmap or planning work:
 - `docs/production-ai-implementation-plan.md` is the canonical long-form strategic implementation plan.
 - If older docs conflict with the three files above, update the older docs or explicitly note the conflict.
 
+### Always write comments in English.
+
 ---
 
 ## Required Planning Files

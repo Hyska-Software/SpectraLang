@@ -14,6 +14,13 @@ impl ASTLowering {
 
                 // Criar blocos para cada arm e um bloco de saída
                 let exit_block = ir_func.add_block("match_exit");
+
+                // Um braço "garantido" é irrefutável e sem guard: casa sempre.
+                // Sem ele, todos os checks podem falhar em runtime e nenhum
+                // valor de resultado é produzido.
+                let has_guaranteed_arm = arms
+                    .iter()
+                    .any(|arm| arm.guard.is_none() && pattern_is_irrefutable(&arm.pattern));
                 let mut arm_check_blocks = Vec::new();
                 let mut arm_body_blocks = Vec::new();
 
@@ -22,6 +29,15 @@ impl ASTLowering {
                     arm_check_blocks.push(ir_func.add_block(format!("match_check_{}", idx)));
                     arm_body_blocks.push(ir_func.add_block(format!("match_body_{}", idx)));
                 }
+
+                // Sem braço garantido, os braços que casam desviam para um bloco
+                // de continuação próprio; o bloco de saída fica selado com
+                // Unreachable (nenhum padrão casou => resultado nunca armazenado).
+                let match_end = if has_guaranteed_arm {
+                    None
+                } else {
+                    Some(ir_func.add_block("match_end"))
+                };
 
                 // Inferir tipo do resultado combinando os tipos de cada arm
                 let mut result_type = if let Some(first_arm) = arms.first() {
@@ -129,7 +145,7 @@ impl ASTLowering {
                         if let Some(result_alloca) = result_alloca {
                             self.builder.build_store(ir_func, result_alloca, body_value);
                         }
-                        self.builder.build_branch(ir_func, exit_block);
+                        self.builder.build_branch(ir_func, match_end.unwrap_or(exit_block));
                     }
 
                     self.struct_var_map.pop_scope();
@@ -141,6 +157,18 @@ impl ASTLowering {
 
                 // Bloco de saída
                 self.builder.set_current_block(exit_block);
+
+                // Nenhum braço garante casamento: se todos os checks falharem
+                // em runtime, o fluxo chega aqui com a result_alloca nunca
+                // armazenada — lê-la seria ler memória não inicializada. Sela
+                // este bloco com Unreachable; o fluxo normal continua em
+                // match_end, alcançado apenas pelos braços que casaram.
+                if !has_guaranteed_arm {
+                    self.builder.build_unreachable(ir_func);
+                    self.builder
+                        .set_current_block(match_end.expect("match_end must exist without guaranteed arm"));
+                }
+
                 if let Some(result_alloca) = result_alloca {
                     self.builder
                         .build_load_typed(ir_func, result_alloca, result_type.clone())
@@ -150,5 +178,20 @@ impl ASTLowering {
             }
             _ => unreachable!("lowering expression category mismatch"),
         }
+    }
+}
+
+/// Padrão que casa com qualquer valor do tipo (irrefutável), ignorando guards.
+fn pattern_is_irrefutable(pattern: &spectra_compiler::ast::Pattern) -> bool {
+    use spectra_compiler::ast::Pattern;
+
+    match pattern {
+        Pattern::Wildcard | Pattern::Identifier(_) => true,
+        Pattern::Tuple(elements) => elements.iter().all(pattern_is_irrefutable),
+        Pattern::Struct { fields, .. } => fields.iter().all(|(_, p)| pattern_is_irrefutable(p)),
+        Pattern::Or(patterns) => patterns.iter().any(pattern_is_irrefutable),
+        // Literais e variantes de enum são refutáveis; exaustividade de enum é
+        // responsabilidade da análise semântica, não do lowering.
+        Pattern::Literal(_) | Pattern::EnumVariant { .. } => false,
     }
 }

@@ -243,6 +243,11 @@ pub const STD_API_MODULE_PATHS: &[&str] = &[
     "std.api.session",
     "std.api.websocket",
     "std.api.sse",
+    "std.api.trace",
+    "std.api.health",
+    "std.api.db.sqlite",
+    "std.api.db.postgres",
+    "std.api.db.redis",
 ];
 
 pub const STD_API_PUBLIC_TYPES: &[(&str, &str)] = &[
@@ -445,6 +450,11 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.server.set_idle_timeout",
         "func(Server, int) returns bool",
     ),
+    (
+        "std.api.server.set_tls_certificate",
+        "func(Server, string, string) returns bool",
+    ),
+    ("std.api.server.tls_local_port", "func(Server) returns int"),
     ("std.api.client.new", "func() returns Client"),
     (
         "std.api.client.request",
@@ -457,8 +467,16 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
     ),
     ("std.api.json.validate", "func(string) returns bool"),
     ("std.api.json.kind", "func(string) returns int"),
-    ("std.api.json.encode", "func(unknown) returns string"),
-    ("std.api.json.decode", "func(string) returns JsonValue"),
+    ("std.api.json.parse", "func(string) returns int"),
+    ("std.api.json.value_kind", "func(int) returns int"),
+    ("std.api.json.value_len", "func(int) returns int"),
+    ("std.api.json.value_get", "func(int, string) returns int"),
+    ("std.api.json.value_at", "func(int, int) returns int"),
+    ("std.api.json.value_text", "func(int) returns string"),
+    ("std.api.json.value_number_bits", "func(int) returns int"),
+    ("std.api.json.value_bool", "func(int) returns int"),
+    ("std.api.json.value_free", "func(int) returns unit"),
+    ("std.api.json.stringify", "func(int) returns string"),
     (
         "std.api.jwt.sign",
         "func(string, string, string) returns string",
@@ -513,10 +531,6 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
     ),
     ("std.api.tls.config_new", "func(int) returns TlsConfig"),
     ("std.api.tls.config_mode", "func(TlsConfig) returns int"),
-    (
-        "std.api.tls.server_config",
-        "func(string, string) returns TlsConfig",
-    ),
     ("std.api.tls.client_config", "func() returns TlsConfig"),
     ("std.api.routing.router", "func() returns Router"),
     ("std.api.routing.router_new", "func() returns Router"),

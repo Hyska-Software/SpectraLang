@@ -352,6 +352,14 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
         function: server::server_set_idle_timeout,
     },
     HostCallSpec {
+        name: "spectra.api.server.set_tls_certificate",
+        function: server::server_set_tls_certificate,
+    },
+    HostCallSpec {
+        name: "spectra.api.server.tls_local_port",
+        function: server::server_tls_local_port,
+    },
+    HostCallSpec {
         name: "spectra.api.client.new",
         function: client::client_new,
     },
@@ -374,6 +382,46 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
     HostCallSpec {
         name: "spectra.api.json.kind",
         function: json::json_kind,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.parse",
+        function: json::json_parse,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.value_kind",
+        function: json::json_value_kind,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.value_len",
+        function: json::json_value_len,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.value_get",
+        function: json::json_value_get,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.value_at",
+        function: json::json_value_at,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.value_text",
+        function: json::json_value_text,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.value_number_bits",
+        function: json::json_value_number_bits,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.value_bool",
+        function: json::json_value_bool,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.value_free",
+        function: json::json_value_free,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.stringify",
+        function: json::json_stringify,
     },
     HostCallSpec {
         name: "spectra.api.jwt.sign",

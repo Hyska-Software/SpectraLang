@@ -605,8 +605,12 @@ impl SemanticAnalyzer {
                         .all(|(a, b)| self.types_match(a, b))
             }
 
-            // Generic type parameters are considered compatible with any type during alpha
-            (Type::TypeParameter { .. }, _) | (_, Type::TypeParameter { .. }) => true,
+            // Generic type parameters match only themselves. Concrete
+            // compatibility for signatures that still carry type parameters is
+            // decided by the bound-aware `generic_argument_types_match` at
+            // call-argument validation sites; body and return checking stay
+            // strict so a concrete value can never silently satisfy `T`.
+            (Type::TypeParameter { name: a }, Type::TypeParameter { name: b }) => a == b,
 
             // Arrays com tipos de elemento compatíveis
             (
@@ -623,6 +627,103 @@ impl SemanticAnalyzer {
             _ => false,
         }
     }
+    /// Call-argument compatibility when the expected signature still contains
+    /// generic type parameters (user generic functions, unspecialized builtin
+    /// returns, enum/struct constructor payloads, higher-order closures). A
+    /// concrete argument is accepted when it satisfies every trait bound
+    /// registered for the parameter; unconstrained parameters accept any
+    /// concrete type. Strict body/return checking continues to use
+    /// `types_match` directly.
+    fn generic_argument_types_match(&self, actual: &Type, expected: &Type) -> bool {
+        if self.types_match(actual, expected) {
+            return true;
+        }
+        let bound_accepts =
+            |semantic: &Self, param: &str, concrete: &Type| -> bool {
+                if matches!(concrete, Type::Unknown | Type::TypeParameter { .. }) {
+                    return true;
+                }
+                match semantic.get_generic_bounds(param) {
+                    Some(bounds) => bounds
+                        .iter()
+                        .all(|bound| semantic.type_satisfies_trait_bound(concrete, bound)),
+                    None => true,
+                }
+            };
+        match (actual, expected) {
+            (_, Type::TypeParameter { name }) => bound_accepts(self, name, actual),
+            (Type::TypeParameter { name }, _) => bound_accepts(self, name, expected),
+            // Closures and generic applications are compared structurally so a
+            // parameter nested inside `Fn`/`Applied` stays compatible with the
+            // concrete argument that instantiates it.
+            (
+                Type::Fn {
+                    params: actual_params,
+                    return_type: actual_return,
+                },
+                Type::Fn {
+                    params: expected_params,
+                    return_type: expected_return,
+                },
+            ) => {
+                actual_params.len() == expected_params.len()
+                    && actual_params
+                        .iter()
+                        .zip(expected_params.iter())
+                        .all(|(a, b)| self.generic_argument_types_match(a, b))
+                    && self.generic_argument_types_match(actual_return, expected_return)
+            }
+            (
+                Type::Applied {
+                    name: actual_name,
+                    args: actual_args,
+                },
+                Type::Applied {
+                    name: expected_name,
+                    args: expected_args,
+                },
+            ) => {
+                actual_name == expected_name
+                    && actual_args.len() == expected_args.len()
+                    && actual_args
+                        .iter()
+                        .zip(expected_args.iter())
+                        .all(|(a, b)| self.generic_argument_types_match(a, b))
+            }
+            _ => false,
+        }
+    }
+
+    /// Binding-site compatibility (`let` annotations and assignments): the
+    /// value's type may still carry an unresolved generic parameter when
+    /// inference could not fix it; such values stay tolerated. A fully
+    /// concrete value must match strictly.
+    fn inferred_binding_types_match(&self, actual: &Type, expected: &Type) -> bool {
+        if self.types_match(actual, expected) {
+            return true;
+        }
+        Self::type_contains_parameter(actual)
+    }
+
+    /// True when any generic type parameter survives inside `ty`.
+    pub fn type_contains_parameter(ty: &Type) -> bool {
+        match ty {
+            Type::TypeParameter { .. } => true,
+            Type::Applied { args, .. } => args.iter().any(Self::type_contains_parameter),
+            Type::Fn {
+                params,
+                return_type,
+            } => {
+                params.iter().any(Self::type_contains_parameter)
+                    || Self::type_contains_parameter(return_type)
+            }
+            Type::Task { output } => Self::type_contains_parameter(output),
+            Type::Array { element_type, .. } => Self::type_contains_parameter(element_type),
+            Type::Tuple { elements } => elements.iter().any(Self::type_contains_parameter),
+            _ => false,
+        }
+    }
+
 
     fn return_types_match(&self, actual: &Type, expected: &Type) -> bool {
         if matches!(actual, Type::Unknown) || matches!(expected, Type::Unknown) {
@@ -720,4 +821,63 @@ impl SemanticAnalyzer {
         }
     }
 
+}
+
+#[cfg(test)]
+mod generic_wildcard_tests {
+    use crate::pipeline::{CompilationOptions, CompilationPipeline};
+
+    fn compile(source: &str) -> Result<(), Vec<String>> {
+        let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
+        match pipeline.compile(source, "test.spectra") {
+            Ok(result) => {
+                assert!(result.errors.is_empty(), "unexpected: {:?}", result.errors);
+                Ok(())
+            }
+            Err(errors) => Err(errors.iter().map(|e| e.to_string()).collect()),
+        }
+    }
+
+    /// A generic call whose concrete arguments disagree with a shared type
+    /// parameter must fail now that `Type::TypeParameter` is no longer a
+    /// wildcard inside `types_match`.
+    #[test]
+    fn generic_call_with_wrong_concrete_argument_fails() {
+        let source = r#"
+            module test
+            func pick<T>(a: T, b: T) returns T {
+                return a
+            }
+            public func main() returns int {
+                let value = pick(1, "wrong")
+                return 0
+            }
+        "#;
+        let errors = compile(source).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("Argument 2 of function 'pick'")),
+            "expected argument mismatch diagnostic, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn generic_call_with_consistent_arguments_still_passes() {
+        let source = r#"
+            module test
+            func pick<T>(a: T, b: T) returns T {
+                return a
+            }
+            func identity<T>(value: T) returns T {
+                return value
+            }
+            public func main() returns int {
+                let number = pick(1, 2)
+                let same = identity(number)
+                return same
+            }
+        "#;
+        compile(source).expect("consistent generic calls should compile cleanly");
+    }
 }

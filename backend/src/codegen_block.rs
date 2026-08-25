@@ -19,6 +19,7 @@ impl CodeGenerator {
         manual_frame_active: bool,
         current_block_id: usize,
         phi_map: &HashMap<usize, Vec<PhiDescriptor>>,
+        emitted_tail_call: &mut bool,
     ) -> BackendResult<()> {
         // Get Cranelift block
         let block = *block_map
@@ -46,12 +47,10 @@ impl CodeGenerator {
             if batch_end > instruction_index {
                 Self::generate_hostcall_batch(
                     module,
-                    hostcall.host_call_sites,
-                    hostcall.bindings.get(RuntimeImport::HostInvokeCachedBatch),
+                    hostcall,
                     builder,
                     &ir_block.instructions[instruction_index..batch_end],
                     value_map,
-                    hostcall.batch_stats,
                 )?;
                 instruction_index = batch_end;
                 continue;
@@ -82,29 +81,35 @@ impl CodeGenerator {
                 ir_block.id,
                 block_map,
                 phi_map,
+                emitted_tail_call,
             )?;
             instruction_index += 1;
         }
 
         // Generate terminator
-        if let Some(ref terminator) = ir_block.terminator {
-            let manual_free_func = hostcall.bindings.get(RuntimeImport::ManualFree);
-            let manual_frame_exit_func = hostcall.bindings.get(RuntimeImport::ManualFrameExit);
-            let manual_escape_func = hostcall.bindings.get(RuntimeImport::ManualEscape);
-            Self::generate_terminator_static(
-                builder,
-                terminator,
-                value_map,
-                block_map,
-                module,
-                manual_free_func,
-                manual_frame_exit_func,
-                manual_escape_func,
-                frame_var,
-                manual_frame_active,
-                current_block_id,
-                phi_map,
-            )?;
+        // A marked tail call already terminated this block with Cranelift's
+        // native `return_call`; emitting the IR `Return` afterwards would
+        // produce two terminators in one block.
+        if !*emitted_tail_call {
+            if let Some(terminator) = &ir_block.terminator {
+                let manual_free_func = hostcall.bindings.get(RuntimeImport::ManualFree);
+                let manual_frame_exit_func = hostcall.bindings.get(RuntimeImport::ManualFrameExit);
+                let manual_escape_func = hostcall.bindings.get(RuntimeImport::ManualEscape);
+                Self::generate_terminator_static(
+                    builder,
+                    terminator,
+                    value_map,
+                    block_map,
+                    module,
+                    manual_free_func,
+                    manual_frame_exit_func,
+                    manual_escape_func,
+                    frame_var,
+                    manual_frame_active,
+                    current_block_id,
+                    phi_map,
+                )?;
+            }
         }
 
         Ok(())

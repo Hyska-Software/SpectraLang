@@ -1,4 +1,123 @@
 impl CodeGenerator {
+    /// Emits a call to `spectra_rt_panic` with an interned message literal
+    /// and terminates the current block.
+    ///
+    /// The runtime function prints `runtime error: <message>` to stderr,
+    /// flushes, and exits the process with code 101. The trailing `trap` is
+    /// unreachable in practice (the runtime call never returns) but keeps the
+    /// block terminated for the Cranelift verifier.
+    ///
+    /// Unlike `ConstString` literals — which resolve through heap storage in
+    /// JIT mode and pre-interned `.rodata` sections in AOT mode — panic
+    /// messages are always embedded as read-only data objects here. This
+    /// keeps the pointer valid in both backends without requiring AOT
+    /// pre-interning to know every lowering-generated message.
+    pub(crate) fn emit_runtime_panic<M: Module>(
+        module: &mut M,
+        hostcall: &mut HostCallLoweringContext<'_>,
+        builder: &mut FunctionBuilder,
+        message: &str,
+    ) -> BackendResult<()> {
+        let record = match hostcall.string_literal_data.get(message) {
+            Some(record) => *record,
+            None => {
+                // Layout: one byte per `i64` slot, null-terminated. This
+                // matches every other Spectra string representation crossing
+                // the runtime ABI.
+                let slots: Vec<i64> = message
+                    .bytes()
+                    .map(|byte| byte as i64)
+                    .chain(std::iter::once(0))
+                    .collect();
+                let bytes: Vec<u8> = slots.iter().flat_map(|slot| slot.to_ne_bytes()).collect();
+                let len_with_null = slots.len() as i64;
+
+                // Deterministic FNV-1a symbol so repeated sites deduplicate.
+                let mut hash: u64 = 0xcbf29ce484222325;
+                for &byte in &bytes {
+                    hash ^= byte as u64;
+                    hash = hash.wrapping_mul(0x100000001b3);
+                }
+                let symbol = format!(".__spectra_panic_str_{hash:016x}");
+
+                let data_id = module
+                    .declare_data(&symbol, Linkage::Local, false, false)
+                    .map_err(|error| {
+                        BackendCodegenError::cranelift(format!(
+                            "failed to declare panic message data '{symbol}': {error}"
+                        ))
+                    })?;
+                let mut data_ctx = DataDescription::new();
+                data_ctx.set_align(std::mem::align_of::<i64>() as u64);
+                data_ctx.define(bytes.into_boxed_slice());
+                module.define_data(data_id, &data_ctx).map_err(|error| {
+                    BackendCodegenError::cranelift(format!(
+                        "failed to define panic message data '{symbol}': {error}"
+                    ))
+                })?;
+
+                let record = StringLiteralRecord {
+                    ptr: 0,
+                    len_with_null,
+                    data_id: Some(data_id),
+                };
+                hostcall
+                    .string_literal_data
+                    .insert(message.to_string(), record);
+                record
+            }
+        };
+        let gv = module.declare_data_in_func(record.data_id.expect("panic literal has data"), builder.func);
+        let msg_ptr = builder.ins().global_value(types::I64, gv);
+        let func_ref = module.declare_func_in_func(
+            hostcall.runtime_func(RuntimeImport::SpectraPanic),
+            builder.func,
+        );
+        builder.ins().call(func_ref, &[msg_ptr]);
+        builder
+            .ins()
+            .trap(cranelift::codegen::ir::TrapCode::user(1).unwrap());
+        Ok(())
+    }
+
+    /// Lowers an integer division or remainder with an explicit zero-divisor
+    /// check.
+    ///
+    /// Emits `brif divisor == 0` into a panic block that reports through
+    /// [`Self::emit_runtime_panic`]; the normal path falls through to
+    /// `sdiv`/`srem`. Float remainder (`fmod`) intentionally has no zero
+    /// check because IEEE 754 defines `fmod(x, 0)` as NaN.
+    pub(crate) fn emit_checked_int_divrem<M: Module>(
+        module: &mut M,
+        hostcall: &mut HostCallLoweringContext<'_>,
+        builder: &mut FunctionBuilder,
+        lhs: Value,
+        rhs: Value,
+        panic_message: &'static str,
+        is_remainder: bool,
+    ) -> BackendResult<Value> {
+        let panic_block = builder.create_block();
+        let continue_block = builder.create_block();
+        let is_zero = builder.ins().icmp_imm(IntCC::Equal, rhs, 0);
+        builder
+            .ins()
+            .brif(is_zero, panic_block, &[], continue_block, &[]);
+        builder.seal_block(panic_block);
+        builder.seal_block(continue_block);
+
+        builder.switch_to_block(panic_block);
+        Self::emit_runtime_panic(module, hostcall, builder, panic_message)?;
+
+        builder.switch_to_block(continue_block);
+        Ok(if is_remainder {
+            builder.ins().srem(lhs, rhs)
+        } else {
+            builder.ins().sdiv(lhs, rhs)
+        })
+    }
+}
+
+impl CodeGenerator {
     /// Convert a call argument to the callee parameter's Cranelift type.
     /// Char/bool/exact-width parameters use narrow Cranelift types (I8/I16/I32)
     /// while Spectra constants and most values are I64; without conversion the
@@ -107,12 +226,10 @@ impl CodeGenerator {
 
     fn generate_hostcall_batch<M: Module>(
         module: &mut M,
-        host_call_sites: &HashMap<String, HostCallSiteRecord>,
-        host_invoke_cached_batch_func: FuncId,
+        hostcall: &mut HostCallLoweringContext<'_>,
         builder: &mut FunctionBuilder,
         instructions: &[Instruction],
         value_map: &mut DenseValueMap,
-        batch_stats: &mut HostCallBatchStats,
     ) -> BackendResult<()> {
         let call_count = instructions.len();
         let descriptor_bytes = call_count
@@ -145,6 +262,7 @@ impl CodeGenerator {
             ));
         }
 
+        let batch_stats = &mut *hostcall.batch_stats;
         batch_stats.batched_sites += 1;
         batch_stats.batched_hostcalls += call_count;
         batch_stats.argument_arena_bytes += argument_bytes;
@@ -196,7 +314,7 @@ impl CodeGenerator {
             else {
                 unreachable!("hostcall batch was prevalidated");
             };
-            let record = *host_call_sites.get(host).ok_or_else(|| {
+            let record = *hostcall.host_call_sites.get(host).ok_or_else(|| {
                 BackendCodegenError::cranelift(format!(
                     "host call name '{}' was not pre-interned",
                     host
@@ -281,7 +399,12 @@ impl CodeGenerator {
             }
         }
 
-        let func_ref = module.declare_func_in_func(host_invoke_cached_batch_func, builder.func);
+        let func_ref = module.declare_func_in_func(
+            hostcall
+                .bindings
+                .get(RuntimeImport::HostInvokeCachedBatch),
+            builder.func,
+        );
         let call_count_value = builder.ins().iconst(types::I64, call_count as i64);
         let call = builder
             .ins()
@@ -296,9 +419,27 @@ impl CodeGenerator {
             .brif(is_ok, success_block, &[], failure_block, &[]);
 
         builder.switch_to_block(failure_block);
-        builder
-            .ins()
-            .trap(cranelift::codegen::ir::TrapCode::user(1).unwrap());
+        // Report every distinct host name in the failed batch so the runtime
+        // message identifies the call site instead of dying on a bare trap.
+        let mut names: Vec<&str> = Vec::new();
+        for instruction in instructions {
+            if let InstructionKind::HostCall { host, .. } = &instruction.kind {
+                if !names.contains(&host.as_str()) {
+                    names.push(host);
+                }
+            }
+        }
+        let listing = names
+            .iter()
+            .map(|name| format!("'{name}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        Self::emit_runtime_panic(
+            module,
+            hostcall,
+            builder,
+            &format!("host call {listing} failed"),
+        )?;
         builder.seal_block(failure_block);
 
         builder.switch_to_block(success_block);

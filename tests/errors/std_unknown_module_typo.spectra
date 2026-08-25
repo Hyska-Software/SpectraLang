@@ -1,0 +1,7 @@
+module std_unknown_module_typo
+
+import std.mth
+
+public func main() returns int {
+    return 0
+}

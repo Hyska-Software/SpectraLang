@@ -1,0 +1,157 @@
+module fs_directories
+
+import std.fs as fs
+import std.error as error
+
+public func main() returns int {
+    let root = "target/fs-directories-check/level1/level2"
+
+    // create_dir_all builds the whole nested chain.
+    let created = fs.create_dir_all(root)
+    if let Result::Ok(ok) = created {
+        if ok != true {
+            return 1
+        }
+    } else {
+        return 1
+    }
+
+    let file_a = "target/fs-directories-check/level1/level2/alpha.txt"
+    let file_b = "target/fs-directories-check/level1/level2/beta.txt"
+    let write_a = fs.fs_write(file_a, "aaa")
+    if let Result::Ok(wrote_a) = write_a {
+        if wrote_a != true {
+            return 2
+        }
+    } else {
+        return 2
+    }
+    let write_b = fs.fs_write(file_b, "bbb")
+    if let Result::Ok(wrote_b) = write_b {
+        if wrote_b != true {
+            return 3
+        }
+    } else {
+        return 3
+    }
+
+    // read_dir yields entry NAMES (not paths), sorted deterministically.
+    let listed = fs.read_dir(root)
+    if let Result::Ok(names) = listed {
+        let count = 0
+        let saw_alpha = false
+        let saw_beta = false
+        for name in names {
+            count = count + 1
+            if name == "alpha.txt" {
+                saw_alpha = true
+            }
+            if name == "beta.txt" {
+                saw_beta = true
+            }
+        }
+        if count != 2 {
+            return 4
+        }
+        if saw_alpha != true {
+            return 5
+        }
+        if saw_beta != true {
+            return 6
+        }
+    } else {
+        return 4
+    }
+
+    // rename moves beta.txt to gamma.txt.
+    let file_g = "target/fs-directories-check/level1/level2/gamma.txt"
+    let renamed = fs.rename(file_b, file_g)
+    if let Result::Ok(moved) = renamed {
+        if moved != true {
+            return 7
+        }
+    } else {
+        return 7
+    }
+    let beta_gone = fs.fs_exists(file_b)
+    if let Result::Ok(exists_b) = beta_gone {
+        if exists_b != false {
+            return 8
+        }
+    } else {
+        return 8
+    }
+
+    // copy returns the number of bytes copied.
+    let file_c = "target/fs-directories-check/level1/level2/alpha-copy.txt"
+    let copied = fs.copy(file_a, file_c)
+    if let Result::Ok(bytes) = copied {
+        if bytes != 3 {
+            return 9
+        }
+    } else {
+        return 9
+    }
+    let copy_there = fs.fs_exists(file_c)
+    if let Result::Ok(exists_c) = copy_there {
+        if exists_c != true {
+            return 10
+        }
+    } else {
+        return 10
+    }
+
+    // remove_dir refuses non-empty directories with a tagged Err.
+    let refused = fs.remove_dir(root)
+    if let Result::Err(remove_error) = refused {
+        if error.operation(remove_error) != "fs_remove_dir" {
+            return 11
+        }
+    } else {
+        return 11
+    }
+
+    // After clearing the entries, remove_dir succeeds on the empty directory.
+    let drop_c = fs.fs_remove(file_c)
+    if let Result::Ok(removed_c) = drop_c {
+        if removed_c != true {
+            return 12
+        }
+    } else {
+        return 12
+    }
+    let drop_a = fs.fs_remove(file_a)
+    if let Result::Ok(removed_a) = drop_a {
+        if removed_a != true {
+            return 13
+        }
+    } else {
+        return 13
+    }
+    let drop_g = fs.fs_remove(file_g)
+    if let Result::Ok(removed_g) = drop_g {
+        if removed_g != true {
+            return 14
+        }
+    } else {
+        return 14
+    }
+    let emptied = fs.remove_dir(root)
+    if let Result::Ok(removed_root) = emptied {
+        if removed_root != true {
+            return 15
+        }
+    } else {
+        return 15
+    }
+    let root_gone = fs.fs_exists(root)
+    if let Result::Ok(exists_root) = root_gone {
+        if exists_root != false {
+            return 16
+        }
+    } else {
+        return 16
+    }
+
+    return 0
+}

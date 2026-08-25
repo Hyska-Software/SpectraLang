@@ -410,15 +410,18 @@ pub extern "C" fn spectra_rt_startup_with_args(argc: i32, argv: *const *const u8
 
 /// Called at the end of every AOT executable's native `main` shim.
 ///
-/// On Windows, if the process owns its console (i.e. it was launched by
-/// double-clicking in Explorer rather than from a terminal), prints a
-/// "press any key" prompt and waits so that the output window stays open
-/// long enough for the user to read the output.
+/// No-op by default. Set `SPECTRA_PAUSE_ON_EXIT=1` to opt in: on Windows, if
+/// the process owns its console (i.e. it was launched by double-clicking in
+/// Explorer rather than from a terminal), prints a "press any key" prompt and
+/// waits so that the output window stays open long enough for the user to read
+/// the output.
 ///
-/// On all other platforms (and on Windows when running from a terminal)
-/// this is a no-op.
+/// On all other platforms this is always a no-op.
 #[no_mangle]
 pub extern "C" fn spectra_rt_maybe_pause() {
+    if std::env::var("SPECTRA_PAUSE_ON_EXIT").as_deref() != Ok("1") {
+        return;
+    }
     #[cfg(target_os = "windows")]
     {
         // GetConsoleProcessList returns the number of processes attached to the
@@ -444,5 +447,8 @@ pub extern "C" fn spectra_rt_maybe_pause() {
             let _ = std::io::stdin().read(&mut [0u8; 1]);
         }
     }
-    // On non-Windows platforms terminals remain open on exit — nothing to do.
+    #[cfg(not(target_os = "windows"))]
+    {
+        // On non-Windows platforms terminals remain open on exit — nothing to do.
+    }
 }

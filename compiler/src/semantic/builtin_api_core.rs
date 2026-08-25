@@ -444,6 +444,12 @@ fn make_std_api_server(prefix: &str) -> ModuleExports {
             vec![api_type("Server"), Type::Int],
             Type::Bool,
         ),
+        (
+            "set_tls_certificate",
+            vec![api_type("Server"), Type::String, Type::String],
+            Type::Bool,
+        ),
+        ("tls_local_port", vec![api_type("Server")], Type::Int),
     ];
     for (name, params, return_type) in functions {
         exports
@@ -487,12 +493,18 @@ fn make_std_api_json(prefix: &str) -> ModuleExports {
     let functions = [
         ("validate", vec![Type::String], Type::Bool),
         ("kind", vec![Type::String], Type::Int),
-        (
-            "encode",
-            vec![Type::TypeParameter { name: "T".to_string() }],
-            Type::String,
-        ),
-        ("decode", vec![Type::String], api_type("JsonValue")),
+        // `parse` returns an opaque runtime handle (int); 0 signals a parse
+        // error. Handles are freed explicitly with `value_free`.
+        ("parse", vec![Type::String], Type::Int),
+        ("value_kind", vec![Type::Int], Type::Int),
+        ("value_len", vec![Type::Int], Type::Int),
+        ("value_get", vec![Type::Int, Type::String], Type::Int),
+        ("value_at", vec![Type::Int, Type::Int], Type::Int),
+        ("value_text", vec![Type::Int], Type::String),
+        ("value_number_bits", vec![Type::Int], Type::Int),
+        ("value_bool", vec![Type::Int], Type::Int),
+        ("value_free", vec![Type::Int], Type::Unit),
+        ("stringify", vec![Type::Int], Type::String),
     ];
     for (name, params, return_type) in functions {
         exports
@@ -596,11 +608,6 @@ fn make_std_api_tls(prefix: &str) -> ModuleExports {
     let functions = [
         ("config_new", vec![Type::Int], tls_config.clone()),
         ("config_mode", vec![tls_config.clone()], Type::Int),
-        (
-            "server_config",
-            vec![Type::String, Type::String],
-            tls_config.clone(),
-        ),
         ("client_config", vec![], tls_config),
     ];
     for (name, params, return_type) in functions {

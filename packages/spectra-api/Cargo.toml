@@ -25,3 +25,12 @@ webpki-roots = "0.26"
 
 [dev-dependencies]
 rcgen = "0.13"
+
+[dev-dependencies.spectra-compiler]
+path = "../../compiler"
+
+[dev-dependencies.spectra-midend]
+path = "../../midend"
+
+[dev-dependencies.spectra-contract]
+path = "../spectra-contract"

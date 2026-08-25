@@ -686,7 +686,7 @@ impl SemanticAnalyzer {
                     for (i, (trait_param, impl_param)) in
                         substituted_trait_params.iter().zip(impl_params.iter()).enumerate()
                     {
-                        if !self.types_match(impl_param, trait_param) {
+                        if !self.generic_argument_types_match(impl_param, trait_param) {
                             let mut message = format!(
                                 "Method '{}' parameter {} has wrong type. Expected {:?}, found {:?}",
                                 trait_method_name,
@@ -704,7 +704,10 @@ impl SemanticAnalyzer {
                     }
 
                     // Verificar tipo de retorno
-                    if !self.types_match(&impl_signature.return_type, &substituted_trait_return) {
+                    if !self.generic_argument_types_match(
+                        &impl_signature.return_type,
+                        &substituted_trait_return,
+                    ) {
                         let mut message = format!(
                             "Method '{}' has wrong return type. Expected {:?}, found {:?}",
                             trait_method_name,

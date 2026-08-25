@@ -105,6 +105,13 @@ impl Parser {
     }
 
     pub(super) fn parse_block(&mut self) -> Result<Block, ()> {
+        self.enter_parse_depth()?;
+        let result = self.parse_block_inner();
+        self.exit_parse_depth();
+        result
+    }
+
+    fn parse_block_inner(&mut self) -> Result<Block, ()> {
         let start_span = self.consume_symbol('{', "Expected '{' to start block")?;
 
         let mut statements = Vec::new();

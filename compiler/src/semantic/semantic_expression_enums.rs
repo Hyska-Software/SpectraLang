@@ -140,7 +140,7 @@ impl SemanticAnalyzer {
                                             args.iter().zip(method_export.params.iter()).enumerate()
                                         {
                                             let arg_ty = self.infer_expression_type(arg);
-                                            if !self.types_match(&arg_ty, expected)
+                                            if !self.generic_argument_types_match(&arg_ty, expected)
                                                 && arg_ty != Type::Unknown
                                                 && *expected != Type::Unknown
                                             {
@@ -444,7 +444,7 @@ impl SemanticAnalyzer {
                         for (i, arg) in call_args.iter().skip(1).enumerate() {
                             let arg_ty = self.infer_expression_type(arg);
                             if let Some(expected_ty) = sig.params.get(i + 1) {
-                                if !self.types_match(&arg_ty, expected_ty)
+                                if !self.generic_argument_types_match(&arg_ty, expected_ty)
                                     && arg_ty != Type::Unknown
                                     && *expected_ty != Type::Unknown
                                 {
@@ -544,7 +544,7 @@ impl SemanticAnalyzer {
                                         args.iter().zip(signature.params.iter()).enumerate()
                                     {
                                         let arg_ty = self.infer_expression_type(arg);
-                                        if !self.types_match(&arg_ty, expected)
+                                        if !self.generic_argument_types_match(&arg_ty, expected)
                                             && arg_ty != Type::Unknown
                                             && *expected != Type::Unknown
                                         {
@@ -748,7 +748,7 @@ impl SemanticAnalyzer {
                                 &variant_substitutions,
                             );
 
-                            if !self.types_match(&arg_type, &expected_type) {
+                            if !self.generic_argument_types_match(&arg_type, &expected_type) {
                                 self.error(
                                     format!(
                                         "Argument {} for variant '{}::{}' has type {:?}, but {:?} was expected",
@@ -796,7 +796,7 @@ impl SemanticAnalyzer {
                                 expected_ann,
                                 &variant_substitutions,
                             );
-                            if !self.types_match(&actual_type, &expected_type) {
+                            if !self.generic_argument_types_match(&actual_type, &expected_type) {
                                 self.error(
                                     format!(
                                         "Field '{}' of variant '{}::{}' has type {:?}, but {:?} was expected",

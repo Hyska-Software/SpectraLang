@@ -37,6 +37,57 @@ pub struct CodeViewFunction {
     /// `local_offsets` remains as a compatibility fallback for callers that
     /// only have the older CFA-only metadata.
     pub local_locations: Vec<Vec<NativeValueLocationRange>>,
+    /// Real source-line rows captured during codegen, sorted by offset:
+    /// `(machine-code offset relative to this function's start, 1-based
+    /// source line)`. Each row comes from an IR instruction whose lowering
+    /// populated `source_span`; Cranelift's post-allocation value-label pass
+    /// supplies the machine offset. Empty means no span-derived row exists
+    /// for this function and the line table falls back to the uniform
+    /// heuristic distribution (see [`line_table_rows`]).
+    pub line_rows: Vec<(u32, u32)>,
+}
+
+/// One entry of a native line table: machine-code offset relative to the
+/// start of the function, and the 1-based source line it belongs to.
+pub type LineRow = (u32, u32);
+
+/// Build the final `(offset, line)` row table for one function.
+///
+/// `real_rows` are span-derived rows captured during codegen. Rows are kept
+/// sorted by offset; when a span-derived row and a heuristic row collide on
+/// the same offset the real row wins because it is compiler-proven. When no
+/// real row exists at all the table is exactly the historical uniform
+/// distribution over the source lines — that remains the documented fallback
+/// for instructions whose IR carried no `source_span` (compiler-generated
+/// instructions, optimized-out values without a live range, and IR produced
+/// by passes that do not propagate spans).
+pub fn line_table_rows(function_size: u32, source_line_count: u32, real_rows: &[LineRow]) -> Vec<LineRow> {
+    let function_size = function_size.max(1);
+    let source_line_count = source_line_count.max(1);
+    let mut fallback = Vec::with_capacity(source_line_count as usize);
+    for index in 0..source_line_count {
+        let relative = if source_line_count <= 1 {
+            0
+        } else {
+            (function_size.saturating_sub(1) * index) / (source_line_count - 1)
+        };
+        fallback.push((relative, index + 1));
+    }
+    if real_rows.is_empty() {
+        return fallback;
+    }
+    let mut rows: Vec<LineRow> = fallback
+        .into_iter()
+        .chain(
+            real_rows
+                .iter()
+                .copied()
+                .filter(|(offset, _)| *offset < function_size),
+        )
+        .collect();
+    rows.sort_unstable();
+    rows.dedup();
+    rows
 }
 
 /// Convert a Cranelift x86-64 hardware-register encoding to the CodeView
@@ -70,6 +121,78 @@ fn push_u16(out: &mut Vec<u8>, value: u16) {
 }
 fn push_u32(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
+}
+
+/// Minimal RFC 1321 MD5, used only for CodeView `DEBUG_S_FILECHKSMS` file
+/// checksums. The backend has no hashing dependency beyond this; the digest
+/// is over the exact source text that was compiled.
+fn md5(input: &[u8]) -> [u8; 16] {
+    const S: [usize; 64] = [
+        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20,
+        5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+        6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+    ];
+    const K: [u32; 64] = [
+        0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613,
+        0xfd469501, 0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be, 0x6b901122, 0xfd987193,
+        0xa679438e, 0x49b40821, 0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa, 0xd62f105d,
+        0x02441453, 0xd8a1e681, 0xe7d3fbc8, 0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed,
+        0xa9e3e905, 0xfcefa3f8, 0x676f02d9, 0x8d2a4c8a, 0xfffa3942, 0x8771f681, 0x6d9d6122,
+        0xfde5380c, 0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70, 0x289b7ec6, 0xeaa127fa,
+        0xd4ef3085, 0x04881d05, 0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665, 0xf4292244,
+        0x432aff97, 0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1,
+        0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb,
+        0xeb86d391,
+    ];
+
+    let mut message = input.to_vec();
+    let bit_len = (input.len() as u64).wrapping_mul(8);
+    message.push(0x80);
+    while message.len() % 64 != 56 {
+        message.push(0);
+    }
+    message.extend_from_slice(&bit_len.to_le_bytes());
+
+    let mut a0: u32 = 0x6745_2301;
+    let mut b0: u32 = 0xefcd_ab89;
+    let mut c0: u32 = 0x98ba_dcfe;
+    let mut d0: u32 = 0x1032_5476;
+
+    for chunk in message.chunks_exact(64) {
+        let mut m = [0u32; 16];
+        for (index, word) in m.iter_mut().enumerate() {
+            *word = u32::from_le_bytes(chunk[index * 4..index * 4 + 4].try_into().unwrap());
+        }
+        let (mut a, mut b, mut c, mut d) = (a0, b0, c0, d0);
+        for index in 0..64 {
+            let (f, g) = match index {
+                0..=15 => ((b & c) | (!b & d), index),
+                16..=31 => ((d & b) | (!d & c), (5 * index + 1) % 16),
+                32..=47 => (b ^ c ^ d, (3 * index + 5) % 16),
+                _ => (c ^ (b | !d), (7 * index) % 16),
+            };
+            let temp = d;
+            d = c;
+            c = b;
+            let sum = a
+                .wrapping_add(f)
+                .wrapping_add(K[index])
+                .wrapping_add(m[g]);
+            b = b.wrapping_add(sum.rotate_left(S[index] as u32));
+            a = temp;
+        }
+        a0 = a0.wrapping_add(a);
+        b0 = b0.wrapping_add(b);
+        c0 = c0.wrapping_add(c);
+        d0 = d0.wrapping_add(d);
+    }
+
+    let mut digest = [0u8; 16];
+    digest[0..4].copy_from_slice(&a0.to_le_bytes());
+    digest[4..8].copy_from_slice(&b0.to_le_bytes());
+    digest[8..12].copy_from_slice(&c0.to_le_bytes());
+    digest[12..16].copy_from_slice(&d0.to_le_bytes());
+    digest
 }
 
 fn subsection(out: &mut Vec<u8>, kind: u32, payload: &[u8]) {
@@ -206,6 +329,7 @@ pub fn codeview_section(source_file: &str, functions: &[String], source: &str) -
             locals: vec!["debug_value".to_string()],
             local_offsets: vec![None],
             local_locations: vec![Vec::new()],
+            line_rows: Vec::new(),
         })
         .collect::<Vec<_>>();
     codeview_section_with_ranges(source_file, &ranges, source)
@@ -216,16 +340,20 @@ pub fn codeview_section_with_ranges(
     functions: &[CodeViewFunction],
     source: &str,
 ) -> Vec<u8> {
+    // The checksum is the real MD5 of the source text. The source path is
+    // always resolvable by the AOT attach step (the CLI reads the file
+    // before calling this function), so a real checksum is emitted instead
+    // of the historical all-zero placeholder.
     let mut checksums = Vec::new();
     push_u32(&mut checksums, 0); // offset of source_file in the string table
     checksums.push(16); // checksum size
     checksums.push(0); // MD5 checksum kind
-    checksums.extend_from_slice(&[0u8; 16]);
+    checksums.extend_from_slice(&md5(source.as_bytes()));
     while checksums.len() % 4 != 0 {
         checksums.push(0);
     }
 
-    let line_count = source.lines().count().max(1) as u32;
+    let source_line_count = source.lines().count().max(1) as u32;
     let mut result = Vec::new();
     // C13 streams start with the version signature 4.
     push_u32(&mut result, 4);
@@ -240,21 +368,17 @@ pub fn codeview_section_with_ranges(
         subsection(&mut result, DEBUG_S_SYMBOLS, &symbols);
     }
     for function in functions {
+        let rows = line_table_rows(function.size, source_line_count, &function.line_rows);
         let mut lines = Vec::new();
         push_u32(&mut lines, function.offset);
         push_u16(&mut lines, function.section);
         push_u16(&mut lines, 0);
         push_u32(&mut lines, function.size.max(1));
         push_u32(&mut lines, 0); // file checksum record offset
-        push_u32(&mut lines, 12 + line_count * 8);
-        for (index, _) in source.lines().enumerate() {
-            let relative = if line_count <= 1 {
-                0
-            } else {
-                (function.size.saturating_sub(1) * index as u32) / (line_count - 1)
-            };
-            push_u32(&mut lines, relative);
-            push_u32(&mut lines, (index as u32 + 1) & 0x00FF_FFFF);
+        push_u32(&mut lines, 12 + rows.len() as u32 * 8);
+        for (relative, line) in &rows {
+            push_u32(&mut lines, *relative);
+            push_u32(&mut lines, line & 0x00FF_FFFF);
         }
         if source.is_empty() {
             push_u32(&mut lines, 0);
@@ -346,6 +470,7 @@ pub fn coff_function_ranges(object: &[u8]) -> Vec<CodeViewFunction> {
             locals: Vec::new(),
             local_offsets: Vec::new(),
             local_locations: Vec::new(),
+            line_rows: Vec::new(),
         });
     }
     // COFF function symbols carry starts but not sizes.  The next symbol in
@@ -391,6 +516,7 @@ pub fn native_function_ranges(bytes: &[u8]) -> Vec<CodeViewFunction> {
                 locals: Vec::new(),
                 local_offsets: Vec::new(),
                 local_locations: Vec::new(),
+                line_rows: Vec::new(),
             })
         })
         .collect::<Vec<_>>();
@@ -507,5 +633,54 @@ mod tests {
         assert!(bytes.windows(4).any(|w| w == b"main"));
         assert!(bytes.windows(11).any(|w| w == b"debug_value"));
         assert!(bytes.len() > 32);
+    }
+
+    #[test]
+    fn line_table_rows_falls_back_to_uniform_distribution_without_real_rows() {
+        let rows = super::line_table_rows(32, 5, &[]);
+        assert_eq!(rows.len(), 5);
+        for (index, (offset, line)) in rows.iter().enumerate() {
+            assert_eq!(*line, index as u32 + 1);
+            assert_eq!(
+                *offset,
+                32u32.saturating_sub(1) * index as u32 / 4
+            );
+        }
+    }
+
+    #[test]
+    fn line_table_rows_prefers_real_rows_and_keeps_fallback_coverage() {
+        // Real, compiler-proven rows at offsets 4 and 20.
+        let real = [(4u32, 7u32), (20, 12)];
+        let rows = super::line_table_rows(32, 5, &real);
+        assert!(rows.contains(&(4, 7)));
+        assert!(rows.contains(&(20, 12)));
+        // The heuristic rows still cover the rest of the function so every
+        // address maps to some line (documented fallback).
+        assert!(rows.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        assert!(rows.contains(&(7, 2))); // uniform row inside the gap
+    }
+
+    #[test]
+    fn line_table_rows_drops_real_rows_outside_the_function_range() {
+        let real = [(100u32, 3u32)];
+        assert!(super::line_table_rows(16, 2, &real).contains(&((15, 2))));
+        assert!(!super::line_table_rows(16, 2, &real).contains(&(100, 3)));
+    }
+
+    #[test]
+    fn md5_matches_reference_digests() {
+        assert_eq!(
+            hex(&super::md5(b"")),
+            "d41d8cd98f00b204e9800998ecf8427e"
+        );
+        assert_eq!(
+            hex(&super::md5(b"abc")),
+            "900150983cd24fb0d6963f7d28e17f72"
+        );
+    }
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 }

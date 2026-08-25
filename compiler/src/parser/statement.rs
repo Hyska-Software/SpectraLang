@@ -11,6 +11,13 @@ use super::Parser;
 
 impl Parser {
     pub(super) fn parse_statement(&mut self) -> Result<Statement, ()> {
+        self.enter_parse_depth()?;
+        let result = self.parse_statement_inner();
+        self.exit_parse_depth();
+        result
+    }
+
+    fn parse_statement_inner(&mut self) -> Result<Statement, ()> {
         let start_span = self.current().span;
 
         // Check for `if let` before falling into the general match
@@ -136,7 +143,11 @@ impl Parser {
                     // Block expressions terminate with their closing brace;
                     // all other statements use a source line break.
                     let requires_terminator =
-                        !matches!(expr.kind, crate::ast::ExpressionKind::If { .. })
+                        !matches!(
+                            expr.kind,
+                            crate::ast::ExpressionKind::If { .. }
+                                | crate::ast::ExpressionKind::Unless { .. }
+                        )
                             && !self.check_symbol('}');
 
                     if requires_terminator {

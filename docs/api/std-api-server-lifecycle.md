@@ -24,6 +24,30 @@ surface is intentionally small:
   signal handling. Code `2` is SIGINT and code `15` is SIGTERM.
 - `stats(Server, int) -> int` returns lifecycle counters for validation and
   diagnostics.
+- `set_tls_certificate(Server, string, string) -> bool` attaches a PEM
+  certificate chain and PEM private key to a stopped server. Rejected while
+  the server is running or stopping.
+- `tls_local_port(Server) -> int` reports the OS-assigned port of the TLS
+  gateway listener once `serve` is running; it returns `0` before that.
+
+## TLS Topology
+
+The HTTP/1.1 pipeline is a mio state machine, while the HTTP/2 implementation
+is tokio-based; a mio event loop cannot wrap TLS streams. When certificates are
+attached via `set_tls_certificate`, `serve` therefore runs two listeners:
+
+- The configured loopback port keeps serving **cleartext HTTP/1.1** on the mio
+  event loop with full SSE/WebSocket support (unchanged behavior).
+- A dedicated tokio listener on an OS-assigned port on the same host acts as
+  the **TLS gateway**. It terminates TLS, inspects the negotiated ALPN
+  protocol, and fans out: `h2` connections are served by the HTTP/2 pipeline;
+  `http/1.1` (and ALPN-less) clients are served by an async HTTP/1.1 loop that
+  dispatches through the same router and handlers as the mio pipeline.
+
+Both protocols are reachable on the SAME TLS port. Limitations of the gateway's
+HTTP/1.1 leg: Server-Sent Events streams and WebSocket upgrades require the
+mio connection surface and answer `501 Not Implemented` there; synchronous and
+asynchronous handlers work normally.
 
 ## Shutdown Policy
 

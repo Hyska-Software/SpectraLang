@@ -773,3 +773,151 @@ fn test_lower_multiple_functions() {
     assert!(ir_module.functions.iter().any(|f| f.name == "bar"));
     assert!(ir_module.functions.iter().any(|f| f.name == "baz"));
 }
+
+#[test]
+fn test_tail_self_recursion_is_marked() {
+    use spectra_compiler::ast::StatementKind;
+    // fn countdown(n: int, acc: int) -> int {
+    //     if n <= 0 { return acc; }
+    //     return countdown(n - 1, acc + n);
+    // }
+    let if_expr = Expression {
+        span: s(),
+        kind: ExpressionKind::If {
+            condition: Box::new(bin(
+                ident("n"),
+                BinaryOperator::LessEqual,
+                int_lit(0),
+            )),
+            then_block: Block {
+                span: s(),
+                statements: vec![Statement {
+                    span: s(),
+                    kind: StatementKind::Return(ReturnStatement {
+                        span: s(),
+                        value: Some(ident("acc")),
+                    }),
+                }],
+            },
+            elif_blocks: vec![],
+            else_block: None,
+        },
+    };
+    let recursive_call = Expression {
+        span: s(),
+        kind: ExpressionKind::Call {
+            callee: Box::new(ident("countdown")),
+            arguments: vec![
+                bin(ident("n"), BinaryOperator::Subtract, int_lit(1)),
+                bin(ident("acc"), BinaryOperator::Add, ident("n")),
+            ],
+        },
+    };
+    let countdown_fn = make_function_with_params(
+        "countdown",
+        vec![("n", int_type()), ("acc", int_type())],
+        vec![
+            Statement {
+                span: s(),
+                kind: StatementKind::Expression(if_expr),
+            },
+            return_stmt(recursive_call),
+        ],
+        Some(int_type()),
+    );
+
+    // fn main() { } — entry point must stay unmarked (external callers).
+    let module = make_module("test", vec![countdown_fn, make_function("main", vec![])]);
+
+    let mut lowering = ASTLowering::new();
+    let ir_module = lowering
+        .lower_module(&module)
+        .expect("lowering should succeed");
+
+    let countdown_ir = ir_module
+        .functions
+        .iter()
+        .find(|f| f.name == "countdown")
+        .expect("countdown function should exist");
+    let marked = countdown_ir.blocks.iter().any(|block| {
+        block.instructions.iter().any(|i| {
+            matches!(
+                &i.kind,
+                InstructionKind::Call {
+                    function,
+                    is_tail: true,
+                    ..
+                } if function == "countdown"
+            )
+        })
+    });
+    assert!(
+        marked,
+        "the direct self-call in tail position should be marked is_tail"
+    );
+
+    let main_ir = ir_module
+        .functions
+        .iter()
+        .find(|f| f.name == "main")
+        .expect("main function should exist");
+    assert!(
+        main_ir.blocks.iter().all(|block| {
+            block.instructions.iter().all(|i| {
+                !matches!(
+                    &i.kind,
+                    InstructionKind::Call {
+                        is_tail: true,
+                        ..
+                    }
+                )
+            })
+        }),
+        "main is entered externally and must never be marked"
+    );
+}
+
+#[test]
+fn test_cross_function_tail_call_is_not_marked() {
+    use spectra_compiler::ast::StatementKind;
+    // fn helper(n: int) -> int { return n; }
+    // fn caller() -> int { return helper(5); }  // cross-function: NOT a self call
+    let helper_fn = make_function_with_params(
+        "helper",
+        vec![("n", int_type())],
+        vec![return_stmt(ident("n"))],
+        Some(int_type()),
+    );
+    let cross_call = Expression {
+        span: s(),
+        kind: ExpressionKind::Call {
+            callee: Box::new(ident("helper")),
+            arguments: vec![int_lit(5)],
+        },
+    };
+    let caller_fn = make_function_with_params(
+        "caller",
+        vec![],
+        vec![return_stmt(cross_call)],
+        Some(int_type()),
+    );
+    let module = make_module("test", vec![helper_fn, caller_fn]);
+
+    let mut lowering = ASTLowering::new();
+    let ir_module = lowering
+        .lower_module(&module)
+        .expect("lowering should succeed");
+
+    for func in &ir_module.functions {
+        for block in &func.blocks {
+            for instruction in &block.instructions {
+                if let InstructionKind::Call { is_tail, .. } = &instruction.kind {
+                    assert!(
+                        !is_tail,
+                        "cross-function calls must not be marked as tail calls"
+                    );
+                }
+            }
+        }
+    }
+}

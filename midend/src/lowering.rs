@@ -240,15 +240,6 @@ impl RangeScopeStack {
         }
     }
 
-    #[allow(dead_code)]
-    fn get(&self, name: &str) -> Option<RangeInfo> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(info) = scope.get(name) {
-                return Some(*info);
-            }
-        }
-        None
-    }
 
     fn clear(&mut self) {
         self.scopes.clear();

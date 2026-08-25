@@ -317,3 +317,74 @@ fn json_derived_static_error_field_keeps_string_type_without_annotation() {
         .compile(source, "json_derived_static_error_field.spectra")
         .expect("derived JSON static method should infer string through the full pipeline");
 }
+
+#[test]
+fn analyze_modules_rejects_mutual_import_cycle_with_e028() {
+    let source_a = r#"
+        module cycle_a
+
+        import cycle_b
+
+        public func from_a() returns int {
+            return 1
+        }
+    "#;
+    let source_b = r#"
+        module cycle_b
+
+        import cycle_a
+
+        public func from_b() returns int {
+            return 2
+        }
+    "#;
+
+    let mut module_a = parse_module(source_a);
+    let mut module_b = parse_module(source_b);
+    let mut modules = vec![&mut module_a, &mut module_b];
+
+    let errors = analyze_modules(modules.as_mut_slice())
+        .expect_err("mutual imports must be rejected as a circular import");
+    assert_eq!(
+        errors.len(),
+        1,
+        "expected a single non-cascading circular-import diagnostic: {errors:?}"
+    );
+    assert!(
+        matches!(
+            &errors[0],
+            error
+                if error.code.as_deref() == Some("E028")
+                    && error.message.contains("cycle_a -> cycle_b -> cycle_a")
+        ),
+        "expected coded E028 listing the full cycle: {errors:?}"
+    );
+}
+
+#[test]
+fn analyze_modules_reports_self_import_as_circular_without_processing() {
+    let source = r#"
+        module loopback
+
+        import loopback
+
+        public func main() returns int {
+            return 0
+        }
+    "#;
+
+    let mut module = parse_module(source);
+    let mut modules = vec![&mut module];
+
+    let errors = analyze_modules(modules.as_mut_slice())
+        .expect_err("a self-import must be rejected as a circular import");
+    assert!(
+        matches!(
+            &errors[0],
+            error
+                if error.code.as_deref() == Some("E028")
+                    && error.message.contains("loopback -> loopback")
+        ),
+        "expected coded E028 for the self-import: {errors:?}"
+    );
+}

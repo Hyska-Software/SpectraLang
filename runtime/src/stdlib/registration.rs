@@ -981,6 +981,11 @@ fn register_fs() {
     register_host_function(FS_APPEND, std_fs_append);
     register_host_function(FS_EXISTS, std_fs_exists);
     register_host_function(FS_REMOVE, std_fs_remove);
+    register_host_function(FS_CREATE_DIR_ALL, std_fs_create_dir_all);
+    register_host_function(FS_REMOVE_DIR, std_fs_remove_dir);
+    register_host_function(FS_RENAME, std_fs_rename);
+    register_host_function(FS_COPY, std_fs_copy);
+    register_host_function(FS_READ_DIR, std_fs_read_dir);
     register_host_function(FS_READ_COMPAT, std_fs_compat_read);
     register_host_function(FS_WRITE_COMPAT, std_fs_compat_write);
     register_host_function(FS_APPEND_COMPAT, std_fs_compat_append);

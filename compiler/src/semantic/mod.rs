@@ -163,10 +163,19 @@ pub fn analyze_modules(modules: &mut [&mut Module]) -> Result<(), Vec<SemanticEr
                             .is_some();
                         registered || !pending_names.contains(&path)
                     })
-            })
-            .unwrap_or(0);
+            });
+        let Some(next_index) = next_index else {
+            // No pending module is ready, so every remaining module waits on
+            // another pending module: the residual import graph must contain
+            // at least one cycle. Report each distinct cycle (E028) at the
+            // offending import and stop; cyclic modules are never analyzed.
+            let frozen: Vec<&Module> = pending.iter().map(|module| &**module).collect();
+            errors.extend(report_import_cycles(&frozen));
+            break;
+        };
         let module = pending.remove(next_index);
         let mut analyzer = SemanticAnalyzer::new_with_registry(Arc::clone(&registry), None);
+        analyzer.set_current_module_name(Some(module.name.clone()));
         let module_errors = analyzer.analyze_module(module);
 
         // Register the exports of this module so subsequent modules can import it.
@@ -182,6 +191,117 @@ pub fn analyze_modules(modules: &mut [&mut Module]) -> Result<(), Vec<SemanticEr
     } else {
         Err(errors)
     }
+}
+
+/// Detect import cycles among the not-yet-analyzed modules and build one
+/// coded E028 diagnostic per distinct cycle.
+///
+/// Each edge is an `import` whose dotted path matches another module in the
+/// set (self-imports included). The reported span points at the import that
+/// closes the cycle.
+fn report_import_cycles(modules: &[&Module]) -> Vec<SemanticError> {
+    #[derive(Clone, Copy, PartialEq)]
+    enum VisitState {
+        Unvisited,
+        InStack,
+        Done,
+    }
+
+    struct CycleSearch<'a> {
+        edges: &'a [Vec<(usize, Span)>],
+        state: Vec<VisitState>,
+        stack: Vec<usize>,
+        reported: HashSet<Vec<usize>>,
+        cycles: Vec<(Vec<usize>, Span)>,
+    }
+
+    impl CycleSearch<'_> {
+        fn visit(&mut self, node: usize) {
+            self.state[node] = VisitState::InStack;
+            self.stack.push(node);
+            for edge_index in 0..self.edges[node].len() {
+                let (next, span) = self.edges[node][edge_index];
+                match self.state[next] {
+                    VisitState::InStack => {
+                        let start = self
+                            .stack
+                            .iter()
+                            .position(|&candidate| candidate == next)
+                            .expect("in-stack node must be on the DFS stack");
+                        let cycle: Vec<usize> = self.stack[start..].to_vec();
+                        // Canonical rotation so a cycle reached from any of
+                        // its members is reported only once.
+                        let mut key = cycle.clone();
+                        if let Some(min_pos) =
+                            key.iter()
+                                .enumerate()
+                                .min_by_key(|(_, &member)| member)
+                                .map(|(position, _)| position)
+                        {
+                            key.rotate_left(min_pos);
+                        }
+                        if self.reported.insert(key) {
+                            self.cycles.push((cycle, span));
+                        }
+                    }
+                    VisitState::Unvisited => self.visit(next),
+                    VisitState::Done => {}
+                }
+            }
+            self.stack.pop();
+            self.state[node] = VisitState::Done;
+        }
+    }
+
+    let index_of: HashMap<&str, usize> = modules
+        .iter()
+        .enumerate()
+        .map(|(index, module)| (module.name.as_str(), index))
+        .collect();
+
+    let mut edges: Vec<Vec<(usize, Span)>> = vec![Vec::new(); modules.len()];
+    for (index, module) in modules.iter().enumerate() {
+        for item in &module.items {
+            if let Item::Import(import) = item {
+                let path = import.path.join(".");
+                if let Some(&next) = index_of.get(path.as_str()) {
+                    edges[index].push((next, import.span));
+                }
+            }
+        }
+    }
+
+    let mut search = CycleSearch {
+        edges: &edges,
+        state: vec![VisitState::Unvisited; modules.len()],
+        stack: Vec::new(),
+        reported: HashSet::new(),
+        cycles: Vec::new(),
+    };
+    for node in 0..modules.len() {
+        if search.state[node] == VisitState::Unvisited {
+            search.visit(node);
+        }
+    }
+
+    search
+        .cycles
+        .into_iter()
+        .map(|(cycle, span)| {
+            let mut chain: Vec<String> = cycle
+                .iter()
+                .map(|&node| modules[node].name.clone())
+                .collect();
+            // Close the loop for display: a -> b -> a.
+            chain.push(modules[cycle[0]].name.clone());
+            SemanticError::new(
+                format!("Circular import detected: {}", chain.join(" -> ")),
+                span,
+            )
+            .with_code("E028")
+            .with_hint("Break the cycle by removing or restructuring one of these imports")
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -440,6 +560,10 @@ pub struct SemanticAnalyzer {
     generic_param_bounds: Vec<HashMap<String, Vec<String>>>,
     // Cross-module registry shared across all modules compiled by a pipeline.
     registry: Arc<RwLock<ModuleRegistry>>,
+    // Name of the module currently being analyzed, when known. Used by import
+    // resolution to classify self-imports as circular imports (E028) instead
+    // of missing modules (E029).
+    current_module_name: Option<String>,
     // Package name from `spectra.toml` used to check `internal` visibility.
     current_package: Option<String>,
     // Track resolutions of symbols to their definitions to support ide features like Hover and GoToDef
@@ -455,6 +579,15 @@ pub struct SemanticAnalyzer {
     // Flushed to module.imported_function_return_types at the end of analyze_module.
     qualified_fn_types: Vec<(String, crate::ast::Type)>,
     const_values: HashMap<String, ConstValue>,
+}
+
+impl SemanticAnalyzer {
+    /// Record the name of the module about to be analyzed so import
+    /// resolution can classify self-imports as circular imports (E028)
+    /// instead of missing modules (E029).
+    pub(crate) fn set_current_module_name(&mut self, name: Option<String>) {
+        self.current_module_name = name;
+    }
 }
 
 // ---------------------------------------------------------------------------

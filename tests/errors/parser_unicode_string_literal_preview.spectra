@@ -1,0 +1,11 @@
+# Regressão: o caminho de ERRO do parser truncava a pré-visualização de
+# string literals por byte (`value[..24]`), causando panic
+# 'byte index is not a char boundary' quando o índice caía dentro de um
+# caractere UTF-8 multibyte. Aqui os 23 primeiros bytes são ASCII e o `é`
+# ocupa os bytes 24-25; o parser deve emitir P003 (expected identifier)
+# descrevendo o literal truncado com '…' sem panic.
+module unicode_string_preview
+
+func main() {
+    let "abcdefghijklmnopqrstuvw ééééé" = 1
+}

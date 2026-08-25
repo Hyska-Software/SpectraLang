@@ -1,0 +1,15 @@
+// Regression: closing the Type::TypeParameter wildcard in types_match.
+//
+// A call to a generic function whose concrete arguments disagree with a shared
+// type parameter must produce a semantic diagnostic instead of being accepted
+// by the old `(TypeParameter, _) | (_, TypeParameter) => true` wildcard.
+module generic_call_concrete_mismatch
+
+func pick<T>(a: T, b: T) returns T {
+    return a
+}
+
+public func main() returns int {
+    let value = pick(1, "wrong")
+    return 0
+}
