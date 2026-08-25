@@ -1,8 +1,9 @@
+use super::*;
 // ── std.io new functions ─────────────────────────────────────────────────────
 
 /// Prints `prompt` (without newline), flushes stdout, then reads a line from
 /// stdin. Strips the trailing newline before returning.
-extern "C" fn std_io_input(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_io_input(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

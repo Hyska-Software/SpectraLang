@@ -1,5 +1,7 @@
+use super::*;
+
 impl ASTLowering {
-    fn lower_expression_struct(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_struct(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
         match &expr.kind {
             ExpressionKind::StructLiteral {
                 name,

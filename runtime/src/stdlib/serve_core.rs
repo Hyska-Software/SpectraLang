@@ -1,44 +1,45 @@
+use super::*;
 #[derive(Clone, PartialEq)]
-enum ServeRequestState {
+pub(crate) enum ServeRequestState {
     Pending,
     /// Completed with the scalar projection plus the full float output vector.
     Complete(SpectraHostValue, Vec<f64>),
     Cancelled,
 }
 
-struct ServeHandleTable<T> {
+pub(crate) struct ServeHandleTable<T> {
     table: HandleTable<T>,
 }
 
 impl<T> ServeHandleTable<T> {
-    fn new(kind: HandleKind) -> Self {
+    pub(crate) fn new(kind: HandleKind) -> Self {
         Self {
             table: HandleTable::new(kind),
         }
     }
 
-    fn insert(&mut self, value: T) -> SpectraHostValue {
+    pub(crate) fn insert(&mut self, value: T) -> SpectraHostValue {
         self.table.insert(value).raw()
     }
 
-    fn get(&self, raw: SpectraHostValue) -> Option<&T> {
+    pub(crate) fn get(&self, raw: SpectraHostValue) -> Option<&T> {
         let handle = HandleId::from_raw(raw).ok()?;
         self.table.get(handle).ok()
     }
 
-    fn get_mut(&mut self, raw: SpectraHostValue) -> Option<&mut T> {
+    pub(crate) fn get_mut(&mut self, raw: SpectraHostValue) -> Option<&mut T> {
         let handle = HandleId::from_raw(raw).ok()?;
         self.table.get_mut(handle).ok()
     }
 
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.table.clear();
     }
 }
 
 /// Activation applied to a served dense layer's outputs.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum ServeActivation {
+pub(crate) enum ServeActivation {
     Relu,
     Gelu,
     Tanh,
@@ -46,77 +47,80 @@ enum ServeActivation {
 }
 
 /// One fully connected layer of a served model: `y = act(x @ W^T + b)`.
-struct ServeLinearLayer {
+pub(crate) struct ServeLinearLayer {
     /// Row-major `[out][in]` weight matrix.
-    weights: Vec<Vec<f64>>,
-    biases: Vec<f64>,
-    activation: ServeActivation,
+    pub(crate) weights: Vec<Vec<f64>>,
+    pub(crate) biases: Vec<f64>,
+    pub(crate) activation: ServeActivation,
 }
 
 /// Real model behind a serve server: an explicit chain of dense layers or a
 /// committed onnxruntime session reused through `ml_onnx_run_inner`.
 #[cfg_attr(not(feature = "onnx"), allow(dead_code))]
-enum ServeModel {
+pub(crate) enum ServeModel {
     Linear(Vec<ServeLinearLayer>),
     Onnx(u64),
 }
 
-struct ServeServer {
-    model: SpectraHostValue,
-    served_model: Option<ServeModel>,
-    model_version: String,
-    warm: bool,
-    timeout: SpectraHostValue,
-    queue: VecDeque<SpectraHostValue>,
-    input_policy: Option<(SpectraHostValue, SpectraHostValue)>,
-    output_policy: Option<(SpectraHostValue, SpectraHostValue)>,
-    rate_limit: Option<SpectraHostValue>,
-    accepted_requests: SpectraHostValue,
-    fallback: SpectraHostValue,
-    last_diagnostic: String,
-    audit_events: Vec<String>,
-    total_requests: SpectraHostValue,
-    completed_requests: SpectraHostValue,
-    blocked_requests: SpectraHostValue,
-    cancelled_requests: SpectraHostValue,
-    error_count: SpectraHostValue,
-    batch_count: SpectraHostValue,
-    latency_samples_ms: Vec<f64>,
-    observed_inputs: Vec<f64>,
-    observed_outputs: Vec<f64>,
+pub(crate) struct ServeServer {
+    pub(crate) model: SpectraHostValue,
+    pub(crate) served_model: Option<ServeModel>,
+    pub(crate) model_version: String,
+    pub(crate) warm: bool,
+    pub(crate) timeout: SpectraHostValue,
+    pub(crate) queue: VecDeque<SpectraHostValue>,
+    pub(crate) input_policy: Option<(SpectraHostValue, SpectraHostValue)>,
+    pub(crate) output_policy: Option<(SpectraHostValue, SpectraHostValue)>,
+    pub(crate) rate_limit: Option<SpectraHostValue>,
+    pub(crate) accepted_requests: SpectraHostValue,
+    pub(crate) fallback: SpectraHostValue,
+    pub(crate) last_diagnostic: String,
+    pub(crate) audit_events: Vec<String>,
+    pub(crate) total_requests: SpectraHostValue,
+    pub(crate) completed_requests: SpectraHostValue,
+    pub(crate) blocked_requests: SpectraHostValue,
+    pub(crate) cancelled_requests: SpectraHostValue,
+    pub(crate) error_count: SpectraHostValue,
+    pub(crate) batch_count: SpectraHostValue,
+    pub(crate) latency_samples_ms: Vec<f64>,
+    pub(crate) observed_inputs: Vec<f64>,
+    pub(crate) observed_outputs: Vec<f64>,
+    /// Optional embedded HTTP/1.1 listener (see `serve_http.rs`); at most one
+    /// per server.
+    pub(crate) http: Option<ServeHttpRuntime>,
 }
 
-struct ServeRegistry {
-    servers: ServeHandleTable<ServeServer>,
-    requests: ServeHandleTable<(SpectraHostValue, ServeRequestState)>,
+pub(crate) struct ServeRegistry {
+    pub(crate) servers: ServeHandleTable<ServeServer>,
+    pub(crate) requests: ServeHandleTable<(SpectraHostValue, ServeRequestState)>,
 }
 
 impl ServeRegistry {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             servers: ServeHandleTable::new(HandleKind::ServeServer),
             requests: ServeHandleTable::new(HandleKind::ServeRequest),
         }
     }
 
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.servers.clear();
         self.requests.clear();
     }
 }
 
-fn serve_registry() -> &'static Mutex<ServeRegistry> {
+pub(crate) fn serve_registry() -> &'static Mutex<ServeRegistry> {
     static REGISTRY: OnceLock<Mutex<ServeRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(ServeRegistry::new()))
 }
 
-fn lock_serve_registry() -> Result<std::sync::MutexGuard<'static, ServeRegistry>, i32> {
+pub(crate) fn lock_serve_registry() -> Result<std::sync::MutexGuard<'static, ServeRegistry>, i32> {
     serve_registry()
         .lock()
         .map_err(|_| HOST_STATUS_INTERNAL_ERROR)
 }
 
-fn serve_guardrail_diagnostic(
+pub(crate) fn serve_guardrail_diagnostic(
     request_id: SpectraHostValue,
     stage: &str,
     policy: &str,
@@ -131,7 +135,7 @@ fn serve_guardrail_diagnostic(
     )
 }
 
-fn serve_audit_event(
+pub(crate) fn serve_audit_event(
     request_id: SpectraHostValue,
     event: &str,
     stage: &str,
@@ -144,7 +148,7 @@ fn serve_audit_event(
     )
 }
 
-fn serve_audit_json(server: &ServeServer) -> String {
+pub(crate) fn serve_audit_json(server: &ServeServer) -> String {
     format!(
         "{{\"schema\":\"spectra.serve.audit.v1\",\"model\":{},\"warm\":{},\"accepted_requests\":{},\"events\":[{}]}}",
         server.model,
@@ -155,7 +159,7 @@ fn serve_audit_json(server: &ServeServer) -> String {
 }
 
 
-fn serve_record_block(server: &mut ServeServer, output: SpectraHostValue) {
+pub(crate) fn serve_record_block(server: &mut ServeServer, output: SpectraHostValue) {
     server.blocked_requests = server.blocked_requests.saturating_add(1);
     server.error_count = server.error_count.saturating_add(1);
     server.observed_outputs.push(output as f64);
@@ -164,7 +168,7 @@ fn serve_record_block(server: &mut ServeServer, output: SpectraHostValue) {
 /// Records a completed request together with its MEASURED inference latency
 /// (wall-clock `std::time::Instant` delta around the forward pass). No
 /// synthetic latency formula exists anymore.
-fn serve_record_complete(
+pub(crate) fn serve_record_complete(
     server: &mut ServeServer,
     output_first: f64,
     latency_ms: f64,
@@ -174,7 +178,7 @@ fn serve_record_complete(
     server.latency_samples_ms.push(latency_ms);
 }
 
-fn serve_values_summary(values: &[f64]) -> (f64, f64, f64) {
+pub(crate) fn serve_values_summary(values: &[f64]) -> (f64, f64, f64) {
     if values.is_empty() {
         return (0.0, 0.0, 0.0);
     }
@@ -184,7 +188,7 @@ fn serve_values_summary(values: &[f64]) -> (f64, f64, f64) {
     (min, max, sum / values.len() as f64)
 }
 
-fn serve_p95(values: &[f64]) -> f64 {
+pub(crate) fn serve_p95(values: &[f64]) -> f64 {
     if values.is_empty() {
         return 0.0;
     }
@@ -197,7 +201,7 @@ fn serve_p95(values: &[f64]) -> f64 {
 /// Extracts a `"samples":[...]` float array from a JSON document, starting
 /// the search at `section_marker` so nested objects (inputs vs outputs) do
 /// not collide.
-fn serve_json_samples_array(source: &str, section_marker: &str) -> Option<Vec<f64>> {
+pub(crate) fn serve_json_samples_array(source: &str, section_marker: &str) -> Option<Vec<f64>> {
     const ARRAY_KEY: &str = "\"samples\":[";
     let section_start = source.find(section_marker)?;
     let tail = &source[section_start..];
@@ -216,7 +220,7 @@ fn serve_json_samples_array(source: &str, section_marker: &str) -> Option<Vec<f6
 }
 
 
-fn serve_json_f64_array(values: &[f64]) -> String {
+pub(crate) fn serve_json_f64_array(values: &[f64]) -> String {
     let items = values
         .iter()
         .map(|value| ml_float_json(*value))
@@ -225,7 +229,7 @@ fn serve_json_f64_array(values: &[f64]) -> String {
     format!("[{}]", items)
 }
 
-fn serve_distribution_summary_json(server: &ServeServer) -> String {
+pub(crate) fn serve_distribution_summary_json(server: &ServeServer) -> String {
     let (input_min, input_max, input_mean) = serve_values_summary(&server.observed_inputs);
     let (output_min, output_max, output_mean) = serve_values_summary(&server.observed_outputs);
     format!(
@@ -244,7 +248,7 @@ fn serve_distribution_summary_json(server: &ServeServer) -> String {
     )
 }
 
-fn serve_monitoring_snapshot_json(server: &ServeServer) -> String {
+pub(crate) fn serve_monitoring_snapshot_json(server: &ServeServer) -> String {
     let total_latency_ms = server.latency_samples_ms.iter().sum::<f64>();
     let latency_avg = if server.latency_samples_ms.is_empty() {
         0.0
@@ -279,7 +283,7 @@ fn serve_monitoring_snapshot_json(server: &ServeServer) -> String {
     )
 }
 
-fn serve_json_number(source: &str, key: &str) -> Option<f64> {
+pub(crate) fn serve_json_number(source: &str, key: &str) -> Option<f64> {
     let start = source.find(key)? + key.len();
     let tail = &source[start..];
     let end =
@@ -297,7 +301,7 @@ fn serve_json_number(source: &str, key: &str) -> Option<f64> {
 ///
 /// The epsilon keeps empty bins finite; identical histograms score exactly 0.
 /// Returns `None` when either side has no samples.
-fn serve_psi(reference: &[f64], live: &[f64]) -> Option<f64> {
+pub(crate) fn serve_psi(reference: &[f64], live: &[f64]) -> Option<f64> {
     const BINS: usize = 10;
     const EPSILON: f64 = 1e-6;
     if reference.is_empty() || live.is_empty() {
@@ -339,7 +343,7 @@ fn serve_psi(reference: &[f64], live: &[f64]) -> Option<f64> {
     Some(psi)
 }
 
-fn serve_drift_json(
+pub(crate) fn serve_drift_json(
     reference: &str,
     live: &str,
     threshold_per_mille: SpectraHostValue,
@@ -373,7 +377,7 @@ fn serve_drift_json(
     ))
 }
 
-fn serve_apply_activation(activation: ServeActivation, values: &[f64]) -> Option<Vec<f64>> {
+pub(crate) fn serve_apply_activation(activation: ServeActivation, values: &[f64]) -> Option<Vec<f64>> {
     match activation {
         ServeActivation::Relu => Some(values.iter().map(|value| value.max(0.0)).collect()),
         ServeActivation::Tanh => Some(values.iter().map(|value| value.tanh()).collect()),
@@ -389,14 +393,11 @@ fn serve_apply_activation(activation: ServeActivation, values: &[f64]) -> Option
     }
 }
 
-/// Real dense-chain forward pass: `x @ W^T + b` followed by the layer's
-/// activation, applied layer by layer starting from the scalar request input
-/// as a length-1 vector.
-fn serve_forward_linear(
-    layers: &[ServeLinearLayer],
-    input: SpectraHostValue,
-) -> Result<Vec<f64>, i32> {
-    let mut current = vec![input as f64];
+/// Real dense-chain forward pass over a float scalar request input:
+/// `x @ W^T + b` followed by the layer's activation, applied layer by layer
+/// starting from the input as a length-1 vector.
+pub(crate) fn serve_forward_linear_f64(layers: &[ServeLinearLayer], input: f64) -> Result<Vec<f64>, i32> {
+    let mut current = vec![input];
     for layer in layers {
         if layer.biases.len() != layer.weights.len() {
             return Err(HOST_STATUS_INVALID_ARGUMENT);
@@ -426,7 +427,7 @@ fn serve_forward_linear(
 /// request input becomes a length-1 float tensor; scratch tensors are
 /// released after extraction.
 #[cfg(feature = "onnx")]
-fn serve_forward_onnx(session_id: u64, input: SpectraHostValue) -> Result<Vec<f64>, i32> {
+pub(crate) fn serve_forward_onnx_f64(session_id: u64, input: f64) -> Result<Vec<f64>, i32> {
     // Copy the output name out before running: the borrowed session must not
     // overlap with the mutable lock that `ml_onnx_run_inner` takes.
     let output_name = {
@@ -437,7 +438,7 @@ fn serve_forward_onnx(session_id: u64, input: SpectraHostValue) -> Result<Vec<f6
         }
         session.outputs()[0].name().to_owned()
     };
-    let input_handle = ml_alloc_float_tensor(vec![1], vec![input as f64])?;
+    let input_handle = ml_alloc_float_tensor(vec![1], vec![input])?;
     let mut output_handle: Option<usize> = None;
     let result = match ml_onnx_run_inner(session_id, input_handle, &output_name) {
         Ok(handle) => {
@@ -459,20 +460,26 @@ fn serve_forward_onnx(session_id: u64, input: SpectraHostValue) -> Result<Vec<f6
     result
 }
 
+
 /// Without the `onnx` feature no real session can exist, so serving an ONNX
 /// model is rejected instead of being simulated.
 #[cfg(not(feature = "onnx"))]
-fn serve_forward_onnx(_session_id: u64, _input: SpectraHostValue) -> Result<Vec<f64>, i32> {
+pub(crate) fn serve_forward_onnx_f64(_session_id: u64, _input: f64) -> Result<Vec<f64>, i32> {
     Err(HOST_STATUS_INVALID_ARGUMENT)
 }
-
 /// Runs one REAL inference request against the served model and returns the
 /// output vector together with its measured latency in milliseconds.
-fn serve_infer(server: &ServeServer, input: SpectraHostValue) -> Result<(Vec<f64>, f64), i32> {
+pub(crate) fn serve_infer(server: &ServeServer, input: SpectraHostValue) -> Result<(Vec<f64>, f64), i32> {
+    serve_infer_f64(server, input as f64)
+}
+
+/// Float-native inference entry used by the embedded HTTP listener so JSON
+/// f64 inputs reach the forward pass without an integer round-trip.
+pub(crate) fn serve_infer_f64(server: &ServeServer, input: f64) -> Result<(Vec<f64>, f64), i32> {
     let start = std::time::Instant::now();
     let output = match &server.served_model {
-        Some(ServeModel::Linear(layers)) => serve_forward_linear(layers, input)?,
-        Some(ServeModel::Onnx(session_id)) => serve_forward_onnx(*session_id, input)?,
+        Some(ServeModel::Linear(layers)) => serve_forward_linear_f64(layers, input)?,
+        Some(ServeModel::Onnx(session_id)) => serve_forward_onnx_f64(*session_id, input)?,
         None => return Err(HOST_STATUS_INVALID_ARGUMENT),
     };
     let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
@@ -481,6 +488,6 @@ fn serve_infer(server: &ServeServer, input: SpectraHostValue) -> Result<(Vec<f64
 
 /// Scalar projection of an output vector for the integer result ABI:
 /// first component rounded to nearest i64 (saturating).
-fn serve_scalar_result(output: &[f64]) -> SpectraHostValue {
+pub(crate) fn serve_scalar_result(output: &[f64]) -> SpectraHostValue {
     output.first().map(|value| value.round() as i64).unwrap_or(0)
 }

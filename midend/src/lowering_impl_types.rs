@@ -1,5 +1,7 @@
+use super::*;
+
 impl ASTLowering {
-    fn ensure_struct_definition(
+    pub(crate) fn ensure_struct_definition(
         &mut self,
         base_name: &str,
         type_args: &[TypeAnnotation],
@@ -72,7 +74,7 @@ impl ASTLowering {
         (mangled, fields)
     }
 
-    fn lower_default_struct_value(
+    pub(crate) fn lower_default_struct_value(
         &mut self,
         base_name: &str,
         type_args: &[TypeAnnotation],
@@ -97,7 +99,7 @@ impl ASTLowering {
         struct_ptr
     }
 
-    fn lower_default_value_for_type(&mut self, ty: &IRType, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_default_value_for_type(&mut self, ty: &IRType, ir_func: &mut IRFunction) -> Value {
         match ty {
             IRType::Float => self.builder.build_const_float(ir_func, 0.0),
             IRType::Bool => self.builder.build_const_bool(ir_func, false),
@@ -124,7 +126,7 @@ impl ASTLowering {
         }
     }
 
-    fn ensure_enum_definition(
+    pub(crate) fn ensure_enum_definition(
         &mut self,
         base_name: &str,
         type_args: &[TypeAnnotation],
@@ -187,7 +189,7 @@ impl ASTLowering {
         (mangled, variants)
     }
 
-    fn resolve_struct_type(&self, base_name: &str, type_args: &[TypeAnnotation]) -> Option<IRType> {
+    pub(crate) fn resolve_struct_type(&self, base_name: &str, type_args: &[TypeAnnotation]) -> Option<IRType> {
         if type_args.is_empty() {
             return self
                 .struct_definitions
@@ -255,7 +257,7 @@ impl ASTLowering {
         None
     }
 
-    fn resolve_enum_type(&self, base_name: &str, type_args: &[TypeAnnotation]) -> Option<IRType> {
+    pub(crate) fn resolve_enum_type(&self, base_name: &str, type_args: &[TypeAnnotation]) -> Option<IRType> {
         let mut enum_name = base_name.to_string();
         let variants_data = if type_args.is_empty() {
             self.enum_definitions.get(base_name).cloned()
@@ -337,7 +339,7 @@ impl ASTLowering {
         })
     }
 
-    fn infer_block_result_type(&mut self, block: &Block) -> Option<IRType> {
+    pub(crate) fn infer_block_result_type(&mut self, block: &Block) -> Option<IRType> {
         // Block-local bindings participate in inference just like they do in
         // lowering. In particular, a closure body may declare another closure
         // and call it in the final expression; skipping `let` statements here
@@ -386,7 +388,7 @@ impl ASTLowering {
         result
     }
 
-    fn expected_async_output_type(&self) -> Option<IRType> {
+    pub(crate) fn expected_async_output_type(&self) -> Option<IRType> {
         let annotation = self.current_expected_annotation.as_ref()?;
         match self.lower_type_annotation(annotation) {
             IRType::Task { output } if !Self::ir_type_contains_unknown(&output) => Some(*output),
@@ -394,7 +396,7 @@ impl ASTLowering {
         }
     }
 
-    fn unknown_type_annotation() -> TypeAnnotation {
+    pub(crate) fn unknown_type_annotation() -> TypeAnnotation {
         TypeAnnotation {
             kind: TypeAnnotationKind::Simple {
                 segments: vec!["unknown".to_string()],
@@ -403,7 +405,7 @@ impl ASTLowering {
         }
     }
 
-    fn simple_type_annotation(name: &str) -> TypeAnnotation {
+    pub(crate) fn simple_type_annotation(name: &str) -> TypeAnnotation {
         TypeAnnotation {
             kind: TypeAnnotationKind::Simple {
                 segments: vec![name.to_string()],
@@ -412,7 +414,7 @@ impl ASTLowering {
         }
     }
 
-    fn is_unknown_annotation(type_ann: &TypeAnnotation) -> bool {
+    pub(crate) fn is_unknown_annotation(type_ann: &TypeAnnotation) -> bool {
         matches!(
             &type_ann.kind,
             TypeAnnotationKind::Simple { segments }
@@ -425,7 +427,7 @@ impl ASTLowering {
     /// Preserve the historical deterministic `int` default for that narrow
     /// compatibility case; every other unresolved generic remains poison and
     /// is rejected before backend code generation.
-    fn fill_builtin_enum_defaults(enum_name: &str, args: &mut [TypeAnnotation]) {
+    pub(crate) fn fill_builtin_enum_defaults(enum_name: &str, args: &mut [TypeAnnotation]) {
         if !matches!(enum_name, "Option" | "Result") {
             return;
         }
@@ -437,7 +439,7 @@ impl ASTLowering {
         }
     }
 
-    fn ir_type_to_annotation(&self, ir_type: &IRType) -> TypeAnnotation {
+    pub(crate) fn ir_type_to_annotation(&self, ir_type: &IRType) -> TypeAnnotation {
         match ir_type {
             IRType::Int => Self::simple_type_annotation("int"),
             IRType::Float => Self::simple_type_annotation("float"),

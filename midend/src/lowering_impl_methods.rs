@@ -1,5 +1,7 @@
+use super::*;
+
 impl ASTLowering {
-    fn lower_function(&mut self, ast_func: &ASTFunction) -> IRFunction {
+    pub(crate) fn lower_function(&mut self, ast_func: &ASTFunction) -> IRFunction {
         // Convert parameters
         let params: Vec<Parameter> = ast_func
             .params
@@ -114,10 +116,8 @@ impl ASTLowering {
         self.current_function = Some(ir_func.clone());
         self.current_function_return_annotation = ast_func.return_type.clone();
         let saved_async_output = self.current_async_output_type.clone();
-        let saved_async_state_counter = self.async_state_counter;
         if ast_func.is_async {
             self.current_async_output_type = Some(body_return_type.clone());
-            self.async_state_counter = 0;
         }
 
         // Check if last statement is an expression (implicit return)
@@ -175,7 +175,6 @@ impl ASTLowering {
 
         if ast_func.is_async {
             self.current_async_output_type = saved_async_output;
-            self.async_state_counter = saved_async_state_counter;
         }
 
         ir_func
@@ -186,7 +185,7 @@ impl ASTLowering {
     /// The method `foo` on type `TypeName` becomes a function named `TypeName_foo`
     /// where `self` (in all forms: `self`, `&self`, `&mut self`) is passed as the
     /// first regular parameter of type `TypeName`.
-    fn lower_method(&mut self, method: &ASTMethod, type_name: &str) -> IRFunction {
+    pub(crate) fn lower_method(&mut self, method: &ASTMethod, type_name: &str) -> IRFunction {
         let mangled_name = format!("{}_{}", type_name, method.name);
 
         // Convert method parameters to IR parameters.
@@ -315,10 +314,8 @@ impl ASTLowering {
         self.current_function = Some(ir_func.clone());
         self.current_function_return_annotation = method.return_type.clone();
         let saved_async_output = self.current_async_output_type.clone();
-        let saved_async_state_counter = self.async_state_counter;
         if method.is_async {
             self.current_async_output_type = Some(body_return_type.clone());
-            self.async_state_counter = 0;
         }
 
         // Lower the body; support implicit returns (last expression = return value).
@@ -370,13 +367,12 @@ impl ASTLowering {
 
         if method.is_async {
             self.current_async_output_type = saved_async_output;
-            self.async_state_counter = saved_async_state_counter;
         }
 
         ir_func
     }
 
-    fn lower_type_annotation_with_self(
+    pub(crate) fn lower_type_annotation_with_self(
         &self,
         annotation: &TypeAnnotation,
         self_type_name: &str,
@@ -414,7 +410,7 @@ impl ASTLowering {
     ///
     /// Saves and restores all per-function state so nested lambdas work correctly.
     /// Returns the generated IR function; the caller must queue it in `pending_lambdas`.
-    fn lower_lambda(
+    pub(crate) fn lower_lambda(
         &mut self,
         name: String,
         captures: &[ClosureCapture],
@@ -574,7 +570,7 @@ impl ASTLowering {
         lambda_func
     }
 
-    fn build_closure_object(
+    pub(crate) fn build_closure_object(
         &mut self,
         ir_func: &mut IRFunction,
         lambda_name: String,

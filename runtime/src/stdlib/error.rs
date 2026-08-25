@@ -7,25 +7,25 @@
 
 use super::*;
 
-const ERROR_NEW: &str = spectra_contract::STD_ERROR_NEW_BINDING;
-const ERROR_CODE: &str = spectra_contract::STD_ERROR_CODE_BINDING;
-const ERROR_MESSAGE: &str = spectra_contract::STD_ERROR_MESSAGE_BINDING;
-const ERROR_OPERATION: &str = spectra_contract::STD_ERROR_OPERATION_BINDING;
-const ERROR_CONTEXT: &str = spectra_contract::STD_ERROR_CONTEXT_BINDING;
-const ERROR_ORIGIN: &str = spectra_contract::STD_ERROR_ORIGIN_BINDING;
-const ERROR_RETRYABLE: &str = spectra_contract::STD_ERROR_RETRYABLE_BINDING;
+pub(crate) const ERROR_NEW: &str = spectra_contract::STD_ERROR_NEW_BINDING;
+pub(crate) const ERROR_CODE: &str = spectra_contract::STD_ERROR_CODE_BINDING;
+pub(crate) const ERROR_MESSAGE: &str = spectra_contract::STD_ERROR_MESSAGE_BINDING;
+pub(crate) const ERROR_OPERATION: &str = spectra_contract::STD_ERROR_OPERATION_BINDING;
+pub(crate) const ERROR_CONTEXT: &str = spectra_contract::STD_ERROR_CONTEXT_BINDING;
+pub(crate) const ERROR_ORIGIN: &str = spectra_contract::STD_ERROR_ORIGIN_BINDING;
+pub(crate) const ERROR_RETRYABLE: &str = spectra_contract::STD_ERROR_RETRYABLE_BINDING;
 
-const ERROR_FIELD_CODE: usize = 0;
-const ERROR_FIELD_MESSAGE: usize = 1;
-const ERROR_FIELD_OPERATION: usize = 2;
-const ERROR_FIELD_CONTEXT: usize = 3;
-const ERROR_FIELD_ORIGIN: usize = 4;
-const ERROR_FIELD_RETRYABLE: usize = 5;
-const ERROR_FIELD_COUNT: usize = 6;
+pub(crate) const ERROR_FIELD_CODE: usize = 0;
+pub(crate) const ERROR_FIELD_MESSAGE: usize = 1;
+pub(crate) const ERROR_FIELD_OPERATION: usize = 2;
+pub(crate) const ERROR_FIELD_CONTEXT: usize = 3;
+pub(crate) const ERROR_FIELD_ORIGIN: usize = 4;
+pub(crate) const ERROR_FIELD_RETRYABLE: usize = 5;
+pub(crate) const ERROR_FIELD_COUNT: usize = 6;
 
-static ERROR_HANDLES: OnceLock<Mutex<HashSet<SpectraHostValue>>> = OnceLock::new();
+pub(crate) static ERROR_HANDLES: OnceLock<Mutex<HashSet<SpectraHostValue>>> = OnceLock::new();
 
-fn error_handles() -> &'static Mutex<HashSet<SpectraHostValue>> {
+pub(crate) fn error_handles() -> &'static Mutex<HashSet<SpectraHostValue>> {
     ERROR_HANDLES.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
@@ -74,7 +74,7 @@ pub(super) unsafe fn alloc_error(
     value
 }
 
-unsafe fn read_error_field(error: SpectraHostValue, field: usize) -> Option<SpectraHostValue> {
+pub(crate) unsafe fn read_error_field(error: SpectraHostValue, field: usize) -> Option<SpectraHostValue> {
     if error == 0 || field >= ERROR_FIELD_COUNT {
         return None;
     }
@@ -88,7 +88,7 @@ unsafe fn read_error_field(error: SpectraHostValue, field: usize) -> Option<Spec
     Some(*((error as *const i64).add(field)))
 }
 
-extern "C" fn std_error_new(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_error_new(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -135,7 +135,7 @@ extern "C" fn std_error_new(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-fn write_error_scalar(ctx: *mut SpectraHostCallContext, field: usize) -> i32 {
+pub(crate) fn write_error_scalar(ctx: *mut SpectraHostCallContext, field: usize) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -159,30 +159,30 @@ fn write_error_scalar(ctx: *mut SpectraHostCallContext, field: usize) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-fn write_error_string(ctx: *mut SpectraHostCallContext, field: usize) -> i32 {
+pub(crate) fn write_error_string(ctx: *mut SpectraHostCallContext, field: usize) -> i32 {
     write_error_scalar(ctx, field)
 }
 
-extern "C" fn std_error_code(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_error_code(ctx: *mut SpectraHostCallContext) -> i32 {
     write_error_scalar(ctx, ERROR_FIELD_CODE)
 }
 
-extern "C" fn std_error_message(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_error_message(ctx: *mut SpectraHostCallContext) -> i32 {
     write_error_string(ctx, ERROR_FIELD_MESSAGE)
 }
 
-extern "C" fn std_error_operation(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_error_operation(ctx: *mut SpectraHostCallContext) -> i32 {
     write_error_string(ctx, ERROR_FIELD_OPERATION)
 }
 
-extern "C" fn std_error_context(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_error_context(ctx: *mut SpectraHostCallContext) -> i32 {
     write_error_string(ctx, ERROR_FIELD_CONTEXT)
 }
 
-extern "C" fn std_error_origin(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_error_origin(ctx: *mut SpectraHostCallContext) -> i32 {
     write_error_string(ctx, ERROR_FIELD_ORIGIN)
 }
 
-extern "C" fn std_error_retryable(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_error_retryable(ctx: *mut SpectraHostCallContext) -> i32 {
     write_error_scalar(ctx, ERROR_FIELD_RETRYABLE)
 }

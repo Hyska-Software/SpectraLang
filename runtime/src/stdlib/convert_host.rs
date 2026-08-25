@@ -1,6 +1,7 @@
+use super::*;
 // ── std.convert host functions ───────────────────────────────────────────────
 
-extern "C" fn std_convert_int_to_string(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_convert_int_to_string(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -19,7 +20,7 @@ extern "C" fn std_convert_int_to_string(ctx: *mut SpectraHostCallContext) -> i32
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_convert_float_to_string(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_convert_float_to_string(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -39,7 +40,7 @@ extern "C" fn std_convert_float_to_string(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_convert_bool_to_string(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_convert_bool_to_string(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -58,7 +59,7 @@ extern "C" fn std_convert_bool_to_string(ctx: *mut SpectraHostCallContext) -> i3
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_convert_string_to_int(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_convert_string_to_int(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -80,7 +81,7 @@ extern "C" fn std_convert_string_to_int(ctx: *mut SpectraHostCallContext) -> i32
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_convert_string_to_float(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_convert_string_to_float(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -105,7 +106,7 @@ extern "C" fn std_convert_string_to_float(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_convert_int_to_float(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_convert_int_to_float(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -125,7 +126,7 @@ extern "C" fn std_convert_int_to_float(ctx: *mut SpectraHostCallContext) -> i32 
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_convert_float_to_int(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_convert_float_to_int(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

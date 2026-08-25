@@ -6154,13 +6154,13 @@
 
 // ── ServeReal ────────────────────────────────────────────────────────────────
 
-fn serve_real_bits(value: f64) -> SpectraHostValue {
+pub(crate) fn serve_real_bits(value: f64) -> SpectraHostValue {
     value.to_bits() as i64
 }
 
 /// Registers a single dense layer `y = relu(scale * x)` as the server's real
 /// served model (the dense equivalent of the historical seed constant).
-fn serve_real_register_scalar_model(server: SpectraHostValue, scale: f64) {
+pub(crate) fn serve_real_register_scalar_model(server: SpectraHostValue, scale: f64) {
     let (status, weights) = call_host(TENSOR_LITERAL2_F, &[1, 1, serve_real_bits(scale)]);
     assert_eq!(status, HOST_STATUS_SUCCESS);
     let (status, biases) = call_host(TENSOR_LITERAL_F, &[1, serve_real_bits(0.0)]);
@@ -6174,7 +6174,7 @@ fn serve_real_register_scalar_model(server: SpectraHostValue, scale: f64) {
 }
 
 #[test]
-fn serve_real_linear_forward_matches_manual_reference() {
+pub(crate) fn serve_real_linear_forward_matches_manual_reference() {
     let _lock = test_guard();
     clear_host_functions();
     register();
@@ -6240,7 +6240,7 @@ fn serve_real_linear_forward_matches_manual_reference() {
 }
 
 #[test]
-fn serve_real_drift_psi_zero_for_identical_and_flags_known_shift() {
+pub(crate) fn serve_real_drift_psi_zero_for_identical_and_flags_known_shift() {
     let _lock = test_guard();
     clear_host_functions();
     register();
@@ -6294,7 +6294,7 @@ fn serve_real_drift_psi_zero_for_identical_and_flags_known_shift() {
 }
 
 #[test]
-fn serve_real_latency_measured_positive_and_grows_with_compute() {
+pub(crate) fn serve_real_latency_measured_positive_and_grows_with_compute() {
     let _lock = test_guard();
     clear_host_functions();
     register();
@@ -6373,7 +6373,7 @@ fn serve_real_latency_measured_positive_and_grows_with_compute() {
 }
 
 #[test]
-fn serve_real_rejects_inference_without_registered_model() {
+pub(crate) fn serve_real_rejects_inference_without_registered_model() {
     let _lock = test_guard();
     clear_host_functions();
     register();
@@ -6557,4 +6557,450 @@ fn serve_real_rejects_inference_without_registered_model() {
             call_host(CONCURRENT_TASK_JOIN, &[fresh_task]),
             (HOST_STATUS_SUCCESS, 5)
         );
+    }
+
+    // ── RagGenerate ──────────────────────────────────────────────────────────
+
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn ml_generate_autoregressive_greedy_matches_fixture_pattern() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+
+        let dir = temp_test_dir("ml_generate");
+        std::fs::create_dir_all(&dir).expect("create temp generate dir");
+        let path = dir.join("toy_causal_lm.onnx");
+        std::fs::write(&path, ml_generation_fixture_proto()).expect("write fixture model");
+
+        // Commit a real onnxruntime session from the fixture bytes.
+        let (status, session) = call_host(
+            ML_ONNX_SESSION_FROM_BYTES,
+            &[test_string(path.to_string_lossy().as_ref())],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!(session > 0, "session handle must be positive");
+
+        let make_ids = |ids: &[i64]| -> SpectraHostValue {
+            tensor_alloc(TensorDType::Int, vec![ids.len()], ids.to_vec())
+                .expect("alloc prompt tensor") as SpectraHostValue
+        };
+        let run = |prompt: &[i64], max: i64, eos: i64| -> Vec<i64> {
+            let input = make_ids(prompt);
+            let (status, out) = call_host(ML_GENERATE, &[session, input, max, eos]);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            assert!(out > 0, "output tensor handle must be positive");
+            ml_tensor_int_data(out as usize).expect("generated ids")
+        };
+
+        // Pure cycle 0→1→2→3→0: runs until the max_new_tokens stop.
+        let got = run(&[0], 7, -1);
+        assert_eq!(got, [0, 1, 2, 3, 0, 1, 2, 3]);
+        assert_eq!(got, ml_generation_expected(&[0], 7, -1));
+
+        // Multi-token prompt: selection uses the LAST position's logits row
+        // (a first-position bug would diverge immediately here).
+        let got = run(&[3, 3], 4, -1);
+        assert_eq!(got, [3, 3, 0, 1, 2, 3]);
+        assert_eq!(got, ml_generation_expected(&[3, 3], 4, -1));
+
+        // EOS terminates generation and is NOT appended.
+        let got = run(&[4], 10, 5);
+        assert_eq!(got, [4]);
+        let got = run(&[0], 10, 3);
+        assert_eq!(got, [0, 1, 2]);
+        assert_eq!(got, ml_generation_expected(&[0], 10, 3));
+
+        // Invalid arguments and unknown sessions fail typed.
+        let input = make_ids(&[0]);
+        assert_eq!(
+            call_host(ML_GENERATE, &[session, input, 0, -1]).0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            call_host(ML_GENERATE, &[session + 9_999, input, 4, -1]).0,
+            HOST_STATUS_NOT_FOUND
+        );
+
+        // Freed sessions no longer generate.
+        assert_eq!(
+            call_host(ML_ONNX_SESSION_FREE, &[session]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        assert_eq!(
+            call_host(ML_GENERATE, &[session, input, 4, -1]).0,
+            HOST_STATUS_NOT_FOUND
+        );
+
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(not(feature = "onnx"))]
+    #[test]
+    fn ml_generate_without_feature_returns_typed_error() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        // Scalar arguments validate first so the failure below is
+        // unambiguously the missing feature, not bad input: the tagged Error
+        // record is the contract for real-inference hosts without ORT.
+        let (status, tagged) = call_host(ML_GENERATE, &[1, 1, 4, -1]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (tag, error) = unsafe { tagged_result_parts(tagged) };
+        assert_eq!(tag, 1, "expected Err tag, got payload {error}");
+        let (message_status, message_ptr) = call_host("spectra.std.error.message", &[error]);
+        assert_eq!(message_status, HOST_STATUS_SUCCESS);
+        let message = unsafe { read_spectra_string(message_ptr) }.expect("error message");
+        assert!(message.contains("--features onnx"), "{message}");
+    }
+    // ── ServeHttp ── (APPEND-ONLY: novos testes abaixo desta linha)
+
+    /// Sends one raw HTTP/1.1 request with `Connection: close` and reads the
+    /// full response until the server closes the socket.
+    fn serve_http_request_once(port: u16, request_head: &str, body: &str) -> String {
+        use std::io::{Read, Write};
+        let mut stream = std::net::TcpStream::connect(("127.0.0.1", port))
+            .expect("connect to embedded listener");
+        stream
+            .write_all(
+                format!(
+                    "{}Content-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    request_head,
+                    body.len(),
+                    body
+                )
+                .as_bytes(),
+            )
+            .expect("write request");
+        let mut response = String::new();
+        stream.read_to_string(&mut response).expect("read response");
+        response
+    }
+
+    #[test]
+    fn serve_http_embedded_listener_serves_infer_and_metrics_then_stops() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        assert_eq!(call_host(SERVE_RESET, &[]).0, HOST_STATUS_SUCCESS);
+        let (status, server) = call_host(SERVE_SERVER_NEW, &[1]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        // Real served model: y = relu(2x) (the scalar-model helper registers
+        // bias 0).
+        serve_real_register_scalar_model(server, 2.0);
+        assert_eq!(
+            call_host(SERVE_SERVER_WARMUP, &[server]).0,
+            HOST_STATUS_SUCCESS
+        );
+
+        // Start on an ephemeral port; the host returns the actually bound one.
+        let (status, port) = call_host(SERVE_HTTP_START, &[server, 0]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!((1..=65_535).contains(&port), "bound port {port}");
+        let port = port as u16;
+
+        // POST /infer with a JSON f64 input must run the REAL forward pass:
+        // relu(2 * 3.5) = 7.0.
+        let response = serve_http_request_once(
+            port,
+            "POST /infer HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n",
+            "{\"inputs\":[3.5]}",
+        );
+        assert!(
+            response.starts_with("HTTP/1.1 200"),
+            "unexpected status line in: {response}"
+        );
+        let parsed: serde_json::Value = serde_json::from_str(
+            response.split("\r\n\r\n").nth(1).expect("response body"),
+        )
+        .expect("JSON body");
+        let outputs = parsed["outputs"].as_array().expect("outputs array");
+        assert_eq!(outputs.len(), 1);
+        assert!(
+            (outputs[0].as_f64().expect("output f64") - 7.0).abs() < 1e-9,
+            "expected [7.0], got {}",
+            outputs[0]
+        );
+
+        // GET /metrics returns the existing monitoring snapshot and reflects
+        // the HTTP-served request.
+        let response = serve_http_request_once(port, "GET /metrics HTTP/1.1\r\nHost: localhost\r\n", "");
+        assert!(
+            response.starts_with("HTTP/1.1 200"),
+            "unexpected status line in: {response}"
+        );
+        let snapshot: serde_json::Value = serde_json::from_str(
+            response.split("\r\n\r\n").nth(1).expect("metrics body"),
+        )
+        .expect("snapshot JSON");
+        assert_eq!(
+            snapshot["schema"],
+            "spectra.serve.monitoring_snapshot.v1"
+        );
+        assert!(
+            snapshot["completed"].as_i64().expect("completed") >= 1,
+            "HTTP inference not folded into monitoring: {snapshot}"
+        );
+
+        // http_stop joins the worker; afterwards the port refuses connections.
+        assert_eq!(
+            call_host(SERVE_HTTP_STOP, &[server]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        let mut refused = false;
+        for _ in 0..50 {
+            match std::net::TcpStream::connect(("127.0.0.1", port)) {
+                Ok(_) => std::thread::sleep(std::time::Duration::from_millis(20)),
+                Err(_) => {
+                    refused = true;
+                    break;
+                }
+            }
+        }
+        assert!(refused, "listener still accepting after http_stop");
+
+        // Stopping twice rejects typed instead of pretending success.
+        assert_eq!(call_host(SERVE_HTTP_STOP, &[server]).0, HOST_STATUS_INVALID_ARGUMENT);
+    }
+
+    // ── OnnxMultiInput: multi-graph-input inference ──
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn ml_onnx_run_multi_feeds_two_graph_inputs_and_matches_manual_add() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+
+        let dir = temp_test_dir("onnx_run_multi");
+        std::fs::create_dir_all(&dir).expect("create temp onnx dir");
+        let path = dir.join("dual_linear.onnx");
+
+        // Export the deterministic two-graph-input template. The protobuf
+        // writer already emits every graph input (field 11 is repeated).
+        let (status, exported_ptr) = call_host(
+            ML_ONNX_EXPORT,
+            &[
+                test_string(path.to_string_lossy().as_ref()),
+                test_string("dual_linear"),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let exported = unsafe { read_spectra_string(exported_ptr) }.expect("export path");
+
+        // Real session metadata confirms both inputs reached ORT.
+        let (status, summary_ptr) =
+            call_host(ML_ONNX_IMPORT_SUMMARY, &[test_string(&exported)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let summary = unsafe { read_spectra_string(summary_ptr) }.expect("summary");
+        assert!(
+            summary.contains("\"inputs\":2"),
+            "writer must support multiple graph inputs: {summary}"
+        );
+        assert!(
+            summary.contains("\"name\":\"lhs\"") && summary.contains("\"name\":\"rhs\""),
+            "{summary}"
+        );
+
+        let (status, session) = call_host(ML_ONNX_SESSION_FROM_BYTES, &[test_string(&exported)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!(session > 0);
+
+        // lhs + rhs computed by hand: the Add node has no initializers.
+        let lhs_values = [0.5f64, -1.25, 2.0];
+        let rhs_values = [-0.75f64, 0.25, 1.5];
+        let lhs = tensor_alloc(
+            TensorDType::Float,
+            vec![1, 3],
+            f64_values_to_host(&lhs_values),
+        )
+        .expect("alloc lhs tensor") as SpectraHostValue;
+        let rhs = tensor_alloc(
+            TensorDType::Float,
+            vec![1, 3],
+            f64_values_to_host(&rhs_values),
+        )
+        .expect("alloc rhs tensor") as SpectraHostValue;
+
+        let make_string_list = |items: &[&str]| {
+            let (_, handle) = call_host(LIST_NEW, &[]);
+            assert!(handle > 0);
+            for item in items {
+                let (_, len) = call_host(LIST_PUSH, &[handle, test_string(item)]);
+                assert!(len > 0);
+            }
+            handle
+        };
+        let make_int_list = |items: &[SpectraHostValue]| {
+            let (_, handle) = call_host(LIST_NEW, &[]);
+            assert!(handle > 0);
+            for item in items {
+                let (_, len) = call_host(LIST_PUSH, &[handle, *item]);
+                assert!(len > 0);
+            }
+            handle
+        };
+
+        let names = make_string_list(&["lhs", "rhs"]);
+        let tensors = make_int_list(&[lhs, rhs]);
+        let (status, output) = call_host(ML_ONNX_RUN_MULTI, &[session, names, tensors]);
+        assert_eq!(status, HOST_STATUS_SUCCESS, "multi-input run must succeed");
+        assert!(output > 0, "output tensor handle must be positive");
+        let (_, values, _) = ml_tensor_float_data(output as usize).expect("output data");
+        assert_eq!(values.len(), 3);
+        for index in 0..3 {
+            let want = lhs_values[index] + rhs_values[index];
+            assert!(
+                (values[index] - want).abs() < 1e-6,
+                "add {} vs manual {}",
+                values[index],
+                want
+            );
+        }
+
+        // Typed error: an unknown input name yields a tagged Error record.
+        let bad_names = make_string_list(&["lhs", "nope"]);
+        let tensors_again = make_int_list(&[lhs, rhs]);
+        let (status, tagged) =
+            call_host(ML_ONNX_RUN_MULTI, &[session, bad_names, tensors_again]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (tag, error) = unsafe { tagged_result_parts(tagged) };
+        assert_eq!(tag, 1, "unknown input name must produce Err tag");
+        let (code_status, code) = call_host("spectra.std.error.code", &[error]);
+        assert_eq!(code_status, HOST_STATUS_SUCCESS);
+        assert_eq!(code as i32, HOST_STATUS_NOT_FOUND);
+        let (message_status, message_ptr) = call_host("spectra.std.error.message", &[error]);
+        assert_eq!(message_status, HOST_STATUS_SUCCESS);
+        let message = unsafe { read_spectra_string(message_ptr) }.expect("error message");
+        assert!(message.contains("unknown graph input 'nope'"), "{message}");
+
+        // Typed error: a wrong shape fails with an explicit mismatch record.
+        let wide = tensor_alloc(
+            TensorDType::Float,
+            vec![1, 4],
+            f64_values_to_host(&[1.0, 2.0, 3.0, 4.0]),
+        )
+        .expect("alloc wide tensor") as SpectraHostValue;
+        let shape_names = make_string_list(&["lhs", "rhs"]);
+        let shape_tensors = make_int_list(&[lhs, wide]);
+        let (status, tagged) =
+            call_host(ML_ONNX_RUN_MULTI, &[session, shape_names, shape_tensors]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (shape_tag, shape_error) = unsafe { tagged_result_parts(tagged) };
+        assert_eq!(shape_tag, 1, "wrong shape must produce Err tag");
+        let (_, shape_code) = call_host("spectra.std.error.code", &[shape_error]);
+        assert_eq!(shape_code as i32, HOST_STATUS_INVALID_ARGUMENT);
+        let (message_status, message_ptr) =
+            call_host("spectra.std.error.message", &[shape_error]);
+        assert_eq!(message_status, HOST_STATUS_SUCCESS);
+        let message = unsafe { read_spectra_string(message_ptr) }.expect("error message");
+        assert!(
+            message.contains("shape mismatch for input 'rhs'"),
+            "{message}"
+        );
+
+        // Typed error: omitting a model input fails with the arity record.
+        let short_names = make_string_list(&["lhs"]);
+        let short_tensors = make_int_list(&[lhs]);
+        let (status, tagged) =
+            call_host(ML_ONNX_RUN_MULTI, &[session, short_names, short_tensors]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (short_tag, short_error) = unsafe { tagged_result_parts(tagged) };
+        assert_eq!(short_tag, 1);
+        let (message_status, message_ptr) =
+            call_host("spectra.std.error.message", &[short_error]);
+        assert_eq!(message_status, HOST_STATUS_SUCCESS);
+        let message = unsafe { read_spectra_string(message_ptr) }.expect("error message");
+        assert!(message.contains("2 graph input(s)"), "{message}");
+
+        // Single-input compat: `spectra.std.ml.onnx_run` still works and the
+        // multi host rejects a single-graph-input model instead of silently
+        // feeding one tensor.
+        let single_path = dir.join("linear.onnx");
+        let (status, single_ptr) = call_host(
+            ML_ONNX_EXPORT,
+            &[
+                test_string(single_path.to_string_lossy().as_ref()),
+                test_string("linear"),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let single_exported = unsafe { read_spectra_string(single_ptr) }.expect("single export");
+        let (status, single_session) =
+            call_host(ML_ONNX_SESSION_FROM_BYTES, &[test_string(&single_exported)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let linear_input = tensor_alloc(
+            TensorDType::Float,
+            vec![1, 2],
+            f64_values_to_host(&[0.75, -1.25]),
+        )
+        .expect("alloc linear input") as SpectraHostValue;
+        let (status, linear_output) = call_host(
+            ML_ONNX_RUN,
+            &[single_session, linear_input, test_string("output")],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS, "single-input run stays intact");
+        assert!(linear_output > 0);
+
+        // A correctly-fed single-graph-input model also works through the
+        // multi host (a valid degenerate case): one name, one tensor.
+        let one_names = make_string_list(&["input"]);
+        let one_tensors = make_int_list(&[linear_input]);
+        let (status, one_output) = call_host(
+            ML_ONNX_RUN_MULTI,
+            &[single_session, one_names, one_tensors],
+        );
+        assert_eq!(
+            status, HOST_STATUS_SUCCESS,
+            "single-input model through the multi host must succeed"
+        );
+        assert!(one_output > 0);
+        let (_, one_values, _) =
+            ml_tensor_float_data(one_output as usize).expect("one-output data");
+        assert_eq!(one_values.len(), 3);
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        assert_eq!(
+            call_host(ML_ONNX_SESSION_FREE, &[session]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        assert_eq!(
+            call_host(ML_ONNX_SESSION_FREE, &[single_session]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(not(feature = "onnx"))]
+    #[test]
+    fn ml_onnx_run_multi_without_feature_returns_typed_error() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        // List arguments validate first so the failure below is
+        // unambiguously the missing onnxruntime feature.
+        let (_, names) = call_host(LIST_NEW, &[]);
+        let (_, tensors) = call_host(LIST_NEW, &[]);
+        assert!(names > 0 && tensors > 0);
+        let (status, tagged) = call_host(ML_ONNX_RUN_MULTI, &[1, names, tensors]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (tag, error) = unsafe { tagged_result_parts(tagged) };
+        assert_eq!(tag, 1, "expected Err tag, got payload {error}");
+        let (message_status, message_ptr) = call_host("spectra.std.error.message", &[error]);
+        assert_eq!(message_status, HOST_STATUS_SUCCESS);
+        let message = unsafe { read_spectra_string(message_ptr) }.expect("error message");
+        assert!(message.contains("--features onnx"), "{message}");
+
+        let _ = call_host(LIST_FREE, &[names]);
+        let _ = call_host(LIST_FREE, &[tensors]);
     }

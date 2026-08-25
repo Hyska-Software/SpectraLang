@@ -1,4 +1,5 @@
-fn ml_classification_loss(
+use super::*;
+pub(crate) fn ml_classification_loss(
     ctx: *mut SpectraHostCallContext,
     op: AutogradOp,
     from_logits: bool,
@@ -66,15 +67,15 @@ fn ml_classification_loss(
     }
 }
 
-extern "C" fn std_ml_cross_entropy_loss(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_cross_entropy_loss(ctx: *mut SpectraHostCallContext) -> i32 {
     ml_classification_loss(ctx, AutogradOp::MlCrossEntropy, true)
 }
 
-extern "C" fn std_ml_nll_loss(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_nll_loss(ctx: *mut SpectraHostCallContext) -> i32 {
     ml_classification_loss(ctx, AutogradOp::MlNll, false)
 }
 
-fn ml_optimizer_update(param_handle: usize, update: impl Fn(f64, f64, usize) -> f64) -> bool {
+pub(crate) fn ml_optimizer_update(param_handle: usize, update: impl Fn(f64, f64, usize) -> f64) -> bool {
     with_tensor_registry(|registry| {
         let Some(param) = registry.get_mut(param_handle) else {
             return false;
@@ -101,7 +102,7 @@ fn ml_optimizer_update(param_handle: usize, update: impl Fn(f64, f64, usize) -> 
     })
 }
 
-extern "C" fn std_ml_sgd_step(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_sgd_step(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -198,7 +199,7 @@ extern "C" fn std_ml_sgd_step(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_sgd_momentum_step(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_sgd_momentum_step(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 4) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -240,7 +241,7 @@ extern "C" fn std_ml_sgd_momentum_step(ctx: *mut SpectraHostCallContext) -> i32 
     }
 }
 
-extern "C" fn std_ml_adam_step(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_adam_step(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 8) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -289,7 +290,7 @@ extern "C" fn std_ml_adam_step(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_adamw_step(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_adamw_step(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 9) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -340,7 +341,7 @@ extern "C" fn std_ml_adamw_step(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_exp_lr(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_exp_lr(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -355,7 +356,7 @@ extern "C" fn std_ml_exp_lr(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_unscale_grad(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_unscale_grad(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;

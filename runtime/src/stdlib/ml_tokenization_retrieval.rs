@@ -1,4 +1,5 @@
-extern "C" fn std_ml_embedding_lookup(ctx: *mut SpectraHostCallContext) -> i32 {
+use super::*;
+pub(crate) extern "C" fn std_ml_embedding_lookup(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -29,7 +30,7 @@ extern "C" fn std_ml_embedding_lookup(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_positional_encoding(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_positional_encoding(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -54,7 +55,7 @@ extern "C" fn std_ml_positional_encoding(ctx: *mut SpectraHostCallContext) -> i3
     }
 }
 
-extern "C" fn std_ml_layer_norm(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_layer_norm(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 4) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -106,7 +107,7 @@ extern "C" fn std_ml_layer_norm(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_gelu(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_gelu(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -129,7 +130,7 @@ extern "C" fn std_ml_gelu(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_swiglu(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_swiglu(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -155,7 +156,7 @@ extern "C" fn std_ml_swiglu(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_attention(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_attention(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -207,7 +208,7 @@ extern "C" fn std_ml_attention(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_kv_cache_new(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_kv_cache_new(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -227,7 +228,7 @@ extern "C" fn std_ml_kv_cache_new(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_kv_cache_append(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_kv_cache_append(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -259,12 +260,12 @@ extern "C" fn std_ml_kv_cache_append(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 impl MlKvCache {
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.keys.len() / self.dim
     }
 }
 
-extern "C" fn std_ml_kv_cache_keys(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_kv_cache_keys(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -282,7 +283,7 @@ extern "C" fn std_ml_kv_cache_keys(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_kv_cache_values(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_kv_cache_values(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -300,7 +301,7 @@ extern "C" fn std_ml_kv_cache_values(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_kv_cache_len(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_kv_cache_len(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -317,7 +318,7 @@ extern "C" fn std_ml_kv_cache_len(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_logits_sample(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_logits_sample(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -351,7 +352,7 @@ extern "C" fn std_ml_logits_sample(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_tokenizer_wordpiece(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_tokenizer_wordpiece(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -369,7 +370,7 @@ extern "C" fn std_ml_tokenizer_wordpiece(ctx: *mut SpectraHostCallContext) -> i3
     }
 }
 
-extern "C" fn std_ml_tokenizer_load(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_tokenizer_load(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -390,7 +391,7 @@ extern "C" fn std_ml_tokenizer_load(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_tokenizer_encode(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_tokenizer_encode(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -414,7 +415,7 @@ extern "C" fn std_ml_tokenizer_encode(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_tokenizer_decode(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_tokenizer_decode(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -435,7 +436,7 @@ extern "C" fn std_ml_tokenizer_decode(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_embedding_load(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_embedding_load(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -489,7 +490,7 @@ extern "C" fn std_ml_embedding_load(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_text_embed(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_text_embed(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -510,7 +511,7 @@ extern "C" fn std_ml_text_embed(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_vector_index_new(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_vector_index_new(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -525,7 +526,7 @@ extern "C" fn std_ml_vector_index_new(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_vector_index_insert(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_vector_index_insert(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -553,7 +554,7 @@ extern "C" fn std_ml_vector_index_insert(ctx: *mut SpectraHostCallContext) -> i3
     }
 }
 
-extern "C" fn std_ml_vector_index_query(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_vector_index_query(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -594,7 +595,7 @@ extern "C" fn std_ml_vector_index_query(ctx: *mut SpectraHostCallContext) -> i32
     }
 }
 
-extern "C" fn std_ml_vector_index_persist(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_vector_index_persist(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -621,7 +622,7 @@ extern "C" fn std_ml_vector_index_persist(ctx: *mut SpectraHostCallContext) -> i
     }
 }
 
-extern "C" fn std_ml_vector_index_load(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_vector_index_load(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -644,7 +645,7 @@ extern "C" fn std_ml_vector_index_load(ctx: *mut SpectraHostCallContext) -> i32 
     }
 }
 
-extern "C" fn std_ml_vector_index_set_metadata(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_vector_index_set_metadata(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -666,7 +667,7 @@ extern "C" fn std_ml_vector_index_set_metadata(ctx: *mut SpectraHostCallContext)
     }
 }
 
-extern "C" fn std_ml_vector_index_metrics(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_vector_index_metrics(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -685,7 +686,7 @@ extern "C" fn std_ml_vector_index_metrics(ctx: *mut SpectraHostCallContext) -> i
     }
 }
 
-extern "C" fn std_ml_rag_chunk_text(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_rag_chunk_text(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -722,7 +723,7 @@ extern "C" fn std_ml_rag_chunk_text(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_rag_build_prompt(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_rag_build_prompt(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -741,7 +742,7 @@ extern "C" fn std_ml_rag_build_prompt(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_rag_evaluate_answer(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_rag_evaluate_answer(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;

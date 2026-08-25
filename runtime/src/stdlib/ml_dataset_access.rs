@@ -1,4 +1,5 @@
-extern "C" fn std_ml_dataset_from_tensors(ctx: *mut SpectraHostCallContext) -> i32 {
+use super::*;
+pub(crate) extern "C" fn std_ml_dataset_from_tensors(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -24,7 +25,7 @@ extern "C" fn std_ml_dataset_from_tensors(ctx: *mut SpectraHostCallContext) -> i
     }
 }
 
-extern "C" fn std_ml_dataset_from_csv(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataset_from_csv(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -42,7 +43,7 @@ extern "C" fn std_ml_dataset_from_csv(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_dataset_from_jsonl(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataset_from_jsonl(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -57,7 +58,7 @@ extern "C" fn std_ml_dataset_from_jsonl(ctx: *mut SpectraHostCallContext) -> i32
     }
 }
 
-extern "C" fn std_ml_dataset_from_npy(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataset_from_npy(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -86,7 +87,7 @@ extern "C" fn std_ml_dataset_from_npy(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_dataset_from_directory(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataset_from_directory(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -116,7 +117,7 @@ extern "C" fn std_ml_dataset_from_directory(ctx: *mut SpectraHostCallContext) ->
     }
 }
 
-extern "C" fn std_ml_dataset_len(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataset_len(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -133,7 +134,7 @@ extern "C" fn std_ml_dataset_len(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_dataset_map_features(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataset_map_features(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -170,7 +171,7 @@ extern "C" fn std_ml_dataset_map_features(ctx: *mut SpectraHostCallContext) -> i
     }
 }
 
-extern "C" fn std_ml_dataset_filter_label_min(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataset_filter_label_min(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -219,7 +220,7 @@ extern "C" fn std_ml_dataset_filter_label_min(ctx: *mut SpectraHostCallContext) 
     }
 }
 
-fn std_ml_dataset_split(ctx: *mut SpectraHostCallContext, train: bool) -> i32 {
+pub(crate) fn std_ml_dataset_split(ctx: *mut SpectraHostCallContext, train: bool) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -248,15 +249,15 @@ fn std_ml_dataset_split(ctx: *mut SpectraHostCallContext, train: bool) -> i32 {
     }
 }
 
-extern "C" fn std_ml_dataset_train_split(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataset_train_split(ctx: *mut SpectraHostCallContext) -> i32 {
     std_ml_dataset_split(ctx, true)
 }
 
-extern "C" fn std_ml_dataset_test_split(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataset_test_split(ctx: *mut SpectraHostCallContext) -> i32 {
     std_ml_dataset_split(ctx, false)
 }
 
-extern "C" fn std_ml_dataloader_new(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataloader_new(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -280,7 +281,7 @@ extern "C" fn std_ml_dataloader_new(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_dataloader_batch_count(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataloader_batch_count(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -296,7 +297,7 @@ extern "C" fn std_ml_dataloader_batch_count(ctx: *mut SpectraHostCallContext) ->
     }
 }
 
-fn ml_batch_indices(len: usize, batch_size: usize, batch_index: usize, seed: u64) -> Vec<usize> {
+pub(crate) fn ml_batch_indices(len: usize, batch_size: usize, batch_index: usize, seed: u64) -> Vec<usize> {
     let start = batch_index.saturating_mul(batch_size);
     let end = (start + batch_size).min(len);
     let mut indices = (start..end).collect::<Vec<_>>();
@@ -311,7 +312,7 @@ fn ml_batch_indices(len: usize, batch_size: usize, batch_index: usize, seed: u64
     indices
 }
 
-fn std_ml_dataloader_batch(ctx: *mut SpectraHostCallContext, labels: bool) -> i32 {
+pub(crate) fn std_ml_dataloader_batch(ctx: *mut SpectraHostCallContext, labels: bool) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -358,15 +359,15 @@ fn std_ml_dataloader_batch(ctx: *mut SpectraHostCallContext, labels: bool) -> i3
     }
 }
 
-extern "C" fn std_ml_dataloader_batch_features(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataloader_batch_features(ctx: *mut SpectraHostCallContext) -> i32 {
     std_ml_dataloader_batch(ctx, false)
 }
 
-extern "C" fn std_ml_dataloader_batch_labels(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataloader_batch_labels(ctx: *mut SpectraHostCallContext) -> i32 {
     std_ml_dataloader_batch(ctx, true)
 }
 
-extern "C" fn std_ml_dataframe_from_csv(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataframe_from_csv(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -385,7 +386,7 @@ extern "C" fn std_ml_dataframe_from_csv(ctx: *mut SpectraHostCallContext) -> i32
     }
 }
 
-extern "C" fn std_ml_dataframe_rows(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataframe_rows(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -402,7 +403,7 @@ extern "C" fn std_ml_dataframe_rows(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_dataframe_cols(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataframe_cols(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -419,7 +420,7 @@ extern "C" fn std_ml_dataframe_cols(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_dataframe_column(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dataframe_column(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;

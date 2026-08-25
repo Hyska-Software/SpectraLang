@@ -1,5 +1,6 @@
+use super::*;
 impl AsyncTaskRegistry {
-    fn take_stream_chunk_sum(&mut self, stream_id: SpectraHostValue) -> Option<SpectraHostValue> {
+    pub(crate) fn take_stream_chunk_sum(&mut self, stream_id: SpectraHostValue) -> Option<SpectraHostValue> {
         let stream = self.streams.get_mut(stream_id)?;
         let value = stream.chunk_items.iter().copied().sum();
         stream.chunk_items.clear();
@@ -7,7 +8,7 @@ impl AsyncTaskRegistry {
     }
 }
 
-fn map_stream_value(
+pub(crate) fn map_stream_value(
     value: SpectraHostValue,
     op: SpectraHostValue,
     arg: SpectraHostValue,
@@ -23,7 +24,7 @@ fn map_stream_value(
     }
 }
 
-fn filter_stream_value(
+pub(crate) fn filter_stream_value(
     value: SpectraHostValue,
     predicate: SpectraHostValue,
     arg: SpectraHostValue,
@@ -41,7 +42,7 @@ fn filter_stream_value(
     }
 }
 
-fn fold_stream_value(
+pub(crate) fn fold_stream_value(
     accumulator: SpectraHostValue,
     value: SpectraHostValue,
     op: SpectraHostValue,
@@ -55,14 +56,14 @@ fn fold_stream_value(
     }
 }
 
-type BackgroundJob = Box<dyn FnOnce() + Send + 'static>;
-type BackgroundCancelHook = Arc<dyn Fn() + Send + Sync + 'static>;
+pub(crate) type BackgroundJob = Box<dyn FnOnce() + Send + 'static>;
+pub(crate) type BackgroundCancelHook = Arc<dyn Fn() + Send + Sync + 'static>;
 
-struct BackgroundWorkerQueue {
-    sender: mpsc::SyncSender<BackgroundJob>,
+pub(crate) struct BackgroundWorkerQueue {
+    pub(crate) sender: mpsc::SyncSender<BackgroundJob>,
 }
 
-fn background_worker_queue() -> &'static BackgroundWorkerQueue {
+pub(crate) fn background_worker_queue() -> &'static BackgroundWorkerQueue {
     static QUEUE: OnceLock<BackgroundWorkerQueue> = OnceLock::new();
     QUEUE.get_or_init(|| {
         let (sender, receiver) = mpsc::sync_channel::<BackgroundJob>(128);
@@ -84,7 +85,7 @@ fn background_worker_queue() -> &'static BackgroundWorkerQueue {
     })
 }
 
-fn background_io_worker_queue() -> &'static BackgroundWorkerQueue {
+pub(crate) fn background_io_worker_queue() -> &'static BackgroundWorkerQueue {
     static QUEUE: OnceLock<BackgroundWorkerQueue> = OnceLock::new();
     QUEUE.get_or_init(|| {
         let (sender, receiver) = mpsc::sync_channel::<BackgroundJob>(128);
@@ -106,14 +107,14 @@ fn background_io_worker_queue() -> &'static BackgroundWorkerQueue {
     })
 }
 
-fn background_cancel_hooks(
+pub(crate) fn background_cancel_hooks(
 ) -> &'static Mutex<HashMap<SpectraHostValue, BackgroundCancelHook>> {
     static HOOKS: OnceLock<Mutex<HashMap<SpectraHostValue, BackgroundCancelHook>>> =
         OnceLock::new();
     HOOKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn background_task_lifecycle() -> &'static Mutex<()> {
+pub(crate) fn background_task_lifecycle() -> &'static Mutex<()> {
     static LIFECYCLE: OnceLock<Mutex<()>> = OnceLock::new();
     LIFECYCLE.get_or_init(|| Mutex::new(()))
 }

@@ -1,19 +1,20 @@
+use super::*;
 // ── std.collections map ─────────────────────────────────────────────────────
 
-const MAP_NEW: &str = "spectra.std.collections.map_new";
-const MAP_SET: &str = "spectra.std.collections.map_set";
-const MAP_GET: &str = spectra_contract::STD_COLLECTIONS_MAP_GET_BINDING;
-const MAP_GET_OPTION: &str = spectra_contract::STD_COLLECTIONS_MAP_GET_OPTION_BINDING;
-const MAP_GET_COMPAT: &str = spectra_contract::STD_COMPAT_COLLECTIONS_MAP_GET_BINDING;
-const MAP_CONTAINS: &str = "spectra.std.collections.map_contains";
-const MAP_REMOVE: &str = spectra_contract::STD_COLLECTIONS_MAP_REMOVE_BINDING;
-const MAP_REMOVE_OPTION: &str = spectra_contract::STD_COLLECTIONS_MAP_REMOVE_OPTION_BINDING;
-const MAP_REMOVE_COMPAT: &str = spectra_contract::STD_COMPAT_COLLECTIONS_MAP_REMOVE_BINDING;
-const MAP_LEN: &str = "spectra.std.collections.map_len";
-const MAP_CLEAR: &str = "spectra.std.collections.map_clear";
-const MAP_FREE: &str = "spectra.std.collections.map_free";
+pub(crate) const MAP_NEW: &str = "spectra.std.collections.map_new";
+pub(crate) const MAP_SET: &str = "spectra.std.collections.map_set";
+pub(crate) const MAP_GET: &str = spectra_contract::STD_COLLECTIONS_MAP_GET_BINDING;
+pub(crate) const MAP_GET_OPTION: &str = spectra_contract::STD_COLLECTIONS_MAP_GET_OPTION_BINDING;
+pub(crate) const MAP_GET_COMPAT: &str = spectra_contract::STD_COMPAT_COLLECTIONS_MAP_GET_BINDING;
+pub(crate) const MAP_CONTAINS: &str = "spectra.std.collections.map_contains";
+pub(crate) const MAP_REMOVE: &str = spectra_contract::STD_COLLECTIONS_MAP_REMOVE_BINDING;
+pub(crate) const MAP_REMOVE_OPTION: &str = spectra_contract::STD_COLLECTIONS_MAP_REMOVE_OPTION_BINDING;
+pub(crate) const MAP_REMOVE_COMPAT: &str = spectra_contract::STD_COMPAT_COLLECTIONS_MAP_REMOVE_BINDING;
+pub(crate) const MAP_LEN: &str = "spectra.std.collections.map_len";
+pub(crate) const MAP_CLEAR: &str = "spectra.std.collections.map_clear";
+pub(crate) const MAP_FREE: &str = "spectra.std.collections.map_free";
 
-fn register_map() {
+pub(crate) fn register_map() {
     register_host_function(MAP_NEW, std_map_new);
     register_host_function(MAP_SET, std_map_set);
     register_host_function(MAP_GET, std_map_get_option);
@@ -28,36 +29,36 @@ fn register_map() {
     register_host_function(MAP_FREE, std_map_free);
 }
 
-struct MapRegistry {
-    maps: HandleTable<Arc<Mutex<StdMap>>>,
+pub(crate) struct MapRegistry {
+    pub(crate) maps: HandleTable<Arc<Mutex<StdMap>>>,
 }
 
 #[derive(Default)]
-struct StdMap {
-    data: HashMap<CollectionKey, SpectraHostValue>,
+pub(crate) struct StdMap {
+    pub(crate) data: HashMap<CollectionKey, SpectraHostValue>,
 }
 
 impl MapRegistry {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             maps: HandleTable::new(HandleKind::Map),
         }
     }
 
-    fn insert(&mut self, map: Arc<Mutex<StdMap>>) -> usize {
+    pub(crate) fn insert(&mut self, map: Arc<Mutex<StdMap>>) -> usize {
         self.maps.insert(map).raw() as usize
     }
 
-    fn id(handle: usize) -> Result<HandleId, i32> {
+    pub(crate) fn id(handle: usize) -> Result<HandleId, i32> {
         HandleId::from_raw(handle as i64).map_err(|_| HOST_STATUS_NOT_FOUND)
     }
 
-    fn get(&self, handle: usize) -> Option<Arc<Mutex<StdMap>>> {
+    pub(crate) fn get(&self, handle: usize) -> Option<Arc<Mutex<StdMap>>> {
         let id = Self::id(handle).ok()?;
         self.maps.get(id).ok().cloned()
     }
 
-    fn lookup_value(
+    pub(crate) fn lookup_value(
         &self,
         handle: usize,
         key: SpectraHostValue,
@@ -70,7 +71,7 @@ impl MapRegistry {
             .copied())
     }
 
-    fn keys_snapshot(&self, handle: usize) -> Result<Vec<SpectraHostValue>, i32> {
+    pub(crate) fn keys_snapshot(&self, handle: usize) -> Result<Vec<SpectraHostValue>, i32> {
         let id = Self::id(handle)?;
         let map = self.maps.get(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
         let mut keys = lock_unpoisoned(map)
@@ -82,12 +83,12 @@ impl MapRegistry {
         Ok(keys)
     }
 
-    fn remove(&mut self, handle: usize) -> Result<Arc<Mutex<StdMap>>, i32> {
+    pub(crate) fn remove(&mut self, handle: usize) -> Result<Arc<Mutex<StdMap>>, i32> {
         let id = Self::id(handle)?;
         self.maps.remove(id).map_err(|_| HOST_STATUS_NOT_FOUND)
     }
 
-    fn remove_value(
+    pub(crate) fn remove_value(
         &mut self,
         handle: usize,
         key: SpectraHostValue,
@@ -98,12 +99,12 @@ impl MapRegistry {
     }
 }
 
-fn map_registry() -> &'static Mutex<MapRegistry> {
+pub(crate) fn map_registry() -> &'static Mutex<MapRegistry> {
     static REGISTRY: OnceLock<Mutex<MapRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(MapRegistry::new()))
 }
 
-fn with_map_registry<F, R>(action: F) -> R
+pub(crate) fn with_map_registry<F, R>(action: F) -> R
 where
     F: FnOnce(&mut MapRegistry) -> R,
 {
@@ -113,7 +114,7 @@ where
 }
 
 /// Creates a new empty map and returns its handle.
-extern "C" fn std_map_new(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_map_new(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -131,7 +132,7 @@ extern "C" fn std_map_new(ctx: *mut SpectraHostCallContext) -> i32 {
 
 /// Inserts or updates `key → value` in the map identified by `handle`.
 /// Args: [handle, key, value]. Returns 0.
-extern "C" fn std_map_set(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_map_set(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -160,7 +161,7 @@ extern "C" fn std_map_set(ctx: *mut SpectraHostCallContext) -> i32 {
 
 /// Returns the value for `key` in the map, or 0 if not found.
 /// Args: [handle, key]. Returns: value.
-extern "C" fn std_map_get(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_map_get(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -190,7 +191,7 @@ extern "C" fn std_map_get(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_map_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_map_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -208,7 +209,7 @@ extern "C" fn std_map_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
 
 /// Returns 1 if the map contains `key`, 0 otherwise.
 /// Args: [handle, key]. Returns: bool as i64.
-extern "C" fn std_map_contains(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_map_contains(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -238,7 +239,7 @@ extern "C" fn std_map_contains(ctx: *mut SpectraHostCallContext) -> i32 {
 
 /// Removes `key` from the map. Returns the removed value, or 0 if not present.
 /// Args: [handle, key]. Returns: removed_value.
-extern "C" fn std_map_remove(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_map_remove(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -266,7 +267,7 @@ extern "C" fn std_map_remove(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_map_remove_option(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_map_remove_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -286,7 +287,7 @@ extern "C" fn std_map_remove_option(ctx: *mut SpectraHostCallContext) -> i32 {
 
 /// Returns the number of entries in the map.
 /// Args: [handle]. Returns: len.
-extern "C" fn std_map_len(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_map_len(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -313,7 +314,7 @@ extern "C" fn std_map_len(ctx: *mut SpectraHostCallContext) -> i32 {
 
 /// Removes all entries from the map without freeing the handle.
 /// Args: [handle]. Returns 0.
-extern "C" fn std_map_clear(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_map_clear(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -338,7 +339,7 @@ extern "C" fn std_map_clear(ctx: *mut SpectraHostCallContext) -> i32 {
 
 /// Frees the map and its handle.
 /// Args: [handle].
-extern "C" fn std_map_free(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_map_free(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

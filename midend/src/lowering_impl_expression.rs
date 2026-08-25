@@ -1,5 +1,7 @@
+use super::*;
+
 impl ASTLowering {
-    fn lower_expression(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
         self.builder.set_source_span(Some(self.source_span(expr.span)));
         match &expr.kind {
             ExpressionKind::NumberLiteral(_)

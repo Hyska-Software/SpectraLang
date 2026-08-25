@@ -1,5 +1,7 @@
+use super::*;
+
 impl ASTLowering {
-    fn lower_expression_match(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_match(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
         match &expr.kind {
             ExpressionKind::Match { scrutinee, arms } => {
                 // Lower do valor sendo matcheado
@@ -182,7 +184,7 @@ impl ASTLowering {
 }
 
 /// Padrão que casa com qualquer valor do tipo (irrefutável), ignorando guards.
-fn pattern_is_irrefutable(pattern: &spectra_compiler::ast::Pattern) -> bool {
+pub(crate) fn pattern_is_irrefutable(pattern: &spectra_compiler::ast::Pattern) -> bool {
     use spectra_compiler::ast::Pattern;
 
     match pattern {

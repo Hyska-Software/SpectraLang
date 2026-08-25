@@ -1,4 +1,6 @@
-fn lookup_std_host_function(path: &[String]) -> Option<HostFunctionDescriptor> {
+use super::*;
+
+pub(crate) fn lookup_std_host_function(path: &[String]) -> Option<HostFunctionDescriptor> {
     match path {
         [] => None,
         [first, ..] if first != "std" && first != "spectra" => None,

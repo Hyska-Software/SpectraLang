@@ -1,6 +1,7 @@
+use super::*;
 // ── std.char register & host functions ──────────────────────────────────────
 
-fn register_char() {
+pub(crate) fn register_char() {
     register_host_function(CHAR_IS_ALPHA, std_char_is_alpha);
     register_host_function(CHAR_IS_DIGIT, std_char_is_digit);
     register_host_function(CHAR_IS_WHITESPACE, std_char_is_whitespace);
@@ -11,7 +12,7 @@ fn register_char() {
     register_host_function(CHAR_IS_ALPHANUMERIC, std_char_is_alphanumeric);
 }
 
-extern "C" fn std_char_is_alpha(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_char_is_alpha(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -33,7 +34,7 @@ extern "C" fn std_char_is_alpha(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_char_is_digit(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_char_is_digit(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -55,7 +56,7 @@ extern "C" fn std_char_is_digit(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_char_is_whitespace(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_char_is_whitespace(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -77,7 +78,7 @@ extern "C" fn std_char_is_whitespace(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_char_is_upper(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_char_is_upper(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -99,7 +100,7 @@ extern "C" fn std_char_is_upper(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_char_is_lower(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_char_is_lower(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -122,7 +123,7 @@ extern "C" fn std_char_is_lower(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns the uppercase version of the Unicode code point `c`.
-extern "C" fn std_char_to_upper(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_char_to_upper(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -145,7 +146,7 @@ extern "C" fn std_char_to_upper(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns the lowercase version of the Unicode code point `c`.
-extern "C" fn std_char_to_lower(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_char_to_lower(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -167,7 +168,7 @@ extern "C" fn std_char_to_lower(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_char_is_alphanumeric(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_char_is_alphanumeric(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

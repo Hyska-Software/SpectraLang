@@ -1,16 +1,17 @@
+use super::*;
 // ── std.tensor runtime ──────────────────────────────────────────────────────
 
 pub const NUMERICAL_TOLERANCE_ABS: f64 = 1.0e-9;
 pub const NUMERICAL_TOLERANCE_REL: f64 = 1.0e-9;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TensorDType {
+pub(crate) enum TensorDType {
     Int,
     Float,
 }
 
 impl TensorDType {
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Int => "int",
             Self::Float => "float",
@@ -19,13 +20,13 @@ impl TensorDType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TensorLayout {
+pub(crate) enum TensorLayout {
     Contiguous,
     View,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TensorDevice {
+pub(crate) enum TensorDevice {
     Cpu,
     Cuda,
     Rocm,
@@ -36,7 +37,7 @@ enum TensorDevice {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TensorPrecision {
+pub(crate) enum TensorPrecision {
     F64,
     F32,
     F16,
@@ -44,7 +45,7 @@ enum TensorPrecision {
 }
 
 impl TensorPrecision {
-    fn from_code(code: SpectraHostValue) -> Option<Self> {
+    pub(crate) fn from_code(code: SpectraHostValue) -> Option<Self> {
         match code {
             0 => Some(Self::F64),
             1 => Some(Self::F32),
@@ -54,7 +55,7 @@ impl TensorPrecision {
         }
     }
 
-    fn code(self) -> SpectraHostValue {
+    pub(crate) fn code(self) -> SpectraHostValue {
         match self {
             Self::F64 => 0,
             Self::F32 => 1,
@@ -63,7 +64,7 @@ impl TensorPrecision {
         }
     }
 
-    fn quantize(self, value: f64) -> f64 {
+    pub(crate) fn quantize(self, value: f64) -> f64 {
         match self {
             Self::F64 => value,
             Self::F32 => value as f32 as f64,
@@ -74,7 +75,7 @@ impl TensorPrecision {
 }
 
 impl TensorDevice {
-    fn from_code(code: SpectraHostValue) -> Option<Self> {
+    pub(crate) fn from_code(code: SpectraHostValue) -> Option<Self> {
         match code {
             0 => Some(Self::Cpu),
             1 => Some(Self::Cuda),
@@ -87,7 +88,7 @@ impl TensorDevice {
         }
     }
 
-    fn code(self) -> SpectraHostValue {
+    pub(crate) fn code(self) -> SpectraHostValue {
         match self {
             Self::Cpu => 0,
             Self::Cuda => 1,
@@ -99,7 +100,7 @@ impl TensorDevice {
         }
     }
 
-    fn is_available(self) -> bool {
+    pub(crate) fn is_available(self) -> bool {
         match self {
             Self::Cpu => true,
             Self::Wgpu => {
@@ -122,15 +123,15 @@ impl TensorDevice {
     /// `HOST_STATUS_INVALID_ARGUMENT` to the caller, not as a fake
     /// "reserved but not implemented" status that misleads users into
     /// expecting a future backend.
-    fn is_implemented(self) -> bool {
+    pub(crate) fn is_implemented(self) -> bool {
         matches!(self, Self::Cpu | Self::Wgpu)
     }
 
-    fn is_accelerator(self) -> bool {
+    pub(crate) fn is_accelerator(self) -> bool {
         !matches!(self, Self::Cpu)
     }
 
-    fn status_code(self) -> SpectraHostValue {
+    pub(crate) fn status_code(self) -> SpectraHostValue {
         if self.is_available() {
             return 0;
         }
@@ -143,7 +144,7 @@ impl TensorDevice {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AutogradOp {
+pub(crate) enum AutogradOp {
     Add,
     Sub,
     Mul,
@@ -170,23 +171,23 @@ enum AutogradOp {
 }
 
 #[derive(Debug, Clone)]
-struct AutogradNode {
-    op: AutogradOp,
-    parents: Vec<usize>,
-    input_shape: Vec<usize>,
-    left_shape: Vec<usize>,
-    right_shape: Vec<usize>,
-    input: Vec<f64>,
-    output: Vec<f64>,
-    left: Vec<f64>,
-    right: Vec<f64>,
-    aux: Vec<usize>,
+pub(crate) struct AutogradNode {
+    pub(crate) op: AutogradOp,
+    pub(crate) parents: Vec<usize>,
+    pub(crate) input_shape: Vec<usize>,
+    pub(crate) left_shape: Vec<usize>,
+    pub(crate) right_shape: Vec<usize>,
+    pub(crate) input: Vec<f64>,
+    pub(crate) output: Vec<f64>,
+    pub(crate) left: Vec<f64>,
+    pub(crate) right: Vec<f64>,
+    pub(crate) aux: Vec<usize>,
     #[cfg(feature = "gpu")]
-    device_aux: Option<crate::gpu::DeviceBuffer>,
+    pub(crate) device_aux: Option<crate::gpu::DeviceBuffer>,
 }
 
 impl AutogradNode {
-    fn unary(
+    pub(crate) fn unary(
         op: AutogradOp,
         parent: usize,
         input_shape: Vec<usize>,
@@ -209,7 +210,7 @@ impl AutogradNode {
         }
     }
 
-    fn binary(
+    pub(crate) fn binary(
         op: AutogradOp,
         left_parent: usize,
         right_parent: usize,
@@ -235,33 +236,33 @@ impl AutogradNode {
 }
 
 #[derive(Debug, Clone)]
-struct StdTensor {
-    dtype: TensorDType,
-    shape: Vec<usize>,
-    strides: Vec<usize>,
-    storage: Arc<Vec<SpectraHostValue>>,
-    offset: usize,
-    layout: TensorLayout,
-    device: TensorDevice,
-    precision: TensorPrecision,
-    requires_grad: bool,
-    grad: Option<Vec<f64>>,
-    creator: Option<AutogradNode>,
+pub(crate) struct StdTensor {
+    pub(crate) dtype: TensorDType,
+    pub(crate) shape: Vec<usize>,
+    pub(crate) strides: Vec<usize>,
+    pub(crate) storage: Arc<Vec<SpectraHostValue>>,
+    pub(crate) offset: usize,
+    pub(crate) layout: TensorLayout,
+    pub(crate) device: TensorDevice,
+    pub(crate) precision: TensorPrecision,
+    pub(crate) requires_grad: bool,
+    pub(crate) grad: Option<Vec<f64>>,
+    pub(crate) creator: Option<AutogradNode>,
     /// R-3052 (minimal): optional device-resident buffers, keyed by the
     /// pool's device tag. Populated by `to_device` after R-3021 lands.
     /// Not yet read by the GPU op sites — that is R-3052 full.
     #[cfg(feature = "gpu")]
-    device_storage: std::collections::HashMap<crate::gpu::PoolDevice, crate::gpu::DeviceBuffer>,
+    pub(crate) device_storage: std::collections::HashMap<crate::gpu::PoolDevice, crate::gpu::DeviceBuffer>,
     /// R-3052 full: optional device-resident gradient buffer, keyed by
     /// the pool's device tag. Populated by the GPU backward path when
     /// the parent is device-resident; consumed by the residency-aware
     /// `sgd_step`. Mirrors `device_storage` for the grad slot.
     #[cfg(feature = "gpu")]
-    device_grad: std::collections::HashMap<crate::gpu::PoolDevice, crate::gpu::DeviceBuffer>,
+    pub(crate) device_grad: std::collections::HashMap<crate::gpu::PoolDevice, crate::gpu::DeviceBuffer>,
 }
 
 impl StdTensor {
-    fn new(dtype: TensorDType, shape: Vec<usize>, data: Vec<SpectraHostValue>) -> Option<Self> {
+    pub(crate) fn new(dtype: TensorDType, shape: Vec<usize>, data: Vec<SpectraHostValue>) -> Option<Self> {
         let expected_len = shape
             .iter()
             .try_fold(1usize, |acc, dim| acc.checked_mul(*dim))?;
@@ -278,7 +279,7 @@ impl StdTensor {
         )
     }
 
-    fn from_storage(
+    pub(crate) fn from_storage(
         dtype: TensorDType,
         shape: Vec<usize>,
         strides: Vec<usize>,
@@ -321,13 +322,13 @@ impl StdTensor {
         })
     }
 
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.shape
             .iter()
             .fold(1usize, |acc, dim| acc.saturating_mul(*dim))
     }
 
-    fn offset(&self, indices: &[usize]) -> Option<usize> {
+    pub(crate) fn offset(&self, indices: &[usize]) -> Option<usize> {
         if indices.len() != self.shape.len() {
             return None;
         }
@@ -345,7 +346,7 @@ impl StdTensor {
         Some(offset)
     }
 
-    fn linear_offset(&self, index: usize) -> Option<usize> {
+    pub(crate) fn linear_offset(&self, index: usize) -> Option<usize> {
         if index >= self.len() {
             return None;
         }
@@ -364,12 +365,12 @@ impl StdTensor {
         Some(offset)
     }
 
-    fn value_at_linear(&self, index: usize) -> Option<SpectraHostValue> {
+    pub(crate) fn value_at_linear(&self, index: usize) -> Option<SpectraHostValue> {
         let offset = self.linear_offset(index)?;
         self.storage.get(offset).copied()
     }
 
-    fn materialize(&self) -> Vec<SpectraHostValue> {
+    pub(crate) fn materialize(&self) -> Vec<SpectraHostValue> {
         if self.layout == TensorLayout::Contiguous
             && self.offset == 0
             && self.storage.len() == self.len()
@@ -381,7 +382,7 @@ impl StdTensor {
             .collect()
     }
 
-    fn set_linear(&mut self, index: usize, value: SpectraHostValue) -> bool {
+    pub(crate) fn set_linear(&mut self, index: usize, value: SpectraHostValue) -> bool {
         let Some(offset) = self.linear_offset(index) else {
             return false;
         };
@@ -393,43 +394,43 @@ impl StdTensor {
         true
     }
 
-    fn storage_bytes(&self) -> usize {
+    pub(crate) fn storage_bytes(&self) -> usize {
         self.len()
             .saturating_mul(std::mem::size_of::<SpectraHostValue>())
     }
 
-    fn is_contiguous(&self) -> bool {
+    pub(crate) fn is_contiguous(&self) -> bool {
         self.layout == TensorLayout::Contiguous && self.strides == tensor_strides(&self.shape)
     }
 }
 
-struct TensorRegistry {
-    tensors: HandleTable<ManualBox<StdTensor>>,
-    pool: Vec<Vec<SpectraHostValue>>,
-    metrics: TensorMetrics,
-    memory_step: usize,
-    lifetimes: Vec<TensorLifetimeRecord>,
-    active_lifetimes: HashMap<usize, usize>,
+pub(crate) struct TensorRegistry {
+    pub(crate) tensors: HandleTable<ManualBox<StdTensor>>,
+    pub(crate) pool: Vec<Vec<SpectraHostValue>>,
+    pub(crate) metrics: TensorMetrics,
+    pub(crate) memory_step: usize,
+    pub(crate) lifetimes: Vec<TensorLifetimeRecord>,
+    pub(crate) active_lifetimes: HashMap<usize, usize>,
     /// R-3051: device buffer pool. Source of truth for the
     /// `stats_device_pool_*` host calls. Held inside the registry
     /// mutex, no extra lock surface.
     #[cfg(feature = "gpu")]
-    device_arena: crate::gpu::DeviceArena,
+    pub(crate) device_arena: crate::gpu::DeviceArena,
 }
 
 #[derive(Debug, Clone)]
-struct TensorLifetimeRecord {
-    handle: usize,
-    dtype: TensorDType,
-    shape: Vec<usize>,
-    bytes: usize,
-    allocation_step: usize,
-    release_step: Option<usize>,
-    allocation_site: String,
+pub(crate) struct TensorLifetimeRecord {
+    pub(crate) handle: usize,
+    pub(crate) dtype: TensorDType,
+    pub(crate) shape: Vec<usize>,
+    pub(crate) bytes: usize,
+    pub(crate) allocation_step: usize,
+    pub(crate) release_step: Option<usize>,
+    pub(crate) allocation_site: String,
 }
 
 impl TensorRegistry {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             tensors: HandleTable::new(HandleKind::Tensor),
             pool: Vec::new(),
@@ -442,7 +443,7 @@ impl TensorRegistry {
         }
     }
 
-    fn insert(
+    pub(crate) fn insert(
         &mut self,
         tensor: ManualBox<StdTensor>,
         allocation_site: impl Into<String>,
@@ -474,7 +475,7 @@ impl TensorRegistry {
         handle
     }
 
-    fn remove(&mut self, handle: usize) -> Result<(), i32> {
+    pub(crate) fn remove(&mut self, handle: usize) -> Result<(), i32> {
         let id = HandleId::from_raw(handle as i64).map_err(|_| HOST_STATUS_NOT_FOUND)?;
         if let Ok(tensor) = self.tensors.remove(id) {
             self.mark_released(handle);
@@ -485,7 +486,7 @@ impl TensorRegistry {
         }
     }
 
-    fn clear_all(&mut self) -> usize {
+    pub(crate) fn clear_all(&mut self) -> usize {
         let tensors = self.tensors.drain();
         let count = tensors.len();
         let handles = tensors
@@ -501,29 +502,29 @@ impl TensorRegistry {
         count
     }
 
-    fn get(&self, handle: usize) -> Option<&StdTensor> {
+    pub(crate) fn get(&self, handle: usize) -> Option<&StdTensor> {
         let id = HandleId::from_raw(handle as i64).ok()?;
         self.tensors.get(id).ok().map(|boxed| boxed.as_ref())
     }
 
-    fn get_mut(&mut self, handle: usize) -> Option<&mut StdTensor> {
+    pub(crate) fn get_mut(&mut self, handle: usize) -> Option<&mut StdTensor> {
         let id = HandleId::from_raw(handle as i64).ok()?;
         self.tensors.get_mut(id).ok().map(|boxed| boxed.as_mut())
     }
 
-    fn take(&mut self, handle: usize) -> Option<ManualBox<StdTensor>> {
+    pub(crate) fn take(&mut self, handle: usize) -> Option<ManualBox<StdTensor>> {
         let id = HandleId::from_raw(handle as i64).ok()?;
         self.tensors.take(id).ok()
     }
 
-    fn put(&mut self, handle: usize, tensor: ManualBox<StdTensor>) -> bool {
+    pub(crate) fn put(&mut self, handle: usize, tensor: ManualBox<StdTensor>) -> bool {
         let Some(id) = HandleId::from_raw(handle as i64).ok() else {
             return false;
         };
         self.tensors.put(id, tensor).is_ok()
     }
 
-    fn mark_released(&mut self, handle: usize) {
+    pub(crate) fn mark_released(&mut self, handle: usize) {
         self.memory_step = self.memory_step.saturating_add(1);
         if let Some(index) = self.active_lifetimes.remove(&handle) {
             if let Some(record) = self.lifetimes.get_mut(index) {
@@ -532,7 +533,7 @@ impl TensorRegistry {
         }
     }
 
-    fn recycle_tensor(&mut self, tensor: ManualBox<StdTensor>) {
+    pub(crate) fn recycle_tensor(&mut self, tensor: ManualBox<StdTensor>) {
         #[allow(unused_mut)]
         let mut tensor = tensor.into_inner();
         let bytes = tensor.storage_bytes();
@@ -569,7 +570,7 @@ impl TensorRegistry {
         }
     }
 
-    fn take_buffer(&mut self, len: usize) -> Vec<SpectraHostValue> {
+    pub(crate) fn take_buffer(&mut self, len: usize) -> Vec<SpectraHostValue> {
         if let Some(buffer) = self.take_buffer_unfilled(len) {
             self.metrics.reused_buffers = self.metrics.reused_buffers.saturating_add(1);
             self.metrics.pool_hits = self.metrics.pool_hits.saturating_add(1);
@@ -580,7 +581,7 @@ impl TensorRegistry {
         }
     }
 
-    fn take_buffer_unfilled(&mut self, len: usize) -> Option<Vec<SpectraHostValue>> {
+    pub(crate) fn take_buffer_unfilled(&mut self, len: usize) -> Option<Vec<SpectraHostValue>> {
         let index = self
             .pool
             .iter()
@@ -597,30 +598,30 @@ impl TensorRegistry {
     }
 
     #[allow(dead_code)]
-    fn reset_pool(&mut self) {
+    pub(crate) fn reset_pool(&mut self) {
         self.pool.clear();
     }
 
-    fn note_kernel(&mut self, elements: usize) {
+    pub(crate) fn note_kernel(&mut self, elements: usize) {
         self.metrics.kernel_ops = self.metrics.kernel_ops.saturating_add(1);
         self.metrics.kernel_elements = self.metrics.kernel_elements.saturating_add(elements);
     }
 
-    fn note_scratch_reuse(&mut self) {
+    pub(crate) fn note_scratch_reuse(&mut self) {
         self.metrics.scratch_reuses = self.metrics.scratch_reuses.saturating_add(1);
     }
 
-    fn note_device_transfer(&mut self) {
+    pub(crate) fn note_device_transfer(&mut self) {
         self.metrics.device_transfers = self.metrics.device_transfers.saturating_add(1);
     }
 
     #[allow(dead_code)]
-    fn note_gpu_kernel(&mut self) {
+    pub(crate) fn note_gpu_kernel(&mut self) {
         self.metrics.gpu_kernel_ops = self.metrics.gpu_kernel_ops.saturating_add(1);
     }
 
     #[allow(dead_code)]
-    fn note_cpu_fallback(&mut self) {
+    pub(crate) fn note_cpu_fallback(&mut self) {
         self.metrics.cpu_fallbacks = self.metrics.cpu_fallbacks.saturating_add(1);
     }
 
@@ -630,7 +631,7 @@ impl TensorRegistry {
     /// of truth; this counter is the rolled-up view exposed through
     /// `stats_device_resident_tensors`.
     #[allow(dead_code)]
-    fn note_device_resident(&mut self) {
+    pub(crate) fn note_device_resident(&mut self) {
         self.metrics.device_resident_tensors =
             self.metrics.device_resident_tensors.saturating_add(1);
     }
@@ -638,7 +639,7 @@ impl TensorRegistry {
     /// R-3023: record a typed GPU error so callers can see per-kind
     /// counters via `std_tensor_stats_gpu_errors(kind)`.
     #[cfg(feature = "gpu")]
-    fn note_gpu_error(&mut self, kind: crate::gpu::GpuErrorKind) {
+    pub(crate) fn note_gpu_error(&mut self, kind: crate::gpu::GpuErrorKind) {
         let code = kind.code();
         if (0..self.metrics.gpu_errors.len() as i32).contains(&code) {
             self.metrics.gpu_errors[code as usize] =
@@ -652,11 +653,11 @@ impl TensorRegistry {
     /// ever incremented in this build (which is unreachable in practice).
     #[cfg(not(feature = "gpu"))]
     #[allow(dead_code)]
-    fn note_gpu_error(&mut self, _kind: u8) {
+    pub(crate) fn note_gpu_error(&mut self, _kind: u8) {
         self.metrics.gpu_errors[6] = self.metrics.gpu_errors[6].saturating_add(1);
     }
 
-    fn reset_metrics(&mut self) {
+    pub(crate) fn reset_metrics(&mut self) {
         let active_tensors = self.tensors.len();
         let active_bytes = self
             .tensors
@@ -704,7 +705,7 @@ impl TensorRegistry {
         }
     }
 
-    fn allocation_site_count(&self) -> usize {
+    pub(crate) fn allocation_site_count(&self) -> usize {
         self.lifetimes
             .iter()
             .map(|record| record.allocation_site.as_str())
@@ -712,14 +713,14 @@ impl TensorRegistry {
             .len()
     }
 
-    fn released_lifetime_count(&self) -> usize {
+    pub(crate) fn released_lifetime_count(&self) -> usize {
         self.lifetimes
             .iter()
             .filter(|record| record.release_step.is_some())
             .count()
     }
 
-    fn reuse_rate_per_mille(&self) -> usize {
+    pub(crate) fn reuse_rate_per_mille(&self) -> usize {
         let total = self
             .metrics
             .pool_hits
@@ -730,7 +731,7 @@ impl TensorRegistry {
         self.metrics.pool_hits.saturating_mul(1000) / total
     }
 
-    fn memory_report_json(&self) -> String {
+    pub(crate) fn memory_report_json(&self) -> String {
         let mut out = String::new();
         out.push_str("{\"schema\":\"spectra.tensor.memory_report.v1\"");
         out.push_str(&format!(
@@ -797,41 +798,41 @@ impl TensorRegistry {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-struct TensorMetrics {
-    allocations: usize,
-    active_tensors: usize,
-    active_bytes: usize,
-    peak_bytes: usize,
-    reused_buffers: usize,
-    pool_hits: usize,
-    pool_misses: usize,
-    scratch_reuses: usize,
-    kernel_ops: usize,
-    kernel_elements: usize,
-    device_transfers: usize,
-    gpu_kernel_ops: usize,
-    cpu_fallbacks: usize,
+pub(crate) struct TensorMetrics {
+    pub(crate) allocations: usize,
+    pub(crate) active_tensors: usize,
+    pub(crate) active_bytes: usize,
+    pub(crate) peak_bytes: usize,
+    pub(crate) reused_buffers: usize,
+    pub(crate) pool_hits: usize,
+    pub(crate) pool_misses: usize,
+    pub(crate) scratch_reuses: usize,
+    pub(crate) kernel_ops: usize,
+    pub(crate) kernel_elements: usize,
+    pub(crate) device_transfers: usize,
+    pub(crate) gpu_kernel_ops: usize,
+    pub(crate) cpu_fallbacks: usize,
     /// R-3052: number of tensors that currently live on a device
     /// (incremented on `to_device`, decremented on free/reset). Surface
     /// of residency through `std_tensor_stats_device_resident_tensors`.
-    device_resident_tensors: usize,
+    pub(crate) device_resident_tensors: usize,
     /// Per-kind GPU error counter (R-3023). Indexed by `GpuErrorKind::code()`.
     /// 0 = ShapeMismatch, 1 = ShaderCompile, 2 = BufferAlloc, 3 = Dispatch,
     /// 4 = Readback, 5 = FeatureUnsupported, 6 = Other.
-    gpu_errors: [usize; 7],
+    pub(crate) gpu_errors: [usize; 7],
 }
 
-fn tensor_registry() -> &'static Mutex<TensorRegistry> {
+pub(crate) fn tensor_registry() -> &'static Mutex<TensorRegistry> {
     static REGISTRY: OnceLock<Mutex<TensorRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(TensorRegistry::new()))
 }
 
-fn tensor_grad_enabled() -> &'static Mutex<bool> {
+pub(crate) fn tensor_grad_enabled() -> &'static Mutex<bool> {
     static ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
     ENABLED.get_or_init(|| Mutex::new(true))
 }
 
-fn tensor_deterministic_mode() -> &'static Mutex<bool> {
+pub(crate) fn tensor_deterministic_mode() -> &'static Mutex<bool> {
     static ENABLED: OnceLock<Mutex<bool>> = OnceLock::new();
     ENABLED.get_or_init(|| Mutex::new(false))
 }
@@ -840,17 +841,17 @@ fn tensor_deterministic_mode() -> &'static Mutex<bool> {
 /// without falling back to CPU. Lives outside `TensorRegistry` because
 /// the increment happens inside the autograd hot path, where the
 /// registry mutex is already held. Cleared on `reset_stats`.
-fn gpu_backward_ops_counter() -> &'static std::sync::atomic::AtomicUsize {
+pub(crate) fn gpu_backward_ops_counter() -> &'static std::sync::atomic::AtomicUsize {
     static COUNTER: OnceLock<std::sync::atomic::AtomicUsize> = OnceLock::new();
     COUNTER.get_or_init(|| std::sync::atomic::AtomicUsize::new(0))
 }
 
-fn note_gpu_backward_op() {
+pub(crate) fn note_gpu_backward_op() {
     gpu_backward_ops_counter().fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
 #[allow(dead_code)]
-fn _ensure_note_gpu_backward_op_linked() {
+pub(crate) fn _ensure_note_gpu_backward_op_linked() {
     note_gpu_backward_op();
 }
 

@@ -1,5 +1,7 @@
+use super::*;
+
 impl ASTLowering {
-    fn lower_range_expression(
+    pub(crate) fn lower_range_expression(
         &mut self,
         start: &Expression,
         end: &Expression,
@@ -29,7 +31,7 @@ impl ASTLowering {
         )
     }
 
-    fn lower_iterator_for_loop(
+    pub(crate) fn lower_iterator_for_loop(
         &mut self,
         for_stmt: &spectra_compiler::ast::ForLoop,
         iterator_value: Value,
@@ -147,7 +149,7 @@ impl ASTLowering {
     /// parameter. Used to keep unsized `[T]` array parameters (whose recorded
     /// size is the annotation placeholder 0) out of the statically-empty
     /// zero-trip path: their true length lives with the caller.
-    fn binding_is_parameter(&self, value: &Value) -> bool {
+    pub(crate) fn binding_is_parameter(&self, value: &Value) -> bool {
         self.current_function
             .as_ref()
             .is_some_and(|function| function.params.len() > value.id)
@@ -160,7 +162,7 @@ impl ASTLowering {
     /// block so the index still advances before the next condition check.
     #[allow(clippy::too_many_statements)]
 
-    fn lower_array_index_for_loop(
+    pub(crate) fn lower_array_index_for_loop(
         &mut self,
         for_stmt: &spectra_compiler::ast::ForLoop,
         array_ptr: Value,
@@ -243,7 +245,7 @@ impl ASTLowering {
         self.builder.set_current_block(exit_block);
     }
 
-    fn lower_for_loop_via_iterator(
+    pub(crate) fn lower_for_loop_via_iterator(
         &mut self,
         for_stmt: &spectra_compiler::ast::ForLoop,
         ir_func: &mut IRFunction,

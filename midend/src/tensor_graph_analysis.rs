@@ -1,17 +1,22 @@
-struct FusedTensorNode {
-    old_node_ids: Vec<usize>,
-    node: TensorGraphNode,
+use super::*;
+
+use crate::ir::{Type, Value};
+
+use std::collections::{BTreeMap, HashMap, HashSet};
+pub(crate) struct FusedTensorNode {
+    pub(crate) old_node_ids: Vec<usize>,
+    pub(crate) node: TensorGraphNode,
 }
 
 impl TensorGraphNode {
-    fn with_id(mut self, id: usize) -> Self {
+    pub(crate) fn with_id(mut self, id: usize) -> Self {
         self.id = id;
         self
     }
 }
 
 impl TensorGraphError {
-    fn new(
+    pub(crate) fn new(
         function: &str,
         node: Option<usize>,
         kind: TensorGraphErrorKind,
@@ -27,14 +32,14 @@ impl TensorGraphError {
 }
 
 #[derive(Default)]
-struct TensorGraphExtractor {
-    nodes: Vec<TensorGraphNode>,
-    value_to_node: HashMap<usize, usize>,
-    constants: HashMap<usize, i64>,
+pub(crate) struct TensorGraphExtractor {
+    pub(crate) nodes: Vec<TensorGraphNode>,
+    pub(crate) value_to_node: HashMap<usize, usize>,
+    pub(crate) constants: HashMap<usize, i64>,
 }
 
 impl TensorGraphExtractor {
-    fn fold_const_int(
+    pub(crate) fn fold_const_int(
         &mut self,
         result: Value,
         lhs: Value,
@@ -44,7 +49,7 @@ impl TensorGraphExtractor {
         self.fold_const_int_checked(result, lhs, rhs, |left, right| Some(op(left, right)));
     }
 
-    fn fold_const_int_checked(
+    pub(crate) fn fold_const_int_checked(
         &mut self,
         result: Value,
         lhs: Value,
@@ -60,7 +65,7 @@ impl TensorGraphExtractor {
         }
     }
 
-    fn lower_host_call(
+    pub(crate) fn lower_host_call(
         &mut self,
         block: usize,
         instruction: usize,
@@ -100,7 +105,7 @@ impl TensorGraphExtractor {
         self.value_to_node.insert(value.id, id);
     }
 
-    fn node_for_input(&mut self, value: Value, block: usize, instruction: usize) -> usize {
+    pub(crate) fn node_for_input(&mut self, value: Value, block: usize, instruction: usize) -> usize {
         if let Some(node_id) = self.value_to_node.get(&value.id) {
             return *node_id;
         }
@@ -178,7 +183,7 @@ impl TensorMetadata {
         }
     }
 
-    fn stable_name(&self) -> String {
+    pub(crate) fn stable_name(&self) -> String {
         format!(
             "dtype={} shape={} layout={} device={}",
             self.dtype.stable_name(),
@@ -190,7 +195,7 @@ impl TensorMetadata {
 }
 
 impl TensorDType {
-    fn stable_name(self) -> &'static str {
+    pub(crate) fn stable_name(self) -> &'static str {
         match self {
             TensorDType::Int => "int",
             TensorDType::Float => "float",
@@ -214,7 +219,7 @@ impl TensorShape {
         }
     }
 
-    fn compatible_with(&self, other: &Self) -> bool {
+    pub(crate) fn compatible_with(&self, other: &Self) -> bool {
         match (self, other) {
             (TensorShape::Unknown, _) | (_, TensorShape::Unknown) => true,
             (TensorShape::Ranked(left), TensorShape::Ranked(right)) => {
@@ -231,7 +236,7 @@ impl TensorShape {
         }
     }
 
-    fn stable_name(&self) -> String {
+    pub(crate) fn stable_name(&self) -> String {
         match self {
             TensorShape::Unknown => "?".to_string(),
             TensorShape::Ranked(dims) => format!(
@@ -248,7 +253,7 @@ impl TensorShape {
 }
 
 impl TensorLayout {
-    fn stable_name(&self) -> &'static str {
+    pub(crate) fn stable_name(&self) -> &'static str {
         match self {
             TensorLayout::Contiguous => "contiguous",
             TensorLayout::Unknown => "?",
@@ -257,7 +262,7 @@ impl TensorLayout {
 }
 
 impl TensorDevice {
-    fn stable_name(&self) -> String {
+    pub(crate) fn stable_name(&self) -> String {
         match self {
             TensorDevice::Cpu => "cpu".to_string(),
             TensorDevice::Wgpu => "wgpu".to_string(),
@@ -267,11 +272,11 @@ impl TensorDevice {
     }
 }
 
-fn is_tensor_host(host: &str) -> bool {
+pub(crate) fn is_tensor_host(host: &str) -> bool {
     host.starts_with("spectra.std.tensor.") || host.starts_with("spectra.std.ml.")
 }
 
-fn classify_host(
+pub(crate) fn classify_host(
     host: &str,
     args: &[Value],
     constants: &HashMap<usize, i64>,
@@ -322,7 +327,7 @@ fn classify_host(
     }
 }
 
-fn returns_tensor_like(host: &str, name: &str) -> bool {
+pub(crate) fn returns_tensor_like(host: &str, name: &str) -> bool {
     host.starts_with("spectra.std.ml.")
         || matches!(
             name,
@@ -330,7 +335,7 @@ fn returns_tensor_like(host: &str, name: &str) -> bool {
         )
 }
 
-fn tensor_arg_positions(host: &str) -> &'static [usize] {
+pub(crate) fn tensor_arg_positions(host: &str) -> &'static [usize] {
     let name = host
         .strip_prefix("spectra.std.tensor.")
         .or_else(|| host.strip_prefix("spectra.std.ml."))
@@ -348,7 +353,7 @@ fn tensor_arg_positions(host: &str) -> &'static [usize] {
     }
 }
 
-fn infer_output_metadata(
+pub(crate) fn infer_output_metadata(
     op: &TensorGraphOp,
     inputs: &[usize],
     nodes: &[TensorGraphNode],
@@ -439,7 +444,7 @@ fn infer_output_metadata(
     }
 }
 
-fn infer_create_metadata(
+pub(crate) fn infer_create_metadata(
     name: &str,
     args: &[Value],
     constants: &HashMap<usize, i64>,
@@ -462,7 +467,7 @@ fn infer_create_metadata(
     TensorMetadata::new(dtype, shape, TensorDevice::Cpu)
 }
 
-fn infer_arange_len(args: &[Value], constants: &HashMap<usize, i64>) -> Option<usize> {
+pub(crate) fn infer_arange_len(args: &[Value], constants: &HashMap<usize, i64>) -> Option<usize> {
     let start = args
         .first()
         .and_then(|value| constants.get(&value.id))
@@ -493,13 +498,13 @@ fn infer_arange_len(args: &[Value], constants: &HashMap<usize, i64>) -> Option<u
     Some(distance.unsigned_abs().div_ceil(step_abs) as usize)
 }
 
-fn const_usize(value: Option<&Value>, constants: &HashMap<usize, i64>) -> Option<usize> {
+pub(crate) fn const_usize(value: Option<&Value>, constants: &HashMap<usize, i64>) -> Option<usize> {
     value
         .and_then(|value| constants.get(&value.id))
         .and_then(|value| usize::try_from(*value).ok())
 }
 
-fn device_from_code(code: i64) -> TensorDevice {
+pub(crate) fn device_from_code(code: i64) -> TensorDevice {
     match code {
         0 => TensorDevice::Cpu,
         6 => TensorDevice::Wgpu,
@@ -507,7 +512,7 @@ fn device_from_code(code: i64) -> TensorDevice {
     }
 }
 
-fn input_pair<'a>(
+pub(crate) fn input_pair<'a>(
     node: &TensorGraphNode,
     by_id: &'a BTreeMap<usize, &TensorGraphNode>,
 ) -> Option<[&'a TensorGraphNode; 2]> {
@@ -517,7 +522,7 @@ fn input_pair<'a>(
     ])
 }
 
-fn validate_same_device(
+pub(crate) fn validate_same_device(
     function: &str,
     node: &TensorGraphNode,
     left: &TensorGraphNode,
@@ -542,7 +547,7 @@ fn validate_same_device(
     }
 }
 
-fn validate_same_dtype(
+pub(crate) fn validate_same_dtype(
     function: &str,
     node: &TensorGraphNode,
     left: &TensorGraphNode,
@@ -567,7 +572,7 @@ fn validate_same_dtype(
     }
 }
 
-fn has_cycle(
+pub(crate) fn has_cycle(
     node_id: usize,
     by_id: &BTreeMap<usize, &TensorGraphNode>,
     visiting: &mut HashSet<usize>,

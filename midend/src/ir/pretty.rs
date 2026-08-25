@@ -321,12 +321,6 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                     None => format!("call_indirect {}({})", fmt_value(*fn_ptr), arg_list),
                 }
             }
-            InstructionKind::AsyncSuspend { task, state } => {
-                format!("async.suspend state{} {}", state, fmt_value(*task))
-            }
-            InstructionKind::AsyncResume { task, state } => {
-                format!("async.resume state{} {}", state, fmt_value(*task))
-            }
             InstructionKind::AsyncReady {
                 result,
                 value,

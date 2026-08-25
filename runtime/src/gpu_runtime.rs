@@ -451,10 +451,12 @@ fn run_compute_two_stage_no_readback(
     Ok(())
 }
 
-/// Host-materializing parallel tree reduction used by
-/// `gpu_core_kernels::sum`. Runs both reduction stages in a single
-/// compute pass and reads back only the final 1-f32 buffer.
-pub fn dispatch_tree_reduction(input: &[f32]) -> Result<Vec<f32>, GpuError> {
+/// Host-materializing parallel tree reduction used by the
+/// `gpu_core_kernels` scalar reductions (`sum`, `mean`, `min`, `max`,
+/// `argmax`). Runs both reduction stages in a single compute pass and
+/// reads back only the final 1-f32 buffer. For ArgMax that scalar is
+/// the winning index bit-cast to f32.
+pub fn dispatch_tree_reduction(input: &[f32], op: GpuReduceOp) -> Result<Vec<f32>, GpuError> {
     if input.is_empty() {
         return Err(GpuError::new(
             GpuErrorKind::ShapeMismatch,
@@ -465,13 +467,16 @@ pub fn dispatch_tree_reduction(input: &[f32]) -> Result<Vec<f32>, GpuError> {
         .lock()
         .map_err(|_| GpuError::new(GpuErrorKind::Other, "gpu context poisoned"))?;
     let (workgroups, total_threads, partials_count) = reduction_plan(input.len());
-    let shader_source = reduction_shader(input.len(), total_threads, partials_count);
+    let shader_source = reduction_shader(input.len(), total_threads, partials_count, op);
     let input_buffer = storage_buffer(
         &guard.device,
         bytemuck::cast_slice(input),
         "spectra-reduce-input",
     );
-    let partials_buffer = output_buffer(&guard.device, partials_count as usize);
+    let partials_buffer = output_buffer(
+        &guard.device,
+        partials_count as usize * usize::try_from(op.partials_stride()).unwrap_or(1),
+    );
     let out_buffer = output_buffer(&guard.device, 1);
     let readback = readback_buffer(&guard.device, 1);
     let shader = guard.device.create_shader_module(wgpu::ShaderModuleDescriptor {

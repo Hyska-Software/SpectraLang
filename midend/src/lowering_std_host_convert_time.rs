@@ -1,4 +1,6 @@
-fn lookup_std_host_group_convert_time(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
+use super::*;
+
+pub(crate) fn lookup_std_host_group_convert_time(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
     match (module, function) {
             ("convert", "int_to_string") => Some(HostFunctionDescriptor {
                 runtime_name: "spectra.std.convert.int_to_string",

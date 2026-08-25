@@ -1,4 +1,5 @@
-extern "C" fn std_concurrent_task_spawn(ctx: *mut SpectraHostCallContext) -> i32 {
+use super::*;
+pub(crate) extern "C" fn std_concurrent_task_spawn(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -13,7 +14,7 @@ extern "C" fn std_concurrent_task_spawn(ctx: *mut SpectraHostCallContext) -> i32
     }
 }
 
-extern "C" fn std_concurrent_task_spawn_fn(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_task_spawn_fn(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -27,7 +28,7 @@ extern "C" fn std_concurrent_task_spawn_fn(ctx: *mut SpectraHostCallContext) -> 
     }
 }
 
-extern "C" fn std_concurrent_task_join(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_task_join(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -41,7 +42,7 @@ extern "C" fn std_concurrent_task_join(ctx: *mut SpectraHostCallContext) -> i32 
     }
 }
 
-extern "C" fn std_concurrent_task_spawn_join(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_task_spawn_join(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -55,7 +56,7 @@ extern "C" fn std_concurrent_task_spawn_join(ctx: *mut SpectraHostCallContext) -
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_concurrent_task_spawn_batch(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_task_spawn_batch(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -69,7 +70,7 @@ extern "C" fn std_concurrent_task_spawn_batch(ctx: *mut SpectraHostCallContext) 
     }
 }
 
-extern "C" fn std_concurrent_task_join_batch_sum(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_task_join_batch_sum(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -83,7 +84,7 @@ extern "C" fn std_concurrent_task_join_batch_sum(ctx: *mut SpectraHostCallContex
     }
 }
 
-extern "C" fn std_concurrent_task_is_done(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_task_is_done(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -97,7 +98,7 @@ extern "C" fn std_concurrent_task_is_done(ctx: *mut SpectraHostCallContext) -> i
     }
 }
 
-extern "C" fn std_concurrent_channel_new(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_channel_new(ctx: *mut SpectraHostCallContext) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -118,7 +119,7 @@ extern "C" fn std_concurrent_channel_new(ctx: *mut SpectraHostCallContext) -> i3
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_concurrent_channel_send(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_channel_send(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -140,7 +141,7 @@ extern "C" fn std_concurrent_channel_send(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_concurrent_channel_recv(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_channel_recv(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -157,7 +158,7 @@ extern "C" fn std_concurrent_channel_recv(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_concurrent_channel_len(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_channel_len(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -175,7 +176,7 @@ extern "C" fn std_concurrent_channel_len(ctx: *mut SpectraHostCallContext) -> i3
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_concurrent_channel_close(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_channel_close(ctx: *mut SpectraHostCallContext) -> i32 {
     let args = match host_call_void_args(ctx, 1) {
         Ok(args) => args,
         Err(status) => return status,
@@ -191,7 +192,7 @@ extern "C" fn std_concurrent_channel_close(ctx: *mut SpectraHostCallContext) -> 
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_concurrent_counter_new(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_counter_new(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -205,7 +206,7 @@ extern "C" fn std_concurrent_counter_new(ctx: *mut SpectraHostCallContext) -> i3
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_concurrent_counter_add(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_counter_add(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -222,7 +223,7 @@ extern "C" fn std_concurrent_counter_add(ctx: *mut SpectraHostCallContext) -> i3
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_concurrent_counter_get(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_counter_get(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -238,7 +239,7 @@ extern "C" fn std_concurrent_counter_get(ctx: *mut SpectraHostCallContext) -> i3
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_concurrent_pipeline_sum(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_pipeline_sum(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 3) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -279,7 +280,7 @@ extern "C" fn std_concurrent_pipeline_sum(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_concurrent_stats_tasks_spawned(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_stats_tasks_spawned(ctx: *mut SpectraHostCallContext) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -292,7 +293,7 @@ extern "C" fn std_concurrent_stats_tasks_spawned(ctx: *mut SpectraHostCallContex
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_concurrent_stats_channels(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_stats_channels(ctx: *mut SpectraHostCallContext) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -305,7 +306,7 @@ extern "C" fn std_concurrent_stats_channels(ctx: *mut SpectraHostCallContext) ->
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_concurrent_reset(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_reset(ctx: *mut SpectraHostCallContext) -> i32 {
     let _ = match host_call_void_args(ctx, 0) {
         Ok(args) => args,
         Err(status) => return status,

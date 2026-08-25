@@ -882,3 +882,89 @@ mod tests {
 // invalid handles (they return NOT_FOUND / 0). Because the handles they
 // return are immediately dropped without being used again, no observable
 // state changes.
+
+// ============================================================================
+// APPEND-ONLY (Frame0Budget): frame-0 escape budget tests. Tests for the
+// frame-0 budget belong here at the end of this shared file; do not modify
+// earlier sections.
+// ============================================================================
+
+#[cfg(test)]
+mod frame0_budget_tests {
+    use super::*;
+    use std::process::Command;
+
+    const CHILD_TEST: &str = "frame0_budget_child_escapes_past_budget";
+
+    #[test]
+    fn budget_allows_bytes_within_limit() {
+        assert!(frame0_budget_check(0, 512).is_ok());
+        assert!(frame0_budget_check(512 * 1024 * 1024, 512).is_ok());
+    }
+
+    #[test]
+    fn budget_breaches_strictly_past_limit_with_diagnostic() {
+        let err = frame0_budget_check(512 * 1024 * 1024 + 1, 512).unwrap_err();
+        assert!(err.contains("frame-0 budget exceeded"), "{err}");
+        assert!(err.contains("escaped 513 MB > 512 MB"), "{err}");
+        assert!(
+            err.contains("raise SPECTRA_FRAME0_BUDGET_MB if intentional"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn budget_zero_disables_ceiling() {
+        assert!(frame0_budget_check(usize::MAX, 0).is_ok());
+    }
+
+    #[test]
+    fn budget_parse_env_variants() {
+        assert_eq!(parse_frame0_budget_mb(None), 512);
+        assert_eq!(parse_frame0_budget_mb(Some("garbage")), 512);
+        assert_eq!(parse_frame0_budget_mb(Some("0")), 0);
+        assert_eq!(parse_frame0_budget_mb(Some(" 7 ")), 7);
+    }
+
+    /// Only acts when launched as a child process by
+    /// `frame0_budget_exceeded_aborts_process_with_diagnostic` below: escapes
+    /// past a 1 MiB budget and never returns — the runtime aborts via
+    /// `spectra_rt_panic` with exit code 101 partway through the loop.
+    #[test]
+    fn frame0_budget_child_escapes_past_budget() {
+        if std::env::var("SPECTRA_FRAME0_BUDGET_CHILD").as_deref() != Ok("1") {
+            return;
+        }
+        let _lock = crate::runtime_test_guard();
+        // 128 × 16 KiB = 2 MiB of escapes against a 1 MiB budget.
+        for _ in 0..128 {
+            let frame = spectra_rt_manual_frame_enter();
+            let ptr = spectra_rt_manual_alloc(16 * 1024);
+            assert!(!ptr.is_null());
+            spectra_rt_manual_escape(ptr, frame);
+            spectra_rt_manual_frame_exit(frame);
+        }
+        panic!("frame-0 budget should have aborted this child process");
+    }
+
+    #[test]
+    fn frame0_budget_exceeded_aborts_process_with_diagnostic() {
+        let exe = std::env::current_exe().expect("current test binary path");
+        let output = Command::new(exe)
+            .arg(CHILD_TEST)
+            .env("SPECTRA_FRAME0_BUDGET_MB", "1")
+            .env("SPECTRA_FRAME0_BUDGET_CHILD", "1")
+            .output()
+            .expect("spawn child test process");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            output.status.code(),
+            Some(crate::panic::SPECTRA_RUNTIME_PANIC_EXIT_CODE),
+            "child stderr: {stderr}"
+        );
+        assert!(stderr.contains("frame-0 budget exceeded"), "stderr: {stderr}");
+        // 65 × 16 KiB crosses the 1 MiB ceiling; ceil-rounding reports 2 MB.
+        assert!(stderr.contains("escaped 2 MB > 1 MB"), "stderr: {stderr}");
+        assert!(stderr.contains("SPECTRA_FRAME0_BUDGET_MB"), "stderr: {stderr}");
+    }
+}

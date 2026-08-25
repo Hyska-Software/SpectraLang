@@ -16,6 +16,28 @@ pub enum GpuUnaryOp {
     Relu,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuReduceOp {
+    Sum,
+    Mean,
+    Min,
+    Max,
+    /// Index (u32) of the maximum element; ties resolve to the lowest
+    /// index for determinism.
+    ArgMax,
+}
+
+impl GpuReduceOp {
+    /// ArgMax packs `(value, index)` pairs into the partials buffer,
+    /// so it needs twice the scalar partials capacity.
+    fn partials_stride(self) -> u64 {
+        match self {
+            GpuReduceOp::ArgMax => 2,
+            _ => 1,
+        }
+    }
+}
+
 /// Stable kind tag for a GPU error, used by `std_tensor_stats_gpu_errors` to
 /// surface per-kind counters (R-3023). The previous `Err(String)` path
 /// swallowed every error into a single silent `stats_cpu_fallbacks++`
@@ -378,11 +400,72 @@ pub fn reduction_plan(len: usize) -> (u32, u32, u32) {
     )
 }
 
-/// WGSL source for the two-entry-point parallel reduction. Shared by
-/// the host-materializing path (`dispatch_tree_reduction` in
-/// gpu_runtime.rs) and the device-buffer path (`sum_device` in
-/// gpu_device_dispatch.rs).
-fn reduction_shader(len: usize, total_threads: u32, partials: u32) -> String {
+/// WGSL source for the two-entry-point parallel reduction, parametrized
+/// by `op`. Shared by the host-materializing path
+/// (`dispatch_tree_reduction` in gpu_runtime.rs) and the device-buffer
+/// paths (`sum_device`, `mean_device`, `min_device`, `max_device`,
+/// `argmax_device` in gpu_device_dispatch.rs).
+///
+/// Numeric ops fold one accumulator per thread; ArgMax folds a
+/// `(value, index)` pair per thread with strict-greater comparison and
+/// lowest-index tie-breaking at every level (thread scan, workgroup
+/// tree, final fold), so the result index is deterministic regardless
+/// of dispatch geometry.
+fn reduction_shader(len: usize, total_threads: u32, partials: u32, op: GpuReduceOp) -> String {
+    // WGSL has no inf literal; bitcast the IEEE-754 bit patterns.
+    const POS_INF: &str = "bitcast<f32>(0x7f800000u)";
+    const NEG_INF: &str = "bitcast<f32>(0xff800000u)";
+
+    let numeric = match op {
+        GpuReduceOp::Sum | GpuReduceOp::Mean => {
+            let final_body = if op == GpuReduceOp::Mean {
+                // Divide once in the final phase: mean = sum / len.
+                format!("out[0] = scratch[0] / {len}.0;")
+            } else {
+                "out[0] = scratch[0];".to_string()
+            };
+            ShaderBody {
+                init: "0.0".to_string(),
+                stage1_fold: "acc = acc + input_values[idx];".to_string(),
+                stage1_combine: "scratch[lid.x] = scratch[lid.x] + scratch[lid.x + stride];"
+                    .to_string(),
+                final_init: "0.0".to_string(),
+                final_fold: "acc = acc + partials[i];".to_string(),
+                final_combine:
+                    "scratch[lid.x] = scratch[lid.x] + scratch[lid.x + stride];".to_string(),
+                final_body,
+                partials_stride: 1,
+            }
+        }
+        GpuReduceOp::Min => ShaderBody {
+            init: format!("{POS_INF}"),
+            stage1_fold: "acc = min(acc, input_values[idx]);".to_string(),
+            stage1_combine:
+                "scratch[lid.x] = min(scratch[lid.x], scratch[lid.x + stride]);".to_string(),
+            final_init: format!("{POS_INF}"),
+            final_fold: "acc = min(acc, partials[i]);".to_string(),
+            final_combine: "scratch[lid.x] = min(scratch[lid.x], scratch[lid.x + stride]);"
+                .to_string(),
+            final_body: "out[0] = scratch[0];".to_string(),
+            partials_stride: 1,
+        },
+        GpuReduceOp::Max => ShaderBody {
+            init: format!("{NEG_INF}"),
+            stage1_fold: "acc = max(acc, input_values[idx]);".to_string(),
+            stage1_combine:
+                "scratch[lid.x] = max(scratch[lid.x], scratch[lid.x + stride]);".to_string(),
+            final_init: format!("{NEG_INF}"),
+            final_fold: "acc = max(acc, partials[i]);".to_string(),
+            final_combine: "scratch[lid.x] = max(scratch[lid.x], scratch[lid.x + stride]);"
+                .to_string(),
+            final_body: "out[0] = scratch[0];".to_string(),
+            partials_stride: 1,
+        },
+        GpuReduceOp::ArgMax => {
+            return argmax_shader(len, total_threads, partials);
+        }
+    };
+
     format!(
         r#"
 @group(0) @binding(0) var<storage, read> input_values: array<f32>;
@@ -396,13 +479,13 @@ fn reduce(
     @builtin(global_invocation_id) gid: vec3<u32>,
     @builtin(workgroup_id) wid: vec3<u32>,
     @builtin(local_invocation_id) lid: vec3<u32>,
-) {{
+){{
     let count = {len}u;
     let step = {total_threads}u;
-    var acc = 0.0;
+    var acc = {init};
     var idx = gid.x;
     while (idx < count) {{
-        acc = acc + input_values[idx];
+        {stage1_fold}
         idx = idx + step;
     }}
     scratch[lid.x] = acc;
@@ -410,7 +493,7 @@ fn reduce(
     var stride = 128u;
     loop {{
         if (lid.x < stride) {{
-            scratch[lid.x] = scratch[lid.x] + scratch[lid.x + stride];
+            {stage1_combine}
         }}
         workgroupBarrier();
         if (stride <= 1u) {{
@@ -419,17 +502,17 @@ fn reduce(
         stride = stride >> 1u;
     }}
     if (lid.x == 0u) {{
-        partials[wid.x] = scratch[0];
+        partials[wid.x * {stride}u] = scratch[0];
     }}
 }}
 
 @compute @workgroup_size(256)
 fn final_reduce(@builtin(local_invocation_id) lid: vec3<u32>) {{
     let count = {partials}u;
-    var acc = 0.0;
+    var acc = {final_init};
     var i = lid.x;
     while (i < count) {{
-        acc = acc + partials[i];
+        {final_fold}
         i = i + 256u;
     }}
     scratch[lid.x] = acc;
@@ -437,7 +520,7 @@ fn final_reduce(@builtin(local_invocation_id) lid: vec3<u32>) {{
     var stride = 128u;
     loop {{
         if (lid.x < stride) {{
-            scratch[lid.x] = scratch[lid.x] + scratch[lid.x + stride];
+            {final_combine}
         }}
         workgroupBarrier();
         if (stride <= 1u) {{
@@ -446,26 +529,174 @@ fn final_reduce(@builtin(local_invocation_id) lid: vec3<u32>) {{
         stride = stride >> 1u;
     }}
     if (lid.x == 0u) {{
-        out[0] = scratch[0];
+        {final_body}
     }}
 }}
 "#,
         len = len,
         total_threads = total_threads,
-        partials = partials
+        partials = partials,
+        init = numeric.init,
+        stage1_fold = numeric.stage1_fold,
+        stage1_combine = numeric.stage1_combine,
+        final_init = numeric.final_init,
+        final_fold = numeric.final_fold,
+        final_combine = numeric.final_combine,
+        final_body = numeric.final_body,
+        stride = numeric.partials_stride,
     )
 }
 
+/// Injected code fragments for the numeric reduction template.
+struct ShaderBody {
+    init: String,
+    stage1_fold: String,
+    stage1_combine: String,
+    final_init: String,
+    final_fold: String,
+    final_combine: String,
+    final_body: String,
+    partials_stride: u64,
+}
+
+/// ArgMax variant of the two-phase reduction. Partials hold
+/// `(value, index)` f32 pairs (`partials[2*i]`, `partials[2*i+1]`);
+/// the index is carried as a bit-cast f32 so it survives storage
+/// round-trips exactly. Every combine prefers strictly greater values
+/// and, on ties, the lower index — deterministic for any dispatch
+/// geometry. Output scalar is the winning index bit-cast back from
+/// f32 to u32 on the host.
+fn argmax_shader(len: usize, total_threads: u32, partials: u32) -> String {
+    format!(
+        r#"
+@group(0) @binding(0) var<storage, read> input_values: array<f32>;
+@group(0) @binding(1) var<storage, read_write> partials: array<f32>;
+@group(0) @binding(2) var<storage, read_write> out: array<f32>;
+
+var<workgroup> scratch_val: array<f32, 256>;
+var<workgroup> scratch_idx: array<u32, 256>;
+
+@compute @workgroup_size(256)
+fn reduce(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(local_invocation_id) lid: vec3<u32>,
+){{
+    let count = {len}u;
+    let step = {total_threads}u;
+    var best = bitcast<f32>(0xff800000u);
+    var best_idx = count;
+    var idx = gid.x;
+    while (idx < count) {{
+        let v = input_values[idx];
+        if ((v > best) || ((v == best) && (idx < best_idx))) {{
+            best = v;
+            best_idx = idx;
+        }}
+        idx = idx + step;
+    }}
+    scratch_val[lid.x] = best;
+    scratch_idx[lid.x] = best_idx;
+    workgroupBarrier();
+    var stride = 128u;
+    loop {{
+        if (lid.x < stride) {{
+            let rv = scratch_val[lid.x + stride];
+            let ri = scratch_idx[lid.x + stride];
+            if ((rv > scratch_val[lid.x]) || ((rv == scratch_val[lid.x]) && (ri < scratch_idx[lid.x]))) {{
+                scratch_val[lid.x] = rv;
+                scratch_idx[lid.x] = ri;
+            }}
+        }}
+        workgroupBarrier();
+        if (stride <= 1u) {{
+            break;
+        }}
+        stride = stride >> 1u;
+    }}
+    if (lid.x == 0u) {{
+        partials[wid.x * 2u] = scratch_val[0];
+        partials[wid.x * 2u + 1u] = bitcast<f32>(scratch_idx[0]);
+    }}
+}}
+
+@compute @workgroup_size(256)
+fn final_reduce(@builtin(local_invocation_id) lid: vec3<u32>) {{
+    let count = {partials}u;
+    var best = bitcast<f32>(0xff800000u);
+    var best_idx = 0xffffffffu;
+    var i = lid.x;
+    while (i < count) {{
+        let v = partials[i * 2u];
+        let ix = bitcast<u32>(partials[i * 2u + 1u]);
+        if ((v > best) || ((v == best) && (ix < best_idx))) {{
+            best = v;
+            best_idx = ix;
+        }}
+        i = i + 256u;
+    }}
+    scratch_val[lid.x] = best;
+    scratch_idx[lid.x] = best_idx;
+    workgroupBarrier();
+    var stride = 128u;
+    loop {{
+        if (lid.x < stride) {{
+            let rv = scratch_val[lid.x + stride];
+            let ri = scratch_idx[lid.x + stride];
+            if ((rv > scratch_val[lid.x]) || ((rv == scratch_val[lid.x]) && (ri < scratch_idx[lid.x]))) {{
+                scratch_val[lid.x] = rv;
+                scratch_idx[lid.x] = ri;
+            }}
+        }}
+        workgroupBarrier();
+        if (stride <= 1u) {{
+            break;
+        }}
+        stride = stride >> 1u;
+    }}
+    if (lid.x == 0u) {{
+        out[0] = bitcast<f32>(scratch_idx[0]);
+    }}
+}}
+"#
+    )
+}
+
+/// Host-materializing GPU reductions. Each reads back exactly one
+/// scalar; without a GPU adapter the context error propagates and every
+/// caller falls back to its counted CPU path (unchanged behavior).
 pub fn sum(input: &[f32]) -> Result<f32, GpuError> {
+    reduce_scalar(input, GpuReduceOp::Sum)
+}
+
+pub fn mean(input: &[f32]) -> Result<f32, GpuError> {
+    reduce_scalar(input, GpuReduceOp::Mean)
+}
+
+pub fn min(input: &[f32]) -> Result<f32, GpuError> {
+    reduce_scalar(input, GpuReduceOp::Min)
+}
+
+pub fn max(input: &[f32]) -> Result<f32, GpuError> {
+    reduce_scalar(input, GpuReduceOp::Max)
+}
+
+/// Index of the maximum element; ties resolve to the lowest index.
+/// The device writes the index as a bit-cast f32, so the round-trip is
+/// exact and no tolerance applies.
+pub fn argmax(input: &[f32]) -> Result<usize, GpuError> {
+    reduce_scalar(input, GpuReduceOp::ArgMax)
+        .map(|bits| f32::to_bits(bits) as usize)
+}
+
+fn reduce_scalar(input: &[f32], op: GpuReduceOp) -> Result<f32, GpuError> {
     if input.is_empty() {
         return Err(GpuError::new(
             GpuErrorKind::ShapeMismatch,
             "gpu reduction requires at least one element",
         ));
     }
-    // No GPU adapter -> `dispatch_tree_reduction` errors here and every
-    // caller falls back to its counted CPU path (unchanged behavior).
-    dispatch_tree_reduction(input).map(|values| values[0])
+    dispatch_tree_reduction(input, op).map(|values| values[0])
 }
 
 pub fn matmul(

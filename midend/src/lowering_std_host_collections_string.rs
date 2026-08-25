@@ -1,4 +1,6 @@
-fn lookup_std_host_group_collections_string(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
+use super::*;
+
+pub(crate) fn lookup_std_host_group_collections_string(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
     match (module, function) {
             // ── std.collections map ──────────────────────────────────────
             ("collections", "map_new") => Some(HostFunctionDescriptor {

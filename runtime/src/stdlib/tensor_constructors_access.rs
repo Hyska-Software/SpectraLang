@@ -1,5 +1,6 @@
+use super::*;
 #[track_caller]
-fn tensor_alloc(
+pub(crate) fn tensor_alloc(
     dtype: TensorDType,
     shape: Vec<usize>,
     data: Vec<SpectraHostValue>,
@@ -23,7 +24,7 @@ fn tensor_alloc(
 }
 
 #[track_caller]
-fn tensor_alloc_buffered(
+pub(crate) fn tensor_alloc_buffered(
     dtype: TensorDType,
     shape: Vec<usize>,
     buffer: Vec<SpectraHostValue>,
@@ -42,7 +43,7 @@ fn tensor_alloc_buffered(
 }
 
 #[track_caller]
-fn tensor_insert(tensor: StdTensor) -> Result<usize, i32> {
+pub(crate) fn tensor_insert(tensor: StdTensor) -> Result<usize, i32> {
     let memory = initialize().memory();
     let tensor = memory
         .allocate_manual(tensor)
@@ -54,7 +55,7 @@ fn tensor_insert(tensor: StdTensor) -> Result<usize, i32> {
 }
 
 #[track_caller]
-fn tensor_alloc_autograd(
+pub(crate) fn tensor_alloc_autograd(
     dtype: TensorDType,
     shape: Vec<usize>,
     data: Vec<SpectraHostValue>,
@@ -75,7 +76,7 @@ fn tensor_alloc_autograd(
 }
 
 #[track_caller]
-fn tensor_alloc_autograd_on_device(
+pub(crate) fn tensor_alloc_autograd_on_device(
     dtype: TensorDType,
     shape: Vec<usize>,
     data: Vec<SpectraHostValue>,
@@ -129,7 +130,7 @@ fn tensor_alloc_autograd_on_device(
 /// `stats_device_resident_tensors` tracks every residency output.
 #[cfg(feature = "gpu")]
 #[track_caller]
-fn tensor_alloc_autograd_on_device_with_buffer(
+pub(crate) fn tensor_alloc_autograd_on_device_with_buffer(
     dtype: TensorDType,
     shape: Vec<usize>,
     data: Vec<SpectraHostValue>,
@@ -161,11 +162,11 @@ fn tensor_alloc_autograd_on_device_with_buffer(
     Ok(handle)
 }
 
-fn tensor_allocation_site(location: &'static std::panic::Location<'static>) -> String {
+pub(crate) fn tensor_allocation_site(location: &'static std::panic::Location<'static>) -> String {
     format!("{}:{}", location.file(), location.line())
 }
 
-fn tensor_result(ctx_ref: &mut SpectraHostCallContext, value: SpectraHostValue) -> i32 {
+pub(crate) fn tensor_result(ctx_ref: &mut SpectraHostCallContext, value: SpectraHostValue) -> i32 {
     if ctx_ref.result_len == 0 || ctx_ref.results.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -176,7 +177,7 @@ fn tensor_result(ctx_ref: &mut SpectraHostCallContext, value: SpectraHostValue) 
     HOST_STATUS_SUCCESS
 }
 
-fn tensor_optional_result(ctx_ref: &mut SpectraHostCallContext, value: SpectraHostValue) -> i32 {
+pub(crate) fn tensor_optional_result(ctx_ref: &mut SpectraHostCallContext, value: SpectraHostValue) -> i32 {
     if ctx_ref.result_len == 0 || ctx_ref.results.is_null() {
         return HOST_STATUS_SUCCESS;
     }
@@ -188,13 +189,13 @@ fn tensor_optional_result(ctx_ref: &mut SpectraHostCallContext, value: SpectraHo
 }
 
 #[inline]
-fn fill_i64_pattern(buffer: &mut [SpectraHostValue], value: SpectraHostValue) {
+pub(crate) fn fill_i64_pattern(buffer: &mut [SpectraHostValue], value: SpectraHostValue) {
     for slot in buffer.iter_mut() {
         *slot = value;
     }
 }
 
-unsafe fn tensor_args<'a>(
+pub(crate) unsafe fn tensor_args<'a>(
     ctx: *mut SpectraHostCallContext,
     expected: usize,
 ) -> Result<(&'a mut SpectraHostCallContext, &'a [SpectraHostValue]), i32> {
@@ -213,7 +214,7 @@ unsafe fn tensor_args<'a>(
     Ok((ctx_ref, args))
 }
 
-fn tensor_create_1d(
+pub(crate) fn tensor_create_1d(
     ctx: *mut SpectraHostCallContext,
     value: SpectraHostValue,
     dtype: TensorDType,
@@ -234,7 +235,7 @@ fn tensor_create_1d(
     }
 }
 
-fn tensor_create_2d(
+pub(crate) fn tensor_create_2d(
     ctx: *mut SpectraHostCallContext,
     value: SpectraHostValue,
     dtype: TensorDType,
@@ -259,15 +260,15 @@ fn tensor_create_2d(
     }
 }
 
-extern "C" fn std_tensor_zeros(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_zeros(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_create_1d(ctx, 0, TensorDType::Int)
 }
 
-extern "C" fn std_tensor_ones(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_ones(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_create_1d(ctx, 1, TensorDType::Int)
 }
 
-extern "C" fn std_tensor_full(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_full(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -283,7 +284,7 @@ extern "C" fn std_tensor_full(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_full_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_full_f(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -316,7 +317,7 @@ extern "C" fn std_tensor_full_f(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_refill(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_refill(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -351,23 +352,23 @@ extern "C" fn std_tensor_refill(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_literal(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_literal(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_literal_1d(ctx, TensorDType::Int)
 }
 
-extern "C" fn std_tensor_literal_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_literal_f(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_literal_1d(ctx, TensorDType::Float)
 }
 
-extern "C" fn std_tensor_literal2(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_literal2(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_literal_2d(ctx, TensorDType::Int)
 }
 
-extern "C" fn std_tensor_literal2_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_literal2_f(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_literal_2d(ctx, TensorDType::Float)
 }
 
-fn tensor_literal_1d(ctx: *mut SpectraHostCallContext, dtype: TensorDType) -> i32 {
+pub(crate) fn tensor_literal_1d(ctx: *mut SpectraHostCallContext, dtype: TensorDType) -> i32 {
     unsafe {
         if ctx.is_null() {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -389,7 +390,7 @@ fn tensor_literal_1d(ctx: *mut SpectraHostCallContext, dtype: TensorDType) -> i3
     }
 }
 
-fn tensor_literal_2d(ctx: *mut SpectraHostCallContext, dtype: TensorDType) -> i32 {
+pub(crate) fn tensor_literal_2d(ctx: *mut SpectraHostCallContext, dtype: TensorDType) -> i32 {
     unsafe {
         if ctx.is_null() {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -418,7 +419,7 @@ fn tensor_literal_2d(ctx: *mut SpectraHostCallContext, dtype: TensorDType) -> i3
     }
 }
 
-extern "C" fn std_tensor_arange(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_arange(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -443,15 +444,15 @@ extern "C" fn std_tensor_arange(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_zeros2(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_zeros2(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_create_2d(ctx, 0, TensorDType::Int)
 }
 
-extern "C" fn std_tensor_ones2(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_ones2(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_create_2d(ctx, 1, TensorDType::Int)
 }
 
-extern "C" fn std_tensor_full2(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_full2(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -474,7 +475,7 @@ extern "C" fn std_tensor_full2(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_full2_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_full2_f(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -497,15 +498,15 @@ extern "C" fn std_tensor_full2_f(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_len(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_len(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_query_i64(ctx, |tensor| tensor.len() as SpectraHostValue)
 }
 
-extern "C" fn std_tensor_rank(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_rank(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_query_i64(ctx, |tensor| tensor.shape.len() as SpectraHostValue)
 }
 
-extern "C" fn std_tensor_dim(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_dim(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -521,19 +522,19 @@ extern "C" fn std_tensor_dim(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_rows(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_rows(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_query_i64(ctx, |tensor| {
         tensor.shape.first().copied().unwrap_or(0) as i64
     })
 }
 
-extern "C" fn std_tensor_cols(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_cols(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_query_i64(ctx, |tensor| {
         tensor.shape.get(1).copied().unwrap_or(1) as i64
     })
 }
 
-extern "C" fn std_tensor_is_valid(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_is_valid(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -543,7 +544,7 @@ extern "C" fn std_tensor_is_valid(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-fn tensor_query_i64(
+pub(crate) fn tensor_query_i64(
     ctx: *mut SpectraHostCallContext,
     query: impl FnOnce(&StdTensor) -> SpectraHostValue,
 ) -> i32 {
@@ -560,15 +561,15 @@ fn tensor_query_i64(
     }
 }
 
-extern "C" fn std_tensor_get(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_get(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_get_linear(ctx, false)
 }
 
-extern "C" fn std_tensor_get_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_get_f(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_get_linear(ctx, true)
 }
 
-fn tensor_get_linear(ctx: *mut SpectraHostCallContext, as_float: bool) -> i32 {
+pub(crate) fn tensor_get_linear(ctx: *mut SpectraHostCallContext, as_float: bool) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -593,15 +594,15 @@ fn tensor_get_linear(ctx: *mut SpectraHostCallContext, as_float: bool) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_set(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_set(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_set_linear(ctx, false)
 }
 
-extern "C" fn std_tensor_set_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_set_f(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_set_linear(ctx, true)
 }
 
-fn tensor_set_linear(ctx: *mut SpectraHostCallContext, is_float: bool) -> i32 {
+pub(crate) fn tensor_set_linear(ctx: *mut SpectraHostCallContext, is_float: bool) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -630,15 +631,15 @@ fn tensor_set_linear(ctx: *mut SpectraHostCallContext, is_float: bool) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_get2(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_get2(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_get_2d(ctx, false)
 }
 
-extern "C" fn std_tensor_get2_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_get2_f(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_get_2d(ctx, true)
 }
 
-fn tensor_get_2d(ctx: *mut SpectraHostCallContext, as_float: bool) -> i32 {
+pub(crate) fn tensor_get_2d(ctx: *mut SpectraHostCallContext, as_float: bool) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -662,15 +663,15 @@ fn tensor_get_2d(ctx: *mut SpectraHostCallContext, as_float: bool) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_set2(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_set2(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_set_2d(ctx, false)
 }
 
-extern "C" fn std_tensor_set2_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_set2_f(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_set_2d(ctx, true)
 }
 
-fn tensor_set_2d(ctx: *mut SpectraHostCallContext, is_float: bool) -> i32 {
+pub(crate) fn tensor_set_2d(ctx: *mut SpectraHostCallContext, is_float: bool) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 4) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -704,7 +705,7 @@ fn tensor_set_2d(ctx: *mut SpectraHostCallContext, is_float: bool) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_reshape(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_reshape(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -766,7 +767,7 @@ extern "C" fn std_tensor_reshape(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_flatten(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_flatten(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -819,7 +820,7 @@ extern "C" fn std_tensor_flatten(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_permute(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_permute(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -858,7 +859,7 @@ extern "C" fn std_tensor_permute(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_slice(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_slice(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -894,7 +895,7 @@ extern "C" fn std_tensor_slice(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_concat(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_concat(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -929,7 +930,7 @@ extern "C" fn std_tensor_concat(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_stack(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_stack(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -958,19 +959,19 @@ extern "C" fn std_tensor_stack(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_add(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_add(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_binary(ctx, AutogradOp::Add, |a, b| a + b, |a, b| a + b)
 }
 
-extern "C" fn std_tensor_sub(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_sub(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_binary(ctx, AutogradOp::Sub, |a, b| a - b, |a, b| a - b)
 }
 
-extern "C" fn std_tensor_mul(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_mul(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_binary(ctx, AutogradOp::Mul, |a, b| a * b, |a, b| a * b)
 }
 
-extern "C" fn std_tensor_div(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_div(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_binary(
         ctx,
         AutogradOp::Div,

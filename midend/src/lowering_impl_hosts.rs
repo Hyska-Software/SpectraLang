@@ -1,7 +1,9 @@
+use super::*;
+
 impl ASTLowering {
     /// Infer concrete types from argument expressions
     /// This is a simplified type inference for monomorphization
-    fn infer_argument_types(&mut self, arguments: &[Expression]) -> Vec<IRType> {
+    pub(crate) fn infer_argument_types(&mut self, arguments: &[Expression]) -> Vec<IRType> {
         arguments
             .iter()
             .map(|arg| {
@@ -55,7 +57,7 @@ impl ASTLowering {
             .collect()
     }
 
-    fn resolve_call_path(&self, callee: &Expression) -> Option<Vec<String>> {
+    pub(crate) fn resolve_call_path(&self, callee: &Expression) -> Option<Vec<String>> {
         match &callee.kind {
             ExpressionKind::Identifier(name) => Some(vec![name.clone()]),
             ExpressionKind::FieldAccess { object, field } => {
@@ -67,7 +69,7 @@ impl ASTLowering {
         }
     }
 
-    fn host_function_descriptor(&self, callee: &Expression) -> Option<HostFunctionDescriptor> {
+    pub(crate) fn host_function_descriptor(&self, callee: &Expression) -> Option<HostFunctionDescriptor> {
         let path = self.resolve_call_path(callee)?;
         self.host_function_descriptor_for_path(&path)
     }
@@ -76,7 +78,7 @@ impl ASTLowering {
     /// concrete generic enum payload at the call site.  The host ABI returns a
     /// canonical i64 word, but the IR type still matters for string equality,
     /// float bitcasts, and bool narrowing after `Option`/`Result` unwrapping.
-    fn host_function_descriptor_for_call(
+    pub(crate) fn host_function_descriptor_for_call(
         &mut self,
         callee: &Expression,
         arguments: &[Expression],
@@ -85,7 +87,7 @@ impl ASTLowering {
         Some(self.refine_host_function_descriptor(descriptor, arguments))
     }
 
-    fn refine_host_function_descriptor(
+    pub(crate) fn refine_host_function_descriptor(
         &mut self,
         mut descriptor: HostFunctionDescriptor,
         arguments: &[Expression],
@@ -427,7 +429,7 @@ impl ASTLowering {
         descriptor
     }
 
-    fn std_method_host_function_descriptor(
+    pub(crate) fn std_method_host_function_descriptor(
         &self,
         object: &Expression,
         method_name: &str,
@@ -437,7 +439,7 @@ impl ASTLowering {
         self.host_function_descriptor_for_path(&path)
     }
 
-    fn std_method_host_function_descriptor_for_call(
+    pub(crate) fn std_method_host_function_descriptor_for_call(
         &mut self,
         object: &Expression,
         method_name: &str,
@@ -447,7 +449,7 @@ impl ASTLowering {
         Some(self.refine_host_function_descriptor(descriptor, arguments))
     }
 
-    fn host_function_descriptor_for_path(&self, path: &[String]) -> Option<HostFunctionDescriptor> {
+    pub(crate) fn host_function_descriptor_for_path(&self, path: &[String]) -> Option<HostFunctionDescriptor> {
         // Direct path lookup (e.g. std.io.print).
         if let Some(desc) = lookup_std_host_function(path) {
             return Some(desc);
@@ -489,7 +491,7 @@ impl ASTLowering {
         None
     }
 
-    fn lower_value_to_string(
+    pub(crate) fn lower_value_to_string(
         &mut self,
         value: Value,
         value_type: IRType,
@@ -535,7 +537,7 @@ impl ASTLowering {
         )
     }
 
-    fn lower_value_equality(
+    pub(crate) fn lower_value_equality(
         &mut self,
         lhs: Value,
         rhs: Value,
@@ -607,7 +609,7 @@ impl ASTLowering {
     /// already rejects incompatible source programs; this helper only
     /// materializes the ABI conversion required by the backend for numeric
     /// literals and exact-width values.
-    fn coerce_value_to_type(
+    pub(crate) fn coerce_value_to_type(
         &mut self,
         value: Value,
         from_ty: &IRType,
@@ -638,7 +640,7 @@ impl ASTLowering {
         value
     }
 
-    fn lower_expression_as_type(
+    pub(crate) fn lower_expression_as_type(
         &mut self,
         expr: &Expression,
         expected_type: &IRType,

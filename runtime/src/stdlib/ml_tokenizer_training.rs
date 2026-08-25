@@ -1,3 +1,4 @@
+use super::*;
 // ── TokenizerTrainer ────────────────────────────────────────────────────────
 // Real corpus-driven tokenizer training: classic BPE and WordPiece.
 //
@@ -20,16 +21,16 @@
 
 /// Minimum weighted frequency for a candidate pair to be merged. This is the
 /// "limiar de frequência" early-stop for both trainers.
-const ML_TOKENIZER_TRAIN_MIN_PAIR_FREQUENCY: usize = 2;
+pub(crate) const ML_TOKENIZER_TRAIN_MIN_PAIR_FREQUENCY: usize = 2;
 
-const ML_TOKENIZER_TRAIN_UNK: &str = "[UNK]";
-const ML_TOKENIZER_TRAIN_CONTINUATION: &str = "##";
+pub(crate) const ML_TOKENIZER_TRAIN_UNK: &str = "[UNK]";
+pub(crate) const ML_TOKENIZER_TRAIN_CONTINUATION: &str = "##";
 
 /// Word frequencies over maximal alphanumeric runs. Whitespace and
 /// punctuation act as delimiters; ASCII letters are lowercased to match the
 /// encoder normalization (`lowercase = true`, edge-punctuation trimming makes
 /// punctuation-delimited words equivalent).
-fn ml_training_word_frequencies(corpus: &str) -> HashMap<String, usize> {
+pub(crate) fn ml_training_word_frequencies(corpus: &str) -> HashMap<String, usize> {
     let mut freqs: HashMap<String, usize> = HashMap::new();
     let mut current = String::new();
     for ch in corpus.chars() {
@@ -53,7 +54,7 @@ fn ml_training_word_frequencies(corpus: &str) -> HashMap<String, usize> {
 /// lexicographically. Every base char enters the initial vocabulary (both as
 /// the plain form and the `##` continuation form) so any position of any
 /// corpus word is representable.
-fn ml_training_base_symbols(word_freqs: &HashMap<String, usize>) -> Vec<String> {
+pub(crate) fn ml_training_base_symbols(word_freqs: &HashMap<String, usize>) -> Vec<String> {
     let mut chars: Vec<char> = word_freqs
         .keys()
         .flat_map(|word| word.chars())
@@ -63,7 +64,7 @@ fn ml_training_base_symbols(word_freqs: &HashMap<String, usize>) -> Vec<String> 
     chars.into_iter().map(String::from).collect()
 }
 
-fn ml_training_initial_symbols(word: &str) -> Vec<String> {
+pub(crate) fn ml_training_initial_symbols(word: &str) -> Vec<String> {
     word.chars()
         .enumerate()
         .map(|(index, ch)| {
@@ -85,7 +86,7 @@ fn ml_training_initial_symbols(word: &str) -> Vec<String> {
 /// repeat while the pair frequency is at least
 /// `ML_TOKENIZER_TRAIN_MIN_PAIR_FREQUENCY` and the exported vocabulary still
 /// has room. Cost: `O(merges × corpus_symbols)`.
-fn ml_train_bpe_vocab(corpus: &str, vocab_size: usize) -> Option<Vec<String>> {
+pub(crate) fn ml_train_bpe_vocab(corpus: &str, vocab_size: usize) -> Option<Vec<String>> {
     let word_freqs = ml_training_word_frequencies(corpus);
     if word_freqs.is_empty() || vocab_size < 2 {
         return None;
@@ -159,7 +160,7 @@ fn ml_train_bpe_vocab(corpus: &str, vocab_size: usize) -> Option<Vec<String>> {
 /// absolute-frequency threshold. Learned tokens keep the `##` prefix of their
 /// left operand, so continuation pieces come out naturally marked.
 /// Cost: `O(merges × corpus_symbols)`.
-fn ml_train_wordpiece_vocab(corpus: &str, vocab_size: usize) -> Option<Vec<String>> {
+pub(crate) fn ml_train_wordpiece_vocab(corpus: &str, vocab_size: usize) -> Option<Vec<String>> {
     let word_freqs = ml_training_word_frequencies(corpus);
     if word_freqs.is_empty() || vocab_size < 2 {
         return None;
@@ -242,7 +243,7 @@ fn ml_train_wordpiece_vocab(corpus: &str, vocab_size: usize) -> Option<Vec<Strin
 
 /// Serialize a vocabulary into the exact inline spec format understood by
 /// `ml_parse_wordpiece_vocab`: one `token:id` line per token, ids dense from 0.
-fn ml_training_vocab_spec(vocab: &[String]) -> String {
+pub(crate) fn ml_training_vocab_spec(vocab: &[String]) -> String {
     vocab
         .iter()
         .enumerate()
@@ -252,7 +253,7 @@ fn ml_training_vocab_spec(vocab: &[String]) -> String {
 
 /// Serialize a vocabulary into the artifact `vocab_json` metadata payload
 /// consumed by `ml_parse_artifact_tokenizer`.
-fn ml_training_vocab_json(vocab: &[String]) -> String {
+pub(crate) fn ml_training_vocab_json(vocab: &[String]) -> String {
     let tokens: Vec<serde_json::Value> = vocab
         .iter()
         .enumerate()
@@ -267,7 +268,7 @@ fn ml_training_vocab_json(vocab: &[String]) -> String {
     .to_string()
 }
 
-extern "C" fn std_ml_train_bpe(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_train_bpe(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -289,7 +290,7 @@ extern "C" fn std_ml_train_bpe(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_train_wordpiece(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_train_wordpiece(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -313,7 +314,7 @@ extern "C" fn std_ml_train_wordpiece(ctx: *mut SpectraHostCallContext) -> i32 {
 
 /// Export the inline `token:id` spec of ANY tokenizer handle (trained, inline,
 /// or artifact-loaded), enabling save-to-artifact through the standard hosts.
-extern "C" fn std_ml_tokenizer_vocab(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_tokenizer_vocab(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;

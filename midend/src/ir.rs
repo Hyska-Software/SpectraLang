@@ -261,16 +261,6 @@ pub enum InstructionKind {
         /// Return type of the callee signature.
         signature_return: Box<Type>,
     },
-    /// Async suspend boundary before polling or registering a task.
-    AsyncSuspend {
-        task: Value,
-        state: usize,
-    },
-    /// Async resume boundary after a task is ready.
-    AsyncResume {
-        task: Value,
-        state: usize,
-    },
     /// Produce a ready task handle from a completed async result.
     AsyncReady {
         result: Value,

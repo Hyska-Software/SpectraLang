@@ -1,4 +1,6 @@
-fn lookup_std_host_group_math_io_error(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
+use super::*;
+
+pub(crate) fn lookup_std_host_group_math_io_error(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
     match (module, function) {
             ("math", "abs") => Some(HostFunctionDescriptor {
                 runtime_name: "spectra.std.math.abs",

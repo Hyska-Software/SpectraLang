@@ -1,4 +1,6 @@
-fn lookup_std_host_module_function(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
+use super::*;
+
+pub(crate) fn lookup_std_host_module_function(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
             if module == "numeric" {
                 if function == "checked_f32" {
                     return Some(HostFunctionDescriptor {

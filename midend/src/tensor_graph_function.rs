@@ -1,5 +1,9 @@
+use super::*;
+
+use crate::ir::InstructionKind;
+use std::collections::{BTreeMap, HashMap, HashSet};
 impl TensorGraphFunction {
-    fn from_ir_function(function: &crate::ir::Function) -> Self {
+    pub(crate) fn from_ir_function(function: &crate::ir::Function) -> Self {
         let mut extractor = TensorGraphExtractor::default();
         for block in &function.blocks {
             for instruction in &block.instructions {
@@ -51,14 +55,14 @@ impl TensorGraphFunction {
         }
     }
 
-    fn planned_buffers(&self) -> usize {
+    pub(crate) fn planned_buffers(&self) -> usize {
         self.nodes
             .iter()
             .filter(|node| node.value.is_some())
             .count()
     }
 
-    fn peak_live_buffers(&self) -> usize {
+    pub(crate) fn peak_live_buffers(&self) -> usize {
         let mut live = 0usize;
         let mut peak = 0usize;
         for node in &self.nodes {
@@ -73,7 +77,7 @@ impl TensorGraphFunction {
         peak
     }
 
-    fn optimize_into(&self, report: &mut TensorGraphOptimizationReport) -> Self {
+    pub(crate) fn optimize_into(&self, report: &mut TensorGraphOptimizationReport) -> Self {
         let consumer_counts = self.consumer_counts();
         let mut old_to_new = HashMap::new();
         let mut skipped = HashSet::new();
@@ -140,7 +144,7 @@ impl TensorGraphFunction {
         }
     }
 
-    fn consumer_counts(&self) -> HashMap<usize, usize> {
+    pub(crate) fn consumer_counts(&self) -> HashMap<usize, usize> {
         let mut counts = HashMap::new();
         for node in &self.nodes {
             for input in &node.inputs {
@@ -150,7 +154,7 @@ impl TensorGraphFunction {
         counts
     }
 
-    fn try_fuse_reduction(
+    pub(crate) fn try_fuse_reduction(
         &self,
         node: &TensorGraphNode,
         consumer_counts: &HashMap<usize, usize>,
@@ -200,7 +204,7 @@ impl TensorGraphFunction {
         })
     }
 
-    fn try_fuse_elementwise_chain(
+    pub(crate) fn try_fuse_elementwise_chain(
         &self,
         node: &TensorGraphNode,
         consumer_counts: &HashMap<usize, usize>,
@@ -252,7 +256,7 @@ impl TensorGraphFunction {
         })
     }
 
-    fn collect_forward_elementwise_chain(
+    pub(crate) fn collect_forward_elementwise_chain(
         &self,
         start_id: usize,
         consumer_counts: &HashMap<usize, usize>,
@@ -284,7 +288,7 @@ impl TensorGraphFunction {
         chain
     }
 
-    fn elementwise_chain_feeds_reduction(
+    pub(crate) fn elementwise_chain_feeds_reduction(
         &self,
         start_id: usize,
         consumer_counts: &HashMap<usize, usize>,
@@ -310,7 +314,7 @@ impl TensorGraphFunction {
         }
     }
 
-    fn single_consumer(
+    pub(crate) fn single_consumer(
         &self,
         node_id: usize,
         consumer_counts: &HashMap<usize, usize>,
@@ -323,7 +327,7 @@ impl TensorGraphFunction {
         })
     }
 
-    fn collect_elementwise_chain(
+    pub(crate) fn collect_elementwise_chain(
         &self,
         start_id: usize,
         consumer_counts: &HashMap<usize, usize>,
@@ -353,7 +357,7 @@ impl TensorGraphFunction {
         reversed
     }
 
-    fn observable_outputs(&self) -> BTreeMap<usize, TensorMetadata> {
+    pub(crate) fn observable_outputs(&self) -> BTreeMap<usize, TensorMetadata> {
         let consumed = self
             .nodes
             .iter()
@@ -366,7 +370,7 @@ impl TensorGraphFunction {
             .collect()
     }
 
-    fn validate_into(&self, errors: &mut Vec<TensorGraphError>, reject_external: bool) {
+    pub(crate) fn validate_into(&self, errors: &mut Vec<TensorGraphError>, reject_external: bool) {
         let ids = self
             .nodes
             .iter()
@@ -407,7 +411,7 @@ impl TensorGraphFunction {
         }
     }
 
-    fn validate_node_contract(
+    pub(crate) fn validate_node_contract(
         &self,
         node: &TensorGraphNode,
         by_id: &BTreeMap<usize, &TensorGraphNode>,

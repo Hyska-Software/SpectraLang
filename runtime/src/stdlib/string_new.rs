@@ -1,8 +1,9 @@
+use super::*;
 // ── std.string new functions ─────────────────────────────────────────────────
 
 /// Splits `s` by `sep` and returns a list handle (int) whose elements are
 /// string pointers (i64) for each part. Returns -1 on allocation failure.
-extern "C" fn std_string_split_by(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_split_by(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -41,7 +42,7 @@ extern "C" fn std_string_split_by(ctx: *mut SpectraHostCallContext) -> i32 {
 /// Pads `s` on the left with `pad_char` (Unicode code point) until the result
 /// has `width` bytes. If `s` is already at or longer than `width`, returns `s`
 /// unchanged.
-extern "C" fn std_string_pad_left(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_pad_left(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -87,7 +88,7 @@ extern "C" fn std_string_pad_left(ctx: *mut SpectraHostCallContext) -> i32 {
 /// Pads `s` on the right with `pad_char` (Unicode code point) until the result
 /// has `width` bytes. If `s` is already at or longer than `width`, returns `s`
 /// unchanged.
-extern "C" fn std_string_pad_right(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_pad_right(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -131,7 +132,7 @@ extern "C" fn std_string_pad_right(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns a new string with the characters of `s` in reverse order.
-extern "C" fn std_string_reverse(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_reverse(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

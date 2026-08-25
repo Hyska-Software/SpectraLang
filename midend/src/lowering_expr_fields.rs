@@ -1,5 +1,7 @@
+use super::*;
+
 impl ASTLowering {
-    fn lower_expression_field(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_field(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
         match &expr.kind {
             ExpressionKind::FieldAccess { object, field } => {
                 // Se o objeto é um identificador, buscar no struct_var_map

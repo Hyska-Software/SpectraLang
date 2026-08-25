@@ -1,4 +1,5 @@
-fn tensor_binary(
+use super::*;
+pub(crate) fn tensor_binary(
     ctx: *mut SpectraHostCallContext,
     op: AutogradOp,
     int_op: impl Fn(i64, i64) -> i64,
@@ -189,7 +190,7 @@ fn tensor_binary(
     }
 }
 
-extern "C" fn std_tensor_sum(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_sum(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -259,7 +260,7 @@ extern "C" fn std_tensor_sum(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_sum_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_sum_f(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -328,11 +329,11 @@ extern "C" fn std_tensor_sum_f(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_sum_t(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_sum_t(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_reduction_tensor(ctx, AutogradOp::SumTensor, |values| values.iter().sum())
 }
 
-extern "C" fn std_tensor_mean_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_mean_f(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_query_i64(ctx, |tensor| {
         let data = tensor.materialize();
         if data.is_empty() {
@@ -349,13 +350,13 @@ extern "C" fn std_tensor_mean_f(ctx: *mut SpectraHostCallContext) -> i32 {
     })
 }
 
-extern "C" fn std_tensor_mean_t(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_mean_t(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_reduction_tensor(ctx, AutogradOp::MeanTensor, |values| {
         values.iter().sum::<f64>() / values.len() as f64
     })
 }
 
-fn tensor_reduction_tensor(
+pub(crate) fn tensor_reduction_tensor(
     ctx: *mut SpectraHostCallContext,
     op: AutogradOp,
     reduce: impl Fn(&[f64]) -> f64,
@@ -405,19 +406,19 @@ fn tensor_reduction_tensor(
     }
 }
 
-extern "C" fn std_tensor_max(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_max(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_query_i64(ctx, |tensor| {
         tensor.materialize().iter().copied().max().unwrap_or(0)
     })
 }
 
-extern "C" fn std_tensor_min(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_min(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_query_i64(ctx, |tensor| {
         tensor.materialize().iter().copied().min().unwrap_or(0)
     })
 }
 
-extern "C" fn std_tensor_argmax(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_argmax(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_query_i64(ctx, |tensor| {
         let data = tensor.materialize();
         if data.is_empty() {
@@ -449,7 +450,7 @@ extern "C" fn std_tensor_argmax(ctx: *mut SpectraHostCallContext) -> i32 {
     })
 }
 
-extern "C" fn std_tensor_transpose(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_transpose(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -501,7 +502,7 @@ extern "C" fn std_tensor_transpose(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_dot(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_dot(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -528,7 +529,7 @@ extern "C" fn std_tensor_dot(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_dot_t(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_dot_t(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -584,35 +585,35 @@ extern "C" fn std_tensor_dot_t(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_neg(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_neg(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_unary(ctx, AutogradOp::Neg, |v| v.saturating_neg(), |v| -v)
 }
 
-extern "C" fn std_tensor_exp_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_exp_f(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_float_unary(ctx, AutogradOp::Exp, f64::exp)
 }
 
-extern "C" fn std_tensor_log_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_log_f(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_float_unary(ctx, AutogradOp::Log, f64::ln)
 }
 
-extern "C" fn std_tensor_sqrt_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_sqrt_f(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_float_unary(ctx, AutogradOp::Sqrt, f64::sqrt)
 }
 
-extern "C" fn std_tensor_relu(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_relu(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_unary(ctx, AutogradOp::Relu, |v| v.max(0), |v| v.max(0.0))
 }
 
-extern "C" fn std_tensor_sigmoid_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_sigmoid_f(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_float_unary(ctx, AutogradOp::Sigmoid, |v| 1.0 / (1.0 + (-v).exp()))
 }
 
-extern "C" fn std_tensor_tanh_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_tanh_f(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_float_unary(ctx, AutogradOp::Tanh, f64::tanh)
 }
 
-fn tensor_unary(
+pub(crate) fn tensor_unary(
     ctx: *mut SpectraHostCallContext,
     op: AutogradOp,
     int_op: impl Fn(i64) -> i64,

@@ -120,8 +120,6 @@ fn is_inline_candidate(function: &Function, call_graph: &HashMap<String, HashSet
                 | InstructionKind::Call { .. }
                 | InstructionKind::CallIndirect { .. }
                 | InstructionKind::FuncAddr { .. }
-                | InstructionKind::AsyncSuspend { .. }
-                | InstructionKind::AsyncResume { .. }
                 | InstructionKind::AsyncReady { .. }
                 | InstructionKind::MakeDynFatPtr { .. }
                 | InstructionKind::LoadDynDataPtr { .. }

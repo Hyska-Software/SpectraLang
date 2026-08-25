@@ -180,11 +180,6 @@ impl DeadCodeElimination {
                     used.insert(value.id);
                 }
             }
-            // Fronteiras async: consomem o handle da tarefa.
-            InstructionKind::AsyncSuspend { task, .. }
-            | InstructionKind::AsyncResume { task, .. } => {
-                used.insert(task.id);
-            }
             InstructionKind::AsyncReady { value, .. } => {
                 if let Some(value) = value {
                     used.insert(value.id);
@@ -250,9 +245,6 @@ impl DeadCodeElimination {
                 | InstructionKind::HostCall { .. }
                 // AutodiffStep acumula gradientes no backward pass: nunca eliminar.
                 | InstructionKind::AutodiffStep { .. }
-                // Fronteiras async controlam o estado da tarefa: nunca eliminar.
-                | InstructionKind::AsyncSuspend { .. }
-                | InstructionKind::AsyncResume { .. }
         )
     }
 }

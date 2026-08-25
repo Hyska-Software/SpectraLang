@@ -1,6 +1,8 @@
+use super::*;
+
 impl ASTLowering {
     /// Lower a `expr as TargetType` cast expression.
-    fn lower_cast_expression(
+    pub(crate) fn lower_cast_expression(
         &mut self,
         inner: &Expression,
         target_type: &TypeAnnotation,
@@ -83,7 +85,7 @@ impl ASTLowering {
     /// Dispatch a method call via vtable for `dyn Trait` objects.
     /// The fat_ptr contains (data_ptr, vtable_ptr); we look up the method slot
     /// and emit a `CallIndirect`.
-    fn lower_dyn_method_call(
+    pub(crate) fn lower_dyn_method_call(
         &mut self,
         fat_ptr: Value,
         trait_name: String,
@@ -138,7 +140,7 @@ impl ASTLowering {
     }
 
     /// Build a fat pointer (data_ptr, vtable_ptr) for coercing a concrete struct to `dyn Trait`.
-    fn lower_coerce_to_dyn(
+    pub(crate) fn lower_coerce_to_dyn(
         &mut self,
         data_ptr: Value,
         from_ty: &IRType,
@@ -186,7 +188,7 @@ impl ASTLowering {
             .build_make_dyn_fat_ptr(ir_func, data_ptr, vtable_ptr)
     }
 
-    fn lower_string_literal(&mut self, literal: &str, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_string_literal(&mut self, literal: &str, ir_func: &mut IRFunction) -> Value {
         // R-3126: emit a single ConstString instruction. The backend resolves
         // this to a stable pointer (global .rodata section in AOT, heap
         // buffer in JIT) and tracks the compile-time length for fast
@@ -195,7 +197,7 @@ impl ASTLowering {
             .build_const_string(ir_func, literal.to_string())
     }
 
-    fn lower_pattern_check(
+    pub(crate) fn lower_pattern_check(
         &mut self,
         pattern: &spectra_compiler::ast::Pattern,
         scrutinee: Value,

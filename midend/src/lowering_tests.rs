@@ -1,3 +1,5 @@
+use super::*;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -16,7 +18,7 @@ mod tests {
     }
 
     #[test]
-    fn r2103_async_await_lowers_to_task_and_suspend_resume_markers() {
+    fn r2103_async_await_lowers_to_task_and_host_calls() {
         let ir = lower_source(
             r#"
             module r2103_async_await
@@ -35,8 +37,6 @@ mod tests {
         let pretty = crate::ir::pretty::format_module(&ir);
         assert!(pretty.contains("fn ready() -> Task<int>"));
         assert!(pretty.contains("fn add_one() -> Task<int>"));
-        assert!(pretty.contains("async.suspend"));
-        assert!(pretty.contains("async.resume"));
         assert!(pretty.contains("async.ready"));
         assert!(pretty.contains("spectra.async.task.ready"));
         assert!(pretty.contains("spectra.async.task.wait"));

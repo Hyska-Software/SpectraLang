@@ -1,6 +1,8 @@
+use super::*;
+
 impl ASTLowering {
     /// Substitute type parameters in a type annotation
-    fn substitute_type(
+    pub(crate) fn substitute_type(
         &self,
         ty: &TypeAnnotation,
         type_map: &HashMap<String, TypeAnnotation>,

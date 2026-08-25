@@ -1,4 +1,5 @@
-extern "C" fn std_serve_server_new(ctx: *mut SpectraHostCallContext) -> i32 {
+use super::*;
+pub(crate) extern "C" fn std_serve_server_new(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -32,12 +33,13 @@ extern "C" fn std_serve_server_new(ctx: *mut SpectraHostCallContext) -> i32 {
             latency_samples_ms: Vec::new(),
             observed_inputs: Vec::new(),
             observed_outputs: Vec::new(),
+            http: None,
         });
     results[0] = server_id;
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_warmup(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_warmup(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -54,7 +56,7 @@ extern "C" fn std_serve_server_warmup(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_is_warm(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_is_warm(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -70,7 +72,7 @@ extern "C" fn std_serve_server_is_warm(ctx: *mut SpectraHostCallContext) -> i32 
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_enqueue(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_enqueue(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -148,7 +150,7 @@ extern "C" fn std_serve_server_enqueue(ctx: *mut SpectraHostCallContext) -> i32 
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -179,7 +181,7 @@ extern "C" fn std_serve_server_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_process_batch(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_process_batch(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -279,7 +281,7 @@ extern "C" fn std_serve_server_process_batch(ctx: *mut SpectraHostCallContext) -
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_result(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_result(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -301,7 +303,7 @@ extern "C" fn std_serve_server_result(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_pending(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_pending(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -317,7 +319,7 @@ extern "C" fn std_serve_server_pending(ctx: *mut SpectraHostCallContext) -> i32 
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_set_timeout(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_set_timeout(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -334,7 +336,7 @@ extern "C" fn std_serve_server_set_timeout(ctx: *mut SpectraHostCallContext) -> 
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_resident_model(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_resident_model(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -350,7 +352,7 @@ extern "C" fn std_serve_server_resident_model(ctx: *mut SpectraHostCallContext) 
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_benchmark(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_benchmark(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 3) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -450,7 +452,7 @@ extern "C" fn std_serve_server_benchmark(ctx: *mut SpectraHostCallContext) -> i3
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_set_input_policy(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_set_input_policy(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 3) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -474,7 +476,7 @@ extern "C" fn std_serve_server_set_input_policy(ctx: *mut SpectraHostCallContext
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_set_output_policy(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_set_output_policy(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 3) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -498,7 +500,7 @@ extern "C" fn std_serve_server_set_output_policy(ctx: *mut SpectraHostCallContex
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_set_rate_limit(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_set_rate_limit(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -522,7 +524,7 @@ extern "C" fn std_serve_server_set_rate_limit(ctx: *mut SpectraHostCallContext) 
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_set_fallback(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_set_fallback(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -543,7 +545,7 @@ extern "C" fn std_serve_server_set_fallback(ctx: *mut SpectraHostCallContext) ->
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_last_diagnostic(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_last_diagnostic(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -562,7 +564,7 @@ extern "C" fn std_serve_server_last_diagnostic(ctx: *mut SpectraHostCallContext)
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_audit_log(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_audit_log(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -581,7 +583,7 @@ extern "C" fn std_serve_server_audit_log(ctx: *mut SpectraHostCallContext) -> i3
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_set_model_version(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_set_model_version(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -605,7 +607,7 @@ extern "C" fn std_serve_server_set_model_version(ctx: *mut SpectraHostCallContex
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_monitoring_snapshot(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_monitoring_snapshot(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -624,7 +626,7 @@ extern "C" fn std_serve_server_monitoring_snapshot(ctx: *mut SpectraHostCallCont
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_server_distribution_summary(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_distribution_summary(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -643,7 +645,7 @@ extern "C" fn std_serve_server_distribution_summary(ctx: *mut SpectraHostCallCon
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_drift_check(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_drift_check(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 3) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -664,7 +666,7 @@ extern "C" fn std_serve_drift_check(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_export_monitoring(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_export_monitoring(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 5) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -707,7 +709,7 @@ extern "C" fn std_serve_export_monitoring(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_serve_reset(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_reset(ctx: *mut SpectraHostCallContext) -> i32 {
     let _ = match host_call_void_args(ctx, 0) {
         Ok(registry) => registry,
         Err(status) => return status,
@@ -726,7 +728,7 @@ extern "C" fn std_serve_reset(ctx: *mut SpectraHostCallContext) -> i32 {
 /// from host args. Weights must be a 2-D float tensor `[out][in]` (row-major),
 /// biases a 1-D float tensor with `out` elements; activation codes are
 /// 0 = relu, 1 = gelu, 2 = tanh, 3 = softmax.
-fn serve_parse_linear_layer(
+pub(crate) fn serve_parse_linear_layer(
     weights_handle: SpectraHostValue,
     biases_handle: SpectraHostValue,
     activation_code: SpectraHostValue,
@@ -771,7 +773,7 @@ fn serve_parse_linear_layer(
 /// `x @ W^T + b -> act(layer)` per layer. Request inputs are scalars, so the
 /// first layer's input dimension must be 1 and every following layer must
 /// chain on the previous output width.
-extern "C" fn std_serve_server_register_model_linear(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_register_model_linear(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -832,7 +834,7 @@ extern "C" fn std_serve_server_register_model_linear(ctx: *mut SpectraHostCallCo
 /// delegates to `ml_onnx_run_inner` exactly like
 /// `spectra.std.ml.onnx_run`. Without the runtime `onnx` feature no real
 /// session can exist and this host rejects instead of simulating.
-extern "C" fn std_serve_server_register_model_onnx(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_register_model_onnx(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -873,7 +875,7 @@ extern "C" fn std_serve_server_register_model_onnx(ctx: *mut SpectraHostCallCont
 /// Returns the full float output vector of a completed request as a fresh
 /// stdlib tensor handle, enabling exact (< 1e-9) verification of forward-pass
 /// results. Only requests completed through real inference carry vectors.
-extern "C" fn std_serve_server_result_vector(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_result_vector(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,

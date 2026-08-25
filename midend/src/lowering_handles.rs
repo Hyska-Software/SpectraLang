@@ -1,4 +1,6 @@
-fn is_std_api_handle_type_segments(segments: &[String]) -> bool {
+use super::*;
+
+pub(crate) fn is_std_api_handle_type_segments(segments: &[String]) -> bool {
     let name = match segments {
         [name] => name.as_str(),
         [std, api, module, name]
@@ -125,7 +127,7 @@ fn is_std_api_handle_type_segments(segments: &[String]) -> bool {
     )
 }
 
-fn is_std_api_handle_type_name(name: &str) -> bool {
+pub(crate) fn is_std_api_handle_type_name(name: &str) -> bool {
     matches!(
         name,
         "Request"
@@ -183,7 +185,7 @@ fn is_std_api_handle_type_name(name: &str) -> bool {
     )
 }
 
-fn host_int(runtime_name: &'static str) -> HostFunctionDescriptor {
+pub(crate) fn host_int(runtime_name: &'static str) -> HostFunctionDescriptor {
     HostFunctionDescriptor {
         runtime_name,
         return_type: IRType::Int,
@@ -191,7 +193,7 @@ fn host_int(runtime_name: &'static str) -> HostFunctionDescriptor {
     }
 }
 
-fn host_task_int(runtime_name: &'static str) -> HostFunctionDescriptor {
+pub(crate) fn host_task_int(runtime_name: &'static str) -> HostFunctionDescriptor {
     HostFunctionDescriptor {
         runtime_name,
         return_type: IRType::Task {
@@ -201,7 +203,7 @@ fn host_task_int(runtime_name: &'static str) -> HostFunctionDescriptor {
     }
 }
 
-fn host_task_bool(runtime_name: &'static str) -> HostFunctionDescriptor {
+pub(crate) fn host_task_bool(runtime_name: &'static str) -> HostFunctionDescriptor {
     HostFunctionDescriptor {
         runtime_name,
         return_type: IRType::Task {
@@ -211,7 +213,7 @@ fn host_task_bool(runtime_name: &'static str) -> HostFunctionDescriptor {
     }
 }
 
-fn host_task_string(runtime_name: &'static str) -> HostFunctionDescriptor {
+pub(crate) fn host_task_string(runtime_name: &'static str) -> HostFunctionDescriptor {
     HostFunctionDescriptor {
         runtime_name,
         return_type: IRType::Task {
@@ -221,7 +223,7 @@ fn host_task_string(runtime_name: &'static str) -> HostFunctionDescriptor {
     }
 }
 
-fn host_float(runtime_name: &'static str) -> HostFunctionDescriptor {
+pub(crate) fn host_float(runtime_name: &'static str) -> HostFunctionDescriptor {
     HostFunctionDescriptor {
         runtime_name,
         return_type: IRType::Float,
@@ -229,7 +231,7 @@ fn host_float(runtime_name: &'static str) -> HostFunctionDescriptor {
     }
 }
 
-fn host_bool(runtime_name: &'static str) -> HostFunctionDescriptor {
+pub(crate) fn host_bool(runtime_name: &'static str) -> HostFunctionDescriptor {
     HostFunctionDescriptor {
         runtime_name,
         return_type: IRType::Bool,
@@ -237,7 +239,7 @@ fn host_bool(runtime_name: &'static str) -> HostFunctionDescriptor {
     }
 }
 
-fn host_string(runtime_name: &'static str) -> HostFunctionDescriptor {
+pub(crate) fn host_string(runtime_name: &'static str) -> HostFunctionDescriptor {
     HostFunctionDescriptor {
         runtime_name,
         return_type: IRType::String,
@@ -245,7 +247,7 @@ fn host_string(runtime_name: &'static str) -> HostFunctionDescriptor {
     }
 }
 
-fn host_void(runtime_name: &'static str) -> HostFunctionDescriptor {
+pub(crate) fn host_void(runtime_name: &'static str) -> HostFunctionDescriptor {
     HostFunctionDescriptor {
         runtime_name,
         return_type: IRType::Void,
@@ -253,7 +255,7 @@ fn host_void(runtime_name: &'static str) -> HostFunctionDescriptor {
     }
 }
 
-fn host_tensor_rank0(runtime_name: &'static str) -> HostFunctionDescriptor {
+pub(crate) fn host_tensor_rank0(runtime_name: &'static str) -> HostFunctionDescriptor {
     HostFunctionDescriptor {
         runtime_name,
         return_type: IRType::Tensor {
@@ -267,7 +269,7 @@ fn host_tensor_rank0(runtime_name: &'static str) -> HostFunctionDescriptor {
     }
 }
 
-fn host_tensor_dynamic(runtime_name: &'static str) -> HostFunctionDescriptor {
+pub(crate) fn host_tensor_dynamic(runtime_name: &'static str) -> HostFunctionDescriptor {
     HostFunctionDescriptor {
         runtime_name,
         return_type: IRType::Tensor {
@@ -282,14 +284,14 @@ fn host_tensor_dynamic(runtime_name: &'static str) -> HostFunctionDescriptor {
 }
 
 #[derive(Debug, Default)]
-struct LoweredTensorMetadata {
-    rank: Option<usize>,
-    dims: Option<Vec<Option<usize>>>,
-    layout: Option<String>,
-    device: Option<String>,
+pub(crate) struct LoweredTensorMetadata {
+    pub(crate) rank: Option<usize>,
+    pub(crate) dims: Option<Vec<Option<usize>>>,
+    pub(crate) layout: Option<String>,
+    pub(crate) device: Option<String>,
 }
 
-fn tensor_metadata(type_args: &[TypeAnnotation]) -> LoweredTensorMetadata {
+pub(crate) fn tensor_metadata(type_args: &[TypeAnnotation]) -> LoweredTensorMetadata {
     let mut meta = LoweredTensorMetadata::default();
     let mut dims = Vec::new();
 

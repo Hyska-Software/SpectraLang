@@ -1,169 +1,170 @@
+use super::*;
 // ── std.ml runtime ──────────────────────────────────────────────────────────
 
 #[derive(Default)]
-struct MlModule {
-    parameters: Vec<usize>,
-    training: bool,
+pub(crate) struct MlModule {
+    pub(crate) parameters: Vec<usize>,
+    pub(crate) training: bool,
 }
 
 #[derive(Clone, Copy)]
-struct MlDataset {
-    features: usize,
-    labels: usize,
-    len: usize,
+pub(crate) struct MlDataset {
+    pub(crate) features: usize,
+    pub(crate) labels: usize,
+    pub(crate) len: usize,
 }
 
 #[derive(Clone, Copy)]
-struct MlDataLoader {
-    dataset: usize,
-    batch_size: usize,
-    shuffle_seed: u64,
+pub(crate) struct MlDataLoader {
+    pub(crate) dataset: usize,
+    pub(crate) batch_size: usize,
+    pub(crate) shuffle_seed: u64,
 }
 
 #[derive(Clone)]
-struct MlDataFrame {
-    rows: usize,
-    cols: usize,
-    data: Vec<f64>,
+pub(crate) struct MlDataFrame {
+    pub(crate) rows: usize,
+    pub(crate) cols: usize,
+    pub(crate) data: Vec<f64>,
 }
 
 #[derive(Clone)]
-struct MlMetricRecord {
-    name: String,
-    value: f64,
-    step: i64,
+pub(crate) struct MlMetricRecord {
+    pub(crate) name: String,
+    pub(crate) value: f64,
+    pub(crate) step: i64,
 }
 
 #[derive(Clone)]
-struct MlArtifactRecord {
-    path: String,
-    size: u64,
-    fnv64: String,
+pub(crate) struct MlArtifactRecord {
+    pub(crate) path: String,
+    pub(crate) size: u64,
+    pub(crate) fnv64: String,
 }
 
 #[derive(Clone)]
-struct MlExperiment {
-    name: String,
-    out_dir: String,
-    seed: i64,
-    configs: Vec<(String, String)>,
-    metrics: Vec<MlMetricRecord>,
-    artifacts: Vec<MlArtifactRecord>,
-    lockfile: Option<MlArtifactRecord>,
-    model_output: Option<MlArtifactRecord>,
-    manifest_path: String,
-    reproduction_command: String,
-    finished: bool,
+pub(crate) struct MlExperiment {
+    pub(crate) name: String,
+    pub(crate) out_dir: String,
+    pub(crate) seed: i64,
+    pub(crate) configs: Vec<(String, String)>,
+    pub(crate) metrics: Vec<MlMetricRecord>,
+    pub(crate) artifacts: Vec<MlArtifactRecord>,
+    pub(crate) lockfile: Option<MlArtifactRecord>,
+    pub(crate) model_output: Option<MlArtifactRecord>,
+    pub(crate) manifest_path: String,
+    pub(crate) reproduction_command: String,
+    pub(crate) finished: bool,
 }
 
 #[derive(Clone)]
-struct MlDistributedWorker {
-    worker_id: usize,
-    step_count: i64,
-    sample_count: i64,
-    accumulator: f64,
-    active: bool,
+pub(crate) struct MlDistributedWorker {
+    pub(crate) worker_id: usize,
+    pub(crate) step_count: i64,
+    pub(crate) sample_count: i64,
+    pub(crate) accumulator: f64,
+    pub(crate) active: bool,
 }
 
 #[derive(Clone)]
-struct MlDistributedSession {
-    name: String,
-    out_dir: String,
-    worker_count: usize,
-    seed: i64,
-    global_step: i64,
-    interrupted_worker: Option<usize>,
-    workers: Vec<MlDistributedWorker>,
-    last_checkpoint_path: Option<String>,
-    topology: String,
-    last_loss: f64,
+pub(crate) struct MlDistributedSession {
+    pub(crate) name: String,
+    pub(crate) out_dir: String,
+    pub(crate) worker_count: usize,
+    pub(crate) seed: i64,
+    pub(crate) global_step: i64,
+    pub(crate) interrupted_worker: Option<usize>,
+    pub(crate) workers: Vec<MlDistributedWorker>,
+    pub(crate) last_checkpoint_path: Option<String>,
+    pub(crate) topology: String,
+    pub(crate) last_loss: f64,
 }
 
 #[derive(Clone)]
-struct MlKvCache {
-    max_tokens: usize,
-    dim: usize,
-    keys: Vec<f64>,
-    values: Vec<f64>,
+pub(crate) struct MlKvCache {
+    pub(crate) max_tokens: usize,
+    pub(crate) dim: usize,
+    pub(crate) keys: Vec<f64>,
+    pub(crate) values: Vec<f64>,
 }
 
 #[derive(Clone)]
-struct MlWordpieceTokenizer {
-    token_to_id: HashMap<String, i64>,
-    id_to_token: HashMap<i64, String>,
-    unk_id: i64,
-    max_token_chars: usize,
-    special_tokens: HashMap<String, i64>,
-    lowercase: bool,
-    continuation_prefix: String,
-    strict_ids: bool,
+pub(crate) struct MlWordpieceTokenizer {
+    pub(crate) token_to_id: HashMap<String, i64>,
+    pub(crate) id_to_token: HashMap<i64, String>,
+    pub(crate) unk_id: i64,
+    pub(crate) max_token_chars: usize,
+    pub(crate) special_tokens: HashMap<String, i64>,
+    pub(crate) lowercase: bool,
+    pub(crate) continuation_prefix: String,
+    pub(crate) strict_ids: bool,
 }
 
 #[derive(Clone)]
-struct MlArtifact {
-    name: String,
-    model_version: String,
-    kind: String,
-    metadata: BTreeMap<String, String>,
-    tensors: HashMap<String, usize>,
+pub(crate) struct MlArtifact {
+    pub(crate) name: String,
+    pub(crate) model_version: String,
+    pub(crate) kind: String,
+    pub(crate) metadata: BTreeMap<String, String>,
+    pub(crate) tensors: HashMap<String, usize>,
 }
 
 /// ML resources use the same generational handle encoding as core collections
 /// and time values. This adapter keeps the existing `Option`-based call sites
 /// small while removing the old process-global `next_id` namespace.
-struct MlHandleTable<T> {
+pub(crate) struct MlHandleTable<T> {
     table: HandleTable<T>,
 }
 
 impl<T> MlHandleTable<T> {
-    fn new(kind: HandleKind) -> Self {
+    pub(crate) fn new(kind: HandleKind) -> Self {
         Self {
             table: HandleTable::new(kind),
         }
     }
 
-    fn insert(&mut self, value: T) -> usize {
+    pub(crate) fn insert(&mut self, value: T) -> usize {
         self.table.insert(value).raw() as usize
     }
 
-    fn id(&self, raw: &usize) -> Option<HandleId> {
+    pub(crate) fn id(&self, raw: &usize) -> Option<HandleId> {
         HandleId::from_raw(*raw as i64).ok()
     }
 
-    fn get(&self, raw: &usize) -> Option<&T> {
+    pub(crate) fn get(&self, raw: &usize) -> Option<&T> {
         self.id(raw).and_then(|id| self.table.get(id).ok())
     }
 
-    fn get_mut(&mut self, raw: &usize) -> Option<&mut T> {
+    pub(crate) fn get_mut(&mut self, raw: &usize) -> Option<&mut T> {
         let id = self.id(raw)?;
         self.table.get_mut(id).ok()
     }
 
-    fn remove(&mut self, raw: &usize) -> Option<T> {
+    pub(crate) fn remove(&mut self, raw: &usize) -> Option<T> {
         let id = self.id(raw)?;
         self.table.remove(id).ok()
     }
 
-    fn contains_key(&self, raw: &usize) -> bool {
+    pub(crate) fn contains_key(&self, raw: &usize) -> bool {
         self.get(raw).is_some()
     }
 }
 
-struct MlRegistry {
-    modules: MlHandleTable<MlModule>,
-    datasets: MlHandleTable<MlDataset>,
-    loaders: MlHandleTable<MlDataLoader>,
-    dataframes: MlHandleTable<MlDataFrame>,
-    experiments: MlHandleTable<MlExperiment>,
-    distributed_sessions: MlHandleTable<MlDistributedSession>,
-    kv_caches: MlHandleTable<MlKvCache>,
-    tokenizers: MlHandleTable<MlWordpieceTokenizer>,
-    vector_indexes: MlHandleTable<crate::vector_index::VectorIndex>,
-    artifacts: MlHandleTable<MlArtifact>,
+pub(crate) struct MlRegistry {
+    pub(crate) modules: MlHandleTable<MlModule>,
+    pub(crate) datasets: MlHandleTable<MlDataset>,
+    pub(crate) loaders: MlHandleTable<MlDataLoader>,
+    pub(crate) dataframes: MlHandleTable<MlDataFrame>,
+    pub(crate) experiments: MlHandleTable<MlExperiment>,
+    pub(crate) distributed_sessions: MlHandleTable<MlDistributedSession>,
+    pub(crate) kv_caches: MlHandleTable<MlKvCache>,
+    pub(crate) tokenizers: MlHandleTable<MlWordpieceTokenizer>,
+    pub(crate) vector_indexes: MlHandleTable<crate::vector_index::VectorIndex>,
+    pub(crate) artifacts: MlHandleTable<MlArtifact>,
 }
 
 impl MlRegistry {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             modules: MlHandleTable::new(HandleKind::MlModule),
             datasets: MlHandleTable::new(HandleKind::MlDataset),
@@ -179,12 +180,12 @@ impl MlRegistry {
     }
 }
 
-fn ml_registry() -> &'static Mutex<MlRegistry> {
+pub(crate) fn ml_registry() -> &'static Mutex<MlRegistry> {
     static REGISTRY: OnceLock<Mutex<MlRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(MlRegistry::new()))
 }
 
-fn with_ml_registry<F, R>(action: F) -> R
+pub(crate) fn with_ml_registry<F, R>(action: F) -> R
 where
     F: FnOnce(&mut MlRegistry) -> R,
 {
@@ -192,14 +193,14 @@ where
     action(&mut guard)
 }
 
-unsafe fn ml_args<'a>(
+pub(crate) unsafe fn ml_args<'a>(
     ctx: *mut SpectraHostCallContext,
     expected: usize,
 ) -> Result<(&'a mut SpectraHostCallContext, &'a [SpectraHostValue]), i32> {
     tensor_args(ctx, expected)
 }
 
-fn ml_tensor_float_data(handle: usize) -> Option<(Vec<usize>, Vec<f64>, bool)> {
+pub(crate) fn ml_tensor_float_data(handle: usize) -> Option<(Vec<usize>, Vec<f64>, bool)> {
     with_tensor_registry(|registry| {
         let tensor = registry.get(handle)?;
         if tensor.dtype != TensorDType::Float {
@@ -213,14 +214,14 @@ fn ml_tensor_float_data(handle: usize) -> Option<(Vec<usize>, Vec<f64>, bool)> {
     })
 }
 
-fn ml_tensor_int_data(handle: usize) -> Option<Vec<i64>> {
+pub(crate) fn ml_tensor_int_data(handle: usize) -> Option<Vec<i64>> {
     with_tensor_registry(|registry| {
         let tensor = registry.get(handle)?;
         Some(tensor.materialize())
     })
 }
 
-fn ml_store_float_tensor(handle: usize, values: Vec<f64>) -> bool {
+pub(crate) fn ml_store_float_tensor(handle: usize, values: Vec<f64>) -> bool {
     with_tensor_registry(|registry| {
         let Some(tensor) = registry.get_mut(handle) else {
             return false;
@@ -236,14 +237,14 @@ fn ml_store_float_tensor(handle: usize, values: Vec<f64>) -> bool {
     })
 }
 
-fn ml_alloc_float_tensor(shape: Vec<usize>, values: Vec<f64>) -> Result<usize, i32> {
+pub(crate) fn ml_alloc_float_tensor(shape: Vec<usize>, values: Vec<f64>) -> Result<usize, i32> {
     if shape.iter().product::<usize>() != values.len() {
         return Err(HOST_STATUS_INVALID_ARGUMENT);
     }
     tensor_alloc(TensorDType::Float, shape, f64_values_to_host(&values))
 }
 
-fn ml_sigmoid(value: f64) -> f64 {
+pub(crate) fn ml_sigmoid(value: f64) -> f64 {
     if value >= 0.0 {
         let z = (-value).exp();
         1.0 / (1.0 + z)
@@ -253,7 +254,7 @@ fn ml_sigmoid(value: f64) -> f64 {
     }
 }
 
-fn ml_softmax_row(values: &[f64]) -> Option<Vec<f64>> {
+pub(crate) fn ml_softmax_row(values: &[f64]) -> Option<Vec<f64>> {
     if values.is_empty() || values.iter().any(|value| !value.is_finite()) {
         return None;
     }
@@ -269,7 +270,7 @@ fn ml_softmax_row(values: &[f64]) -> Option<Vec<f64>> {
     Some(exp.into_iter().map(|value| value / sum).collect())
 }
 
-fn ml_parse_wordpiece_vocab(spec: &str) -> Option<MlWordpieceTokenizer> {
+pub(crate) fn ml_parse_wordpiece_vocab(spec: &str) -> Option<MlWordpieceTokenizer> {
     let mut token_to_id = HashMap::new();
     let mut id_to_token = HashMap::new();
     let mut next_id = 0i64;
@@ -315,7 +316,7 @@ fn ml_parse_wordpiece_vocab(spec: &str) -> Option<MlWordpieceTokenizer> {
     })
 }
 
-fn ml_vocab_json_depth(value: &serde_json::Value, depth: usize) -> bool {
+pub(crate) fn ml_vocab_json_depth(value: &serde_json::Value, depth: usize) -> bool {
     if depth > 32 {
         return false;
     }
@@ -330,7 +331,7 @@ fn ml_vocab_json_depth(value: &serde_json::Value, depth: usize) -> bool {
     }
 }
 
-fn ml_parse_artifact_tokenizer(
+pub(crate) fn ml_parse_artifact_tokenizer(
     data: &crate::artifact::ArtifactData,
 ) -> Option<MlWordpieceTokenizer> {
     if data.kind != "multi_array"
@@ -424,7 +425,7 @@ fn ml_parse_artifact_tokenizer(
     })
 }
 
-fn ml_wordpiece_encode(tokenizer: &MlWordpieceTokenizer, text: &str) -> Vec<i64> {
+pub(crate) fn ml_wordpiece_encode(tokenizer: &MlWordpieceTokenizer, text: &str) -> Vec<i64> {
     let mut ids = Vec::new();
     for word in text.split_whitespace() {
         if let Some(id) = tokenizer.special_tokens.get(word) {
@@ -477,7 +478,7 @@ fn ml_wordpiece_encode(tokenizer: &MlWordpieceTokenizer, text: &str) -> Vec<i64>
     ids
 }
 
-fn ml_wordpiece_decode(tokenizer: &MlWordpieceTokenizer, ids: &[i64]) -> Option<String> {
+pub(crate) fn ml_wordpiece_decode(tokenizer: &MlWordpieceTokenizer, ids: &[i64]) -> Option<String> {
     let mut words = Vec::<String>::new();
     for id in ids {
         let token = tokenizer.id_to_token.get(id).cloned().or_else(|| {
@@ -502,7 +503,7 @@ fn ml_wordpiece_decode(tokenizer: &MlWordpieceTokenizer, ids: &[i64]) -> Option<
     Some(words.join(" "))
 }
 
-fn ml_hash_text_to_embedding(text: &str, dim: usize) -> Option<Vec<f64>> {
+pub(crate) fn ml_hash_text_to_embedding(text: &str, dim: usize) -> Option<Vec<f64>> {
     if dim == 0 {
         return None;
     }
@@ -526,7 +527,7 @@ fn ml_hash_text_to_embedding(text: &str, dim: usize) -> Option<Vec<f64>> {
     Some(values)
 }
 
-fn ml_token_set(text: &str) -> HashSet<String> {
+pub(crate) fn ml_token_set(text: &str) -> HashSet<String> {
     text.split_whitespace()
         .map(|token| {
             token
@@ -537,7 +538,7 @@ fn ml_token_set(text: &str) -> HashSet<String> {
         .collect()
 }
 
-fn ml_f1_overlap(answer: &str, expected: &str) -> f64 {
+pub(crate) fn ml_f1_overlap(answer: &str, expected: &str) -> f64 {
     let answer_tokens = ml_token_set(answer);
     let expected_tokens = ml_token_set(expected);
     if answer_tokens.is_empty() || expected_tokens.is_empty() {
@@ -552,7 +553,7 @@ fn ml_f1_overlap(answer: &str, expected: &str) -> f64 {
     2.0 * precision * recall / (precision + recall)
 }
 
-fn ml_metrics_json(kind: &str, fields: &[(&str, String)]) -> String {
+pub(crate) fn ml_metrics_json(kind: &str, fields: &[(&str, String)]) -> String {
     let fields = fields
         .iter()
         .map(|(key, value)| format!("\"{}\":{}", key, value))
@@ -564,7 +565,7 @@ fn ml_metrics_json(kind: &str, fields: &[(&str, String)]) -> String {
     )
 }
 
-fn ml_float_json(value: f64) -> String {
+pub(crate) fn ml_float_json(value: f64) -> String {
     if value.is_finite() {
         format!("{:.6}", value)
     } else {
@@ -572,7 +573,7 @@ fn ml_float_json(value: f64) -> String {
     }
 }
 
-fn ml_json_payload_arg(value: SpectraHostValue) -> Option<String> {
+pub(crate) fn ml_json_payload_arg(value: SpectraHostValue) -> Option<String> {
     let payload = ml_read_path_arg(value)?;
     let trimmed = payload.trim();
     if trimmed.starts_with('{') && trimmed.ends_with('}') {
@@ -582,7 +583,7 @@ fn ml_json_payload_arg(value: SpectraHostValue) -> Option<String> {
     }
 }
 
-fn ml_loss_tensor(
+pub(crate) fn ml_loss_tensor(
     ctx_ref: &mut SpectraHostCallContext,
     value: f64,
     requires_grad: bool,

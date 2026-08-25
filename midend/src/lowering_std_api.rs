@@ -1,4 +1,6 @@
-fn lookup_std_api_host_function(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
+use super::*;
+
+pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
     match (module, function) {
         ("http", "method_name") => Some(host_string("spectra.api.http.method_name")),
         ("http", "method_allows_body") => Some(host_int("spectra.api.http.method_allows_body")),

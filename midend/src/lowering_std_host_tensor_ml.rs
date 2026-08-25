@@ -1,4 +1,6 @@
-fn lookup_std_host_group_tensor_ml(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
+use super::*;
+
+pub(crate) fn lookup_std_host_group_tensor_ml(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
     match (module, function) {
             ("tensor", "vector_f") => Some(HostFunctionDescriptor {
                 runtime_name: "spectra.std.tensor.full_f",

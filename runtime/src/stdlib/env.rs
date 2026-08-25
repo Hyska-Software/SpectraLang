@@ -1,6 +1,7 @@
+use super::*;
 // ── std.env host functions ───────────────────────────────────────────────────
 
-extern "C" fn std_env_get(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_env_get(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -24,7 +25,7 @@ extern "C" fn std_env_get(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_env_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_env_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -48,7 +49,7 @@ extern "C" fn std_env_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_env_set(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_env_set(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -73,7 +74,7 @@ extern "C" fn std_env_set(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_env_args_count(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_env_args_count(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -96,7 +97,7 @@ extern "C" fn std_env_args_count(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_env_arg(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_env_arg(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -123,7 +124,7 @@ extern "C" fn std_env_arg(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_env_arg_option(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_env_arg_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

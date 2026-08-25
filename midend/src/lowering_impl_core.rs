@@ -1,5 +1,7 @@
+use super::*;
+
 impl ASTLowering {
-    fn source_span(&self, span: Span) -> SourceSpan {
+    pub(crate) fn source_span(&self, span: Span) -> SourceSpan {
         SourceSpan {
             file: self.source_file.clone(),
             start_line: span.start_location.line as u32,
@@ -42,7 +44,6 @@ impl ASTLowering {
             closure_var_map: HashMap::new(),
             current_function_return_annotation: None,
             current_async_output_type: None,
-            async_state_counter: 0,
             current_expected_annotation: None,
             trait_method_order: HashMap::new(),
             trait_method_signatures: HashMap::new(),
@@ -63,7 +64,7 @@ impl ASTLowering {
         self.source_file = file.into();
     }
 
-    fn register_builtin_async_traits(&mut self) {
+    pub(crate) fn register_builtin_async_traits(&mut self) {
         self.trait_method_order.insert(
             "Future".to_string(),
             vec!["poll".to_string(), "cancel".to_string()],
@@ -111,7 +112,7 @@ impl ASTLowering {
     /// Response both lower to `Int` here.  Keeping the async result as
     /// `Task<Int>` is essential for dyn AsyncHandler: the backend vtable call
     /// must preserve the task boundary for a subsequent `await` (R-2113).
-    fn register_builtin_api_traits(&mut self) {
+    pub(crate) fn register_builtin_api_traits(&mut self) {
         let api_handle = IRType::Int;
         let api_task = |output: IRType| IRType::Task {
             output: Box::new(output),
@@ -186,7 +187,7 @@ impl ASTLowering {
         );
     }
 
-    fn register_trait_metadata(&mut self, trait_decl: &TraitDeclaration) {
+    pub(crate) fn register_trait_metadata(&mut self, trait_decl: &TraitDeclaration) {
         self.trait_declarations
             .insert(trait_decl.name.clone(), trait_decl.clone());
         self.trait_method_order.insert(
@@ -228,7 +229,7 @@ impl ASTLowering {
     /// The semantic module owns the public record contract; the midend keeps
     /// this small intrinsic definition available even when a module imports
     /// `std.fs` without importing `std.error` solely to inspect an error.
-    fn register_builtin_error_struct(&mut self) {
+    pub(crate) fn register_builtin_error_struct(&mut self) {
         self.struct_definitions.insert(
             "Error".to_string(),
             vec![
@@ -259,7 +260,7 @@ impl ASTLowering {
 
     /// Pre-register `Option<T>` and `Result<T, E>` as built-in generic enums so
     /// that user code doesn't need to declare them.
-    fn register_builtin_generic_enums(&mut self) {
+    pub(crate) fn register_builtin_generic_enums(&mut self) {
         let dummy = Span::dummy();
 
         let make_type_param = |name: &str| TypeParameter {
@@ -330,26 +331,26 @@ impl ASTLowering {
         self.generic_enums.insert("Result".to_string(), result_enum);
     }
 
-    fn error(&mut self, message: impl Into<String>) {
+    pub(crate) fn error(&mut self, message: impl Into<String>) {
         self.errors.push(MidendError::new(message));
     }
 
     /// Report an impossible lowering state and return a non-emittable poison
     /// value. `lower_module` rejects the module whenever `errors` is non-empty,
     /// so this sentinel can never reach verification or backend codegen.
-    fn invalid_value(&mut self, message: impl Into<String>) -> Value {
+    pub(crate) fn invalid_value(&mut self, message: impl Into<String>) -> Value {
         self.error(message);
         Value { id: usize::MAX }
     }
 
-    fn require_value(&mut self, value: Option<Value>, message: impl Into<String>) -> Value {
+    pub(crate) fn require_value(&mut self, value: Option<Value>, message: impl Into<String>) -> Value {
         match value {
             Some(value) => value,
             None => self.invalid_value(message),
         }
     }
 
-    fn eval_const_expression(&self, expr: &Expression) -> Option<LoweredConstValue> {
+    pub(crate) fn eval_const_expression(&self, expr: &Expression) -> Option<LoweredConstValue> {
         match &expr.kind {
             ExpressionKind::NumberLiteral(raw) => {
                 if raw.contains('.') {
@@ -400,7 +401,7 @@ impl ASTLowering {
         }
     }
 
-    fn eval_const_binary(
+    pub(crate) fn eval_const_binary(
         &self,
         left: LoweredConstValue,
         operator: BinaryOperator,
@@ -461,7 +462,7 @@ impl ASTLowering {
         }
     }
 
-    fn eval_const_order(
+    pub(crate) fn eval_const_order(
         &self,
         left: LoweredConstValue,
         right: LoweredConstValue,
@@ -473,7 +474,7 @@ impl ASTLowering {
         )))
     }
 
-    fn const_value_as_f64(&self, value: &LoweredConstValue) -> Option<f64> {
+    pub(crate) fn const_value_as_f64(&self, value: &LoweredConstValue) -> Option<f64> {
         match value {
             LoweredConstValue::Int(v) => Some(*v as f64),
             LoweredConstValue::Float(v) => Some(*v),
@@ -481,7 +482,7 @@ impl ASTLowering {
         }
     }
 
-    fn const_values_equal(&self, left: &LoweredConstValue, right: &LoweredConstValue) -> bool {
+    pub(crate) fn const_values_equal(&self, left: &LoweredConstValue, right: &LoweredConstValue) -> bool {
         match (left, right) {
             (LoweredConstValue::Int(a), LoweredConstValue::Int(b)) => a == b,
             (LoweredConstValue::Float(a), LoweredConstValue::Float(b)) => a == b,
@@ -494,7 +495,7 @@ impl ASTLowering {
         }
     }
 
-    fn cast_const_value(
+    pub(crate) fn cast_const_value(
         &self,
         value: LoweredConstValue,
         target: &IRType,
@@ -539,7 +540,7 @@ impl ASTLowering {
         }
     }
 
-    fn exact_int_bounds(signed: bool, width: IRIntWidth) -> (i64, i64) {
+    pub(crate) fn exact_int_bounds(signed: bool, width: IRIntWidth) -> (i64, i64) {
         match (signed, width) {
             (true, IRIntWidth::I8) => (i8::MIN as i64, i8::MAX as i64),
             (true, IRIntWidth::I16) => (i16::MIN as i64, i16::MAX as i64),
@@ -552,7 +553,7 @@ impl ASTLowering {
         }
     }
 
-    fn emit_const_value(&mut self, value: &LoweredConstValue, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn emit_const_value(&mut self, value: &LoweredConstValue, ir_func: &mut IRFunction) -> Value {
         match value {
             LoweredConstValue::Int(v) => self.builder.build_const_int(ir_func, *v),
             LoweredConstValue::Float(v) => self.builder.build_const_float(ir_func, *v),
@@ -562,7 +563,7 @@ impl ASTLowering {
         }
     }
 
-    fn lowered_const_to_ir_constant(value: &LoweredConstValue) -> Constant {
+    pub(crate) fn lowered_const_to_ir_constant(value: &LoweredConstValue) -> Constant {
         match value {
             LoweredConstValue::Int(v) => Constant::Int(*v),
             LoweredConstValue::Float(v) => Constant::Float(*v),

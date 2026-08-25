@@ -1,37 +1,38 @@
+use super::*;
 #[derive(Clone)]
-struct MlOnnxValue {
-    name: &'static str,
-    dtype: &'static str,
-    shape: &'static [i64],
+pub(crate) struct MlOnnxValue {
+    pub(crate) name: &'static str,
+    pub(crate) dtype: &'static str,
+    pub(crate) shape: &'static [i64],
 }
 
 #[derive(Clone)]
-struct MlOnnxNode {
-    name: &'static str,
-    op_type: &'static str,
-    inputs: &'static [&'static str],
-    outputs: &'static [&'static str],
+pub(crate) struct MlOnnxNode {
+    pub(crate) name: &'static str,
+    pub(crate) op_type: &'static str,
+    pub(crate) inputs: &'static [&'static str],
+    pub(crate) outputs: &'static [&'static str],
 }
 
 #[derive(Clone)]
-struct MlOnnxModel {
-    kind: &'static str,
-    nodes: Vec<MlOnnxNode>,
-    inputs: Vec<MlOnnxValue>,
-    outputs: Vec<MlOnnxValue>,
+pub(crate) struct MlOnnxModel {
+    pub(crate) kind: &'static str,
+    pub(crate) nodes: Vec<MlOnnxNode>,
+    pub(crate) inputs: Vec<MlOnnxValue>,
+    pub(crate) outputs: Vec<MlOnnxValue>,
     /// Real weights baked into the exported ModelProto so every exported
     /// template is directly executable by an onnxruntime session.
-    initializers: Vec<MlOnnxInitializer>,
+    pub(crate) initializers: Vec<MlOnnxInitializer>,
 }
 
 #[derive(Clone)]
-struct MlOnnxInitializer {
-    name: &'static str,
-    shape: &'static [i64],
+pub(crate) struct MlOnnxInitializer {
+    pub(crate) name: &'static str,
+    pub(crate) shape: &'static [i64],
 }
 
 /// FNV-1a seed so every initializer name maps to a stable value stream.
-fn ml_onnx_seed(name: &str) -> u64 {
+pub(crate) fn ml_onnx_seed(name: &str) -> u64 {
     name.bytes().fold(0xCBF2_9CE4_8422_2325, |hash, byte| {
         (hash ^ byte as u64).wrapping_mul(0x100_0000_01B3)
     })
@@ -40,7 +41,7 @@ fn ml_onnx_seed(name: &str) -> u64 {
 /// Deterministic xorshift64 stream quantized to multiples of 0.25 in
 /// [-2.0, 2.0]. Exact reproducibility matters: the inference tests recompute
 /// expected outputs from this same stream.
-fn ml_onnx_deterministic_values(seed: u64, len: usize) -> Vec<f32> {
+pub(crate) fn ml_onnx_deterministic_values(seed: u64, len: usize) -> Vec<f32> {
     let mut state = seed | 1;
     let mut out = Vec::with_capacity(len);
     for _ in 0..len {
@@ -54,12 +55,12 @@ fn ml_onnx_deterministic_values(seed: u64, len: usize) -> Vec<f32> {
 }
 
 impl MlOnnxInitializer {
-    fn values(&self) -> Vec<f32> {
+    pub(crate) fn values(&self) -> Vec<f32> {
         let len = self.shape.iter().product::<i64>() as usize;
         ml_onnx_deterministic_values(ml_onnx_seed(self.name), len)
     }
 }
-fn pb_varint(mut value: u64, out: &mut Vec<u8>) {
+pub(crate) fn pb_varint(mut value: u64, out: &mut Vec<u8>) {
     while value >= 0x80 {
         out.push((value as u8) | 0x80);
         value >>= 7;
@@ -67,39 +68,39 @@ fn pb_varint(mut value: u64, out: &mut Vec<u8>) {
     out.push(value as u8);
 }
 
-fn pb_key(field: u32, wire: u8, out: &mut Vec<u8>) {
+pub(crate) fn pb_key(field: u32, wire: u8, out: &mut Vec<u8>) {
     pb_varint(((field << 3) | wire as u32) as u64, out);
 }
 
-fn pb_i64(field: u32, value: i64, out: &mut Vec<u8>) {
+pub(crate) fn pb_i64(field: u32, value: i64, out: &mut Vec<u8>) {
     pb_key(field, 0, out);
     pb_varint(value as u64, out);
 }
 
-fn pb_i32(field: u32, value: i32, out: &mut Vec<u8>) {
+pub(crate) fn pb_i32(field: u32, value: i32, out: &mut Vec<u8>) {
     pb_key(field, 0, out);
     pb_varint(value as u64, out);
 }
 
-fn pb_string(field: u32, value: &str, out: &mut Vec<u8>) {
+pub(crate) fn pb_string(field: u32, value: &str, out: &mut Vec<u8>) {
     pb_key(field, 2, out);
     pb_varint(value.len() as u64, out);
     out.extend_from_slice(value.as_bytes());
 }
 
-fn pb_message(field: u32, payload: Vec<u8>, out: &mut Vec<u8>) {
+pub(crate) fn pb_message(field: u32, payload: Vec<u8>, out: &mut Vec<u8>) {
     pb_key(field, 2, out);
     pb_varint(payload.len() as u64, out);
     out.extend_from_slice(&payload);
 }
 
-fn ml_onnx_dimension(value: i64) -> Vec<u8> {
+pub(crate) fn ml_onnx_dimension(value: i64) -> Vec<u8> {
     let mut out = Vec::new();
     pb_i64(1, value, &mut out);
     out
 }
 
-fn ml_onnx_shape(shape: &[i64]) -> Vec<u8> {
+pub(crate) fn ml_onnx_shape(shape: &[i64]) -> Vec<u8> {
     let mut out = Vec::new();
     for dim in shape {
         pb_message(1, ml_onnx_dimension(*dim), &mut out);
@@ -107,7 +108,7 @@ fn ml_onnx_shape(shape: &[i64]) -> Vec<u8> {
     out
 }
 
-fn ml_onnx_type(value: &MlOnnxValue) -> Vec<u8> {
+pub(crate) fn ml_onnx_type(value: &MlOnnxValue) -> Vec<u8> {
     let elem_type = match value.dtype {
         "float32" => 1,
         "int64" => 7,
@@ -121,14 +122,14 @@ fn ml_onnx_type(value: &MlOnnxValue) -> Vec<u8> {
     type_proto
 }
 
-fn ml_onnx_value_info(value: &MlOnnxValue) -> Vec<u8> {
+pub(crate) fn ml_onnx_value_info(value: &MlOnnxValue) -> Vec<u8> {
     let mut out = Vec::new();
     pb_string(1, value.name, &mut out);
     pb_message(2, ml_onnx_type(value), &mut out);
     out
 }
 
-fn ml_onnx_node(node: &MlOnnxNode) -> Vec<u8> {
+pub(crate) fn ml_onnx_node(node: &MlOnnxNode) -> Vec<u8> {
     let mut out = Vec::new();
     for input in node.inputs {
         pb_string(1, input, &mut out);
@@ -141,7 +142,7 @@ fn ml_onnx_node(node: &MlOnnxNode) -> Vec<u8> {
     out
 }
 
-fn ml_onnx_model_spec(kind: &str) -> Option<MlOnnxModel> {
+pub(crate) fn ml_onnx_model_spec(kind: &str) -> Option<MlOnnxModel> {
     match kind {
         "linear" => Some(MlOnnxModel {
             kind: "linear",
@@ -317,11 +318,38 @@ fn ml_onnx_model_spec(kind: &str) -> Option<MlOnnxModel> {
                 shape: &[1, 4, 8],
             }],
         }),
+        "dual_linear" => Some(MlOnnxModel {
+            kind: "dual_linear",
+            nodes: vec![MlOnnxNode {
+                name: "dual_add",
+                op_type: "Add",
+                inputs: &["lhs", "rhs"],
+                outputs: &["output"],
+            }],
+            inputs: vec![
+                MlOnnxValue {
+                    name: "lhs",
+                    dtype: "float32",
+                    shape: &[1, 3],
+                },
+                MlOnnxValue {
+                    name: "rhs",
+                    dtype: "float32",
+                    shape: &[1, 3],
+                },
+            ],
+            outputs: vec![MlOnnxValue {
+                name: "output",
+                dtype: "float32",
+                shape: &[1, 3],
+            }],
+            initializers: vec![],
+        }),
         _ => None,
     }
 }
 
-fn ml_onnx_initializer_proto(init: &MlOnnxInitializer) -> Vec<u8> {
+pub(crate) fn ml_onnx_initializer_proto(init: &MlOnnxInitializer) -> Vec<u8> {
     let mut out = Vec::new();
     for dim in init.shape {
         pb_i64(1, *dim, &mut out);
@@ -337,7 +365,7 @@ fn ml_onnx_initializer_proto(init: &MlOnnxInitializer) -> Vec<u8> {
     out
 }
 
-fn ml_onnx_model_proto(model: &MlOnnxModel) -> Vec<u8> {
+pub(crate) fn ml_onnx_model_proto(model: &MlOnnxModel) -> Vec<u8> {
     let mut graph = Vec::new();
     for node in &model.nodes {
         pb_message(1, ml_onnx_node(node), &mut graph);
@@ -368,7 +396,7 @@ fn ml_onnx_model_proto(model: &MlOnnxModel) -> Vec<u8> {
     out
 }
 
-fn pb_read_varint(bytes: &[u8], index: &mut usize) -> Option<u64> {
+pub(crate) fn pb_read_varint(bytes: &[u8], index: &mut usize) -> Option<u64> {
     let mut shift = 0u32;
     let mut value = 0u64;
     while *index < bytes.len() && shift < 64 {
@@ -383,7 +411,7 @@ fn pb_read_varint(bytes: &[u8], index: &mut usize) -> Option<u64> {
     None
 }
 
-fn pb_read_len<'a>(bytes: &'a [u8], index: &mut usize) -> Option<&'a [u8]> {
+pub(crate) fn pb_read_len<'a>(bytes: &'a [u8], index: &mut usize) -> Option<&'a [u8]> {
     let len = pb_read_varint(bytes, index)? as usize;
     let end = index.checked_add(len)?;
     if end > bytes.len() {
@@ -394,7 +422,7 @@ fn pb_read_len<'a>(bytes: &'a [u8], index: &mut usize) -> Option<&'a [u8]> {
     Some(slice)
 }
 
-fn pb_skip(bytes: &[u8], index: &mut usize, wire: u64) -> Option<()> {
+pub(crate) fn pb_skip(bytes: &[u8], index: &mut usize, wire: u64) -> Option<()> {
     match wire {
         0 => {
             pb_read_varint(bytes, index)?;
@@ -416,7 +444,7 @@ fn pb_skip(bytes: &[u8], index: &mut usize, wire: u64) -> Option<()> {
     }
 }
 
-fn ml_onnx_node_op_types(node: &[u8], ops: &mut Vec<String>) -> Option<()> {
+pub(crate) fn ml_onnx_node_op_types(node: &[u8], ops: &mut Vec<String>) -> Option<()> {
     let mut index = 0usize;
     while index < node.len() {
         let key = pb_read_varint(node, &mut index)?;
@@ -432,7 +460,7 @@ fn ml_onnx_node_op_types(node: &[u8], ops: &mut Vec<String>) -> Option<()> {
     Some(())
 }
 
-fn ml_onnx_graph_ops(graph: &[u8], ops: &mut Vec<String>) -> Option<(usize, usize)> {
+pub(crate) fn ml_onnx_graph_ops(graph: &[u8], ops: &mut Vec<String>) -> Option<(usize, usize)> {
     let mut index = 0usize;
     let mut inputs = 0usize;
     let mut outputs = 0usize;
@@ -455,7 +483,7 @@ fn ml_onnx_graph_ops(graph: &[u8], ops: &mut Vec<String>) -> Option<(usize, usiz
     Some((inputs, outputs))
 }
 
-fn ml_onnx_import_summary_from_bytes(bytes: &[u8]) -> Option<String> {
+pub(crate) fn ml_onnx_import_summary_from_bytes(bytes: &[u8]) -> Option<String> {
     let mut index = 0usize;
     let mut ops = Vec::new();
     let mut graph_count = 0usize;
@@ -497,7 +525,7 @@ fn ml_onnx_import_summary_from_bytes(bytes: &[u8]) -> Option<String> {
     ))
 }
 
-fn ml_onnx_validate_summary(summary: &str) -> bool {
+pub(crate) fn ml_onnx_validate_summary(summary: &str) -> bool {
     summary.contains("\"schema\":\"spectra.onnx.subset.v1\"")
         && summary.contains("\"nodes\":")
         && summary.contains("\"inputs\":")
@@ -507,7 +535,7 @@ fn ml_onnx_validate_summary(summary: &str) -> bool {
 }
 
 #[cfg(feature = "onnx")]
-fn ml_onnx_proto_op_types(bytes: &[u8]) -> Option<Vec<String>> {
+pub(crate) fn ml_onnx_proto_op_types(bytes: &[u8]) -> Option<Vec<String>> {
     let mut index = 0usize;
     while index < bytes.len() {
         let key = pb_read_varint(bytes, &mut index)?;
@@ -526,32 +554,34 @@ fn ml_onnx_proto_op_types(bytes: &[u8]) -> Option<Vec<String>> {
 }
 
 #[cfg(feature = "onnx")]
-type MlOnnxSessionTable = std::collections::HashMap<u64, ort::session::Session>;
+pub(crate) type MlOnnxSessionTable = std::collections::HashMap<u64, ort::session::Session>;
 
 #[cfg(feature = "onnx")]
-static ML_ONNX_SESSION_NEXT_ID: std::sync::atomic::AtomicU64 =
+pub(crate) static ML_ONNX_SESSION_NEXT_ID: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
 
 /// Process-local table of live onnxruntime sessions keyed by handle id.
 #[cfg(feature = "onnx")]
-static ML_ONNX_SESSIONS: std::sync::LazyLock<Mutex<MlOnnxSessionTable>> =
+pub(crate) static ML_ONNX_SESSIONS: std::sync::LazyLock<Mutex<MlOnnxSessionTable>> =
     std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 
 #[cfg(feature = "onnx")]
-fn ml_onnx_sessions() -> &'static Mutex<MlOnnxSessionTable> {
+pub(crate) fn ml_onnx_sessions() -> &'static Mutex<MlOnnxSessionTable> {
     &ML_ONNX_SESSIONS
 }
 
 #[cfg(feature = "onnx")]
-fn ml_onnx_sessions_lock() -> std::sync::MutexGuard<'static, MlOnnxSessionTable> {
+pub(crate) fn ml_onnx_sessions_lock() -> std::sync::MutexGuard<'static, MlOnnxSessionTable> {
     lock_unpoisoned(ml_onnx_sessions())
 }
 
 /// Commits an onnxruntime session from in-memory model bytes and registers
-/// it under a fresh process-local handle. Only single-graph-input models are
-/// accepted: `spectra.std.ml.onnx_run` feeds one tensor per call.
+/// it under a fresh process-local handle. Sessions may carry any number of
+/// graph inputs: `spectra.std.ml.onnx_run` keeps serving single-input models
+/// while multi-graph-input models go through `spectra.std.ml.onnx_run_multi`,
+/// which validates names, order and f32 shapes against the real ORT session.
 #[cfg(feature = "onnx")]
-fn ml_onnx_commit_session(
+pub(crate) fn ml_onnx_commit_session(
     bytes: &[u8],
 ) -> Result<u64, i32> {
     use ort::session::{builder::GraphOptimizationLevel, Session};
@@ -561,9 +591,6 @@ fn ml_onnx_commit_session(
         .map_err(|_| HOST_STATUS_INVALID_ARGUMENT)?
         .commit_from_memory(bytes)
         .map_err(|_| HOST_STATUS_INVALID_ARGUMENT)?;
-    if session.inputs().len() != 1 {
-        return Err(HOST_STATUS_INVALID_ARGUMENT);
-    }
     let id = ML_ONNX_SESSION_NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     ml_onnx_sessions_lock().insert(id, session);
     Ok(id)
@@ -574,7 +601,7 @@ fn ml_onnx_commit_session(
 /// template knowledge. Falls back to the protobuf walker in the caller when
 /// the model cannot be loaded (still a real parse of the actual bytes).
 #[cfg(feature = "onnx")]
-fn ml_onnx_real_summary_from_bytes(bytes: &[u8]) -> Option<String> {
+pub(crate) fn ml_onnx_real_summary_from_bytes(bytes: &[u8]) -> Option<String> {
     fn describe_outlets(outlets: &[ort::value::Outlet]) -> String {
         outlets
             .iter()
@@ -646,7 +673,7 @@ fn ml_onnx_real_summary_from_bytes(bytes: &[u8]) -> Option<String> {
 /// extracts `output_name` back into shape + flat f32 data and registers a
 /// new stdlib tensor holding the widened result.
 #[cfg(feature = "onnx")]
-fn ml_onnx_run_inner(
+pub(crate) fn ml_onnx_run_inner(
     session_id: u64,
     tensor_handle: usize,
     output_name: &str,
@@ -683,4 +710,222 @@ fn ml_onnx_run_inner(
         .collect();
     let values: Vec<f64> = flat.iter().map(|value| *value as f64).collect();
     ml_alloc_float_tensor(out_dims, values)
+}
+
+/// Typed failure for `spectra.std.ml.onnx_run_multi`: `status` preserves the
+/// host status contract while `message` feeds the tagged `Error` record the
+/// binding allocates, so missing names and shape mismatches surface with a
+/// code plus a human-readable reason instead of a bare status alone.
+#[cfg(feature = "onnx")]
+pub(crate) struct MlOnnxMultiRunError {
+    pub(crate) status: i32,
+    pub(crate) code: SpectraHostValue,
+    pub(crate) message: String,
+}
+
+#[cfg(feature = "onnx")]
+pub(crate) fn ml_onnx_multi_error(status: i32, message: String) -> MlOnnxMultiRunError {
+    MlOnnxMultiRunError {
+        status,
+        code: status as SpectraHostValue,
+        message,
+    }
+}
+
+/// Multi-graph-input inference against a committed onnxruntime session:
+/// `names` and `tensor_handles` arrive as parallel lists (List<string> /
+/// List<int> handles in the binding), are validated one-to-one against the
+/// REAL session metadata — input names, full coverage, float32 dtypes and
+/// static shapes read straight from ORT — executed together, and the first
+/// graph output comes back as a fresh stdlib tensor.
+#[cfg(feature = "onnx")]
+pub(crate) fn ml_onnx_run_multi_inner(
+    session_id: u64,
+    names: &[String],
+    tensor_handles: &[usize],
+) -> Result<usize, MlOnnxMultiRunError> {
+    use ort::value::{Tensor, TensorElementType};
+
+    if names.len() != tensor_handles.len() {
+        return Err(ml_onnx_multi_error(
+            HOST_STATUS_INVALID_ARGUMENT,
+            format!(
+                "onnx_run_multi received {} input name(s) but {} tensor(s)",
+                names.len(),
+                tensor_handles.len()
+            ),
+        ));
+    }
+
+    // Narrow every stdlib tensor first (f64 storage -> f32) so the session
+    // borrow below only covers metadata reads and the actual run.
+    let mut prepared: Vec<(String, Vec<i64>, Vec<f32>)> = Vec::with_capacity(names.len());
+    for (name, handle) in names.iter().zip(tensor_handles.iter()) {
+        let Some((shape, values_f64, _requires_grad)) = ml_tensor_float_data(*handle) else {
+            return Err(ml_onnx_multi_error(
+                HOST_STATUS_NOT_FOUND,
+                format!("tensor handle {handle} for input '{name}' does not exist"),
+            ));
+        };
+        if values_f64.iter().any(|value| !value.is_finite()) {
+            return Err(ml_onnx_multi_error(
+                HOST_STATUS_INVALID_ARGUMENT,
+                format!("input '{name}' carries non-finite values"),
+            ));
+        }
+        prepared.push((
+            name.clone(),
+            shape.iter().map(|dim| *dim as i64).collect(),
+            values_f64.iter().map(|value| *value as f32).collect(),
+        ));
+    }
+
+    let mut sessions = ml_onnx_sessions_lock();
+    let session =
+        sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| {
+                ml_onnx_multi_error(
+                    HOST_STATUS_NOT_FOUND,
+                    format!("session handle {session_id} does not exist"),
+                )
+            })?;
+    if prepared.len() != session.inputs().len() {
+        let expected = session
+            .inputs()
+            .iter()
+            .map(|inlet| inlet.name())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(ml_onnx_multi_error(
+            HOST_STATUS_INVALID_ARGUMENT,
+            format!(
+                "model has {} graph input(s) [{}] but {} were supplied",
+                session.inputs().len(),
+                expected,
+                prepared.len()
+            ),
+        ));
+    }
+
+    // Real metadata inventory from ORT itself: names in graph order, static
+    // shapes ("?" stays symbolic and never matches concrete dims) and the
+    // float32 element type.
+    let mut model_inputs: Vec<(String, String, bool)> = Vec::with_capacity(session.inputs().len());
+    for inlet in session.inputs() {
+        let is_f32 = inlet.dtype().tensor_type() == Some(TensorElementType::Float32);
+        let shape = inlet
+            .dtype()
+            .tensor_shape()
+            .map(|shape| {
+                shape
+                    .iter()
+                    .map(|dim| dim.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default();
+        model_inputs.push((inlet.name().to_owned(), shape, is_f32));
+    }
+
+    // Resolve every requested name against the real metadata; each model
+    // input must be fed exactly once (duplicates leave another input unfed
+    // and fail below with the missing-name error).
+    let mut feed: Vec<Option<usize>> = vec![None; model_inputs.len()];
+    for (index, (name, dims, _)) in prepared.iter().enumerate() {
+        let position = model_inputs
+            .iter()
+            .position(|(model_name, _, _)| model_name == name)
+            .ok_or_else(|| {
+                let expected = model_inputs
+                    .iter()
+                    .map(|(model_name, _, _)| model_name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                ml_onnx_multi_error(
+                    HOST_STATUS_NOT_FOUND,
+                    format!("unknown graph input '{name}'; model inputs are [{expected}]"),
+                )
+            })?;
+        let (_, model_shape, is_f32) = &model_inputs[position];
+        if !*is_f32 {
+            return Err(ml_onnx_multi_error(
+                HOST_STATUS_INVALID_ARGUMENT,
+                format!("graph input '{name}' expects float32 but the model declares another dtype"),
+            ));
+        }
+        let provided = dims
+            .iter()
+            .map(|dim| dim.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        if provided != *model_shape {
+            return Err(ml_onnx_multi_error(
+                HOST_STATUS_INVALID_ARGUMENT,
+                format!(
+                    "shape mismatch for input '{name}': got [{provided}], model expects [{}]",
+                    model_shape
+                ),
+            ));
+        }
+        feed[position] = Some(index);
+    }
+    for (position, slot) in feed.iter().enumerate() {
+        let Some(_) = *slot else {
+            return Err(ml_onnx_multi_error(
+                HOST_STATUS_NOT_FOUND,
+                format!(
+                    "missing graph input '{}' in the supplied name list",
+                    model_inputs[position].0
+                ),
+            ));
+        };
+    }
+
+    let mut inputs: Vec<(String, Tensor<f32>)> = Vec::with_capacity(feed.len());
+    for (position, slot) in feed.iter().enumerate() {
+        let index = slot.expect("coverage checked above");
+        let (_, dims, data) = &prepared[index];
+        let tensor = Tensor::from_array((dims.clone(), data.clone()))
+            .map_err(|_| {
+                ml_onnx_multi_error(
+                    HOST_STATUS_INVALID_ARGUMENT,
+                    format!("cannot build ORT tensor for input '{}'", model_inputs[position].0),
+                )
+            })?;
+        inputs.push((model_inputs[position].0.clone(), tensor));
+    }
+
+    // Copy the output name out before `run`: the borrowed string must not
+    // overlap with the `&mut session` that inference takes.
+    let output_name = session.outputs()[0].name().to_owned();
+    let outputs = session.run(inputs).map_err(|_| {
+        ml_onnx_multi_error(
+            HOST_STATUS_INTERNAL_ERROR,
+            "onnxruntime rejected the multi-input feed".to_string(),
+        )
+    })?;
+    let output = outputs.get(output_name.as_str()).ok_or_else(|| {
+        ml_onnx_multi_error(
+            HOST_STATUS_NOT_FOUND,
+            format!("output '{output_name}' missing from inference results"),
+        )
+    })?;
+    let (out_shape, flat) = output.try_extract_tensor::<f32>().map_err(|_| {
+        ml_onnx_multi_error(
+            HOST_STATUS_INTERNAL_ERROR,
+            format!("output '{output_name}' is not an f32 tensor"),
+        )
+    })?;
+    let out_dims: Vec<usize> = out_shape
+        .iter()
+        .map(|dim| usize::try_from(*dim).unwrap_or(0))
+        .collect();
+    let values: Vec<f64> = flat.iter().map(|value| *value as f64).collect();
+    ml_alloc_float_tensor(out_dims, values).map_err(|status| {
+        ml_onnx_multi_error(
+            status,
+            "cannot register the multi-input output tensor".to_string(),
+        )
+    })
 }

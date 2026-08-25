@@ -1,4 +1,5 @@
-extern "C" fn std_math_abs(ctx: *mut SpectraHostCallContext) -> i32 {
+use super::*;
+pub(crate) extern "C" fn std_math_abs(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -30,7 +31,7 @@ extern "C" fn std_math_abs(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_math_min(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_min(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -57,7 +58,7 @@ extern "C" fn std_math_min(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_math_max(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_max(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -85,7 +86,7 @@ extern "C" fn std_math_max(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Clamp an integer value between min and max (inclusive).
-extern "C" fn std_math_clamp(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_clamp(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -105,7 +106,7 @@ extern "C" fn std_math_clamp(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Square root. Value and result are f64 bits reinterpreted as i64.
-extern "C" fn std_math_sqrt_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_sqrt_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -126,7 +127,7 @@ extern "C" fn std_math_sqrt_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Power. Both arguments and result are f64 bits reinterpreted as i64.
-extern "C" fn std_math_pow_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_pow_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -148,7 +149,7 @@ extern "C" fn std_math_pow_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Floor. Value and result are f64 bits reinterpreted as i64.
-extern "C" fn std_math_floor_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_floor_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -169,7 +170,7 @@ extern "C" fn std_math_floor_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Ceil. Value and result are f64 bits reinterpreted as i64.
-extern "C" fn std_math_ceil_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_ceil_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -190,7 +191,7 @@ extern "C" fn std_math_ceil_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Round. Value and result are f64 bits reinterpreted as i64.
-extern "C" fn std_math_round_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_round_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -211,7 +212,7 @@ extern "C" fn std_math_round_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Sine. Argument and result are f64 bits reinterpreted as i64.
-extern "C" fn std_math_sin_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_sin_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -231,7 +232,7 @@ extern "C" fn std_math_sin_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Cosine. Argument and result are f64 bits reinterpreted as i64.
-extern "C" fn std_math_cos_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_cos_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -251,7 +252,7 @@ extern "C" fn std_math_cos_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Tangent. Argument and result are f64 bits reinterpreted as i64.
-extern "C" fn std_math_tan_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_tan_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -271,7 +272,7 @@ extern "C" fn std_math_tan_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Natural logarithm. Argument and result are f64 bits reinterpreted as i64.
-extern "C" fn std_math_log_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_log_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -291,7 +292,7 @@ extern "C" fn std_math_log_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Base-2 logarithm. Argument and result are f64 bits reinterpreted as i64.
-extern "C" fn std_math_log2_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_log2_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -311,7 +312,7 @@ extern "C" fn std_math_log2_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Base-10 logarithm. Argument and result are f64 bits reinterpreted as i64.
-extern "C" fn std_math_log10_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_log10_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -331,7 +332,7 @@ extern "C" fn std_math_log10_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Two-argument arctangent (atan2). Arguments y, x and result are f64 bits.
-extern "C" fn std_math_atan2_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_atan2_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -353,7 +354,7 @@ extern "C" fn std_math_atan2_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns the mathematical constant PI as f64 bits.
-extern "C" fn std_math_pi(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_pi(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -369,7 +370,7 @@ extern "C" fn std_math_pi(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns the mathematical constant E as f64 bits.
-extern "C" fn std_math_e_const(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_e_const(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -391,7 +392,7 @@ extern "C" fn std_math_e_const(ctx: *mut SpectraHostCallContext) -> i32 {
 ///   - tag 1 → print as null-terminated string (value is a pointer)
 ///   - tag 2 → print as bool ("true"/"false")
 ///   - tag 3 → print as float (value reinterpreted as f64 bits)
-extern "C" fn std_io_print(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_io_print(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -466,7 +467,7 @@ extern "C" fn std_io_print(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Polymorphic println: same as print but appends a trailing newline.
-extern "C" fn std_io_println(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_io_println(ctx: *mut SpectraHostCallContext) -> i32 {
     let status = std_io_print(ctx);
     if status != HOST_STATUS_SUCCESS {
         return status;
@@ -478,7 +479,7 @@ extern "C" fn std_io_println(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Same as io.print but writes to stderr (no trailing newline).
-extern "C" fn std_io_eprint(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_io_eprint(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -553,7 +554,7 @@ extern "C" fn std_io_eprint(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Polymorphic eprintln: same as eprint but appends a trailing newline.
-extern "C" fn std_io_eprintln(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_io_eprintln(ctx: *mut SpectraHostCallContext) -> i32 {
     let status = std_io_eprint(ctx);
     if status != HOST_STATUS_SUCCESS {
         return status;
@@ -564,7 +565,7 @@ extern "C" fn std_io_eprintln(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_io_read_line(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_io_read_line(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -591,7 +592,7 @@ extern "C" fn std_io_read_line(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_io_flush(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_io_flush(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

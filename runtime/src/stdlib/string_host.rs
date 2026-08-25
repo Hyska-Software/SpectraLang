@@ -1,6 +1,7 @@
+use super::*;
 // ── std.string host functions ────────────────────────────────────────────────
 
-extern "C" fn std_string_len(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_len(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -22,7 +23,7 @@ extern "C" fn std_string_len(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_string_contains(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_contains(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -44,7 +45,7 @@ extern "C" fn std_string_contains(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_string_to_upper(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_to_upper(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -66,7 +67,7 @@ extern "C" fn std_string_to_upper(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_string_to_lower(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_to_lower(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -88,7 +89,7 @@ extern "C" fn std_string_to_lower(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_string_trim(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_trim(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -110,7 +111,7 @@ extern "C" fn std_string_trim(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_string_starts_with(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_starts_with(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -132,7 +133,7 @@ extern "C" fn std_string_starts_with(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_string_ends_with(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_ends_with(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -154,7 +155,7 @@ extern "C" fn std_string_ends_with(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_string_eq(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_eq(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -176,7 +177,7 @@ extern "C" fn std_string_eq(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_string_concat(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_concat(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -200,7 +201,7 @@ extern "C" fn std_string_concat(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_string_repeat(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_repeat(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

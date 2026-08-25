@@ -1,3 +1,4 @@
+use super::*;
 // ── StatsEmbed ──
 //
 // Real sentence embeddings through onnxruntime instead of lexical hashing.
@@ -20,16 +21,16 @@
 /// Deterministic fixture geometry shared by the test writer and the manual
 /// mean-pooling reference computation.
 #[cfg(all(test, feature = "onnx"))]
-const ML_TEXT_EMBED_FIXTURE_VOCAB: usize = 8;
+pub(crate) const ML_TEXT_EMBED_FIXTURE_VOCAB: usize = 8;
 #[cfg(all(test, feature = "onnx"))]
-const ML_TEXT_EMBED_FIXTURE_HIDDEN: usize = 4;
+pub(crate) const ML_TEXT_EMBED_FIXTURE_HIDDEN: usize = 4;
 
 /// Commits an onnxruntime session for an embedding model from in-memory
 /// ModelProto bytes. Embedding graphs take two int64 graph inputs
 /// (`input_ids`, `attention_mask`); sessions land in the shared process-local
 /// session table so `onnx_session_free` can release them too.
 #[cfg(feature = "onnx")]
-fn ml_text_embed_commit_session(bytes: &[u8]) -> Result<u64, i32> {
+pub(crate) fn ml_text_embed_commit_session(bytes: &[u8]) -> Result<u64, i32> {
     use ort::session::{builder::GraphOptimizationLevel, Session};
     let builder = Session::builder().map_err(|_| HOST_STATUS_INVALID_ARGUMENT)?;
     let session = builder
@@ -49,7 +50,7 @@ fn ml_text_embed_commit_session(bytes: &[u8]) -> Result<u64, i32> {
 /// comes back as f32 [seq, hidden]; masked mean-pooling plus L2 normalization
 /// produce the final sentence vector.
 #[cfg(feature = "onnx")]
-fn ml_text_embed_model_inner(
+pub(crate) fn ml_text_embed_model_inner(
     session_id: u64,
     input_ids: &[i64],
     attention_mask: &[i64],
@@ -136,7 +137,7 @@ fn ml_text_embed_model_inner(
 ///
 /// Loads ONNX ModelProto bytes from `path` and commits an onnxruntime
 /// session for a two-input embedding model.
-extern "C" fn std_ml_text_embed_model_session(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_text_embed_model_session(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -169,7 +170,7 @@ extern "C" fn std_ml_text_embed_model_session(ctx: *mut SpectraHostCallContext) 
 /// `input_ids`/`attention_mask` → ORT run → masked mean-pooling of the last
 /// hidden state → L2 normalize. The optional fourth argument overrides the
 /// attention mask (int tensor, one entry per token, 0 = ignored position).
-extern "C" fn std_ml_text_embed_model(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_text_embed_model(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         if ctx.is_null() {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -232,21 +233,21 @@ extern "C" fn std_ml_text_embed_model(ctx: *mut SpectraHostCallContext) -> i32 {
 // mean-pooling reference below recomputes exactly what ORT produces.
 
 #[cfg(all(test, feature = "onnx"))]
-fn ml_embed_dim_value(value: i64) -> Vec<u8> {
+pub(crate) fn ml_embed_dim_value(value: i64) -> Vec<u8> {
     let mut out = Vec::new();
     pb_i64(1, value, &mut out);
     out
 }
 
 #[cfg(all(test, feature = "onnx"))]
-fn ml_embed_dim_param(param: &str) -> Vec<u8> {
+pub(crate) fn ml_embed_dim_param(param: &str) -> Vec<u8> {
     let mut out = Vec::new();
     pb_string(2, param, &mut out);
     out
 }
 
 #[cfg(all(test, feature = "onnx"))]
-fn ml_embed_value_info(name: &str, elem_type: i32, dims: &[Vec<u8>]) -> Vec<u8> {
+pub(crate) fn ml_embed_value_info(name: &str, elem_type: i32, dims: &[Vec<u8>]) -> Vec<u8> {
     let mut tensor_type = Vec::new();
     pb_i32(1, elem_type, &mut tensor_type);
     let mut shape = Vec::new();
@@ -265,7 +266,7 @@ fn ml_embed_value_info(name: &str, elem_type: i32, dims: &[Vec<u8>]) -> Vec<u8> 
 
 /// Manual reference: deterministic embedding table row `id`.
 #[cfg(all(test, feature = "onnx"))]
-fn ml_embed_fixture_row(id: usize) -> Vec<f64> {
+pub(crate) fn ml_embed_fixture_row(id: usize) -> Vec<f64> {
     let table = ml_onnx_deterministic_values(
         ml_onnx_seed("embedding"),
         ML_TEXT_EMBED_FIXTURE_VOCAB * ML_TEXT_EMBED_FIXTURE_HIDDEN,
@@ -278,7 +279,7 @@ fn ml_embed_fixture_row(id: usize) -> Vec<f64> {
 
 /// Builds the tiny deterministic `.onnx` fixture bytes.
 #[cfg(all(test, feature = "onnx"))]
-fn ml_text_embed_fixture_proto() -> Vec<u8> {
+pub(crate) fn ml_text_embed_fixture_proto() -> Vec<u8> {
     let vocab = ML_TEXT_EMBED_FIXTURE_VOCAB as i64;
     let hidden = ML_TEXT_EMBED_FIXTURE_HIDDEN as i64;
 

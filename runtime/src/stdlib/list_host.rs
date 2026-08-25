@@ -1,4 +1,5 @@
-extern "C" fn std_list_new(ctx: *mut SpectraHostCallContext) -> i32 {
+use super::*;
+pub(crate) extern "C" fn std_list_new(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -26,7 +27,7 @@ extern "C" fn std_list_new(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_list_push(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_push(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -55,7 +56,7 @@ extern "C" fn std_list_push(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_list_len(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_len(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -83,7 +84,7 @@ extern "C" fn std_list_len(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_list_clear(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_clear(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -111,7 +112,7 @@ extern "C" fn std_list_clear(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_list_free(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_free(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -143,7 +144,7 @@ extern "C" fn std_list_free(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_list_free_all(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_free_all(ctx: *mut SpectraHostCallContext) -> i32 {
     let freed = with_list_registry(|registry| registry.clear_all());
 
     if ctx.is_null() {

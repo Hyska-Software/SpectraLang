@@ -1,4 +1,5 @@
-fn ml_read_path_arg(arg: SpectraHostValue) -> Option<String> {
+use super::*;
+pub(crate) fn ml_read_path_arg(arg: SpectraHostValue) -> Option<String> {
     let path = unsafe { read_spectra_string(arg)? };
     if path.trim().is_empty() {
         return None;
@@ -6,7 +7,7 @@ fn ml_read_path_arg(arg: SpectraHostValue) -> Option<String> {
     Some(path)
 }
 
-fn ml_parse_csv_numeric(path: &str, has_header: bool) -> Result<(usize, usize, Vec<f64>), i32> {
+pub(crate) fn ml_parse_csv_numeric(path: &str, has_header: bool) -> Result<(usize, usize, Vec<f64>), i32> {
     let content = std::fs::read_to_string(path).map_err(|_| HOST_STATUS_NOT_FOUND)?;
     let mut rows = 0usize;
     let mut cols = None;
@@ -42,7 +43,7 @@ fn ml_parse_csv_numeric(path: &str, has_header: bool) -> Result<(usize, usize, V
     Ok((rows, cols, values))
 }
 
-fn ml_dataset_from_flat_parts(
+pub(crate) fn ml_dataset_from_flat_parts(
     features: Vec<f64>,
     labels: Vec<f64>,
     len: usize,
@@ -73,7 +74,7 @@ fn ml_dataset_from_flat_parts(
     Ok(handle)
 }
 
-fn ml_dataset_from_csv_path(path: &str, label_col: usize, has_header: bool) -> Result<usize, i32> {
+pub(crate) fn ml_dataset_from_csv_path(path: &str, label_col: usize, has_header: bool) -> Result<usize, i32> {
     let (rows, cols, values) = ml_parse_csv_numeric(path, has_header)?;
     if cols < 2 || label_col >= cols {
         return Err(HOST_STATUS_INVALID_ARGUMENT);
@@ -93,7 +94,7 @@ fn ml_dataset_from_csv_path(path: &str, label_col: usize, has_header: bool) -> R
     ml_dataset_from_flat_parts(features, labels, rows)
 }
 
-fn ml_parse_json_number_after(key: &str, input: &str) -> Option<f64> {
+pub(crate) fn ml_parse_json_number_after(key: &str, input: &str) -> Option<f64> {
     let start = input.find(key)? + key.len();
     let rest = input[start..].trim_start();
     let rest = rest.strip_prefix(':')?.trim_start();
@@ -103,7 +104,7 @@ fn ml_parse_json_number_after(key: &str, input: &str) -> Option<f64> {
     rest[..end].parse::<f64>().ok()
 }
 
-fn ml_parse_json_features(input: &str) -> Option<Vec<f64>> {
+pub(crate) fn ml_parse_json_features(input: &str) -> Option<Vec<f64>> {
     let key_pos = input.find("\"features\"")?;
     let after_key = &input[key_pos..];
     let open = after_key.find('[')? + key_pos;
@@ -114,7 +115,7 @@ fn ml_parse_json_features(input: &str) -> Option<Vec<f64>> {
         .collect::<Option<Vec<_>>>()
 }
 
-fn ml_dataset_from_jsonl_path(path: &str) -> Result<usize, i32> {
+pub(crate) fn ml_dataset_from_jsonl_path(path: &str) -> Result<usize, i32> {
     let content = std::fs::read_to_string(path).map_err(|_| HOST_STATUS_NOT_FOUND)?;
     let mut features = Vec::new();
     let mut labels = Vec::new();
@@ -141,7 +142,7 @@ fn ml_dataset_from_jsonl_path(path: &str) -> Result<usize, i32> {
     ml_dataset_from_flat_parts(features, labels.clone(), labels.len())
 }
 
-fn ml_parse_npy_f64_1d(path: &str) -> Result<Vec<f64>, i32> {
+pub(crate) fn ml_parse_npy_f64_1d(path: &str) -> Result<Vec<f64>, i32> {
     let bytes = std::fs::read(path).map_err(|_| HOST_STATUS_NOT_FOUND)?;
     if bytes.len() < 16 || &bytes[0..6] != b"\x93NUMPY" || bytes[6] != 1 || bytes[7] != 0 {
         return Err(HOST_STATUS_INVALID_ARGUMENT);
@@ -187,7 +188,7 @@ fn ml_parse_npy_f64_1d(path: &str) -> Result<Vec<f64>, i32> {
     Ok(values)
 }
 
-fn ml_dataset_subset(dataset: MlDataset, start: usize, len: usize) -> Result<usize, i32> {
+pub(crate) fn ml_dataset_subset(dataset: MlDataset, start: usize, len: usize) -> Result<usize, i32> {
     let (feature_shape, feature_data, _) =
         ml_tensor_float_data(dataset.features).ok_or(HOST_STATUS_INVALID_ARGUMENT)?;
     let (label_shape, label_data, _) =
@@ -209,7 +210,7 @@ fn ml_dataset_subset(dataset: MlDataset, start: usize, len: usize) -> Result<usi
     )
 }
 
-fn ml_fnv64_file(path: &str) -> Result<(u64, String), i32> {
+pub(crate) fn ml_fnv64_file(path: &str) -> Result<(u64, String), i32> {
     let bytes = std::fs::read(path).map_err(|_| HOST_STATUS_NOT_FOUND)?;
     let mut hash = 0xcbf29ce484222325u64;
     for byte in &bytes {
@@ -219,7 +220,7 @@ fn ml_fnv64_file(path: &str) -> Result<(u64, String), i32> {
     Ok((bytes.len() as u64, format!("{hash:016x}")))
 }
 
-fn ml_artifact_record(path: String) -> Result<MlArtifactRecord, i32> {
+pub(crate) fn ml_artifact_record(path: String) -> Result<MlArtifactRecord, i32> {
     if path.trim().is_empty() {
         return Err(HOST_STATUS_INVALID_ARGUMENT);
     }
@@ -227,11 +228,11 @@ fn ml_artifact_record(path: String) -> Result<MlArtifactRecord, i32> {
     Ok(MlArtifactRecord { path, size, fnv64 })
 }
 
-fn ml_json_string(value: &str) -> String {
+pub(crate) fn ml_json_string(value: &str) -> String {
     format!("\"{}\"", json_escape(value))
 }
 
-fn ml_artifact_json(record: &MlArtifactRecord) -> String {
+pub(crate) fn ml_artifact_json(record: &MlArtifactRecord) -> String {
     format!(
         "{{\"path\":{},\"size\":{},\"fnv64\":{}}}",
         ml_json_string(&record.path),
@@ -240,7 +241,7 @@ fn ml_artifact_json(record: &MlArtifactRecord) -> String {
     )
 }
 
-fn ml_experiment_manifest_json(experiment: &MlExperiment) -> String {
+pub(crate) fn ml_experiment_manifest_json(experiment: &MlExperiment) -> String {
     let mut configs = experiment.configs.clone();
     configs.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
     let configs_json = configs
@@ -297,7 +298,7 @@ fn ml_experiment_manifest_json(experiment: &MlExperiment) -> String {
     )
 }
 
-fn ml_manifest_section(source: &str, key: &str) -> Option<String> {
+pub(crate) fn ml_manifest_section(source: &str, key: &str) -> Option<String> {
     let start = source.find(key)? + key.len();
     let bytes = source.as_bytes();
     let mut index = start;
@@ -368,7 +369,7 @@ fn ml_manifest_section(source: &str, key: &str) -> Option<String> {
     None
 }
 
-fn ml_compare_manifest_payloads(left: &str, right: &str) -> bool {
+pub(crate) fn ml_compare_manifest_payloads(left: &str, right: &str) -> bool {
     for key in [
         "\"configs\"",
         "\"metrics\"",
@@ -384,7 +385,7 @@ fn ml_compare_manifest_payloads(left: &str, right: &str) -> bool {
     true
 }
 
-fn ml_distributed_worker_json(worker: &MlDistributedWorker) -> String {
+pub(crate) fn ml_distributed_worker_json(worker: &MlDistributedWorker) -> String {
     format!(
         "{{\"worker_id\":{},\"step_count\":{},\"sample_count\":{},\"accumulator\":{},\"active\":{}}}",
         worker.worker_id,
@@ -395,7 +396,7 @@ fn ml_distributed_worker_json(worker: &MlDistributedWorker) -> String {
     )
 }
 
-fn ml_distributed_session_json(session: &MlDistributedSession) -> String {
+pub(crate) fn ml_distributed_session_json(session: &MlDistributedSession) -> String {
     let workers_json = session
         .workers
         .iter()
@@ -425,7 +426,7 @@ fn ml_distributed_session_json(session: &MlDistributedSession) -> String {
     )
 }
 
-fn ml_distributed_summary_json(session: &MlDistributedSession) -> String {
+pub(crate) fn ml_distributed_summary_json(session: &MlDistributedSession) -> String {
     let total_samples: i64 = session
         .workers
         .iter()
@@ -449,11 +450,11 @@ fn ml_distributed_summary_json(session: &MlDistributedSession) -> String {
     )
 }
 
-fn ml_checkpoint_number(source: &str, key: &str) -> Option<i64> {
+pub(crate) fn ml_checkpoint_number(source: &str, key: &str) -> Option<i64> {
     ml_manifest_section(source, key)?.trim().parse::<i64>().ok()
 }
 
-fn ml_checkpoint_string(source: &str, key: &str) -> Option<String> {
+pub(crate) fn ml_checkpoint_string(source: &str, key: &str) -> Option<String> {
     let encoded = ml_manifest_section(source, key)?;
     if encoded == "null" {
         return None;
@@ -469,7 +470,7 @@ fn ml_checkpoint_string(source: &str, key: &str) -> Option<String> {
     )
 }
 
-fn ml_checkpoint_worker_number(worker_source: &str, key: &str) -> Option<i64> {
+pub(crate) fn ml_checkpoint_worker_number(worker_source: &str, key: &str) -> Option<i64> {
     let needle = format!("\"{}\":", key);
     let start = worker_source.find(&needle)? + needle.len();
     let bytes = worker_source.as_bytes();
@@ -485,7 +486,7 @@ fn ml_checkpoint_worker_number(worker_source: &str, key: &str) -> Option<i64> {
         .map(|value| value as i64)
 }
 
-fn ml_checkpoint_worker_float(worker_source: &str, key: &str) -> Option<f64> {
+pub(crate) fn ml_checkpoint_worker_float(worker_source: &str, key: &str) -> Option<f64> {
     let needle = format!("\"{}\":", key);
     let start = worker_source.find(&needle)? + needle.len();
     let bytes = worker_source.as_bytes();
@@ -498,7 +499,7 @@ fn ml_checkpoint_worker_float(worker_source: &str, key: &str) -> Option<f64> {
     worker_source[start..end].parse::<f64>().ok()
 }
 
-fn ml_checkpoint_worker_bool(worker_source: &str, key: &str) -> Option<bool> {
+pub(crate) fn ml_checkpoint_worker_bool(worker_source: &str, key: &str) -> Option<bool> {
     let needle = format!("\"{}\":", key);
     let start = worker_source.find(&needle)? + needle.len();
     if worker_source[start..].starts_with("true") {
@@ -510,7 +511,7 @@ fn ml_checkpoint_worker_bool(worker_source: &str, key: &str) -> Option<bool> {
     }
 }
 
-fn ml_distributed_session_from_checkpoint(
+pub(crate) fn ml_distributed_session_from_checkpoint(
     source: &str,
     checkpoint_path: String,
 ) -> Option<MlDistributedSession> {

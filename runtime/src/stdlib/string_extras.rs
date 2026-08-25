@@ -1,3 +1,4 @@
+use super::*;
 // ── std.string extras ────────────────────────────────────────────────────────
 
 /// Returns a substring from `start` (inclusive) to `end` (exclusive).
@@ -6,7 +7,7 @@
 /// offsets. Indices are clamped to `[0, byte_len]`. Returns an empty string
 /// on invalid input: when `start > end`, or when either clamped index falls
 /// inside a multi-byte UTF-8 sequence (not on a char boundary).
-extern "C" fn std_string_substring(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_substring(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -44,7 +45,7 @@ extern "C" fn std_string_substring(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Replaces all occurrences of `from` with `to` in `s`.
-extern "C" fn std_string_replace(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_replace(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -72,7 +73,7 @@ extern "C" fn std_string_replace(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns the byte index of the first occurrence of `sub` in `s`, or -1 if not found.
-extern "C" fn std_string_index_of(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_index_of(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -99,7 +100,7 @@ extern "C" fn std_string_index_of(ctx: *mut SpectraHostCallContext) -> i32 {
 
 /// Returns the part of `s` before the first occurrence of `sep`.
 /// Returns `s` unchanged if `sep` is not found.
-extern "C" fn std_string_split_first(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_split_first(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -127,7 +128,7 @@ extern "C" fn std_string_split_first(ctx: *mut SpectraHostCallContext) -> i32 {
 
 /// Returns the part of `s` after the last occurrence of `sep`.
 /// Returns empty string if `sep` is not found.
-extern "C" fn std_string_split_last(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_split_last(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -153,7 +154,7 @@ extern "C" fn std_string_split_last(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns 1 if the string is empty (or null), 0 otherwise.
-extern "C" fn std_string_is_empty(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_is_empty(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -176,7 +177,7 @@ extern "C" fn std_string_is_empty(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns the number of non-overlapping occurrences of `sub` in `s`.
-extern "C" fn std_string_count_occurrences(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_count_occurrences(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

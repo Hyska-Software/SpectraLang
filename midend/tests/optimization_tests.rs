@@ -800,60 +800,6 @@ fn test_dce_preserves_autodiff_step_with_unused_result() {
 }
 
 #[test]
-fn test_dce_preserves_async_suspend() {
-    // AsyncSuspend is an effectful async boundary: never eliminable.
-    let mut module = Module {
-        name: "test".to_string(),
-        functions: vec![Function {
-            name: "test_func".to_string(),
-            params: vec![],
-            return_type: Type::Void,
-            next_value_id: 0,
-            next_block_id: 1,
-            source_span: None,
-            locals: vec![],
-            blocks: vec![BasicBlock {
-                id: 0,
-                label: "entry".to_string(),
-                instructions: vec![
-                    Instruction {
-                        id: 0,
-                        kind: InstructionKind::ConstInt {
-                            result: Value { id: 0 },
-                            value: 1,
-                        },
-                        source_span: None,
-                    },
-                    Instruction {
-                        id: 1,
-                        kind: InstructionKind::AsyncSuspend {
-                            task: Value { id: 0 },
-                            state: 0,
-                        },
-                        source_span: None,
-                    },
-                ],
-                terminator: Some(Terminator::Return { value: None }),
-            }],
-        }],
-        external_functions: vec![],
-        globals: vec![],
-        source_file: None,
-    };
-
-    let modified = dead_code_elimination::run(&mut module);
-    assert!(!modified, "DCE must not remove effectful AsyncSuspend");
-
-    let instructions = &module.functions[0].blocks[0].instructions;
-    assert!(
-        instructions
-            .iter()
-            .any(|i| matches!(i.kind, InstructionKind::AsyncSuspend { .. })),
-        "AsyncSuspend must survive DCE"
-    );
-}
-
-#[test]
 fn test_dce_iterates_to_fixpoint() {
     // First pass removes the unused Mul; only after that does the ConstInt
     // feeding it become unused. A single-pass DCE would leave it behind.

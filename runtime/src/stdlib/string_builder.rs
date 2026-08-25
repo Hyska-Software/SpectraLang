@@ -1,3 +1,4 @@
+use super::*;
 // ── std.string string builder (R-3108) ──────────────────────────────────────
 //
 // Each builder function takes at least one argument (some a sentinel) so the
@@ -7,7 +8,7 @@
 // fails to resolve a struct method. A `Call` on a qualified path routes
 // through the existing qualified-call resolution path.
 
-extern "C" fn std_string_builder_new(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_builder_new(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -35,7 +36,7 @@ extern "C" fn std_string_builder_new(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_string_builder_push(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_builder_push(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -54,7 +55,7 @@ extern "C" fn std_string_builder_push(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_string_builder_len(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_builder_len(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -80,7 +81,7 @@ extern "C" fn std_string_builder_len(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_string_builder_finish(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_builder_finish(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -103,7 +104,7 @@ extern "C" fn std_string_builder_finish(ctx: *mut SpectraHostCallContext) -> i32
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_string_builder_free(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_builder_free(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -127,7 +128,7 @@ extern "C" fn std_string_builder_free(ctx: *mut SpectraHostCallContext) -> i32 {
 /// Returns `HOST_STATUS_INVALID_ARGUMENT` when `idx` is negative, at or after
 /// the end of the string, or inside a multi-byte UTF-8 sequence (i.e. not on a
 /// char boundary). No result is written for invalid arguments.
-extern "C" fn std_string_char_at(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_string_char_at(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

@@ -1,10 +1,11 @@
+use super::*;
 // ── std.collections higher-order functions ──────────────────────────────────
 
 /// `list_map(handle, fn_ptr) -> new_handle`
 ///
 /// Creates a new list by applying the Spectra closure `fn_ptr(elem: int) -> int`
 /// to every element of the source list.
-extern "C" fn std_list_map(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_map(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -63,7 +64,7 @@ extern "C" fn std_list_map(ctx: *mut SpectraHostCallContext) -> i32 {
 ///
 /// Creates a new list containing only the elements for which the Spectra closure
 /// `fn_ptr(elem: int) -> int` returns a non-zero (truthy) value.
-extern "C" fn std_list_filter(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_filter(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -125,7 +126,7 @@ extern "C" fn std_list_filter(ctx: *mut SpectraHostCallContext) -> i32 {
 ///
 /// Folds the list left-to-right using `fn_ptr(accumulator: int, elem: int) -> int`,
 /// starting with `initial` as the accumulator. Returns the final accumulator value.
-extern "C" fn std_list_reduce(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_reduce(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -171,7 +172,7 @@ extern "C" fn std_list_reduce(ctx: *mut SpectraHostCallContext) -> i32 {
 ///
 /// Sorts the list in-place using the Spectra comparator closure
 /// `fn_ptr(a: int, b: int) -> int` (negative ⇒ a < b, 0 ⇒ equal, positive ⇒ a > b).
-extern "C" fn std_list_sort_by(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_sort_by(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

@@ -1,4 +1,5 @@
-extern "C" fn std_ml_module_new(ctx: *mut SpectraHostCallContext) -> i32 {
+use super::*;
+pub(crate) extern "C" fn std_ml_module_new(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, _args)) = ml_args(ctx, 0) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -13,7 +14,7 @@ extern "C" fn std_ml_module_new(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-fn artifact_tensor_payload(handle: usize, name: &str) -> Option<crate::artifact::TensorPayload> {
+pub(crate) fn artifact_tensor_payload(handle: usize, name: &str) -> Option<crate::artifact::TensorPayload> {
     with_tensor_registry(|registry| {
         let tensor = registry.get(handle)?;
         if tensor.device != TensorDevice::Cpu || tensor.shape.is_empty() {
@@ -42,7 +43,7 @@ fn artifact_tensor_payload(handle: usize, name: &str) -> Option<crate::artifact:
     })
 }
 
-fn artifact_tensor_from_payload(payload: &crate::artifact::TensorPayload) -> Result<usize, i32> {
+pub(crate) fn artifact_tensor_from_payload(payload: &crate::artifact::TensorPayload) -> Result<usize, i32> {
     let values = payload
         .bytes
         .chunks_exact(8)
@@ -63,7 +64,7 @@ fn artifact_tensor_from_payload(payload: &crate::artifact::TensorPayload) -> Res
     tensor_alloc(dtype, payload.shape.clone(), values)
 }
 
-fn artifact_data_for_save(artifact: &MlArtifact) -> Option<crate::artifact::ArtifactData> {
+pub(crate) fn artifact_data_for_save(artifact: &MlArtifact) -> Option<crate::artifact::ArtifactData> {
     let tensors = artifact
         .tensors
         .iter()
@@ -78,7 +79,7 @@ fn artifact_data_for_save(artifact: &MlArtifact) -> Option<crate::artifact::Arti
     })
 }
 
-extern "C" fn std_ml_artifact_new(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_artifact_new(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -111,7 +112,7 @@ extern "C" fn std_ml_artifact_new(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_artifact_set_metadata(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_artifact_set_metadata(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -140,7 +141,7 @@ extern "C" fn std_ml_artifact_set_metadata(ctx: *mut SpectraHostCallContext) -> 
     }
 }
 
-extern "C" fn std_ml_artifact_add_tensor(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_artifact_add_tensor(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -171,7 +172,7 @@ extern "C" fn std_ml_artifact_add_tensor(ctx: *mut SpectraHostCallContext) -> i3
     }
 }
 
-extern "C" fn std_ml_artifact_save(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_artifact_save(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -194,7 +195,7 @@ extern "C" fn std_ml_artifact_save(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_artifact_load(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_artifact_load(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -225,7 +226,7 @@ extern "C" fn std_ml_artifact_load(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_artifact_tensor(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_artifact_tensor(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -245,7 +246,7 @@ extern "C" fn std_ml_artifact_tensor(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_artifact_metadata(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_artifact_metadata(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -265,7 +266,7 @@ extern "C" fn std_ml_artifact_metadata(ctx: *mut SpectraHostCallContext) -> i32 
     }
 }
 
-extern "C" fn std_ml_artifact_validate(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_artifact_validate(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -280,7 +281,7 @@ extern "C" fn std_ml_artifact_validate(ctx: *mut SpectraHostCallContext) -> i32 
     }
 }
 
-extern "C" fn std_ml_artifact_free(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_artifact_free(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;

@@ -1,4 +1,5 @@
-fn with_string_builder_registry<F, R>(action: F) -> R
+use super::*;
+pub(crate) fn with_string_builder_registry<F, R>(action: F) -> R
 where
     F: FnOnce(&mut StringBuilderRegistry) -> R,
 {
@@ -8,7 +9,7 @@ where
 }
 
 #[allow(dead_code)]
-fn lock_string_builder_registry(
+pub(crate) fn lock_string_builder_registry(
 ) -> Result<std::sync::MutexGuard<'static, StringBuilderRegistry>, i32> {
     string_builder_registry()
         .lock()

@@ -1,6 +1,8 @@
+use super::*;
+
 impl ASTLowering {
     /// Infere o tipo IR de uma expressão AST (análise simplificada)
-    fn infer_expr_ir_type(&mut self, expr: &Expression) -> IRType {
+    pub(crate) fn infer_expr_ir_type(&mut self, expr: &Expression) -> IRType {
         match &expr.kind {
             ExpressionKind::NumberLiteral(s) => {
                 // Se tem ponto, é float, senão int
@@ -585,7 +587,7 @@ impl ASTLowering {
         }
     }
 
-    fn infer_pattern_binding_types(
+    pub(crate) fn infer_pattern_binding_types(
         &self,
         pattern: &spectra_compiler::ast::Pattern,
         scrutinee_enum: Option<&str>,
@@ -716,7 +718,7 @@ impl ASTLowering {
         }
     }
 
-    fn infer_match_arm_type(
+    pub(crate) fn infer_match_arm_type(
         &mut self,
         pattern: &spectra_compiler::ast::Pattern,
         body: &Expression,

@@ -1,3 +1,4 @@
+use super::*;
 /// Fast-path helper for `ml.linear(input, weight, bias)`.
 ///
 /// Mirrors `std_ml_linear` but skips the generic host-call dispatch
@@ -152,7 +153,7 @@ pub fn tensor_grad_handle_fast(input_h: usize) -> i64 {
     .unwrap_or(0)
 }
 
-fn tensor_shape(handle: usize) -> Option<Vec<usize>> {
+pub(crate) fn tensor_shape(handle: usize) -> Option<Vec<usize>> {
     with_tensor_registry(|registry| registry.get(handle).map(|tensor| tensor.shape.clone()))
 }
 

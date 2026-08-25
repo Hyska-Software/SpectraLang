@@ -1,9 +1,11 @@
+use super::*;
+
 impl ASTLowering {
-    fn lower_block(&mut self, statements: &[Statement], ir_func: &mut IRFunction) {
+    pub(crate) fn lower_block(&mut self, statements: &[Statement], ir_func: &mut IRFunction) {
         self.lower_block_with_scope(statements, ir_func, true);
     }
 
-    fn type_has_drop(&self, ty: &IRType) -> bool {
+    pub(crate) fn type_has_drop(&self, ty: &IRType) -> bool {
         match ty {
             IRType::Struct { name, fields } => {
                 self.trait_implementations
@@ -21,7 +23,7 @@ impl ASTLowering {
     /// owning record, followed by its droppable fields in declaration order.
     /// Fields are themselves stored as pointers, so loading a nested struct
     /// value produces the pointer expected by its drop glue.
-    fn emit_drop_for_value(
+    pub(crate) fn emit_drop_for_value(
         &mut self,
         value: Value,
         ty: &IRType,
@@ -111,7 +113,7 @@ impl ASTLowering {
     /// allocations and would otherwise be reclaimed by the callee's frame
     /// exit.  Returning such a value must transfer the complete ownership
     /// graph, not just its outer pointer.
-    fn emit_escape_for_value(
+    pub(crate) fn emit_escape_for_value(
         &mut self,
         value: Value,
         ty: &IRType,
@@ -210,7 +212,7 @@ impl ASTLowering {
         }
     }
 
-    fn collect_moved_identifiers(expr: &Expression, out: &mut HashSet<String>) {
+    pub(crate) fn collect_moved_identifiers(expr: &Expression, out: &mut HashSet<String>) {
         match &expr.kind {
             ExpressionKind::Identifier(name) => {
                 out.insert(name.clone());
@@ -230,7 +232,7 @@ impl ASTLowering {
         }
     }
 
-    fn emit_scope_drops(
+    pub(crate) fn emit_scope_drops(
         &mut self,
         ir_func: &mut IRFunction,
         skipped_names: &HashSet<String>,
@@ -273,7 +275,7 @@ impl ASTLowering {
         }
     }
 
-    fn wrap_async_return_value(
+    pub(crate) fn wrap_async_return_value(
         &mut self,
         ir_func: &mut IRFunction,
         value: Option<Value>,
@@ -300,13 +302,7 @@ impl ASTLowering {
             .unwrap_or_else(|| self.builder.build_const_int(ir_func, 0))
     }
 
-    fn next_async_state(&mut self) -> usize {
-        let state = self.async_state_counter;
-        self.async_state_counter += 1;
-        state
-    }
-
-    fn current_block_is_terminated(&self, ir_func: &IRFunction) -> bool {
+    pub(crate) fn current_block_is_terminated(&self, ir_func: &IRFunction) -> bool {
         self.builder
             .get_current_block()
             .and_then(|block_id| ir_func.get_block(block_id))
@@ -314,7 +310,7 @@ impl ASTLowering {
             .unwrap_or(false)
     }
 
-    fn lower_block_with_scope(
+    pub(crate) fn lower_block_with_scope(
         &mut self,
         statements: &[Statement],
         ir_func: &mut IRFunction,
@@ -354,7 +350,7 @@ impl ASTLowering {
             self.value_map.pop_scope();
         }
     }
-    fn find_assigned_variables(
+    pub(crate) fn find_assigned_variables(
         &self,
         statements: &[Statement],
     ) -> std::collections::HashSet<String> {
@@ -428,7 +424,7 @@ impl ASTLowering {
 
     /// Best-effort IR type for a stack slot derived purely from syntax.
     /// Anything not recognized keeps the historical `Int` slot.
-    fn syntactic_ir_type_hint(expr: &Expression) -> Option<IRType> {
+    pub(crate) fn syntactic_ir_type_hint(expr: &Expression) -> Option<IRType> {
         match &expr.kind {
             ExpressionKind::BoolLiteral(_) => Some(IRType::Bool),
             ExpressionKind::StringLiteral(_) => Some(IRType::String),
@@ -450,7 +446,7 @@ impl ASTLowering {
     /// backend promote the alloca to a Cranelift variable of the declared
     /// type while stores carry the real value type, which panics in the
     /// Cranelift frontend (e.g. a `bool` mutated inside a loop).
-    fn find_assigned_variables_with_types(
+    pub(crate) fn find_assigned_variables_with_types(
         &self,
         statements: &[Statement],
         hints: &mut std::collections::HashMap<String, IRType>,
@@ -553,7 +549,7 @@ impl ASTLowering {
         assigned
     }
 
-    fn collect_assigned_variables_in_expr(
+    pub(crate) fn collect_assigned_variables_in_expr(
         &self,
         expr: &Expression,
         assigned: &mut std::collections::HashSet<String>,
@@ -682,7 +678,7 @@ impl ASTLowering {
         }
     }
 
-    fn lower_branch_block_result(
+    pub(crate) fn lower_branch_block_result(
         &mut self,
         block: &Block,
         ir_func: &mut IRFunction,
@@ -732,7 +728,7 @@ impl ASTLowering {
         (produced_value, current_block_id, has_terminator)
     }
 
-    fn evaluate_int_constant(&self, expr: &Expression) -> Option<i64> {
+    pub(crate) fn evaluate_int_constant(&self, expr: &Expression) -> Option<i64> {
         match &expr.kind {
             ExpressionKind::NumberLiteral(value) => value.parse::<i64>().ok(),
             ExpressionKind::BoolLiteral(value) => Some(if *value { 1 } else { 0 }),
@@ -783,7 +779,7 @@ impl ASTLowering {
         }
     }
 
-    fn lower_tensor_literal(
+    pub(crate) fn lower_tensor_literal(
         &mut self,
         expr: &Expression,
         dtype: &IRType,

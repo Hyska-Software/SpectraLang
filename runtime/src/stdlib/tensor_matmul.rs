@@ -1,4 +1,5 @@
-fn tensor_float_unary(
+use super::*;
+pub(crate) fn tensor_float_unary(
     ctx: *mut SpectraHostCallContext,
     autograd_op: AutogradOp,
     op: impl Fn(f64) -> f64,
@@ -49,7 +50,7 @@ fn tensor_float_unary(
     }
 }
 
-extern "C" fn std_tensor_matmul(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_matmul(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -202,7 +203,7 @@ extern "C" fn std_tensor_matmul(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_matmul_batched(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_matmul_batched(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -256,7 +257,7 @@ extern "C" fn std_tensor_matmul_batched(ctx: *mut SpectraHostCallContext) -> i32
     }
 }
 
-fn matmul_f64(left: &[f64], right: &[f64], m: usize, k: usize, n: usize) -> Vec<f64> {
+pub(crate) fn matmul_f64(left: &[f64], right: &[f64], m: usize, k: usize, n: usize) -> Vec<f64> {
     let mut out = vec![0.0; m * n];
     for row in 0..m {
         for col in 0..n {
@@ -270,7 +271,7 @@ fn matmul_f64(left: &[f64], right: &[f64], m: usize, k: usize, n: usize) -> Vec<
     out
 }
 
-fn transpose_f64(data: &[f64], rows: usize, cols: usize) -> Vec<f64> {
+pub(crate) fn transpose_f64(data: &[f64], rows: usize, cols: usize) -> Vec<f64> {
     let mut out = vec![0.0; data.len()];
     for row in 0..rows {
         for col in 0..cols {
@@ -280,7 +281,7 @@ fn transpose_f64(data: &[f64], rows: usize, cols: usize) -> Vec<f64> {
     out
 }
 
-fn accumulate_tensor_grad(tensor: &mut StdTensor, grad: &[f64]) -> bool {
+pub(crate) fn accumulate_tensor_grad(tensor: &mut StdTensor, grad: &[f64]) -> bool {
     if tensor.dtype != TensorDType::Float || tensor.len() != grad.len() {
         return false;
     }

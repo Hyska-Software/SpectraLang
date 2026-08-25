@@ -1,18 +1,19 @@
-struct AsyncTaskRegistry {
-    now_ms: SpectraHostValue,
-    next_join_order: SpectraHostValue,
-    tasks: AsyncHandleTable<AsyncTask>,
-    scopes: AsyncHandleTable<AsyncScope>,
-    cancel_handles: AsyncHandleTable<SpectraHostValue>,
-    streams: AsyncHandleTable<AsyncStream>,
-    tcp_listeners: AsyncHandleTable<AsyncTcpListenerState>,
-    tcp_streams: AsyncHandleTable<AsyncTcpStreamState>,
-    udp_sockets: AsyncHandleTable<AsyncUdpSocketState>,
-    async_channels: AsyncHandleTable<AsyncChannelState>,
+use super::*;
+pub(crate) struct AsyncTaskRegistry {
+    pub(crate) now_ms: SpectraHostValue,
+    pub(crate) next_join_order: SpectraHostValue,
+    pub(crate) tasks: AsyncHandleTable<AsyncTask>,
+    pub(crate) scopes: AsyncHandleTable<AsyncScope>,
+    pub(crate) cancel_handles: AsyncHandleTable<SpectraHostValue>,
+    pub(crate) streams: AsyncHandleTable<AsyncStream>,
+    pub(crate) tcp_listeners: AsyncHandleTable<AsyncTcpListenerState>,
+    pub(crate) tcp_streams: AsyncHandleTable<AsyncTcpStreamState>,
+    pub(crate) udp_sockets: AsyncHandleTable<AsyncUdpSocketState>,
+    pub(crate) async_channels: AsyncHandleTable<AsyncChannelState>,
 }
 
 impl AsyncTaskRegistry {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             now_ms: 0,
             next_join_order: 1,
@@ -27,7 +28,7 @@ impl AsyncTaskRegistry {
         }
     }
 
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.deregister_io_sources();
         self.now_ms = 0;
         self.next_join_order = 1;
@@ -41,7 +42,7 @@ impl AsyncTaskRegistry {
         self.async_channels.clear();
     }
 
-    fn deregister_io_sources(&mut self) {
+    pub(crate) fn deregister_io_sources(&mut self) {
         let listener_ids = self.tcp_listeners.keys().collect::<Vec<_>>();
         for listener_id in listener_ids {
             if let Some(listener) = self.tcp_listeners.get_mut(listener_id) {
@@ -64,7 +65,7 @@ impl AsyncTaskRegistry {
         }
     }
 
-    fn allocate_task(
+    pub(crate) fn allocate_task(
         &mut self,
         value: SpectraHostValue,
         parent_scope: Option<SpectraHostValue>,
@@ -81,7 +82,7 @@ impl AsyncTaskRegistry {
         )
     }
 
-    fn allocate_task_with_completion(
+    pub(crate) fn allocate_task_with_completion(
         &mut self,
         value: SpectraHostValue,
         parent_scope: Option<SpectraHostValue>,
@@ -101,7 +102,7 @@ impl AsyncTaskRegistry {
         )
     }
 
-    fn allocate_task_with_completion_fresh(
+    pub(crate) fn allocate_task_with_completion_fresh(
         &mut self,
         value: SpectraHostValue,
         parent_scope: Option<SpectraHostValue>,
@@ -122,7 +123,7 @@ impl AsyncTaskRegistry {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn allocate_task_with_completion_impl(
+    pub(crate) fn allocate_task_with_completion_impl(
         &mut self,
         value: SpectraHostValue,
         parent_scope: Option<SpectraHostValue>,
@@ -163,7 +164,7 @@ impl AsyncTaskRegistry {
         task_id
     }
 
-    fn complete_task(&mut self, task_id: SpectraHostValue, value: SpectraHostValue) -> Option<()> {
+    pub(crate) fn complete_task(&mut self, task_id: SpectraHostValue, value: SpectraHostValue) -> Option<()> {
         let task = self.tasks.get_mut(task_id)?;
         if task.cancelled {
             lock_unpoisoned(background_cancel_hooks()).remove(&task_id);
@@ -178,7 +179,7 @@ impl AsyncTaskRegistry {
         Some(())
     }
 
-    fn fail_task(&mut self, task_id: SpectraHostValue) -> Option<()> {
+    pub(crate) fn fail_task(&mut self, task_id: SpectraHostValue) -> Option<()> {
         let task = self.tasks.get_mut(task_id)?;
         task.failed = true;
         task.completed = true;
@@ -188,20 +189,20 @@ impl AsyncTaskRegistry {
         Some(())
     }
 
-    fn allocate_failed_task(&mut self) -> SpectraHostValue {
+    pub(crate) fn allocate_failed_task(&mut self) -> SpectraHostValue {
         let task_id = self.allocate_task(-2, None, None, None);
         let _ = self.fail_task(task_id);
         task_id
     }
 
-    fn task_is_cancelled(&self, task_id: SpectraHostValue) -> bool {
+    pub(crate) fn task_is_cancelled(&self, task_id: SpectraHostValue) -> bool {
         self.tasks
             .get(task_id)
             .map(|task| task.cancelled)
             .unwrap_or(true)
     }
 
-    fn create_scope(&mut self, parent: Option<SpectraHostValue>) -> Option<SpectraHostValue> {
+    pub(crate) fn create_scope(&mut self, parent: Option<SpectraHostValue>) -> Option<SpectraHostValue> {
         if let Some(parent_id) = parent {
             self.scopes.get(parent_id)?;
         }
@@ -221,7 +222,7 @@ impl AsyncTaskRegistry {
         Some(scope_id)
     }
 
-    fn attach_task_to_scope(
+    pub(crate) fn attach_task_to_scope(
         &mut self,
         scope_id: SpectraHostValue,
         task_id: SpectraHostValue,
@@ -244,7 +245,7 @@ impl AsyncTaskRegistry {
         Some(())
     }
 
-    fn cancel_task(&mut self, task_id: SpectraHostValue) -> Option<()> {
+    pub(crate) fn cancel_task(&mut self, task_id: SpectraHostValue) -> Option<()> {
         let inner = {
             let task = self.tasks.get_mut(task_id)?;
             task.cancelled = true;
@@ -261,7 +262,7 @@ impl AsyncTaskRegistry {
         Some(())
     }
 
-    fn cancel_scope(&mut self, scope_id: SpectraHostValue) -> Option<()> {
+    pub(crate) fn cancel_scope(&mut self, scope_id: SpectraHostValue) -> Option<()> {
         let (children, child_scopes) = {
             let scope = self.scopes.get_mut(scope_id)?;
             scope.cancelled = true;
@@ -276,7 +277,7 @@ impl AsyncTaskRegistry {
         Some(())
     }
 
-    fn process_due_timeouts(&mut self) {
+    pub(crate) fn process_due_timeouts(&mut self) {
         let due_tasks: Vec<_> = self
             .tasks
             .iter()
@@ -290,7 +291,7 @@ impl AsyncTaskRegistry {
         }
     }
 
-    fn join_scope(&mut self, scope_id: SpectraHostValue) -> Option<SpectraHostValue> {
+    pub(crate) fn join_scope(&mut self, scope_id: SpectraHostValue) -> Option<SpectraHostValue> {
         self.process_due_timeouts();
         let (children, child_scopes, scope_cancelled) = {
             let scope = self.scopes.get(scope_id)?;
@@ -350,7 +351,7 @@ impl AsyncTaskRegistry {
         }
     }
 
-    fn create_stream(&mut self, kind: AsyncStreamKind, capacity: usize) -> SpectraHostValue {
+    pub(crate) fn create_stream(&mut self, kind: AsyncStreamKind, capacity: usize) -> SpectraHostValue {
         
         self.streams.insert(AsyncStream {
             kind,
@@ -365,7 +366,7 @@ impl AsyncTaskRegistry {
         })
     }
 
-    fn push_stream_value(
+    pub(crate) fn push_stream_value(
         &mut self,
         stream_id: SpectraHostValue,
         value: SpectraHostValue,
@@ -389,7 +390,7 @@ impl AsyncTaskRegistry {
         Some(1)
     }
 
-    fn mark_stream_done(&mut self, stream_id: SpectraHostValue) -> Option<()> {
+    pub(crate) fn mark_stream_done(&mut self, stream_id: SpectraHostValue) -> Option<()> {
         let stream = self.streams.get_mut(stream_id)?;
         stream.done = true;
         stream.last_next_status = 2;
@@ -397,7 +398,7 @@ impl AsyncTaskRegistry {
         Some(())
     }
 
-    fn cancel_stream(&mut self, stream_id: SpectraHostValue) -> Option<()> {
+    pub(crate) fn cancel_stream(&mut self, stream_id: SpectraHostValue) -> Option<()> {
         let pending = {
             let stream = self.streams.get_mut(stream_id)?;
             stream.cancelled = true;
@@ -410,7 +411,7 @@ impl AsyncTaskRegistry {
         Some(())
     }
 
-    fn drive_streams(&mut self) {
+    pub(crate) fn drive_streams(&mut self) {
         loop {
             let stream_ids = self.streams.keys().collect::<Vec<_>>();
             let mut progressed = false;
@@ -423,7 +424,7 @@ impl AsyncTaskRegistry {
         }
     }
 
-    fn drive_stream_pending(&mut self, stream_id: SpectraHostValue) -> bool {
+    pub(crate) fn drive_stream_pending(&mut self, stream_id: SpectraHostValue) -> bool {
         let mut progressed = false;
         while let Some(task_id) = self
                 .streams
@@ -472,7 +473,7 @@ impl AsyncTaskRegistry {
         progressed
     }
 
-    fn pull_stream_value(&mut self, stream_id: SpectraHostValue) -> Option<AsyncStreamPull> {
+    pub(crate) fn pull_stream_value(&mut self, stream_id: SpectraHostValue) -> Option<AsyncStreamPull> {
         let kind = {
             let stream = self.streams.get_mut(stream_id)?;
             if stream.cancelled {
@@ -632,7 +633,7 @@ impl AsyncTaskRegistry {
         }
     }
 
-    fn insert_tcp_listener(
+    pub(crate) fn insert_tcp_listener(
         &mut self,
         listener: mio::net::TcpListener,
     ) -> Option<SpectraHostValue> {
@@ -658,7 +659,7 @@ impl AsyncTaskRegistry {
         Some(listener_id)
     }
 
-    fn insert_tcp_stream(
+    pub(crate) fn insert_tcp_stream(
         &mut self,
         stream: mio::net::TcpStream,
         connect_task: Option<SpectraHostValue>,
@@ -687,7 +688,7 @@ impl AsyncTaskRegistry {
         Some(stream_id)
     }
 
-    fn insert_udp_socket(&mut self, socket: mio::net::UdpSocket) -> Option<SpectraHostValue> {
+    pub(crate) fn insert_udp_socket(&mut self, socket: mio::net::UdpSocket) -> Option<SpectraHostValue> {
         let socket_id = self.udp_sockets.insert(AsyncUdpSocketState {
             socket,
             pending_recvs: VecDeque::new(),
@@ -711,7 +712,7 @@ impl AsyncTaskRegistry {
         Some(socket_id)
     }
 
-    fn drive_tcp_connect(&mut self, ready_token: Option<SpectraHostValue>) {
+    pub(crate) fn drive_tcp_connect(&mut self, ready_token: Option<SpectraHostValue>) {
         let stream_ids = self.tcp_streams.keys().collect::<Vec<_>>();
         for stream_id in stream_ids {
             let Some(connect_task) = self
@@ -756,7 +757,7 @@ impl AsyncTaskRegistry {
         }
     }
 
-    fn drive_tcp_accepts(&mut self) {
+    pub(crate) fn drive_tcp_accepts(&mut self) {
         let listener_ids = self.tcp_listeners.keys().collect::<Vec<_>>();
         for listener_id in listener_ids {
             loop {
@@ -796,7 +797,7 @@ impl AsyncTaskRegistry {
         }
     }
 
-    fn drive_tcp_reads(&mut self) {
+    pub(crate) fn drive_tcp_reads(&mut self) {
         let stream_ids = self.tcp_streams.keys().collect::<Vec<_>>();
         for stream_id in stream_ids {
             loop {
@@ -837,7 +838,7 @@ impl AsyncTaskRegistry {
         }
     }
 
-    fn drive_udp_recvs(&mut self) {
+    pub(crate) fn drive_udp_recvs(&mut self) {
         let socket_ids = self.udp_sockets.keys().collect::<Vec<_>>();
         for socket_id in socket_ids {
             loop {
@@ -884,7 +885,7 @@ impl AsyncTaskRegistry {
         }
     }
 
-    fn drive_pending_io_for_task(&mut self, task_id: SpectraHostValue) {
+    pub(crate) fn drive_pending_io_for_task(&mut self, task_id: SpectraHostValue) {
         for _ in 0..16 {
             let pending = self
                 .tasks
@@ -905,7 +906,7 @@ impl AsyncTaskRegistry {
         }
     }
 
-    fn process_reactor_event(&mut self, event: ReactorEvent) {
+    pub(crate) fn process_reactor_event(&mut self, event: ReactorEvent) {
         match event.kind {
             reactor::EventKind::Io => {
                 self.drive_tcp_connect(Some(event.token));
@@ -918,7 +919,7 @@ impl AsyncTaskRegistry {
         }
     }
 
-    fn drive_async_channel(&mut self, channel_id: SpectraHostValue) -> Option<()> {
+    pub(crate) fn drive_async_channel(&mut self, channel_id: SpectraHostValue) -> Option<()> {
         loop {
             let recv_task = {
                 let channel = self.async_channels.get_mut(channel_id)?;

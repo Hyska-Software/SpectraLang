@@ -249,33 +249,40 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
     )
 }
 
-/// Device-sum: parallel two-stage tree reduction writing 1 f32 into
-/// `out`. Stage one (`reduce`, workgroup_size 256) folds a strided tile
-/// per workgroup through an 8-step shared-memory tree and emits one
-/// partial per workgroup; stage two (`final_reduce`) folds the partials
-/// into the final scalar. A scratch partials buffer is allocated for
-/// the submission and dropped right after — `queue.submit` retains it
-/// for the duration of the GPU work. No intermediate readback: the
-/// caller reads only this final scalar (the one allowed readback in
-/// the hot path). Without a GPU adapter the context error propagates
-/// and callers fall back to their counted CPU path.
-pub fn sum_device(
+/// Device reduction core behind `sum_device`, `mean_device`,
+/// `min_device`, `max_device`, and `argmax_device`. Parallel
+/// two-stage tree reduction writing 1 f32 into `out` (for ArgMax: the
+/// winning index bit-cast to f32). Stage one (`reduce`, workgroup_size
+/// 256) folds a strided tile per workgroup through an 8-step
+/// shared-memory tree and emits one partial per workgroup (a
+/// value/index pair for ArgMax); stage two (`final_reduce`) folds the
+/// partials into the final scalar. A scratch partials buffer is
+/// allocated for the submission and dropped right after —
+/// `queue.submit` retains it for the duration of the GPU work. No
+/// intermediate readback: the caller reads only this final scalar (the
+/// one allowed readback in the hot path). Without a GPU adapter the
+/// context error propagates and callers fall back to their counted CPU
+/// path.
+fn reduce_device(
     input: &DeviceBuffer,
     out: &DeviceBuffer,
+    op: GpuReduceOp,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> Result<(), GpuError> {
     if input.elements == 0 || out.elements != 1 {
         return Err(GpuError::new(
             GpuErrorKind::ShapeMismatch,
-            "gpu sum_device shape mismatch",
+            "gpu reduction_device shape mismatch",
         ));
     }
     let (workgroups, total_threads, partials_count) = reduction_plan(input.elements);
-    let shader = reduction_shader(input.elements, total_threads, partials_count);
+    let shader = reduction_shader(input.elements, total_threads, partials_count, op);
     let partials = Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("spectra-runtime-gpu-sum-partials"),
-        size: u64::from(partials_count) * std::mem::size_of::<f32>() as u64,
+        label: Some("spectra-runtime-gpu-reduction-partials"),
+        size: u64::from(partials_count)
+            * op.partials_stride()
+            * std::mem::size_of::<f32>() as u64,
         usage: wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
     }));
@@ -291,6 +298,59 @@ pub fn sum_device(
         ("reduce", [workgroups, 1, 1]),
         ("final_reduce", [1, 1, 1]),
     )
+}
+
+pub fn sum_device(
+    input: &DeviceBuffer,
+    out: &DeviceBuffer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> Result<(), GpuError> {
+    reduce_device(input, out, GpuReduceOp::Sum, device, queue)
+}
+
+/// Device mean: parallel two-stage tree reduction dividing the folded
+/// scalar by `len` in the final phase; writes 1 f32 into `out`.
+pub fn mean_device(
+    input: &DeviceBuffer,
+    out: &DeviceBuffer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> Result<(), GpuError> {
+    reduce_device(input, out, GpuReduceOp::Mean, device, queue)
+}
+
+/// Device min: identity init is +inf, so empty lanes never poison the
+/// fold; writes 1 f32 into `out`.
+pub fn min_device(
+    input: &DeviceBuffer,
+    out: &DeviceBuffer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> Result<(), GpuError> {
+    reduce_device(input, out, GpuReduceOp::Min, device, queue)
+}
+
+/// Device max: identity init is -inf; writes 1 f32 into `out`.
+pub fn max_device(
+    input: &DeviceBuffer,
+    out: &DeviceBuffer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> Result<(), GpuError> {
+    reduce_device(input, out, GpuReduceOp::Max, device, queue)
+}
+
+/// Device argmax: writes the index (u32 bit-cast to f32) of the maximum
+/// element into `out`. Strict-greater comparison with lowest-index tie
+/// breaking at every fold level makes the result deterministic.
+pub fn argmax_device(
+    input: &DeviceBuffer,
+    out: &DeviceBuffer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> Result<(), GpuError> {
+    reduce_device(input, out, GpuReduceOp::ArgMax, device, queue)
 }
 
 /// Device column sum: for a row-major matrix `input[rows, cols]`, writes

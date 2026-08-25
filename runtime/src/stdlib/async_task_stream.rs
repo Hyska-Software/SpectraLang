@@ -1,21 +1,22 @@
-fn async_task_registry() -> &'static Mutex<AsyncTaskRegistry> {
+use super::*;
+pub(crate) fn async_task_registry() -> &'static Mutex<AsyncTaskRegistry> {
     static REGISTRY: OnceLock<Mutex<AsyncTaskRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(AsyncTaskRegistry::new()))
 }
 
-fn async_task_completion_signal() -> &'static (Mutex<u64>, Condvar) {
+pub(crate) fn async_task_completion_signal() -> &'static (Mutex<u64>, Condvar) {
     static SIGNAL: OnceLock<(Mutex<u64>, Condvar)> = OnceLock::new();
     SIGNAL.get_or_init(|| (Mutex::new(0), Condvar::new()))
 }
 
-fn notify_async_task_completion() {
+pub(crate) fn notify_async_task_completion() {
     let (epoch, ready) = async_task_completion_signal();
     let mut epoch = lock_unpoisoned(epoch);
     *epoch = epoch.wrapping_add(1);
     ready.notify_all();
 }
 
-fn lock_async_task_registry() -> Result<std::sync::MutexGuard<'static, AsyncTaskRegistry>, i32> {
+pub(crate) fn lock_async_task_registry() -> Result<std::sync::MutexGuard<'static, AsyncTaskRegistry>, i32> {
     async_task_registry()
         .lock()
         .map_err(|_| HOST_STATUS_INTERNAL_ERROR)
@@ -82,7 +83,7 @@ where
     )
 }
 
-fn spawn_background_task_internal<F>(
+pub(crate) fn spawn_background_task_internal<F>(
     work: F,
     cancel: Option<BackgroundCancelHook>,
     queue: &'static BackgroundWorkerQueue,
@@ -133,12 +134,12 @@ where
     Ok(task_id)
 }
 
-fn async_last_reactor_event() -> &'static Mutex<Option<ReactorEvent>> {
+pub(crate) fn async_last_reactor_event() -> &'static Mutex<Option<ReactorEvent>> {
     static LAST: OnceLock<Mutex<Option<ReactorEvent>>> = OnceLock::new();
     LAST.get_or_init(|| Mutex::new(None))
 }
 
-fn set_async_last_reactor_event(event: Option<ReactorEvent>) -> Result<(), i32> {
+pub(crate) fn set_async_last_reactor_event(event: Option<ReactorEvent>) -> Result<(), i32> {
     let mut last = async_last_reactor_event()
         .lock()
         .map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
@@ -146,7 +147,7 @@ fn set_async_last_reactor_event(event: Option<ReactorEvent>) -> Result<(), i32> 
     Ok(())
 }
 
-extern "C" fn std_async_task_ready(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_ready(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -160,7 +161,7 @@ extern "C" fn std_async_task_ready(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_task_ready_batch(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_ready_batch(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -192,7 +193,7 @@ extern "C" fn std_async_task_ready_batch(ctx: *mut SpectraHostCallContext) -> i3
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_task_batch_checksum(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_batch_checksum(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -220,7 +221,7 @@ extern "C" fn std_async_task_batch_checksum(ctx: *mut SpectraHostCallContext) ->
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_task_poll(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_poll(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -276,7 +277,7 @@ pub fn task_result_value(task_id: SpectraHostValue) -> Result<SpectraHostValue, 
 /// readiness that only this thread can observe. This replaces the
 /// historical fixed 10 ms spin: an idle waiter now blocks inside the
 /// reactor instead of waking one hundred times per second.
-const TASK_WAIT_PARK: Duration = Duration::from_millis(50);
+pub(crate) const TASK_WAIT_PARK: Duration = Duration::from_millis(50);
 
 /// Terminal join-status codes, mirroring `async_task_join_status`:
 /// 0 = completed with a value, 1 = cancelled, 2 = failed.
@@ -333,7 +334,7 @@ pub fn cancel_task_handle(task_id: SpectraHostValue) -> bool {
         .is_some()
 }
 
-extern "C" fn std_async_task_result(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_result(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -354,7 +355,7 @@ extern "C" fn std_async_task_result(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_task_block_on(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_block_on(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -381,7 +382,7 @@ extern "C" fn std_async_task_block_on(ctx: *mut SpectraHostCallContext) -> i32 {
 /// which one: 0 = completed with a value, 1 = cancelled, 2 = failed.
 /// This is the efficient readiness wait used by the lowered `await`
 /// expression (`spectra.async.task.wait`).
-extern "C" fn std_async_task_wait(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_wait(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -393,7 +394,7 @@ extern "C" fn std_async_task_wait(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-fn async_task_join_status(task: &AsyncTask) -> SpectraHostValue {
+pub(crate) fn async_task_join_status(task: &AsyncTask) -> SpectraHostValue {
     if task.cancelled {
         1
     } else if task.failed {
@@ -405,7 +406,7 @@ fn async_task_join_status(task: &AsyncTask) -> SpectraHostValue {
     }
 }
 
-extern "C" fn std_async_task_join(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_join(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -428,7 +429,7 @@ extern "C" fn std_async_task_join(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_task_join_status(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_join_status(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -446,7 +447,7 @@ extern "C" fn std_async_task_join_status(ctx: *mut SpectraHostCallContext) -> i3
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_task_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -462,7 +463,7 @@ extern "C" fn std_async_task_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_task_is_cancelled(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_is_cancelled(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -479,7 +480,7 @@ extern "C" fn std_async_task_is_cancelled(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_task_cancel_handle(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_cancel_handle(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -495,7 +496,7 @@ extern "C" fn std_async_task_cancel_handle(ctx: *mut SpectraHostCallContext) -> 
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_task_with_timeout(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_with_timeout(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -523,7 +524,7 @@ extern "C" fn std_async_task_with_timeout(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_task_fail(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_fail(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -541,7 +542,7 @@ extern "C" fn std_async_task_fail(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_task_join_order(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_join_order(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -557,7 +558,7 @@ extern "C" fn std_async_task_join_order(ctx: *mut SpectraHostCallContext) -> i32
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_cancel_handle_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_cancel_handle_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -576,7 +577,7 @@ extern "C" fn std_async_cancel_handle_cancel(ctx: *mut SpectraHostCallContext) -
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_scheduler_advance_time(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_scheduler_advance_time(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -594,7 +595,7 @@ extern "C" fn std_async_scheduler_advance_time(ctx: *mut SpectraHostCallContext)
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_scope_new(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_scope_new(ctx: *mut SpectraHostCallContext) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -610,7 +611,7 @@ extern "C" fn std_async_scope_new(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_scope_child(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_scope_child(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -626,7 +627,7 @@ extern "C" fn std_async_scope_child(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_scope_attach(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_scope_attach(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -642,7 +643,7 @@ extern "C" fn std_async_scope_attach(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_scope_spawn_ready(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_scope_spawn_ready(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -658,7 +659,7 @@ extern "C" fn std_async_scope_spawn_ready(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_scope_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_scope_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -674,7 +675,7 @@ extern "C" fn std_async_scope_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_scope_join(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_scope_join(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -690,7 +691,7 @@ extern "C" fn std_async_scope_join(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_scope_joined_count(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_scope_joined_count(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -706,7 +707,7 @@ extern "C" fn std_async_scope_joined_count(ctx: *mut SpectraHostCallContext) -> 
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_scope_failures(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_scope_failures(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -722,7 +723,7 @@ extern "C" fn std_async_scope_failures(ctx: *mut SpectraHostCallContext) -> i32 
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_new(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_new(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -738,7 +739,7 @@ extern "C" fn std_async_stream_new(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_push(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_push(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -754,7 +755,7 @@ extern "C" fn std_async_stream_push(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_done(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_done(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -770,7 +771,7 @@ extern "C" fn std_async_stream_done(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_next(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_next(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -812,7 +813,7 @@ extern "C" fn std_async_stream_next(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_next_status(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_next_status(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -828,7 +829,7 @@ extern "C" fn std_async_stream_next_status(ctx: *mut SpectraHostCallContext) -> 
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -844,7 +845,7 @@ extern "C" fn std_async_stream_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_len(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_len(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -860,7 +861,7 @@ extern "C" fn std_async_stream_len(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_capacity(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_capacity(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -876,7 +877,7 @@ extern "C" fn std_async_stream_capacity(ctx: *mut SpectraHostCallContext) -> i32
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_map(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_map(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 3) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -902,7 +903,7 @@ extern "C" fn std_async_stream_map(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_filter(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_filter(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 3) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -928,7 +929,7 @@ extern "C" fn std_async_stream_filter(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_fold(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_fold(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 3) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -986,7 +987,7 @@ extern "C" fn std_async_stream_fold(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_async_stream_take(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_take(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -1011,7 +1012,7 @@ extern "C" fn std_async_stream_take(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_skip(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_skip(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -1036,7 +1037,7 @@ extern "C" fn std_async_stream_skip(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_chunks(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_chunks(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -1061,7 +1062,7 @@ extern "C" fn std_async_stream_chunks(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_stream_fuse(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_stream_fuse(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,

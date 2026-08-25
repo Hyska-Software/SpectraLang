@@ -1,6 +1,7 @@
+use super::*;
 // ── std.collections extras ──────────────────────────────────────────────────
 
-fn write_option_result(
+pub(crate) fn write_option_result(
     ctx: &mut SpectraHostCallContext,
     value: Option<SpectraHostValue>,
 ) -> i32 {
@@ -22,7 +23,7 @@ fn write_option_result(
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_list_get(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_get(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -44,7 +45,7 @@ extern "C" fn std_list_get(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_list_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -60,7 +61,7 @@ extern "C" fn std_list_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_list_set(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_set(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -82,7 +83,7 @@ extern "C" fn std_list_set(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_list_contains(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_contains(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -104,7 +105,7 @@ extern "C" fn std_list_contains(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_list_pop(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_pop(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -125,7 +126,7 @@ extern "C" fn std_list_pop(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_list_pop_front(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_pop_front(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -146,7 +147,7 @@ extern "C" fn std_list_pop_front(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_list_pop_option(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_pop_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -162,7 +163,7 @@ extern "C" fn std_list_pop_option(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_list_pop_front_option(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_pop_front_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -178,7 +179,7 @@ extern "C" fn std_list_pop_front_option(ctx: *mut SpectraHostCallContext) -> i32
     }
 }
 
-extern "C" fn std_list_insert_at(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_insert_at(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -200,7 +201,7 @@ extern "C" fn std_list_insert_at(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_list_remove_at(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_remove_at(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -222,7 +223,7 @@ extern "C" fn std_list_remove_at(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_list_remove_at_option(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_remove_at_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -240,7 +241,7 @@ extern "C" fn std_list_remove_at_option(ctx: *mut SpectraHostCallContext) -> i32
     }
 }
 
-extern "C" fn std_list_index_of(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_index_of(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -262,7 +263,7 @@ extern "C" fn std_list_index_of(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_list_sort(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_list_sort(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

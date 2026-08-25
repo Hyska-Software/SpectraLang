@@ -1,5 +1,7 @@
+use super::*;
+
 impl ASTLowering {
-    fn specialized_generic_annotation(&self, type_name: &str) -> Option<TypeAnnotation> {
+    pub(crate) fn specialized_generic_annotation(&self, type_name: &str) -> Option<TypeAnnotation> {
         self.generic_enums
             .iter()
             .find_map(|(base_name, generic_enum)| {
@@ -66,7 +68,7 @@ impl ASTLowering {
             })
     }
 
-    fn specialized_generic_annotation_from_enum(
+    pub(crate) fn specialized_generic_annotation_from_enum(
         &self,
         type_name: &str,
         variants: &[(String, Option<Vec<IRType>>)],
@@ -136,7 +138,7 @@ impl ASTLowering {
         self.specialized_generic_annotation(type_name)
     }
 
-    fn default_type_args_for_enum(&self, enum_name: &str) -> Option<Vec<TypeAnnotation>> {
+    pub(crate) fn default_type_args_for_enum(&self, enum_name: &str) -> Option<Vec<TypeAnnotation>> {
         self.generic_enums.get(enum_name).map(|generic_enum| {
             generic_enum
                 .type_params
@@ -146,7 +148,7 @@ impl ASTLowering {
         })
     }
 
-    fn fill_type_args_from_annotation(
+    pub(crate) fn fill_type_args_from_annotation(
         &self,
         template: &TypeAnnotation,
         actual_type: &IRType,
@@ -180,7 +182,7 @@ impl ASTLowering {
         }
     }
 
-    fn type_annotation_needs_refinement(&self, ann: &TypeAnnotation) -> bool {
+    pub(crate) fn type_annotation_needs_refinement(&self, ann: &TypeAnnotation) -> bool {
         match &ann.kind {
             TypeAnnotationKind::Simple { segments } if segments.len() == 1 => {
                 let name = &segments[0];
@@ -196,7 +198,7 @@ impl ASTLowering {
         }
     }
 
-    fn infer_enum_type_args_from_data(
+    pub(crate) fn infer_enum_type_args_from_data(
         &mut self,
         enum_name: &str,
         variant_name: &str,
@@ -254,7 +256,7 @@ impl ASTLowering {
         Some(inferred)
     }
 
-    fn infer_expr_type_annotation(&mut self, expr: &Expression) -> Option<TypeAnnotation> {
+    pub(crate) fn infer_expr_type_annotation(&mut self, expr: &Expression) -> Option<TypeAnnotation> {
         match &expr.kind {
             ExpressionKind::NumberLiteral(num) => {
                 Some(Self::simple_type_annotation(if num.contains('.') {
@@ -332,7 +334,7 @@ impl ASTLowering {
         }
     }
 
-    fn infer_enum_type_args_from_named_fields(
+    pub(crate) fn infer_enum_type_args_from_named_fields(
         &mut self,
         enum_name: &str,
         variant_name: &str,
@@ -381,7 +383,7 @@ impl ASTLowering {
         Some(inferred)
     }
 
-    fn reorder_named_variant_exprs<'a>(
+    pub(crate) fn reorder_named_variant_exprs<'a>(
         &self,
         enum_name: &str,
         variant_name: &str,
@@ -403,7 +405,7 @@ impl ASTLowering {
             .collect()
     }
 
-    fn reorder_named_variant_patterns<'a>(
+    pub(crate) fn reorder_named_variant_patterns<'a>(
         &self,
         enum_name: &str,
         variant_name: &str,
@@ -425,7 +427,7 @@ impl ASTLowering {
             .collect()
     }
 
-    fn enum_variants_from_ir_type(
+    pub(crate) fn enum_variants_from_ir_type(
         &self,
         scrutinee_type: Option<&IRType>,
     ) -> Option<Vec<EnumVariantDefinition>> {
@@ -443,7 +445,7 @@ impl ASTLowering {
         None
     }
 
-    fn merge_types(&self, left: &IRType, right: &IRType) -> Option<IRType> {
+    pub(crate) fn merge_types(&self, left: &IRType, right: &IRType) -> Option<IRType> {
         if left == right {
             return Some(left.clone());
         }
@@ -456,7 +458,7 @@ impl ASTLowering {
         }
     }
 
-    fn unify_types(&self, mut types: Vec<IRType>) -> IRType {
+    pub(crate) fn unify_types(&self, mut types: Vec<IRType>) -> IRType {
         if types.is_empty() {
             return IRType::Void;
         }

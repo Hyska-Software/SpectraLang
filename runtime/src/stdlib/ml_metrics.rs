@@ -1,4 +1,5 @@
-extern "C" fn std_ml_metrics_classification(ctx: *mut SpectraHostCallContext) -> i32 {
+use super::*;
+pub(crate) extern "C" fn std_ml_metrics_classification(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -91,7 +92,7 @@ extern "C" fn std_ml_metrics_classification(ctx: *mut SpectraHostCallContext) ->
     }
 }
 
-extern "C" fn std_ml_metrics_regression(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_metrics_regression(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -127,7 +128,7 @@ extern "C" fn std_ml_metrics_regression(ctx: *mut SpectraHostCallContext) -> i32
     }
 }
 
-extern "C" fn std_ml_metrics_ranking(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_metrics_ranking(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -193,7 +194,7 @@ extern "C" fn std_ml_metrics_ranking(ctx: *mut SpectraHostCallContext) -> i32 {
 // Without log-probs no fake number is invented: `perplexity` renders null and
 // the old lexical proxy value stays available under its honest name
 // `answer_overlap_score` for existing callers.
-extern "C" fn std_ml_metrics_generation(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_metrics_generation(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         if ctx.is_null() {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -251,7 +252,7 @@ extern "C" fn std_ml_metrics_generation(ctx: *mut SpectraHostCallContext) -> i32
     }
 }
 
-extern "C" fn std_ml_serving_metrics(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_serving_metrics(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -296,7 +297,7 @@ extern "C" fn std_ml_serving_metrics(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_evaluation_report(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_evaluation_report(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 7) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -357,7 +358,7 @@ extern "C" fn std_ml_evaluation_report(ctx: *mut SpectraHostCallContext) -> i32 
 /// Returns (token_count, mean_logprob, perplexity); None when the slice is
 /// empty or any entry is NaN / positive (log-probs are <= 0 by definition).
 /// -inf entries propagate honestly: mean = -inf → perplexity = +inf.
-fn ml_perplexity_from_logprobs(logprobs: &[f64]) -> Option<(usize, f64, f64)> {
+pub(crate) fn ml_perplexity_from_logprobs(logprobs: &[f64]) -> Option<(usize, f64, f64)> {
     if logprobs.is_empty() {
         return None;
     }

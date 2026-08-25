@@ -1,4 +1,6 @@
-fn builtin_error_ir_type() -> IRType {
+use super::*;
+
+pub(crate) fn builtin_error_ir_type() -> IRType {
     IRType::Struct {
         name: "Error".to_string(),
         fields: vec![
@@ -12,7 +14,7 @@ fn builtin_error_ir_type() -> IRType {
     }
 }
 
-fn builtin_result_ir_type(ok_type: IRType) -> IRType {
+pub(crate) fn builtin_result_ir_type(ok_type: IRType) -> IRType {
     let ok_name = match &ok_type {
         IRType::Int => "int",
         IRType::Bool => "bool",

@@ -7,19 +7,19 @@
 
 use super::*;
 
-const OPTION_IS_SOME: &str = "spectra.std.option.is_some";
-const OPTION_IS_NONE: &str = "spectra.std.option.is_none";
+pub(crate) const OPTION_IS_SOME: &str = "spectra.std.option.is_some";
+pub(crate) const OPTION_IS_NONE: &str = "spectra.std.option.is_none";
 pub(super) const OPTION_UNWRAP: &str = "spectra.std.option.option_unwrap";
-const OPTION_UNWRAP_OR: &str = "spectra.std.option.option_unwrap_or";
-const OPTION_MAP: &str = "spectra.std.option.option_map";
+pub(crate) const OPTION_UNWRAP_OR: &str = "spectra.std.option.option_unwrap_or";
+pub(crate) const OPTION_MAP: &str = "spectra.std.option.option_map";
 
-const RESULT_IS_OK: &str = "spectra.std.result.is_ok";
-const RESULT_IS_ERR: &str = "spectra.std.result.is_err";
+pub(crate) const RESULT_IS_OK: &str = "spectra.std.result.is_ok";
+pub(crate) const RESULT_IS_ERR: &str = "spectra.std.result.is_err";
 pub(super) const RESULT_UNWRAP: &str = "spectra.std.result.result_unwrap";
-const RESULT_UNWRAP_OR: &str = "spectra.std.result.result_unwrap_or";
+pub(crate) const RESULT_UNWRAP_OR: &str = "spectra.std.result.result_unwrap_or";
 pub(super) const RESULT_UNWRAP_ERR: &str = "spectra.std.result.result_unwrap_err";
-const RESULT_MAP: &str = "spectra.std.result.result_map";
-const RESULT_MAP_ERR: &str = "spectra.std.result.result_map_err";
+pub(crate) const RESULT_MAP: &str = "spectra.std.result.result_map";
+pub(crate) const RESULT_MAP_ERR: &str = "spectra.std.result.result_map_err";
 
 pub(super) fn register() {
     register_host_function(OPTION_IS_SOME, std_option_is_some);
@@ -36,7 +36,7 @@ pub(super) fn register() {
     register_host_function(RESULT_MAP_ERR, std_result_map_err);
 }
 
-extern "C" fn std_option_is_some(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_option_is_some(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -57,7 +57,7 @@ extern "C" fn std_option_is_some(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_option_is_none(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_option_is_none(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -78,7 +78,7 @@ extern "C" fn std_option_is_none(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_option_unwrap(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_option_unwrap(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -101,7 +101,7 @@ extern "C" fn std_option_unwrap(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_option_unwrap_or(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_option_unwrap_or(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -124,7 +124,7 @@ extern "C" fn std_option_unwrap_or(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Maps the payload of `Option<T>` without turning `None` into a sentinel.
-extern "C" fn std_option_map(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_option_map(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -162,7 +162,7 @@ extern "C" fn std_option_map(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_result_is_ok(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_result_is_ok(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -183,7 +183,7 @@ extern "C" fn std_result_is_ok(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_result_is_err(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_result_is_err(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -204,7 +204,7 @@ extern "C" fn std_result_is_err(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_result_unwrap(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_result_unwrap(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -227,7 +227,7 @@ extern "C" fn std_result_unwrap(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_result_unwrap_or(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_result_unwrap_or(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -249,7 +249,7 @@ extern "C" fn std_result_unwrap_or(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_result_unwrap_err(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_result_unwrap_err(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -273,16 +273,16 @@ extern "C" fn std_result_unwrap_err(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Maps only the `Ok` payload of `Result<T, E>` and preserves `Err(E)`.
-extern "C" fn std_result_map(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_result_map(ctx: *mut SpectraHostCallContext) -> i32 {
     map_result_payload(ctx, true)
 }
 
 /// Maps only the `Err` payload of `Result<T, E>` and preserves `Ok(T)`.
-extern "C" fn std_result_map_err(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_result_map_err(ctx: *mut SpectraHostCallContext) -> i32 {
     map_result_payload(ctx, false)
 }
 
-fn map_result_payload(ctx: *mut SpectraHostCallContext, map_ok: bool) -> i32 {
+pub(crate) fn map_result_payload(ctx: *mut SpectraHostCallContext, map_ok: bool) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

@@ -406,8 +406,6 @@ fn instruction_result(instruction: &Instruction) -> Option<Value> {
         | InstructionKind::HostCall { result, .. }
         | InstructionKind::CallIndirect { result, .. } => *result,
         InstructionKind::Store { .. }
-        | InstructionKind::AsyncSuspend { .. }
-        | InstructionKind::AsyncResume { .. }
         | InstructionKind::EscapeManualAlloc { .. } => None,
     }
 }
@@ -443,8 +441,6 @@ fn instruction_operands(instruction: &Instruction) -> Vec<Value> {
             vtable_ptr: operand,
             ..
         }
-        | InstructionKind::AsyncSuspend { task: operand, .. }
-        | InstructionKind::AsyncResume { task: operand, .. }
         | InstructionKind::EscapeManualAlloc { ptr: operand, .. } => vec![*operand],
         InstructionKind::Store { ptr, value } => vec![*ptr, *value],
         InstructionKind::GetElementPtr { ptr, index, .. } => vec![*ptr, *index],

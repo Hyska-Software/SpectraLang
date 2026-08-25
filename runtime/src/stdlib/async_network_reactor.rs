@@ -1,4 +1,5 @@
-extern "C" fn std_async_fs_read(ctx: *mut SpectraHostCallContext) -> i32 {
+use super::*;
+pub(crate) extern "C" fn std_async_fs_read(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -31,7 +32,7 @@ extern "C" fn std_async_fs_read(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_fs_write(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_fs_write(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -67,7 +68,7 @@ extern "C" fn std_async_fs_write(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_tcp_listen(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_tcp_listen(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -91,7 +92,7 @@ extern "C" fn std_async_tcp_listen(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_tcp_listener_port(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_tcp_listener_port(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -110,7 +111,7 @@ extern "C" fn std_async_tcp_listener_port(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_tcp_connect(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_tcp_connect(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -146,7 +147,7 @@ extern "C" fn std_async_tcp_connect(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_tcp_accept(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_tcp_accept(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -180,7 +181,7 @@ extern "C" fn std_async_tcp_accept(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_tcp_read(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_tcp_read(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -210,7 +211,7 @@ extern "C" fn std_async_tcp_read(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_tcp_write(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_tcp_write(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -237,7 +238,7 @@ extern "C" fn std_async_tcp_write(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_tcp_close(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_tcp_close(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -262,7 +263,7 @@ extern "C" fn std_async_tcp_close(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_NOT_FOUND
 }
 
-extern "C" fn std_async_udp_bind(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_udp_bind(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -286,7 +287,7 @@ extern "C" fn std_async_udp_bind(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_udp_port(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_udp_port(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -305,7 +306,7 @@ extern "C" fn std_async_udp_port(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_udp_send_to(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_udp_send_to(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 3) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -335,7 +336,7 @@ extern "C" fn std_async_udp_send_to(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_udp_recv(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_udp_recv(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -370,7 +371,7 @@ extern "C" fn std_async_udp_recv(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_udp_close(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_udp_close(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -389,7 +390,7 @@ extern "C" fn std_async_udp_close(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_channel_new(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_channel_new(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -412,7 +413,7 @@ extern "C" fn std_async_channel_new(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_channel_send(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_channel_send(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -451,7 +452,7 @@ extern "C" fn std_async_channel_send(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_channel_recv(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_channel_recv(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -500,7 +501,7 @@ extern "C" fn std_async_channel_recv(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_channel_close(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_channel_close(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -518,7 +519,7 @@ extern "C" fn std_async_channel_close(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_channel_len(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_channel_len(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -534,7 +535,7 @@ extern "C" fn std_async_channel_len(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_task_reset(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_task_reset(ctx: *mut SpectraHostCallContext) -> i32 {
     let args = match host_call_void_args(ctx, 0) {
         Ok(args) => args,
         Err(status) => return status,
@@ -563,7 +564,7 @@ extern "C" fn std_async_task_reset(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_reactor_backend(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_backend(ctx: *mut SpectraHostCallContext) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -572,7 +573,7 @@ extern "C" fn std_async_reactor_backend(ctx: *mut SpectraHostCallContext) -> i32
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_reactor_wake(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_wake(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -582,7 +583,7 @@ extern "C" fn std_async_reactor_wake(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_reactor_timer(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_timer(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -595,7 +596,7 @@ extern "C" fn std_async_reactor_timer(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_reactor_io_register(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_io_register(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -607,7 +608,7 @@ extern "C" fn std_async_reactor_io_register(ctx: *mut SpectraHostCallContext) ->
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_reactor_io_notify(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_io_notify(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -619,7 +620,7 @@ extern "C" fn std_async_reactor_io_notify(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_reactor_poll(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_poll(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -640,7 +641,7 @@ extern "C" fn std_async_reactor_poll(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_reactor_last_kind(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_last_kind(ctx: *mut SpectraHostCallContext) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -653,7 +654,7 @@ extern "C" fn std_async_reactor_last_kind(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_reactor_last_readiness(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_last_readiness(ctx: *mut SpectraHostCallContext) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -666,7 +667,7 @@ extern "C" fn std_async_reactor_last_readiness(ctx: *mut SpectraHostCallContext)
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_reactor_stats_queued(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_stats_queued(ctx: *mut SpectraHostCallContext) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -675,7 +676,7 @@ extern "C" fn std_async_reactor_stats_queued(ctx: *mut SpectraHostCallContext) -
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_reactor_stats_task_wakeups(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_stats_task_wakeups(ctx: *mut SpectraHostCallContext) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -684,7 +685,7 @@ extern "C" fn std_async_reactor_stats_task_wakeups(ctx: *mut SpectraHostCallCont
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_reactor_stats_timer_events(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_stats_timer_events(ctx: *mut SpectraHostCallContext) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -693,7 +694,7 @@ extern "C" fn std_async_reactor_stats_timer_events(ctx: *mut SpectraHostCallCont
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_reactor_stats_io_events(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_stats_io_events(ctx: *mut SpectraHostCallContext) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -702,7 +703,7 @@ extern "C" fn std_async_reactor_stats_io_events(ctx: *mut SpectraHostCallContext
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_async_reactor_stats_io_registrations(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_stats_io_registrations(ctx: *mut SpectraHostCallContext) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,

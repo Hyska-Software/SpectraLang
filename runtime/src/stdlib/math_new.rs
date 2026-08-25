@@ -1,7 +1,8 @@
+use super::*;
 // ── std.math new functions ───────────────────────────────────────────────────
 
 /// Returns the sign of `n`: -1 for negative, 0 for zero, 1 for positive.
-extern "C" fn std_math_sign(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_sign(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -21,7 +22,7 @@ extern "C" fn std_math_sign(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Greatest common divisor of `a` and `b` (always non-negative; gcd(0,0) = 0).
-extern "C" fn std_math_gcd(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_gcd(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -48,7 +49,7 @@ extern "C" fn std_math_gcd(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Least common multiple of `a` and `b` (always non-negative; lcm(n,0) = 0).
-extern "C" fn std_math_lcm(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_lcm(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -82,7 +83,7 @@ extern "C" fn std_math_lcm(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns 1 if the float value is NaN, 0 otherwise. Argument is f64 bits as i64.
-extern "C" fn std_math_is_nan_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_is_nan_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -102,7 +103,7 @@ extern "C" fn std_math_is_nan_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns 1 if the float value is +∞ or −∞, 0 otherwise. Argument is f64 bits.
-extern "C" fn std_math_is_infinite_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_is_infinite_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -122,7 +123,7 @@ extern "C" fn std_math_is_infinite_f(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns |x| for a float. Argument and result are f64 bits as i64.
-extern "C" fn std_math_abs_f(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_math_abs_f(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

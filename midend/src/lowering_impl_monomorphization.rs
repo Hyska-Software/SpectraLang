@@ -1,6 +1,8 @@
+use super::*;
+
 impl ASTLowering {
     /// Process all pending monomorphization requests
-    fn process_monomorphization_requests(&mut self, ir_module: &mut IRModule) {
+    pub(crate) fn process_monomorphization_requests(&mut self, ir_module: &mut IRModule) {
         // Safety limit: prevent infinite expansion from recursive/mutually-recursive
         // generics (e.g., Foo<T> → Foo<List<T>> → Foo<List<List<T>>> …).
         const MAX_SPECIALIZATIONS: usize = 512;
@@ -49,7 +51,7 @@ impl ASTLowering {
     }
 
     /// Create a specialized version of a generic function
-    fn specialize_function(
+    pub(crate) fn specialize_function(
         &mut self,
         generic_func: &ASTFunction,
         request: &MonomorphizationRequest,
@@ -113,7 +115,7 @@ impl ASTLowering {
     }
 
     /// Process a pending generic impl method specialization request (R-211).
-    fn process_method_specialization(
+    pub(crate) fn process_method_specialization(
         &mut self,
         request: &MethodMonomorphizationRequest,
         ir_module: &mut IRModule,
@@ -165,7 +167,7 @@ impl ASTLowering {
     /// Create a specialized copy of a generic impl method with the impl type
     /// parameters substituted by concrete types. `instantiated_struct` is the
     /// concrete struct name used to type `self` and to name the function.
-    fn specialize_method(
+    pub(crate) fn specialize_method(
         &mut self,
         method: &ASTMethod,
         type_params: &[TypeParameter],
@@ -219,7 +221,7 @@ impl ASTLowering {
     }
 
     /// Substitute type parameters in a TypeAnnotation
-    fn substitute_type_in_annotation(
+    pub(crate) fn substitute_type_in_annotation(
         &self,
         annotation: &mut TypeAnnotation,
         type_map: &HashMap<String, IRType>,
@@ -263,7 +265,7 @@ impl ASTLowering {
     }
 
     /// Convert IRType to AST type name for substitution
-    fn ir_type_to_ast_name(&self, ty: &IRType) -> String {
+    pub(crate) fn ir_type_to_ast_name(&self, ty: &IRType) -> String {
         match ty {
             IRType::Int => "int".to_string(),
             IRType::Float => "float".to_string(),
@@ -279,7 +281,7 @@ impl ASTLowering {
         }
     }
 
-    fn ir_type_contains_unknown(ty: &IRType) -> bool {
+    pub(crate) fn ir_type_contains_unknown(ty: &IRType) -> bool {
         match ty {
             IRType::Unknown => true,
             IRType::Pointer(inner) | IRType::Task { output: inner } => {
@@ -325,7 +327,7 @@ impl ASTLowering {
     }
 
     /// Check if a concrete type satisfies a trait bound
-    fn type_satisfies_trait(&self, concrete_type: &IRType, trait_name: &str) -> bool {
+    pub(crate) fn type_satisfies_trait(&self, concrete_type: &IRType, trait_name: &str) -> bool {
         if trait_name == "Send" || trait_name == "Sync" {
             return self.ir_type_satisfies_auto_trait(concrete_type, trait_name);
         }
@@ -339,7 +341,7 @@ impl ASTLowering {
             .unwrap_or(false)
     }
 
-    fn ir_type_satisfies_auto_trait(&self, concrete_type: &IRType, trait_name: &str) -> bool {
+    pub(crate) fn ir_type_satisfies_auto_trait(&self, concrete_type: &IRType, trait_name: &str) -> bool {
         match concrete_type {
             IRType::Unknown => false,
             IRType::Void
@@ -409,7 +411,7 @@ impl ASTLowering {
         }
     }
 
-    fn type_name_fails_auto_trait(&self, name: &str, trait_name: &str) -> bool {
+    pub(crate) fn type_name_fails_auto_trait(&self, name: &str, trait_name: &str) -> bool {
         match trait_name {
             "Send" => matches!(
                 name,
@@ -431,7 +433,7 @@ impl ASTLowering {
         }
     }
 
-    fn merge_array_element_types(&self, left: &IRType, right: &IRType) -> Option<IRType> {
+    pub(crate) fn merge_array_element_types(&self, left: &IRType, right: &IRType) -> Option<IRType> {
         if left == right {
             return Some(left.clone());
         }
@@ -503,7 +505,7 @@ impl ASTLowering {
         }
     }
 
-    fn infer_array_element_type(&mut self, elements: &[Expression]) -> IRType {
+    pub(crate) fn infer_array_element_type(&mut self, elements: &[Expression]) -> IRType {
         if elements.is_empty() {
             if let Some(annotation) = self.current_expected_annotation.as_ref() {
                 if let IRType::Array { element_type, .. } = self.lower_type_annotation(annotation) {

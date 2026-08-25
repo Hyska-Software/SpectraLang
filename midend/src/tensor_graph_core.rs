@@ -1,5 +1,4 @@
-use crate::ir::{InstructionKind, Module, Type, Value};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use crate::ir::Module;
 use std::fmt::Write;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -190,8 +190,6 @@ fn instruction_inputs(kind: &InstructionKind) -> Vec<Value> {
             values.extend(args.iter().copied());
             values
         }
-        InstructionKind::AsyncSuspend { task, .. }
-        | InstructionKind::AsyncResume { task, .. }
         | InstructionKind::LoadDynDataPtr { fat_ptr: task, .. }
         | InstructionKind::LoadDynVtablePtr { fat_ptr: task, .. } => vec![*task],
         InstructionKind::AsyncReady { value, .. } => value.iter().copied().collect(),

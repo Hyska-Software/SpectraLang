@@ -1,4 +1,5 @@
-extern "C" fn std_ml_experiment_start(ctx: *mut SpectraHostCallContext) -> i32 {
+use super::*;
+pub(crate) extern "C" fn std_ml_experiment_start(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -36,7 +37,7 @@ extern "C" fn std_ml_experiment_start(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_experiment_set_config(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_experiment_set_config(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -69,7 +70,7 @@ extern "C" fn std_ml_experiment_set_config(ctx: *mut SpectraHostCallContext) -> 
     }
 }
 
-extern "C" fn std_ml_experiment_log_metric(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_experiment_log_metric(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 4) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -99,7 +100,7 @@ extern "C" fn std_ml_experiment_log_metric(ctx: *mut SpectraHostCallContext) -> 
     }
 }
 
-extern "C" fn std_ml_experiment_log_artifact(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_experiment_log_artifact(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -125,7 +126,7 @@ extern "C" fn std_ml_experiment_log_artifact(ctx: *mut SpectraHostCallContext) -
     }
 }
 
-extern "C" fn std_ml_experiment_set_lockfile(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_experiment_set_lockfile(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -151,7 +152,7 @@ extern "C" fn std_ml_experiment_set_lockfile(ctx: *mut SpectraHostCallContext) -
     }
 }
 
-extern "C" fn std_ml_experiment_set_model_output(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_experiment_set_model_output(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -177,7 +178,7 @@ extern "C" fn std_ml_experiment_set_model_output(ctx: *mut SpectraHostCallContex
     }
 }
 
-extern "C" fn std_ml_experiment_finish(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_experiment_finish(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -203,7 +204,7 @@ extern "C" fn std_ml_experiment_finish(ctx: *mut SpectraHostCallContext) -> i32 
     }
 }
 
-extern "C" fn std_ml_experiment_manifest_path(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_experiment_manifest_path(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -220,7 +221,7 @@ extern "C" fn std_ml_experiment_manifest_path(ctx: *mut SpectraHostCallContext) 
     }
 }
 
-extern "C" fn std_ml_experiment_repro_command(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_experiment_repro_command(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -237,7 +238,7 @@ extern "C" fn std_ml_experiment_repro_command(ctx: *mut SpectraHostCallContext) 
     }
 }
 
-extern "C" fn std_ml_experiment_compare_manifests(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_experiment_compare_manifests(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -267,7 +268,7 @@ extern "C" fn std_ml_experiment_compare_manifests(ctx: *mut SpectraHostCallConte
     }
 }
 
-extern "C" fn std_ml_distributed_session_start(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_distributed_session_start(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 4) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -311,7 +312,7 @@ extern "C" fn std_ml_distributed_session_start(ctx: *mut SpectraHostCallContext)
     }
 }
 
-extern "C" fn std_ml_distributed_global_step(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_distributed_global_step(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -333,7 +334,7 @@ extern "C" fn std_ml_distributed_global_step(ctx: *mut SpectraHostCallContext) -
     }
 }
 
-extern "C" fn std_ml_distributed_worker_step_count(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_distributed_worker_step_count(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -351,7 +352,7 @@ extern "C" fn std_ml_distributed_worker_step_count(ctx: *mut SpectraHostCallCont
     }
 }
 
-extern "C" fn std_ml_distributed_checkpoint_save(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_distributed_checkpoint_save(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -396,7 +397,7 @@ extern "C" fn std_ml_distributed_checkpoint_save(ctx: *mut SpectraHostCallContex
     }
 }
 
-extern "C" fn std_ml_distributed_resume(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_distributed_resume(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -422,7 +423,7 @@ extern "C" fn std_ml_distributed_resume(ctx: *mut SpectraHostCallContext) -> i32
     }
 }
 
-extern "C" fn std_ml_distributed_summary(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_distributed_summary(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -445,17 +446,17 @@ extern "C" fn std_ml_distributed_summary(ctx: *mut SpectraHostCallContext) -> i3
 // passes on OS-thread workers over disjoint shards and ALLREDUCE the gradients;
 // they differ only in transport (shared-memory barriers vs TCP loopback).
 
-extern "C" fn std_ml_distributed_train_multithread(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_distributed_train_multithread(ctx: *mut SpectraHostCallContext) -> i32 {
     ml_distributed_train(ctx, ML_DISTRIBUTED_TOPOLOGY_MULTITHREAD, |spec| {
         dist_run_multithread(spec)
     })
 }
 
-extern "C" fn std_ml_distributed_train_tcp(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_distributed_train_tcp(ctx: *mut SpectraHostCallContext) -> i32 {
     ml_distributed_train(ctx, ML_DISTRIBUTED_TOPOLOGY_TCP, |spec| dist_run_tcp(spec))
 }
 
-fn ml_distributed_train<F>(
+pub(crate) fn ml_distributed_train<F>(
     ctx: *mut SpectraHostCallContext,
     topology: &str,
     run: F,

@@ -50,6 +50,101 @@ pub extern "C" fn spectra_rt_manual_quarantine_len() -> usize {
     guard.quarantine_len()
 }
 
+// --- Frame-0 escape budget --------------------------------------------------
+//
+// `spectra_rt_manual_escape` re-parents allocations onto the base frame (0),
+// which is never popped by `frame_exit`. Escaped bytes therefore stay
+// resident for the whole process lifetime: a loop that escapes per iteration
+// grows without bound and eventually dies under the operating system's OOM
+// killer — a silent, undiagnosable failure.
+//
+// The counter below is deliberately MONOTONIC. It never decrements — not
+// even when an escaped value is later released through
+// `spectra_rt_manual_free` — because escaped values typically back returned
+// results whose lifetime spans frames: cumulative volume ("peak") is what
+// predicts memory exhaustion, so the budget is a hard ceiling on total
+// re-parented bytes, not a live-bytes gauge.
+//
+// Configure with `SPECTRA_FRAME0_BUDGET_MB` (default 512). `0` disables the
+// ceiling entirely for short-lived scripts where process exit frees
+// everything. On breach the runtime takes the existing `spectra_rt_panic`
+// path: a loud `runtime error:` diagnostic on stderr and exit code 101,
+// instead of an opaque OS OOM kill.
+
+/// Environment variable overriding the frame-0 escape budget, in MiB.
+const FRAME0_BUDGET_ENV: &str = "SPECTRA_FRAME0_BUDGET_MB";
+
+/// Default frame-0 escape budget in MiB.
+const FRAME0_BUDGET_DEFAULT_MB: u64 = 512;
+
+const FRAME0_BYTES_PER_MB: usize = 1024 * 1024;
+
+/// Cumulative bytes moved into frame 0 by [`spectra_rt_manual_escape`].
+/// Monotonic by design — see the block comment above.
+static FRAME0_ESCAPED_BYTES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+/// Parses the frame-0 budget override. `None` or an unparseable value falls
+/// back to [`FRAME0_BUDGET_DEFAULT_MB`]; `0` means unlimited.
+pub(crate) fn parse_frame0_budget_mb(raw: Option<&str>) -> u64 {
+    match raw {
+        Some(raw) => raw.trim().parse::<u64>().unwrap_or(FRAME0_BUDGET_DEFAULT_MB),
+        None => FRAME0_BUDGET_DEFAULT_MB,
+    }
+}
+
+fn frame0_budget_mb() -> u64 {
+    parse_frame0_budget_mb(std::env::var(FRAME0_BUDGET_ENV).ok().as_deref())
+}
+
+/// Pure budget predicate: `Ok(())` while cumulative escaped `bytes` stay
+/// within `budget_mb`, `Err` carrying the full diagnostic otherwise.
+/// `budget_mb == 0` disables the ceiling. Kept side-effect-free so tests can
+/// exercise boundary behaviour without touching process state.
+pub(crate) fn frame0_budget_check(bytes: usize, budget_mb: u64) -> Result<(), String> {
+    if budget_mb == 0 {
+        return Ok(());
+    }
+    let limit = usize::try_from(budget_mb.saturating_mul(1024 * 1024)).unwrap_or(usize::MAX);
+    if bytes <= limit {
+        return Ok(());
+    }
+    Err(format!(
+        "frame-0 budget exceeded (escaped {} MB > {} MB). Long-running programs must free or stream; raise SPECTRA_FRAME0_BUDGET_MB if intentional.",
+        bytes.saturating_add(FRAME0_BYTES_PER_MB - 1) / FRAME0_BYTES_PER_MB,
+        budget_mb,
+    ))
+}
+
+/// Reports a frame-0 budget breach through the standard panic path
+/// ([`crate::panic::spectra_rt_panic`]): stderr diagnostic + exit code 101.
+fn frame0_budget_abort(message: &str) -> ! {
+    let mut buf = message.as_bytes().to_vec();
+    buf.push(0); // NUL terminator expected by the panic message scan.
+    crate::panic::spectra_rt_panic(buf.as_ptr() as i64);
+    unreachable!("spectra_rt_panic terminates the process")
+}
+
+ /// Moves a manual allocation from the current function's frame to its parent frame,
+ /// so that it survives the current function's `frame_exit` call.
+ ///
+ /// Only moves the allocation if it currently belongs to `current_frame_id` — this
+ /// prevents accidentally re-parenting allocations that were passed in from the caller.
+ /// If `ptr` is not a tracked allocation (e.g. a scalar value), this is a no-op.
+///
+/// # Frame-0 budget
+///
+/// Frame 0 is never popped by `frame_exit`, so every escaped byte stays
+/// resident until process exit. Each successful escape adds the allocation
+/// size to a process-wide monotonic counter and checks it against
+/// `SPECTRA_FRAME0_BUDGET_MB` (MiB; default 512; `0` = unlimited for short
+/// scripts). The counter does NOT rewind when an escaped value is later
+/// freed via [`spectra_rt_manual_free`] — the budget is a hard cumulative
+/// ceiling on re-parented volume, because escaped values sustain returned
+/// results and peak volume is what exhausts memory. Breaching the ceiling
+/// aborts through `spectra_rt_panic` with
+/// `runtime error: frame-0 budget exceeded (...)` and exit code 101,
+/// replacing an eventual silent OS OOM kill with an actionable diagnostic.
 /// Moves a manual allocation from the current function's frame to its parent frame,
 /// so that it survives the current function's `frame_exit` call.
 ///
@@ -93,6 +188,21 @@ pub extern "C" fn spectra_rt_manual_escape(ptr: *mut u8, current_frame_id: usize
     {
         parent.allocations.push(ptr_value);
     }
+    let escaped_bytes = guard
+        .allocations
+        .get(&ptr_value)
+        .map(|entry| entry.byte_len())
+        .unwrap_or(0);
+    drop(guard);
+
+    // Monotonic accounting + budget enforcement. See the block comment above:
+    // the counter never decrements; breaching it is fatal via spectra_rt_panic.
+    let total =
+        FRAME0_ESCAPED_BYTES.fetch_add(escaped_bytes, std::sync::atomic::Ordering::Relaxed)
+            + escaped_bytes;
+    if let Err(message) = frame0_budget_check(total, frame0_budget_mb()) {
+        frame0_budget_abort(&message);
+    }
 }
 
 /// Clears all outstanding manual allocations owned by the runtime.
@@ -101,7 +211,6 @@ pub extern "C" fn spectra_rt_manual_clear() {
     let table = allocation_table();
     let mut guard = table.lock().unwrap_or_else(|e| e.into_inner());
     guard.clear_all();
-    crate::stdlib::clear_string_values();
 }
 
 /// Registers a host function that JITed code can invoke by name.

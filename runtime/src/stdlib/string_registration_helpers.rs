@@ -1,6 +1,7 @@
+use super::*;
 // ── std.string & std.convert registrations ─────────────────────────────────
 
-fn register_string() {
+pub(crate) fn register_string() {
     register_host_function(STR_LEN, std_string_len);
     register_host_function(STR_CONTAINS, std_string_contains);
     register_host_function(STR_TO_UPPER, std_string_to_upper);
@@ -30,7 +31,7 @@ fn register_string() {
     register_host_function(STR_REVERSE, std_string_reverse);
 }
 
-fn register_convert() {
+pub(crate) fn register_convert() {
     register_host_function(CONV_INT_TO_STRING, std_convert_int_to_string);
     register_host_function(CONV_FLOAT_TO_STRING, std_convert_float_to_string);
     register_host_function(CONV_BOOL_TO_STRING, std_convert_bool_to_string);
@@ -49,7 +50,7 @@ fn register_convert() {
 /// Read a Spectra string (packed UTF-8 bytes with a single-byte NUL
 /// terminator) from a raw pointer value.
 /// Returns `None` if the pointer is null or the bytes are not valid UTF-8.
-unsafe fn read_spectra_string(ptr_val: SpectraHostValue) -> Option<String> {
+pub(crate) unsafe fn read_spectra_string(ptr_val: SpectraHostValue) -> Option<String> {
     if ptr_val == 0 {
         return None;
     }
@@ -70,15 +71,54 @@ unsafe fn read_spectra_string(ptr_val: SpectraHostValue) -> Option<String> {
         return None;
     }
     let value = String::from_utf8(bytes).ok()?;
-    register_string_value(ptr_val, &value);
     Some(value)
+}
+/// Probe whether `value` points at a tracked packed string buffer
+/// (UTF-8 bytes with a single-byte NUL terminator).
+///
+/// Only pointers known to the manual AllocationTable are dereferenced;
+/// untracked values (raw scalars, interned JIT literals, stack data) are
+/// rejected without touching memory, so any host value can be probed safely.
+/// Beyond requiring a NUL terminator inside the allocation, every trailing
+/// byte must be zero: genuine string allocations are zero-padded, while
+/// multi-word payloads (e.g. tagged `Option`/`Result` slots) carry nonzero
+/// words past the first zero byte and therefore stay scalar keys.
+pub(crate) unsafe fn try_read_packed_string(value: SpectraHostValue) -> Option<String> {
+    if value == 0 {
+        return None;
+    }
+    let limit = crate::ffi::manual_allocation_size(value)?;
+    let raw = value as *const u8;
+    let mut bytes: Vec<u8> = Vec::new();
+    let mut offset = 0usize;
+    while offset < limit {
+        // SAFETY: offset stays within the bounds of the tracked allocation.
+        let byte = *raw.add(offset);
+        if byte == 0 {
+            break;
+        }
+        bytes.push(byte);
+        offset += 1;
+    }
+    if offset >= limit {
+        // No NUL terminator within the tracked allocation: not a packed string.
+        return None;
+    }
+    while offset + 1 < limit {
+        offset += 1;
+        // SAFETY: offset stays within the bounds of the tracked allocation.
+        if *raw.add(offset) != 0 {
+            return None;
+        }
+    }
+    String::from_utf8(bytes).ok()
 }
 
 /// Allocate a new Spectra string using the runtime manual allocator.
 /// The UTF-8 bytes are packed one byte per byte; the buffer is terminated
 /// with a single NUL byte (`len + 1` bytes total).
 /// Returns the pointer cast to `i64`, or `0` on allocation failure.
-unsafe fn alloc_spectra_string(s: &str) -> SpectraHostValue {
+pub(crate) unsafe fn alloc_spectra_string(s: &str) -> SpectraHostValue {
     use crate::ffi::spectra_rt_manual_alloc;
     let bytes = s.as_bytes();
     let total_bytes = bytes.len() + 1;
@@ -89,7 +129,6 @@ unsafe fn alloc_spectra_string(s: &str) -> SpectraHostValue {
     std::ptr::copy_nonoverlapping(bytes.as_ptr(), raw, bytes.len());
     *raw.add(bytes.len()) = 0; // null terminator
     let pointer = raw as i64;
-    register_string_value(pointer, s);
     pointer
 }
 
@@ -97,7 +136,7 @@ unsafe fn alloc_spectra_string(s: &str) -> SpectraHostValue {
 /// `Option<T>` and `Result<T, E>` values: tag at slot zero, payload at slot one.
 /// The allocation is intentionally manual so the value can cross a host-call
 /// boundary and remain valid after this function returns.
-unsafe fn alloc_tagged_payload(tag: SpectraHostValue, payload: SpectraHostValue) -> SpectraHostValue {
+pub(crate) unsafe fn alloc_tagged_payload(tag: SpectraHostValue, payload: SpectraHostValue) -> SpectraHostValue {
     use crate::ffi::spectra_rt_manual_alloc;
     let raw = spectra_rt_manual_alloc(2 * std::mem::size_of::<i64>()) as *mut i64;
     if raw.is_null() {
@@ -156,32 +195,32 @@ pub fn string_char_at_fast(s: SpectraHostValue, index: SpectraHostValue) -> Spec
     }
 }
 
-fn fs_path_from_string(path: String) -> Option<PathBuf> {
+pub(crate) fn fs_path_from_string(path: String) -> Option<PathBuf> {
     if path.trim().is_empty() || path.contains('\0') {
         return None;
     }
     Some(PathBuf::from(path))
 }
 
-unsafe fn read_fs_path_arg(arg: SpectraHostValue) -> Result<Option<PathBuf>, i32> {
+pub(crate) unsafe fn read_fs_path_arg(arg: SpectraHostValue) -> Result<Option<PathBuf>, i32> {
     match read_spectra_string(arg) {
         Some(path) => Ok(fs_path_from_string(path)),
         None => Err(HOST_STATUS_INVALID_ARGUMENT),
     }
 }
 
-fn ensure_file_parent(path: &Path) -> bool {
+pub(crate) fn ensure_file_parent(path: &Path) -> bool {
     match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => std::fs::create_dir_all(parent).is_ok(),
         _ => true,
     }
 }
 
-fn fs_write_text(path: &Path, content: &str, append: bool) -> bool {
+pub(crate) fn fs_write_text(path: &Path, content: &str, append: bool) -> bool {
     fs_write_text_result(path, content, append).is_ok()
 }
 
-fn fs_write_text_result(
+pub(crate) fn fs_write_text_result(
     path: &Path,
     content: &str,
     append: bool,

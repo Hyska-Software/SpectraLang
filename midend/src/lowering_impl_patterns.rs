@@ -1,6 +1,8 @@
+use super::*;
+
 impl ASTLowering {
     /// Extrai valores do scrutinee e cria bindings locais de acordo com o pattern
-    fn lower_pattern_bindings(
+    pub(crate) fn lower_pattern_bindings(
         &mut self,
         pattern: &spectra_compiler::ast::Pattern,
         scrutinee: Value,
@@ -186,7 +188,7 @@ impl ASTLowering {
         }
     }
 
-    fn lower_type_annotation_with_map(
+    pub(crate) fn lower_type_annotation_with_map(
         &self,
         type_ann: &TypeAnnotation,
         substitutions: &HashMap<String, IRType>,

@@ -1,6 +1,7 @@
+use super::*;
 // ── std.time register & host functions ──────────────────────────────────────
 
-fn register_time() {
+pub(crate) fn register_time() {
     register_host_function(TIME_NOW_MILLIS, std_time_now_millis);
     register_host_function(TIME_NOW_SECS, std_time_now_secs);
     register_host_function(TIME_SLEEP_MS, std_time_sleep_ms);
@@ -26,84 +27,84 @@ fn register_time() {
     register_host_function(TIME_UTC_SECOND, std_time_utc_second);
 }
 
-const STD_TIME_MAX_SLEEP_MS: u128 = 86_400_000;
+pub(crate) const STD_TIME_MAX_SLEEP_MS: u128 = 86_400_000;
 
 #[derive(Clone, Copy)]
-struct UtcDateTime {
-    year: i64,
-    month: i64,
-    day: i64,
-    hour: i64,
-    minute: i64,
-    second: i64,
+pub(crate) struct UtcDateTime {
+    pub(crate) year: i64,
+    pub(crate) month: i64,
+    pub(crate) day: i64,
+    pub(crate) hour: i64,
+    pub(crate) minute: i64,
+    pub(crate) second: i64,
 }
 
-struct TimeHandles<T> {
+pub(crate) struct TimeHandles<T> {
     values: HandleTable<T>,
 }
 
 impl<T> TimeHandles<T> {
-    fn new(kind: HandleKind) -> Self {
+    pub(crate) fn new(kind: HandleKind) -> Self {
         Self {
             values: HandleTable::new(kind),
         }
     }
 
-    fn insert(&mut self, value: T) -> SpectraHostValue {
+    pub(crate) fn insert(&mut self, value: T) -> SpectraHostValue {
         self.values.insert(value).raw() as SpectraHostValue
     }
 
-    fn get(&self, handle: SpectraHostValue) -> Option<&T> {
+    pub(crate) fn get(&self, handle: SpectraHostValue) -> Option<&T> {
         let id = HandleId::from_raw(handle).ok()?;
         self.values.get(id).ok()
     }
 }
 
-fn time_start() -> StdInstant {
+pub(crate) fn time_start() -> StdInstant {
     static START: OnceLock<StdInstant> = OnceLock::new();
     *START.get_or_init(StdInstant::now)
 }
 
-fn duration_handles() -> &'static Mutex<TimeHandles<Duration>> {
+pub(crate) fn duration_handles() -> &'static Mutex<TimeHandles<Duration>> {
     static HANDLES: OnceLock<Mutex<TimeHandles<Duration>>> = OnceLock::new();
     HANDLES.get_or_init(|| Mutex::new(TimeHandles::new(HandleKind::Duration)))
 }
 
-fn instant_handles() -> &'static Mutex<TimeHandles<StdInstant>> {
+pub(crate) fn instant_handles() -> &'static Mutex<TimeHandles<StdInstant>> {
     static HANDLES: OnceLock<Mutex<TimeHandles<StdInstant>>> = OnceLock::new();
     HANDLES.get_or_init(|| Mutex::new(TimeHandles::new(HandleKind::Instant)))
 }
 
-fn utc_handles() -> &'static Mutex<TimeHandles<UtcDateTime>> {
+pub(crate) fn utc_handles() -> &'static Mutex<TimeHandles<UtcDateTime>> {
     static HANDLES: OnceLock<Mutex<TimeHandles<UtcDateTime>>> = OnceLock::new();
     HANDLES.get_or_init(|| Mutex::new(TimeHandles::new(HandleKind::UtcDateTime)))
 }
 
-fn store_duration(duration: Duration) -> SpectraHostValue {
+pub(crate) fn store_duration(duration: Duration) -> SpectraHostValue {
     lock_unpoisoned(duration_handles()).insert(duration)
 }
 
-fn load_duration(handle: SpectraHostValue) -> Option<Duration> {
+pub(crate) fn load_duration(handle: SpectraHostValue) -> Option<Duration> {
     lock_unpoisoned(duration_handles()).get(handle).copied()
 }
 
-fn store_instant(instant: StdInstant) -> SpectraHostValue {
+pub(crate) fn store_instant(instant: StdInstant) -> SpectraHostValue {
     lock_unpoisoned(instant_handles()).insert(instant)
 }
 
-fn load_instant(handle: SpectraHostValue) -> Option<StdInstant> {
+pub(crate) fn load_instant(handle: SpectraHostValue) -> Option<StdInstant> {
     lock_unpoisoned(instant_handles()).get(handle).copied()
 }
 
-fn store_utc(datetime: UtcDateTime) -> SpectraHostValue {
+pub(crate) fn store_utc(datetime: UtcDateTime) -> SpectraHostValue {
     lock_unpoisoned(utc_handles()).insert(datetime)
 }
 
-fn load_utc(handle: SpectraHostValue) -> Option<UtcDateTime> {
+pub(crate) fn load_utc(handle: SpectraHostValue) -> Option<UtcDateTime> {
     lock_unpoisoned(utc_handles()).get(handle).copied()
 }
 
-fn host_args<'a>(
+pub(crate) fn host_args<'a>(
     ctx: *mut SpectraHostCallContext,
     expected_len: usize,
 ) -> Result<&'a [SpectraHostValue], i32> {
@@ -119,7 +120,7 @@ fn host_args<'a>(
     }
 }
 
-fn write_host_result(ctx: *mut SpectraHostCallContext, value: SpectraHostValue) -> i32 {
+pub(crate) fn write_host_result(ctx: *mut SpectraHostCallContext, value: SpectraHostValue) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -134,15 +135,15 @@ fn write_host_result(ctx: *mut SpectraHostCallContext, value: SpectraHostValue) 
     HOST_STATUS_SUCCESS
 }
 
-fn duration_to_i64_millis(duration: Duration) -> Option<i64> {
+pub(crate) fn duration_to_i64_millis(duration: Duration) -> Option<i64> {
     i64::try_from(duration.as_millis()).ok()
 }
 
-fn duration_from_millis_i64(ms: i64) -> Option<Duration> {
+pub(crate) fn duration_from_millis_i64(ms: i64) -> Option<Duration> {
     (ms >= 0).then(|| Duration::from_millis(ms as u64))
 }
 
-fn utc_from_unix_seconds(secs: i64) -> UtcDateTime {
+pub(crate) fn utc_from_unix_seconds(secs: i64) -> UtcDateTime {
     let days = secs.div_euclid(86_400);
     let seconds_of_day = secs.rem_euclid(86_400);
     let (year, month, day) = civil_from_days(days);
@@ -156,7 +157,7 @@ fn utc_from_unix_seconds(secs: i64) -> UtcDateTime {
     }
 }
 
-fn civil_from_days(days: i64) -> (i64, i64, i64) {
+pub(crate) fn civil_from_days(days: i64) -> (i64, i64, i64) {
     let z = days + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let doe = z - era * 146_097;
@@ -172,7 +173,7 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
 
 /// Returns milliseconds elapsed since the Unix epoch (January 1, 1970 UTC).
 /// Returns -1 if the system clock is before the epoch.
-extern "C" fn std_time_now_millis(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_now_millis(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -191,7 +192,7 @@ extern "C" fn std_time_now_millis(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns seconds elapsed since the Unix epoch. Returns -1 on error.
-extern "C" fn std_time_now_secs(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_now_secs(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -210,7 +211,7 @@ extern "C" fn std_time_now_secs(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Sleeps for `ms` milliseconds. Negative values are treated as zero.
-extern "C" fn std_time_sleep_ms(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_sleep_ms(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -230,7 +231,7 @@ extern "C" fn std_time_sleep_ms(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_time_monotonic_millis(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_monotonic_millis(ctx: *mut SpectraHostCallContext) -> i32 {
     let elapsed = time_start().elapsed();
     let Some(ms) = duration_to_i64_millis(elapsed) else {
         return HOST_STATUS_INTERNAL_ERROR;
@@ -238,7 +239,7 @@ extern "C" fn std_time_monotonic_millis(ctx: *mut SpectraHostCallContext) -> i32
     write_host_result(ctx, ms)
 }
 
-extern "C" fn std_time_monotonic_nanos(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_monotonic_nanos(ctx: *mut SpectraHostCallContext) -> i32 {
     let elapsed = time_start().elapsed();
     let Ok(ns) = i64::try_from(elapsed.as_nanos()) else {
         return HOST_STATUS_INTERNAL_ERROR;
@@ -246,7 +247,7 @@ extern "C" fn std_time_monotonic_nanos(ctx: *mut SpectraHostCallContext) -> i32 
     write_host_result(ctx, ns)
 }
 
-extern "C" fn std_time_duration_ms(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_duration_ms(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -256,7 +257,7 @@ extern "C" fn std_time_duration_ms(ctx: *mut SpectraHostCallContext) -> i32 {
     write_host_result(ctx, store_duration(duration))
 }
 
-extern "C" fn std_time_duration_secs(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_duration_secs(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -266,7 +267,7 @@ extern "C" fn std_time_duration_secs(ctx: *mut SpectraHostCallContext) -> i32 {
     write_host_result(ctx, store_duration(Duration::from_secs(args[0] as u64)))
 }
 
-extern "C" fn std_time_duration_millis(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_duration_millis(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -279,7 +280,7 @@ extern "C" fn std_time_duration_millis(ctx: *mut SpectraHostCallContext) -> i32 
     write_host_result(ctx, ms)
 }
 
-extern "C" fn std_time_duration_secs_value(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_duration_secs_value(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -292,7 +293,7 @@ extern "C" fn std_time_duration_secs_value(ctx: *mut SpectraHostCallContext) -> 
     write_host_result(ctx, secs)
 }
 
-extern "C" fn std_time_duration_add(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_duration_add(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 2) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -305,7 +306,7 @@ extern "C" fn std_time_duration_add(ctx: *mut SpectraHostCallContext) -> i32 {
     write_host_result(ctx, store_duration(sum))
 }
 
-extern "C" fn std_time_duration_sub(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_duration_sub(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 2) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -318,11 +319,11 @@ extern "C" fn std_time_duration_sub(ctx: *mut SpectraHostCallContext) -> i32 {
     write_host_result(ctx, store_duration(diff))
 }
 
-extern "C" fn std_time_instant_now(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_instant_now(ctx: *mut SpectraHostCallContext) -> i32 {
     write_host_result(ctx, store_instant(StdInstant::now()))
 }
 
-extern "C" fn std_time_instant_elapsed_ms(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_instant_elapsed_ms(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -335,7 +336,7 @@ extern "C" fn std_time_instant_elapsed_ms(ctx: *mut SpectraHostCallContext) -> i
     write_host_result(ctx, ms)
 }
 
-extern "C" fn std_time_instant_add(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_instant_add(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 2) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -348,7 +349,7 @@ extern "C" fn std_time_instant_add(ctx: *mut SpectraHostCallContext) -> i32 {
     write_host_result(ctx, store_instant(deadline))
 }
 
-extern "C" fn std_time_instant_has_elapsed(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_instant_has_elapsed(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -358,7 +359,7 @@ extern "C" fn std_time_instant_has_elapsed(ctx: *mut SpectraHostCallContext) -> 
     write_host_result(ctx, (StdInstant::now() >= instant) as i64)
 }
 
-extern "C" fn std_time_sleep(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_sleep(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -372,14 +373,14 @@ extern "C" fn std_time_sleep(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_time_unix_to_utc(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_unix_to_utc(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
     write_host_result(ctx, store_utc(utc_from_unix_seconds(args[0])))
 }
 
-fn std_time_utc_field(ctx: *mut SpectraHostCallContext, field: fn(UtcDateTime) -> i64) -> i32 {
+pub(crate) fn std_time_utc_field(ctx: *mut SpectraHostCallContext, field: fn(UtcDateTime) -> i64) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -389,27 +390,27 @@ fn std_time_utc_field(ctx: *mut SpectraHostCallContext, field: fn(UtcDateTime) -
     write_host_result(ctx, field(datetime))
 }
 
-extern "C" fn std_time_utc_year(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_utc_year(ctx: *mut SpectraHostCallContext) -> i32 {
     std_time_utc_field(ctx, |dt| dt.year)
 }
 
-extern "C" fn std_time_utc_month(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_utc_month(ctx: *mut SpectraHostCallContext) -> i32 {
     std_time_utc_field(ctx, |dt| dt.month)
 }
 
-extern "C" fn std_time_utc_day(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_utc_day(ctx: *mut SpectraHostCallContext) -> i32 {
     std_time_utc_field(ctx, |dt| dt.day)
 }
 
-extern "C" fn std_time_utc_hour(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_utc_hour(ctx: *mut SpectraHostCallContext) -> i32 {
     std_time_utc_field(ctx, |dt| dt.hour)
 }
 
-extern "C" fn std_time_utc_minute(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_utc_minute(ctx: *mut SpectraHostCallContext) -> i32 {
     std_time_utc_field(ctx, |dt| dt.minute)
 }
 
-extern "C" fn std_time_utc_second(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_time_utc_second(ctx: *mut SpectraHostCallContext) -> i32 {
     std_time_utc_field(ctx, |dt| dt.second)
 }
 

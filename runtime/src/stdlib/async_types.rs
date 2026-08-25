@@ -1,4 +1,5 @@
-fn host_call_args<'a>(
+use super::*;
+pub(crate) fn host_call_args<'a>(
     ctx: *mut SpectraHostCallContext,
     expected_args: usize,
 ) -> Result<(&'a [SpectraHostValue], &'a mut [SpectraHostValue]), i32> {
@@ -28,7 +29,7 @@ fn host_call_args<'a>(
     }
 }
 
-fn host_call_void_args<'a>(
+pub(crate) fn host_call_void_args<'a>(
     ctx: *mut SpectraHostCallContext,
     expected_args: usize,
 ) -> Result<&'a [SpectraHostValue], i32> {
@@ -54,29 +55,29 @@ fn host_call_void_args<'a>(
 }
 
 #[derive(Clone, Copy)]
-struct AsyncTask {
-    value: SpectraHostValue,
-    cancelled: bool,
-    failed: bool,
-    completed: bool,
-    parent_scope: Option<SpectraHostValue>,
-    cancel_handle: SpectraHostValue,
-    timeout_inner: Option<SpectraHostValue>,
-    deadline_ms: Option<SpectraHostValue>,
-    join_order: Option<SpectraHostValue>,
+pub(crate) struct AsyncTask {
+    pub(crate) value: SpectraHostValue,
+    pub(crate) cancelled: bool,
+    pub(crate) failed: bool,
+    pub(crate) completed: bool,
+    pub(crate) parent_scope: Option<SpectraHostValue>,
+    pub(crate) cancel_handle: SpectraHostValue,
+    pub(crate) timeout_inner: Option<SpectraHostValue>,
+    pub(crate) deadline_ms: Option<SpectraHostValue>,
+    pub(crate) join_order: Option<SpectraHostValue>,
 }
 
-struct AsyncScope {
-    _parent: Option<SpectraHostValue>,
-    child_scopes: Vec<SpectraHostValue>,
-    children: Vec<SpectraHostValue>,
-    cancelled: bool,
-    joined_count: SpectraHostValue,
-    failures: SpectraHostValue,
+pub(crate) struct AsyncScope {
+    pub(crate) _parent: Option<SpectraHostValue>,
+    pub(crate) child_scopes: Vec<SpectraHostValue>,
+    pub(crate) children: Vec<SpectraHostValue>,
+    pub(crate) cancelled: bool,
+    pub(crate) joined_count: SpectraHostValue,
+    pub(crate) failures: SpectraHostValue,
 }
 
 #[derive(Clone, Copy)]
-enum AsyncStreamKind {
+pub(crate) enum AsyncStreamKind {
     Source,
     Map {
         upstream: SpectraHostValue,
@@ -106,45 +107,45 @@ enum AsyncStreamKind {
     },
 }
 
-struct AsyncStream {
-    kind: AsyncStreamKind,
-    buffer: VecDeque<SpectraHostValue>,
-    capacity: usize,
-    pending_next: VecDeque<SpectraHostValue>,
-    done: bool,
-    cancelled: bool,
-    failed: bool,
-    last_next_status: SpectraHostValue,
-    chunk_items: Vec<SpectraHostValue>,
+pub(crate) struct AsyncStream {
+    pub(crate) kind: AsyncStreamKind,
+    pub(crate) buffer: VecDeque<SpectraHostValue>,
+    pub(crate) capacity: usize,
+    pub(crate) pending_next: VecDeque<SpectraHostValue>,
+    pub(crate) done: bool,
+    pub(crate) cancelled: bool,
+    pub(crate) failed: bool,
+    pub(crate) last_next_status: SpectraHostValue,
+    pub(crate) chunk_items: Vec<SpectraHostValue>,
 }
 
-struct AsyncTcpListenerState {
-    listener: mio::net::TcpListener,
-    pending_accepts: VecDeque<SpectraHostValue>,
+pub(crate) struct AsyncTcpListenerState {
+    pub(crate) listener: mio::net::TcpListener,
+    pub(crate) pending_accepts: VecDeque<SpectraHostValue>,
 }
 
-struct AsyncTcpStreamState {
-    stream: mio::net::TcpStream,
-    pending_reads: VecDeque<SpectraHostValue>,
-    connect_task: Option<SpectraHostValue>,
-    closed: bool,
+pub(crate) struct AsyncTcpStreamState {
+    pub(crate) stream: mio::net::TcpStream,
+    pub(crate) pending_reads: VecDeque<SpectraHostValue>,
+    pub(crate) connect_task: Option<SpectraHostValue>,
+    pub(crate) closed: bool,
 }
 
-struct AsyncUdpSocketState {
-    socket: mio::net::UdpSocket,
-    pending_recvs: VecDeque<SpectraHostValue>,
-    closed: bool,
+pub(crate) struct AsyncUdpSocketState {
+    pub(crate) socket: mio::net::UdpSocket,
+    pub(crate) pending_recvs: VecDeque<SpectraHostValue>,
+    pub(crate) closed: bool,
 }
 
-struct AsyncChannelState {
-    queue: VecDeque<SpectraHostValue>,
-    capacity: usize,
-    pending_sends: VecDeque<(SpectraHostValue, SpectraHostValue)>,
-    pending_recvs: VecDeque<SpectraHostValue>,
-    closed: bool,
+pub(crate) struct AsyncChannelState {
+    pub(crate) queue: VecDeque<SpectraHostValue>,
+    pub(crate) capacity: usize,
+    pub(crate) pending_sends: VecDeque<(SpectraHostValue, SpectraHostValue)>,
+    pub(crate) pending_recvs: VecDeque<SpectraHostValue>,
+    pub(crate) closed: bool,
 }
 
-enum AsyncStreamPull {
+pub(crate) enum AsyncStreamPull {
     Pending,
     Item(SpectraHostValue),
     Done,
@@ -152,7 +153,7 @@ enum AsyncStreamPull {
     Cancelled,
 }
 
-trait AsyncHandleKey {
+pub(crate) trait AsyncHandleKey {
     fn raw(self) -> SpectraHostValue;
 }
 
@@ -168,56 +169,56 @@ impl AsyncHandleKey for &SpectraHostValue {
     }
 }
 
-struct AsyncHandleTable<T> {
+pub(crate) struct AsyncHandleTable<T> {
     table: HandleTable<T>,
 }
 
 impl<T> AsyncHandleTable<T> {
-    fn new(kind: HandleKind) -> Self {
+    pub(crate) fn new(kind: HandleKind) -> Self {
         Self {
             table: HandleTable::new(kind),
         }
     }
 
-    fn insert(&mut self, value: T) -> SpectraHostValue {
+    pub(crate) fn insert(&mut self, value: T) -> SpectraHostValue {
         self.table.insert(value).raw()
     }
 
-    fn insert_fresh(&mut self, value: T) -> SpectraHostValue {
+    pub(crate) fn insert_fresh(&mut self, value: T) -> SpectraHostValue {
         self.table.insert_fresh(value).raw()
     }
 
-    fn id<R: AsyncHandleKey>(&self, raw: R) -> Option<HandleId> {
+    pub(crate) fn id<R: AsyncHandleKey>(&self, raw: R) -> Option<HandleId> {
         HandleId::from_raw(raw.raw()).ok()
     }
 
-    fn get<R: AsyncHandleKey>(&self, raw: R) -> Option<&T> {
+    pub(crate) fn get<R: AsyncHandleKey>(&self, raw: R) -> Option<&T> {
         self.id(raw).and_then(|id| self.table.get(id).ok())
     }
 
-    fn get_mut<R: AsyncHandleKey>(&mut self, raw: R) -> Option<&mut T> {
+    pub(crate) fn get_mut<R: AsyncHandleKey>(&mut self, raw: R) -> Option<&mut T> {
         let id = self.id(raw)?;
         self.table.get_mut(id).ok()
     }
 
-    fn remove<R: AsyncHandleKey>(&mut self, raw: R) -> Option<T> {
+    pub(crate) fn remove<R: AsyncHandleKey>(&mut self, raw: R) -> Option<T> {
         let id = self.id(raw)?;
         self.table.remove(id).ok()
     }
 
-    fn contains_key<R: AsyncHandleKey>(&self, raw: R) -> bool {
+    pub(crate) fn contains_key<R: AsyncHandleKey>(&self, raw: R) -> bool {
         self.get(raw).is_some()
     }
 
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.table.clear();
     }
 
-    fn keys(&self) -> impl Iterator<Item = SpectraHostValue> + '_ {
+    pub(crate) fn keys(&self) -> impl Iterator<Item = SpectraHostValue> + '_ {
         self.table.iter().map(|(handle, _)| handle.raw())
     }
 
-    fn iter(&self) -> impl Iterator<Item = (SpectraHostValue, &T)> + '_ {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (SpectraHostValue, &T)> + '_ {
         self.table
             .iter()
             .map(|(handle, value)| (handle.raw(), value))

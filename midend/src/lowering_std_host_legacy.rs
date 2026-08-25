@@ -1,4 +1,6 @@
-fn lookup_std_host_group_legacy(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
+use super::*;
+
+pub(crate) fn lookup_std_host_group_legacy(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
     match (module, function) {
             ("random", "random_seed") => Some(HostFunctionDescriptor {
                 runtime_name: "spectra.std.random.random_seed",

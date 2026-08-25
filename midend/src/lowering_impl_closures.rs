@@ -1,5 +1,7 @@
+use super::*;
+
 impl ASTLowering {
-    fn lower_closure_handle_call(
+    pub(crate) fn lower_closure_handle_call(
         &mut self,
         closure_handle: Value,
         mut arg_values: Vec<Value>,
@@ -35,7 +37,7 @@ impl ASTLowering {
         }
     }
 
-    fn lower_identifier_value(&mut self, name: &str, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_identifier_value(&mut self, name: &str, ir_func: &mut IRFunction) -> Value {
         if let Some(value) = self.const_values.get(name).cloned() {
             self.emit_const_value(&value, ir_func)
         } else if let Some(value) = self.lower_global_value(name, ir_func) {
@@ -61,7 +63,7 @@ impl ASTLowering {
     /// functions use the public ABI, while closure callbacks use
     /// `fn(env, args...)`; this adapter keeps both contracts explicit and
     /// lets named functions cross host-call boundaries such as API handlers.
-    fn lower_named_function_value(&mut self, name: &str, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_named_function_value(&mut self, name: &str, ir_func: &mut IRFunction) -> Value {
         let Some(public_params) = self.function_parameter_types.get(name).cloned() else {
             return self.invalid_value(format!("unknown function value '{}'", name));
         };
@@ -120,7 +122,7 @@ impl ASTLowering {
         self.build_closure_object(ir_func, wrapper_name, &[])
     }
 
-    fn lower_global_value(&mut self, name: &str, ir_func: &mut IRFunction) -> Option<Value> {
+    pub(crate) fn lower_global_value(&mut self, name: &str, ir_func: &mut IRFunction) -> Option<Value> {
         let (global_key, ty) = self.static_globals.get(name)?.clone();
         let ptr = self
             .builder
@@ -128,7 +130,7 @@ impl ASTLowering {
         Some(self.builder.build_load_typed(ir_func, ptr, ty))
     }
 
-    fn collect_lambda_captures(
+    pub(crate) fn collect_lambda_captures(
         &self,
         params: &[spectra_compiler::ast::LambdaParam],
         body: &Expression,
@@ -140,7 +142,7 @@ impl ASTLowering {
         captures
     }
 
-    fn collect_lambda_captures_expr(
+    pub(crate) fn collect_lambda_captures_expr(
         &self,
         expr: &Expression,
         locals: &mut HashSet<String>,
@@ -301,7 +303,7 @@ impl ASTLowering {
         }
     }
 
-    fn collect_lambda_captures_block(
+    pub(crate) fn collect_lambda_captures_block(
         &self,
         block: &Block,
         locals: &HashSet<String>,
@@ -314,7 +316,7 @@ impl ASTLowering {
         }
     }
 
-    fn collect_lambda_captures_stmt(
+    pub(crate) fn collect_lambda_captures_stmt(
         &self,
         stmt: &Statement,
         locals: &mut HashSet<String>,
@@ -386,7 +388,7 @@ impl ASTLowering {
         }
     }
 
-    fn collect_lvalue_captures(
+    pub(crate) fn collect_lvalue_captures(
         &self,
         target: &spectra_compiler::ast::LValue,
         locals: &mut HashSet<String>,
@@ -414,7 +416,7 @@ impl ASTLowering {
         }
     }
 
-    fn collect_pattern_names(
+    pub(crate) fn collect_pattern_names(
         pattern: &spectra_compiler::ast::Pattern,
         names: &mut HashSet<String>,
     ) {
@@ -456,7 +458,7 @@ impl ASTLowering {
         }
     }
 
-    fn collect_trait_method_order_recursive(
+    pub(crate) fn collect_trait_method_order_recursive(
         &self,
         trait_name: &str,
         seen: &mut HashSet<String>,
@@ -477,7 +479,7 @@ impl ASTLowering {
         }
     }
 
-    fn collect_trait_methods_recursive(
+    pub(crate) fn collect_trait_methods_recursive(
         &self,
         trait_name: &str,
         out: &mut HashMap<String, spectra_compiler::ast::TraitMethod>,
@@ -497,7 +499,7 @@ impl ASTLowering {
         }
     }
 
-    fn collect_default_trait_methods(
+    pub(crate) fn collect_default_trait_methods(
         &self,
         trait_name: &str,
         explicit_methods: &[ASTMethod],
@@ -509,7 +511,7 @@ impl ASTLowering {
         out
     }
 
-    fn collect_default_trait_methods_recursive(
+    pub(crate) fn collect_default_trait_methods_recursive(
         &self,
         trait_name: &str,
         seen: &mut std::collections::HashSet<String>,

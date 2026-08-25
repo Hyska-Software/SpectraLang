@@ -1,14 +1,15 @@
+use super::*;
 // ── std.fs host functions ────────────────────────────────────────────────────
 
-struct FsFailure {
-    code: SpectraHostValue,
-    message: String,
-    operation: &'static str,
-    context: String,
-    retryable: bool,
+pub(crate) struct FsFailure {
+    pub(crate) code: SpectraHostValue,
+    pub(crate) message: String,
+    pub(crate) operation: &'static str,
+    pub(crate) context: String,
+    pub(crate) retryable: bool,
 }
 
-fn fs_failure(
+pub(crate) fn fs_failure(
     code: SpectraHostValue,
     message: impl Into<String>,
     operation: &'static str,
@@ -24,7 +25,7 @@ fn fs_failure(
     }
 }
 
-fn fs_error_code(error: &std::io::Error) -> SpectraHostValue {
+pub(crate) fn fs_error_code(error: &std::io::Error) -> SpectraHostValue {
     match error.kind() {
         std::io::ErrorKind::NotFound => 1,         // ErrorCode::NotFound
         std::io::ErrorKind::PermissionDenied => 2, // ErrorCode::PermissionDenied
@@ -35,7 +36,7 @@ fn fs_error_code(error: &std::io::Error) -> SpectraHostValue {
     }
 }
 
-fn fs_error_retryable(error: &std::io::Error) -> bool {
+pub(crate) fn fs_error_retryable(error: &std::io::Error) -> bool {
     matches!(
         error.kind(),
         std::io::ErrorKind::Interrupted
@@ -45,7 +46,7 @@ fn fs_error_retryable(error: &std::io::Error) -> bool {
     )
 }
 
-fn fs_io_failure(operation: &'static str, path: &Path, error: std::io::Error) -> FsFailure {
+pub(crate) fn fs_io_failure(operation: &'static str, path: &Path, error: std::io::Error) -> FsFailure {
     fs_failure(
         fs_error_code(&error),
         error.to_string(),
@@ -55,21 +56,21 @@ fn fs_io_failure(operation: &'static str, path: &Path, error: std::io::Error) ->
     )
 }
 
-fn begin_fs_span(operation: &'static str, path: &Path) -> Option<u64> {
+pub(crate) fn begin_fs_span(operation: &'static str, path: &Path) -> Option<u64> {
     let span = tracing::begin_external_span(SpanKind::Internal, operation).ok()?;
     let path_label = path.to_string_lossy();
     let _ = tracing::span_set_attribute(span, "fs.path", &path_label);
     Some(span)
 }
 
-fn end_fs_span(span: Option<u64>, status: SpanStatus) {
+pub(crate) fn end_fs_span(span: Option<u64>, status: SpanStatus) {
     if let Some(span) = span {
         let _ = tracing::span_set_status(span, status);
         let _ = tracing::span_end(span);
     }
 }
 
-fn write_fs_result(
+pub(crate) fn write_fs_result(
     ctx: &mut SpectraHostCallContext,
     value: Result<SpectraHostValue, FsFailure>,
 ) -> i32 {
@@ -106,7 +107,7 @@ fn write_fs_result(
     HOST_STATUS_SUCCESS
 }
 
-unsafe fn required_fs_path(arg: SpectraHostValue, operation: &'static str) -> Result<PathBuf, FsFailure> {
+pub(crate) unsafe fn required_fs_path(arg: SpectraHostValue, operation: &'static str) -> Result<PathBuf, FsFailure> {
     match read_fs_path_arg(arg) {
         Ok(Some(path)) => Ok(path),
         Ok(None) => Err(fs_failure(
@@ -126,7 +127,7 @@ unsafe fn required_fs_path(arg: SpectraHostValue, operation: &'static str) -> Re
     }
 }
 
-extern "C" fn std_fs_read(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_read(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -164,15 +165,15 @@ extern "C" fn std_fs_read(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_fs_write(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_write(ctx: *mut SpectraHostCallContext) -> i32 {
     std_fs_write_common(ctx, false)
 }
 
-extern "C" fn std_fs_append(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_append(ctx: *mut SpectraHostCallContext) -> i32 {
     std_fs_write_common(ctx, true)
 }
 
-fn std_fs_write_common(ctx: *mut SpectraHostCallContext, append: bool) -> i32 {
+pub(crate) fn std_fs_write_common(ctx: *mut SpectraHostCallContext, append: bool) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -224,7 +225,7 @@ fn std_fs_write_common(ctx: *mut SpectraHostCallContext, append: bool) -> i32 {
     }
 }
 
-extern "C" fn std_fs_exists(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_exists(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -256,7 +257,7 @@ extern "C" fn std_fs_exists(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_fs_remove(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_remove(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -286,7 +287,7 @@ extern "C" fn std_fs_remove(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_fs_create_dir_all(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_create_dir_all(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -320,7 +321,7 @@ extern "C" fn std_fs_create_dir_all(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_fs_remove_dir(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_remove_dir(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -351,7 +352,7 @@ extern "C" fn std_fs_remove_dir(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_fs_rename(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_rename(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -386,7 +387,7 @@ extern "C" fn std_fs_rename(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_fs_copy(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_copy(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -425,7 +426,7 @@ extern "C" fn std_fs_copy(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_fs_read_dir(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_read_dir(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -481,7 +482,7 @@ extern "C" fn std_fs_read_dir(ctx: *mut SpectraHostCallContext) -> i32 {
 
 // ── std.compat.fs host functions ────────────────────────────────────────────
 
-extern "C" fn std_fs_compat_read(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_compat_read(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -527,7 +528,7 @@ extern "C" fn std_fs_compat_read(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_fs_compat_write(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_compat_write(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -573,7 +574,7 @@ extern "C" fn std_fs_compat_write(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_fs_compat_append(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_compat_append(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -619,7 +620,7 @@ extern "C" fn std_fs_compat_append(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_fs_compat_exists(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_compat_exists(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -657,7 +658,7 @@ extern "C" fn std_fs_compat_exists(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-extern "C" fn std_fs_compat_remove(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_fs_compat_remove(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

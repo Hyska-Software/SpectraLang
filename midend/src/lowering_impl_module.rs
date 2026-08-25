@@ -1,3 +1,5 @@
+use super::*;
+
 impl ASTLowering {
     pub fn lower_module(&mut self, ast_module: &ASTModule) -> Result<IRModule, Vec<MidendError>> {
         let mut ir_module = IRModule::new(&ast_module.name);

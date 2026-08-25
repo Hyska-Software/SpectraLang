@@ -27,122 +27,185 @@ use crate::ffi::{clear_host_functions, lookup_host_function};
 #[cfg(test)]
 use std::ptr;
 
-include!("stdlib_bindings.rs");
+#[path = "stdlib_bindings.rs"] mod stdlib_bindings;
+pub use stdlib_bindings::*;
 
-include!("registration.rs");
+#[path = "registration.rs"] mod registration;
+pub use registration::*;
 
-include!("math_io.rs");
+#[path = "math_io.rs"] mod math_io;
+pub(crate) use math_io::*;
 
-include!("list_host.rs");
+#[path = "list_host.rs"] mod list_host;
+pub(crate) use list_host::*;
 
-include!("list_registry.rs");
+#[path = "list_registry.rs"] mod list_registry;
+pub(crate) use list_registry::*;
 
-include!("string_map_fast.rs");
+#[path = "string_map_fast.rs"] mod string_map_fast;
+pub use string_map_fast::*;
 
-include!("ml_tensor_fast.rs");
+#[path = "ml_tensor_fast.rs"] mod ml_tensor_fast;
+pub use ml_tensor_fast::*;
 
-include!("list_methods.rs");
+#[path = "list_methods.rs"] mod list_methods;
 
-include!("tensor_types_registry.rs");
+#[path = "tensor_types_registry.rs"] mod tensor_types_registry;
+pub use tensor_types_registry::*;
 
-include!("tensor_helpers_kernels.rs");
+#[path = "tensor_helpers_kernels.rs"] mod tensor_helpers_kernels;
+pub use tensor_helpers_kernels::*;
 
-include!("tensor_constructors_access.rs");
+#[path = "tensor_constructors_access.rs"] mod tensor_constructors_access;
+pub(crate) use tensor_constructors_access::*;
 
-include!("tensor_ops_reductions.rs");
+#[path = "tensor_ops_reductions.rs"] mod tensor_ops_reductions;
+pub(crate) use tensor_ops_reductions::*;
 
-include!("tensor_matmul.rs");
+#[path = "tensor_matmul.rs"] mod tensor_matmul;
+pub(crate) use tensor_matmul::*;
 
-include!("tensor_autograd_gpu.rs");
+#[path = "tensor_autograd_gpu.rs"] mod tensor_autograd_gpu;
+pub(crate) use tensor_autograd_gpu::*;
 
-include!("tensor_autograd.rs");
+#[path = "tensor_autograd.rs"] mod tensor_autograd;
+pub(crate) use tensor_autograd::*;
 
-include!("ml_registry_utils.rs");
+#[path = "ml_registry_utils.rs"] mod ml_registry_utils;
+pub(crate) use ml_registry_utils::*;
 
-include!("ml_artifacts_modules.rs");
+#[path = "ml_artifacts_modules.rs"] mod ml_artifacts_modules;
+pub(crate) use ml_artifacts_modules::*;
 
-include!("ml_training_losses.rs");
+#[path = "ml_training_losses.rs"] mod ml_training_losses;
+pub(crate) use ml_training_losses::*;
 
-include!("ml_optimizers.rs");
+#[path = "ml_optimizers.rs"] mod ml_optimizers;
+pub(crate) use ml_optimizers::*;
 
-include!("ml_datasets_artifacts.rs");
+#[path = "ml_datasets_artifacts.rs"] mod ml_datasets_artifacts;
+pub(crate) use ml_datasets_artifacts::*;
 
-include!("ml_onnx.rs");
+#[path = "ml_onnx.rs"] mod ml_onnx;
+pub(crate) use ml_onnx::*;
 
-include!("ml_dataset_access.rs");
+#[path = "ml_dataset_access.rs"] mod ml_dataset_access;
+pub(crate) use ml_dataset_access::*;
 
-include!("ml_experiments_distributed.rs");
+#[path = "ml_experiments_distributed.rs"] mod ml_experiments_distributed;
+pub(crate) use ml_experiments_distributed::*;
 
-include!("ml_distributed_tcp.rs");
+#[path = "ml_distributed_tcp.rs"] mod ml_distributed_tcp;
+pub(crate) use ml_distributed_tcp::*;
 
-include!("ml_onnx_bindings.rs");
+#[path = "ml_onnx_bindings.rs"] mod ml_onnx_bindings;
+pub(crate) use ml_onnx_bindings::*;
 
-include!("ml_tokenization_retrieval.rs");
+#[path = "ml_tokenization_retrieval.rs"] mod ml_tokenization_retrieval;
+pub(crate) use ml_tokenization_retrieval::*;
 
-include!("ml_tokenizer_training.rs");
+#[path = "ml_generation.rs"] mod ml_generation;
+pub(crate) use ml_generation::*;
 
-include!("ml_metrics.rs");
-include!("ml_text_embedding_model.rs");
+#[path = "ml_tokenizer_training.rs"] mod ml_tokenizer_training;
+pub(crate) use ml_tokenizer_training::*;
 
-include!("tensor_runtime_extras.rs");
+#[path = "ml_metrics.rs"] mod ml_metrics;
+pub(crate) use ml_metrics::*;
+#[path = "ml_text_embedding_model.rs"] mod ml_text_embedding_model;
+pub(crate) use ml_text_embedding_model::*;
 
-include!("collections_extras.rs");
+#[path = "tensor_runtime_extras.rs"] mod tensor_runtime_extras;
+pub(crate) use tensor_runtime_extras::*;
 
-include!("collections_higher_order.rs");
+#[path = "collections_extras.rs"] mod collections_extras;
+pub(crate) use collections_extras::*;
 
-include!("string_registration_helpers.rs");
+#[path = "collections_higher_order.rs"] mod collections_higher_order;
+pub(crate) use collections_higher_order::*;
 
-include!("string_host.rs");
+#[path = "string_registration_helpers.rs"] mod string_registration_helpers;
+pub use string_registration_helpers::*;
 
-include!("string_builder.rs");
+#[path = "string_host.rs"] mod string_host;
+pub(crate) use string_host::*;
 
-include!("string_extras.rs");
+#[path = "string_builder.rs"] mod string_builder;
+pub(crate) use string_builder::*;
 
-include!("convert_host.rs");
+#[path = "string_extras.rs"] mod string_extras;
+pub(crate) use string_extras::*;
 
-include!("convert_random.rs");
+#[path = "convert_host.rs"] mod convert_host;
+pub(crate) use convert_host::*;
 
-include!("fs.rs");
+#[path = "convert_random.rs"] mod convert_random;
+pub(crate) use convert_random::*;
 
-include!("env.rs");
+#[path = "fs.rs"] mod fs;
+pub(crate) use fs::*;
 
-include!("char.rs");
+#[path = "env.rs"] mod env;
+pub(crate) use env::*;
 
-include!("time.rs");
+#[path = "char.rs"] mod char;
+pub(crate) use char::*;
 
-include!("range.rs");
+#[path = "time.rs"] mod time;
+pub(crate) use time::*;
 
-include!("string_new.rs");
+#[path = "range.rs"] mod range;
+pub(crate) use range::*;
 
-include!("math_new.rs");
+#[path = "string_new.rs"] mod string_new;
+pub(crate) use string_new::*;
 
-include!("io_new.rs");
+#[path = "math_new.rs"] mod math_new;
+pub(crate) use math_new::*;
 
-include!("set_iterator.rs");
+#[path = "io_new.rs"] mod io_new;
+pub(crate) use io_new::*;
 
-include!("map.rs");
+#[path = "set_iterator.rs"] mod set_iterator;
+pub(crate) use set_iterator::*;
 
-include!("async_types.rs");
+#[path = "map.rs"] mod map;
+pub(crate) use map::*;
 
-include!("async_registry.rs");
+#[path = "async_types.rs"] mod async_types;
+pub(crate) use async_types::*;
 
-include!("async_registry_support.rs");
+#[path = "async_registry.rs"] mod async_registry;
+pub(crate) use async_registry::*;
 
-include!("async_task_stream.rs");
+#[path = "async_registry_support.rs"] mod async_registry_support;
+pub(crate) use async_registry_support::*;
 
-include!("async_network_reactor.rs");
+#[path = "async_task_stream.rs"] mod async_task_stream;
+pub use async_task_stream::*;
 
-include!("async_fast_paths.rs");
+#[path = "async_network_reactor.rs"] mod async_network_reactor;
+pub(crate) use async_network_reactor::*;
 
-include!("concurrent_core.rs");
+#[path = "async_fast_paths.rs"] mod async_fast_paths;
+pub use async_fast_paths::*;
 
-include!("concurrent_api.rs");
+#[path = "concurrent_core.rs"] mod concurrent_core;
+pub(crate) use concurrent_core::*;
 
-include!("serve_core.rs");
+#[path = "concurrent_api.rs"] mod concurrent_api;
+pub(crate) use concurrent_api::*;
 
-include!("serve_api.rs");
+#[path = "serve_core.rs"] mod serve_core;
+pub(crate) use serve_core::*;
+
+#[path = "serve_api.rs"] mod serve_api;
+pub(crate) use serve_api::*;
+
+// ── ServeHttp ──
+#[path = "serve_http.rs"] mod serve_http;
+pub(crate) use serve_http::*;
 
 #[cfg(test)]
-mod tests {
-    include!("tests.rs");
-}
+#[path = "tests.rs"]
+mod tests;

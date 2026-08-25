@@ -1,3 +1,4 @@
+use super::*;
 /// Fast-path helper for `concurrent.task_spawn(value)` called from JIT code
 /// via the `spectra_rt_concurrent_spawn_fast` fast ABI entry. Bypasses the
 /// generic host-call dispatcher (no manual_alloc/free, no name lookup, no
@@ -153,7 +154,7 @@ pub fn concurrent_channel_len_fast(channel: SpectraHostValue) -> i64 {
     n
 }
 
-extern "C" fn std_async_reactor_reset(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_reset(ctx: *mut SpectraHostCallContext) -> i32 {
     let args = match host_call_void_args(ctx, 0) {
         Ok(args) => args,
         Err(status) => return status,

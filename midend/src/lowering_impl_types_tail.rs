@@ -1,9 +1,11 @@
+use super::*;
+
 impl ASTLowering {
-    fn lower_type_annotation(&self, type_ann: &TypeAnnotation) -> IRType {
+    pub(crate) fn lower_type_annotation(&self, type_ann: &TypeAnnotation) -> IRType {
         self.lower_type_annotation_with_map(type_ann, &self.type_substitution_map)
     }
 
-    fn lower_generic_application(
+    pub(crate) fn lower_generic_application(
         &self,
         name: &str,
         type_args: &[TypeAnnotation],
@@ -24,7 +26,7 @@ impl ASTLowering {
     /// Generic arguments remain available to type inference while existing
     /// aggregate lowering can continue to operate on the monomorphized
     /// representation.
-    fn ir_type_representation<'a>(&self, ty: &'a IRType) -> &'a IRType {
+    pub(crate) fn ir_type_representation<'a>(&self, ty: &'a IRType) -> &'a IRType {
         match ty {
             IRType::Generic { representation, .. } => {
                 self.ir_type_representation(representation)
@@ -33,7 +35,7 @@ impl ASTLowering {
         }
     }
 
-    fn ir_type_representation_static(ty: &IRType) -> &IRType {
+    pub(crate) fn ir_type_representation_static(ty: &IRType) -> &IRType {
         match ty {
             IRType::Generic { representation, .. } => {
                 Self::ir_type_representation_static(representation)
@@ -42,7 +44,7 @@ impl ASTLowering {
         }
     }
 
-    fn ir_generic_args_static<'a>(ty: &'a IRType, name: &str) -> Option<&'a [IRType]> {
+    pub(crate) fn ir_generic_args_static<'a>(ty: &'a IRType, name: &str) -> Option<&'a [IRType]> {
         match ty {
             IRType::Generic {
                 name: actual,
@@ -53,7 +55,7 @@ impl ASTLowering {
         }
     }
 
-    fn ir_nominal_name<'a>(&self, ty: &'a IRType) -> Option<&'a str> {
+    pub(crate) fn ir_nominal_name<'a>(&self, ty: &'a IRType) -> Option<&'a str> {
         match self.ir_type_representation(ty) {
             IRType::Struct { name, .. } | IRType::Enum { name, .. } => Some(name.as_str()),
             IRType::Generic { name, .. } => Some(name.as_str()),
@@ -62,7 +64,7 @@ impl ASTLowering {
     }
 
 
-    fn lower_type(&self, ast_type: &ASTType) -> IRType {
+    pub(crate) fn lower_type(&self, ast_type: &ASTType) -> IRType {
         match ast_type {
             ASTType::Int => IRType::Int,
             ASTType::Float => IRType::Float,
@@ -210,7 +212,7 @@ impl ASTLowering {
     }
 
     /// Convert TypeAnnotation to string for name mangling
-    fn type_annotation_to_string(&self, ty: &TypeAnnotation) -> String {
+    pub(crate) fn type_annotation_to_string(&self, ty: &TypeAnnotation) -> String {
         match &ty.kind {
             TypeAnnotationKind::Simple { segments } => segments.join("::"),
             TypeAnnotationKind::Tuple { elements } => {
@@ -243,7 +245,7 @@ impl ASTLowering {
     }
 
     /// Specialize a generic struct with concrete type arguments
-    fn specialize_struct(
+    pub(crate) fn specialize_struct(
         &mut self,
         generic: &ASTStruct,
         type_args: &[TypeAnnotation],
@@ -285,7 +287,7 @@ impl ASTLowering {
     }
 
     /// Specialize a generic enum with concrete type arguments
-    fn specialize_enum(
+    pub(crate) fn specialize_enum(
         &mut self,
         generic: &ASTEnum,
         type_args: &[TypeAnnotation],

@@ -1,7 +1,8 @@
+use super::*;
 // ── std.convert extras ───────────────────────────────────────────────────────
 
 /// Parses a string as int; returns `default` if parsing fails.
-extern "C" fn std_convert_string_to_int_or(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_convert_string_to_int_or(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -25,7 +26,7 @@ extern "C" fn std_convert_string_to_int_or(ctx: *mut SpectraHostCallContext) -> 
 }
 
 /// Parses a string as float; returns `default` (f64 bits) if parsing fails.
-extern "C" fn std_convert_string_to_float_or(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_convert_string_to_float_or(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -52,7 +53,7 @@ extern "C" fn std_convert_string_to_float_or(ctx: *mut SpectraHostCallContext) -
 }
 
 /// Returns 1 (true) if the string equals "true" (case-insensitive), 0 otherwise.
-extern "C" fn std_convert_string_to_bool(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_convert_string_to_bool(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -75,7 +76,7 @@ extern "C" fn std_convert_string_to_bool(ctx: *mut SpectraHostCallContext) -> i3
 }
 
 /// Converts a bool to int: true → 1, false → 0.
-extern "C" fn std_convert_bool_to_int(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_convert_bool_to_int(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -96,7 +97,7 @@ extern "C" fn std_convert_bool_to_int(ctx: *mut SpectraHostCallContext) -> i32 {
 
 // ── std.random ───────────────────────────────────────────────────────────────
 
-fn random_state() -> &'static Mutex<u64> {
+pub(crate) fn random_state() -> &'static Mutex<u64> {
     static STATE: OnceLock<Mutex<u64>> = OnceLock::new();
     STATE.get_or_init(|| {
         // Default seed derived from the system time for variety across runs.
@@ -115,7 +116,7 @@ fn random_state() -> &'static Mutex<u64> {
 /// shared by other stdlib modules. The public seeding API and post-seed
 /// determinism are unchanged: a given seed always produces the same sequence.
 #[inline]
-fn lcg_next(state: &mut u64) -> u64 {
+pub(crate) fn lcg_next(state: &mut u64) -> u64 {
     // xorshift64* never escapes the zero state, so substitute the golden
     // ratio constant when seeded with 0 to keep the stream alive.
     let mut x = if *state == 0 {
@@ -134,7 +135,7 @@ fn lcg_next(state: &mut u64) -> u64 {
 /// multiply with rejection, avoiding the modulo bias of `rand % range`.
 /// Returns `0` when `range` is 0.
 #[inline]
-fn unbiased_below(state: &mut u64, range: u64) -> u64 {
+pub(crate) fn unbiased_below(state: &mut u64, range: u64) -> u64 {
     if range == 0 {
         return 0;
     }
@@ -151,11 +152,11 @@ fn unbiased_below(state: &mut u64, range: u64) -> u64 {
 }
 
 #[inline]
-fn random_unit_f64(state: &mut u64) -> f64 {
+pub(crate) fn random_unit_f64(state: &mut u64) -> f64 {
     (lcg_next(state) >> 11) as f64 / (1u64 << 53) as f64
 }
 
-fn register_random() {
+pub(crate) fn register_random() {
     register_host_function(RAND_SEED, std_random_seed);
     register_host_function(RAND_INT, std_random_int);
     register_host_function(RAND_FLOAT, std_random_float);
@@ -163,7 +164,7 @@ fn register_random() {
 }
 
 /// Sets the random seed.
-extern "C" fn std_random_seed(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_random_seed(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -183,7 +184,7 @@ extern "C" fn std_random_seed(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns a random integer in [min, max). Returns `min` when min >= max.
-extern "C" fn std_random_int(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_random_int(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -215,7 +216,7 @@ extern "C" fn std_random_int(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns a random float in [0.0, 1.0) as f64 bits.
-extern "C" fn std_random_float(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_random_float(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
@@ -232,7 +233,7 @@ extern "C" fn std_random_float(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 /// Returns a random bool (0 or 1).
-extern "C" fn std_random_bool(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_random_bool(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }

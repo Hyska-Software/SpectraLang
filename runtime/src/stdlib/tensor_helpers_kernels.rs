@@ -1,4 +1,5 @@
-fn with_tensor_registry<F, R>(action: F) -> R
+use super::*;
+pub(crate) fn with_tensor_registry<F, R>(action: F) -> R
 where
     F: FnOnce(&mut TensorRegistry) -> R,
 {
@@ -6,7 +7,7 @@ where
     action(&mut guard)
 }
 
-fn tensor_strides(shape: &[usize]) -> Vec<usize> {
+pub(crate) fn tensor_strides(shape: &[usize]) -> Vec<usize> {
     let mut strides = vec![1; shape.len()];
     if shape.len() > 1 {
         for idx in (0..shape.len() - 1).rev() {
@@ -16,11 +17,11 @@ fn tensor_strides(shape: &[usize]) -> Vec<usize> {
     strides
 }
 
-fn tensor_is_grad_enabled() -> bool {
+pub(crate) fn tensor_is_grad_enabled() -> bool {
     *lock_unpoisoned(tensor_grad_enabled())
 }
 
-fn tensor_values_as_f64(tensor: &StdTensor) -> Vec<f64> {
+pub(crate) fn tensor_values_as_f64(tensor: &StdTensor) -> Vec<f64> {
     tensor
         .materialize()
         .iter()
@@ -31,14 +32,14 @@ fn tensor_values_as_f64(tensor: &StdTensor) -> Vec<f64> {
         .collect()
 }
 
-fn f64_values_to_host(values: &[f64]) -> Vec<SpectraHostValue> {
+pub(crate) fn f64_values_to_host(values: &[f64]) -> Vec<SpectraHostValue> {
     values
         .iter()
         .map(|value| value.to_bits() as SpectraHostValue)
         .collect()
 }
 
-fn json_escape(input: &str) -> String {
+pub(crate) fn json_escape(input: &str) -> String {
     input
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -48,7 +49,7 @@ fn json_escape(input: &str) -> String {
 }
 
 #[cfg(feature = "gpu")]
-fn tensor_values_as_f32(tensor: &StdTensor) -> Option<Vec<f32>> {
+pub(crate) fn tensor_values_as_f32(tensor: &StdTensor) -> Option<Vec<f32>> {
     if tensor.dtype != TensorDType::Float {
         return None;
     }
@@ -62,7 +63,7 @@ fn tensor_values_as_f32(tensor: &StdTensor) -> Option<Vec<f32>> {
 }
 
 #[cfg(feature = "gpu")]
-fn f32_values_to_host(values: &[f32]) -> Vec<SpectraHostValue> {
+pub(crate) fn f32_values_to_host(values: &[f32]) -> Vec<SpectraHostValue> {
     values
         .iter()
         .map(|value| (*value as f64).to_bits() as SpectraHostValue)
@@ -70,7 +71,7 @@ fn f32_values_to_host(values: &[f32]) -> Vec<SpectraHostValue> {
 }
 
 #[cfg(feature = "gpu")]
-fn gpu_binary_float(
+pub(crate) fn gpu_binary_float(
     left: &StdTensor,
     right: &StdTensor,
     op: crate::gpu::GpuBinaryOp,
@@ -95,7 +96,7 @@ fn gpu_binary_float(
 }
 
 #[cfg(feature = "gpu")]
-fn gpu_unary_float(
+pub(crate) fn gpu_unary_float(
     tensor: &StdTensor,
     op: crate::gpu::GpuUnaryOp,
 ) -> Result<Option<Vec<SpectraHostValue>>, crate::gpu::GpuError> {
@@ -115,7 +116,7 @@ fn gpu_unary_float(
 /// on `device_storage` — the precondition for the residency-aware
 /// dispatch path.
 #[cfg(feature = "gpu")]
-fn tensor_residency_pair(left: &StdTensor, right: &StdTensor) -> bool {
+pub(crate) fn tensor_residency_pair(left: &StdTensor, right: &StdTensor) -> bool {
     left.device_storage
         .contains_key(&crate::gpu::PoolDevice::Wgpu)
         && right
@@ -129,7 +130,7 @@ fn tensor_residency_pair(left: &StdTensor, right: &StdTensor) -> bool {
 /// host-materializing path; `Error` means the GPU path failed and the
 /// caller should record the error and fall back.
 #[cfg(feature = "gpu")]
-enum ResidencyOutcome {
+pub(crate) enum ResidencyOutcome {
     Ok(crate::gpu::DeviceBuffer),
     CpuFallback,
     Error(crate::gpu::GpuError),
@@ -139,7 +140,7 @@ enum ResidencyOutcome {
 /// inside the same `with_device_queue` closure used by `to_device` so
 /// queue ordering is preserved across the chain.
 #[cfg(feature = "gpu")]
-fn tensor_residency_binary(
+pub(crate) fn tensor_residency_binary(
     registry: &mut TensorRegistry,
     left: &StdTensor,
     right: &StdTensor,
@@ -178,7 +179,7 @@ fn tensor_residency_binary(
 
 /// R-3052 full: residency-aware unary. Same pattern as binary.
 #[cfg(feature = "gpu")]
-fn tensor_residency_unary(
+pub(crate) fn tensor_residency_unary(
     registry: &mut TensorRegistry,
     tensor: &StdTensor,
     op: crate::gpu::GpuUnaryOp,
@@ -212,7 +213,7 @@ fn tensor_residency_unary(
 
 /// R-3052 full: residency-aware matmul. Output is a fresh pool buffer.
 #[cfg(feature = "gpu")]
-fn tensor_residency_matmul(
+pub(crate) fn tensor_residency_matmul(
     registry: &mut TensorRegistry,
     left: &StdTensor,
     right: &StdTensor,
@@ -254,7 +255,7 @@ fn tensor_residency_matmul(
 
 /// R-3052 full: residency-aware conv2d. Output is a fresh pool buffer.
 #[cfg(feature = "gpu")]
-fn tensor_residency_conv2d(
+pub(crate) fn tensor_residency_conv2d(
     registry: &mut TensorRegistry,
     input: &StdTensor,
     kernel: &StdTensor,
@@ -311,7 +312,7 @@ fn tensor_residency_conv2d(
 /// 1-element pool buffer; the caller reads it back as the scalar loss
 /// (the only allowed readback in the hot path).
 #[cfg(feature = "gpu")]
-fn tensor_residency_sum(registry: &mut TensorRegistry, tensor: &StdTensor) -> Option<f32> {
+pub(crate) fn tensor_residency_sum(registry: &mut TensorRegistry, tensor: &StdTensor) -> Option<f32> {
     let in_buf = tensor
         .device_storage
         .get(&crate::gpu::PoolDevice::Wgpu)?
@@ -363,7 +364,7 @@ fn tensor_residency_sum(registry: &mut TensorRegistry, tensor: &StdTensor) -> Op
 /// matmul followed by a device bias-add (in-place on the matmul
 /// output buffer) and returns the resulting buffer.
 #[cfg(feature = "gpu")]
-fn tensor_residency_ml_linear(
+pub(crate) fn tensor_residency_ml_linear(
     registry: &mut TensorRegistry,
     input: &StdTensor,
     weight: &StdTensor,
@@ -403,7 +404,7 @@ fn tensor_residency_ml_linear(
     }
 }
 
-fn tensor_requires_autograd(registry: &TensorRegistry, parents: &[usize]) -> bool {
+pub(crate) fn tensor_requires_autograd(registry: &TensorRegistry, parents: &[usize]) -> bool {
     if !tensor_is_grad_enabled() {
         return false;
     }
@@ -415,7 +416,7 @@ fn tensor_requires_autograd(registry: &TensorRegistry, parents: &[usize]) -> boo
     })
 }
 
-fn max_tensor_offset(shape: &[usize], strides: &[usize], base_offset: usize) -> Option<usize> {
+pub(crate) fn max_tensor_offset(shape: &[usize], strides: &[usize], base_offset: usize) -> Option<usize> {
     let mut max_offset = base_offset;
     for (dim, stride) in shape.iter().zip(strides.iter()) {
         max_offset = max_offset.checked_add(dim.saturating_sub(1).checked_mul(*stride)?)?;
@@ -424,7 +425,7 @@ fn max_tensor_offset(shape: &[usize], strides: &[usize], base_offset: usize) -> 
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TensorKernelStrategy {
+pub(crate) enum TensorKernelStrategy {
     Scalar = 1,
     #[allow(dead_code)]
     Avx2 = 2,
@@ -437,7 +438,7 @@ enum TensorKernelStrategy {
 }
 
 impl TensorKernelStrategy {
-    fn current() -> Self {
+    pub(crate) fn current() -> Self {
         #[cfg(feature = "blas")]
         {
             return Self::Blas;
@@ -451,12 +452,12 @@ impl TensorKernelStrategy {
         Self::Scalar
     }
 
-    fn code(self) -> SpectraHostValue {
+    pub(crate) fn code(self) -> SpectraHostValue {
         self as SpectraHostValue
     }
 }
 
-fn kernel_dot_i64(left: &[SpectraHostValue], right: &[SpectraHostValue]) -> SpectraHostValue {
+pub(crate) fn kernel_dot_i64(left: &[SpectraHostValue], right: &[SpectraHostValue]) -> SpectraHostValue {
     debug_assert_eq!(left.len(), right.len());
     let len = left.len();
     let mut acc0 = 0i64;
@@ -483,7 +484,7 @@ fn kernel_dot_i64(left: &[SpectraHostValue], right: &[SpectraHostValue]) -> Spec
     }
 }
 
-fn kernel_dot_f64_bits(left: &[SpectraHostValue], right: &[SpectraHostValue]) -> SpectraHostValue {
+pub(crate) fn kernel_dot_f64_bits(left: &[SpectraHostValue], right: &[SpectraHostValue]) -> SpectraHostValue {
     let mut acc0 = 0.0f64;
     let mut acc1 = 0.0f64;
     let mut acc2 = 0.0f64;
@@ -505,7 +506,7 @@ fn kernel_dot_f64_bits(left: &[SpectraHostValue], right: &[SpectraHostValue]) ->
     acc.to_bits() as i64
 }
 
-fn kernel_transpose_i64(
+pub(crate) fn kernel_transpose_i64(
     data: &[SpectraHostValue],
     rows: usize,
     cols: usize,
@@ -519,7 +520,7 @@ fn kernel_transpose_i64(
     out
 }
 
-fn kernel_matmul_i64(
+pub(crate) fn kernel_matmul_i64(
     left: &[SpectraHostValue],
     right: &[SpectraHostValue],
     m: usize,
@@ -538,7 +539,7 @@ fn kernel_matmul_i64(
     out
 }
 
-fn kernel_matmul_f64_bits(
+pub(crate) fn kernel_matmul_f64_bits(
     left: &[SpectraHostValue],
     right: &[SpectraHostValue],
     m: usize,

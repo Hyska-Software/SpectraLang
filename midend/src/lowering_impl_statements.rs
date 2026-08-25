@@ -1,5 +1,7 @@
+use super::*;
+
 impl ASTLowering {
-    fn lower_statement(&mut self, stmt: &Statement, ir_func: &mut IRFunction) {
+    pub(crate) fn lower_statement(&mut self, stmt: &Statement, ir_func: &mut IRFunction) {
         self.builder.set_source_span(Some(self.source_span(stmt.span)));
         match &stmt.kind {
             StatementKind::Let(let_stmt) => {

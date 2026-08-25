@@ -22,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 /// Stack-based scope system for variable shadowing support
 
 #[derive(Debug, Clone)]
-enum LoweredConstValue {
+pub(crate) enum LoweredConstValue {
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -150,14 +150,14 @@ struct ArrayInfo {
 
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
-struct RangeInfo {
+pub(crate) struct RangeInfo {
     start: Value,
     end: Value,
     inclusive: bool,
 }
 
 #[derive(Clone)]
-struct ClosureCapture {
+pub(crate) struct ClosureCapture {
     name: String,
     ty: IRType,
 }
@@ -299,7 +299,7 @@ struct LoopContext {
 }
 
 #[derive(Clone)]
-struct HostFunctionDescriptor {
+pub(crate) struct HostFunctionDescriptor {
     runtime_name: &'static str,
     return_type: IRType,
     returns_value: bool,
@@ -307,7 +307,7 @@ struct HostFunctionDescriptor {
 
 /// Represents a needed specialization of a generic function
 #[derive(Debug, Clone)]
-struct MonomorphizationRequest {
+pub(crate) struct MonomorphizationRequest {
     /// Name of the generic function
     generic_name: String,
     /// Concrete types to substitute for type parameters (in order)
@@ -344,7 +344,7 @@ impl MonomorphizationRequest {
 /// The mangled function name is `{instantiated_struct}_{method}` (e.g.
 /// `Par_int_get`), matching the static method-call mangling.
 #[derive(Debug, Clone)]
-struct MethodMonomorphizationRequest {
+pub(crate) struct MethodMonomorphizationRequest {
     /// Instantiated struct name (e.g. "Par_int").
     instantiated_struct: String,
     /// Method name.
@@ -425,7 +425,6 @@ pub struct ASTLowering {
     /// the construction expression (e.g., Result::Ok(x) in a fn -> Result<int, string>).
     current_function_return_annotation: Option<TypeAnnotation>,
     current_async_output_type: Option<IRType>,
-    async_state_counter: usize,
     /// Expected expression type annotation from a local binding or other typed context.
     /// This refines generic aggregate constructors such as `Result::Ok(x)` when the
     /// expression itself only determines part of the generic argument list.
@@ -447,43 +446,97 @@ pub struct ASTLowering {
     drop_excluded_names: HashSet<String>,
 }
 
-include!("lowering_impl_core.rs");
-include!("lowering_impl_module.rs");
-include!("lowering_impl_monomorphization.rs");
-include!("lowering_impl_types.rs");
-include!("lowering_impl_type_inference.rs");
-include!("lowering_impl_functions.rs");
-include!("lowering_impl_methods.rs");
-include!("lowering_impl_closures.rs");
-include!("lowering_impl_blocks.rs");
-include!("lowering_impl_loops.rs");
-include!("lowering_impl_statements.rs");
-include!("lowering_impl_hosts.rs");
-include!("lowering_impl_expression.rs");
-include!("lowering_expr_literals.rs");
-include!("lowering_expr_binary.rs");
-include!("lowering_expr_calls.rs");
-include!("lowering_expr_aggregates.rs");
-include!("lowering_expr_struct.rs");
-include!("lowering_expr_fields.rs");
-include!("lowering_expr_enum.rs");
-include!("lowering_expr_match.rs");
-include!("lowering_expr_method.rs");
-include!("lowering_expr_tail.rs");
-include!("lowering_expr_cast.rs");
-include!("lowering_impl_cast_dyn.rs");
-include!("lowering_impl_patterns.rs");
-include!("lowering_impl_types_tail.rs");
-include!("lowering_impl_substitution.rs");
-include!("lowering_builtins.rs");
-include!("lowering_std_host.rs");
-include!("lowering_std_host_numeric.rs");
-include!("lowering_std_host_math_io_error.rs");
-include!("lowering_std_host_tensor_ml.rs");
-include!("lowering_std_host_collections_string.rs");
-include!("lowering_std_host_convert_time.rs");
-include!("lowering_std_host_legacy.rs");
-include!("lowering_std_api.rs");
-include!("lowering_handles.rs");
-include!("lowering_default.rs");
-include!("lowering_tests.rs");
+// Former include! monolith, decomposed into real child modules. The glob
+// re-exports recreate the flat namespace the includes provided; most names are
+// consumed by the children themselves via `use super::*`.
+#[path = "lowering_impl_core.rs"] mod lowering_impl_core;
+#[path = "lowering_impl_module.rs"] mod lowering_impl_module;
+#[path = "lowering_impl_monomorphization.rs"] mod lowering_impl_monomorphization;
+#[path = "lowering_impl_types.rs"] mod lowering_impl_types;
+#[path = "lowering_impl_type_inference.rs"] mod lowering_impl_type_inference;
+#[path = "lowering_impl_functions.rs"] mod lowering_impl_functions;
+#[path = "lowering_impl_methods.rs"] mod lowering_impl_methods;
+#[path = "lowering_impl_closures.rs"] mod lowering_impl_closures;
+#[path = "lowering_impl_blocks.rs"] mod lowering_impl_blocks;
+#[path = "lowering_impl_loops.rs"] mod lowering_impl_loops;
+#[path = "lowering_impl_statements.rs"] mod lowering_impl_statements;
+#[path = "lowering_impl_hosts.rs"] mod lowering_impl_hosts;
+#[path = "lowering_impl_expression.rs"] mod lowering_impl_expression;
+#[path = "lowering_expr_literals.rs"] mod lowering_expr_literals;
+#[path = "lowering_expr_binary.rs"] mod lowering_expr_binary;
+#[path = "lowering_expr_calls.rs"] mod lowering_expr_calls;
+#[path = "lowering_expr_aggregates.rs"] mod lowering_expr_aggregates;
+#[path = "lowering_expr_struct.rs"] mod lowering_expr_struct;
+#[path = "lowering_expr_fields.rs"] mod lowering_expr_fields;
+#[path = "lowering_expr_enum.rs"] mod lowering_expr_enum;
+#[path = "lowering_expr_match.rs"] mod lowering_expr_match;
+#[path = "lowering_expr_method.rs"] mod lowering_expr_method;
+#[path = "lowering_expr_tail.rs"] mod lowering_expr_tail;
+#[path = "lowering_expr_cast.rs"] mod lowering_expr_cast;
+#[path = "lowering_impl_cast_dyn.rs"] mod lowering_impl_cast_dyn;
+#[path = "lowering_impl_patterns.rs"] mod lowering_impl_patterns;
+#[path = "lowering_impl_types_tail.rs"] mod lowering_impl_types_tail;
+#[path = "lowering_impl_substitution.rs"] mod lowering_impl_substitution;
+#[path = "lowering_builtins.rs"] mod lowering_builtins;
+#[path = "lowering_std_host.rs"] mod lowering_std_host;
+#[path = "lowering_std_host_numeric.rs"] mod lowering_std_host_numeric;
+#[path = "lowering_std_host_math_io_error.rs"] mod lowering_std_host_math_io_error;
+#[path = "lowering_std_host_tensor_ml.rs"] mod lowering_std_host_tensor_ml;
+#[path = "lowering_std_host_collections_string.rs"] mod lowering_std_host_collections_string;
+#[path = "lowering_std_host_convert_time.rs"] mod lowering_std_host_convert_time;
+#[path = "lowering_std_host_legacy.rs"] mod lowering_std_host_legacy;
+#[path = "lowering_std_api.rs"] mod lowering_std_api;
+#[path = "lowering_handles.rs"] mod lowering_handles;
+#[path = "lowering_default.rs"] mod lowering_default;
+
+/// Public re-export preserved from the pre-split layout: consumed by
+/// `packages/spectra-api` (contract-drift test) as
+/// `spectra_midend::lowering::std_api_host_call_target`.
+pub use lowering_std_api::std_api_host_call_target;
+
+#[allow(unused_imports)]
+use {
+    lowering_impl_core::*,
+    lowering_impl_module::*,
+    lowering_impl_monomorphization::*,
+    lowering_impl_types::*,
+    lowering_impl_type_inference::*,
+    lowering_impl_functions::*,
+    lowering_impl_methods::*,
+    lowering_impl_closures::*,
+    lowering_impl_blocks::*,
+    lowering_impl_loops::*,
+    lowering_impl_statements::*,
+    lowering_impl_hosts::*,
+    lowering_impl_expression::*,
+    lowering_expr_literals::*,
+    lowering_expr_binary::*,
+    lowering_expr_calls::*,
+    lowering_expr_aggregates::*,
+    lowering_expr_struct::*,
+    lowering_expr_fields::*,
+    lowering_expr_enum::*,
+    lowering_expr_match::*,
+    lowering_expr_method::*,
+    lowering_expr_tail::*,
+    lowering_expr_cast::*,
+    lowering_impl_cast_dyn::*,
+    lowering_impl_patterns::*,
+    lowering_impl_types_tail::*,
+    lowering_impl_substitution::*,
+    lowering_builtins::*,
+    lowering_std_host::*,
+    lowering_std_host_numeric::*,
+    lowering_std_host_math_io_error::*,
+    lowering_std_host_tensor_ml::*,
+    lowering_std_host_collections_string::*,
+    lowering_std_host_convert_time::*,
+    lowering_std_host_legacy::*,
+    lowering_std_api::*,
+    lowering_handles::*,
+    lowering_default::*,
+};
+
+#[cfg(test)]
+#[path = "lowering_tests.rs"]
+mod lowering_tests;

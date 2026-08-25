@@ -390,22 +390,6 @@ impl IRBuilder {
         result
     }
 
-    pub fn build_async_suspend(&self, func: &mut Function, task: Value, state: usize) {
-        if let Some(block_id) = self.current_block {
-            if let Some(block) = func.get_block_mut(block_id) {
-                block.add_instruction(InstructionKind::AsyncSuspend { task, state });
-            }
-        }
-    }
-
-    pub fn build_async_resume(&self, func: &mut Function, task: Value, state: usize) {
-        if let Some(block_id) = self.current_block {
-            if let Some(block) = func.get_block_mut(block_id) {
-                block.add_instruction(InstructionKind::AsyncResume { task, state });
-            }
-        }
-    }
-
     pub fn build_async_ready(
         &self,
         func: &mut Function,

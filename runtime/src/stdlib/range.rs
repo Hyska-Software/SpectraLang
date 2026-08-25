@@ -1,6 +1,7 @@
+use super::*;
 // ── std.range register & host functions ─────────────────────────────────────
 
-fn register_range() {
+pub(crate) fn register_range() {
     register_host_function(RANGE_CREATE, std_range_create);
     register_host_function(RANGE_LEN, std_range_len);
     register_host_function(RANGE_AT, std_range_at);
@@ -12,26 +13,26 @@ fn register_range() {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct IntRange {
-    start: i64,
-    end: i64,
-    inclusive: bool,
+pub(crate) struct IntRange {
+    pub(crate) start: i64,
+    pub(crate) end: i64,
+    pub(crate) inclusive: bool,
 }
 
-fn range_handles() -> &'static Mutex<TimeHandles<IntRange>> {
+pub(crate) fn range_handles() -> &'static Mutex<TimeHandles<IntRange>> {
     static HANDLES: OnceLock<Mutex<TimeHandles<IntRange>>> = OnceLock::new();
     HANDLES.get_or_init(|| Mutex::new(TimeHandles::new(HandleKind::Range)))
 }
 
-fn store_range(range: IntRange) -> SpectraHostValue {
+pub(crate) fn store_range(range: IntRange) -> SpectraHostValue {
     lock_unpoisoned(range_handles()).insert(range)
 }
 
-fn load_range(handle: SpectraHostValue) -> Option<IntRange> {
+pub(crate) fn load_range(handle: SpectraHostValue) -> Option<IntRange> {
     lock_unpoisoned(range_handles()).get(handle).copied()
 }
 
-fn range_len_value(range: IntRange) -> Option<i64> {
+pub(crate) fn range_len_value(range: IntRange) -> Option<i64> {
     if range.start > range.end {
         return Some(0);
     }
@@ -43,7 +44,7 @@ fn range_len_value(range: IntRange) -> Option<i64> {
     i64::try_from(len).ok()
 }
 
-fn range_at_value(range: IntRange, index: i64) -> Option<i64> {
+pub(crate) fn range_at_value(range: IntRange, index: i64) -> Option<i64> {
     if index < 0 {
         return None;
     }
@@ -55,7 +56,7 @@ fn range_at_value(range: IntRange, index: i64) -> Option<i64> {
     i64::try_from(value).ok()
 }
 
-extern "C" fn std_range_create(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_range_create(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 3) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -74,7 +75,7 @@ extern "C" fn std_range_create(ctx: *mut SpectraHostCallContext) -> i32 {
     )
 }
 
-extern "C" fn std_range_len(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_range_len(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -87,7 +88,7 @@ extern "C" fn std_range_len(ctx: *mut SpectraHostCallContext) -> i32 {
     write_host_result(ctx, len)
 }
 
-extern "C" fn std_range_at(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_range_at(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 2) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -100,7 +101,7 @@ extern "C" fn std_range_at(ctx: *mut SpectraHostCallContext) -> i32 {
     write_host_result(ctx, value)
 }
 
-extern "C" fn std_range_eq(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_range_eq(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 2) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -110,7 +111,7 @@ extern "C" fn std_range_eq(ctx: *mut SpectraHostCallContext) -> i32 {
     write_host_result(ctx, (lhs == rhs) as i64)
 }
 
-extern "C" fn std_range_start(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_range_start(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -120,7 +121,7 @@ extern "C" fn std_range_start(ctx: *mut SpectraHostCallContext) -> i32 {
     write_host_result(ctx, range.start)
 }
 
-extern "C" fn std_range_end(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_range_end(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -130,7 +131,7 @@ extern "C" fn std_range_end(ctx: *mut SpectraHostCallContext) -> i32 {
     write_host_result(ctx, range.end)
 }
 
-extern "C" fn std_range_is_inclusive(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_range_is_inclusive(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -140,7 +141,7 @@ extern "C" fn std_range_is_inclusive(ctx: *mut SpectraHostCallContext) -> i32 {
     write_host_result(ctx, range.inclusive as i64)
 }
 
-extern "C" fn std_range_iter(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_range_iter(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };

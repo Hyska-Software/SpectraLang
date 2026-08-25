@@ -1,9 +1,10 @@
+use super::*;
 /// R-3052 full: incoming gradient to a parent during backward. Either
 /// a host `Vec<f64>` (the CPU path or the first seed from a host loss)
 /// or a device `DeviceBuffer` (the GPU residency path).
 #[derive(Clone)]
 #[allow(dead_code)]
-enum ParentGrad {
+pub(crate) enum ParentGrad {
     Host(Vec<f64>),
     #[cfg(feature = "gpu")]
     Device(crate::gpu::DeviceBuffer),
@@ -14,7 +15,7 @@ enum ParentGrad {
 /// add into the tensor's `device_grad`; otherwise fall back to the
 /// host `Vec<f64>` accumulation.
 #[cfg(feature = "gpu")]
-fn accumulate_parent_grad(
+pub(crate) fn accumulate_parent_grad(
     registry: &mut TensorRegistry,
     tensor: &mut StdTensor,
     grad: ParentGrad,
@@ -122,7 +123,7 @@ fn accumulate_parent_grad(
 }
 
 #[cfg(not(feature = "gpu"))]
-fn accumulate_parent_grad(
+pub(crate) fn accumulate_parent_grad(
     _registry: &mut TensorRegistry,
     tensor: &mut StdTensor,
     grad: ParentGrad,
@@ -152,7 +153,7 @@ fn accumulate_parent_grad(
 /// for the production benchmarks; callers should not rely on bitwise
 /// equality between the two paths.
 #[cfg(feature = "gpu")]
-fn autograd_parent_grads_gpu_dispatch(
+pub(crate) fn autograd_parent_grads_gpu_dispatch(
     node: &AutogradNode,
     grad: &ParentGrad,
     registry: &mut TensorRegistry,
@@ -441,7 +442,7 @@ fn autograd_parent_grads_gpu_dispatch(
 }
 
 #[cfg(all(feature = "gpu", any()))]
-fn autograd_parent_grads_gpu_dispatch(
+pub(crate) fn autograd_parent_grads_gpu_dispatch(
     node: &AutogradNode,
     grad: &ParentGrad,
     registry: &TensorRegistry,

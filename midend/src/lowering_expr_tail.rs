@@ -1,5 +1,7 @@
+use super::*;
+
 impl ASTLowering {
-    fn lower_expression_tail(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_tail(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
         match &expr.kind {
             ExpressionKind::CharLiteral(c) => self
                 .builder
@@ -108,13 +110,11 @@ impl ASTLowering {
                         ));
                     }
                 };
-                let state = self.next_async_state();
-                // AsyncSuspend/AsyncResume stay as pure markers: the backend
-                // currently emits no code for them (preemptive suspension /
-                // stackful coroutines are future work). The actual waiting
-                // contract of `await` is carried entirely by the host calls
-                // between them.
-                self.builder.build_async_suspend(ir_func, task, state);
+                // Execution model: threads/worker-pool concurrency with
+                // reactor-park waiting — see docs/adr/
+                // 0015-async-execution-model.md. There are no suspend/resume
+                // IR markers; the waiting contract of `await` is carried
+                // entirely by the host calls below.
                 // Block until the task reaches a terminal state. The host
                 // parks inside the reactor (no CPU spin) and reports the
                 // join status: 0 = completed, 1 = cancelled, 2 = failed.
@@ -130,7 +130,6 @@ impl ASTLowering {
                     IRType::Int,
                     true,
                 );
-                self.builder.build_async_resume(ir_func, task, state);
                 if output_type == IRType::Void {
                     self.builder.build_const_int(ir_func, 0)
                 } else {

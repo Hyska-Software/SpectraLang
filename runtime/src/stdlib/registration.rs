@@ -1,3 +1,4 @@
+use super::*;
 /// Registers the standard library host functions.
 pub fn register() {
     register_math();
@@ -23,13 +24,15 @@ pub fn register() {
     register_async();
     register_serve();
     register_serve_real(); // ── ServeReal ──
+    register_serve_http(); // ── ServeHttp (APPEND-ONLY call site) ──
     register_ml_text_embedding_model(); // StatsEmbed
+    register_ml_generation(); // ── RagGenerate ──
     // Anchor the fast-path extern "C" symbols so the JIT symbol resolver
     // can find them at runtime. See `ffi::keep_fast_symbols` for details.
     crate::ffi::keep_fast_symbols();
 }
 
-fn numeric_binary_args(ctx: *mut SpectraHostCallContext) -> Option<([i64; 2], *mut i64)> {
+pub(crate) fn numeric_binary_args(ctx: *mut SpectraHostCallContext) -> Option<([i64; 2], *mut i64)> {
     if ctx.is_null() {
         return None;
     }
@@ -43,7 +46,7 @@ fn numeric_binary_args(ctx: *mut SpectraHostCallContext) -> Option<([i64; 2], *m
     }
 }
 
-fn numeric_unary_arg(ctx: *mut SpectraHostCallContext) -> Option<(i64, *mut i64)> {
+pub(crate) fn numeric_unary_arg(ctx: *mut SpectraHostCallContext) -> Option<(i64, *mut i64)> {
     if ctx.is_null() {
         return None;
     }
@@ -205,7 +208,7 @@ define_checked_binary_host!(std_numeric_checked_add_u64, "u64", false, 64, +);
 define_checked_binary_host!(std_numeric_checked_sub_u64, "u64", false, 64, -);
 define_checked_binary_host!(std_numeric_checked_mul_u64, "u64", false, 64, *);
 
-fn register_numeric() {
+pub(crate) fn register_numeric() {
     register_host_function("spectra.std.numeric.wrapping_add_i8", std_numeric_add_i8);
     register_host_function("spectra.std.numeric.wrapping_sub_i8", std_numeric_sub_i8);
     register_host_function("spectra.std.numeric.wrapping_mul_i8", std_numeric_mul_i8);
@@ -369,12 +372,12 @@ fn register_numeric() {
     );
 }
 
-fn numeric_checked_error(code: &str, message: &str) -> i32 {
+pub(crate) fn numeric_checked_error(code: &str, message: &str) -> i32 {
     eprintln!("{code}: {message}");
     HOST_STATUS_INVALID_ARGUMENT
 }
 
-extern "C" fn std_numeric_checked_f32(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_numeric_checked_f32(ctx: *mut SpectraHostCallContext) -> i32 {
     let Some((raw, results_ptr)) = numeric_unary_arg(ctx) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -465,7 +468,7 @@ define_checked_float_int_cast!(std_numeric_checked_float_u16, "u16", false, 16);
 define_checked_float_int_cast!(std_numeric_checked_float_u32, "u32", false, 32);
 define_checked_float_int_cast!(std_numeric_checked_float_u64, "u64", false, 64);
 
-fn register_math() {
+pub(crate) fn register_math() {
     register_host_function(MATH_ABS, std_math_abs);
     register_host_function(MATH_MIN, std_math_min);
     register_host_function(MATH_MAX, std_math_max);
@@ -492,7 +495,7 @@ fn register_math() {
     register_host_function(MATH_ABS_F, std_math_abs_f);
 }
 
-fn register_io() {
+pub(crate) fn register_io() {
     register_host_function(IO_PRINT, std_io_print);
     register_host_function(IO_PRINTLN, std_io_println);
     register_host_function(IO_FLUSH, std_io_flush);
@@ -502,7 +505,7 @@ fn register_io() {
     register_host_function(IO_INPUT, std_io_input);
 }
 
-fn register_collections() {
+pub(crate) fn register_collections() {
     register_host_function(LIST_NEW, std_list_new);
     register_host_function(LIST_PUSH, std_list_push);
     register_host_function(LIST_LEN, std_list_len);
@@ -532,7 +535,7 @@ fn register_collections() {
     register_host_function(LIST_SORT_BY, std_list_sort_by);
 }
 
-fn register_tensor() {
+pub(crate) fn register_tensor() {
     register_host_function(TENSOR_ZEROS, std_tensor_zeros);
     register_host_function(TENSOR_ONES, std_tensor_ones);
     register_host_function(TENSOR_FULL, std_tensor_full);
@@ -686,7 +689,7 @@ fn register_tensor() {
     register_host_function(TENSOR_REFILL, std_tensor_refill);
 }
 
-fn register_ml() {
+pub(crate) fn register_ml() {
     register_host_function(ML_MODULE_NEW, std_ml_module_new);
     register_host_function(ML_MODULE_ADD_PARAMETER, std_ml_module_add_parameter);
     register_host_function(ML_MODULE_PARAMETER_COUNT, std_ml_module_parameter_count);
@@ -771,6 +774,8 @@ fn register_ml() {
     register_host_function(ML_ONNX_ROUNDTRIP, std_ml_onnx_roundtrip);
     register_host_function(ML_ONNX_SESSION_FROM_BYTES, std_ml_onnx_session_from_bytes);
     register_host_function(ML_ONNX_RUN, std_ml_onnx_run);
+    // ── OnnxMultiInput ──
+    register_host_function(ML_ONNX_RUN_MULTI, std_ml_onnx_run_multi);
     register_host_function(ML_ONNX_SESSION_FREE, std_ml_onnx_session_free);
     register_host_function(ML_EMBEDDING_LOOKUP, std_ml_embedding_lookup);
     register_host_function(ML_POSITIONAL_ENCODING, std_ml_positional_encoding);
@@ -825,7 +830,7 @@ fn register_ml() {
     register_host_function(ML_TOKENIZER_VOCAB, std_ml_tokenizer_vocab);
 }
 
-fn register_concurrent() {
+pub(crate) fn register_concurrent() {
     register_host_function(CONCURRENT_TASK_SPAWN, std_concurrent_task_spawn);
     register_host_function(CONCURRENT_TASK_SPAWN_FN, std_concurrent_task_spawn_fn);
     register_host_function(CONCURRENT_TASK_JOIN, std_concurrent_task_join);
@@ -853,7 +858,7 @@ fn register_concurrent() {
     register_host_function(CONCURRENT_RESET, std_concurrent_reset);
 }
 
-fn register_async() {
+pub(crate) fn register_async() {
     register_host_function(ASYNC_TASK_READY, std_async_task_ready);
     register_host_function(ASYNC_TASK_READY_BATCH, std_async_task_ready_batch);
     register_host_function(ASYNC_TASK_BATCH_CHECKSUM, std_async_task_batch_checksum);
@@ -948,7 +953,7 @@ fn register_async() {
     register_host_function(ASYNC_REACTOR_RESET, std_async_reactor_reset);
 }
 
-fn register_serve() {
+pub(crate) fn register_serve() {
     register_host_function(SERVE_SERVER_NEW, std_serve_server_new);
     register_host_function(SERVE_SERVER_WARMUP, std_serve_server_warmup);
     register_host_function(SERVE_SERVER_IS_WARM, std_serve_server_is_warm);
@@ -992,7 +997,7 @@ fn register_serve() {
     register_host_function(SERVE_RESET, std_serve_reset);
 }
 
-fn register_fs() {
+pub(crate) fn register_fs() {
     register_host_function(FS_READ, std_fs_read);
     register_host_function(FS_WRITE, std_fs_write);
     register_host_function(FS_APPEND, std_fs_append);
@@ -1010,7 +1015,7 @@ fn register_fs() {
     register_host_function(FS_REMOVE_COMPAT, std_fs_compat_remove);
 }
 
-fn register_env() {
+pub(crate) fn register_env() {
     register_host_function(ENV_GET, std_env_get_option);
     register_host_function(ENV_GET_OPTION, std_env_get_option);
     register_host_function(ENV_SET, std_env_set);
@@ -1022,13 +1027,13 @@ fn register_env() {
 }
 
 // ── StatsEmbed ───────────────────────────────────────────────────────────────
-fn register_ml_text_embedding_model() {
+pub(crate) fn register_ml_text_embedding_model() {
     register_host_function(ML_TEXT_EMBED_MODEL_SESSION, std_ml_text_embed_model_session);
     register_host_function(ML_TEXT_EMBED_MODEL, std_ml_text_embed_model);
 }
 
 // ── ServeReal ────────────────────────────────────────────────────────────────
-fn register_serve_real() {
+pub(crate) fn register_serve_real() {
     register_host_function(
         SERVE_SERVER_REGISTER_MODEL_LINEAR,
         std_serve_server_register_model_linear,
@@ -1038,4 +1043,15 @@ fn register_serve_real() {
         std_serve_server_register_model_onnx,
     );
     register_host_function(SERVE_SERVER_RESULT_VECTOR, std_serve_server_result_vector);
+}
+
+// ── ServeHttp ── (APPEND-ONLY: novos registros abaixo desta linha)
+pub(crate) fn register_serve_http() {
+    register_host_function(SERVE_HTTP_START, std_serve_http_start);
+    register_host_function(SERVE_HTTP_STOP, std_serve_http_stop);
+}
+
+// ── RagGenerate ──────────────────────────────────────────────────────────────
+pub(crate) fn register_ml_generation() {
+    register_host_function(ML_GENERATE, std_ml_generate);
 }

@@ -1,4 +1,5 @@
-extern "C" fn std_ml_module_add_parameter(ctx: *mut SpectraHostCallContext) -> i32 {
+use super::*;
+pub(crate) extern "C" fn std_ml_module_add_parameter(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -17,7 +18,7 @@ extern "C" fn std_ml_module_add_parameter(ctx: *mut SpectraHostCallContext) -> i
     }
 }
 
-extern "C" fn std_ml_module_parameter_count(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_module_parameter_count(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -34,7 +35,7 @@ extern "C" fn std_ml_module_parameter_count(ctx: *mut SpectraHostCallContext) ->
     }
 }
 
-extern "C" fn std_ml_module_parameter(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_module_parameter(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -54,7 +55,7 @@ extern "C" fn std_ml_module_parameter(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_module_set_training(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_module_set_training(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -73,7 +74,7 @@ extern "C" fn std_ml_module_set_training(ctx: *mut SpectraHostCallContext) -> i3
     }
 }
 
-extern "C" fn std_ml_module_is_training(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_module_is_training(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -90,7 +91,7 @@ extern "C" fn std_ml_module_is_training(ctx: *mut SpectraHostCallContext) -> i32
     }
 }
 
-extern "C" fn std_ml_linear(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_linear(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -239,7 +240,7 @@ extern "C" fn std_ml_linear(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_conv2d(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_conv2d(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 10) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -426,7 +427,7 @@ extern "C" fn std_ml_conv2d(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_dropout(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_dropout(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -461,7 +462,7 @@ extern "C" fn std_ml_dropout(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_ml_max_pool2d(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_max_pool2d(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 7) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -514,7 +515,7 @@ extern "C" fn std_ml_max_pool2d(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-fn ml_two_tensor_loss(
+pub(crate) fn ml_two_tensor_loss(
     ctx: *mut SpectraHostCallContext,
     op: AutogradOp,
     value_and_grad: impl Fn(&[f64], &[f64]) -> Option<(f64, Vec<f64>)>,
@@ -557,7 +558,7 @@ fn ml_two_tensor_loss(
     }
 }
 
-extern "C" fn std_ml_mse_loss(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_mse_loss(ctx: *mut SpectraHostCallContext) -> i32 {
     #[cfg(feature = "gpu")]
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
@@ -648,7 +649,7 @@ extern "C" fn std_ml_mse_loss(ctx: *mut SpectraHostCallContext) -> i32 {
     })
 }
 
-extern "C" fn std_ml_bce_loss(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_bce_loss(ctx: *mut SpectraHostCallContext) -> i32 {
     ml_two_tensor_loss(ctx, AutogradOp::MlBce, |pred, target| {
         let n = pred.len() as f64;
         let value = pred

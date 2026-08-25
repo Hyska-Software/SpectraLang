@@ -74,8 +74,6 @@ fn function_is_tail_fusion_candidate(func: &Function) -> bool {
                     | InstructionKind::EscapeManualAlloc { .. }
                     | InstructionKind::Alloca { .. }
                     | InstructionKind::MakeDynFatPtr { .. }
-                    | InstructionKind::AsyncSuspend { .. }
-                    | InstructionKind::AsyncResume { .. }
                     | InstructionKind::AsyncReady { .. }
                     | InstructionKind::CallIndirect { .. }
             )

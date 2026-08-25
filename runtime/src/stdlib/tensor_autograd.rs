@@ -1,5 +1,6 @@
+use super::*;
 #[cfg(not(feature = "gpu"))]
-fn autograd_parent_grads_gpu_dispatch(
+pub(crate) fn autograd_parent_grads_gpu_dispatch(
     _node: &AutogradNode,
     _grad: &ParentGrad,
     _registry: &mut TensorRegistry,
@@ -7,7 +8,7 @@ fn autograd_parent_grads_gpu_dispatch(
     None
 }
 
-fn autograd_parent_grads(
+pub(crate) fn autograd_parent_grads(
     node: &AutogradNode,
     grad: &ParentGrad,
     registry: &mut TensorRegistry,
@@ -24,7 +25,7 @@ fn autograd_parent_grads(
     autograd_parent_grads_cpu(node, grad)
 }
 
-fn autograd_parent_grads_cpu(
+pub(crate) fn autograd_parent_grads_cpu(
     node: &AutogradNode,
     grad: &ParentGrad,
 ) -> Option<Vec<(usize, ParentGrad)>> {
@@ -223,7 +224,7 @@ fn autograd_parent_grads_cpu(
     }
 }
 
-fn tensor_backward_impl(loss_handle: usize) -> Result<(), i32> {
+pub(crate) fn tensor_backward_impl(loss_handle: usize) -> Result<(), i32> {
     let mut stack = with_tensor_registry(|registry| {
         let loss = registry.get(loss_handle).ok_or(HOST_STATUS_NOT_FOUND)?;
         if loss.dtype != TensorDType::Float || loss.len() != 1 {
@@ -264,7 +265,7 @@ fn tensor_backward_impl(loss_handle: usize) -> Result<(), i32> {
     Ok(())
 }
 
-extern "C" fn std_tensor_requires_grad(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_requires_grad(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -300,7 +301,7 @@ extern "C" fn std_tensor_requires_grad(ctx: *mut SpectraHostCallContext) -> i32 
     }
 }
 
-extern "C" fn std_tensor_backward(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_backward(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -312,7 +313,7 @@ extern "C" fn std_tensor_backward(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_grad(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_grad(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -354,7 +355,7 @@ extern "C" fn std_tensor_grad(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_zero_grad(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_zero_grad(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -382,7 +383,7 @@ extern "C" fn std_tensor_zero_grad(ctx: *mut SpectraHostCallContext) -> i32 {
     }
 }
 
-extern "C" fn std_tensor_set_grad_enabled(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_set_grad_enabled(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -392,7 +393,7 @@ extern "C" fn std_tensor_set_grad_enabled(ctx: *mut SpectraHostCallContext) -> i
     }
 }
 
-extern "C" fn std_tensor_grad_enabled(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_grad_enabled(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, _args)) = tensor_args(ctx, 0) else {
             return HOST_STATUS_INVALID_ARGUMENT;

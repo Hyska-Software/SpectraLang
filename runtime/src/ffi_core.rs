@@ -34,6 +34,14 @@ struct ManualAllocation {
     _storage: ManualBox<Vec<u8>>,
 }
 
+impl ManualAllocation {
+    /// Byte length of the backing buffer (mirrors `manual_allocation_size`,
+    /// usable while the table lock is already held).
+    fn byte_len(&self) -> usize {
+        self._storage.len()
+    }
+}
+
 /// Maximum number of tombstones retained in the free quarantine (FIFO).
 /// This bounds the stale-pointer detection window and its memory cost:
 /// at most [`QUARANTINE_CAPACITY`] buffers stay resident-but-unreachable
@@ -180,7 +188,6 @@ impl AllocationTable {
         // pins the address against reuse by `spectra_rt_manual_alloc`.
         let storage = entry._storage.into_inner();
         self.remove_from_frame(entry.frame_id, ptr_value);
-        crate::stdlib::forget_string_value(ptr_value);
 
         let freed_epoch = self.next_freed_epoch;
         self.next_freed_epoch = self.next_freed_epoch.wrapping_add(1);

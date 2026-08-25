@@ -1,34 +1,35 @@
-const CONCURRENT_CHANNEL_INITIAL_CAPACITY: usize = 8;
+use super::*;
+pub(crate) const CONCURRENT_CHANNEL_INITIAL_CAPACITY: usize = 8;
 
-struct ConcurrentChannel {
-    queue: VecDeque<SpectraHostValue>,
-    closed: bool,
+pub(crate) struct ConcurrentChannel {
+    pub(crate) queue: VecDeque<SpectraHostValue>,
+    pub(crate) closed: bool,
 }
 
-struct ConcurrentTask {
-    state: AtomicU8,
-    value: AtomicI64,
+pub(crate) struct ConcurrentTask {
+    pub(crate) state: AtomicU8,
+    pub(crate) value: AtomicI64,
 }
 
 impl ConcurrentTask {
-    const PENDING: u8 = 0;
-    const READY: u8 = 1;
-    const FAILED: u8 = 2;
-    const CANCELLED: u8 = 3;
+    pub(crate) const PENDING: u8 = 0;
+    pub(crate) const READY: u8 = 1;
+    pub(crate) const FAILED: u8 = 2;
+    pub(crate) const CANCELLED: u8 = 3;
 
-    fn pending() -> Self {
+    pub(crate) fn pending() -> Self {
         Self {
             state: AtomicU8::new(Self::PENDING),
             value: AtomicI64::new(0),
         }
     }
 
-    fn prepare(&self) {
+    pub(crate) fn prepare(&self) {
         self.value.store(0, Ordering::Relaxed);
         self.state.store(Self::PENDING, Ordering::Release);
     }
 
-    fn complete(&self, value: SpectraHostValue) -> bool {
+    pub(crate) fn complete(&self, value: SpectraHostValue) -> bool {
         self.value.store(value, Ordering::Relaxed);
         self.state
             .compare_exchange(
@@ -40,7 +41,7 @@ impl ConcurrentTask {
             .is_ok()
     }
 
-    fn fail(&self) -> bool {
+    pub(crate) fn fail(&self) -> bool {
         self.state
             .compare_exchange(
                 Self::PENDING,
@@ -51,7 +52,7 @@ impl ConcurrentTask {
             .is_ok()
     }
 
-    fn cancel(&self) -> bool {
+    pub(crate) fn cancel(&self) -> bool {
         self.state
             .compare_exchange(
                 Self::PENDING,
@@ -62,11 +63,11 @@ impl ConcurrentTask {
             .is_ok()
     }
 
-    fn is_done(&self) -> bool {
+    pub(crate) fn is_done(&self) -> bool {
         self.state.load(Ordering::Acquire) != Self::PENDING
     }
 
-    fn join(&self) -> Result<SpectraHostValue, i32> {
+    pub(crate) fn join(&self) -> Result<SpectraHostValue, i32> {
         loop {
             match self.state.load(Ordering::Acquire) {
                 Self::READY => return Ok(self.value.load(Ordering::Relaxed)),
@@ -85,28 +86,28 @@ impl ConcurrentTask {
     }
 }
 
-fn concurrent_completion_signal() -> &'static (Mutex<u64>, Condvar) {
+pub(crate) fn concurrent_completion_signal() -> &'static (Mutex<u64>, Condvar) {
     static SIGNAL: OnceLock<(Mutex<u64>, Condvar)> = OnceLock::new();
     SIGNAL.get_or_init(|| (Mutex::new(0), Condvar::new()))
 }
 
-fn notify_concurrent_completion() {
+pub(crate) fn notify_concurrent_completion() {
     let (epoch, ready) = concurrent_completion_signal();
     let mut epoch = lock_unpoisoned(epoch);
     *epoch = epoch.wrapping_add(1);
     ready.notify_all();
 }
 
-struct ConcurrentBatch {
-    count: usize,
-    remaining: AtomicUsize,
-    total: AtomicI64,
-    failed: AtomicBool,
-    cancelled: AtomicBool,
+pub(crate) struct ConcurrentBatch {
+    pub(crate) count: usize,
+    pub(crate) remaining: AtomicUsize,
+    pub(crate) total: AtomicI64,
+    pub(crate) failed: AtomicBool,
+    pub(crate) cancelled: AtomicBool,
 }
 
 impl ConcurrentBatch {
-    fn new(count: usize) -> Self {
+    pub(crate) fn new(count: usize) -> Self {
         Self {
             count,
             remaining: AtomicUsize::new(count),
@@ -116,7 +117,7 @@ impl ConcurrentBatch {
         }
     }
 
-    fn finish_lane(&self, lane_total: SpectraHostValue, completed: usize) -> bool {
+    pub(crate) fn finish_lane(&self, lane_total: SpectraHostValue, completed: usize) -> bool {
         if completed == 0 {
             return false;
         }
@@ -124,7 +125,7 @@ impl ConcurrentBatch {
         self.remaining.fetch_sub(completed, Ordering::AcqRel) == completed
     }
 
-    fn join_sum(&self) -> Result<SpectraHostValue, i32> {
+    pub(crate) fn join_sum(&self) -> Result<SpectraHostValue, i32> {
         let mut spins = 0usize;
         while self.remaining.load(Ordering::Acquire) != 0 {
             if self.cancelled.load(Ordering::Acquire) {
@@ -147,7 +148,7 @@ impl ConcurrentBatch {
     }
 }
 
-enum ConcurrentJob {
+pub(crate) enum ConcurrentJob {
     Single {
         task: Arc<ConcurrentTask>,
         value: SpectraHostValue,
@@ -169,13 +170,13 @@ enum ConcurrentJob {
     },
 }
 
-struct ConcurrentExecutor {
-    sender: mpsc::Sender<ConcurrentJob>,
-    workers: usize,
+pub(crate) struct ConcurrentExecutor {
+    pub(crate) sender: mpsc::Sender<ConcurrentJob>,
+    pub(crate) workers: usize,
 }
 
 impl ConcurrentExecutor {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let (sender, receiver) = mpsc::channel::<ConcurrentJob>();
         let receiver = Arc::new(Mutex::new(receiver));
         let workers = thread::available_parallelism()
@@ -308,7 +309,7 @@ impl ConcurrentExecutor {
         Self { sender, workers }
     }
 
-    fn submit(&self, task: Arc<ConcurrentTask>, value: SpectraHostValue) -> Result<(), ()> {
+    pub(crate) fn submit(&self, task: Arc<ConcurrentTask>, value: SpectraHostValue) -> Result<(), ()> {
         self.sender
             .send(ConcurrentJob::Single {
                 task,
@@ -317,7 +318,7 @@ impl ConcurrentExecutor {
             })
             .map_err(|_| ())
     }
-    fn submit_closure(
+    pub(crate) fn submit_closure(
         &self,
         task: Arc<ConcurrentTask>,
         fn_ptr: SpectraHostValue,
@@ -333,7 +334,7 @@ impl ConcurrentExecutor {
             .map_err(|_| ())
     }
 
-    fn submit_batch_lane(
+    pub(crate) fn submit_batch_lane(
         &self,
         batch: Arc<ConcurrentBatch>,
         first_value: SpectraHostValue,
@@ -354,75 +355,75 @@ impl ConcurrentExecutor {
     }
 }
 
-fn concurrent_executor() -> &'static ConcurrentExecutor {
+pub(crate) fn concurrent_executor() -> &'static ConcurrentExecutor {
     static EXECUTOR: OnceLock<ConcurrentExecutor> = OnceLock::new();
     EXECUTOR.get_or_init(ConcurrentExecutor::new)
 }
 
-struct ConcurrentHandleTable<T> {
+pub(crate) struct ConcurrentHandleTable<T> {
     table: HandleTable<T>,
 }
 
 impl<T> ConcurrentHandleTable<T> {
-    fn new(kind: HandleKind) -> Self {
+    pub(crate) fn new(kind: HandleKind) -> Self {
         Self {
             table: HandleTable::new(kind),
         }
     }
 
-    fn insert(&mut self, value: T) -> SpectraHostValue {
+    pub(crate) fn insert(&mut self, value: T) -> SpectraHostValue {
         self.table.insert(value).raw()
     }
 
-    fn get(&self, raw: SpectraHostValue) -> Option<&T> {
+    pub(crate) fn get(&self, raw: SpectraHostValue) -> Option<&T> {
         let handle = HandleId::from_raw(raw).ok()?;
         self.table.get(handle).ok()
     }
 
-    fn get_mut(&mut self, raw: SpectraHostValue) -> Option<&mut T> {
+    pub(crate) fn get_mut(&mut self, raw: SpectraHostValue) -> Option<&mut T> {
         let handle = HandleId::from_raw(raw).ok()?;
         self.table.get_mut(handle).ok()
     }
 
-    fn remove(&mut self, raw: SpectraHostValue) -> Option<T> {
+    pub(crate) fn remove(&mut self, raw: SpectraHostValue) -> Option<T> {
         let handle = HandleId::from_raw(raw).ok()?;
         self.table.remove(handle).ok()
     }
 
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.table.clear();
     }
 
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.table.len()
     }
 
-    fn slot_count(&self) -> usize {
+    pub(crate) fn slot_count(&self) -> usize {
         self.table.slot_count()
     }
 
-    fn iter(&self) -> impl Iterator<Item = (SpectraHostValue, &T)> + '_ {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (SpectraHostValue, &T)> + '_ {
         self.table
             .iter()
             .map(|(handle, value)| (handle.raw(), value))
     }
 }
 
-struct ConcurrentRegistry {
+pub(crate) struct ConcurrentRegistry {
     // task_spawn receives an already-evaluated Spectra value; task_spawn_fn
     // instead dispatches a real JIT closure onto the worker pool. Both
     // schedule completion on the persistent executor, preserving the public
     // API while making fan-out/fan-in observable without one OS thread per
     // task.
-    tasks: ConcurrentHandleTable<Arc<ConcurrentTask>>,
-    batches: ConcurrentHandleTable<Arc<ConcurrentBatch>>,
-    channels: ConcurrentHandleTable<Arc<Mutex<ConcurrentChannel>>>,
-    counters: ConcurrentHandleTable<SpectraHostValue>,
-    tasks_spawned: SpectraHostValue,
+    pub(crate) tasks: ConcurrentHandleTable<Arc<ConcurrentTask>>,
+    pub(crate) batches: ConcurrentHandleTable<Arc<ConcurrentBatch>>,
+    pub(crate) channels: ConcurrentHandleTable<Arc<Mutex<ConcurrentChannel>>>,
+    pub(crate) counters: ConcurrentHandleTable<SpectraHostValue>,
+    pub(crate) tasks_spawned: SpectraHostValue,
 }
 
 impl ConcurrentRegistry {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             tasks: ConcurrentHandleTable::new(HandleKind::ConcurrentTask),
             batches: ConcurrentHandleTable::new(HandleKind::ConcurrentBatch),
@@ -432,7 +433,7 @@ impl ConcurrentRegistry {
         }
     }
 
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         for (_, batch) in self.batches.iter() {
             batch.cancelled.store(true, Ordering::Release);
         }
@@ -452,7 +453,7 @@ impl ConcurrentRegistry {
         self.tasks_spawned = 0;
     }
 
-    fn allocate_task(&mut self) -> (SpectraHostValue, Arc<ConcurrentTask>) {
+    pub(crate) fn allocate_task(&mut self) -> (SpectraHostValue, Arc<ConcurrentTask>) {
         self.tasks_spawned += 1;
         let slots_before = self.tasks.slot_count();
         let task = Arc::new(ConcurrentTask::pending());
@@ -466,21 +467,21 @@ impl ConcurrentRegistry {
         (task_id, task)
     }
 
-    fn task(&self, task_id: SpectraHostValue) -> Result<Arc<ConcurrentTask>, i32> {
+    pub(crate) fn task(&self, task_id: SpectraHostValue) -> Result<Arc<ConcurrentTask>, i32> {
         self.tasks
             .get(task_id)
             .cloned()
             .ok_or(HOST_STATUS_NOT_FOUND)
     }
 
-    fn is_done(&self, task_id: SpectraHostValue) -> Result<bool, i32> {
+    pub(crate) fn is_done(&self, task_id: SpectraHostValue) -> Result<bool, i32> {
         self.tasks
             .get(task_id)
             .map(|task| task.is_done())
             .ok_or(HOST_STATUS_NOT_FOUND)
     }
 
-    fn release(
+    pub(crate) fn release(
         &mut self,
         task_id: SpectraHostValue,
         task: &Arc<ConcurrentTask>,
@@ -493,7 +494,7 @@ impl ConcurrentRegistry {
         Ok(())
     }
 
-    fn allocate_batch(&mut self, count: usize) -> (SpectraHostValue, Arc<ConcurrentBatch>) {
+    pub(crate) fn allocate_batch(&mut self, count: usize) -> (SpectraHostValue, Arc<ConcurrentBatch>) {
         self.tasks_spawned = self.tasks_spawned.saturating_add(count as SpectraHostValue);
         let batch = Arc::new(ConcurrentBatch::new(count));
         let batch_id = self.batches.insert(Arc::clone(&batch));
@@ -503,14 +504,14 @@ impl ConcurrentRegistry {
         (batch_id, batch)
     }
 
-    fn batch(&self, batch_id: SpectraHostValue) -> Result<Arc<ConcurrentBatch>, i32> {
+    pub(crate) fn batch(&self, batch_id: SpectraHostValue) -> Result<Arc<ConcurrentBatch>, i32> {
         self.batches
             .get(batch_id)
             .cloned()
             .ok_or(HOST_STATUS_NOT_FOUND)
     }
 
-    fn release_batch(&mut self, batch_id: SpectraHostValue) -> Result<(), i32> {
+    pub(crate) fn release_batch(&mut self, batch_id: SpectraHostValue) -> Result<(), i32> {
         self.batches
             .remove(batch_id)
             .map(|_| {
@@ -522,12 +523,12 @@ impl ConcurrentRegistry {
     }
 }
 
-fn concurrent_registry() -> &'static Mutex<ConcurrentRegistry> {
+pub(crate) fn concurrent_registry() -> &'static Mutex<ConcurrentRegistry> {
     static REGISTRY: OnceLock<Mutex<ConcurrentRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(ConcurrentRegistry::new()))
 }
 
-fn lock_concurrent_registry() -> Result<std::sync::MutexGuard<'static, ConcurrentRegistry>, i32> {
+pub(crate) fn lock_concurrent_registry() -> Result<std::sync::MutexGuard<'static, ConcurrentRegistry>, i32> {
     let result = concurrent_registry()
         .lock()
         .map_err(|_| HOST_STATUS_INTERNAL_ERROR);
@@ -539,7 +540,7 @@ fn lock_concurrent_registry() -> Result<std::sync::MutexGuard<'static, Concurren
     result
 }
 
-fn record_concurrent_task_created() {
+pub(crate) fn record_concurrent_task_created() {
     if let Some(data) = concurrent_diagnostics() {
         data.tasks_created.fetch_add(1, Ordering::Relaxed);
         data.tasks_counted.fetch_add(1, Ordering::Relaxed);
@@ -559,7 +560,7 @@ fn record_concurrent_task_created() {
     }
 }
 
-fn spawn_concurrent_task(value: SpectraHostValue) -> Result<SpectraHostValue, i32> {
+pub(crate) fn spawn_concurrent_task(value: SpectraHostValue) -> Result<SpectraHostValue, i32> {
     let (task_id, task) = {
         let mut registry = lock_concurrent_registry()?;
         registry.allocate_task()
@@ -588,7 +589,7 @@ fn spawn_concurrent_task(value: SpectraHostValue) -> Result<SpectraHostValue, i3
 /// invocation fails (null fn pointer, bad arity, panicking closure). The
 /// error never propagates as a Rust panic: a failing user closure must turn
 /// into a FAILED task, not abort the worker.
-fn invoke_concurrent_closure(
+pub(crate) fn invoke_concurrent_closure(
     fn_ptr: SpectraHostValue,
     arg: SpectraHostValue,
 ) -> Result<SpectraHostValue, ()> {
@@ -616,7 +617,7 @@ fn invoke_concurrent_closure(
 /// on a persistent executor worker; its return value becomes the task's
 /// value (join returns it), and a panic inside the closure marks the task
 /// FAILED (join reports an internal-error status) instead of aborting.
-fn spawn_concurrent_task_fn(
+pub(crate) fn spawn_concurrent_task_fn(
     fn_ptr: SpectraHostValue,
     arg: SpectraHostValue,
 ) -> Result<SpectraHostValue, i32> {
@@ -640,7 +641,7 @@ fn spawn_concurrent_task_fn(
     Ok(task_id)
 }
 
-fn join_concurrent_task(task_id: SpectraHostValue) -> Result<SpectraHostValue, i32> {
+pub(crate) fn join_concurrent_task(task_id: SpectraHostValue) -> Result<SpectraHostValue, i32> {
     let task = {
         let registry = lock_concurrent_registry()?;
         registry.task(task_id)?
@@ -654,7 +655,7 @@ fn join_concurrent_task(task_id: SpectraHostValue) -> Result<SpectraHostValue, i
     Ok(value)
 }
 
-fn concurrent_task_done(task_id: SpectraHostValue) -> Result<bool, i32> {
+pub(crate) fn concurrent_task_done(task_id: SpectraHostValue) -> Result<bool, i32> {
     if let Some(data) = concurrent_diagnostics() {
         data.task_polls.fetch_add(1, Ordering::Relaxed);
     }
@@ -662,7 +663,7 @@ fn concurrent_task_done(task_id: SpectraHostValue) -> Result<bool, i32> {
     registry.is_done(task_id)
 }
 
-fn spawn_concurrent_batch(
+pub(crate) fn spawn_concurrent_batch(
     first_value: SpectraHostValue,
     count: SpectraHostValue,
 ) -> Result<SpectraHostValue, i32> {
@@ -693,7 +694,7 @@ fn spawn_concurrent_batch(
     Ok(batch_id)
 }
 
-fn join_concurrent_batch_sum(batch_id: SpectraHostValue) -> Result<SpectraHostValue, i32> {
+pub(crate) fn join_concurrent_batch_sum(batch_id: SpectraHostValue) -> Result<SpectraHostValue, i32> {
     let batch = {
         let registry = lock_concurrent_registry()?;
         registry.batch(batch_id)?
