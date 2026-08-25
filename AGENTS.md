@@ -1,5 +1,7 @@
 # AGENTS.md
 
+### use kaomoji in conversations to make it more fun NOT IN CODE
+
 ## Purpose
 
 This file defines repository-specific instructions for coding agents working in SpectraLang.
