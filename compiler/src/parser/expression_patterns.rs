@@ -1,5 +1,7 @@
+use super::*;
+
 impl Parser {
-    pub(super) fn parse_pattern(&mut self) -> Result<crate::ast::Pattern, ()> {
+    pub(crate) fn parse_pattern(&mut self) -> Result<crate::ast::Pattern, ()> {
         self.enter_parse_depth()?;
         let result = self.parse_pattern_inner();
         self.exit_parse_depth();
@@ -183,7 +185,7 @@ impl Parser {
         Ok(Pattern::Literal(expr))
     }
 
-    fn is_likely_type_args_lookahead(&self) -> bool {
+    pub(crate) fn is_likely_type_args_lookahead(&self) -> bool {
         if !self.check_symbol('<') {
             return false;
         }
@@ -215,7 +217,7 @@ impl Parser {
 
     /// Parse type arguments: <Type1, Type2>
     /// Used in generic type instantiation: Point<int>, Option<string>
-    fn parse_type_arguments(&mut self) -> Result<Vec<crate::ast::TypeAnnotation>, ()> {
+    pub(crate) fn parse_type_arguments(&mut self) -> Result<Vec<crate::ast::TypeAnnotation>, ()> {
         self.consume_symbol('<', "Expected '<' for type arguments")?;
 
         let mut type_args = Vec::new();

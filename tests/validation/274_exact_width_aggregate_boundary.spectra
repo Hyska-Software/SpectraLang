@@ -17,10 +17,10 @@ record Widths {
 
 impl WidthReport for Widths {
     func checksum(&self) returns int {
-        self.signed8 as int
-            + self.signed16 as int
-            + self.unsigned8 as int
-            + self.unsigned16 as int
+        self.signed8 as int +
+            self.signed16 as int +
+            self.unsigned8 as int +
+            self.unsigned16 as int
     }
 }
 

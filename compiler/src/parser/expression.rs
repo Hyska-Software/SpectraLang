@@ -5,8 +5,11 @@ use crate::{
 
 use super::Parser;
 
-include!("expression_precedence.rs");
+#[path = "expression_precedence.rs"]
+mod expression_precedence;
 
-include!("expression_primary.rs");
+#[path = "expression_primary.rs"]
+mod expression_primary;
 
-include!("expression_patterns.rs");
+#[path = "expression_patterns.rs"]
+mod expression_patterns;

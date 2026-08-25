@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn analyze_item(&mut self, item: &Item) {
+    pub(crate) fn analyze_item(&mut self, item: &Item) {
         match item {
             Item::Import(_) => {
                 // Already handled in pass 0 of analyze_module.
@@ -42,7 +44,7 @@ impl SemanticAnalyzer {
     /// - Injects type names into `self.struct_infos` / `self.enum_infos` so
     ///   type-checking can reference them.
     #[allow(clippy::too_many_arguments)]
-    fn analyze_import(
+    pub(crate) fn analyze_import(
         &mut self,
         import: &crate::ast::Import,
         user_fn_types: &mut Vec<(String, crate::ast::Type)>,

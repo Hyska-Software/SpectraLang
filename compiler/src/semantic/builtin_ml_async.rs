@@ -1,4 +1,8 @@
-fn make_std_ml() -> ModuleExports {
+use super::*;
+use crate::semantic::module_registry::{ExportVisibility, ExportedType, ModuleExports};
+use crate::ast::{Type};
+
+pub(crate) fn make_std_ml() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "ml".to_string()]),
         package_name: Some("std".to_string()),
@@ -456,7 +460,7 @@ fn make_std_ml() -> ModuleExports {
     exports
 }
 
-fn make_std_concurrent() -> ModuleExports {
+pub(crate) fn make_std_concurrent() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "concurrent".to_string()]),
         package_name: Some("std".to_string()),
@@ -518,7 +522,7 @@ fn make_std_concurrent() -> ModuleExports {
     exports
 }
 
-fn make_std_serve() -> ModuleExports {
+pub(crate) fn make_std_serve() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "serve".to_string()]),
         package_name: Some("std".to_string()),

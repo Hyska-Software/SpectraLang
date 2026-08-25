@@ -1,0 +1,8 @@
+module lint_warning_deprecated_task_spawn
+
+import std.concurrent as concurrent
+
+public func main() returns int {
+    let task = concurrent.task_spawn(41)
+    return concurrent.task_join(task)
+}

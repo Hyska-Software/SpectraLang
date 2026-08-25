@@ -17,8 +17,8 @@ public func main() returns int {
     let double: f64        = 4.5
 
     let float_total: f64 = single as f64 + double + SCALE as f64
-    let int_total: i64   = tiny as i64 + small as i64 + regular as i64 + wide
-    + unsigned as i64 + unsigned_wide as i64 + BASE as i64
+    let int_total: i64   = tiny as i64 + small as i64 + regular as i64 + wide +
+    unsigned as i64 + unsigned_wide as i64 + BASE as i64
 
     if not FLAG {
         return 1

@@ -148,7 +148,7 @@ public func main() {
     let bad_match_partial  = match_with_partial_return(1)
 
     let _sink =
-    ok_nested + ok_loop + ok_match
-    + bad_missing_final + bad_missing_else + bad_loop_break
-    + bad_nested_if_loop + bad_match_partial
+    ok_nested + ok_loop + ok_match +
+    bad_missing_final + bad_missing_else + bad_loop_break +
+    bad_nested_if_loop + bad_match_partial
 }

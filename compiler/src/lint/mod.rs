@@ -11,6 +11,8 @@ pub enum LintRule {
     UnusedBinding,
     UnreachableCode,
     Shadowing,
+    NarrowingCast,
+    DeprecatedTaskSpawn,
 }
 
 impl LintRule {
@@ -19,6 +21,8 @@ impl LintRule {
             LintRule::UnusedBinding => "unused-binding",
             LintRule::UnreachableCode => "unreachable-code",
             LintRule::Shadowing => "shadowing",
+            LintRule::NarrowingCast => "narrowing-cast",
+            LintRule::DeprecatedTaskSpawn => "deprecated-task-spawn",
         }
     }
 
@@ -27,6 +31,8 @@ impl LintRule {
             LintRule::UnusedBinding => "unused binding",
             LintRule::UnreachableCode => "unreachable code",
             LintRule::Shadowing => "shadowed binding",
+            LintRule::NarrowingCast => "narrowing numeric cast",
+            LintRule::DeprecatedTaskSpawn => "deprecated concurrent.task_spawn call",
         }
     }
 
@@ -35,6 +41,8 @@ impl LintRule {
             LintRule::UnusedBinding,
             LintRule::UnreachableCode,
             LintRule::Shadowing,
+            LintRule::NarrowingCast,
+            LintRule::DeprecatedTaskSpawn,
         ];
         ALL
     }
@@ -44,7 +52,19 @@ impl LintRule {
             "unused-binding" | "unused_binding" => Some(LintRule::UnusedBinding),
             "unreachable-code" | "unreachable_code" => Some(LintRule::UnreachableCode),
             "shadowing" => Some(LintRule::Shadowing),
+            "narrowing-cast" | "narrowing_cast" => Some(LintRule::NarrowingCast),
+            "deprecated-task-spawn" | "deprecated_task_spawn" => Some(LintRule::DeprecatedTaskSpawn),
             _ => None,
+        }
+    }
+
+    /// Stable error code assigned when this rule is escalated to a hard error
+    /// via `--deny`. `None` for rules without a reserved code yet.
+    pub fn stable_error_code(&self) -> Option<&'static str> {
+        match self {
+            LintRule::NarrowingCast => Some("E035"),
+            LintRule::DeprecatedTaskSpawn => Some("E036"),
+            LintRule::UnusedBinding | LintRule::UnreachableCode | LintRule::Shadowing => None,
         }
     }
 }
@@ -164,7 +184,8 @@ impl<'a> LintRunner<'a> {
     fn visit_function(&mut self, function: &Function) {
         self.enter_scope();
         for param in &function.params {
-            self.declare_binding(param.name.clone(), param.span, BindingKind::Parameter);
+            let exact_num = ExactNum::from_annotation(param.ty.as_ref());
+            self.declare_binding(param.name.clone(), param.span, BindingKind::Parameter, exact_num);
         }
         self.visit_block(&function.body, false);
         self.exit_scope();
@@ -196,7 +217,12 @@ impl<'a> LintRunner<'a> {
             if param.is_self {
                 continue;
             }
-            self.declare_binding(param.name.clone(), param.span, BindingKind::Parameter);
+            self.declare_binding(
+                param.name.clone(),
+                param.span,
+                BindingKind::Parameter,
+                ExactNum::from_annotation(param.type_annotation.as_ref()),
+            );
         }
         self.visit_block(body, false);
         self.exit_scope();
@@ -208,7 +234,12 @@ impl<'a> LintRunner<'a> {
             if param.is_self {
                 continue;
             }
-            self.declare_binding(param.name.clone(), param.span, BindingKind::Parameter);
+            self.declare_binding(
+                param.name.clone(),
+                param.span,
+                BindingKind::Parameter,
+                ExactNum::from_annotation(param.type_annotation.as_ref()),
+            );
         }
         self.visit_block(&method.body, false);
         self.exit_scope();
@@ -247,7 +278,7 @@ impl<'a> LintRunner<'a> {
                 if let Some(value) = &let_stmt.value {
                     self.visit_expression(value);
                 }
-                self.declare_let_pattern_bindings(&let_stmt.pattern, let_stmt.span);
+                self.declare_let_pattern_bindings(&let_stmt.pattern, let_stmt.ty.as_ref(), let_stmt.span);
                 true
             }
             StatementKind::Assignment(assign_stmt) => {
@@ -281,6 +312,7 @@ impl<'a> LintRunner<'a> {
                     for_loop.iterator.clone(),
                     for_loop.span,
                     BindingKind::ForIterator,
+                    None,
                 );
                 self.visit_block(&for_loop.body, false);
                 self.exit_scope();
@@ -338,19 +370,25 @@ impl<'a> LintRunner<'a> {
         self.visit_expression(&assignment.value);
     }
 
-    fn declare_let_pattern_bindings(&mut self, pattern: &ast::Pattern, span: Span) {
+    fn declare_let_pattern_bindings(
+        &mut self,
+        pattern: &ast::Pattern,
+        ty: Option<&TypeAnnotation>,
+        span: Span,
+    ) {
         match pattern {
             ast::Pattern::Identifier(name) => {
-                self.declare_binding(name.clone(), span, BindingKind::Variable);
+                let exact_num = ty.and_then(|annotation| ExactNum::from_annotation(Some(annotation)));
+                self.declare_binding(name.clone(), span, BindingKind::Variable, exact_num);
             }
             ast::Pattern::Tuple(elements) => {
                 for element in elements {
-                    self.declare_let_pattern_bindings(element, span);
+                    self.declare_let_pattern_bindings(element, None, span);
                 }
             }
             ast::Pattern::Struct { fields, .. } => {
                 for (_, pattern) in fields {
-                    self.declare_let_pattern_bindings(pattern, span);
+                    self.declare_let_pattern_bindings(pattern, None, span);
                 }
             }
             ast::Pattern::EnumVariant {
@@ -358,18 +396,18 @@ impl<'a> LintRunner<'a> {
             } => {
                 if let Some(patterns) = data {
                     for pattern in patterns {
-                        self.declare_let_pattern_bindings(pattern, span);
+                        self.declare_let_pattern_bindings(pattern, None, span);
                     }
                 }
                 if let Some(fields) = struct_data {
                     for (_, pattern) in fields {
-                        self.declare_let_pattern_bindings(pattern, span);
+                        self.declare_let_pattern_bindings(pattern, None, span);
                     }
                 }
             }
             ast::Pattern::Or(patterns) => {
                 if let Some(first) = patterns.first() {
-                    self.declare_let_pattern_bindings(first, span);
+                    self.declare_let_pattern_bindings(first, None, span);
                 }
             }
             ast::Pattern::Wildcard | ast::Pattern::Literal(_) => {}
@@ -392,6 +430,9 @@ impl<'a> LintRunner<'a> {
                 self.visit_expression(operand);
             }
             ExpressionKind::Call { callee, arguments } => {
+                // BEGIN deprecated-task-spawn lint (DeprecateSpawn)
+                self.check_deprecated_task_spawn(callee);
+                // END deprecated-task-spawn lint (DeprecateSpawn)
                 self.visit_expression(callee);
                 for arg in arguments {
                     self.visit_expression(arg);
@@ -477,6 +518,9 @@ impl<'a> LintRunner<'a> {
             ExpressionKind::MethodCall {
                 object, arguments, ..
             } => {
+                // BEGIN deprecated-task-spawn lint (DeprecateSpawn)
+                self.check_deprecated_task_spawn(expression);
+                // END deprecated-task-spawn lint (DeprecateSpawn)
                 self.visit_expression(object);
                 for argument in arguments {
                     self.visit_expression(argument);
@@ -509,13 +553,26 @@ impl<'a> LintRunner<'a> {
             ExpressionKind::AsyncBlock(block) => {
                 self.visit_block(block, true);
             }
-            ExpressionKind::Cast { expr, .. } => {
+            ExpressionKind::Cast {
+                expr,
+                target_type,
+                mode,
+            } => {
                 self.visit_expression(expr);
+                // BEGIN narrowing-cast lint (CastLint)
+                self.check_narrowing_cast(expression, expr, target_type, *mode);
+                
             }
         }
     }
 
-    fn declare_binding(&mut self, name: String, span: Span, kind: BindingKind) {
+    fn declare_binding(
+        &mut self,
+        name: String,
+        span: Span,
+        kind: BindingKind,
+        exact_num: Option<ExactNum>,
+    ) {
         if self.scope_stack.is_empty() {
             self.enter_scope();
         }
@@ -526,6 +583,7 @@ impl<'a> LintRunner<'a> {
                 kind,
                 used: false,
                 allow_unused: true,
+                exact_num,
             };
             if let Some(scope) = self.scope_stack.last_mut() {
                 scope.bindings.insert(name, binding);
@@ -555,6 +613,7 @@ impl<'a> LintRunner<'a> {
             kind,
             used: false,
             allow_unused,
+            exact_num,
         };
 
         if let Some(scope) = self.scope_stack.last_mut() {
@@ -625,16 +684,20 @@ impl<'a> LintRunner<'a> {
     }
 }
 
-#[derive(Default)]
-struct Scope {
-    bindings: HashMap<String, Binding>,
-}
-
 struct Binding {
     span: Span,
     kind: BindingKind,
     used: bool,
     allow_unused: bool,
+    /// Exact-width numeric type resolved from the binding's annotation, when
+    /// declared with one (`i8`, `u32`, `f32`, ...). Used by the narrowing-cast
+    /// lint to reason about cast source widths without full type inference.
+    exact_num: Option<ExactNum>,
+}
+
+#[derive(Default)]
+struct Scope {
+    bindings: HashMap<String, Binding>,
 }
 
 #[derive(Clone, Copy)]
@@ -682,3 +745,15 @@ fn stmt_has_break(stmt: &Statement) -> bool {
         _ => false,
     }
 }
+
+// BEGIN narrowing-cast lint (CastLint)
+// Real child module so the rule can hook into the private LintRunner below
+// (descendant privacy). Implementation lives in ../semantic/semantic_cast_lint.rs.
+#[path = "../semantic/semantic_cast_lint.rs"]
+mod semantic_cast_lint;
+
+#[path = "../semantic/semantic_deprecated_spawn_lint.rs"]
+mod semantic_deprecated_spawn_lint;
+
+use crate::ast::TypeAnnotation;
+use semantic_cast_lint::ExactNum;

@@ -1,6 +1,8 @@
+use super::*;
+
 impl SemanticAnalyzer {
     // Third pass: fill type information in method calls
-    fn fill_method_call_types_in_item(&mut self, item: &mut Item) {
+    pub(crate) fn fill_method_call_types_in_item(&mut self, item: &mut Item) {
         match item {
             Item::Function(func) => {
                 self.fill_method_call_types_in_block(&mut func.body);
@@ -125,7 +127,7 @@ impl SemanticAnalyzer {
 
     // ============= Type Inference Pass =============
 
-    fn infer_generic_types_in_item(&mut self, item: &mut Item) {
+    pub(crate) fn infer_generic_types_in_item(&mut self, item: &mut Item) {
         match item {
             Item::Function(func) => {
                 self.infer_generic_types_in_block(&mut func.body);
@@ -308,7 +310,7 @@ impl SemanticAnalyzer {
     }
 
     /// Infer type arguments for a generic struct from field values
-    fn infer_struct_type_args(
+    pub(crate) fn infer_struct_type_args(
         &mut self,
         type_params: &[crate::ast::TypeParameter],
         field_defs: &[(String, crate::ast::TypeAnnotation)],
@@ -347,7 +349,7 @@ impl SemanticAnalyzer {
     }
 
     /// Infer type arguments for a generic enum based on a variant constructor call
-    fn infer_enum_type_args(
+    pub(crate) fn infer_enum_type_args(
         &mut self,
         enum_name: &str,
         variant_name: &str,
@@ -403,7 +405,7 @@ impl SemanticAnalyzer {
         result
     }
 
-    fn generic_enum_pattern_matches(pattern: &Type, concrete: &Type) -> bool {
+    pub(crate) fn generic_enum_pattern_matches(pattern: &Type, concrete: &Type) -> bool {
         let pattern_name = match pattern {
             Type::Enum { name } | Type::Applied { name, .. } => name.as_str(),
             _ => return false,
@@ -425,7 +427,7 @@ impl SemanticAnalyzer {
                 || concrete_name.starts_with(&format!("{pattern_name}_")))
     }
 
-    fn infer_enum_type_args_from_named_fields(
+    pub(crate) fn infer_enum_type_args_from_named_fields(
         &mut self,
         enum_name: &str,
         variant_name: &str,
@@ -462,7 +464,7 @@ impl SemanticAnalyzer {
     }
 
     /// Unify a type annotation (potentially containing type variables) with a concrete type
-    fn unify_type_annotation(
+    pub(crate) fn unify_type_annotation(
         &self,
         type_ann: &crate::ast::TypeAnnotation,
         concrete_type: &Type,
@@ -515,7 +517,7 @@ impl SemanticAnalyzer {
     }
 
     /// Convert a Type to TypeAnnotation
-    fn type_to_annotation(&self, ty: &Type) -> crate::ast::TypeAnnotation {
+    pub(crate) fn type_to_annotation(&self, ty: &Type) -> crate::ast::TypeAnnotation {
         use crate::ast::{TypeAnnotation, TypeAnnotationKind};
         use crate::span::Span;
 

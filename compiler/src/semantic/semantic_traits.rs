@@ -1,12 +1,14 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn predeclare_trait_impl(&mut self, trait_name: &str, type_name: &str) {
+    pub(crate) fn predeclare_trait_impl(&mut self, trait_name: &str, type_name: &str) {
         if self.traits.contains_key(trait_name) {
             self.trait_impls
                 .insert((trait_name.to_string(), type_name.to_string()), true);
         }
     }
 
-    fn analyze_trait_impl(&mut self, trait_impl: &crate::ast::TraitImpl) {
+    pub(crate) fn analyze_trait_impl(&mut self, trait_impl: &crate::ast::TraitImpl) {
         let derived_impl = crate::ast::ImplBlock {
             type_name: trait_impl.type_name.clone(),
             module_path: None,
@@ -20,7 +22,7 @@ impl SemanticAnalyzer {
         self.analyze_impl_block(&derived_impl);
     }
 
-    fn analyze_impl_block(&mut self, impl_block: &crate::ast::ImplBlock) {
+    pub(crate) fn analyze_impl_block(&mut self, impl_block: &crate::ast::ImplBlock) {
         let type_param_info = self
             .generic_structs
             .get(&impl_block.type_name)
@@ -325,7 +327,7 @@ impl SemanticAnalyzer {
     }
 
     /// Analisa declara��o de trait e registra assinaturas dos m�todos
-    fn analyze_trait_declaration(&mut self, trait_decl: &crate::ast::TraitDeclaration) {
+    pub(crate) fn analyze_trait_declaration(&mut self, trait_decl: &crate::ast::TraitDeclaration) {
         let mut trait_methods = HashMap::new();
         let mut signature_map = HashMap::new();
 

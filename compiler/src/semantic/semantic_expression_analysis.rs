@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn analyze_expression(&mut self, expr: &Expression) {
+    pub(crate) fn analyze_expression(&mut self, expr: &Expression) {
         match &expr.kind {
             ExpressionKind::Identifier(_)
             | ExpressionKind::NumberLiteral(_)

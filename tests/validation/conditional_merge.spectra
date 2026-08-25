@@ -1,0 +1,25 @@
+module conditional_merge
+
+import std.tensor as tensor
+
+public func main() returns int {
+    let flag = true
+    let handle = tensor.arange(1, 4, 1)
+    if flag {
+        tensor.free(handle)
+        handle = tensor.arange(1, 4, 1)
+    } else {
+        tensor.free(handle)
+        handle = tensor.arange(1, 4, 1)
+    }
+    tensor.free(handle)
+
+    let other = tensor.arange(1, 4, 1)
+    if flag {
+        tensor.free(other)
+    }
+    other = tensor.arange(1, 4, 1)
+    tensor.free(other)
+    tensor.free_all()
+    return 0
+}

@@ -1,3 +1,5 @@
+use super::*;
+
 impl Parser {
     #[allow(dead_code)]
     fn trait_types_compatible(
@@ -26,7 +28,7 @@ impl Parser {
 
     // ── Type Alias ────────────────────────────────────────────────────────
 
-    fn parse_type_alias(&mut self, visibility: Visibility) -> Result<Item, ()> {
+    pub(crate) fn parse_type_alias(&mut self, visibility: Visibility) -> Result<Item, ()> {
         let start_span = self.consume_keyword(Keyword::Type, "Expected 'type' keyword")?;
         let (name, _) = self.consume_identifier("Expected alias name after 'type'")?;
         self.consume_symbol('=', "Expected '=' after alias name")?;
@@ -43,7 +45,7 @@ impl Parser {
 
     // ── Const / Static ────────────────────────────────────────────────────
 
-    fn parse_const_decl(&mut self, visibility: Visibility) -> Result<Item, ()> {
+    pub(crate) fn parse_const_decl(&mut self, visibility: Visibility) -> Result<Item, ()> {
         let start_span = self.consume_keyword(Keyword::Const, "Expected 'const' keyword")?;
         let (name, _) = self.consume_identifier("Expected constant name")?;
         let ty = if self.check_symbol(':') {
@@ -65,7 +67,7 @@ impl Parser {
         }))
     }
 
-    fn parse_static_decl(&mut self, visibility: Visibility) -> Result<Item, ()> {
+    pub(crate) fn parse_static_decl(&mut self, visibility: Visibility) -> Result<Item, ()> {
         let start_span = self.consume_keyword(Keyword::Static, "Expected 'static' keyword")?;
         let (name, _) = self.consume_identifier("Expected static variable name")?;
         let ty = if self.check_symbol(':') {
@@ -89,7 +91,7 @@ impl Parser {
 
     /// Consume the remainder of a reserved `class` item so parser recovery
     /// reports the stable P007 once instead of cascading on its body tokens.
-    fn consume_reserved_class_item(&mut self) {
+    pub(crate) fn consume_reserved_class_item(&mut self) {
         if self.check_keyword(Keyword::Class) {
             self.advance();
         }

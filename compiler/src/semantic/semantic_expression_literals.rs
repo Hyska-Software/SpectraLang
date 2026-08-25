@@ -1,8 +1,12 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn analyze_expression_literals(&mut self, expr: &Expression) {
+    pub(crate) fn analyze_expression_literals(&mut self, expr: &Expression) {
         match &expr.kind {
             ExpressionKind::Identifier(name) => {
-                // Check if identifier is declared
+                // Flow-sensitive use-after-free check (E034); no-op when the
+                // identifier does not resolve to a visible binding.
+                self.uaf_check_use(name, expr.span);
                 if let Some(info) = self.lookup_symbol(name) {
                     let info = info.clone();
                     self.symbol_resolutions.insert(expr.span, info);

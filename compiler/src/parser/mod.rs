@@ -297,6 +297,63 @@ impl Parser {
         self.current().span.start_location.line > previous.end_location.line
     }
 
+    /// Whether an infix binary operator may legally appear even though a
+    /// line break precedes it.  This implements the explicit-continuation
+    /// exception of the newline rule documented at the top of
+    /// `expression_precedence.rs`: the previous token must be a construct
+    /// that visibly cannot end the expression (another operator, an
+    /// assignment `=`, a comma, or an open delimiter).
+    fn infix_operator_continues_line(&self) -> bool {
+        if self.position == 0 {
+            return false;
+        }
+        matches!(
+            &self.tokens[self.position - 1].kind,
+            TokenKind::Symbol(',')
+                | TokenKind::Symbol('(')
+                | TokenKind::Symbol('[')
+                | TokenKind::Symbol('=')
+                | TokenKind::Operator(_)
+                | TokenKind::Keyword(Keyword::AndWord)
+                | TokenKind::Keyword(Keyword::OrWord)
+                | TokenKind::Keyword(Keyword::NotWord)
+        )
+    }
+
+    fn infix_token_text(kind: &TokenKind) -> String {
+        match kind {
+            TokenKind::Symbol(c) => c.to_string(),
+            TokenKind::Operator(op) => op.to_string(),
+            TokenKind::Keyword(Keyword::AndWord) => "and".to_string(),
+            TokenKind::Keyword(Keyword::OrWord) => "or".to_string(),
+            _ => "operator".to_string(),
+        }
+    }
+
+    /// Gate used by every binary-operator loop in the precedence ladder.
+    ///
+    /// Returns `Ok(())` when the current infix operator sits on the same line
+    /// as its left-hand side, or when it is an explicit continuation under the
+    /// rule above. Otherwise emits `P015` and fails so the expression ends at
+    /// the previous line instead of silently absorbing the next one.
+    pub(super) fn reject_line_broken_infix(&mut self) -> Result<(), ()> {
+        if !self.line_break_before_current() || self.infix_operator_continues_line() {
+            return Ok(());
+        }
+        let span = self.current().span;
+        let text = Self::infix_token_text(&self.current().kind);
+        self.push_error_coded(
+            "P015",
+            "a line break before an infix operator ends the expression",
+            span,
+            Some(format!(
+                "Move `{text}` to the end of the previous line to continue the expression, or wrap the operands in parentheses."
+            )),
+            Some("operator at the start of a new line".to_string()),
+        );
+        Err(())
+    }
+
     pub(super) fn statement_ends_before_current(&self) -> bool {
         self.check_symbol(';')
             || self.is_at_end()

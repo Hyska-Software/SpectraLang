@@ -1,4 +1,8 @@
-fn make_std_io() -> ModuleExports {
+use super::*;
+use crate::semantic::module_registry::{ExportVisibility, ExportedType, ModuleExports};
+use crate::ast::{FloatWidth, IntWidth, Type};
+
+pub(crate) fn make_std_io() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "io".to_string()]),
         package_name: Some("std".to_string()),
@@ -57,7 +61,7 @@ fn make_std_io() -> ModuleExports {
     exports
 }
 
-fn make_std_math() -> ModuleExports {
+pub(crate) fn make_std_math() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "math".to_string()]),
         package_name: Some("std".to_string()),
@@ -158,7 +162,7 @@ fn make_std_math() -> ModuleExports {
     exports
 }
 
-fn make_std_numeric() -> ModuleExports {
+pub(crate) fn make_std_numeric() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "numeric".to_string()]),
         package_name: Some("std".to_string()),
@@ -194,7 +198,7 @@ fn make_std_numeric() -> ModuleExports {
 /// Public collection surface.  Potentially empty reads are represented by
 /// `Option<T>`; the sentinel ABI remains available only through the explicit
 /// `std.compat.collections` namespace.
-fn make_std_collections() -> ModuleExports {
+pub(crate) fn make_std_collections() -> ModuleExports {
     let mut exports = make_std_collections_legacy();
     exports.stdlib_path = Some(vec!["std".to_string(), "collections".to_string()]);
 
@@ -248,7 +252,7 @@ fn make_std_collections() -> ModuleExports {
 
 /// Compatibility-only collection surface retaining the historic sentinel
 /// return values for callers that have not migrated yet.
-fn make_std_compat_collections() -> ModuleExports {
+pub(crate) fn make_std_compat_collections() -> ModuleExports {
     let mut exports = make_std_collections_legacy();
     exports.functions.retain(|name, _| {
         matches!(
@@ -560,7 +564,7 @@ fn make_std_collections_legacy() -> ModuleExports {
     exports
 }
 
-fn make_std_tensor() -> ModuleExports {
+pub(crate) fn make_std_tensor() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "tensor".to_string()]),
         package_name: Some("std".to_string()),

@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn analyze_statement(&mut self, statement: &Statement) {
+    pub(crate) fn analyze_statement(&mut self, statement: &Statement) {
         match &statement.kind {
             StatementKind::Let(let_stmt) => {
                 let declared_type = let_stmt
@@ -202,6 +204,11 @@ impl SemanticAnalyzer {
                         hint,
                     );
                 }
+
+                // Assignment revives a released binding (E034 flow state).
+                if let crate::ast::LValue::Identifier(revived) = &assign_stmt.target {
+                    self.uaf_on_bind(revived, &value_type);
+                }
             }
             StatementKind::Return(ret_stmt) => {
                 if self.current_function.is_none() {
@@ -225,12 +232,16 @@ impl SemanticAnalyzer {
             StatementKind::While(while_loop) => {
                 self.analyze_expression(&while_loop.condition);
                 self.loop_depth += 1;
+                let saved_uaf = self.uaf_snapshot();
                 self.analyze_block(&while_loop.body);
+                self.uaf_restore(saved_uaf);
                 self.loop_depth -= 1;
             }
             StatementKind::DoWhile(do_while_loop) => {
                 self.loop_depth += 1;
+                let saved_uaf = self.uaf_snapshot();
                 self.analyze_block(&do_while_loop.body);
+                self.uaf_restore(saved_uaf);
                 self.loop_depth -= 1;
                 self.analyze_expression(&do_while_loop.condition);
             }
@@ -349,14 +360,18 @@ impl SemanticAnalyzer {
 
                 // Analyze loop body
                 self.loop_depth += 1;
+                let saved_uaf = self.uaf_snapshot();
                 self.analyze_block(&for_loop.body);
+                self.uaf_restore(saved_uaf);
                 self.loop_depth -= 1;
 
                 self.pop_scope();
             }
             StatementKind::Loop(loop_stmt) => {
                 self.loop_depth += 1;
+                let saved_uaf = self.uaf_snapshot();
                 self.analyze_block(&loop_stmt.body);
+                self.uaf_restore(saved_uaf);
                 self.loop_depth -= 1;
             }
             StatementKind::Switch(switch_stmt) => {
@@ -366,12 +381,16 @@ impl SemanticAnalyzer {
                 // Analyze each case
                 for case in &switch_stmt.cases {
                     self.analyze_expression(&case.pattern);
+                    let saved_uaf = self.uaf_snapshot();
                     self.analyze_block(&case.body);
+                    self.uaf_restore(saved_uaf);
                 }
 
                 // Analyze default case if present
-                if let Some(ref default_block) = switch_stmt.default {
+                if let Some(default_block) = &switch_stmt.default {
+                    let saved_uaf = self.uaf_snapshot();
                     self.analyze_block(default_block);
+                    self.uaf_restore(saved_uaf);
                 }
             }
             StatementKind::Break => {
@@ -387,14 +406,27 @@ impl SemanticAnalyzer {
             StatementKind::IfLet(stmt) => {
                 self.analyze_expression(&stmt.value);
                 let value_type = self.infer_expression_type(&stmt.value);
+                // Conservative branch merge (E034): the binding stays freed
+                // after the construct only when every analyzed arm ends freed.
+                let base_uaf = self.uaf_snapshot();
                 self.push_scope();
                 self.register_typed_pattern_bindings(&stmt.pattern, &value_type);
                 for statement in &stmt.then_block.statements {
                     self.analyze_statement(statement);
                 }
                 self.pop_scope();
-                if let Some(else_b) = &stmt.else_block {
-                    self.analyze_block(else_b);
+                let then_uaf = self.uaf_snapshot();
+                self.uaf_restore(base_uaf.clone());
+                match &stmt.else_block {
+                    Some(else_b) => {
+                        self.analyze_block(else_b);
+                        let else_uaf = self.uaf_snapshot();
+                        self.uaf_merge_branches(&base_uaf, vec![then_uaf, else_uaf]);
+                    }
+                    None => {
+                        // Without `else` the then-arm may not have executed.
+                        self.uaf_restore(base_uaf);
+                    }
                 }
             }
             StatementKind::WhileLet(stmt) => {
@@ -403,9 +435,11 @@ impl SemanticAnalyzer {
                 self.loop_depth += 1;
                 self.push_scope();
                 self.register_typed_pattern_bindings(&stmt.pattern, &value_type);
+                let saved_uaf = self.uaf_snapshot();
                 for statement in &stmt.body.statements {
                     self.analyze_statement(statement);
                 }
+                self.uaf_restore(saved_uaf);
                 self.pop_scope();
                 self.loop_depth -= 1;
             }
@@ -448,7 +482,7 @@ impl SemanticAnalyzer {
     /// falls back to the signature's type parameter, which the strict
     /// `types_match` tolerates only through the explicit generic-compatibility
     /// paths (`inferred_binding_types_match` / `generic_argument_types_match`).
-    fn std_generic_unwrap_return(
+    pub(crate) fn std_generic_unwrap_return(
         &mut self,
         function_name: &str,
         arguments: &[Expression],
@@ -494,7 +528,7 @@ impl SemanticAnalyzer {
     /// application (`List_int`, `List_string`, `Map_int_string`, ...), so the
     /// generic pattern must match only the base name and never two different
     /// concrete applications.
-    fn generic_collection_pattern_matches(actual: &Type, expected: &Type) -> bool {
+    pub(crate) fn generic_collection_pattern_matches(actual: &Type, expected: &Type) -> bool {
         let actual_name = match actual {
             Type::Struct { name } | Type::Applied { name, .. } => name.as_str(),
             _ => return false,
@@ -578,7 +612,7 @@ impl SemanticAnalyzer {
             .is_some_and(|path| path.ends_with(".compat.collections"))
     }
 
-    fn specialize_std_collection_signature(
+    pub(crate) fn specialize_std_collection_signature(
         &mut self,
         qualified_name: &str,
         signature: &FunctionSignature,
@@ -804,7 +838,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn validate_static_array_index(&mut self, array: &Expression, index: &Expression) {
+    pub(crate) fn validate_static_array_index(&mut self, array: &Expression, index: &Expression) {
         let array_type = self.infer_expression_type(array);
         let Type::Array {
             size: Some(length),

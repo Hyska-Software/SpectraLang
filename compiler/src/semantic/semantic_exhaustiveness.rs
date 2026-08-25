@@ -1,6 +1,8 @@
+use super::*;
+
 impl SemanticAnalyzer {
     /// Verifica se um match expression é exhaustivo
-    fn check_match_exhaustiveness(
+    pub(crate) fn check_match_exhaustiveness(
         &mut self,
         scrutinee_type: &Type,
         arms: &[crate::ast::MatchArm],

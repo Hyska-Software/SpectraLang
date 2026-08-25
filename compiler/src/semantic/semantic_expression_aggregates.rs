@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn analyze_expression_aggregates(&mut self, expr: &Expression) {
+    pub(crate) fn analyze_expression_aggregates(&mut self, expr: &Expression) {
         match &expr.kind {
             ExpressionKind::If {
                 condition,
@@ -8,15 +10,30 @@ impl SemanticAnalyzer {
                 else_block,
             } => {
                 self.analyze_expression(condition);
+                // Conservative branch merge (E034): the binding stays freed
+                // after the construct only when every analyzed arm ends freed.
+                let base_uaf = self.uaf_snapshot();
                 self.analyze_block(then_block);
+                let mut arm_states = vec![self.uaf_snapshot()];
+                self.uaf_restore(base_uaf.clone());
 
                 for (elif_cond, elif_body) in elif_blocks {
                     self.analyze_expression(elif_cond);
                     self.analyze_block(elif_body);
+                    arm_states.push(self.uaf_snapshot());
+                    self.uaf_restore(base_uaf.clone());
                 }
 
-                if let Some(ref else_body) = else_block {
-                    self.analyze_block(else_body);
+                match else_block {
+                    Some(else_body) => {
+                        self.analyze_block(else_body);
+                        arm_states.push(self.uaf_snapshot());
+                        self.uaf_merge_branches(&base_uaf, arm_states);
+                    }
+                    None => {
+                        // Without `else` a conditional arm may not have run.
+                        self.uaf_restore(base_uaf);
+                    }
                 }
 
                 let mut branch_types = Vec::new();
@@ -46,10 +63,21 @@ impl SemanticAnalyzer {
                 else_block,
             } => {
                 self.analyze_expression(condition);
+                // Conservative branch merge (E034), same rule as `if`.
+                let base_uaf = self.uaf_snapshot();
                 self.analyze_block(then_block);
+                let then_state = self.uaf_snapshot();
+                self.uaf_restore(base_uaf.clone());
 
-                if let Some(ref else_body) = else_block {
-                    self.analyze_block(else_body);
+                match else_block {
+                    Some(else_body) => {
+                        self.analyze_block(else_body);
+                        let else_state = self.uaf_snapshot();
+                        self.uaf_merge_branches(&base_uaf, vec![then_state, else_state]);
+                    }
+                    None => {
+                        self.uaf_restore(base_uaf);
+                    }
                 }
 
                 let mut branch_types = Vec::new();

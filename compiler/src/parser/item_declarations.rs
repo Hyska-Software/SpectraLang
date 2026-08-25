@@ -1,5 +1,7 @@
+use super::*;
+
 impl Parser {
-    pub(super) fn parse_function(
+    pub(crate) fn parse_function(
         &mut self,
         visibility: Visibility,
         attributes: Vec<Attribute>,
@@ -104,7 +106,7 @@ impl Parser {
         Ok(params)
     }
 
-    pub(super) fn parse_block(&mut self) -> Result<Block, ()> {
+    pub(crate) fn parse_block(&mut self) -> Result<Block, ()> {
         self.enter_parse_depth()?;
         let result = self.parse_block_inner();
         self.exit_parse_depth();
@@ -139,7 +141,7 @@ impl Parser {
         })
     }
 
-    pub(super) fn parse_struct(
+    pub(crate) fn parse_struct(
         &mut self,
         visibility: Visibility,
         attributes: Vec<Attribute>,
@@ -209,7 +211,7 @@ impl Parser {
         })
     }
 
-    pub(super) fn parse_enum(
+    pub(crate) fn parse_enum(
         &mut self,
         visibility: Visibility,
         attributes: Vec<Attribute>,
@@ -306,7 +308,7 @@ impl Parser {
         })
     }
 
-    pub(super) fn parse_impl_block(&mut self) -> Result<Item, ()> {
+    pub(crate) fn parse_impl_block(&mut self) -> Result<Item, ()> {
         // Expect: impl TypeName { methods... } ou impl TraitName for TypeName { methods... }
         let start_span = self.consume_keyword(Keyword::Impl, "Expected 'impl' keyword")?;
 

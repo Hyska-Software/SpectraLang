@@ -1,5 +1,25 @@
+use super::*;
+
+// Newline rule for expressions (single deterministic rule):
+//
+// A source line break ends the current expression. An infix binary operator
+// (`+ - * / % < > <= >= == != && || and or .. ..=`) whose token starts on a
+// new line therefore never joins the expression. The only exception is an
+// EXPLICIT continuation: the previous token must be another operator, an
+// assignment `=`, a comma, or an open delimiter `(` / `[`. In other words,
+// continuation operators go at the END of the line they continue
+// (`let x = a +\n    b`), while an operator that STARTS a line
+// (`let x = a\n    + b`) fails with `P015` instead of being silently
+// absorbed into the previous statement.
+//
+// Postfix continuations (`.method()`, `expr?`, `as`) are postfix tokens, not
+// infix operators, and remain legal on a new line. Unary prefixes (`-x`,
+// `!x`, `not x`) sit in operand position, never pass through the infix
+// gates, and are likewise unaffected.
+//
+// (Regular comments, not `//!`: inner doc comments are illegal mid-module.)
 impl Parser {
-    pub(super) fn parse_expression(&mut self) -> Result<Expression, ()> {
+    pub(crate) fn parse_expression(&mut self) -> Result<Expression, ()> {
         self.enter_parse_depth()?;
         let result = self.parse_expression_inner();
         self.exit_parse_depth();
@@ -20,6 +40,7 @@ impl Parser {
                 &self.current().kind,
                 TokenKind::Operator(Operator::RangeInclusive)
             );
+            self.reject_line_broken_infix()?;
             self.advance();
             // Bind the range end at the comparison rung so logical-level
             // operators (`or`/`and`/equality/comparison) stay outside the
@@ -53,11 +74,15 @@ impl Parser {
     /// parses its right operand one rung tighter, preserving the same
     /// precedence ladder as the main chain builders above.
     fn parse_logical_level_rest(&mut self, mut left: Expression) -> Result<Expression, ()> {
+        // Tracks an unparenthesized run of relational operators so a second
+        // one in the same chain fails with `P014` (see `parse_comparison`).
+        let mut previous_relational = false;
         loop {
             if matches!(
                 &self.current().kind,
                 TokenKind::Operator(Operator::Or) | TokenKind::Keyword(Keyword::OrWord)
             ) {
+                self.reject_line_broken_infix()?;
                 self.advance();
                 let right = self.parse_logical_and()?;
                 let span = crate::span::span_union(left.span, right.span);
@@ -76,6 +101,7 @@ impl Parser {
                 &self.current().kind,
                 TokenKind::Operator(Operator::And) | TokenKind::Keyword(Keyword::AndWord)
             ) {
+                self.reject_line_broken_infix()?;
                 self.advance();
                 let right = self.parse_equality()?;
                 let span = crate::span::span_union(left.span, right.span);
@@ -101,6 +127,27 @@ impl Parser {
             };
 
             if let Some(operator) = operator {
+                let is_relational =
+                    !matches!(operator, BinaryOperator::Equal | BinaryOperator::NotEqual);
+                if is_relational && previous_relational {
+                    let span = self.current().span;
+                    self.push_error_coded(
+                        "P014",
+                        "chained comparison; combine conditions with `and`",
+                        span,
+                        Some(
+                            "`a < b < c` parses as `(a < b) < c`, comparing a boolean with a value. Write `a < b and b < c` instead."
+                                .to_string(),
+                        ),
+                        Some(
+                            "second relational operator in an unparenthesized comparison chain"
+                                .to_string(),
+                        ),
+                    );
+                    return Err(());
+                }
+                self.reject_line_broken_infix()?;
+                previous_relational = is_relational;
                 self.advance();
                 let right = self.parse_addition()?;
                 let span = crate::span::span_union(left.span, right.span);
@@ -129,6 +176,7 @@ impl Parser {
             &self.current().kind,
             TokenKind::Operator(Operator::Or) | TokenKind::Keyword(Keyword::OrWord)
         ) {
+            self.reject_line_broken_infix()?;
             self.advance();
             let right = self.parse_logical_and()?;
             let span = crate::span::span_union(left.span, right.span);
@@ -153,6 +201,7 @@ impl Parser {
             &self.current().kind,
             TokenKind::Operator(Operator::And) | TokenKind::Keyword(Keyword::AndWord)
         ) {
+            self.reject_line_broken_infix()?;
             self.advance();
             let right = self.parse_logical_not()?;
             let span = crate::span::span_union(left.span, right.span);
@@ -202,6 +251,7 @@ impl Parser {
                 _ => break,
             };
 
+            self.reject_line_broken_infix()?;
             self.advance();
             let right = self.parse_comparison()?;
             let span = crate::span::span_union(left.span, right.span);
@@ -222,6 +272,11 @@ impl Parser {
     fn parse_comparison(&mut self) -> Result<Expression, ()> {
         let mut left = self.parse_addition()?;
 
+        // A single unparenthesized comparison chain may contain at most one
+        // relational operator: `a < b < c` would otherwise silently evaluate
+        // as `(a < b) < c`, comparing a boolean against a value.
+        let mut chain_active = false;
+
         loop {
             let operator = match &self.current().kind {
                 TokenKind::Symbol('<') => BinaryOperator::Less,
@@ -231,6 +286,26 @@ impl Parser {
                 _ => break,
             };
 
+            if chain_active {
+                let span = self.current().span;
+                self.push_error_coded(
+                    "P014",
+                    "chained comparison; combine conditions with `and`",
+                    span,
+                    Some(
+                        "`a < b < c` parses as `(a < b) < c`, comparing a boolean with a value. Write `a < b and b < c` instead."
+                            .to_string(),
+                    ),
+                    Some(
+                        "second relational operator in an unparenthesized comparison chain"
+                            .to_string(),
+                    ),
+                );
+                return Err(());
+            }
+
+            self.reject_line_broken_infix()?;
+            chain_active = true;
             self.advance();
             let right = self.parse_addition()?;
             let span = crate::span::span_union(left.span, right.span);
@@ -258,6 +333,7 @@ impl Parser {
                 _ => break,
             };
 
+            self.reject_line_broken_infix()?;
             self.advance();
             let right = self.parse_multiplication()?;
             let span = crate::span::span_union(left.span, right.span);
@@ -541,7 +617,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_primary_expression(&mut self) -> Result<Expression, ()> {
+    pub(crate) fn parse_primary_expression(&mut self) -> Result<Expression, ()> {
         let token = self.current();
         let span = token.span;
 

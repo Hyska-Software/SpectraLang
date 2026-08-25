@@ -26,10 +26,10 @@ public func main() returns int {
     let point = Point { x: left, y: right }
     let Point { x, y: renamed_y } = point
 
-    let total = score(Signal::Data(x))
-        + score(Signal::Named { value: renamed_y })
-        + score(Signal::Plus)
-        + score(Signal::Minus)
+    let total = score(Signal::Data(x)) +
+        score(Signal::Named { value: renamed_y }) +
+        score(Signal::Plus) +
+        score(Signal::Minus)
 
     if total != 35 {
         return total

@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn block_guaranteed_return(&self, block: &Block) -> bool {
+    pub(crate) fn block_guaranteed_return(&self, block: &Block) -> bool {
         if block.statements.is_empty() {
             return false;
         }
@@ -92,7 +94,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn validate_function_block_return(&mut self, body: &Block, expected: &Type, span: Span) {
+    pub(crate) fn validate_function_block_return(&mut self, body: &Block, expected: &Type, span: Span) {
         match expected {
             Type::Unknown => (),
             Type::Unit => {

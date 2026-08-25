@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn register_pattern_bindings(&mut self, pattern: &Pattern) {
+    pub(crate) fn register_pattern_bindings(&mut self, pattern: &Pattern) {
         use crate::ast::Pattern;
 
         match pattern {
@@ -61,7 +63,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn normalize_bare_enum_pattern(&self, pattern: &mut Pattern, scrutinee_type: &Type) {
+    pub(crate) fn normalize_bare_enum_pattern(&self, pattern: &mut Pattern, scrutinee_type: &Type) {
         let enum_name = match scrutinee_type {
             Type::Enum { name } | Type::Applied { name, .. } => name,
             _ => return,
@@ -101,7 +103,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn register_typed_pattern_bindings(&mut self, pattern: &Pattern, ty: &Type) {
+    pub(crate) fn register_typed_pattern_bindings(&mut self, pattern: &Pattern, ty: &Type) {
         use crate::ast::Pattern;
 
         let mut effective_type = ty.clone();
@@ -109,6 +111,10 @@ impl SemanticAnalyzer {
             if let Some(inferred) = self.infer_pattern_type(pattern) {
                 effective_type = inferred;
             }
+        }
+        // Declaring a pattern binding revives any prior release state (E034).
+        if let Pattern::Identifier(name) = pattern {
+            self.uaf_on_bind(name, &effective_type);
         }
 
         match pattern {

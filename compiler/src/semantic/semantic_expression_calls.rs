@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn analyze_expression_call(&mut self, expr: &Expression) {
+    pub(crate) fn analyze_expression_call(&mut self, expr: &Expression) {
         match &expr.kind {
             ExpressionKind::Call { callee, arguments } => {
                 let call_ty = self.infer_expression_type(expr);
@@ -185,10 +187,22 @@ impl SemanticAnalyzer {
                     self.analyze_expression(callee);
                 }
 
-                // Analyze arguments
+                // Analyze arguments; compatibility sentinel readers
+                // (list_get/map_get/value_kind) deliberately accept released
+                // handles, so their argument subtrees are not use-checked.
+                let suspend_use_checks = self.uaf_callee_is_sentinel_reader(callee);
+                if suspend_use_checks {
+                    self.uaf_suspend_use_checks += 1;
+                }
                 for arg in arguments {
                     self.analyze_expression(arg);
                 }
+                if suspend_use_checks {
+                    self.uaf_suspend_use_checks -= 1;
+                }
+
+                // Resource-release classification (E034).
+                self.uaf_after_call_analysis(callee, arguments, expr.span);
 
                 self.validate_static_tensor_call(callee, arguments, expr.span);
             }

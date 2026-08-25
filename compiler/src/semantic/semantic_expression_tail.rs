@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn analyze_expression_tail(&mut self, expr: &Expression) {
+    pub(crate) fn analyze_expression_tail(&mut self, expr: &Expression) {
         match &expr.kind {
             ExpressionKind::CharLiteral(_) => {
                 // char literal is always valid
@@ -12,6 +14,10 @@ impl SemanticAnalyzer {
                 }
             }
             ExpressionKind::Lambda { params, body, .. } => {
+                // Closures get a fresh flow-state frame (E034): captured
+                // handles are analyzed by value at the capture site, not
+                // tracked across the closure boundary.
+                let previous_uaf = self.uaf_enter_function();
                 let captured = self.collect_lambda_capture_names(params, body);
                 let mut mutated = Vec::new();
                 Self::collect_assigned_names_in_expression(body, &mut mutated);
@@ -29,10 +35,12 @@ impl SemanticAnalyzer {
                 self.push_scope();
                 for p in params {
                     let ty = self.type_annotation_to_type(&p.ty);
+                    self.uaf_on_bind(&p.name, &ty);
                     self.declare_symbol(p.name.clone(), p.span, ty);
                 }
                 self.analyze_expression(body);
                 self.pop_scope();
+                self.uaf_restore(previous_uaf);
             }
             ExpressionKind::Try(inner) => {
                 self.analyze_expression(inner);

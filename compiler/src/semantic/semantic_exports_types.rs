@@ -1,3 +1,5 @@
+use super::*;
+
 impl SemanticAnalyzer {
     /// Build the `ModuleExports` for the module that was just analysed so it
     /// can be registered in the shared registry for downstream importers.
@@ -517,7 +519,7 @@ impl SemanticAnalyzer {
         exports
     }
 
-    fn push_semantic_error(
+    pub(crate) fn push_semantic_error(
         &mut self,
         message: impl Into<String>,
         span: Span,
@@ -534,7 +536,7 @@ impl SemanticAnalyzer {
         self.errors.push(error);
     }
 
-    fn push_semantic_error_coded(
+    pub(crate) fn push_semantic_error_coded(
         &mut self,
         code: &str,
         message: impl Into<String>,
@@ -552,15 +554,15 @@ impl SemanticAnalyzer {
         self.errors.push(error);
     }
 
-    fn error(&mut self, message: impl Into<String>, span: Span) {
+    pub(crate) fn error(&mut self, message: impl Into<String>, span: Span) {
         self.push_semantic_error(message, span, None, None);
     }
 
-    fn error_coded(&mut self, code: &str, message: impl Into<String>, span: Span) {
+    pub(crate) fn error_coded(&mut self, code: &str, message: impl Into<String>, span: Span) {
         self.push_semantic_error_coded(code, message, span, None, None);
     }
 
-    fn error_coded_with_hint(
+    pub(crate) fn error_coded_with_hint(
         &mut self,
         code: &str,
         message: impl Into<String>,
@@ -570,7 +572,7 @@ impl SemanticAnalyzer {
         self.push_semantic_error_coded(code, message, span, None, Some(hint.into()));
     }
 
-    fn error_coded_with_details(
+    pub(crate) fn error_coded_with_details(
         &mut self,
         code: &str,
         message: impl Into<String>,
@@ -587,11 +589,11 @@ impl SemanticAnalyzer {
         );
     }
 
-    fn error_with_hint(&mut self, message: impl Into<String>, span: Span, hint: impl Into<String>) {
+    pub(crate) fn error_with_hint(&mut self, message: impl Into<String>, span: Span, hint: impl Into<String>) {
         self.push_semantic_error(message, span, None, Some(hint.into()));
     }
 
-    fn error_with_context(
+    pub(crate) fn error_with_context(
         &mut self,
         message: impl Into<String>,
         span: Span,
@@ -600,7 +602,7 @@ impl SemanticAnalyzer {
         self.push_semantic_error(message, span, Some(context.into()), None);
     }
 
-    fn error_with_details(
+    pub(crate) fn error_with_details(
         &mut self,
         message: impl Into<String>,
         span: Span,
@@ -610,19 +612,19 @@ impl SemanticAnalyzer {
         self.push_semantic_error(message, span, Some(context.into()), Some(hint.into()));
     }
 
-    fn has_error_at_span(&self, span: Span) -> bool {
+    pub(crate) fn has_error_at_span(&self, span: Span) -> bool {
         self.errors.iter().any(|error| error.span == span)
     }
 
-    fn push_scope(&mut self) {
+    pub(crate) fn push_scope(&mut self) {
         self.symbols.push(HashMap::new());
     }
 
-    fn pop_scope(&mut self) {
+    pub(crate) fn pop_scope(&mut self) {
         self.symbols.pop();
     }
 
-    fn push_generic_params(&mut self, params: &[crate::ast::TypeParameter]) -> bool {
+    pub(crate) fn push_generic_params(&mut self, params: &[crate::ast::TypeParameter]) -> bool {
         if params.is_empty() {
             return false;
         }
@@ -638,19 +640,19 @@ impl SemanticAnalyzer {
         true
     }
 
-    fn pop_generic_params(&mut self) {
+    pub(crate) fn pop_generic_params(&mut self) {
         self.generic_params.pop();
         self.generic_param_bounds.pop();
     }
 
-    fn is_generic_param(&self, name: &str) -> bool {
+    pub(crate) fn is_generic_param(&self, name: &str) -> bool {
         self.generic_params
             .iter()
             .rev()
             .any(|params| params.contains(name))
     }
 
-    fn get_generic_bounds(&self, name: &str) -> Option<&Vec<String>> {
+    pub(crate) fn get_generic_bounds(&self, name: &str) -> Option<&Vec<String>> {
         for bounds in self.generic_param_bounds.iter().rev() {
             if let Some(list) = bounds.get(name) {
                 return Some(list);
@@ -659,7 +661,7 @@ impl SemanticAnalyzer {
         None
     }
 
-    fn trait_method_signature_for_type_param(
+    pub(crate) fn trait_method_signature_for_type_param(
         &self,
         param_name: &str,
         method_name: &str,
@@ -691,7 +693,7 @@ impl SemanticAnalyzer {
         None
     }
 
-    fn infer_type_parameter_substitutions(
+    pub(crate) fn infer_type_parameter_substitutions(
         &mut self,
         param_types: &[Type],
         arguments: &[Expression],
@@ -762,7 +764,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn type_satisfies_trait_bound(&self, concrete_type: &Type, trait_name: &str) -> bool {
+    pub(crate) fn type_satisfies_trait_bound(&self, concrete_type: &Type, trait_name: &str) -> bool {
         if trait_name == "Send" {
             return self.type_is_send(concrete_type);
         }
@@ -781,7 +783,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn validate_type_parameter_bounds(
+    pub(crate) fn validate_type_parameter_bounds(
         &mut self,
         function_name: &str,
         type_params: &[crate::ast::TypeParameter],

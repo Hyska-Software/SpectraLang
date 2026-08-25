@@ -1,6 +1,8 @@
+use super::*;
+
 impl SemanticAnalyzer {
     /// Ensure match arm patterns are compatible with the scrutinee type before binding names.
-    fn validate_pattern_against_type(
+    pub(crate) fn validate_pattern_against_type(
         &mut self,
         pattern: &Pattern,
         scrutinee_type: &Type,

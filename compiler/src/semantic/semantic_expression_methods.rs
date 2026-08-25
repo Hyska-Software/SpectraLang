@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn analyze_expression_method(&mut self, expr: &Expression) {
+    pub(crate) fn analyze_expression_method(&mut self, expr: &Expression) {
         match &expr.kind {
             ExpressionKind::MethodCall {
                 object,
@@ -24,6 +26,10 @@ impl SemanticAnalyzer {
                 for arg in arguments {
                     self.analyze_expression(arg);
                 }
+
+                // Resource-release classification (E034): tensor.free(x) /
+                // tensor.free_all() release through the namespace receiver.
+                self.uaf_after_method_call_analysis(method_name, arguments, expr.span);
 
                 self.validate_static_tensor_method_call(object, method_name, arguments, expr.span);
                 self.validate_static_ml_method_call(object, method_name, arguments, expr.span);

@@ -1,15 +1,12 @@
+use super::*;
+
 // Builtin (virtual) module registrations
 // Maps well-known `std.*` module paths to their exported function signatures
 // without requiring physical `.spectra` files.  The actual implementation of
 // each function lives in the runtime FFI layer (runtime/src/stdlib/mod.rs).
 
-use super::module_registry::{
-    ExportVisibility, ExportedFunction, ExportedSelfParamKind, ExportedTrait, ExportedTraitMethod,
-    ExportedType, ModuleExports, ModuleRegistry,
-};
+use crate::semantic::module_registry::{ExportedType, ModuleRegistry};
 use crate::ast::{FloatWidth, IntWidth, Type, TypeAnnotation, TypeAnnotationKind};
-use crate::span::Span;
-use std::collections::HashMap;
 
 /// Compiler-owned snapshot of one public builtin contract symbol.
 ///

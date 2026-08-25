@@ -1,4 +1,8 @@
-fn make_std_option() -> ModuleExports {
+use super::*;
+use crate::semantic::module_registry::{ModuleExports};
+use crate::ast::{Type};
+
+pub(crate) fn make_std_option() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "option".to_string()]),
         package_name: Some("std".to_string()),
@@ -61,7 +65,7 @@ fn make_std_option() -> ModuleExports {
     exports
 }
 
-fn make_std_result() -> ModuleExports {
+pub(crate) fn make_std_result() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "result".to_string()]),
         package_name: Some("std".to_string()),
@@ -162,7 +166,7 @@ fn make_std_result() -> ModuleExports {
     exports
 }
 
-fn make_std_char() -> ModuleExports {
+pub(crate) fn make_std_char() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "char".to_string()]),
         package_name: Some("std".to_string()),
@@ -213,7 +217,7 @@ fn make_std_char() -> ModuleExports {
     exports
 }
 
-fn make_std_time() -> ModuleExports {
+pub(crate) fn make_std_time() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "time".to_string()]),
         package_name: Some("std".to_string()),

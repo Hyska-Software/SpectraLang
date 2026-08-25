@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn tensor_call_name(callee: &Expression) -> Option<String> {
+    pub(crate) fn tensor_call_name(callee: &Expression) -> Option<String> {
         let path = namespace_path(callee)?;
         let parts = path.split('.').collect::<Vec<_>>();
         match parts.as_slice() {
@@ -10,7 +12,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn tensor_dims(ty: &Type) -> Option<&[Option<usize>]> {
+    pub(crate) fn tensor_dims(ty: &Type) -> Option<&[Option<usize>]> {
         match ty {
             Type::Tensor {
                 dims: Some(dims), ..
@@ -19,7 +21,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn tensor_dim_slices_match(left: &[Option<usize>], right: &[Option<usize>]) -> bool {
+    pub(crate) fn tensor_dim_slices_match(left: &[Option<usize>], right: &[Option<usize>]) -> bool {
         left.len() == right.len()
             && left
                 .iter()
@@ -27,12 +29,12 @@ impl SemanticAnalyzer {
                 .all(|(a, b)| a.is_none() || b.is_none() || a == b)
     }
 
-    fn known_element_count(dims: &[Option<usize>]) -> Option<usize> {
+    pub(crate) fn known_element_count(dims: &[Option<usize>]) -> Option<usize> {
         dims.iter()
             .try_fold(1usize, |acc, dim| Some(acc.saturating_mul((*dim)?)))
     }
 
-    fn const_int_expression(expr: &Expression) -> Option<i64> {
+    pub(crate) fn const_int_expression(expr: &Expression) -> Option<i64> {
         match &expr.kind {
             ExpressionKind::NumberLiteral(raw) if !raw.contains('.') => raw.parse::<i64>().ok(),
             ExpressionKind::Grouping(inner) => Self::const_int_expression(inner),
@@ -40,7 +42,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn validate_differentiable_block_operations(&mut self, block: &Block) {
+    pub(crate) fn validate_differentiable_block_operations(&mut self, block: &Block) {
         for stmt in &block.statements {
             self.validate_differentiable_statement(stmt);
         }
@@ -293,7 +295,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn parse_tensor_metadata(type_args: &[crate::ast::TypeAnnotation]) -> TensorMetadata {
+    pub(crate) fn parse_tensor_metadata(type_args: &[crate::ast::TypeAnnotation]) -> TensorMetadata {
         let mut meta = TensorMetadata::default();
         let mut dims = Vec::new();
 
@@ -351,7 +353,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn branch_type_mismatch(&self, types: &[Type]) -> Option<(Type, Type)> {
+    pub(crate) fn branch_type_mismatch(&self, types: &[Type]) -> Option<(Type, Type)> {
         let mut reference: Option<Type> = None;
 
         for ty in types {
@@ -371,14 +373,14 @@ impl SemanticAnalyzer {
         None
     }
 
-    fn first_non_unknown_type(&self, types: &[Type]) -> Option<Type> {
+    pub(crate) fn first_non_unknown_type(&self, types: &[Type]) -> Option<Type> {
         types
             .iter()
             .find(|ty| !matches!(ty, Type::Unknown))
             .cloned()
     }
 
-    fn infer_block_type(&mut self, block: &Block) -> Type {
+    pub(crate) fn infer_block_type(&mut self, block: &Block) -> Type {
         if self.block_guaranteed_return(block) {
             return Type::Unknown;
         }
@@ -399,7 +401,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn analyze_const_decl(&mut self, decl: &ConstDecl) {
+    pub(crate) fn analyze_const_decl(&mut self, decl: &ConstDecl) {
         self.analyze_expression(&decl.value);
         let Some(value) = self.eval_const_expression(&decl.value) else {
             self.error_with_hint(
@@ -475,7 +477,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn analyze_static_decl(&mut self, decl: &StaticDecl) {
+    pub(crate) fn analyze_static_decl(&mut self, decl: &StaticDecl) {
         self.analyze_expression(&decl.value);
         let Some(value) = self.eval_const_expression(&decl.value) else {
             self.error_coded_with_hint(
@@ -545,7 +547,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn eval_const_expression(&self, expr: &Expression) -> Option<ConstValue> {
+    pub(crate) fn eval_const_expression(&self, expr: &Expression) -> Option<ConstValue> {
         match &expr.kind {
             ExpressionKind::NumberLiteral(raw) => {
                 if raw.contains('.') {

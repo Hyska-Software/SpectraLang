@@ -1,6 +1,8 @@
+use super::*;
+
 impl Parser {
     /// Parse trait implementation: impl TraitName for TypeName { methods... }
-    fn parse_trait_impl_block(
+    pub(crate) fn parse_trait_impl_block(
         &mut self,
         start_span: Span,
         trait_name: String,
@@ -148,7 +150,7 @@ impl Parser {
     }
 
     /// Parse generic type parameters: <T, U: Trait, V: Trait1 + Trait2>
-    fn parse_type_parameters(&mut self) -> Result<Vec<TypeParameter>, ()> {
+    pub(crate) fn parse_type_parameters(&mut self) -> Result<Vec<TypeParameter>, ()> {
         self.consume_symbol('<', "Expected '<'")?;
 
         let mut type_params = Vec::new();

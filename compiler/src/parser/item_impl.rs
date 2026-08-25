@@ -1,6 +1,8 @@
+use super::*;
+
 impl Parser {
     /// Parse trait declaration: trait Name: Parent1, Parent2 { fn method(&self) -> Type; }
-    pub(super) fn parse_trait_declaration(&mut self) -> Result<TraitDeclaration, ()> {
+    pub(crate) fn parse_trait_declaration(&mut self) -> Result<TraitDeclaration, ()> {
         // Expect: trait <name> [: Parent1 + Parent2] { <method signatures> }
         let start_span = self.consume_keyword(Keyword::Trait, "Expected 'trait' keyword")?;
 

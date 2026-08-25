@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn infer_expression_type(&mut self, expr: &Expression) -> Type {
+    pub(crate) fn infer_expression_type(&mut self, expr: &Expression) -> Type {
         match &expr.kind {
             ExpressionKind::NumberLiteral(num) => {
                 if num.contains('.') {
@@ -607,7 +609,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn record_expression_type(&mut self, expr: &Expression) {
+    pub(crate) fn record_expression_type(&mut self, expr: &Expression) {
         let ty = self.infer_expression_type(expr);
         match self.symbol_resolutions.entry(expr.span) {
             Entry::Occupied(mut entry) => {
@@ -623,7 +625,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn collect_lambda_capture_names(
+    pub(crate) fn collect_lambda_capture_names(
         &self,
         params: &[crate::ast::LambdaParam],
         body: &Expression,

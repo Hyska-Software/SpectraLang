@@ -1,5 +1,7 @@
+use super::*;
+
 impl Parser {
-    fn parse_async_expression(&mut self) -> Result<Expression, ()> {
+    pub(crate) fn parse_async_expression(&mut self) -> Result<Expression, ()> {
         let start_span = self.current().span;
         self.advance();
 
@@ -46,7 +48,7 @@ impl Parser {
         Err(())
     }
 
-    fn parse_lambda_params_after_open_pipe(&mut self) -> Result<Vec<LambdaParam>, ()> {
+    pub(crate) fn parse_lambda_params_after_open_pipe(&mut self) -> Result<Vec<LambdaParam>, ()> {
         let mut params = Vec::new();
         while !matches!(&self.current().kind, TokenKind::Symbol('|')) && !self.is_at_end() {
             let (param_name, param_span) =
@@ -72,7 +74,7 @@ impl Parser {
         Ok(params)
     }
 
-    fn finish_lambda_expression(
+    pub(crate) fn finish_lambda_expression(
         &mut self,
         start_span: crate::span::Span,
         is_async: bool,
@@ -110,7 +112,7 @@ impl Parser {
         }
     }
 
-    fn parse_if_expression(&mut self) -> Result<Expression, ()> {
+    pub(crate) fn parse_if_expression(&mut self) -> Result<Expression, ()> {
         let start_span = self.consume_keyword(Keyword::If, "Expected 'if'")?;
 
         let condition = Box::new(self.parse_expression()?);
@@ -170,7 +172,7 @@ impl Parser {
     /// Mirrors `parse_if_expression` but emits [`ExpressionKind::Unless`]
     /// (`if` with a negated condition). `elif`/`else if` chaining is not
     /// part of the `unless` surface — rewrite as `if`/`elif` or nest blocks.
-    fn parse_unless_expression(&mut self) -> Result<Expression, ()> {
+    pub(crate) fn parse_unless_expression(&mut self) -> Result<Expression, ()> {
         let start_span = self.consume_keyword(Keyword::Unless, "Expected 'unless'")?;
 
         let condition = Box::new(self.parse_expression()?);
@@ -215,7 +217,7 @@ impl Parser {
 
     /// Splits f-string raw template into literal and interpolated parts,
     /// then sub-parses inner expressions.
-    fn parse_fstring_parts(&mut self, raw: &str, span: crate::span::Span) -> Vec<FStringPart> {
+    pub(crate) fn parse_fstring_parts(&mut self, raw: &str, span: crate::span::Span) -> Vec<FStringPart> {
         use crate::lexer::Lexer;
         use std::collections::HashSet;
 
@@ -279,7 +281,7 @@ impl Parser {
         parts
     }
 
-    fn parse_match_expression(&mut self) -> Result<Expression, ()> {
+    pub(crate) fn parse_match_expression(&mut self) -> Result<Expression, ()> {
         use crate::ast::MatchArm;
 
         let start_span = self.consume_keyword(Keyword::Match, "Expected 'match'")?;

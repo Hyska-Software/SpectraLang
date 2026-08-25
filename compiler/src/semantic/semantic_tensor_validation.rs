@@ -1,9 +1,11 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn types_compatible(&self, a: &Type, b: &Type) -> bool {
+    pub(crate) fn types_compatible(&self, a: &Type, b: &Type) -> bool {
         self.types_match(a, b) && self.types_match(b, a)
     }
 
-    fn tensor_dims_match(a: &Option<Vec<Option<usize>>>, b: &Option<Vec<Option<usize>>>) -> bool {
+    pub(crate) fn tensor_dims_match(a: &Option<Vec<Option<usize>>>, b: &Option<Vec<Option<usize>>>) -> bool {
         let (Some(a), Some(b)) = (a, b) else {
             return true;
         };
@@ -13,7 +15,7 @@ impl SemanticAnalyzer {
                 .all(|(left, right)| left.is_none() || right.is_none() || left == right)
     }
 
-    fn tensor_mismatch_diagnostic(
+    pub(crate) fn tensor_mismatch_diagnostic(
         actual: &Type,
         expected: &Type,
     ) -> Option<(&'static str, String, &'static str)> {
@@ -102,7 +104,7 @@ impl SemanticAnalyzer {
         None
     }
 
-    fn tensor_literal_matches(&mut self, value: &Expression, expected: &Type) -> bool {
+    pub(crate) fn tensor_literal_matches(&mut self, value: &Expression, expected: &Type) -> bool {
         let Type::Tensor {
             dtype, rank, dims, ..
         } = expected
@@ -169,7 +171,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn validate_static_tensor_call(
+    pub(crate) fn validate_static_tensor_call(
         &mut self,
         callee: &Expression,
         arguments: &[Expression],
@@ -181,7 +183,7 @@ impl SemanticAnalyzer {
         self.validate_static_tensor_operation(&name, arguments, span);
     }
 
-    fn validate_static_tensor_method_call(
+    pub(crate) fn validate_static_tensor_method_call(
         &mut self,
         object: &Expression,
         method_name: &str,
@@ -199,7 +201,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn validate_static_ml_method_call(
+    pub(crate) fn validate_static_ml_method_call(
         &mut self,
         object: &Expression,
         method_name: &str,

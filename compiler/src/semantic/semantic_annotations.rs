@@ -1,3 +1,5 @@
+use super::*;
+
 impl SemanticAnalyzer {
     fn annotation_to_pattern(annotation: &crate::ast::TypeAnnotation) -> TypeAnnotationPattern {
         use crate::ast::TypeAnnotationKind;
@@ -24,13 +26,13 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn option_annotation_to_pattern(
+    pub(crate) fn option_annotation_to_pattern(
         annotation: &Option<crate::ast::TypeAnnotation>,
     ) -> Option<TypeAnnotationPattern> {
         annotation.as_ref().map(Self::annotation_to_pattern)
     }
 
-    fn format_parameter(param: &ParameterInfo) -> String {
+    pub(crate) fn format_parameter(param: &ParameterInfo) -> String {
         if param.is_self {
             if param.is_reference {
                 if param.is_mutable {
@@ -70,7 +72,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn validate_async_trait_method_object_safety(
+    pub(crate) fn validate_async_trait_method_object_safety(
         &mut self,
         trait_name: &str,
         method: &crate::ast::TraitMethod,
@@ -123,7 +125,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn format_trait_signature(method_name: &str, signature: &TraitMethodSignature) -> String {
+    pub(crate) fn format_trait_signature(method_name: &str, signature: &TraitMethodSignature) -> String {
         let params = signature
             .params
             .iter()
@@ -141,7 +143,7 @@ impl SemanticAnalyzer {
         format!("{} {}({}){}", prefix, method_name, params, return_part)
     }
 
-    fn declare_symbol(&mut self, name: String, span: Span, ty: Type) -> bool {
+    pub(crate) fn declare_symbol(&mut self, name: String, span: Span, ty: Type) -> bool {
         let is_local = self.symbols.len() > 1;
         // Check if already declared in current scope
         if let Some(current_scope) = self.symbols.last_mut() {
@@ -161,7 +163,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn lookup_symbol(&self, name: &str) -> Option<&SymbolInfo> {
+    pub(crate) fn lookup_symbol(&self, name: &str) -> Option<&SymbolInfo> {
         // Search from innermost to outermost scope
         for scope in self.symbols.iter().rev() {
             if let Some(info) = scope.get(name) {
@@ -171,11 +173,11 @@ impl SemanticAnalyzer {
         None
     }
 
-    fn lookup_symbol_in_current_scope(&self, name: &str) -> Option<&SymbolInfo> {
+    pub(crate) fn lookup_symbol_in_current_scope(&self, name: &str) -> Option<&SymbolInfo> {
         self.symbols.last().and_then(|scope| scope.get(name))
     }
 
-    fn collect_pattern_binding_names(&self, pattern: &Pattern) -> Vec<String> {
+    pub(crate) fn collect_pattern_binding_names(&self, pattern: &Pattern) -> Vec<String> {
         let mut names = Vec::new();
         self.collect_pattern_binding_names_into(pattern, &mut names);
         names
@@ -217,13 +219,13 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn record_symbol_resolution(&mut self, span: Span, info: SymbolInfo) {
+    pub(crate) fn record_symbol_resolution(&mut self, span: Span, info: SymbolInfo) {
         self.symbol_resolutions.insert(span, info);
     }
 
     /// Suggest a similar name from all in-scope symbols and known functions.
     /// Returns `Some("did you mean 'X'?")` when a close-enough match is found.
-    fn suggest_name(&self, name: &str) -> Option<String> {
+    pub(crate) fn suggest_name(&self, name: &str) -> Option<String> {
         let threshold = (name.len() / 3 + 1).min(3);
         let mut best: Option<(String, usize)> = None;
 
@@ -250,7 +252,7 @@ impl SemanticAnalyzer {
         best.map(|(s, _)| format!("did you mean '{}'?", s))
     }
 
-    fn primitive_numeric_alias(name: &str) -> Option<Type> {
+    pub(crate) fn primitive_numeric_alias(name: &str) -> Option<Type> {
         match name {
             "int" => Some(Type::Int),
             "float" => Some(Type::Float),
@@ -279,15 +281,15 @@ impl SemanticAnalyzer {
         matches!((from, to), (Type::Int, Type::Float))
     }
 
-    fn is_numeric_type(ty: &Type) -> bool {
+    pub(crate) fn is_numeric_type(ty: &Type) -> bool {
         matches!(ty, Type::Int | Type::Float | Type::ExactInt { .. } | Type::ExactFloat { .. })
     }
 
-    fn numeric_types_can_interact(&self, left: &Type, right: &Type) -> bool {
+    pub(crate) fn numeric_types_can_interact(&self, left: &Type, right: &Type) -> bool {
         Self::is_numeric_type(left) && Self::is_numeric_type(right)
     }
 
-    fn numeric_result_type(&self, left: &Type, right: &Type) -> Type {
+    pub(crate) fn numeric_result_type(&self, left: &Type, right: &Type) -> Type {
         if matches!(left, Type::Unknown) || matches!(right, Type::Unknown) {
             return Type::Unknown;
         }
@@ -369,7 +371,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn enforce_visibility_rules(&mut self, item: &Item) {
+    pub(crate) fn enforce_visibility_rules(&mut self, item: &Item) {
         match item {
             Item::Struct(struct_def) if struct_def.visibility == Visibility::Public => {
                 let generics: HashSet<String> = struct_def
@@ -440,7 +442,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn conversion_hint(&self, actual: &Type, expected: &Type) -> Option<String> {
+    pub(crate) fn conversion_hint(&self, actual: &Type, expected: &Type) -> Option<String> {
         match (actual, expected) {
             (Type::Float, Type::Int) => Some(
                 "Implicit narrowing from float to int is not allowed; use an explicit conversion.".to_string(),
@@ -458,7 +460,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn types_match(&self, actual: &Type, expected: &Type) -> bool {
+    pub(crate) fn types_match(&self, actual: &Type, expected: &Type) -> bool {
         if self.can_auto_promote(actual, expected) {
             return true;
         }
@@ -634,7 +636,7 @@ impl SemanticAnalyzer {
     /// registered for the parameter; unconstrained parameters accept any
     /// concrete type. Strict body/return checking continues to use
     /// `types_match` directly.
-    fn generic_argument_types_match(&self, actual: &Type, expected: &Type) -> bool {
+    pub(crate) fn generic_argument_types_match(&self, actual: &Type, expected: &Type) -> bool {
         if self.types_match(actual, expected) {
             return true;
         }
@@ -698,7 +700,7 @@ impl SemanticAnalyzer {
     /// value's type may still carry an unresolved generic parameter when
     /// inference could not fix it; such values stay tolerated. A fully
     /// concrete value must match strictly.
-    fn inferred_binding_types_match(&self, actual: &Type, expected: &Type) -> bool {
+    pub(crate) fn inferred_binding_types_match(&self, actual: &Type, expected: &Type) -> bool {
         if self.types_match(actual, expected) {
             return true;
         }
@@ -725,7 +727,7 @@ impl SemanticAnalyzer {
     }
 
 
-    fn return_types_match(&self, actual: &Type, expected: &Type) -> bool {
+    pub(crate) fn return_types_match(&self, actual: &Type, expected: &Type) -> bool {
         if matches!(actual, Type::Unknown) || matches!(expected, Type::Unknown) {
             return false;
         }
@@ -827,7 +829,7 @@ impl SemanticAnalyzer {
 mod generic_wildcard_tests {
     use crate::pipeline::{CompilationOptions, CompilationPipeline};
 
-    fn compile(source: &str) -> Result<(), Vec<String>> {
+    pub(crate) fn compile(source: &str) -> Result<(), Vec<String>> {
         let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
         match pipeline.compile(source, "test.spectra") {
             Ok(result) => {

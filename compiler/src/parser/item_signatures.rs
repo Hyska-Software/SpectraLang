@@ -1,3 +1,5 @@
+use super::*;
+
 impl Parser {
     pub(crate) fn trait_method_signature_from_decl(method: &TraitMethod) -> TraitMethodSignature {
         TraitMethodSignature {

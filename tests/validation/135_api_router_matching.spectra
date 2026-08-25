@@ -28,12 +28,12 @@ public func main() returns int {
     let conflict                = get(conflict_router, "/users/me")
     let conflict_text           = last_conflict()
 
-    if route_count(routes) == 4
-    and literal_id == route_id(users)
-    and user_id == 42
-    and order_id == 1234
-    and miss_id == 0
-    and route_id(conflict) == 0 {
+    if route_count(routes) == 4 and
+    literal_id == route_id(users) and
+    user_id == 42 and
+    order_id == 1234 and
+    miss_id == 0 and
+    route_id(conflict) == 0 {
         return 0
     }
     return 1

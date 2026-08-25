@@ -11,14 +11,20 @@ use std::collections::{HashMap, HashSet};
 
 use super::{ParameterSignature, Parser, TraitMethodSignature, TypePattern};
 
-include!("item_dispatch.rs");
+#[path = "item_dispatch.rs"]
+mod item_dispatch;
 
-include!("item_declarations.rs");
+#[path = "item_declarations.rs"]
+mod item_declarations;
 
-include!("item_impl.rs");
+#[path = "item_impl.rs"]
+mod item_impl;
 
-include!("item_traits.rs");
+#[path = "item_traits.rs"]
+mod item_traits;
 
-include!("item_signatures.rs");
+#[path = "item_signatures.rs"]
+mod item_signatures;
 
-include!("item_aliases.rs");
+#[path = "item_aliases.rs"]
+mod item_aliases;

@@ -1,3 +1,5 @@
+use super::*;
+
 impl SemanticAnalyzer {
     pub fn analyze_module(&mut self, module: &mut Module) -> Vec<SemanticError> {
         // Pass 0: resolve imports — inject symbols from imported modules into scope

@@ -1,0 +1,17 @@
+// Negative regression: chained comparisons are rejected with P014 instead of
+// silently parsing as `(a < b) < c`.
+//
+// This file must FAIL TO COMPILE with the parser diagnostic P014 ("chained
+// comparison; combine conditions with `and`"), anchored on the SECOND
+// relational operator of the chain.
+module chained_comparison_p014
+
+func main() returns int {
+    let a = 1
+    let b = 2
+    let c = 3
+    if a < b < c {
+        return 1
+    }
+    return 0
+}

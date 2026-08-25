@@ -1,3 +1,5 @@
+use super::*;
+
 impl SemanticAnalyzer {
     fn module_export_names(exports: &ModuleExports) -> String {
         let mut names = exports
@@ -21,7 +23,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn namespace_export_names(&self, namespace: &str) -> Vec<String> {
+    pub(crate) fn namespace_export_names(&self, namespace: &str) -> Vec<String> {
         let prefix = format!("{}.", namespace);
         let mut names = self
             .functions
@@ -34,7 +36,7 @@ impl SemanticAnalyzer {
         names
     }
 
-    fn missing_method_diagnostic(&self, type_name: &str, method_name: &str) -> String {
+    pub(crate) fn missing_method_diagnostic(&self, type_name: &str, method_name: &str) -> String {
         let mut candidates = self
             .methods
             .get(type_name)
@@ -59,7 +61,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn report_unknown_qualified_member(
+    pub(crate) fn report_unknown_qualified_member(
         &mut self,
         module_path: &str,
         member_name: &str,
@@ -81,7 +83,7 @@ impl SemanticAnalyzer {
         );
     }
 
-    fn report_unknown_qualified_member_names(
+    pub(crate) fn report_unknown_qualified_member_names(
         &mut self,
         module_path: &str,
         member_name: &str,
@@ -104,7 +106,7 @@ impl SemanticAnalyzer {
         );
     }
 
-    fn substitute_type_parameters(&self, ty: &Type, substitutions: &HashMap<String, Type>) -> Type {
+    pub(crate) fn substitute_type_parameters(&self, ty: &Type, substitutions: &HashMap<String, Type>) -> Type {
         match ty {
             Type::TypeParameter { name } => substitutions
                 .get(name)
@@ -143,7 +145,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn validate_method_call_signature(
+    pub(crate) fn validate_method_call_signature(
         &mut self,
         method_name: &str,
         signature: &FunctionSignature,
@@ -222,7 +224,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn type_annotation_to_type(&self, type_ann: &Option<crate::ast::TypeAnnotation>) -> Type {
+    pub(crate) fn type_annotation_to_type(&self, type_ann: &Option<crate::ast::TypeAnnotation>) -> Type {
         use crate::ast::TypeAnnotationKind;
 
         match type_ann {
@@ -368,7 +370,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn async_task_type(is_async: bool, output: Type) -> Type {
+    pub(crate) fn async_task_type(is_async: bool, output: Type) -> Type {
         if is_async {
             Type::Task {
                 output: Box::new(output),
@@ -426,7 +428,7 @@ impl SemanticAnalyzer {
     /// registries.  The semantic type itself remains structural (`Applied`),
     /// while lookup tables may still use their specialized mangled key during
     /// the migration.
-    fn nominal_lookup_name(&self, ty: &Type) -> Option<String> {
+    pub(crate) fn nominal_lookup_name(&self, ty: &Type) -> Option<String> {
         match ty {
             Type::Struct { name } | Type::Enum { name } => Some(name.clone()),
             Type::Applied { name, args } => {
@@ -450,7 +452,7 @@ impl SemanticAnalyzer {
     /// R-211: resolve the method signature for an instantiated generic struct
     /// (e.g. `Par_int`) from the template impl (registered under `Par`),
     /// substituting the type parameters with the concrete type arguments.
-    fn instantiated_method_signature(
+    pub(crate) fn instantiated_method_signature(
         &self,
         type_name: &str,
         method_name: &str,
@@ -501,7 +503,7 @@ impl SemanticAnalyzer {
 
     /// Substitute type parameters in a `Type` using the type parameter names and
     /// the concrete types in declaration order.
-    fn substitute_generic_types(
+    pub(crate) fn substitute_generic_types(
         &self,
         ty: &Type,
         type_params: &[crate::ast::TypeParameter],
@@ -627,7 +629,7 @@ impl SemanticAnalyzer {
         None
     }
 
-    fn type_from_mangle_part(&self, part: &str) -> Type {        match part {
+    pub(crate) fn type_from_mangle_part(&self, part: &str) -> Type {        match part {
             "int" => Type::Int,
             "float" => Type::Float,
             "i8" => Type::ExactInt { signed: true, width: IntWidth::I8 },
@@ -662,7 +664,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn specialized_enum_context(
+    pub(crate) fn specialized_enum_context(
         &self,
         enum_type_name: &str,
     ) -> Option<(String, EnumInfo, HashMap<String, Type>)> {
@@ -707,7 +709,7 @@ impl SemanticAnalyzer {
 
     /// Resolve either the legacy mangled nominal form or the structural
     /// `Enum<T, ...>` form used by the semantic type system.
-    fn specialized_enum_context_for_type(
+    pub(crate) fn specialized_enum_context_for_type(
         &self,
         ty: &Type,
     ) -> Option<(String, EnumInfo, HashMap<String, Type>)> {
@@ -730,7 +732,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn specialized_struct_context(
+    pub(crate) fn specialized_struct_context(
         &self,
         struct_type_name: &str,
     ) -> Option<(String, StructInfo, HashMap<String, Type>)> {
@@ -774,7 +776,7 @@ impl SemanticAnalyzer {
 
     /// Resolve either the legacy mangled nominal form or the structural
     /// `Struct<T, ...>` form used by the semantic type system.
-    fn specialized_struct_context_for_type(
+    pub(crate) fn specialized_struct_context_for_type(
         &self,
         ty: &Type,
     ) -> Option<(String, StructInfo, HashMap<String, Type>)> {
@@ -797,7 +799,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn type_annotation_to_type_with_substitutions(
+    pub(crate) fn type_annotation_to_type_with_substitutions(
         &self,
         ann: &crate::ast::TypeAnnotation,
         substitutions: &HashMap<String, Type>,
@@ -902,7 +904,7 @@ impl SemanticAnalyzer {
     /// type annotation resolves to `Unknown` (i.e. the type is not declared).
     /// Use this in pass-2 body analysis where all user types must already be
     /// registered; do **not** use it in pass-1 declaration collection.
-    fn type_annotation_to_type_checked(
+    pub(crate) fn type_annotation_to_type_checked(
         &mut self,
         type_ann: &Option<crate::ast::TypeAnnotation>,
     ) -> Type {

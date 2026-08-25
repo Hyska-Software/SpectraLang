@@ -1,3 +1,8 @@
+use super::*;
+use crate::semantic::module_registry::{ExportVisibility, ExportedFunction, ExportedSelfParamKind, ExportedTraitMethod, ExportedType, ModuleExports, ModuleRegistry};
+use crate::ast::{Type, TypeAnnotation, TypeAnnotationKind};
+use crate::span::Span;
+
 /// Register all built-in standard library modules in the given registry.
 pub fn register_builtin_modules(registry: &mut ModuleRegistry) {
     registry.register_module("std.io".to_string(), make_std_io());
@@ -64,7 +69,7 @@ pub fn register_builtin_modules(registry: &mut ModuleRegistry) {
     register_std_api_modules(registry, "spectra.std.api");
 }
 
-fn pub_fn(params: Vec<Type>, return_type: Type) -> ExportedFunction {
+pub(crate) fn pub_fn(params: Vec<Type>, return_type: Type) -> ExportedFunction {
     ExportedFunction {
         params,
         return_type,
@@ -73,7 +78,7 @@ fn pub_fn(params: Vec<Type>, return_type: Type) -> ExportedFunction {
     }
 }
 
-fn exported_trait_method(
+pub(crate) fn exported_trait_method(
     params: Vec<Type>,
     return_type: Type,
     self_kind: Option<ExportedSelfParamKind>,
@@ -88,7 +93,7 @@ fn exported_trait_method(
     }
 }
 
-fn public_type(members: &[&str]) -> ExportedType {
+pub(crate) fn public_type(members: &[&str]) -> ExportedType {
     ExportedType {
         members: members.iter().map(|member| (*member).to_string()).collect(),
         visibility: ExportVisibility::Public,
@@ -99,7 +104,7 @@ fn public_type(members: &[&str]) -> ExportedType {
     }
 }
 
-fn builtin_type_annotation(name: &str) -> TypeAnnotation {
+pub(crate) fn builtin_type_annotation(name: &str) -> TypeAnnotation {
     TypeAnnotation {
         kind: TypeAnnotationKind::Simple {
             segments: vec![name.to_string()],
@@ -108,13 +113,13 @@ fn builtin_type_annotation(name: &str) -> TypeAnnotation {
     }
 }
 
-fn api_type(name: &str) -> Type {
+pub(crate) fn api_type(name: &str) -> Type {
     Type::Struct {
         name: name.to_string(),
     }
 }
 
-fn api_task(output: Type) -> Type {
+pub(crate) fn api_task(output: Type) -> Type {
     Type::Task {
         output: Box::new(output),
     }
@@ -173,7 +178,7 @@ fn stdlib_segments(prefix: &str) -> Vec<String> {
     prefix.split('.').map(|part| part.to_string()).collect()
 }
 
-fn api_module(prefix: &str, leaf: Option<&str>) -> ModuleExports {
+pub(crate) fn api_module(prefix: &str, leaf: Option<&str>) -> ModuleExports {
     let mut stdlib_path = stdlib_segments(prefix);
     if let Some(leaf) = leaf {
         stdlib_path.push(leaf.to_string());

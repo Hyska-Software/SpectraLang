@@ -1,5 +1,7 @@
+use super::*;
+
 impl Parser {
-    pub(super) fn parse_item(&mut self) -> Result<Item, ()> {
+    pub(crate) fn parse_item(&mut self) -> Result<Item, ()> {
         let attributes = self.parse_outer_attributes()?;
         match &self.current().kind {
             crate::token::TokenKind::Keyword(Keyword::Import) => {
@@ -158,7 +160,7 @@ impl Parser {
         }
     }
 
-    fn parse_outer_attributes(&mut self) -> Result<Vec<Attribute>, ()> {
+    pub(crate) fn parse_outer_attributes(&mut self) -> Result<Vec<Attribute>, ()> {
         let mut attributes = Vec::new();
 
         while self.check_symbol('#') {

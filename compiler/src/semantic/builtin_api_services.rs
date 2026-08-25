@@ -1,4 +1,8 @@
-fn make_std_api_handler(prefix: &str) -> ModuleExports {
+use super::*;
+use crate::semantic::module_registry::{ExportVisibility, ExportedSelfParamKind, ExportedTrait, ModuleExports};
+use crate::ast::{Type};
+
+pub(crate) fn make_std_api_handler(prefix: &str) -> ModuleExports {
     let mut exports = api_module(prefix, Some("handler"));
     exports
         .types
@@ -149,7 +153,7 @@ fn make_std_api_handler(prefix: &str) -> ModuleExports {
     exports
 }
 
-fn make_std_api_middleware(prefix: &str) -> ModuleExports {
+pub(crate) fn make_std_api_middleware(prefix: &str) -> ModuleExports {
     let mut exports = api_module(prefix, Some("middleware"));
     exports.types.insert(
         "MiddlewareChain".to_string(),
@@ -367,7 +371,7 @@ fn make_std_api_middleware(prefix: &str) -> ModuleExports {
     exports
 }
 
-fn make_std_api_cors(prefix: &str) -> ModuleExports {
+pub(crate) fn make_std_api_cors(prefix: &str) -> ModuleExports {
     let mut exports = api_module(prefix, Some("cors"));
     exports
         .types
@@ -429,7 +433,7 @@ fn make_std_api_cors(prefix: &str) -> ModuleExports {
     exports
 }
 
-fn make_std_api_errors(prefix: &str) -> ModuleExports {
+pub(crate) fn make_std_api_errors(prefix: &str) -> ModuleExports {
     let mut exports = api_module(prefix, Some("errors"));
     exports
         .types
@@ -466,7 +470,7 @@ fn make_std_api_errors(prefix: &str) -> ModuleExports {
     exports
 }
 
-fn make_std_api_security(prefix: &str) -> ModuleExports {
+pub(crate) fn make_std_api_security(prefix: &str) -> ModuleExports {
     let mut exports = api_module(prefix, Some("security"));
     exports
         .types
@@ -504,7 +508,7 @@ fn make_std_api_security(prefix: &str) -> ModuleExports {
     exports
 }
 
-fn make_std_api_session(prefix: &str) -> ModuleExports {
+pub(crate) fn make_std_api_session(prefix: &str) -> ModuleExports {
     let mut exports = api_module(prefix, Some("session"));
     exports
         .types
@@ -547,7 +551,7 @@ fn make_std_api_session(prefix: &str) -> ModuleExports {
     exports
 }
 
-fn make_std_api_websocket(prefix: &str) -> ModuleExports {
+pub(crate) fn make_std_api_websocket(prefix: &str) -> ModuleExports {
     let mut exports = api_module(prefix, Some("websocket"));
     exports.types.insert(
         "WebSocketServer".to_string(),
@@ -663,7 +667,7 @@ fn make_std_api_websocket(prefix: &str) -> ModuleExports {
     exports
 }
 
-fn make_std_api_sse(prefix: &str) -> ModuleExports {
+pub(crate) fn make_std_api_sse(prefix: &str) -> ModuleExports {
     let mut exports = api_module(prefix, Some("sse"));
     exports.types.insert(
         "SseServer".to_string(),
@@ -750,7 +754,7 @@ fn make_std_api_sse(prefix: &str) -> ModuleExports {
     exports
 }
 
-fn make_std_api_validation(prefix: &str) -> ModuleExports {
+pub(crate) fn make_std_api_validation(prefix: &str) -> ModuleExports {
     let mut exports = api_module(prefix, Some("validation"));
     exports.types.insert(
         "ValidationSchema".to_string(),
@@ -838,7 +842,7 @@ fn make_std_api_validation(prefix: &str) -> ModuleExports {
     exports
 }
 
-fn make_std_api_trace(prefix: &str) -> ModuleExports {
+pub(crate) fn make_std_api_trace(prefix: &str) -> ModuleExports {
     let mut exports = api_module(prefix, Some("trace"));
     let config = api_type("TraceConfig");
     let span = api_type("TraceSpan");
@@ -866,14 +870,14 @@ fn make_std_api_trace(prefix: &str) -> ModuleExports {
     exports
 }
 
-fn make_std_api_health(prefix: &str) -> ModuleExports {
+pub(crate) fn make_std_api_health(prefix: &str) -> ModuleExports {
     let mut exports = api_module(prefix, Some("health"));
     exports.functions.insert("startup_complete".into(), pub_fn(vec![], Type::Bool));
     exports.functions.insert("startup_failed".into(), pub_fn(vec![Type::String], Type::Bool));
     exports
 }
 
-fn make_std_api_db_sqlite(prefix: &str) -> ModuleExports {
+pub(crate) fn make_std_api_db_sqlite(prefix: &str) -> ModuleExports {
     let mut exports = api_module(&format!("{prefix}.db.sqlite"), None);
     let connection = api_type("SqliteConnection");
     let statement = api_type("SqliteStatement");
@@ -906,7 +910,7 @@ fn make_std_api_db_sqlite(prefix: &str) -> ModuleExports {
     exports
 }
 
-fn make_std_api_db_postgres(prefix: &str) -> ModuleExports {
+pub(crate) fn make_std_api_db_postgres(prefix: &str) -> ModuleExports {
     let mut exports = api_module(&format!("{prefix}.db.postgres"), None);
     let connection = api_type("PostgresConnection");
     let statement = api_type("PostgresStatement");
@@ -955,7 +959,7 @@ fn make_std_api_db_postgres(prefix: &str) -> ModuleExports {
     exports
 }
 
-fn make_std_api_db_redis(prefix: &str) -> ModuleExports {
+pub(crate) fn make_std_api_db_redis(prefix: &str) -> ModuleExports {
     let mut exports = api_module(&format!("{prefix}.db.redis"), None);
     let connection = api_type("RedisConnection");
     exports.types.insert("RedisConnection".to_string(), public_type(&[]));

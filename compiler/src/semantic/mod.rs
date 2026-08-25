@@ -39,7 +39,7 @@ type GenericStructDefinition = (
 );
 
 #[derive(Debug, Clone)]
-struct TraitMethodSignature {
+pub(crate) struct TraitMethodSignature {
     params: Vec<ParameterInfo>,
     return_type: Option<TypeAnnotationPattern>,
     has_default_body: bool,
@@ -47,7 +47,7 @@ struct TraitMethodSignature {
 }
 
 #[derive(Debug, Clone)]
-struct ParameterInfo {
+pub(crate) struct ParameterInfo {
     is_self: bool,
     is_reference: bool,
     is_mutable: bool,
@@ -55,7 +55,7 @@ struct ParameterInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum TypeAnnotationPattern {
+pub(crate) enum TypeAnnotationPattern {
     Simple(Vec<String>),
     Tuple(Vec<TypeAnnotationPattern>),
 }
@@ -312,7 +312,7 @@ pub struct SymbolInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SelfParamKind {
+pub(crate) enum SelfParamKind {
     Value,
     Reference { mutable: bool },
 }
@@ -355,7 +355,7 @@ impl From<SelfParamKind> for ParameterInfo {
 }
 
 #[derive(Debug, Clone)]
-struct FunctionSignature {
+pub(crate) struct FunctionSignature {
     params: Vec<Type>,
     return_type: Type,
     self_kind: Option<SelfParamKind>,
@@ -363,7 +363,7 @@ struct FunctionSignature {
 }
 
 #[derive(Debug, Clone)]
-enum ConstValue {
+pub(crate) enum ConstValue {
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -400,7 +400,7 @@ struct StructFieldInfo {
 }
 
 #[derive(Debug, Clone)]
-struct StructInfo {
+pub(crate) struct StructInfo {
     visibility: Visibility,
     type_params: Vec<String>,
     fields: HashMap<String, StructFieldInfo>,
@@ -440,14 +440,14 @@ struct EnumVariantInfo {
 }
 
 #[derive(Debug, Clone)]
-struct EnumInfo {
+pub(crate) struct EnumInfo {
     visibility: Visibility,
     type_params: Vec<String>,
     variants: HashMap<String, EnumVariantInfo>,
 }
 
 #[derive(Debug, Default)]
-struct TensorMetadata {
+pub(crate) struct TensorMetadata {
     rank: Option<usize>,
     dims: Option<Vec<Option<usize>>>,
     layout: Option<String>,
@@ -579,6 +579,12 @@ pub struct SemanticAnalyzer {
     // Flushed to module.imported_function_return_types at the end of analyze_module.
     qualified_fn_types: Vec<(String, crate::ast::Type)>,
     const_values: HashMap<String, ConstValue>,
+    // Flow-sensitive use-after-free tracking (E034), active only inside a
+    // function body. See semantic_use_after_free.rs for the documented design.
+    uaf_frame: Option<UafFrame>,
+    // Suspension counter for compatibility/sentinel reads (list_get, map_get,
+    // value_kind): argument subtrees of these calls are not use-checked.
+    uaf_suspend_use_checks: usize,
 }
 
 impl SemanticAnalyzer {
@@ -750,34 +756,69 @@ fn namespace_path(expr: &Expression) -> Option<String> {
     }
 }
 
-include!("semantic_init.rs");
-include!("semantic_exports_types.rs");
-include!("semantic_type_system.rs");
-include!("semantic_annotations.rs");
-include!("semantic_tensor_validation.rs");
-include!("semantic_tensor_const.rs");
-include!("semantic_json.rs");
-include!("semantic_module_analysis.rs");
-include!("semantic_item_import.rs");
-include!("semantic_traits.rs");
-include!("semantic_async.rs");
-include!("semantic_statements.rs");
-include!("semantic_expression_inference.rs");
-include!("semantic_capture_helpers.rs");
-include!("semantic_expression_analysis.rs");
-include!("semantic_expression_literals.rs");
-include!("semantic_expression_binary.rs");
-include!("semantic_expression_calls.rs");
-include!("semantic_expression_aggregates.rs");
-include!("semantic_expression_struct.rs");
-include!("semantic_expression_fields.rs");
-include!("semantic_expression_enums.rs");
-include!("semantic_expression_matches.rs");
-include!("semantic_expression_methods.rs");
-include!("semantic_expression_tail.rs");
-include!("semantic_patterns.rs");
-include!("semantic_pattern_validation.rs");
-include!("semantic_pattern_inference.rs");
-include!("semantic_returns.rs");
-include!("semantic_exhaustiveness.rs");
-include!("semantic_method_fill.rs");
+use semantic_use_after_free::UafFrame;
+
+#[path = "semantic_init.rs"]
+mod semantic_init;
+#[path = "semantic_exports_types.rs"]
+mod semantic_exports_types;
+#[path = "semantic_type_system.rs"]
+mod semantic_type_system;
+#[path = "semantic_annotations.rs"]
+mod semantic_annotations;
+#[path = "semantic_tensor_validation.rs"]
+mod semantic_tensor_validation;
+#[path = "semantic_tensor_const.rs"]
+mod semantic_tensor_const;
+#[path = "semantic_json.rs"]
+mod semantic_json;
+#[path = "semantic_module_analysis.rs"]
+mod semantic_module_analysis;
+#[path = "semantic_item_import.rs"]
+mod semantic_item_import;
+#[path = "semantic_traits.rs"]
+mod semantic_traits;
+#[path = "semantic_async.rs"]
+mod semantic_async;
+#[path = "semantic_statements.rs"]
+mod semantic_statements;
+#[path = "semantic_expression_inference.rs"]
+mod semantic_expression_inference;
+#[path = "semantic_capture_helpers.rs"]
+mod semantic_capture_helpers;
+#[path = "semantic_expression_analysis.rs"]
+mod semantic_expression_analysis;
+#[path = "semantic_expression_literals.rs"]
+mod semantic_expression_literals;
+#[path = "semantic_expression_binary.rs"]
+mod semantic_expression_binary;
+#[path = "semantic_expression_calls.rs"]
+mod semantic_expression_calls;
+#[path = "semantic_expression_aggregates.rs"]
+mod semantic_expression_aggregates;
+#[path = "semantic_expression_struct.rs"]
+mod semantic_expression_struct;
+#[path = "semantic_expression_fields.rs"]
+mod semantic_expression_fields;
+#[path = "semantic_expression_enums.rs"]
+mod semantic_expression_enums;
+#[path = "semantic_expression_matches.rs"]
+mod semantic_expression_matches;
+#[path = "semantic_expression_methods.rs"]
+mod semantic_expression_methods;
+#[path = "semantic_expression_tail.rs"]
+mod semantic_expression_tail;
+#[path = "semantic_patterns.rs"]
+mod semantic_patterns;
+#[path = "semantic_pattern_validation.rs"]
+mod semantic_pattern_validation;
+#[path = "semantic_pattern_inference.rs"]
+mod semantic_pattern_inference;
+#[path = "semantic_returns.rs"]
+mod semantic_returns;
+#[path = "semantic_exhaustiveness.rs"]
+mod semantic_exhaustiveness;
+#[path = "semantic_method_fill.rs"]
+mod semantic_method_fill;
+#[path = "semantic_use_after_free.rs"]
+mod semantic_use_after_free;

@@ -249,6 +249,12 @@ where
                     diagnostic.rule.code()
                 ));
 
+                // BEGIN narrowing-cast stable code hook (CastLint)
+                if let Some(code) = diagnostic.rule.stable_error_code() {
+                    error = error.with_code(code);
+                }
+                // END narrowing-cast stable code hook (CastLint)
+
                 if let Some(note) = &diagnostic.note {
                     error = error.with_hint(note.clone());
                 }

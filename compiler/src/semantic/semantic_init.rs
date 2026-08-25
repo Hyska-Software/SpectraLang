@@ -1,3 +1,5 @@
+use super::*;
+
 impl SemanticAnalyzer {
     fn seed_builtin_module_namespaces(&mut self) {
         const BUILTIN_MODULES: &[&str] = &[
@@ -135,6 +137,8 @@ impl SemanticAnalyzer {
             stdlib_namespace_aliases: HashMap::new(),
             qualified_fn_types: Vec::new(),
             const_values: HashMap::new(),
+            uaf_frame: None,
+            uaf_suspend_use_checks: 0,
         };
         analyzer.register_builtin_generic_types();
         analyzer.register_builtin_async_traits();
@@ -142,7 +146,7 @@ impl SemanticAnalyzer {
         analyzer
     }
 
-    fn register_builtin_async_traits(&mut self) {
+    pub(crate) fn register_builtin_async_traits(&mut self) {
         let async_task = |output: Type| Type::Task {
             output: Box::new(output),
         };

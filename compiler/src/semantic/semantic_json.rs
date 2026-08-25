@@ -1,3 +1,5 @@
+use super::*;
+
 impl SemanticAnalyzer {
     fn json_derive_set(&mut self, attributes: &[Attribute], owner_name: &str) -> JsonDeriveSet {
         let mut derives = JsonDeriveSet {
@@ -133,7 +135,7 @@ impl SemanticAnalyzer {
         options
     }
 
-    fn validate_json_struct_derives(&mut self, struct_def: &crate::ast::Struct) {
+    pub(crate) fn validate_json_struct_derives(&mut self, struct_def: &crate::ast::Struct) {
         let derives = self.json_derive_set(&struct_def.attributes, &struct_def.name);
         if !derives.serialize && !derives.deserialize {
             for field in &struct_def.fields {
@@ -188,7 +190,7 @@ impl SemanticAnalyzer {
         );
     }
 
-    fn validate_json_enum_derives(&mut self, enum_def: &crate::ast::Enum) {
+    pub(crate) fn validate_json_enum_derives(&mut self, enum_def: &crate::ast::Enum) {
         let derives = self.json_derive_set(&enum_def.attributes, &enum_def.name);
         if !derives.serialize && !derives.deserialize {
             for variant in &enum_def.variants {
@@ -297,7 +299,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn validate_derived_from_json_literal(
+    pub(crate) fn validate_derived_from_json_literal(
         &mut self,
         derived_type_name: &str,
         method_name: &str,

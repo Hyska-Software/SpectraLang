@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn infer_pattern_type(&mut self, pattern: &Pattern) -> Option<Type> {
+    pub(crate) fn infer_pattern_type(&mut self, pattern: &Pattern) -> Option<Type> {
         use crate::ast::Pattern;
 
         match pattern {
@@ -33,7 +35,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn bind_pattern_types(&mut self, pattern: &Pattern, ty: &Type) {
+    pub(crate) fn bind_pattern_types(&mut self, pattern: &Pattern, ty: &Type) {
         use crate::ast::Pattern;
 
         let mut effective_type = ty.clone();
@@ -169,7 +171,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn check_return_statement(&mut self, value: Option<&Expression>, span: Span) {
+    pub(crate) fn check_return_statement(&mut self, value: Option<&Expression>, span: Span) {
         let expected = match self.current_return_type.as_ref() {
             Some(ty) => ty.clone(),
             None => return,

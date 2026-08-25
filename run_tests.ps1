@@ -712,6 +712,66 @@ $cliTests = @(
         Contains = "shadowing"
         UseStdin = $false
     }
+    # BEGIN narrowing-cast lint rows (CastLint)
+    [PSCustomObject]@{
+        Nome = "lint_warn_narrowing_cast"
+        Args = @("lint", "tests\cli\lint_warning_narrowing_cast.spectra")
+        ExpectExit = 0
+        Contains = "narrowing-cast"
+        UseStdin = $false
+    }
+    [PSCustomObject]@{
+        Nome = "compile_warn_narrowing_cast_does_not_block"
+        Args = @("compile", "tests\cli\lint_warning_narrowing_cast.spectra")
+        ExpectExit = 0
+        Contains = ""
+        UseStdin = $false
+    }
+    [PSCustomObject]@{
+        Nome = "lint_deny_narrowing_cast"
+        Args = @("lint", "--deny", "narrowing-cast", "tests\cli\lint_warning_narrowing_cast.spectra")
+        ExpectExit = 65
+        Contains = "narrowing-cast"
+        UseStdin = $false
+    }
+    [PSCustomObject]@{
+        Nome = "compile_deny_narrowing_cast_escalates_e035"
+        Args = @("compile", "--deny", "narrowing-cast", "--json", "tests\cli\lint_warning_narrowing_cast.spectra")
+        ExpectExit = 65
+        Contains = '"code":"E035"'
+        UseStdin = $false
+    }
+    # END narrowing-cast lint rows (CastLint)
+    # BEGIN deprecated-task-spawn lint rows (DeprecateSpawn)
+    [PSCustomObject]@{
+        Nome = "lint_warn_deprecated_task_spawn"
+        Args = @("lint", "tests\cli\lint_warning_deprecated_task_spawn.spectra")
+        ExpectExit = 0
+        Contains = "deprecated-task-spawn"
+        UseStdin = $false
+    }
+    [PSCustomObject]@{
+        Nome = "compile_warn_deprecated_task_spawn_does_not_block"
+        Args = @("compile", "tests\cli\lint_warning_deprecated_task_spawn.spectra")
+        ExpectExit = 0
+        Contains = ""
+        UseStdin = $false
+    }
+    [PSCustomObject]@{
+        Nome = "lint_deny_deprecated_task_spawn"
+        Args = @("lint", "--deny", "deprecated-task-spawn", "tests\cli\lint_warning_deprecated_task_spawn.spectra")
+        ExpectExit = 65
+        Contains = "deprecated-task-spawn"
+        UseStdin = $false
+    }
+    [PSCustomObject]@{
+        Nome = "compile_deny_deprecated_task_spawn_escalates_e036"
+        Args = @("compile", "--deny", "deprecated-task-spawn", "--json", "tests\cli\lint_warning_deprecated_task_spawn.spectra")
+        ExpectExit = 65
+        Contains = '"code":"E036"'
+        UseStdin = $false
+    }
+    # END deprecated-task-spawn lint rows (DeprecateSpawn)
     [PSCustomObject]@{
         Nome = "fmt_check_formatted"
         Args = @("fmt", "--check", "tests\cli\fmt_formatted.spectra")

@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn analyze_expression_binary(&mut self, expr: &Expression) {
+    pub(crate) fn analyze_expression_binary(&mut self, expr: &Expression) {
         match &expr.kind {
             ExpressionKind::Binary {
                 left,

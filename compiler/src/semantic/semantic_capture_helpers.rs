@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn collect_pattern_names_for_closure(pattern: &Pattern, names: &mut HashSet<String>) {
+    pub(crate) fn collect_pattern_names_for_closure(pattern: &Pattern, names: &mut HashSet<String>) {
         match pattern {
             Pattern::Identifier(name) => {
                 names.insert(name.clone());

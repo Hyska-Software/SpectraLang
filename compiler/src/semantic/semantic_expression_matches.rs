@@ -1,5 +1,7 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn analyze_expression_match(&mut self, expr: &Expression) {
+    pub(crate) fn analyze_expression_match(&mut self, expr: &Expression) {
         match &expr.kind {
             ExpressionKind::Match { scrutinee, arms } => {
                 self.analyze_expression(scrutinee);
@@ -21,6 +23,9 @@ impl SemanticAnalyzer {
                 let mut arm_result_types = Vec::new();
                 for arm in &normalized_arms {
                     // Criar novo escopo para o arm
+                    // Isolated UAF snapshot per arm (E034): frees inside an
+                    // arm are checked linearly but never leak past the match.
+                    let saved_uaf = self.uaf_snapshot();
                     self.push_scope();
 
                     self.validate_pattern_against_type(&arm.pattern, &scrutinee_type, expr.span);
@@ -34,6 +39,7 @@ impl SemanticAnalyzer {
 
                     // Sair do escopo
                     self.pop_scope();
+                    self.uaf_restore(saved_uaf);
                 }
 
                 if let Some((expected, found)) = self.branch_type_mismatch(&arm_result_types) {

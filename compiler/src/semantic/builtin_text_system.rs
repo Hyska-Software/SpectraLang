@@ -1,4 +1,9 @@
-fn make_std_string() -> ModuleExports {
+use super::*;
+use crate::semantic::module_registry::{ExportVisibility, ExportedType, ModuleExports};
+use crate::ast::{Type};
+use std::collections::HashMap;
+
+pub(crate) fn make_std_string() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "string".to_string()]),
         package_name: Some("std".to_string()),
@@ -159,7 +164,7 @@ fn make_std_string() -> ModuleExports {
     exports
 }
 
-fn make_std_convert() -> ModuleExports {
+pub(crate) fn make_std_convert() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "convert".to_string()]),
         package_name: Some("std".to_string()),
@@ -225,7 +230,7 @@ fn make_std_convert() -> ModuleExports {
     exports
 }
 
-fn make_std_random() -> ModuleExports {
+pub(crate) fn make_std_random() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "random".to_string()]),
         package_name: Some("std".to_string()),
@@ -254,7 +259,7 @@ fn make_std_random() -> ModuleExports {
     exports
 }
 
-fn make_std_fs() -> ModuleExports {
+pub(crate) fn make_std_fs() -> ModuleExports {
     let mut exports = make_std_fs_legacy();
     exports.stdlib_path = Some(vec!["std".to_string(), "fs".to_string()]);
 
@@ -328,7 +333,7 @@ fn make_std_fs() -> ModuleExports {
 /// Compatibility-only filesystem surface retaining the historic string and
 /// boolean return values.  New code must import `std.fs` and handle
 /// `Result<_, Error>` explicitly.
-fn make_std_compat_fs() -> ModuleExports {
+pub(crate) fn make_std_compat_fs() -> ModuleExports {
     let mut exports = make_std_fs_legacy();
     exports.stdlib_path = Some(vec![
         "std".to_string(),
@@ -383,7 +388,7 @@ fn make_std_fs_legacy() -> ModuleExports {
 /// runtime materializes it as an opaque pointer with these six word-sized
 /// fields; accessors are also exported for code that prefers not to use field
 /// syntax.
-fn make_std_error() -> ModuleExports {
+pub(crate) fn make_std_error() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "error".to_string()]),
         package_name: Some("std".to_string()),
@@ -480,7 +485,7 @@ fn make_std_error() -> ModuleExports {
 /// Public environment surface. Missing variables and out-of-range arguments
 /// are represented by `Option<string>`; sentinel strings remain available only
 /// through the explicit `std.compat.env` namespace.
-fn make_std_env() -> ModuleExports {
+pub(crate) fn make_std_env() -> ModuleExports {
     let mut exports = make_std_env_legacy();
     exports.stdlib_path = Some(vec!["std".to_string(), "env".to_string()]);
 
@@ -507,7 +512,7 @@ fn make_std_env() -> ModuleExports {
 
 /// Compatibility-only environment surface retaining the historic empty-string
 /// sentinel behavior for callers that have not migrated yet.
-fn make_std_compat_env() -> ModuleExports {
+pub(crate) fn make_std_compat_env() -> ModuleExports {
     let mut exports = make_std_env_legacy();
     exports
         .functions

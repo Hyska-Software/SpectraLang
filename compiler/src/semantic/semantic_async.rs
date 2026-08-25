@@ -1,5 +1,8 @@
+use super::*;
+
 impl SemanticAnalyzer {
-    fn analyze_function(&mut self, func: &Function) {
+    pub(crate) fn analyze_function(&mut self, func: &Function) {
+        let previous_uaf = self.uaf_enter_function();
         let pushed_generics = self.push_generic_params(&func.type_params);
 
         self.current_function = Some(func.name.clone());
@@ -14,6 +17,7 @@ impl SemanticAnalyzer {
         // Declare parameters in function scope
         for param in &func.params {
             let param_type = self.type_annotation_to_type_checked(&param.ty);
+            self.uaf_on_bind(&param.name, &param_type);
             if !self.declare_symbol(param.name.clone(), param.span, param_type) {
                 self.error(
                     format!("Parameter '{}' is already declared", param.name),
@@ -30,6 +34,7 @@ impl SemanticAnalyzer {
         }
 
         self.pop_scope();
+        self.uaf_restore(previous_uaf);
         if func.is_async {
             self.async_context_depth = self.async_context_depth.saturating_sub(1);
         }
@@ -40,7 +45,7 @@ impl SemanticAnalyzer {
         self.current_return_type = previous_return;
     }
 
-    fn analyze_block(&mut self, block: &Block) {
+    pub(crate) fn analyze_block(&mut self, block: &Block) {
         self.push_scope();
 
         for statement in &block.statements {
@@ -777,7 +782,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn type_is_send(&self, ty: &Type) -> bool {
+    pub(crate) fn type_is_send(&self, ty: &Type) -> bool {
         match ty {
             Type::Unknown => false,
             Type::Struct { name } => {
@@ -827,7 +832,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn type_is_sync(&self, ty: &Type) -> bool {
+    pub(crate) fn type_is_sync(&self, ty: &Type) -> bool {
         match ty {
             Type::Unknown => false,
             Type::Struct { name } => {

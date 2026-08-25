@@ -37,7 +37,11 @@ The following set is the current stable Phase 1 table for high-frequency diagnos
 | `P004` | parser | future experimental feature disabled | rerun with the documented feature gate once an active experimental feature exists |
 | `P005` | parser | misplaced or incomplete `async` syntax | use `async func` in declaration position, `async { ... }`, or `async |...| ...` |
 | `P006` | parser | `await` outside async context | move the expression into `async func`, `async { ... }`, or an async closure |
+| `P011` | parser | statement not terminated by a line break | end the statement with a line break or close the surrounding block |
+| `P012` | parser | semicolon used as statement terminator | remove the `;` and end the statement with a line break |
 | `P013` | parser | nesting too deep | reduce nesting of expressions, statements, blocks, or patterns (parser recursion guard) |
+| `P014` | parser | chained comparison (`a < b < c`) | combine conditions explicitly with `and`, e.g. `a < b and b < c` |
+| `P015` | parser | line break before an infix operator ends the expression | move the operator to the end of the previous line, or wrap the operands in parentheses |
 | `P999` | parser | generic syntax failure | inspect nearby syntax; parser context and hint should narrow the issue |
 | `E001` | semantic | undefined variable or function | declare/import the symbol or fix the name |
 | `E002` | semantic | argument count mismatch | pass the expected number of arguments |
@@ -89,6 +93,23 @@ The following codes cover module resolution, duplicate declarations,
 | `E031` | semantic | `match` expression is not exhaustive (missing enum variants or missing wildcard bindings for payload variants) | add patterns for the listed `Enum::Variant` arms or a wildcard arm with payload bindings |
 | `E032` | semantic | method receiver mismatch (receiver type differs from the declared `self` type, or a `self`-less method called on a value) | convert or borrow the receiver to match the signature, or call it as `Type::method(...)` |
 | `E033` | semantic | unknown standard library module in an import | use one of the registered stdlib modules; the diagnostic includes a did-you-mean suggestion when close |
+
+## Resource Lifecycle Diagnostics (E034)
+
+Flow-sensitive, function-local use-after-free tracking. A binding released by
+a resource-free call (`free`, `tensor.free(x)`, `list_free`, `map_free`,
+`set_free`, `iterator_free`, `value_free`, `notification_free`,
+`artifact_free`, `builder_free`) or covered by an arena-wide release
+(`free_all`/`tensor.free_all()`, `list_free_all`, `map_free_all`,
+`set_free_all`) is marked freed; any later read emits the coded diagnostic.
+Reassignment or rebinding revives the binding; conditional branches merge
+conservatively (freed only when every arm ends freed). The compatibility
+sentinel readers (`list_get`, `map_get`, `value_kind`) intentionally accept
+released handles and do not count as uses.
+
+| Code | Phase | Meaning | Expected hint/action |
+| --- | --- | --- | --- |
+| `E034` | semantic | use after free: a binding released by a resource-free call is read afterwards | reassign or recreate the handle before using it again; the hint points at the line of the freeing call |
 
 ## Phase 21 Async Diagnostics
 
