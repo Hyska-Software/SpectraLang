@@ -105,7 +105,11 @@ impl ASTLowering {
                     // later map the value to a register or stack location;
                     // the declaration and type must not be reconstructed
                     // from the sidecar.
-                    if let Some(ty) = binding_type.clone().or_else(|| inferred_type.clone()) {
+                    let debug_ty = binding_type
+                        .clone()
+                        .or_else(|| inferred_type.clone())
+                        .filter(|ty| !matches!(ty, IRType::Unknown));
+                    if let Some(ty) = debug_ty {
                         ir_func.locals.push(LocalDebugInfo {
                             name: name.clone(),
                             ty,
@@ -292,7 +296,12 @@ impl ASTLowering {
                         // Calcular endereço do elemento
                         let elem_type = match self.infer_expr_ir_type(array) {
                             IRType::Array { element_type, .. } => *element_type,
-                            IRType::String => IRType::Char,
+                            // Strings are packed byte buffers: element access
+                            // is byte-granular (1-byte stride, 1-byte store).
+                            IRType::String => IRType::ExactInt {
+                                signed: true,
+                                width: crate::ir::IntWidth::I8,
+                            },
                             other => {
                                 self.error(format!(
                                     "index assignment expected array or string, found {:?}",

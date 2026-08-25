@@ -315,8 +315,8 @@ pub enum InstructionKind {
     },
     /// String literal value. Codegen resolves this to a stable pointer
     /// (global data section in AOT, heap-allocated immutable buffer in
-    /// JIT). Length is always known at compile time and the bytes are
-    /// stored null-terminated, one byte per `i64` slot.
+    /// JIT). Length is always known at compile time and the bytes are stored
+    /// packed UTF-8, terminated by a single NUL byte (`len + 1` bytes).
     ConstString {
         result: Value,
         value: String,

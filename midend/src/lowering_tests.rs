@@ -39,7 +39,8 @@ mod tests {
         assert!(pretty.contains("async.resume"));
         assert!(pretty.contains("async.ready"));
         assert!(pretty.contains("spectra.async.task.ready"));
-        assert!(pretty.contains("spectra.async.task.poll"));
+        assert!(pretty.contains("spectra.async.task.wait"));
+        assert!(!pretty.contains("spectra.async.task.poll"));
         assert!(!pretty.contains("spectra.async.task.block_on"));
         assert!(pretty.contains("spectra.async.task.result"));
     }

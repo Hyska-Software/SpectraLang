@@ -57,6 +57,12 @@ fn lookup_std_host_function(path: &[String]) -> Option<HostFunctionDescriptor> {
         [_, api, db, redis, function] if api == "api" && db == "db" && redis == "redis" => {
             lookup_std_api_host_function("db.redis", function)
         }
+        [_, api, db, pool, function] if api == "api" && db == "db" && pool == "pool" => {
+            lookup_std_api_host_function("db.pool", function)
+        }
+        [_, api, db, migrate, function] if api == "api" && db == "db" && migrate == "migrate" => {
+            lookup_std_api_host_function("db.migrate", function)
+        }
         [_, api, module, function] if api == "api" => {
             lookup_std_api_host_function(module, function)
         }

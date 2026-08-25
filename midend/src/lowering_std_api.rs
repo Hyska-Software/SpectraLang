@@ -598,6 +598,15 @@ fn lookup_std_api_host_function(module: &str, function: &str) -> Option<HostFunc
         ("db.redis", "expire") => Some(host_bool("spectra.api.db.redis.expire")),
         ("db.redis", "incr") => Some(host_int("spectra.api.db.redis.incr")),
         ("db.redis", "exists") => Some(host_bool("spectra.api.db.redis.exists")),
+        ("db.pool", "sqlite_open") => Some(host_int("spectra.api.db.pool.sqlite_open")),
+        ("db.pool", "close") => Some(host_bool("spectra.api.db.pool.close")),
+        ("db.pool", "with_connection") => {
+            Some(host_int("spectra.api.db.pool.with_connection"))
+        }
+        ("db.migrate", "apply_sqlite") => Some(host_int("spectra.api.db.migrate.apply_sqlite")),
+        ("db.migrate", "status_sqlite") => {
+            Some(host_string("spectra.api.db.migrate.status_sqlite"))
+        }
         ("cors", "policy") => Some(host_int("spectra.api.cors.policy")),
         ("cors", "permissive") => Some(host_int("spectra.api.cors.permissive")),
         ("cors", "allow_origin") => Some(host_int("spectra.api.cors.allow_origin")),

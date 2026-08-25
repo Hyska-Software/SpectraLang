@@ -1,0 +1,142 @@
+module api_db_pool_migrations
+
+from std.api.db.sqlite import SqliteConnection, SqliteStatement, open as plain_open, close as plain_close, prepare, bind_int, bind_text, step, column_count, column_int, column_text, finalize
+from std.api.db.pool import Pool, sqlite_open as pool_open, close as pool_close, with_connection
+from std.api.db.migrate import apply_sqlite, status_sqlite
+import std.fs as fs
+
+public func main() returns int {
+    // Fresh run: drop any database left over from a previous validation.
+    let database_path = "target/r349-pool-migrations.sqlite"
+    let exists_result = fs.fs_exists(database_path)
+    if let Result::Ok(exists) = exists_result {
+        if exists == true {
+            let remove_result = fs.fs_remove(database_path)
+            if let Result::Ok(removed) = remove_result {
+                if removed != true {
+                    return 1
+                }
+            } else {
+                return 2
+            }
+        }
+    } else {
+        return 3
+    }
+
+    // Compose std.fs with db migrations: write the migration set to disk.
+    let dir = "target/r349-migrations"
+    let up1 = fs.fs_write(dir + "/0001_create_notes.up.sql", "CREATE TABLE notes(id INTEGER PRIMARY KEY, body TEXT NOT NULL);")
+    if let Result::Ok(written) = up1 {
+        if written != true {
+            return 4
+        }
+    } else {
+        return 5
+    }
+    let down1 = fs.fs_write(dir + "/0001_create_notes.down.sql", "DROP TABLE notes;")
+    if let Result::Ok(written_down) = down1 {
+        if written_down != true {
+            return 6
+        }
+    } else {
+        return 7
+    }
+    let up2 = fs.fs_write(dir + "/0002_seed_note.up.sql", "INSERT INTO notes(id, body) VALUES(1, 'pooled');")
+    if let Result::Ok(written_seed) = up2 {
+        if written_seed != true {
+            return 8
+        }
+    } else {
+        return 9
+    }
+    let down2 = fs.fs_write(dir + "/0002_seed_note.down.sql", "DELETE FROM notes WHERE id = 1;")
+    if let Result::Ok(written_down_seed) = down2 {
+        if written_down_seed != true {
+            return 10
+        }
+    } else {
+        return 11
+    }
+
+    // Open a pool of at most two SQLite connections.
+    let pool_handle: Pool = pool_open(database_path, 2)
+
+    // Lease one connection out of the pool.
+    let writer: SqliteConnection = with_connection(pool_handle)
+
+    // Apply both pending migrations through the leased connection.
+    let applied = apply_sqlite(writer, dir)
+    if applied != 2 {
+        return 12
+    }
+
+    // The migration's seed row must be visible through the same lease.
+    let seed_query: SqliteStatement = prepare(writer, "SELECT id, body FROM notes WHERE id = 1")
+    if step(seed_query) != 1 {
+        return 13
+    }
+    if column_int(seed_query, 0) != 1 or column_text(seed_query, 1) != "pooled" {
+        return 14
+    }
+    if finalize(seed_query) != true {
+        return 15
+    }
+
+    // Insert an extra row using the leased connection.
+    let insert: SqliteStatement = prepare(writer, "INSERT INTO notes(id, body) VALUES(?1, ?2)")
+    if bind_int(insert, 0, 2) != true {
+        return 16
+    }
+    if bind_text(insert, 1, "leased") != true {
+        return 17
+    }
+    if step(insert) != 2 {
+        return 18
+    }
+    if finalize(insert) != true {
+        return 19
+    }
+
+    // Returning the lease hands the physical connection back to the pool.
+    if plain_close(writer) != true {
+        return 20
+    }
+
+    // Lease again: the pool must serve another usable connection.
+    let reader: SqliteConnection = with_connection(pool_handle)
+    let count_query: SqliteStatement = prepare(reader, "SELECT COUNT(*) FROM notes")
+    if step(count_query) != 1 {
+        return 21
+    }
+    if column_count(count_query) != 1 {
+        return 22
+    }
+    if column_int(count_query, 0) != 2 {
+        return 23
+    }
+    if finalize(count_query) != true {
+        return 24
+    }
+
+    // Status report must describe a fully applied, drift-free ledger.
+    let report = status_sqlite(reader, dir)
+    if report == "" {
+        return 25
+    }
+
+    if plain_close(reader) != true {
+        return 26
+    }
+    if pool_close(pool_handle) != true {
+        return 27
+    }
+
+    // The standalone driver must keep working after the pool is gone.
+    let direct: SqliteConnection = plain_open(database_path)
+    if plain_close(direct) != true {
+        return 28
+    }
+
+    return 0
+}

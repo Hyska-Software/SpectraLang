@@ -109,19 +109,25 @@ impl ASTLowering {
                     }
                 };
                 let state = self.next_async_state();
+                // AsyncSuspend/AsyncResume stay as pure markers: the backend
+                // currently emits no code for them (preemptive suspension /
+                // stackful coroutines are future work). The actual waiting
+                // contract of `await` is carried entirely by the host calls
+                // between them.
                 self.builder.build_async_suspend(ir_func, task, state);
+                // Block until the task reaches a terminal state. The host
+                // parks inside the reactor (no CPU spin) and reports the
+                // join status: 0 = completed, 1 = cancelled, 2 = failed.
+                // The status value itself is intentionally discarded:
+                // `spectra.async.task.result` below re-checks the task and
+                // fails with HOST_STATUS_INVALID_ARGUMENT for cancelled or
+                // failed tasks, which is how cancellation surfaces to the
+                // executing backend today.
                 let _ = self.builder.build_typed_host_call(
                     ir_func,
-                    "spectra.async.task.poll".to_string(),
+                    "spectra.async.task.wait".to_string(),
                     vec![task],
-                    IRType::Bool,
-                    true,
-                );
-                let _ = self.builder.build_typed_host_call(
-                    ir_func,
-                    "spectra.async.task.is_cancelled".to_string(),
-                    vec![task],
-                    IRType::Bool,
+                    IRType::Int,
                     true,
                 );
                 self.builder.build_async_resume(ir_func, task, state);
