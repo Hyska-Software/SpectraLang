@@ -93,3 +93,21 @@ Crash triage: reproduce locally with
 `cargo fuzz run <target> fuzz/artifacts/<crash-file>`, minimize, add a
 regression seed to `corpus/<target>/`, fix the compiler bug, and add a
 checked-in regression test before closing the issue.
+
+## Nightly fuzzing
+
+`.github/workflows/fuzz-nightly.yml` runs on a schedule (`0 3 * * *` UTC) and
+via manual dispatch, one matrix job per target:
+
+- 10 min per target (`-max_total_time=600`, same `-max_len=16384` /
+  `-rss_limit_mb=2560` caps as the smoke job)
+- crash artifacts uploaded from `artifacts/*` when a target fails
+  (retention 30 days)
+- after every run (success or failure), the corpus is minimized with
+  `cargo fuzz cmin` and the updated `corpus/<target>/` is uploaded as an
+  artifact `fuzz-corpus-<target>` (retention 7 days)
+
+To fold nightly discoveries back into the repo, download the
+`fuzz-corpus-<target>` artifact, drop interesting new inputs into
+`corpus/<target>/`, and commit them as seeds; crashes follow the same triage
+flow as the smoke job above.

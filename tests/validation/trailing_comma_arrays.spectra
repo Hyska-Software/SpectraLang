@@ -1,0 +1,45 @@
+// Positive regression: trailing commas are accepted inside array literals
+// (and call arguments), matching the formatter's uniform trailing-comma
+// policy. Empty arrays stay valid; every check below must pass at runtime.
+module trailing_comma_arrays
+
+public func main() returns int {
+    // Trailing comma on a multi-element array.
+    let values = [1, 2, 3,]
+    if values[0] != 1 || values[1] != 2 || values[2] != 3 {
+        return 1
+    }
+
+    // Trailing comma on a single-element array.
+    let single = [7,]
+    if single[0] != 7 {
+        return 2
+    }
+
+    // Empty arrays remain valid.
+    let empty: array<int> = []
+    let touched = false
+    for value in empty {
+        touched = true
+    }
+    if touched == true {
+        return 3
+    }
+
+    // Trailing comma in call arguments.
+    if sum_three(1, 2, 3,) != 6 {
+        return 4
+    }
+
+    // Nested arrays keep their own trailing commas.
+    let matrix = [[1, 2,], [3, 4,],]
+    if matrix[1][1] != 4 {
+        return 5
+    }
+
+    return 0
+}
+
+func sum_three(a: int, b: int, c: int) returns int {
+    return a + b + c
+}

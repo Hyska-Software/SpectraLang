@@ -202,18 +202,23 @@ mod tests {
     }
 
     #[test]
-    fn wraps_long_array_literal_one_per_line_without_trailing_comma() {
+    fn wraps_long_array_literal_one_per_line_with_trailing_comma() {
         let input = "func demo() {\n    let matrix = [first_row_of_the_largest_matrix, second_row_of_largest_matrix, third_row_of_largest]\n}\n";
         let output = assert_idempotent(input, &FormatterConfig::default());
         assert!(output.contains("let matrix = ["), "array head:\n{output}");
         let lines: Vec<&str> = output.lines().collect();
         assert!(
-            lines.contains(&"        third_row_of_largest"),
-            "last element without trailing comma:\n{output}"
+            lines.contains(&"        first_row_of_the_largest_matrix,")
+                && lines.contains(&"        second_row_of_largest_matrix,"),
+            "intermediate elements keep their commas:\n{output}"
+        );
+        assert!(
+            lines.contains(&"        third_row_of_largest,"),
+            "last element with trailing comma:\n{output}"
         );
         assert!(
             lines.contains(&"    ]"),
-            "closing bracket at base indent (parser rejects trailing commas in arrays):\n{output}"
+            "closing bracket at base indent:\n{output}"
         );
     }
 

@@ -1,0 +1,11 @@
+// Negative regression: a doubled comma inside an array literal is still a
+// parse error now that a single trailing comma before ']' is accepted.
+//
+// This file must FAIL TO COMPILE with a parser diagnostic ("Expected
+// expression") anchored on the second comma.
+module double_comma
+
+public func main() returns int {
+    let broken = [1,, 2]
+    return broken[0]
+}

@@ -772,7 +772,16 @@ fn try_wrap_delimited(content: &str, opener: char, closer: char) -> Option<Delim
         items.push(item.to_string());
         cursor = comma + ','.len_utf8();
     }
-    let last = content[cursor..close_byte].trim();
+    // Tolerate a trailing comma already present before the closer: calls,
+    // tuples and arrays may all carry one. It is dropped from the items and
+    // excluded from the drift comparison since re-emission adds it back.
+    let inner = content[cursor..close_byte].trim_end();
+    let has_trailing_comma = inner.ends_with(',');
+    let last = if has_trailing_comma {
+        inner[..inner.len() - ','.len_utf8()].trim()
+    } else {
+        inner
+    };
     if last.is_empty() {
         return None;
     }
@@ -786,9 +795,14 @@ fn try_wrap_delimited(content: &str, opener: char, closer: char) -> Option<Delim
     rejoined.push(closer);
     // Safety net against scanner drift: rejoining the pieces must reproduce
     // the original token stream modulo whitespace. The trailing comma we
-    // emit for calls/tuples is an intentional addition, so it stays out of
-    // the comparison.
-    if !collapses_to(&rejoined, content) {
+    // emit for calls/tuples/arrays is an intentional addition, so it stays
+    // out of the comparison.
+    let comparable = if has_trailing_comma {
+        &content[..content[..close_byte].trim_end().len() - ','.len_utf8()]
+    } else {
+        content
+    };
+    if !collapses_to(&rejoined, comparable) {
         return None;
     }
 
@@ -930,10 +944,10 @@ fn try_split_long_line(line: &FormattedLine) -> Option<Vec<FormattedLine>> {
     if let Some(split) = try_wrap_delimited(content, '(', ')') {
         return Some(render_delimited_split(line, &split, true));
     }
-    // Array literals: the parser rejects trailing commas inside `[...]`, so
-    // the closing bracket keeps the last element on its own line instead.
+    // Array literals wrap like calls/tuples under the same uniform
+    // trailing-comma policy.
     if let Some(split) = try_wrap_delimited(content, '[', ']') {
-        return Some(render_delimited_split(line, &split, false));
+        return Some(render_delimited_split(line, &split, true));
     }
     let (head, continuations) = try_wrap_binary_expression(content)?;
     Some(render_binary_split(line, &head, &continuations))

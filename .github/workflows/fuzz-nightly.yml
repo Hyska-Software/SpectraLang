@@ -1,0 +1,80 @@
+name: Fuzz Nightly
+
+on:
+  schedule:
+    # Nightly at 03:00 UTC.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  fuzz-nightly:
+    name: fuzz nightly (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [parser, semantic, pipeline, lowering]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        # cargo-fuzz builds with `-Zsanitizer`, which requires nightly.
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            fuzz
+
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+
+      - name: Build fuzz targets
+        working-directory: fuzz
+        run: cargo fuzz build -O --debug-assertions
+
+      - name: Nightly fuzz ${{ matrix.target }} (10 min)
+        working-directory: fuzz
+        # cargo fuzz run picks up fuzz/corpus/<target> automatically and
+        # writes newly coverage-discovered inputs back into that directory,
+        # so the corpus grows across the session.
+        # Any crash, hang, or OOM exits non-zero and fails the job.
+        run: |
+          mkdir -p "${{ github.workspace }}/artifacts"
+          cargo fuzz run -O --debug-assertions ${{ matrix.target }} -- \
+            -max_total_time=600 \
+            -max_len=16384 \
+            -rss_limit_mb=2560 \
+            -print_final_stats=1 \
+            "-artifact_prefix=${{ github.workspace }}/artifacts/"
+
+      - name: Minimize corpus
+        if: always()
+        working-directory: fuzz
+        # Keep the uploaded corpus small by dropping redundant entries while
+        # preserving every input that contributes unique coverage.
+        run: cargo fuzz cmin -O ${{ matrix.target }}
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: artifacts/*
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload updated corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus-${{ matrix.target }}
+          path: fuzz/corpus/${{ matrix.target }}/
+          if-no-files-found: ignore
+          retention-days: 7
