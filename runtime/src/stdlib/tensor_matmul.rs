@@ -8,41 +8,134 @@ pub(crate) fn tensor_float_unary(
         let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let Some((shape, data, requires_grad, creator)) = with_tensor_registry(|registry| {
-            let tensor = registry.get(args[0] as usize)?;
-            let element_count = tensor.len();
-            let source = tensor.materialize();
-            let data: Vec<SpectraHostValue> = source
-                .iter()
-                .map(|bits| {
-                    let value = match tensor.dtype {
-                        TensorDType::Int => *bits as f64,
-                        TensorDType::Float => f64::from_bits(*bits as u64),
+        let Some((shape, data, requires_grad, creator, device, precision, residency)) =
+            with_tensor_registry(|registry| {
+                let tensor = registry.get(args[0] as usize)?.clone();
+                let element_count = tensor.len();
+                let source = tensor.materialize();
+                #[cfg(feature = "gpu")]
+                let gpu_data = if tensor.device == TensorDevice::Wgpu
+                    && tensor.dtype == TensorDType::Float
+                {
+                    let gpu_op = match autograd_op {
+                        AutogradOp::Exp => Some(crate::gpu::GpuUnaryOp::Exp),
+                        AutogradOp::Log => Some(crate::gpu::GpuUnaryOp::Log),
+                        AutogradOp::Sqrt => Some(crate::gpu::GpuUnaryOp::Sqrt),
+                        AutogradOp::Sigmoid => Some(crate::gpu::GpuUnaryOp::Sigmoid),
+                        AutogradOp::Tanh => Some(crate::gpu::GpuUnaryOp::Tanh),
+                        _ => None,
                     };
-                    op(value).to_bits() as i64
-                })
-                .collect();
-            let input = tensor_values_as_f64(tensor);
-            let output = data
-                .iter()
-                .map(|raw| f64::from_bits(*raw as u64))
-                .collect::<Vec<_>>();
-            let requires_grad = tensor_requires_autograd(registry, &[args[0] as usize]);
-            let creator = requires_grad.then(|| {
-                AutogradNode::unary(
-                    autograd_op,
-                    args[0] as usize,
+                    match gpu_op.map(|gpu_op| gpu_unary_float(&tensor, gpu_op)) {
+                        Some(Ok(Some(data))) => {
+                            registry.note_gpu_kernel();
+                            Some(data)
+                        }
+                        Some(Ok(None)) | None => None,
+                        Some(Err(err)) => {
+                            registry.note_gpu_error(err.kind);
+                            registry.note_cpu_fallback();
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+                let data: Vec<SpectraHostValue> = match tensor.dtype {
+                    #[cfg(feature = "gpu")]
+                    TensorDType::Float if gpu_data.is_some() => gpu_data.unwrap(),
+                    _ => source
+                        .iter()
+                        .map(|bits| {
+                            let value = match tensor.dtype {
+                                TensorDType::Int => *bits as f64,
+                                TensorDType::Float => f64::from_bits(*bits as u64),
+                            };
+                            op(value).to_bits() as i64
+                        })
+                        .collect(),
+                };
+                let requires_grad = tensor_requires_autograd(registry, &[args[0] as usize]);
+                let input = tensor_values_as_f64(&tensor);
+                let creator = requires_grad.then(|| {
+                    AutogradNode::unary(
+                        autograd_op,
+                        args[0] as usize,
+                        tensor.shape.clone(),
+                        input,
+                        data.iter()
+                            .map(|raw| f64::from_bits(*raw as u64))
+                            .collect::<Vec<_>>(),
+                    )
+                });
+                #[cfg(feature = "gpu")]
+                let residency = if tensor.dtype == TensorDType::Float
+                    && tensor.device == TensorDevice::Wgpu
+                    && tensor
+                        .device_storage
+                        .contains_key(&crate::gpu::PoolDevice::Wgpu)
+                {
+                    if let Some(gpu_op) = match autograd_op {
+                        AutogradOp::Exp => Some(crate::gpu::GpuUnaryOp::Exp),
+                        AutogradOp::Log => Some(crate::gpu::GpuUnaryOp::Log),
+                        AutogradOp::Sqrt => Some(crate::gpu::GpuUnaryOp::Sqrt),
+                        AutogradOp::Sigmoid => Some(crate::gpu::GpuUnaryOp::Sigmoid),
+                        AutogradOp::Tanh => Some(crate::gpu::GpuUnaryOp::Tanh),
+                        _ => None,
+                    } {
+                        match tensor_residency_unary(registry, &tensor, gpu_op, element_count) {
+                            ResidencyOutcome::Ok(buf) => Some(buf),
+                            ResidencyOutcome::CpuFallback => None,
+                            ResidencyOutcome::Error(err) => {
+                                registry.note_gpu_error(err.kind);
+                                registry.note_cpu_fallback();
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                #[cfg(not(feature = "gpu"))]
+                let residency: Option<()> = None;
+                let result = Some((
                     tensor.shape.clone(),
-                    input,
-                    output,
-                )
-            });
-            let result = Some((tensor.shape.clone(), data, requires_grad, creator));
-            registry.note_kernel(element_count);
-            result
-        }) else {
+                    data,
+                    requires_grad,
+                    creator,
+                    tensor.device,
+                    tensor.precision,
+                    #[cfg(feature = "gpu")]
+                    residency,
+                    #[cfg(not(feature = "gpu"))]
+                    residency,
+                ));
+                registry.note_kernel(element_count);
+                result
+            })
+        else {
             return HOST_STATUS_NOT_FOUND;
         };
+        #[cfg(feature = "gpu")]
+        {
+            if let Some(buf) = residency {
+                return match tensor_alloc_autograd_on_device_with_buffer(
+                    TensorDType::Float,
+                    shape,
+                    data,
+                    requires_grad,
+                    creator,
+                    device,
+                    precision,
+                    buf,
+                ) {
+                    Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
+                    Err(code) => code,
+                };
+            }
+        }
+        let _ = (device, precision, &residency);
         match tensor_alloc_autograd(TensorDType::Float, shape, data, requires_grad, creator) {
             Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
             Err(code) => code,

@@ -62,9 +62,27 @@ pub(crate) enum ServeModel {
     Onnx(u64),
 }
 
+/// Model id used by the legacy single-model registration/inference hosts
+/// (`server_register_model_linear`, the enqueue/process-batch pipeline and a
+/// `/infer` request without an explicit `"model"` field).
+pub(crate) const SERVE_DEFAULT_MODEL_ID: &str = "default";
+
+/// Monitoring counters tracked separately for every registered `model_id`
+/// (see `serve_monitoring_snapshot_json`'s `"models"` sections).
+#[derive(Clone, Default)]
+pub(crate) struct ServeModelMetrics {
+    pub(crate) requests: SpectraHostValue,
+    pub(crate) completed_requests: SpectraHostValue,
+    pub(crate) blocked_requests: SpectraHostValue,
+    pub(crate) error_count: SpectraHostValue,
+    pub(crate) latency_samples_ms: Vec<f64>,
+}
+
 pub(crate) struct ServeServer {
     pub(crate) model: SpectraHostValue,
-    pub(crate) served_model: Option<ServeModel>,
+    /// Named models registered on this server. The legacy single-model
+    /// hosts register under [`SERVE_DEFAULT_MODEL_ID`].
+    pub(crate) models: std::collections::BTreeMap<String, ServeModel>,
     pub(crate) model_version: String,
     pub(crate) warm: bool,
     pub(crate) timeout: SpectraHostValue,
@@ -85,6 +103,8 @@ pub(crate) struct ServeServer {
     pub(crate) latency_samples_ms: Vec<f64>,
     pub(crate) observed_inputs: Vec<f64>,
     pub(crate) observed_outputs: Vec<f64>,
+    /// Per-model monitoring counters keyed by `model_id`.
+    pub(crate) model_metrics: std::collections::BTreeMap<String, ServeModelMetrics>,
     /// Optional embedded HTTP/1.1 listener (see `serve_http.rs`); at most one
     /// per server.
     pub(crate) http: Option<ServeHttpRuntime>,
@@ -159,23 +179,37 @@ pub(crate) fn serve_audit_json(server: &ServeServer) -> String {
 }
 
 
-pub(crate) fn serve_record_block(server: &mut ServeServer, output: SpectraHostValue) {
+pub(crate) fn serve_record_block(
+    server: &mut ServeServer,
+    model_id: &str,
+    output: SpectraHostValue,
+) {
     server.blocked_requests = server.blocked_requests.saturating_add(1);
     server.error_count = server.error_count.saturating_add(1);
     server.observed_outputs.push(output as f64);
+    let metrics = server.model_metrics.entry(model_id.to_string()).or_default();
+    metrics.requests = metrics.requests.saturating_add(1);
+    metrics.blocked_requests = metrics.blocked_requests.saturating_add(1);
+    metrics.error_count = metrics.error_count.saturating_add(1);
 }
 
 /// Records a completed request together with its MEASURED inference latency
 /// (wall-clock `std::time::Instant` delta around the forward pass). No
-/// synthetic latency formula exists anymore.
+/// synthetic latency formula exists anymore. Counters fold into the
+/// server totals AND the `model_id` section of the monitoring snapshot.
 pub(crate) fn serve_record_complete(
     server: &mut ServeServer,
+    model_id: &str,
     output_first: f64,
     latency_ms: f64,
 ) {
     server.completed_requests = server.completed_requests.saturating_add(1);
     server.observed_outputs.push(output_first);
     server.latency_samples_ms.push(latency_ms);
+    let metrics = server.model_metrics.entry(model_id.to_string()).or_default();
+    metrics.requests = metrics.requests.saturating_add(1);
+    metrics.completed_requests = metrics.completed_requests.saturating_add(1);
+    metrics.latency_samples_ms.push(latency_ms);
 }
 
 pub(crate) fn serve_values_summary(values: &[f64]) -> (f64, f64, f64) {
@@ -248,6 +282,32 @@ pub(crate) fn serve_distribution_summary_json(server: &ServeServer) -> String {
     )
 }
 
+pub(crate) fn serve_model_metrics_json(server: &ServeServer) -> String {
+    server
+        .model_metrics
+        .iter()
+        .map(|(model_id, metrics)| {
+            let latency_avg = if metrics.latency_samples_ms.is_empty() {
+                0.0
+            } else {
+                metrics.latency_samples_ms.iter().sum::<f64>()
+                    / metrics.latency_samples_ms.len() as f64
+            };
+            format!(
+                "{{\"model\":{},\"requests\":{},\"completed\":{},\"blocked\":{},\"errors\":{},\"latency_avg_ms\":{},\"latency_p95_ms\":{}}}",
+                ml_json_string(model_id),
+                metrics.requests,
+                metrics.completed_requests,
+                metrics.blocked_requests,
+                metrics.error_count,
+                ml_float_json(latency_avg),
+                ml_float_json(serve_p95(&metrics.latency_samples_ms)),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 pub(crate) fn serve_monitoring_snapshot_json(server: &ServeServer) -> String {
     let total_latency_ms = server.latency_samples_ms.iter().sum::<f64>();
     let latency_avg = if server.latency_samples_ms.is_empty() {
@@ -266,7 +326,7 @@ pub(crate) fn serve_monitoring_snapshot_json(server: &ServeServer) -> String {
         server.completed_requests as f64 / (total_latency_ms / 1000.0)
     };
     format!(
-        "{{\"schema\":\"spectra.serve.monitoring_snapshot.v1\",\"model\":{},\"model_version\":{},\"requests\":{},\"completed\":{},\"blocked\":{},\"cancelled\":{},\"errors\":{},\"error_rate\":{},\"batches\":{},\"pending\":{},\"latency_avg_ms\":{},\"latency_p95_ms\":{},\"throughput_per_second\":{}}}",
+        "{{\"schema\":\"spectra.serve.monitoring_snapshot.v1\",\"model\":{},\"model_version\":{},\"requests\":{},\"completed\":{},\"blocked\":{},\"cancelled\":{},\"errors\":{},\"error_rate\":{},\"batches\":{},\"pending\":{},\"latency_avg_ms\":{},\"latency_p95_ms\":{},\"throughput_per_second\":{},\"models\":[{}]}}",
         server.model,
         ml_json_string(&server.model_version),
         server.total_requests,
@@ -279,7 +339,8 @@ pub(crate) fn serve_monitoring_snapshot_json(server: &ServeServer) -> String {
         server.queue.len(),
         ml_float_json(latency_avg),
         ml_float_json(serve_p95(&server.latency_samples_ms)),
-        ml_float_json(throughput)
+        ml_float_json(throughput),
+        serve_model_metrics_json(server)
     )
 }
 
@@ -393,11 +454,19 @@ pub(crate) fn serve_apply_activation(activation: ServeActivation, values: &[f64]
     }
 }
 
-/// Real dense-chain forward pass over a float scalar request input:
-/// `x @ W^T + b` followed by the layer's activation, applied layer by layer
-/// starting from the input as a length-1 vector.
-pub(crate) fn serve_forward_linear_f64(layers: &[ServeLinearLayer], input: f64) -> Result<Vec<f64>, i32> {
-    let mut current = vec![input];
+/// Real dense-chain forward pass over a float request vector:
+/// `x @ W^T + b` followed by the layer's activation, applied layer by layer.
+/// The request vector's length must equal the first layer's input dimension;
+/// every following layer must chain on the previous output width (validated
+/// per layer below).
+pub(crate) fn serve_forward_linear_f64(
+    layers: &[ServeLinearLayer],
+    input: &[f64],
+) -> Result<Vec<f64>, i32> {
+    if input.is_empty() {
+        return Err(HOST_STATUS_INVALID_ARGUMENT);
+    }
+    let mut current = input.to_vec();
     for layer in layers {
         if layer.biases.len() != layer.weights.len() {
             return Err(HOST_STATUS_INVALID_ARGUMENT);
@@ -423,11 +492,11 @@ pub(crate) fn serve_forward_linear_f64(layers: &[ServeLinearLayer], input: f64) 
 }
 
 /// ONNX forward pass delegating to the committed onnxruntime session through
-/// `ml_onnx_run_inner`, exactly like `spectra.std.ml.onnx_run`. The scalar
-/// request input becomes a length-1 float tensor; scratch tensors are
+/// `ml_onnx_run_inner`, exactly like `spectra.std.ml.onnx_run`. The request
+/// vector becomes a 1-D float tensor of the same length; scratch tensors are
 /// released after extraction.
 #[cfg(feature = "onnx")]
-pub(crate) fn serve_forward_onnx_f64(session_id: u64, input: f64) -> Result<Vec<f64>, i32> {
+pub(crate) fn serve_forward_onnx_f64(session_id: u64, input: &[f64]) -> Result<Vec<f64>, i32> {
     // Copy the output name out before running: the borrowed session must not
     // overlap with the mutable lock that `ml_onnx_run_inner` takes.
     let output_name = {
@@ -438,7 +507,7 @@ pub(crate) fn serve_forward_onnx_f64(session_id: u64, input: f64) -> Result<Vec<
         }
         session.outputs()[0].name().to_owned()
     };
-    let input_handle = ml_alloc_float_tensor(vec![1], vec![input])?;
+    let input_handle = ml_alloc_float_tensor(vec![input.len()], input.to_vec())?;
     let mut output_handle: Option<usize> = None;
     let result = match ml_onnx_run_inner(session_id, input_handle, &output_name) {
         Ok(handle) => {
@@ -464,26 +533,38 @@ pub(crate) fn serve_forward_onnx_f64(session_id: u64, input: f64) -> Result<Vec<
 /// Without the `onnx` feature no real session can exist, so serving an ONNX
 /// model is rejected instead of being simulated.
 #[cfg(not(feature = "onnx"))]
-pub(crate) fn serve_forward_onnx_f64(_session_id: u64, _input: f64) -> Result<Vec<f64>, i32> {
+pub(crate) fn serve_forward_onnx_f64(_session_id: u64, _input: &[f64]) -> Result<Vec<f64>, i32> {
     Err(HOST_STATUS_INVALID_ARGUMENT)
 }
-/// Runs one REAL inference request against the served model and returns the
-/// output vector together with its measured latency in milliseconds.
-pub(crate) fn serve_infer(server: &ServeServer, input: SpectraHostValue) -> Result<(Vec<f64>, f64), i32> {
-    serve_infer_f64(server, input as f64)
-}
-
-/// Float-native inference entry used by the embedded HTTP listener so JSON
-/// f64 inputs reach the forward pass without an integer round-trip.
-pub(crate) fn serve_infer_f64(server: &ServeServer, input: f64) -> Result<(Vec<f64>, f64), i32> {
+/// Runs one REAL inference against the NAMED registered model and returns
+/// the output vector together with its measured latency in milliseconds.
+/// Unknown `model_id` or a width mismatch between `input` and the first
+/// layer rejects with `HOST_STATUS_INVALID_ARGUMENT`.
+pub(crate) fn serve_infer_named(
+    server: &ServeServer,
+    model_id: &str,
+    input: &[f64],
+) -> Result<(Vec<f64>, f64), i32> {
     let start = std::time::Instant::now();
-    let output = match &server.served_model {
+    let output = match server.models.get(model_id) {
         Some(ServeModel::Linear(layers)) => serve_forward_linear_f64(layers, input)?,
         Some(ServeModel::Onnx(session_id)) => serve_forward_onnx_f64(*session_id, input)?,
         None => return Err(HOST_STATUS_INVALID_ARGUMENT),
     };
     let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
     Ok((output, latency_ms))
+}
+
+/// Legacy scalar entry used by the enqueue/process-batch pipeline: infers
+/// through the `"default"` model with a length-1 request vector.
+pub(crate) fn serve_infer(server: &ServeServer, input: SpectraHostValue) -> Result<(Vec<f64>, f64), i32> {
+    serve_infer_f64(server, input as f64)
+}
+
+/// Float-native scalar entry used by the embedded HTTP listener so JSON
+/// f64 inputs reach the forward pass without an integer round-trip.
+pub(crate) fn serve_infer_f64(server: &ServeServer, input: f64) -> Result<(Vec<f64>, f64), i32> {
+    serve_infer_named(server, SERVE_DEFAULT_MODEL_ID, &[input])
 }
 
 /// Scalar projection of an output vector for the integer result ABI:

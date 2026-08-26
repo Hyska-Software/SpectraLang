@@ -94,6 +94,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
         expr = match op {
             GpuUnaryOp::Neg => "-input_values[i]",
             GpuUnaryOp::Relu => "max(input_values[i], 0.0)",
+            GpuUnaryOp::Exp => "exp(input_values[i])",
+            GpuUnaryOp::Log => "log(input_values[i])",
+            GpuUnaryOp::Sqrt => "sqrt(input_values[i])",
+            GpuUnaryOp::Sigmoid => "1.0 / (1.0 + exp(-input_values[i]))",
+            GpuUnaryOp::Tanh => "tanh(input_values[i])",
         }
     );
     run_compute_no_readback(
@@ -427,6 +432,58 @@ fn main() {{
     for (var i = 0u; i < {len}u; i = i + 1u) {{
         let diff = prediction[i] - target_values[i];
         acc = acc + diff * diff;
+    }}
+    out[0] = acc / f32({len}u);
+}}
+"#,
+        len = len
+    );
+    run_compute_no_readback(
+        device,
+        queue,
+        &shader,
+        &[
+            (0, &prediction.buffer, true),
+            (1, &target.buffer, true),
+            (2, &out.buffer, false),
+        ],
+        [1, 1, 1],
+    )
+}
+
+
+/// Device BCE loss: writes one scalar
+/// `mean(-(t*log(clamp(p)) + (1-t)*log(1-clamp(p))))` into `out`, with the
+/// same `1e-7` clamp as the CPU reference in
+/// `std_ml_bce_loss`. Mirrors `mse_loss_device`: single serial invocation,
+/// one tiny readback on the caller side.
+pub fn bce_loss_device(
+    prediction: &DeviceBuffer,
+    target: &DeviceBuffer,
+    out: &DeviceBuffer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> Result<(), GpuError> {
+    if prediction.elements == 0 || prediction.elements != target.elements || out.elements != 1 {
+        return Err(GpuError::new(
+            GpuErrorKind::ShapeMismatch,
+            "gpu bce_loss_device shape mismatch",
+        ));
+    }
+    let len = prediction.elements;
+    let shader = format!(
+        r#"
+@group(0) @binding(0) var<storage, read> prediction: array<f32>;
+@group(0) @binding(1) var<storage, read> target_values: array<f32>;
+@group(0) @binding(2) var<storage, read_write> out: array<f32>;
+
+@compute @workgroup_size(1)
+fn main() {{
+    var acc = 0.0;
+    for (var i = 0u; i < {len}u; i = i + 1u) {{
+        let p = clamp(prediction[i], 1e-7, 1.0 - 1e-7);
+        let t = target_values[i];
+        acc = acc + -(t * log(p) + (1.0 - t) * log(1.0 - p));
     }}
     out[0] = acc / f32({len}u);
 }}

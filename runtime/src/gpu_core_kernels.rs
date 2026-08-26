@@ -14,6 +14,11 @@ pub enum GpuBinaryOp {
 pub enum GpuUnaryOp {
     Neg,
     Relu,
+    Exp,
+    Log,
+    Sqrt,
+    Sigmoid,
+    Tanh,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -353,6 +358,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
         expr = match op {
             GpuUnaryOp::Neg => "-input_values[i]",
             GpuUnaryOp::Relu => "max(input_values[i], 0.0)",
+            GpuUnaryOp::Exp => "exp(input_values[i])",
+            GpuUnaryOp::Log => "log(input_values[i])",
+            GpuUnaryOp::Sqrt => "sqrt(input_values[i])",
+            GpuUnaryOp::Sigmoid => "1.0 / (1.0 + exp(-input_values[i]))",
+            GpuUnaryOp::Tanh => "tanh(input_values[i])",
         }
     );
     dispatch_one_input(input, input.len(), &shader, [input.len() as u32, 1, 1])

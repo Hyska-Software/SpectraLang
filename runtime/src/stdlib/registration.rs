@@ -1043,6 +1043,15 @@ pub(crate) fn register_serve_real() {
         std_serve_server_register_model_onnx,
     );
     register_host_function(SERVE_SERVER_RESULT_VECTOR, std_serve_server_result_vector);
+    register_host_function(
+        SERVE_SERVER_REGISTER_NAMED_MODEL_LINEAR,
+        std_serve_server_register_named_model_linear,
+    );
+    register_host_function(
+        SERVE_SERVER_REGISTER_NAMED_MODEL_ONNX,
+        std_serve_server_register_named_model_onnx,
+    );
+    register_host_function(SERVE_SERVER_INFER, std_serve_server_infer);
 }
 
 // ── ServeHttp ── (APPEND-ONLY: novos registros abaixo desta linha)
@@ -1054,4 +1063,5 @@ pub(crate) fn register_serve_http() {
 // ── RagGenerate ──────────────────────────────────────────────────────────────
 pub(crate) fn register_ml_generation() {
     register_host_function(ML_GENERATE, std_ml_generate);
+    register_host_function(ML_GENERATE_EX, std_ml_generate_ex);
 }

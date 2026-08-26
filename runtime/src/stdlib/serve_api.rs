@@ -10,7 +10,7 @@ pub(crate) extern "C" fn std_serve_server_new(ctx: *mut SpectraHostCallContext) 
     };
     let server_id = registry.servers.insert(ServeServer {
             model: args[0],
-        served_model: None,
+        models: std::collections::BTreeMap::new(),
             model_version: format!("model-{}", args[0]),
             warm: false,
             timeout: 1,
@@ -33,6 +33,7 @@ pub(crate) extern "C" fn std_serve_server_new(ctx: *mut SpectraHostCallContext) 
             latency_samples_ms: Vec::new(),
             observed_inputs: Vec::new(),
             observed_outputs: Vec::new(),
+            model_metrics: std::collections::BTreeMap::new(),
             http: None,
         });
     results[0] = server_id;
@@ -107,7 +108,7 @@ pub(crate) extern "C" fn std_serve_server_enqueue(ctx: *mut SpectraHostCallConte
                 input,
                 server.fallback,
             ));
-            serve_record_block(server, server.fallback);
+            serve_record_block(server, SERVE_DEFAULT_MODEL_ID, server.fallback);
             if let Some((_, state)) = requests.get_mut(request_id) {
                 *state = ServeRequestState::Complete(server.fallback, Vec::new());
             }
@@ -133,7 +134,7 @@ pub(crate) extern "C" fn std_serve_server_enqueue(ctx: *mut SpectraHostCallConte
                 input,
                 server.fallback,
             ));
-            serve_record_block(server, server.fallback);
+            serve_record_block(server, SERVE_DEFAULT_MODEL_ID, server.fallback);
             if let Some((_, state)) = requests.get_mut(request_id) {
                 *state = ServeRequestState::Complete(server.fallback, Vec::new());
             }
@@ -252,7 +253,7 @@ pub(crate) extern "C" fn std_serve_server_process_batch(ctx: *mut SpectraHostCal
                     output,
                     server.fallback,
                 ));
-                serve_record_block(server, server.fallback);
+                serve_record_block(server, SERVE_DEFAULT_MODEL_ID, server.fallback);
                 if let Some((_, state)) = requests.get_mut(request_id) {
                     *state = ServeRequestState::Complete(server.fallback, Vec::new());
                 }
@@ -269,6 +270,7 @@ pub(crate) extern "C" fn std_serve_server_process_batch(ctx: *mut SpectraHostCal
         ));
         serve_record_complete(
             server,
+            SERVE_DEFAULT_MODEL_ID,
             output_vec[0],
             latency_ms,
         );
@@ -369,7 +371,7 @@ pub(crate) extern "C" fn std_serve_server_benchmark(ctx: *mut SpectraHostCallCon
         let Some(server) = registry.servers.get_mut(server_id) else {
             return HOST_STATUS_NOT_FOUND;
         };
-        if server.served_model.is_none() {
+        if !server.models.contains_key(SERVE_DEFAULT_MODEL_ID) {
             // Benchmarking without a real served model would fabricate data.
             return HOST_STATUS_INVALID_ARGUMENT;
         }
@@ -440,7 +442,7 @@ pub(crate) extern "C" fn std_serve_server_benchmark(ctx: *mut SpectraHostCallCon
                 }
             };
             let output = serve_scalar_result(&output_vec);
-            serve_record_complete(server, output_vec[0], latency_ms);
+            serve_record_complete(server, SERVE_DEFAULT_MODEL_ID, output_vec[0], latency_ms);
             if let Some((_, state)) = requests_registry.get_mut(request_id) {
                 *state = ServeRequestState::Complete(output, output_vec);
             }
@@ -768,11 +770,12 @@ pub(crate) fn serve_parse_linear_layer(
 
 /// `spectra.std.serve.server_register_model_linear(
 ///     server, w1, b1, act1, w2, b2, act2, ...) -> int`
-///
-/// Registers the REAL served model: a chain of dense layers executed as
-/// `x @ W^T + b -> act(layer)` per layer. Request inputs are scalars, so the
-/// first layer's input dimension must be 1 and every following layer must
-/// chain on the previous output width.
+/// Registers the REAL served model under the `"default"` model id: a chain
+/// of dense layers executed as `x @ W^T + b -> act(layer)` per layer.
+/// Request inputs are scalars (enqueue/process-batch pipeline), so the first
+/// layer's input dimension must be 1 and every following layer must chain on
+/// the previous output width. Use the named-model host for wider inputs or
+/// multiple models on one server.
 pub(crate) extern "C" fn std_serve_server_register_model_linear(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
@@ -818,7 +821,9 @@ pub(crate) extern "C" fn std_serve_server_register_model_linear(ctx: *mut Spectr
         }
         layers.push(layer);
     }
-    server.served_model = Some(ServeModel::Linear(layers));
+    server
+        .models
+        .insert(SERVE_DEFAULT_MODEL_ID.to_string(), ServeModel::Linear(layers));
     server.audit_events.push(format!(
         "{{\"request\":0,\"event\":\"model_registered\",\"stage\":\"model\",\"value\":{},\"result\":{}}}",
         server.model,
@@ -860,7 +865,9 @@ pub(crate) extern "C" fn std_serve_server_register_model_onnx(ctx: *mut SpectraH
         let Some(server) = registry.servers.get_mut(args[0]) else {
             return HOST_STATUS_NOT_FOUND;
         };
-        server.served_model = Some(ServeModel::Onnx(session_id));
+        server
+            .models
+            .insert(SERVE_DEFAULT_MODEL_ID.to_string(), ServeModel::Onnx(session_id));
         server.audit_events.push(format!(
             "{{\"request\":0,\"event\":\"model_registered\",\"stage\":\"model\",\"value\":{},\"result\":{}}}",
             server.model, session_id
@@ -901,4 +908,181 @@ pub(crate) extern "C" fn std_serve_server_result_vector(ctx: *mut SpectraHostCal
         }
         Err(status) => status,
     }
+}
+
+// ── ServeMultiModel ──
+
+/// `spectra.std.serve.server_register_named_model_linear(
+///     server, "model_id", w1, b1, act1, ...) -> int`
+///
+/// Registers a REAL dense-chain model under an explicit `model_id`, allowing
+/// MULTIPLE models per server. Unlike the legacy host the first layer may
+/// have any input dimension N >= 1: request vectors of length N are accepted
+/// and every following layer must chain on the previous output width.
+pub(crate) extern "C" fn std_serve_server_register_named_model_linear(ctx: *mut SpectraHostCallContext) -> i32 {
+    if ctx.is_null() {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    let (args, results) = unsafe {
+        let ctx_ref = &mut *ctx;
+        // Variadic: (server, model_id, w1, b1, act1, ...) -> 2 + 3 * layers args.
+        if ctx_ref.arg_len < 5 || (ctx_ref.arg_len - 2) % 3 != 0 {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        if ctx_ref.args.is_null() || ctx_ref.result_len == 0 || ctx_ref.results.is_null() {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        (
+            std::slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len),
+            std::slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len),
+        )
+    };
+    let Some(model_id) = ml_read_path_arg(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut registry = match lock_serve_registry() {
+        Ok(registry) => registry,
+        Err(status) => return status,
+    };
+    let Some(server) = registry.servers.get_mut(args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    let mut layers: Vec<ServeLinearLayer> = Vec::new();
+    for chunk in args[2..].chunks_exact(3) {
+        let layer = match serve_parse_linear_layer(chunk[0], chunk[1], chunk[2]) {
+            Ok(layer) => layer,
+            Err(status) => return status,
+        };
+        let input_dim = layer.weights.first().map(|row| row.len()).unwrap_or(0);
+        if input_dim == 0 {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        if let Some(previous_output) = layers.last().map(|layer| layer.weights.len()) {
+            if input_dim != previous_output {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            }
+        }
+        layers.push(layer);
+    }
+    server.audit_events.push(format!(
+        "{{\"request\":0,\"event\":\"model_registered\",\"stage\":\"model\",\"model\":{},\"value\":{},\"result\":{}}}",
+        ml_json_string(&model_id),
+        server.model,
+        server.model
+    ));
+    server.models.insert(model_id, ServeModel::Linear(layers));
+    results[0] = 1;
+    HOST_STATUS_SUCCESS
+}
+
+/// `spectra.std.serve.server_register_named_model_onnx(
+///     server, "model_id", session_handle) -> int`
+///
+/// Registers a committed onnxruntime session under an explicit `model_id`.
+/// Inference delegates to `ml_onnx_run_inner` exactly like the legacy host.
+/// Without the runtime `onnx` feature no real session can exist and this
+/// host rejects instead of simulating.
+pub(crate) extern "C" fn std_serve_server_register_named_model_onnx(ctx: *mut SpectraHostCallContext) -> i32 {
+    let (args, results) = match host_call_args(ctx, 3) {
+        Ok(parts) => parts,
+        Err(status) => return status,
+    };
+    #[cfg(not(feature = "onnx"))]
+    {
+        let _ = (args, results);
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    #[cfg(feature = "onnx")]
+    {
+        let Some(model_id) = ml_read_path_arg(args[1]) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        if args[2] <= 0 {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let session_id = args[2] as u64;
+        if !ml_onnx_sessions_lock().contains_key(&session_id) {
+            return HOST_STATUS_NOT_FOUND;
+        }
+        let mut registry = match lock_serve_registry() {
+            Ok(registry) => registry,
+            Err(status) => return status,
+        };
+        let Some(server) = registry.servers.get_mut(args[0]) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
+        server.audit_events.push(format!(
+            "{{\"request\":0,\"event\":\"model_registered\",\"stage\":\"model\",\"model\":{},\"value\":{},\"result\":{}}}",
+            ml_json_string(&model_id),
+            server.model,
+            session_id
+        ));
+        server.models.insert(model_id, ServeModel::Onnx(session_id));
+        results[0] = 1;
+        HOST_STATUS_SUCCESS
+    }
+}
+
+/// `spectra.std.serve.server_infer(server, "model_id", input_tensor) -> request_id`
+///
+/// Runs one REAL synchronous inference against the named model. The input is
+/// a 1-D float tensor handle whose length must equal the registered model's
+/// first layer input dimension. Counters fold into both the server totals
+/// and the `model_id` section of the monitoring snapshot. The returned
+/// request id works with `server_result` / `server_result_vector`. Like the
+/// embedded HTTP listener path, direct inference bypasses queue guardrails.
+pub(crate) extern "C" fn std_serve_server_infer(ctx: *mut SpectraHostCallContext) -> i32 {
+    let (args, results) = match host_call_args(ctx, 3) {
+        Ok(parts) => parts,
+        Err(status) => return status,
+    };
+    let Some(model_id) = ml_read_path_arg(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some((shape, data, _)) = ml_tensor_float_data(args[2] as usize) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    if shape.len() != 1 || data.is_empty() {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    let mut registry = match lock_serve_registry() {
+        Ok(registry) => registry,
+        Err(status) => return status,
+    };
+    let ServeRegistry {
+        servers,
+        requests,
+        ..
+    } = &mut *registry;
+    let Some(server) = servers.get_mut(args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    if !server.models.contains_key(&model_id) {
+        return HOST_STATUS_NOT_FOUND;
+    }
+    server.total_requests = server.total_requests.saturating_add(1);
+    server.accepted_requests = server.accepted_requests.saturating_add(1);
+    server.observed_inputs.extend_from_slice(&data);
+    let request_id = requests.insert((data[0] as SpectraHostValue, ServeRequestState::Pending));
+    let (output_vec, latency_ms) = match serve_infer_named(server, &model_id, &data) {
+        Ok(result) => result,
+        Err(status) => return status,
+    };
+    if output_vec.is_empty() {
+        return HOST_STATUS_INTERNAL_ERROR;
+    }
+    let output = serve_scalar_result(&output_vec);
+    server.audit_events.push(serve_audit_event(
+        request_id,
+        "completed",
+        "direct",
+        output,
+        output,
+    ));
+    serve_record_complete(server, &model_id, output_vec[0], latency_ms);
+    if let Some((_, state)) = requests.get_mut(request_id) {
+        *state = ServeRequestState::Complete(output, output_vec);
+    }
+    results[0] = request_id;
+    HOST_STATUS_SUCCESS
 }

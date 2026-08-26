@@ -308,15 +308,29 @@ pub(crate) fn tensor_residency_conv2d(
     }
 }
 
-/// R-3052 full: residency-aware sum reduction. Writes 1 f32 into a
-/// 1-element pool buffer; the caller reads it back as the scalar loss
-/// (the only allowed readback in the hot path).
+/// R-3052 full: residency-aware scalar reduction (`sum`, `mean`, `min`,
+/// `max`, `argmax`). Writes 1 f32 into a 1-element pool buffer and reads
+/// it back as the scalar result (the only allowed readback in the hot
+/// path). For `ArgMax` the readback f32 carries the winning index
+/// bit-cast, so callers convert with `value.to_bits()` instead of using
+/// the numeric value.
 #[cfg(feature = "gpu")]
-pub(crate) fn tensor_residency_sum(registry: &mut TensorRegistry, tensor: &StdTensor) -> Option<f32> {
+pub(crate) fn tensor_residency_reduce(
+    registry: &mut TensorRegistry,
+    tensor: &StdTensor,
+    op: crate::gpu::GpuReduceOp,
+) -> Option<f32> {
     let in_buf = tensor
         .device_storage
         .get(&crate::gpu::PoolDevice::Wgpu)?
         .clone();
+    let run = match op {
+        crate::gpu::GpuReduceOp::Sum => crate::gpu::sum_device,
+        crate::gpu::GpuReduceOp::Mean => crate::gpu::mean_device,
+        crate::gpu::GpuReduceOp::Min => crate::gpu::min_device,
+        crate::gpu::GpuReduceOp::Max => crate::gpu::max_device,
+        crate::gpu::GpuReduceOp::ArgMax => crate::gpu::argmax_device,
+    };
     let outcome = crate::gpu::with_device_queue(|device, queue| {
         let out_buf = registry.device_arena.acquire(
             crate::gpu::PoolDevice::Wgpu,
@@ -324,15 +338,15 @@ pub(crate) fn tensor_residency_sum(registry: &mut TensorRegistry, tensor: &StdTe
             1,
             device,
         );
-        let sum_result = crate::gpu::sum_device(&in_buf, &out_buf, device, queue);
-        let value_result = match &sum_result {
+        let reduce_result = run(&in_buf, &out_buf, device, queue);
+        let value_result = match &reduce_result {
             Ok(()) => crate::gpu::readback_scalar_device(&out_buf, device, queue),
             Err(e) => Err(crate::gpu::GpuError {
                 kind: e.kind,
                 message: e.message.clone(),
             }),
         };
-        (sum_result, value_result, out_buf)
+        (reduce_result, value_result, out_buf)
     });
     match outcome {
         Ok((Ok(()), Ok(value), buf)) => {
@@ -340,11 +354,11 @@ pub(crate) fn tensor_residency_sum(registry: &mut TensorRegistry, tensor: &StdTe
             registry.device_arena.release(buf);
             Some(value)
         }
-        Ok((sum_res, val_res, buf)) => {
-            let err = sum_res.err().or(val_res.err()).unwrap_or_else(|| {
+        Ok((reduce_res, val_res, buf)) => {
+            let err = reduce_res.err().or(val_res.err()).unwrap_or_else(|| {
                 crate::gpu::GpuError::new(
                     crate::gpu::GpuErrorKind::Other,
-                    "sum residency failed without error",
+                    "residency reduce failed without error",
                 )
             });
             registry.device_arena.release(buf);
@@ -358,6 +372,31 @@ pub(crate) fn tensor_residency_sum(registry: &mut TensorRegistry, tensor: &StdTe
             None
         }
     }
+}
+
+/// R-3052 full: guarded scalar-reduction fast path shared by
+/// `sum`/`mean`/`min`/`max`/`argmax`. Returns `None` (without touching
+/// the GPU) unless the tensor is a non-empty device-resident Wgpu f32
+/// float tensor; otherwise runs the residency reduce and converts the
+/// readback f32 with `convert` (numeric ops decode the value; ArgMax
+/// decodes the bit-cast index).
+#[cfg(feature = "gpu")]
+pub(crate) fn tensor_residency_scalar(
+    registry: &mut TensorRegistry,
+    tensor: &StdTensor,
+    op: crate::gpu::GpuReduceOp,
+    convert: impl Fn(f32) -> SpectraHostValue,
+) -> Option<SpectraHostValue> {
+    if tensor.dtype != TensorDType::Float
+        || tensor.device != TensorDevice::Wgpu
+        || tensor.len() == 0
+        || !tensor
+            .device_storage
+            .contains_key(&crate::gpu::PoolDevice::Wgpu)
+    {
+        return None;
+    }
+    tensor_residency_reduce(registry, tensor, op).map(convert)
 }
 
 /// R-3052 full: residency-aware `ml.linear` forward. Runs a device

@@ -24,6 +24,15 @@ use super::*;
 // * The session handle comes from `spectra.std.ml.onnx_session_from_bytes`
 //   (single-graph-input models); the result is a fresh int64 tensor of the
 //   extended id sequence.
+// * `spectra.std.ml.generate_ex(session, input_ids, max_new_tokens, eos_id,
+//   temperature_bits, top_k, seed)` adds optional sampling on top of the
+//   same contract: `temperature_bits` carries an f64 temperature as raw
+//   bits, `top_k` bounds the candidate pool and `seed` drives a
+//   deterministic splitmix64 stream (no external RNG). `temperature <= 0`
+//   or `top_k <= 1` selects plain greedy decoding, bit-compatible with
+//   `ml.generate`; otherwise the top-k logits are temperature-scaled into
+//   a softmax and sampled, so a fixed seed reproduces the exact sequence
+//   for a fixed model and prompt.
 //
 // The deterministic test fixture below is a real GPT-like toy exported as an
 // ONNX ModelProto with trivial fixed weights: `hidden = Gather(embedding,
@@ -36,6 +45,76 @@ use super::*;
 #[cfg(all(test, feature = "onnx"))]
 pub(crate) const ML_GENERATION_FIXTURE_VOCAB: usize = 6;
 
+/// Sampling controls for `spectra.std.ml.generate_ex`.
+#[cfg(feature = "onnx")]
+#[derive(Clone, Copy)]
+pub(crate) struct MlGenerateSampling {
+    /// Softmax temperature; `<= 0.0` selects greedy decoding.
+    pub temperature: f64,
+    /// Candidate pool size (clamped to the vocabulary); `<= 1` is greedy.
+    pub top_k: usize,
+    /// Seed of the deterministic splitmix64 sampling stream.
+    pub seed: u64,
+}
+
+#[cfg(feature = "onnx")]
+impl MlGenerateSampling {
+    fn is_greedy(&self) -> bool {
+        self.temperature <= 0.0 || self.top_k <= 1
+    }
+
+    /// One splitmix64 step. The golden-ratio increment makes every seed —
+    /// including 0 — a usable stream state, keeping "seed 0" reproducible
+    /// instead of degenerate.
+    fn next_random(state: &mut u64) -> u64 {
+        *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = *state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+}
+
+/// Samples one token from the LAST-position logits row: keeps the `top_k`
+/// highest logits, temperature-scales them into a softmax and walks the
+/// cumulative distribution with a uniform draw from the deterministic
+/// stream. The stable sort keeps equal logits in LOWEST-token-id order —
+/// the same tie-break contract as greedy decoding. Non-finite logits were
+/// already rejected by the caller.
+#[cfg(feature = "onnx")]
+fn ml_generate_sample_top_k(
+    last: &[f32],
+    vocab: usize,
+    options: &MlGenerateSampling,
+    state: &mut u64,
+) -> usize {
+    let mut candidates: Vec<(usize, f32)> = last[..vocab].iter().copied().enumerate().collect();
+    candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.truncate(options.top_k.min(vocab).max(1));
+
+    let temperature = if options.temperature > 0.0 {
+        options.temperature
+    } else {
+        1.0
+    };
+    let scaled: Vec<f64> = candidates.iter().map(|(_, logit)| *logit as f64 / temperature).collect();
+    let max_scaled = scaled.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let weights: Vec<f64> = scaled.iter().map(|value| (value - max_scaled).exp()).collect();
+    let total: f64 = weights.iter().sum();
+    let draw =
+        MlGenerateSampling::next_random(state) as f64 / (1u64 << 53) as f64 * total;
+
+    let mut cumulative = 0.0;
+    for (index, weight) in weights.iter().enumerate() {
+        cumulative += weight;
+        if draw < cumulative {
+            return candidates[index].0;
+        }
+    }
+    candidates[candidates.len() - 1].0
+}
+
+
 /// Real autoregressive greedy generation loop. Holds the process-local
 /// session lock for the whole loop: no other host call may run inference on
 /// any session while a generate step sequence is in flight.
@@ -45,6 +124,7 @@ pub(crate) fn ml_generate_inner(
     input_ids: &[i64],
     max_new_tokens: usize,
     eos_id: i64,
+    sampling: Option<MlGenerateSampling>,
 ) -> Result<Vec<i64>, i32> {
     use ort::value::Tensor;
     if input_ids.is_empty() || max_new_tokens == 0 {
@@ -59,6 +139,8 @@ pub(crate) fn ml_generate_inner(
     // overlap with the `&mut session` that inference takes.
     let input_name = session.inputs()[0].name().to_owned();
     let output_name = session.outputs()[0].name().to_owned();
+
+    let mut rng_state = sampling.map(|options| options.seed).unwrap_or(0);
 
     let mut ids = input_ids.to_vec();
     for _ in 0..max_new_tokens {
@@ -89,16 +171,23 @@ pub(crate) fn ml_generate_inner(
             return Err(HOST_STATUS_INTERNAL_ERROR);
         }
 
-        // Argmax over the last position's vocab row; strict `>` keeps the
-        // LOWEST index on ties (deterministic tie-break).
         let last = &flat[(seq - 1) * vocab..];
-        let mut best = 0usize;
-        for candidate in 1..vocab {
-            if last[candidate] > last[best] {
-                best = candidate;
+        let next = match sampling {
+            Some(options) if !options.is_greedy() => {
+                ml_generate_sample_top_k(last, vocab, &options, &mut rng_state) as i64
             }
-        }
-        let next = best as i64;
+            // Greedy argmax over the last position's vocab row; strict `>`
+            // keeps the LOWEST index on ties (deterministic tie-break).
+            _ => {
+                let mut best = 0usize;
+                for candidate in 1..vocab {
+                    if last[candidate] > last[best] {
+                        best = candidate;
+                    }
+                }
+                best as i64
+            }
+        };
         if next == eos_id {
             // EOS terminates generation and is NOT appended.
             break;
@@ -130,7 +219,13 @@ pub(crate) extern "C" fn std_ml_generate(ctx: *mut SpectraHostCallContext) -> i3
             if input_ids.is_empty() {
                 return HOST_STATUS_INVALID_ARGUMENT;
             }
-            match ml_generate_inner(args[0] as u64, &input_ids, args[2] as usize, args[3]) {
+            match ml_generate_inner(
+                args[0] as u64,
+                &input_ids,
+                args[2] as usize,
+                args[3],
+                None,
+            ) {
                 Ok(ids) => match tensor_alloc(TensorDType::Int, vec![ids.len()], ids) {
                     Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
                     Err(_) => HOST_STATUS_INTERNAL_ERROR,
@@ -145,6 +240,67 @@ pub(crate) extern "C" fn std_ml_generate(ctx: *mut SpectraHostCallContext) -> i3
         }
     }
 }
+
+/// `spectra.std.ml.generate_ex(session, input_ids, max_new_tokens, eos_id,
+/// temperature_bits, top_k, seed) -> int_tensor`
+///
+/// Sampling variant of `spectra.std.ml.generate`: `temperature_bits` carries
+/// an f64 temperature as raw bits, `top_k` bounds the candidate pool and
+/// `seed` drives the deterministic splitmix64 stream. A negative or
+/// non-finite temperature is rejected; `temperature <= 0` or `top_k <= 1`
+/// degrades to exactly the greedy behavior of `ml.generate`. Without the
+/// `onnx` feature this degrades to a typed `Error` record like every other
+/// real-inference host.
+pub(crate) extern "C" fn std_ml_generate_ex(ctx: *mut SpectraHostCallContext) -> i32 {
+    unsafe {
+        let Ok((ctx_ref, args)) = ml_args(ctx, 7) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        if args[0] <= 0 || args[1] <= 0 || args[2] <= 0 || args[5] < 0 {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        #[cfg(feature = "onnx")]
+        {
+            let temperature = f64::from_bits(args[4] as u64);
+            if !temperature.is_finite() || temperature < 0.0 {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            }
+            let Ok(top_k) = usize::try_from(args[5]) else {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            };
+            let Some(input_ids) = ml_tensor_int_data(args[1] as usize) else {
+                return HOST_STATUS_NOT_FOUND;
+            };
+            if input_ids.is_empty() {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            }
+            let sampling = MlGenerateSampling {
+                temperature,
+                top_k,
+                seed: args[6] as u64,
+            };
+            match ml_generate_inner(
+                args[0] as u64,
+                &input_ids,
+                args[2] as usize,
+                args[3],
+                Some(sampling),
+            ) {
+                Ok(ids) => match tensor_alloc(TensorDType::Int, vec![ids.len()], ids) {
+                    Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
+                    Err(_) => HOST_STATUS_INTERNAL_ERROR,
+                },
+                Err(status) => status,
+            }
+        }
+        #[cfg(not(feature = "onnx"))]
+        {
+            let _ = (args[1], args[4], args[5], args[6]);
+            ml_onnx_unavailable_result(ctx_ref, ML_GENERATE_EX)
+        }
+    }
+}
+
 
 // ── RagGenerate: deterministic test fixture ──
 //

@@ -650,6 +650,83 @@ pub(crate) extern "C" fn std_ml_mse_loss(ctx: *mut SpectraHostCallContext) -> i3
 }
 
 pub(crate) extern "C" fn std_ml_bce_loss(ctx: *mut SpectraHostCallContext) -> i32 {
+    #[cfg(feature = "gpu")]
+    unsafe {
+        let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        let pred_h = args[0] as usize;
+        let target_h = args[1] as usize;
+        let device_loss = with_tensor_registry(|registry| {
+            let prediction = registry.get(pred_h)?.clone();
+            let target = registry.get(target_h)?.clone();
+            if prediction.dtype != TensorDType::Float
+                || target.dtype != TensorDType::Float
+                || prediction.len() != target.len()
+                || prediction.len() == 0
+            {
+                return None;
+            }
+            let pred_buf = prediction
+                .device_storage
+                .get(&crate::gpu::PoolDevice::Wgpu)?
+                .clone();
+            let target_buf = target
+                .device_storage
+                .get(&crate::gpu::PoolDevice::Wgpu)?
+                .clone();
+            let outcome = crate::gpu::with_device_queue(|device, queue| {
+                let out_buf = registry.device_arena.acquire(
+                    crate::gpu::PoolDevice::Wgpu,
+                    crate::gpu::PoolDType::Float,
+                    1,
+                    device,
+                );
+                let loss_result =
+                    crate::gpu::bce_loss_device(&pred_buf, &target_buf, &out_buf, device, queue);
+                let value_result = loss_result.and_then(|()| {
+                    crate::gpu::readback_scalar_device(&out_buf, device, queue)
+                        .map(|value| value as f64)
+                });
+                (value_result, out_buf)
+            });
+            match outcome {
+                Ok((Ok(value), out_buf)) => {
+                    registry.device_arena.release(out_buf);
+                    registry.note_gpu_kernel();
+                    let requires_grad = prediction.requires_grad && tensor_is_grad_enabled();
+                    let creator = requires_grad.then(|| AutogradNode {
+                        op: AutogradOp::MlBce,
+                        parents: vec![pred_h],
+                        input_shape: vec![prediction.len()],
+                        left_shape: Vec::new(),
+                        right_shape: Vec::new(),
+                        input: Vec::new(),
+                        output: Vec::new(),
+                        left: Vec::new(),
+                        right: Vec::new(),
+                        aux: vec![prediction.len()],
+                        device_aux: Some(target_buf),
+                    });
+                    Some((value, requires_grad, creator))
+                }
+                Ok((Err(err), out_buf)) => {
+                    registry.device_arena.release(out_buf);
+                    registry.note_gpu_error(err.kind);
+                    registry.note_cpu_fallback();
+                    None
+                }
+                Err(err) => {
+                    registry.note_gpu_error(err.kind);
+                    registry.note_cpu_fallback();
+                    None
+                }
+            }
+        });
+        if let Some((value, requires_grad, creator)) = device_loss {
+            return ml_loss_tensor(ctx_ref, value, requires_grad, creator);
+        }
+    }
     ml_two_tensor_loss(ctx, AutogradOp::MlBce, |pred, target| {
         let n = pred.len() as f64;
         let value = pred
@@ -664,4 +741,3 @@ pub(crate) extern "C" fn std_ml_bce_loss(ctx: *mut SpectraHostCallContext) -> i3
         Some((value, Vec::new()))
     })
 }
-

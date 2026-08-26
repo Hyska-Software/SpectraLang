@@ -6658,7 +6658,510 @@ pub(crate) fn serve_real_rejects_inference_without_registered_model() {
         let message = unsafe { read_spectra_string(message_ptr) }.expect("error message");
         assert!(message.contains("--features onnx"), "{message}");
     }
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn ml_generate_ex_seed_is_reproducible_and_temperature_changes_distribution() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+
+        let dir = temp_test_dir("ml_generate_ex");
+        std::fs::create_dir_all(&dir).expect("create temp generate_ex dir");
+        let path = dir.join("toy_causal_lm.onnx");
+        std::fs::write(&path, ml_generation_fixture_proto()).expect("write fixture model");
+
+        let (status, session) = call_host(
+            ML_ONNX_SESSION_FROM_BYTES,
+            &[test_string(path.to_string_lossy().as_ref())],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        let make_ids = |ids: &[i64]| -> SpectraHostValue {
+            tensor_alloc(TensorDType::Int, vec![ids.len()], ids.to_vec())
+                .expect("alloc prompt tensor") as SpectraHostValue
+        };
+        let bits = |temperature: f64| temperature.to_bits() as i64;
+        let run_ex = |prompt: &[i64], max: i64, eos: i64, temp_bits: i64, top_k: i64, seed: i64| {
+            let input = make_ids(prompt);
+            let (status, out) = call_host(
+                ML_GENERATE_EX,
+                &[session, input, max, eos, temp_bits, top_k, seed],
+            );
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            assert!(out > 0);
+            ml_tensor_int_data(out as usize).expect("generated ids")
+        };
+
+        // Greedy compat: temperature 0 / top_k 1 reproduce the exact greedy
+        // cycle of `ml.generate`, regardless of the seed.
+        let greedy_top_k_1 = run_ex(&[0], 6, -1, bits(0.0), 1, 7);
+        assert_eq!(greedy_top_k_1, [0, 1, 2, 3, 0, 1, 2]);
+        let greedy_temp_zero_full_pool = run_ex(&[0], 6, -1, bits(0.0), 64, 99);
+        assert_eq!(greedy_temp_zero_full_pool, greedy_top_k_1);
+
+        // Reproducibility: one fixed seed, two calls, one identical sequence.
+        let first = run_ex(&[0], 8, -1, bits(50.0), 64, 42);
+        let second = run_ex(&[0], 8, -1, bits(50.0), 64, 42);
+        assert_eq!(first, second);
+
+        // High temperature flattens the near-one-hot fixture logits toward a
+        // uniform distribution over the 6-token vocabulary, so across several
+        // fixed seeds at least one sampled trajectory must leave the
+        // deterministic greedy cycle.
+        let reference = ml_generation_expected(&[0], 8, -1);
+        let diverged = [1i64, 2, 3, 4, 5]
+            .iter()
+            .any(|seed| run_ex(&[0], 8, -1, bits(50.0), 64, *seed) != reference);
+        assert!(
+            diverged,
+            "high-temperature sampling must leave the greedy trajectory for some seed"
+        );
+
+        // A negative temperature is rejected before any inference runs.
+        let input = make_ids(&[0]);
+        assert_eq!(
+            call_host(
+                ML_GENERATE_EX,
+                &[session, input, 4, -1, bits(-1.0), 64, 0]
+            )
+            .0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        let nan_bits = f64::NAN.to_bits() as i64;
+        assert_eq!(
+            call_host(ML_GENERATE_EX, &[session, input, 4, -1, nan_bits, 64, 0]).0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        // Negative top_k is rejected too.
+        assert_eq!(
+            call_host(ML_GENERATE_EX, &[session, input, 4, -1, bits(1.0), -3, 0]).0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+
+        assert_eq!(
+            call_host(ML_ONNX_SESSION_FREE, &[session]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn ml_onnx_run_multi_accepts_symbolic_dims_and_matches_feed() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+
+        let dir = temp_test_dir("onnx_run_multi_symbolic");
+        std::fs::create_dir_all(&dir).expect("create temp symbolic dir");
+        let path = dir.join("symbolic_identity.onnx");
+        std::fs::write(&path, ml_onnx_symbolic_identity_proto()).expect("write fixture model");
+
+        let (status, session) =
+            call_host(ML_ONNX_SESSION_FROM_BYTES, &[test_string(path.to_string_lossy().as_ref())]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        let make_string_list = |items: &[&str]| {
+            let (_, handle) = call_host(LIST_NEW, &[]);
+            assert!(handle > 0);
+            for item in items {
+                let (_, len) = call_host(LIST_PUSH, &[handle, test_string(item)]);
+                assert!(len > 0);
+            }
+            handle
+        };
+        let make_int_list = |items: &[SpectraHostValue]| {
+            let (_, handle) = call_host(LIST_NEW, &[]);
+            assert!(handle > 0);
+            for item in items {
+                let (_, len) = call_host(LIST_PUSH, &[handle, *item]);
+                assert!(len > 0);
+            }
+            handle
+        };
+        let feed = |shape: Vec<usize>, values: &[f64]| -> usize {
+            let tensor = tensor_alloc(TensorDType::Float, shape, f64_values_to_host(values))
+                .expect("alloc feed tensor") as usize;
+            let names = make_string_list(&["x"]);
+            let tensors = make_int_list(&[tensor as SpectraHostValue]);
+            let (status, output) = call_host(ML_ONNX_RUN_MULTI, &[session, names, tensors]);
+            assert_eq!(status, HOST_STATUS_SUCCESS, "symbolic dims must be accepted");
+            output as usize
+        };
+
+        // The model declares float32 [batch, seq] with SYMBOLIC dim names;
+        // any concrete rank-2 shape resolves at run time and Identity must
+        // return exactly the fed values.
+        let values_a = [1.5f64, -2.0, 0.25, 3.75];
+        let out_a = feed(vec![2, 2], &values_a);
+        let (_, got_a, _) = ml_tensor_float_data(out_a).expect("output a data");
+        assert_eq!(got_a.len(), 4);
+        for index in 0..4 {
+            assert!((got_a[index] - values_a[index]).abs() < 1e-6);
+        }
+
+        // A different concrete shape through the same symbolic model works.
+        let values_b = [7.0f64, -8.25, 0.5, 1.0, -0.125, 9.5];
+        let out_b = feed(vec![1, 6], &values_b);
+        let (_, got_b, _) = ml_tensor_float_data(out_b).expect("output b data");
+        assert_eq!(got_b.len(), 6);
+        for index in 0..6 {
+            assert!((got_b[index] - values_b[index]).abs() < 1e-6);
+        }
+
+        // Rank mismatch against the declared [batch, seq] stays a typed error.
+        let flat = tensor_alloc(
+            TensorDType::Float,
+            vec![4],
+            f64_values_to_host(&[1.0f64, 2.0, 3.0, 4.0]),
+        )
+        .expect("alloc flat tensor") as SpectraHostValue;
+        let names = make_string_list(&["x"]);
+        let tensors = make_int_list(&[flat]);
+        let (status, tagged) = call_host(ML_ONNX_RUN_MULTI, &[session, names, tensors]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (tag, error) = unsafe { tagged_result_parts(tagged) };
+        assert_eq!(tag, 1, "rank mismatch must produce Err tag");
+        let (message_status, message_ptr) = call_host("spectra.std.error.message", &[error]);
+        assert_eq!(message_status, HOST_STATUS_SUCCESS);
+        let message = unsafe { read_spectra_string(message_ptr) }.expect("error message");
+        assert!(message.contains("shape mismatch"), "{message}");
+
+        assert_eq!(
+            call_host(ML_ONNX_SESSION_FREE, &[session]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(not(feature = "onnx"))]
+    #[test]
+    fn ml_generate_ex_without_feature_returns_typed_error() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        // Scalar arguments validate first so the failure below is
+        // unambiguously the missing feature: temperature 0 and top_k 0 are
+        // valid greedy settings.
+        let (status, tagged) = call_host(ML_GENERATE_EX, &[1, 1, 4, -1, 0, 0, 0]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (tag, error) = unsafe { tagged_result_parts(tagged) };
+        assert_eq!(tag, 1, "expected Err tag, got payload {error}");
+        let (message_status, message_ptr) = call_host("spectra.std.error.message", &[error]);
+        assert_eq!(message_status, HOST_STATUS_SUCCESS);
+        let message = unsafe { read_spectra_string(message_ptr) }.expect("error message");
+        assert!(message.contains("--features onnx"), "{message}");
+    }
+
     // ── ServeHttp ── (APPEND-ONLY: novos testes abaixo desta linha)
+
+    #[test]
+    fn serve_multi_model_alternates_named_models_and_reports_per_model_metrics() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        assert_eq!(call_host(SERVE_RESET, &[]).0, HOST_STATUS_SUCCESS);
+        let (status, server) = call_host(SERVE_SERVER_NEW, &[1]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        // Model "double": y = relu(2x).
+        let (status, w_double) =
+            call_host(TENSOR_LITERAL2_F, &[1, 1, serve_real_bits(2.0)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, b_zero) = call_host(TENSOR_LITERAL_F, &[1, serve_real_bits(0.0)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(
+                SERVE_SERVER_REGISTER_NAMED_MODEL_LINEAR,
+                &[server, test_string("double"), w_double, b_zero, 0]
+            ),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        // Model "shift": y = tanh(3x + 0.25).
+        let (status, w_shift) =
+            call_host(TENSOR_LITERAL2_F, &[1, 1, serve_real_bits(3.0)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, b_shift) = call_host(TENSOR_LITERAL_F, &[1, serve_real_bits(0.25)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(
+                SERVE_SERVER_REGISTER_NAMED_MODEL_LINEAR,
+                &[server, test_string("shift"), w_shift, b_shift, 2]
+            ),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        // Legacy host still registers under the implicit "default" model.
+        let (status, w_one) = call_host(TENSOR_LITERAL2_F, &[1, 1, serve_real_bits(1.0)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(SERVE_SERVER_REGISTER_MODEL_LINEAR, &[server, w_one, b_zero, 0]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        // Alternate REAL inferences across all three models; each request
+        // must hit exactly the model named in its call.
+        let direct_infer = |model: &str, x: f64| -> SpectraHostValue {
+            let (status, input) =
+                call_host(TENSOR_LITERAL_F, &[1, serve_real_bits(x)]);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            let (status, request) =
+                call_host(SERVE_SERVER_INFER, &[server, test_string(model), input]);
+            assert_eq!(status, HOST_STATUS_SUCCESS, "infer {model}");
+            assert!(request > 0);
+            request
+        };
+        let r_double_a = direct_infer("double", 3.0); // relu(6) = 6
+        let r_shift_a = direct_infer("shift", 3.0); // tanh(9.25)
+        let r_default = direct_infer("default", 3.0); // relu(3) = 3
+        let r_double_b = direct_infer("double", -2.0); // relu(-4) = 0
+
+        assert_eq!(
+            call_host(SERVE_SERVER_RESULT, &[server, r_double_a]),
+            (HOST_STATUS_SUCCESS, 6)
+        );
+        assert_eq!(
+            call_host(SERVE_SERVER_RESULT, &[server, r_shift_a]),
+            (HOST_STATUS_SUCCESS, 1) // round(tanh(9.25)) = 1
+        );
+        assert_eq!(
+            call_host(SERVE_SERVER_RESULT, &[server, r_default]),
+            (HOST_STATUS_SUCCESS, 3)
+        );
+        assert_eq!(
+            call_host(SERVE_SERVER_RESULT, &[server, r_double_b]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+
+        // Exact float outputs come from the correct per-model forward pass.
+        let (_, vec_handle) =
+            call_host(SERVE_SERVER_RESULT_VECTOR, &[server, r_shift_a]);
+        let (_, values, _) = ml_tensor_float_data(vec_handle as usize).expect("output vector");
+        assert!((values[0] - (9.25f64).tanh()).abs() < 1e-9, "got {}", values[0]);
+
+        // Unknown model id rejects typed instead of falling back.
+        let (status, input) = call_host(TENSOR_LITERAL_F, &[1, serve_real_bits(1.0)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(SERVE_SERVER_INFER, &[server, test_string("nope"), input]).0,
+            HOST_STATUS_NOT_FOUND
+        );
+
+        // The monitoring snapshot carries one metrics section per model with
+        // separately tracked counters and latencies.
+        let (status, snapshot_ptr) =
+            call_host(SERVE_SERVER_MONITORING_SNAPSHOT, &[server]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let snapshot = unsafe { read_spectra_string(snapshot_ptr) }.expect("snapshot");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&snapshot).expect("snapshot JSON");
+        let models = parsed["models"].as_array().expect("models sections");
+        assert_eq!(models.len(), 3, "{snapshot}");
+        let find_model = |id: &str| {
+            models
+                .iter()
+                .find(|section| section["model"] == id)
+                .unwrap_or_else(|| panic!("missing section for {id}: {snapshot}"))
+                .clone()
+        };
+        assert_eq!(find_model("double")["completed"].as_i64(), Some(2));
+        assert_eq!(find_model("shift")["completed"].as_i64(), Some(1));
+        assert_eq!(find_model("default")["completed"].as_i64(), Some(1));
+        assert!(
+            find_model("shift")["latency_p95_ms"].as_f64().expect("p95") >= 0.0,
+            "{snapshot}"
+        );
+    }
+
+    #[test]
+    fn serve_multi_model_vector_request_indim4_matches_manual_math() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        assert_eq!(call_host(SERVE_RESET, &[]).0, HOST_STATUS_SUCCESS);
+        let (status, server) = call_host(SERVE_SERVER_NEW, &[2]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        // Layer 1 (in-dim 4, out 2, relu):
+        //   h1 = relu([1,-1,2,0] . x + 0.5), h2 = relu([0.5,0.5,-0.5,0] . x - 0.25)
+        // Layer 2 (in-dim 2, out 1, tanh): o = tanh([2,-1] . h - 0.125)
+        let (status, w1) = call_host(
+            TENSOR_LITERAL2_F,
+            &[
+                2,
+                4,
+                serve_real_bits(1.0),
+                serve_real_bits(-1.0),
+                serve_real_bits(2.0),
+                serve_real_bits(0.0),
+                serve_real_bits(0.5),
+                serve_real_bits(0.5),
+                serve_real_bits(-0.5),
+                serve_real_bits(0.0),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, b1) = call_host(
+            TENSOR_LITERAL_F,
+            &[2, serve_real_bits(0.5), serve_real_bits(-0.25)],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, w2) = call_host(
+            TENSOR_LITERAL2_F,
+            &[1, 2, serve_real_bits(2.0), serve_real_bits(-1.0)],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, b2) = call_host(TENSOR_LITERAL_F, &[1, serve_real_bits(-0.125)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(
+                SERVE_SERVER_REGISTER_NAMED_MODEL_LINEAR,
+                &[server, test_string("vec4"), w1, b1, 0, w2, b2, 2]
+            ),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        // Vector request x = [1, -1, 2, 0]:
+        //   h1 = relu(5.5) = 5.5, h2 = relu(-1.25) = 0
+        //   o  = tanh(11 - 0.125) = tanh(10.875)
+        let (status, input) = call_host(
+            TENSOR_LITERAL_F,
+            &[
+                4,
+                serve_real_bits(1.0),
+                serve_real_bits(-1.0),
+                serve_real_bits(2.0),
+                serve_real_bits(0.0),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, request) =
+            call_host(SERVE_SERVER_INFER, &[server, test_string("vec4"), input]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (_, vec_handle) = call_host(SERVE_SERVER_RESULT_VECTOR, &[server, request]);
+        let (shape, values, _) =
+            ml_tensor_float_data(vec_handle as usize).expect("output vector");
+        assert_eq!(shape.len(), 1);
+        assert_eq!(values.len(), 1);
+        assert!(
+            (values[0] - (10.875f64).tanh()).abs() < 1e-9,
+            "got {}",
+            values[0]
+        );
+
+        // Width mismatch: a 3-wide request against an in-dim-4 model must be
+        // rejected instead of silently truncated.
+        let (status, narrow) = call_host(
+            TENSOR_LITERAL_F,
+            &[3, serve_real_bits(1.0), serve_real_bits(2.0), serve_real_bits(3.0)],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(SERVE_SERVER_INFER, &[server, test_string("vec4"), narrow]).0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+    }
+
+    #[test]
+    fn serve_http_listener_routes_named_models_and_vector_inputs() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+
+        assert_eq!(call_host(SERVE_RESET, &[]).0, HOST_STATUS_SUCCESS);
+        let (status, server) = call_host(SERVE_SERVER_NEW, &[1]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        // Default model: y = relu(2x). Named model "triple": y = relu(3x + 1).
+        serve_real_register_scalar_model(server, 2.0);
+        let (status, w_triple) =
+            call_host(TENSOR_LITERAL2_F, &[1, 1, serve_real_bits(3.0)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, b_triple) = call_host(TENSOR_LITERAL_F, &[1, serve_real_bits(1.0)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(
+                SERVE_SERVER_REGISTER_NAMED_MODEL_LINEAR,
+                &[server, test_string("triple"), w_triple, b_triple, 0]
+            ),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        let (status, port) = call_host(SERVE_HTTP_START, &[server, 0]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let port = port as u16;
+
+        let post_infer = |body: &str| -> String {
+            serve_http_request_once(
+                port,
+                "POST /infer HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n",
+                body,
+            )
+        };
+        let body_of = |response: &str| -> serde_json::Value {
+            serde_json::from_str(response.split("\r\n\r\n").nth(1).expect("body"))
+                .expect("JSON body")
+        };
+
+        // No "model" key routes to the default model: relu(2 * 2) = 4.
+        let response = post_infer("{\"inputs\":[2]}");
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        let parsed = body_of(&response);
+        assert!((parsed["outputs"][0].as_f64().expect("out") - 4.0).abs() < 1e-9);
+
+        // Explicit model selector hits the other registered model:
+        // relu(3 * 2 + 1) = 7.
+        let response = post_infer("{\"model\":\"triple\",\"inputs\":[2]}");
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        let parsed = body_of(&response);
+        assert!((parsed["outputs"][0].as_f64().expect("out") - 7.0).abs() < 1e-9);
+
+        // Unknown model id is a typed 404, not a silent default fallback.
+        let response = post_infer("{\"model\":\"nope\",\"inputs\":[2]}");
+        assert!(response.starts_with("HTTP/1.1 404"), "{response}");
+        assert_eq!(body_of(&response)["error"], "unknown_model");
+
+        // Width mismatch against the in-dim-1 models is a typed 400.
+        let response = post_infer("{\"model\":\"triple\",\"inputs\":[1,2]}");
+        assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+        assert_eq!(body_of(&response)["error"], "inference_rejected");
+
+        // Metrics expose separate sections for both served models.
+        let response = serve_http_request_once(port, "GET /metrics HTTP/1.1\r\nHost: localhost\r\n", "");
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        let snapshot = body_of(&response);
+        let models = snapshot["models"].as_array().expect("models sections");
+        let ids: Vec<&str> = models
+            .iter()
+            .filter_map(|section| section["model"].as_str())
+            .collect();
+        assert!(ids.contains(&"default"), "{snapshot}");
+        assert!(ids.contains(&"triple"), "{snapshot}");
+        let triple = models
+            .iter()
+            .find(|section| section["model"] == "triple")
+            .expect("triple section");
+        assert_eq!(triple["completed"].as_i64(), Some(1));
+
+        assert_eq!(
+            call_host(SERVE_HTTP_STOP, &[server]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+    }
 
     /// Sends one raw HTTP/1.1 request with `Connection: close` and reads the
     /// full response until the server closes the socket.
@@ -7003,4 +7506,238 @@ pub(crate) fn serve_real_rejects_inference_without_registered_model() {
 
         let _ = call_host(LIST_FREE, &[names]);
         let _ = call_host(LIST_FREE, &[tensors]);
+    }
+
+    // ── GpuInventory: gated device-vs-CPU tests for the new device paths
+    // ── (residency reductions, float unaries, sum_t/mean_t, BCE loss).
+    // ── Every test self-skips when no WGPU adapter is present.
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn tensor_runtime_gpu_residency_reduce_ops_match_cpu() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        if call_host(TENSOR_DEVICE_AVAILABLE, &[6]) != (HOST_STATUS_SUCCESS, 1) {
+            return;
+        }
+
+        let values = [3.5f64, -2.0, 7.25, 0.5, -9.75, 4.0, 12.5, -1.0];
+        let bits = values.map(|v| v.to_bits() as i64);
+        let (status, h) = call_host(
+            TENSOR_LITERAL_F,
+            &[
+                8, bits[0], bits[1], bits[2], bits[3], bits[4], bits[5], bits[6], bits[7],
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, d) = call_host(TENSOR_TO_DEVICE, &[h, 6]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        // mean_f on the residency path.
+        let (status, mean_bits) = call_host(TENSOR_MEAN_F, &[d]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let cpu_mean = values.iter().sum::<f64>() / values.len() as f64;
+        assert!(
+            (f64::from_bits(mean_bits as u64) - cpu_mean).abs() < 1e-5 * cpu_mean.abs().max(1.0),
+            "mean {} vs cpu {cpu_mean}",
+            f64::from_bits(mean_bits as u64)
+        );
+
+        // min/max on the residency path (numeric compare, mixed signs).
+        for (op, expected, what) in [
+            (
+                TENSOR_MAX,
+                values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                "max",
+            ),
+            (
+                TENSOR_MIN,
+                values.iter().copied().fold(f64::INFINITY, f64::min),
+                "min",
+            ),
+        ] {
+            let (status, extreme_bits) = call_host(op, &[d]);
+            assert_eq!(status, HOST_STATUS_SUCCESS, "{what}");
+            let got = f64::from_bits(extreme_bits as u64);
+            assert!((got - expected).abs() < 1e-6, "{what} {got} vs cpu {expected}");
+        }
+
+        // argmax on the residency path; ties resolve to the lowest index.
+        let (status, index) = call_host(TENSOR_ARGMAX, &[d]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let cpu_argmax = values
+            .iter()
+            .enumerate()
+            .max_by(|(i, a), (j, b)| a.partial_cmp(b).unwrap().then(j.cmp(i)))
+            .map(|(i, _)| i)
+            .unwrap();
+        assert_eq!(index as usize, cpu_argmax);
+
+        // CPU-resident twin must agree with the device result.
+        let (status, mean_cpu_bits) = call_host(TENSOR_MEAN_F, &[h]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!(
+            (f64::from_bits(mean_cpu_bits as u64) - f64::from_bits(mean_bits as u64)).abs() < 1e-5,
+        );
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn tensor_runtime_gpu_float_unary_matches_cpu() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        if call_host(TENSOR_DEVICE_AVAILABLE, &[6]) != (HOST_STATUS_SUCCESS, 1) {
+            return;
+        }
+
+        let values = [0.25f64, 1.0, 2.0, 4.0];
+        let bits = values.map(|v| v.to_bits() as i64);
+        let (status, h) = call_host(
+            TENSOR_LITERAL_F,
+            &[4, bits[0], bits[1], bits[2], bits[3]],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, d) = call_host(TENSOR_TO_DEVICE, &[h, 6]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        let cases: [(&str, fn(f64) -> f64); 5] = [
+            (TENSOR_EXP_F, |v| v.exp()),
+            (TENSOR_LOG_F, |v| v.ln()),
+            (TENSOR_SQRT_F, |v| v.sqrt()),
+            (TENSOR_SIGMOID_F, |v| 1.0 / (1.0 + (-v).exp())),
+            (TENSOR_TANH_F, |v| v.tanh()),
+        ];
+        for (op, reference) in cases {
+            let (status, out) = call_host(op, &[d]);
+            assert_eq!(status, HOST_STATUS_SUCCESS, "{op}");
+            // The unary output must stay device-resident.
+            assert_eq!(
+                call_host(TENSOR_STORAGE_DEVICE, &[out]),
+                (HOST_STATUS_SUCCESS, 6),
+                "{op}"
+            );
+            for (index, value) in values.iter().enumerate() {
+                let (status, out_bits) = call_host(TENSOR_GET_F, &[out, index as i64]);
+                assert_eq!(status, HOST_STATUS_SUCCESS, "{op}");
+                let got = f64::from_bits(out_bits as u64);
+                let expected = reference(*value) as f32;
+                assert!(
+                    (got - f64::from(expected)).abs()
+                        <= 1e-5 * f64::from(expected).abs().max(1.0),
+                    "{op}[{index}] {got} vs cpu {}",
+                    reference(*value)
+                );
+            }
+        }
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn tensor_runtime_gpu_reduction_tensor_sum_mean_match_cpu() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        if call_host(TENSOR_DEVICE_AVAILABLE, &[6]) != (HOST_STATUS_SUCCESS, 1) {
+            return;
+        }
+
+        let values = [1.5f64, -3.25, 8.0, 0.125, -6.0, 2.0];
+        let bits = values.map(|v| v.to_bits() as i64);
+        let (status, h) = call_host(
+            TENSOR_LITERAL_F,
+            &[6, bits[0], bits[1], bits[2], bits[3], bits[4], bits[5]],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, d) = call_host(TENSOR_TO_DEVICE, &[h, 6]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        let cpu_sum = values.iter().sum::<f64>();
+        let cpu_mean = cpu_sum / values.len() as f64;
+
+        let (status, sum_t) = call_host(TENSOR_SUM_T, &[d]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, sum_bits) = call_host(TENSOR_GET_F, &[sum_t, 0]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!(
+            (f64::from_bits(sum_bits as u64) - cpu_sum).abs() <= 1e-5 * cpu_sum.abs().max(1.0),
+            "sum_t {} vs cpu {cpu_sum}",
+            f64::from_bits(sum_bits as u64)
+        );
+
+        let (status, mean_t) = call_host(TENSOR_MEAN_T, &[d]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, mean_bits) = call_host(TENSOR_GET_F, &[mean_t, 0]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!(
+            (f64::from_bits(mean_bits as u64) - cpu_mean).abs() <= 1e-5 * cpu_mean.abs().max(1.0),
+            "mean_t {} vs cpu {cpu_mean}",
+            f64::from_bits(mean_bits as u64)
+        );
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn tensor_runtime_gpu_bce_loss_device_matches_cpu() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        if call_host(TENSOR_DEVICE_AVAILABLE, &[6]) != (HOST_STATUS_SUCCESS, 1) {
+            return;
+        }
+
+        let pred = [0.1f64, 0.9, 0.5, 0.8];
+        let target = [0.0f64, 1.0, 1.0, 0.0];
+        let pred_bits = pred.map(|v| v.to_bits() as i64);
+        let target_bits = target.map(|v| v.to_bits() as i64);
+        let (status, p) = call_host(
+            TENSOR_LITERAL_F,
+            &[4, pred_bits[0], pred_bits[1], pred_bits[2], pred_bits[3]],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, t) = call_host(
+            TENSOR_LITERAL_F,
+            &[
+                4, target_bits[0], target_bits[1], target_bits[2], target_bits[3],
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, pd) = call_host(TENSOR_TO_DEVICE, &[p, 6]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, td) = call_host(TENSOR_TO_DEVICE, &[t, 6]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        let (status, loss) = call_host(ML_BCE_LOSS, &[pd, td]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, loss_bits) = call_host(TENSOR_GET_F, &[loss, 0]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let gpu_loss = f64::from_bits(loss_bits as u64);
+
+        // CPU reference over the same data with the shared 1e-7 clamp.
+        let cpu_loss = pred
+            .iter()
+            .zip(target.iter())
+            .map(|(&p, &t)| {
+                let p = p.clamp(1e-7, 1.0 - 1e-7);
+                -(t * p.ln() + (1.0 - t) * (1.0 - p).ln())
+            })
+            .sum::<f64>()
+            / pred.len() as f64;
+        assert!(
+            (gpu_loss - cpu_loss).abs() <= 1e-5 * cpu_loss.abs().max(1.0),
+            "bce gpu {gpu_loss} vs cpu {cpu_loss}"
+        );
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
     }

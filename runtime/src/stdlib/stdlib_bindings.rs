@@ -728,5 +728,15 @@ pub(crate) const SERVE_SERVER_RESULT_VECTOR: &str = "spectra.std.serve.server_re
 pub(crate) const SERVE_HTTP_START: &str = "spectra.std.serve.http_start";
 pub(crate) const SERVE_HTTP_STOP: &str = "spectra.std.serve.http_stop";
 
+// ── ServeMultiModel ── (APPEND-ONLY: novos bindings abaixo desta linha)
+pub(crate) const SERVE_SERVER_REGISTER_NAMED_MODEL_LINEAR: &str =
+    "spectra.std.serve.server_register_named_model_linear";
+pub(crate) const SERVE_SERVER_REGISTER_NAMED_MODEL_ONNX: &str =
+    "spectra.std.serve.server_register_named_model_onnx";
+pub(crate) const SERVE_SERVER_INFER: &str = "spectra.std.serve.server_infer";
+
 // ── RagGenerate ──────────────────────────────────────────────────────────────
 pub(crate) const ML_GENERATE: &str = "spectra.std.ml.generate";
+
+// ── RagGenerateEx ── (APPEND-ONLY: novos bindings abaixo desta linha)
+pub(crate) const ML_GENERATE_EX: &str = "spectra.std.ml.generate_ex";

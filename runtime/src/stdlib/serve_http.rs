@@ -5,11 +5,15 @@ use super::*;
 // on `mio` (the same backend as `async_network_reactor`). A served server can
 // expose two fixed routes without any external wiring:
 //
-//   POST /infer   JSON body {"inputs":[f64]} (exactly one scalar) runs the REAL
-//                 registered forward pass (dense chain or ONNX session) and
-//                 answers {"outputs":[f64],"latency_ms":f64}.
+//   POST /infer   JSON body {"inputs":[f64,...]} with an optional
+//                 {"model":"id"} selector (missing key -> "default"). The
+//                 input vector length must equal the named model's first
+//                 layer input dimension. Runs the REAL registered forward
+//                 pass (dense chain or ONNX session) and answers
+//                 {"outputs":[f64],"latency_ms":f64}.
 //   GET  /metrics Returns the existing monitoring snapshot JSON
-//                 (`spectra.serve.monitoring_snapshot.v1`).
+//                 (`spectra.serve.monitoring_snapshot.v1`) including the
+//                 per-model `"models"` sections.
 //
 // Hard limits: request head <= 16 KiB, body <= 4 MiB; every read/write phase is
 // deadline-bounded and keep-alive is simple sequential request handling on one
@@ -244,26 +248,36 @@ pub(crate) fn serve_http_infer_error_response(status: i32) -> Vec<u8> {
 pub(crate) fn serve_http_run_inference(
     registry: &mut ServeRegistry,
     server_handle: SpectraHostValue,
-    input: f64,
+    model_id: &str,
+    input: &[f64],
 ) -> Result<(Vec<f64>, f64), Vec<u8>> {
     let server = registry
         .servers
         .get_mut(server_handle)
         .ok_or_else(|| serve_http_response_bytes(404, "application/json", "{\"error\":\"unknown_server\"}", false))?;
-    if server.served_model.is_none() {
-        return Err(serve_http_response_bytes(
-            503,
-            "application/json",
-            "{\"error\":\"no_registered_model\"}",
-            false,
-        ));
+    if !server.models.contains_key(model_id) {
+        return Err(if server.models.is_empty() {
+            serve_http_response_bytes(
+                503,
+                "application/json",
+                "{\"error\":\"no_registered_model\"}",
+                false,
+            )
+        } else {
+            serve_http_response_bytes(
+                404,
+                "application/json",
+                "{\"error\":\"unknown_model\"}",
+                false,
+            )
+        });
     }
     server.total_requests = server.total_requests.saturating_add(1);
-    server.observed_inputs.push(input);
-    match serve_infer_f64(server, input) {
+    server.observed_inputs.extend_from_slice(input);
+    match serve_infer_named(server, model_id, input) {
         Ok((output, latency_ms)) => {
             if let Some(first) = output.first() {
-                serve_record_complete(server, *first, latency_ms);
+                serve_record_complete(server, model_id, *first, latency_ms);
             } else {
                 return Err(serve_http_response_bytes(
                     500,
@@ -301,24 +315,37 @@ pub(crate) fn serve_http_route(
                     )
                 }
             };
-            let inputs = parsed.get("inputs").and_then(serde_json::Value::as_array);
-            let input = match inputs {
-                Some(values) if values.len() == 1 => values[0].as_f64(),
-                _ => None,
-            };
-            let Some(input) = input else {
+            let model_id = parsed
+                .get("model")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(SERVE_DEFAULT_MODEL_ID);
+            let parsed_inputs: Option<Vec<f64>> = parsed
+                .get("inputs")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|values| {
+                    if values.is_empty() {
+                        return None;
+                    }
+                    values
+                        .iter()
+                        .map(|value| value.as_f64())
+                        .collect::<Option<Vec<f64>>>()
+                });
+            let Some(input) = parsed_inputs else {
                 return (
                     serve_http_response_bytes(
                         400,
                         "application/json",
-                        "{\"error\":\"expected_inputs_single_f64_array\"}",
+                        "{\"error\":\"expected_inputs_nonempty_f64_array\"}",
                         false,
                     ),
                     close,
                 );
             };
             let outcome = match lock_serve_registry() {
-                Ok(mut registry) => serve_http_run_inference(&mut registry, server_handle, input),
+                Ok(mut registry) => {
+                    serve_http_run_inference(&mut registry, server_handle, model_id, &input)
+                }
                 Err(status) => Err(serve_http_infer_error_response(status)),
             };
             match outcome {

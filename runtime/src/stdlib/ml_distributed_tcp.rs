@@ -8,8 +8,7 @@ use super::*;
 // count comes from an actual forward/backward pass.
 
 // `HashMap`, `Read`, `Write`, `mpsc`, `Arc`, `Mutex`, atomics and `Duration`
-// are already imported at the stdlib module level (see stdlib/mod.rs).
-use std::net::{Ipv4Addr, TcpStream};
+use std::net::TcpStream;
 use std::sync::Barrier;
 
 pub(crate) const ML_DIST_PROTOCOL_MAGIC: [u8; 4] = [0x53, 0x50, 0x44, 0x57]; // b"SPDW"
@@ -46,7 +45,7 @@ pub(crate) struct DistRunOutcome {
 // ── wire format ──────────────────────────────────────────────────────────────
 //
 // frame            := magic[4] type u8 payload_len u32 LE payload[payload_len]
-// HELLO payload    := version u32 LE worker_id u32 LE
+// HELLO payload    := version u32 LE worker_id u32 LE ++ [token_len u32 LE ++ token bytes]
 // ASSIGN payload   := x_tensor ++ y_tensor
 // GRADIENTS        := local_loss f64 LE ++ w_grad_tensor ++ b_grad_tensor ++ step i64 LE
 //                     (the trailing step is a backward-compatible v1 suffix;
@@ -55,6 +54,16 @@ pub(crate) struct DistRunOutcome {
 // DONE payload     := global_step i64 LE ++ mean_loss f64 LE
 // HEARTBEAT        := empty payload; worker liveness proof while idle
 // tensor           := rank u32 LE dims[u32 LE]^rank values[f64 LE]^n
+//
+// Optional shared-secret authentication: when the coordinator runs with
+// SPECTRA_DIST_TOKEN set (non-empty), every HELLO MUST carry the exact token
+// suffix above — a missing or differing token fails the whole run with the
+// typed `DistFailure::Auth` before any shard data leaves the coordinator.
+// Deployment knobs honored by `dist_run_tcp` (and the multi-node CI entry
+// point):
+//   SPECTRA_DIST_BIND   interface the coordinator binds (default "127.0.0.1";
+//                       "0.0.0.0" exposes it to other containers/hosts)
+//   SPECTRA_DIST_TOKEN  shared secret appended to HELLO frames (optional)
 
 pub(crate) fn dist_encode_frame(msg_type: u8, payload: &[u8]) -> Vec<u8> {
     let mut frame = Vec::with_capacity(ML_DIST_FRAME_HEADER_LEN + payload.len());
@@ -148,9 +157,23 @@ pub(crate) fn dist_decode_tensor_payload(payload: &[u8], cursor: &mut usize) -> 
 }
 
 pub(crate) fn dist_encode_hello(worker_id: usize) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(8);
+    dist_encode_hello_tokenized(worker_id, None)
+}
+
+/// Upper bound on a HELLO token suffix; anything longer is treated as a
+/// malformed frame (Protocol) rather than an allocation vector.
+pub(crate) const ML_DIST_MAX_TOKEN_LEN: usize = 256;
+
+/// Tokenless HELLOs stay byte-identical to v1 (8-byte payload); passing
+/// `Some(token)` appends the `token_len u32 LE ++ token bytes` suffix.
+pub(crate) fn dist_encode_hello_tokenized(worker_id: usize, token: Option<&str>) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(12 + token.map_or(0, str::len));
     dist_push_u32(&mut payload, ML_DIST_PROTOCOL_VERSION);
     dist_push_u32(&mut payload, worker_id as u32);
+    if let Some(token) = token {
+        dist_push_u32(&mut payload, token.len() as u32);
+        payload.extend_from_slice(token.as_bytes());
+    }
     dist_encode_frame(ML_DIST_MSG_HELLO, &payload)
 }
 
@@ -197,11 +220,36 @@ pub(crate) fn dist_encode_done(global_step: i64, mean_loss: f64) -> Vec<u8> {
     dist_encode_frame(ML_DIST_MSG_DONE, &payload)
 }
 
-pub(crate) fn dist_decode_hello(payload: &[u8]) -> Option<(u32, usize)> {
+pub(crate) struct DistHello {
+    pub(crate) version: u32,
+    pub(crate) worker_id: usize,
+    /// Trailing shared-secret suffix; `None` for legacy v1 tokenless HELLOs.
+    pub(crate) token: Option<String>,
+}
+
+pub(crate) fn dist_decode_hello_full(payload: &[u8]) -> Option<DistHello> {
     let mut cursor = 0usize;
     let version = dist_read_u32(payload, &mut cursor)?;
     let worker_id = dist_read_u32(payload, &mut cursor)?;
-    Some((version, worker_id as usize))
+    let token = if cursor == payload.len() {
+        None
+    } else {
+        let len = dist_read_u32(payload, &mut cursor)? as usize;
+        if len > ML_DIST_MAX_TOKEN_LEN || cursor + len > payload.len() {
+            return None;
+        }
+        Some(String::from_utf8(payload[cursor..cursor + len].to_vec()).ok()?)
+    };
+    Some(DistHello {
+        version,
+        worker_id: worker_id as usize,
+        token,
+    })
+}
+
+/// Legacy tuple decode used by the shared protocol-roundtrip tests.
+pub(crate) fn dist_decode_hello(payload: &[u8]) -> Option<(u32, usize)> {
+    dist_decode_hello_full(payload).map(|hello| (hello.version, hello.worker_id))
 }
 
 #[derive(Clone)]
@@ -730,6 +778,10 @@ pub(crate) enum DistFailure {
     Protocol,
     /// Transport/poll failure or global deadline exceeded.
     Io,
+    /// A HELLO presented a missing, unexpected, or non-matching shared
+    /// secret against the coordinator's configured token. Fails the run
+    /// immediately — unauthenticated peers never receive shard data.
+    Auth,
 }
 
 pub(crate) struct DistConn {
@@ -794,6 +846,8 @@ pub(crate) struct DistCoordState {
     pub(crate) pending_gradients: HashMap<usize, DistGradients>,
     pub(crate) round_losses: Vec<f64>,
     pub(crate) current_step: usize,
+    /// Shared secret every HELLO must present; `None` disables the check.
+    pub(crate) auth_token: Option<String>,
     pub(crate) done_sent: bool,
     /// Last completed ALLREDUCE: (step, avg_w, avg_b) — replay source for a
     /// worker that resubmits a step whose ACK it never received.
@@ -840,19 +894,25 @@ pub(crate) fn dist_coord_handle_frame(
 ) -> Result<(), DistFailure> {
     match msg_type {
         ML_DIST_MSG_HELLO => {
-            let Some((version, hello_worker)) = dist_decode_hello(&payload) else {
+            let Some(hello) = dist_decode_hello_full(&payload) else {
                 return Err(DistFailure::Protocol);
             };
-            if version != ML_DIST_PROTOCOL_VERSION || hello_worker >= spec.worker_count {
+            if hello.version != ML_DIST_PROTOCOL_VERSION || hello.worker_id >= spec.worker_count {
                 return Err(DistFailure::Protocol);
+            }
+            // Shared-secret gate: exact match required in both directions —
+            // a tokenless HELLO against a tokened coordinator, or vice versa,
+            // is rejected with the typed Auth failure before any ASSIGN.
+            if state.auth_token.as_deref() != hello.token.as_deref() {
+                return Err(DistFailure::Auth);
             }
             // One identity per connection; one live connection per rank.
             if let Some(conn) = conns.get(&token) {
-                if matches!(conn.worker_id, Some(bound) if bound != hello_worker) {
+                if matches!(conn.worker_id, Some(bound) if bound != hello.worker_id) {
                     return Err(DistFailure::Protocol);
                 }
             }
-            if let Some(&bound) = state.bindings.get(&hello_worker) {
+            if let Some(&bound) = state.bindings.get(&hello.worker_id) {
                 if bound != token && conns.contains_key(&bound) {
                     // Fast retry: the rank reattached before its dead socket
                     // was noticed. Take over the slot, retiring the stale
@@ -862,7 +922,7 @@ pub(crate) fn dist_coord_handle_frame(
                 }
             }
             let assign = {
-                let shard = dist_build_shard(spec, hello_worker);
+                let shard = dist_build_shard(spec, hello.worker_id);
                 dist_encode_assign(
                     &[shard.rows, spec.features],
                     &shard.x,
@@ -873,11 +933,11 @@ pub(crate) fn dist_coord_handle_frame(
             let Some(conn) = conns.get_mut(&token) else {
                 return Ok(());
             };
-            conn.worker_id = Some(hello_worker);
+            conn.worker_id = Some(hello.worker_id);
             conn.assigned = true;
             conn.enqueue(assign);
-            state.bindings.insert(hello_worker, token);
-            state.slot_seen[hello_worker] = StdInstant::now();
+            state.bindings.insert(hello.worker_id, token);
+            state.slot_seen[hello.worker_id] = StdInstant::now();
             Ok(())
         }
         ML_DIST_MSG_HEARTBEAT => {
@@ -982,6 +1042,7 @@ pub(crate) fn dist_coord_loop(
     listener: mio::net::TcpListener,
     spec: &DistTrainSpec,
     timing: DistTiming,
+    auth_token: Option<&str>,
 ) -> Result<(i64, f64), DistFailure> {
     use mio::Interest;
 
@@ -1000,6 +1061,7 @@ pub(crate) fn dist_coord_loop(
         round_losses: Vec::new(),
         current_step: 0,
         done_sent: false,
+        auth_token: auth_token.map(str::to_owned),
         last_round: None,
         done_frame: None,
         slot_seen: vec![started; spec.worker_count],
@@ -1130,12 +1192,32 @@ pub(crate) fn dist_coord_loop(
 }
 
 pub(crate) fn dist_run_tcp(spec: &DistTrainSpec) -> Result<DistRunOutcome, i32> {
-    let addr: std::net::SocketAddr = "127.0.0.1:0".parse().expect("loopback socket address");
+    // Deployment knobs: SPECTRA_DIST_BIND selects the listening interface
+    // (default loopback; "0.0.0.0" for container/multi-node deployments) and
+    // SPECTRA_DIST_TOKEN turns on shared-secret HELLO authentication.
+    let bind = std::env::var("SPECTRA_DIST_BIND")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "127.0.0.1".to_owned());
+    let token = std::env::var("SPECTRA_DIST_TOKEN")
+        .ok()
+        .filter(|token| !token.is_empty());
+    let addr: std::net::SocketAddr = format!("{bind}:0")
+        .parse()
+        .map_err(|_| HOST_STATUS_INVALID_ARGUMENT)?;
     let listener = mio::net::TcpListener::bind(addr).map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
     let port = listener
         .local_addr()
         .map_err(|_| HOST_STATUS_INTERNAL_ERROR)?
         .port();
+    // In-process workers always reach the coordinator over loopback, even
+    // when the listener is bound to a specific external interface.
+    let connect_host = if bind == "0.0.0.0" || bind == "::" {
+        "127.0.0.1".to_owned()
+    } else {
+        bind.clone()
+    };
 
     let (stats_tx, stats_rx) = mpsc::channel::<Result<(usize, f64, i64), String>>();
     // Workers create their own private parameter replicas on connect.
@@ -1147,14 +1229,25 @@ pub(crate) fn dist_run_tcp(spec: &DistTrainSpec) -> Result<DistRunOutcome, i32> 
     let mut handles = Vec::with_capacity(spec.worker_count);
     for (worker_id, shard) in shards.into_iter().enumerate() {
         let stats_tx = stats_tx.clone();
+        let connect_host = connect_host.clone();
+        let token = token.clone();
         handles.push(std::thread::spawn(move || {
-            let result = dist_tcp_worker(port, worker_id, shard, features, steps, lr);
+            let result = dist_tcp_worker(
+                &connect_host,
+                port,
+                worker_id,
+                shard,
+                features,
+                steps,
+                lr,
+                token.as_deref(),
+            );
             let _ = stats_tx.send(result);
         }));
     }
     drop(stats_tx);
 
-    let coord_result = dist_coord_loop(listener, spec, DistTiming::default());
+    let coord_result = dist_coord_loop(listener, spec, DistTiming::default(), token.as_deref());
 
     let mut received: Vec<(f64, i64)> = vec![(0.0, 0); spec.worker_count];
     let mut worker_error: Option<i32> = None;
@@ -1180,7 +1273,7 @@ pub(crate) fn dist_run_tcp(spec: &DistTrainSpec) -> Result<DistRunOutcome, i32> 
         }
     }
     let failure_to_status = |failure: DistFailure| match failure {
-        DistFailure::Protocol => HOST_STATUS_INVALID_ARGUMENT,
+        DistFailure::Protocol | DistFailure::Auth => HOST_STATUS_INVALID_ARGUMENT,
         DistFailure::WorkerLost { .. } | DistFailure::Io => HOST_STATUS_INTERNAL_ERROR,
     };
     let (global_step, last_loss) = coord_result.map_err(failure_to_status)?;
@@ -1211,10 +1304,12 @@ pub(crate) fn dist_run_tcp(spec: &DistTrainSpec) -> Result<DistRunOutcome, i32> 
 /// `dist_backoff_delay` — 100ms doubling, capped at 2s (~10.1s worst case).
 /// Used for the initial attach and again after every mid-run connection loss.
 pub(crate) fn dist_tcp_attach(
+    host: &str,
     port: u16,
     worker_id: usize,
     shard: &DistShard,
     features: usize,
+    token: Option<&str>,
     read_buf: &mut Vec<u8>,
 ) -> Result<TcpStream, String> {
     let mut last_err = String::from("no connection attempt was made");
@@ -1222,7 +1317,7 @@ pub(crate) fn dist_tcp_attach(
         if attempt > 0 {
             std::thread::sleep(dist_backoff_delay(attempt - 1));
         }
-        let mut stream = match TcpStream::connect((Ipv4Addr::LOCALHOST, port)) {
+        let mut stream = match TcpStream::connect((host, port)) {
             Ok(stream) => stream,
             Err(err) => {
                 last_err = format!("connect failed: {err}");
@@ -1231,7 +1326,10 @@ pub(crate) fn dist_tcp_attach(
         };
         let _ = stream.set_nodelay(true);
         let _ = stream.set_read_timeout(Some(ML_DIST_HEARTBEAT_PERIOD));
-        if stream.write_all(&dist_encode_hello(worker_id)).is_err() {
+        if stream
+            .write_all(&dist_encode_hello_tokenized(worker_id, token))
+            .is_err()
+        {
             last_err = "hello write failed".to_string();
             continue;
         }
@@ -1279,16 +1377,15 @@ pub(crate) fn dist_tcp_attach(
 /// emits HEARTBEAT frames while idle so the coordinator can distinguish a
 /// live worker from a dead one, and survives transient disconnections by
 /// reconnecting and resubmitting the exact step it never got a reply for.
-/// The local gradient kernel is deterministic, so resubmission reproduces
-/// byte-identical gradients; per-round losses are counted once at
-/// confirmation time.
 pub(crate) fn dist_tcp_worker(
+    host: &str,
     port: u16,
     worker_id: usize,
     shard: DistShard,
     features: usize,
     steps: usize,
     lr: f64,
+    token: Option<&str>,
 ) -> Result<(usize, f64, i64), String> {
     // Private parameter replica for this rank, as in real data parallelism.
     let (weight_handle, bias_handle) =
@@ -1298,7 +1395,7 @@ pub(crate) fn dist_tcp_worker(
     let mut acked_steps = 0usize;
     let mut read_buf: Vec<u8> = Vec::new();
 
-    let mut stream = dist_tcp_attach(port, worker_id, &shard, features, &mut read_buf)?;
+    let mut stream = dist_tcp_attach(host, port, worker_id, &shard, features, token, &mut read_buf)?;
     while acked_steps < steps {
         dist_clear_param_grads(weight_handle, bias_handle);
         let gradients = dist_local_gradient_step(&shard, features, weight_handle, bias_handle)
@@ -1311,10 +1408,7 @@ pub(crate) fn dist_tcp_worker(
             &gradients.b_grad,
         );
         if stream.write_all(&submission).is_err() {
-            // Lost mid-ALLREDUCE: reconnect with backoff and resubmit this
-            // step; the coordinator replays the cached reply if our gradient
-            // had already been averaged.
-            stream = dist_tcp_attach(port, worker_id, &shard, features, &mut read_buf)?;
+            stream = dist_tcp_attach(host, port, worker_id, &shard, features, token, &mut read_buf)?;
             continue;
         }
         match dist_worker_read_frame(&mut stream, &mut read_buf) {
@@ -1338,7 +1432,7 @@ pub(crate) fn dist_tcp_worker(
             }
             Some((other, _)) => return Err(format!("protocol: unexpected message type {other}")),
             None => {
-                stream = dist_tcp_attach(port, worker_id, &shard, features, &mut read_buf)?;
+                stream = dist_tcp_attach(host, port, worker_id, &shard, features, token, &mut read_buf)?;
             }
         }
     }
@@ -1385,7 +1479,7 @@ pub(crate) fn dist_worker_read_frame(stream: &mut TcpStream, buffer: &mut Vec<u8
 #[cfg(test)]
 mod dist_tcp_fault_tests {
     use super::*;
-    use std::net::TcpListener as StdListener;
+    use std::net::{Ipv4Addr, TcpListener as StdListener};
     use std::process::{Command, Stdio};
 
     fn fault_spec(worker_count: usize, steps: usize) -> DistTrainSpec {
@@ -1451,7 +1545,7 @@ mod dist_tcp_fault_tests {
         std_listener.set_nonblocking(true).unwrap();
         let listener = mio::net::TcpListener::from_std(std_listener);
         let handle = std::thread::spawn(move || {
-            dist_coord_loop(listener, &fault_spec(2, 1), DistTiming::default())
+            dist_coord_loop(listener, &fault_spec(2, 1), DistTiming::default(), None)
         });
 
         let mut buf0 = Vec::new();
@@ -1499,7 +1593,7 @@ mod dist_tcp_fault_tests {
         };
         let started = StdInstant::now();
         let handle = std::thread::spawn(move || {
-            dist_coord_loop(listener, &fault_spec(2, 3), timing)
+            dist_coord_loop(listener, &fault_spec(2, 3), timing, None)
         });
 
         let mut buf0 = Vec::new();
@@ -1536,7 +1630,7 @@ mod dist_tcp_fault_tests {
         std_listener.set_nonblocking(true).unwrap();
         let listener = mio::net::TcpListener::from_std(std_listener);
         let handle = std::thread::spawn(move || {
-            dist_coord_loop(listener, &fault_spec(2, 1), DistTiming::default())
+            dist_coord_loop(listener, &fault_spec(2, 1), DistTiming::default(), None)
         });
 
         let mut buf0 = Vec::new();
@@ -1591,12 +1685,14 @@ mod dist_tcp_fault_tests {
         let spec = e2e_spec();
         let shard = dist_build_shard(&spec, worker_id);
         let (_, loss_sum, samples) = dist_tcp_worker(
+            "127.0.0.1",
             port,
             worker_id,
             shard,
             spec.features,
             spec.steps,
             spec.lr,
+            None,
         )
         .expect("worker conversation over real TCP");
         assert!(loss_sum.is_finite());
@@ -1681,7 +1777,7 @@ mod dist_tcp_fault_tests {
 
         // Coordinator side: bounded by the global deadline inside the loop.
         let (global_step, last_loss) =
-            dist_coord_loop(listener, &e2e_spec(), DistTiming::default())
+            dist_coord_loop(listener, &e2e_spec(), DistTiming::default(), None)
                 .expect("multi-process coordination over TCP");
         assert_eq!(global_step, e2e_spec().steps as i64);
         assert!(last_loss.is_finite());
@@ -1704,5 +1800,240 @@ mod dist_tcp_fault_tests {
             }
         }
         println!("dist e2e worker logs: {}", log_dir.display());
+    }
+
+    // ── HELLO shared-secret authentication (APPEND-ONLY) ────────────────
+    // Covers the optional SPECTRA_DIST_TOKEN contract: tokenized HELLO
+    // round-trip, typed Auth rejection of a wrong/missing token, and a full
+    // tokened training run. The multi-node container entrypoint at the bottom
+    // is driven by .github/workflows/distributed-multi-node.yml.
+
+    #[test]
+    fn dist_hello_token_roundtrip_and_malformed_rejection() {
+        // Tokenless encoding stays byte-identical to v1 (8-byte payload).
+        assert_eq!(dist_encode_hello(3).len(), 9 + 8);
+        let tokened = dist_encode_hello_tokenized(2, Some("s3cret"));
+        let hello = dist_decode_hello_full(&tokened[ML_DIST_FRAME_HEADER_LEN..])
+            .expect("decode tokenized hello");
+        assert_eq!(hello.version, ML_DIST_PROTOCOL_VERSION);
+        assert_eq!(hello.worker_id, 2);
+        assert_eq!(hello.token.as_deref(), Some("s3cret"));
+
+        // Truncated token suffix ⇒ malformed, not a panic or short read.
+        let truncated = &tokened[..tokened.len() - 2];
+        assert!(dist_decode_hello_full(&truncated[ML_DIST_FRAME_HEADER_LEN..]).is_none());
+        // Oversized declared length ⇒ malformed.
+        let mut bloated = Vec::new();
+        dist_push_u32(&mut bloated, ML_DIST_PROTOCOL_VERSION);
+        dist_push_u32(&mut bloated, 0);
+        dist_push_u32(&mut bloated, (ML_DIST_MAX_TOKEN_LEN + 1) as u32);
+        assert!(dist_decode_hello_full(&bloated).is_none());
+    }
+
+    fn raw_hello_tokenized(stream: &mut TcpStream, worker_id: usize, token: Option<&str>) {
+        stream
+            .write_all(&dist_encode_hello_tokenized(worker_id, token))
+            .expect("hello write");
+    }
+
+    #[test]
+    fn dist_tcp_coord_rejects_wrong_and_missing_tokens_with_typed_auth() {
+        for presented in [Some("wrong-token"), None] {
+            let std_listener = StdListener::bind("127.0.0.1:0").expect("bind");
+            let port = std_listener.local_addr().unwrap().port();
+            std_listener.set_nonblocking(true).unwrap();
+            let listener = mio::net::TcpListener::from_std(std_listener);
+            let handle = std::thread::spawn(move || {
+                dist_coord_loop(
+                    listener,
+                    &fault_spec(1, 1),
+                    DistTiming::default(),
+                    Some("right-token"),
+                )
+            });
+            let mut impostor = raw_client(port);
+            raw_hello_tokenized(&mut impostor, 0, presented);
+            // No ASSIGN may ever reach an unauthenticated peer; the run fails
+            // typed instead of hanging on the silent slot.
+            let mut buf = Vec::new();
+            assert!(
+                dist_worker_read_frame(&mut impostor, &mut buf).is_none(),
+                "unauthenticated peer must not receive shard data"
+            );
+            assert_eq!(
+                handle.join().unwrap(),
+                Err(DistFailure::Auth),
+                "presented {presented:?} must yield the typed Auth failure"
+            );
+        }
+    }
+
+    #[test]
+    fn dist_tcp_coord_with_matching_token_completes_training() {
+        let std_listener = StdListener::bind("127.0.0.1:0").expect("bind");
+        let port = std_listener.local_addr().unwrap().port();
+        std_listener.set_nonblocking(true).unwrap();
+        let listener = mio::net::TcpListener::from_std(std_listener);
+        let handle = std::thread::spawn(move || {
+            dist_coord_loop(
+                listener,
+                &fault_spec(2, 1),
+                DistTiming::default(),
+                Some("shared-secret"),
+            )
+        });
+        let mut buf0 = Vec::new();
+        let mut buf1 = Vec::new();
+        let mut w0 = raw_client(port);
+        raw_hello_tokenized(&mut w0, 0, Some("shared-secret"));
+        raw_expect_frame(&mut w0, &mut buf0, ML_DIST_MSG_ASSIGN);
+        let mut w1 = raw_client(port);
+        raw_hello_tokenized(&mut w1, 1, Some("shared-secret"));
+        raw_expect_frame(&mut w1, &mut buf1, ML_DIST_MSG_ASSIGN);
+        w0.write_all(&raw_gradients(0.25, 1)).expect("grad w0");
+        w1.write_all(&raw_gradients(0.5, 1)).expect("grad w1");
+        let done0 = raw_expect_frame(&mut w0, &mut buf0, ML_DIST_MSG_DONE);
+        let done1 = raw_expect_frame(&mut w1, &mut buf1, ML_DIST_MSG_DONE);
+        assert_eq!(done0, done1);
+        let (global_step, last_loss) = handle.join().unwrap().expect("coordination ok");
+        assert_eq!(global_step, 1);
+        assert!(last_loss.is_finite());
+    }
+
+    // ── multi-node deployment entrypoint ─────────────────────────────────
+    // One test binary, two roles selected purely by environment:
+    //   SPECTRA_DIST_ROLE=coordinator — bind SPECTRA_DIST_BIND:SPECTRA_DIST_PORT
+    //     (CI passes SPECTRA_DIST_BIND=0.0.0.0) and run one real training
+    //     session against whatever remote workers attach.
+    //   SPECTRA_DIST_ROLE=worker — attach to SPECTRA_DIST_HOST:SPECTRA_DIST_PORT
+    //     and drive the full conversation from inside another network
+    //     namespace/container.
+    // Without SPECTRA_DIST_ROLE the test self-verifies both roles over
+    // loopback with a token, so plain `cargo test` stays green.
+    fn multi_node_spec() -> DistTrainSpec {
+        DistTrainSpec {
+            worker_count: 1,
+            steps: 10,
+            lr: 0.05,
+            features: 4,
+            total_samples: 16,
+            seed: 42,
+        }
+    }
+
+    fn env_token() -> Option<String> {
+        std::env::var("SPECTRA_DIST_TOKEN")
+            .ok()
+            .filter(|token| !token.is_empty())
+    }
+
+    fn multi_node_coordinator_role() {
+        let bind = std::env::var("SPECTRA_DIST_BIND")
+            .ok()
+            .filter(|bind| !bind.trim().is_empty())
+            .unwrap_or_else(|| "127.0.0.1".to_owned());
+        let port: u16 = std::env::var("SPECTRA_DIST_PORT")
+            .expect("SPECTRA_DIST_PORT")
+            .parse()
+            .expect("parse SPECTRA_DIST_PORT");
+        let addr: std::net::SocketAddr = format!("{bind}:{port}")
+            .parse()
+            .expect("coordinator bind address");
+        let listener =
+            mio::net::TcpListener::bind(addr).expect("coordinator bind succeeded");
+        println!("dist multi-node coordinator listening on {addr}");
+        let spec = multi_node_spec();
+        let (global_step, last_loss) =
+            dist_coord_loop(listener, &spec, DistTiming::default(), env_token().as_deref())
+                .expect("multi-node coordination over real cross-namespace TCP");
+        assert_eq!(global_step, spec.steps as i64);
+        assert!(last_loss.is_finite());
+        println!("dist multi-node coordinator done: step={global_step} loss={last_loss:.6}");
+    }
+
+    fn multi_node_worker_role() {
+        let host = std::env::var("SPECTRA_DIST_HOST")
+            .ok()
+            .filter(|host| !host.trim().is_empty())
+            .unwrap_or_else(|| "127.0.0.1".to_owned());
+        let port: u16 = std::env::var("SPECTRA_DIST_PORT")
+            .expect("SPECTRA_DIST_PORT")
+            .parse()
+            .expect("parse SPECTRA_DIST_PORT");
+        let worker_id: usize = std::env::var("SPECTRA_DIST_WORKER_ID")
+            .ok()
+            .and_then(|id| id.parse().ok())
+            .unwrap_or(0);
+        let spec = multi_node_spec();
+        let shard = dist_build_shard(&spec, worker_id);
+        let (_, loss_sum, samples) = dist_tcp_worker(
+            &host,
+            port,
+            worker_id,
+            shard,
+            spec.features,
+            spec.steps,
+            spec.lr,
+            env_token().as_deref(),
+        )
+        .expect("worker conversation over real cross-namespace TCP");
+        assert!(loss_sum.is_finite());
+        assert!(samples > 0);
+        println!("dist multi-node worker {worker_id}@{host}:{port}: samples={samples} loss_sum={loss_sum:.6}");
+    }
+
+    #[test]
+    fn dist_tcp_multi_node_container_entrypoint() {
+        match std::env::var("SPECTRA_DIST_ROLE").as_deref() {
+            Ok("coordinator") => {
+                multi_node_coordinator_role();
+                std::process::exit(0);
+            }
+            Ok("worker") => {
+                multi_node_worker_role();
+                std::process::exit(0);
+            }
+            other => {
+                assert!(
+                    other.unwrap_or_default().is_empty(),
+                    "unknown SPECTRA_DIST_ROLE: {other:?}"
+                );
+            }
+        }
+
+        // Default in-process proof of the exact CI topology: coordinator on a
+        // tokened listener, worker client connecting by host string, real
+        // training end-to-end.
+        const LOCAL_TOKEN: &str = "in-process-topology-proof";
+        let std_listener = StdListener::bind("127.0.0.1:0").expect("bind");
+        let port = std_listener.local_addr().unwrap().port();
+        std_listener.set_nonblocking(true).unwrap();
+        let listener = mio::net::TcpListener::from_std(std_listener);
+        let coord = std::thread::spawn(move || {
+            dist_coord_loop(
+                listener,
+                &multi_node_spec(),
+                DistTiming::default(),
+                Some(LOCAL_TOKEN),
+            )
+        });
+        let worker = std::thread::spawn(move || {
+            let spec = multi_node_spec();
+            let shard = dist_build_shard(&spec, 0);
+            dist_tcp_worker(
+                "127.0.0.1",
+                port,
+                0,
+                shard,
+                spec.features,
+                spec.steps,
+                spec.lr,
+                Some(LOCAL_TOKEN),
+            )
+        });
+        let (_, loss_sum, samples) = worker.join().unwrap().expect("worker ok");
+        let (global_step, _) = coord.join().unwrap().expect("coord ok");
+        assert_eq!(global_step, multi_node_spec().steps as i64);
+        assert!(loss_sum.is_finite() && samples > 0);
     }
 }

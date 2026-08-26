@@ -732,6 +732,31 @@ pub(crate) fn ml_onnx_multi_error(status: i32, message: String) -> MlOnnxMultiRu
     }
 }
 
+/// ONNX static-shape compatibility for a supplied feed: ranks must match
+/// and every FIXED model dimension (a parseable positive integer) must
+/// equal the corresponding provided dim. Symbolic dimensions ('batch',
+/// 'seq', '?', ...) carry no static constraint — onnxruntime resolves them
+/// against the actual feed — so they accept any concrete value; likewise a
+/// model input with no declared shape accepts every feed.
+#[cfg(feature = "onnx")]
+pub(crate) fn ml_onnx_shape_compatible(model_shape: &str, provided_dims: &[i64]) -> bool {
+    if model_shape.is_empty() {
+        return true;
+    }
+    let model_dims: Vec<&str> = model_shape.split(',').collect();
+    if model_dims.len() != provided_dims.len() {
+        return false;
+    }
+    model_dims
+        .iter()
+        .zip(provided_dims.iter())
+        .all(|(model_dim, provided)| match model_dim.trim().parse::<i64>() {
+            // Negative dims also mean "dynamic" in several exporters.
+            Ok(fixed) if fixed > 0 => fixed == *provided,
+            _ => true,
+        })
+}
+
 /// Multi-graph-input inference against a committed onnxruntime session:
 /// `names` and `tensor_handles` arrive as parallel lists (List<string> /
 /// List<int> handles in the binding), are validated one-to-one against the
@@ -859,12 +884,11 @@ pub(crate) fn ml_onnx_run_multi_inner(
             .map(|dim| dim.to_string())
             .collect::<Vec<_>>()
             .join(",");
-        if provided != *model_shape {
+        if !ml_onnx_shape_compatible(model_shape, dims) {
             return Err(ml_onnx_multi_error(
                 HOST_STATUS_INVALID_ARGUMENT,
                 format!(
-                    "shape mismatch for input '{name}': got [{provided}], model expects [{}]",
-                    model_shape
+                    "shape mismatch for input '{name}': got [{provided}], model expects [{model_shape}]"
                 ),
             ));
         }
@@ -928,4 +952,70 @@ pub(crate) fn ml_onnx_run_multi_inner(
             "cannot register the multi-input output tensor".to_string(),
         )
     })
+}
+
+// ── Symbolic-shape fixture ──────────────────────────────────────────────────
+
+/// Real `.onnx` ModelProto for a single-graph-input Identity model whose
+/// input `x` and output `y` are float32 [batch, seq] with SYMBOLIC dim
+/// names. Used to prove that `ml_onnx_run_multi` accepts feeds whose
+/// concrete dims differ from the symbolic names while still rejecting rank
+/// mismatches.
+#[cfg(all(test, feature = "onnx"))]
+pub(crate) fn ml_onnx_symbolic_identity_proto() -> Vec<u8> {
+    let mut identity = Vec::new();
+    pb_string(1, "x", &mut identity);
+    pb_string(2, "y", &mut identity);
+    pb_string(3, "sym_identity", &mut identity);
+    pb_string(4, "Identity", &mut identity);
+
+    // Reuses the StatsEmbed fixture helpers (same cfg): symbolic dim params.
+    let batch_dim = ml_embed_dim_param("batch");
+    let seq_dim = ml_embed_dim_param("seq");
+
+    let mut graph = Vec::new();
+    pb_message(1, identity, &mut graph);
+    pb_string(2, "spectra_symbolic_identity_graph", &mut graph);
+    pb_message(
+        11,
+        ml_embed_value_info("x", 1, &[batch_dim.clone(), seq_dim.clone()]),
+        &mut graph,
+    );
+    pb_message(12, ml_embed_value_info("y", 1, &[batch_dim, seq_dim]), &mut graph);
+
+    let mut opset = Vec::new();
+    pb_string(1, "", &mut opset);
+    pb_i64(2, 20, &mut opset);
+
+    let mut out = Vec::new();
+    pb_i64(1, 9, &mut out);
+    pb_string(2, "SpectraLang", &mut out);
+    pb_string(5, "Symbolic-shape identity fixture", &mut out);
+    pb_message(7, graph, &mut out);
+    pb_message(8, opset, &mut out);
+    out
+}
+
+#[cfg(all(test, feature = "onnx"))]
+mod shape_compat_tests {
+    use super::ml_onnx_shape_compatible;
+
+    #[test]
+    fn symbolic_dims_accept_any_concrete_feed() {
+        assert!(ml_onnx_shape_compatible("batch,seq", &[1, 4]));
+        assert!(ml_onnx_shape_compatible("batch,seq", &[8, 128]));
+        assert!(ml_onnx_shape_compatible("?,?", &[2, 3]));
+    }
+
+    #[test]
+    fn fixed_dims_must_match_and_rank_conflicts_fail() {
+        assert!(ml_onnx_shape_compatible("1,3", &[1, 3]));
+        assert!(!ml_onnx_shape_compatible("1,3", &[2, 3]));
+        assert!(!ml_onnx_shape_compatible("batch,seq", &[3]));
+        assert!(!ml_onnx_shape_compatible("batch", &[2, 3]));
+        // No declared shape accepts everything; negative dims stay dynamic.
+        assert!(ml_onnx_shape_compatible("", &[5, 6]));
+        assert!(ml_onnx_shape_compatible("-1,3", &[7, 3]));
+        assert!(!ml_onnx_shape_compatible("-1,3", &[7, 4]));
+    }
 }

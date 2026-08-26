@@ -222,7 +222,11 @@ pub(crate) extern "C" fn std_tensor_sum(ctx: *mut SpectraHostCallContext) -> i32
                                 .device_storage
                                 .contains_key(&crate::gpu::PoolDevice::Wgpu)
                         {
-                            match tensor_residency_sum(registry, &tensor) {
+                            match tensor_residency_reduce(
+                                registry,
+                                &tensor,
+                                crate::gpu::GpuReduceOp::Sum,
+                            ) {
                                 Some(value) => value as i64,
                                 None => data
                                     .iter()
@@ -292,7 +296,11 @@ pub(crate) extern "C" fn std_tensor_sum_f(ctx: *mut SpectraHostCallContext) -> i
                                 .device_storage
                                 .contains_key(&crate::gpu::PoolDevice::Wgpu)
                         {
-                            match tensor_residency_sum(registry, &tensor) {
+                            match tensor_residency_reduce(
+                                registry,
+                                &tensor,
+                                crate::gpu::GpuReduceOp::Sum,
+                            ) {
                                 Some(value) => value as f64,
                                 None => data
                                     .iter()
@@ -334,20 +342,38 @@ pub(crate) extern "C" fn std_tensor_sum_t(ctx: *mut SpectraHostCallContext) -> i
 }
 
 pub(crate) extern "C" fn std_tensor_mean_f(ctx: *mut SpectraHostCallContext) -> i32 {
-    tensor_query_i64(ctx, |tensor| {
-        let data = tensor.materialize();
-        if data.is_empty() {
-            return f64::NAN.to_bits() as i64;
-        }
-        let sum = match tensor.dtype {
-            TensorDType::Int => data.iter().map(|v| *v as f64).sum::<f64>(),
-            TensorDType::Float => data
-                .iter()
-                .map(|bits| f64::from_bits(*bits as u64))
-                .sum::<f64>(),
+    unsafe {
+        let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
         };
-        (sum / data.len() as f64).to_bits() as i64
-    })
+        let Some(value) = with_tensor_registry(|registry| {
+            let tensor = registry.get(args[0] as usize)?.clone();
+            #[cfg(feature = "gpu")]
+            if let Some(mean_bits) = tensor_residency_scalar(
+                registry,
+                &tensor,
+                crate::gpu::GpuReduceOp::Mean,
+                |value| f64::from(value).to_bits() as i64,
+            ) {
+                return Some(mean_bits);
+            }
+            let data = tensor.materialize();
+            if data.is_empty() {
+                return Some(f64::NAN.to_bits() as i64);
+            }
+            let sum = match tensor.dtype {
+                TensorDType::Int => data.iter().map(|v| *v as f64).sum::<f64>(),
+                TensorDType::Float => data
+                    .iter()
+                    .map(|bits| f64::from_bits(*bits as u64))
+                    .sum::<f64>(),
+            };
+            Some((sum / data.len() as f64).to_bits() as i64)
+        }) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
+        tensor_result(ctx_ref, value)
+    }
 }
 
 pub(crate) extern "C" fn std_tensor_mean_t(ctx: *mut SpectraHostCallContext) -> i32 {
@@ -366,8 +392,35 @@ pub(crate) fn tensor_reduction_tensor(
             return HOST_STATUS_INVALID_ARGUMENT;
         };
         let Some((value, requires_grad, creator)) = with_tensor_registry(|registry| {
-            let tensor = registry.get(args[0] as usize)?;
-            let values = tensor_values_as_f64(tensor);
+            let tensor = registry.get(args[0] as usize)?.clone();
+            #[cfg(feature = "gpu")]
+            {
+                // Device fast path: scalar reductions over a device-resident
+                // float tensor that is not part of an autograd graph never
+                // need the host values, so fold on the GPU and skip the
+                // element-wise CPU pass entirely. Grad-enabled tensors fall
+                // through: the backward creator needs the input copy anyway.
+                if tensor.dtype == TensorDType::Float
+                    && tensor.device == TensorDevice::Wgpu
+                    && tensor.len() > 0
+                    && tensor
+                        .device_storage
+                        .contains_key(&crate::gpu::PoolDevice::Wgpu)
+                    && !tensor_requires_autograd(registry, &[args[0] as usize])
+                {
+                    let gpu_op = match op {
+                        AutogradOp::MeanTensor => crate::gpu::GpuReduceOp::Mean,
+                        _ => crate::gpu::GpuReduceOp::Sum,
+                    };
+                    if let Some(reduced) =
+                        tensor_residency_reduce(registry, &tensor, gpu_op)
+                    {
+                        registry.note_kernel(tensor.len());
+                        return Some((f64::from(reduced), false, None));
+                    }
+                }
+            }
+            let values = tensor_values_as_f64(&tensor);
             if values.is_empty() {
                 return None;
             }
@@ -407,48 +460,123 @@ pub(crate) fn tensor_reduction_tensor(
 }
 
 pub(crate) extern "C" fn std_tensor_max(ctx: *mut SpectraHostCallContext) -> i32 {
-    tensor_query_i64(ctx, |tensor| {
-        tensor.materialize().iter().copied().max().unwrap_or(0)
-    })
+    unsafe {
+        let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        let Some(value) = with_tensor_registry(|registry| {
+            let tensor = registry.get(args[0] as usize)?.clone();
+            #[cfg(feature = "gpu")]
+            if let Some(max_bits) = tensor_residency_scalar(
+                registry,
+                &tensor,
+                crate::gpu::GpuReduceOp::Max,
+                |value| f64::from(value).to_bits() as i64,
+            ) {
+                return Some(max_bits);
+            }
+            let data = tensor.materialize();
+            Some(match tensor.dtype {
+                TensorDType::Int => data.iter().copied().max().unwrap_or(0),
+                // Numeric compare on the decoded f64 values; the previous
+                // raw-bit compare only agreed for non-negative data.
+                TensorDType::Float if !data.is_empty() => data
+                    .iter()
+                    .map(|bits| f64::from_bits(*bits as u64))
+                    .fold(f64::NEG_INFINITY, f64::max)
+                    .to_bits() as i64,
+                _ => 0,
+            })
+        }) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
+        tensor_result(ctx_ref, value)
+    }
 }
 
 pub(crate) extern "C" fn std_tensor_min(ctx: *mut SpectraHostCallContext) -> i32 {
-    tensor_query_i64(ctx, |tensor| {
-        tensor.materialize().iter().copied().min().unwrap_or(0)
-    })
+    unsafe {
+        let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        let Some(value) = with_tensor_registry(|registry| {
+            let tensor = registry.get(args[0] as usize)?.clone();
+            #[cfg(feature = "gpu")]
+            if let Some(min_bits) = tensor_residency_scalar(
+                registry,
+                &tensor,
+                crate::gpu::GpuReduceOp::Min,
+                |value| f64::from(value).to_bits() as i64,
+            ) {
+                return Some(min_bits);
+            }
+            let data = tensor.materialize();
+            Some(match tensor.dtype {
+                TensorDType::Int => data.iter().copied().min().unwrap_or(0),
+                TensorDType::Float if !data.is_empty() => data
+                    .iter()
+                    .map(|bits| f64::from_bits(*bits as u64))
+                    .fold(f64::INFINITY, f64::min)
+                    .to_bits() as i64,
+                _ => 0,
+            })
+        }) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
+        tensor_result(ctx_ref, value)
+    }
 }
 
 pub(crate) extern "C" fn std_tensor_argmax(ctx: *mut SpectraHostCallContext) -> i32 {
-    tensor_query_i64(ctx, |tensor| {
-        let data = tensor.materialize();
-        if data.is_empty() {
-            return -1;
-        }
-        let mut best_index = 0usize;
-        match tensor.dtype {
-            TensorDType::Int => {
-                let mut best = data[0];
-                for (index, value) in data.iter().copied().enumerate().skip(1) {
-                    if value > best {
-                        best = value;
-                        best_index = index;
+    unsafe {
+        let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        let Some(value) = with_tensor_registry(|registry| {
+            let tensor = registry.get(args[0] as usize)?.clone();
+            #[cfg(feature = "gpu")]
+            if let Some(index) = tensor_residency_scalar(
+                registry,
+                &tensor,
+                crate::gpu::GpuReduceOp::ArgMax,
+                |value| value.to_bits() as i64,
+            ) {
+                return Some(index);
+            }
+            let data = tensor.materialize();
+            if data.is_empty() {
+                return Some(-1);
+            }
+            let mut best_index = 0usize;
+            match tensor.dtype {
+                TensorDType::Int => {
+                    let mut best = data[0];
+                    for (index, value) in data.iter().copied().enumerate().skip(1) {
+                        if value > best {
+                            best = value;
+                            best_index = index;
+                        }
+                    }
+                }
+                TensorDType::Float => {
+                    let mut best = f64::from_bits(data[0] as u64);
+                    for (index, raw) in data.iter().copied().enumerate().skip(1) {
+                        let value = f64::from_bits(raw as u64);
+                        if value > best {
+                            best = value;
+                            best_index = index;
+                        }
                     }
                 }
             }
-            TensorDType::Float => {
-                let mut best = f64::from_bits(data[0] as u64);
-                for (index, raw) in data.iter().copied().enumerate().skip(1) {
-                    let value = f64::from_bits(raw as u64);
-                    if value > best {
-                        best = value;
-                        best_index = index;
-                    }
-                }
-            }
-        }
-        best_index as SpectraHostValue
-    })
+            Some(best_index as SpectraHostValue)
+        }) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
+        tensor_result(ctx_ref, value)
+    }
 }
+
 
 pub(crate) extern "C" fn std_tensor_transpose(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
