@@ -5633,6 +5633,20 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/135_api_router_matching.spectra"
 
 [[entry]]
+path = "std.api.routing.routes_set_request_schema"
+kind = "function"
+namespace = "std.api.routing"
+signature = "fn(Router, int, string, string) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.routing.routes_set_request_schema"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/135_api_router_matching.spectra"
+
+[[entry]]
 path = "std.api.routing.router_new"
 kind = "function"
 namespace = "std.api.routing"

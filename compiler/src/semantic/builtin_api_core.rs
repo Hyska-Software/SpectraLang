@@ -674,6 +674,11 @@ fn make_std_api_routing(prefix: &str) -> ModuleExports {
             vec![router.clone(), Type::String, Type::String],
             Type::String,
         ),
+        (
+            "routes_set_request_schema",
+            vec![router.clone(), Type::Int, Type::String, Type::String],
+            Type::Bool,
+        ),
     ];
     for name in ["get", "post", "put", "patch", "delete"] {
         functions.push((name, vec![router.clone(), Type::String], route.clone()));

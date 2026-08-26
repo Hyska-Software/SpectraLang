@@ -948,6 +948,11 @@ impl Parser {
                             break;
                         }
                         self.advance(); // consume ','
+
+                        // Allow trailing comma before ']'
+                        if self.check_symbol(']') {
+                            break;
+                        }
                     }
                 }
 

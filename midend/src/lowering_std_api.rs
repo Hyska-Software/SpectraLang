@@ -336,6 +336,9 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("routing", "routes_export_openapi") => {
             Some(host_string("spectra.api.routing.routes_export_openapi"))
         }
+        ("routing", "routes_set_request_schema") => {
+            Some(host_bool("spectra.api.routing.routes_set_request_schema"))
+        }
         ("query", "type_string") => Some(host_int("spectra.api.query.type_string")),
         ("query", "type_int") => Some(host_int("spectra.api.query.type_int")),
         ("query", "type_bool") => Some(host_int("spectra.api.query.type_bool")),

@@ -92,6 +92,7 @@ pub enum RouteError {
     InvalidPattern(String),
     InvalidPath(String),
     Conflict(RouteConflict),
+    InvalidSchema(String),
 }
 
 impl fmt::Display for RouteError {
@@ -100,6 +101,7 @@ impl fmt::Display for RouteError {
             Self::InvalidPattern(pattern) => write!(f, "invalid route pattern {pattern:?}"),
             Self::InvalidPath(path) => write!(f, "invalid request path {path:?}"),
             Self::Conflict(conflict) => write!(f, "{conflict}"),
+            Self::InvalidSchema(detail) => write!(f, "invalid JSON request schema: {detail}"),
         }
     }
 }
@@ -126,11 +128,11 @@ struct WildcardEdge {
     name: String,
     route_by_method: HashMap<RouteMethod, SpectraHostValue>,
 }
-
 #[derive(Clone, Debug, Default)]
 pub struct Router {
     routes: HashMap<SpectraHostValue, Route>,
     root: RouteNode,
+    request_schemas: HashMap<(RouteMethod, String), Value>,
 }
 
 impl Router {
@@ -170,6 +172,50 @@ impl Router {
         let mut params = HashMap::new();
         Ok(match_node(&self.root, method, &segments, 0, &mut params)
             .map(|route_id| RouteMatch { route_id, params }))
+    }
+
+    /// Store a JSON request-body schema for the route registered under
+    /// `method` + `path_template`. The template may be written either exactly
+    /// as registered (`/users/{id:int}`) or in plain OpenAPI form
+    /// (`/users/{id}`); it is resolved against registered routes by parsed
+    /// segments. Returns `Ok(false)` when no registered route matches.
+    pub fn set_request_schema(
+        &mut self,
+        method: RouteMethod,
+        path_template: &str,
+        json_schema: &str,
+    ) -> Result<bool, RouteError> {
+        let schema: Value = serde_json::from_str(json_schema)
+            .map_err(|error| RouteError::InvalidSchema(error.to_string()))?;
+        let segments = parse_pattern(path_template)?;
+        let matches_template = |route: &Route| {
+            route.method == method
+                && route.segments.len() == segments.len()
+                && route.segments.iter().zip(&segments).all(|(a, b)| match (a, b) {
+                    // Constraints are ignored so both `/users/{id:int}` and the
+                    // plain OpenAPI form `/users/{id}` resolve to the route.
+                    (RouteSegment::Param { name: a, .. }, RouteSegment::Param { name: b, .. }) => {
+                        a == b
+                    }
+                    (RouteSegment::Wildcard { name: a }, RouteSegment::Wildcard { name: b }) => {
+                        a == b
+                    }
+                    (RouteSegment::Literal(a), RouteSegment::Literal(b)) => a == b,
+                    _ => false,
+                })
+        };
+        let pattern = self
+            .routes
+            .values()
+            .find(|route| matches_template(route))
+            .map(|route| route.pattern.clone());
+        match pattern {
+            Some(pattern) => {
+                self.request_schemas.insert((method, pattern), schema);
+                Ok(true)
+            }
+            None => Ok(false),
+        }
     }
 }
 
@@ -831,9 +877,10 @@ const OPENAPI_METHOD_ORDER: [(RouteMethod, usize); 7] = [
 
 /// Export a router as a minimal but valid OpenAPI 3.1 JSON document: one path
 /// entry per registered route pattern, one operation per method, typed path
-/// parameters derived from the trie constraints, and a default `200` response.
-/// Handler bodies are not tracked by the trie, so `requestBody` is honestly
-/// omitted.
+/// parameters derived from the trie constraints, a default `200` response,
+/// and — when a schema hint was stored via `Router::set_request_schema` — a
+/// `requestBody` whose `application/json` schema is the hint embedded
+/// verbatim. Routes without a hint omit `requestBody`.
 pub fn export_openapi(router: &Router, title: &str, version: &str) -> String {
     // Group routes by their OpenAPI path template; keep deterministic order.
     let mut grouped: BTreeMap<String, Vec<(&Route, usize)>> = BTreeMap::new();
@@ -877,14 +924,25 @@ pub fn export_openapi(router: &Router, title: &str, version: &str) -> String {
                 parameter.insert("schema".to_string(), openapi_param_schema(constraint));
                 parameters.push(Value::Object(parameter));
             }
+            let mut operation = json!({
+                "parameters": parameters,
+                "responses": {
+                    "200": { "description": "OK" },
+                },
+            });
+            if let Some(schema) = router
+                .request_schemas
+                .get(&(route.method, route.pattern.clone()))
+            {
+                operation["requestBody"] = json!({
+                    "content": {
+                        "application/json": { "schema": schema },
+                    },
+                });
+            }
             item.insert(
                 openapi_method_name(route.method).to_string(),
-                json!({
-                    "parameters": parameters,
-                    "responses": {
-                        "200": { "description": "OK" },
-                    },
-                }),
+                operation,
             );
         }
         paths.insert(template, Value::Object(item));
@@ -919,6 +977,36 @@ pub extern "C" fn routes_export_openapi(ctx: *mut SpectraHostCallContext) -> i32
         ctx,
         alloc_spectra_string(&export_openapi(router, &title, &version)),
     )
+}
+
+/// `routing.routes_set_request_schema(router, method, path_template, schema) -> bool`.
+/// Stores a JSON request-body schema hint for a registered route. An invalid
+/// JSON schema is a typed error (`RouteError::InvalidSchema`) surfaced as
+/// `HOST_STATUS_INVALID_ARGUMENT` with the message in `last_conflict`.
+pub extern "C" fn routes_set_request_schema(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 4) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(method) = RouteMethod::from_code(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(path_template) = read_spectra_string(args[2]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(schema) = read_spectra_string(args[3]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut store = store().lock().unwrap_or_else(|e| e.into_inner());
+    let Some(router) = store.routers.get_mut(&args[0]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    match router.set_request_schema(method, &path_template, &schema) {
+        Ok(stored) => write_result(ctx, SpectraHostValue::from(stored)),
+        Err(error) => {
+            store.last_conflict = error.to_string();
+            HOST_STATUS_INVALID_ARGUMENT
+        }
+    }
 }
 
 pub fn benchmark_100k_lookup() -> Result<u128, RouteError> {
@@ -1110,4 +1198,37 @@ mod tests {
         let value: Value = serde_json::from_str(&first).expect("parses");
         assert_eq!(value["paths"].as_object().map(Map::len), Some(0));
     }
+    #[test]
+    fn set_request_schema_resolves_route_and_embeds_verbatim_in_export() {
+        let mut router = Router::default();
+        router
+            .add(RouteMethod::Post, "/users/{id:int}")
+            .expect("post users");
+
+        // Unregistered route reports false without storing anything.
+        assert!(!router
+            .set_request_schema(RouteMethod::Post, "/orders", "{}")
+            .expect("unregistered route is not an error"));
+
+        let schema = r#"{"type":"object","properties":{"id":{"type":"integer"}}}"#;
+        // OpenAPI-style template resolves to the registered constrained route.
+        assert!(router
+            .set_request_schema(RouteMethod::Post, "/users/{id}", schema)
+            .expect("registered route accepts hint"));
+
+        let invalid = router.set_request_schema(RouteMethod::Post, "/users/{id:int}", "{nope");
+        assert!(
+            matches!(invalid, Err(RouteError::InvalidSchema(_))),
+            "invalid JSON is a typed InvalidSchema error, got {invalid:?}"
+        );
+
+        let value: Value =
+            serde_json::from_str(&export_openapi(&router, "T", "0")).expect("spec parses");
+        assert_eq!(
+            value["paths"]["/users/{id}"]["post"]["requestBody"]["content"]["application/json"]
+                ["schema"],
+            serde_json::from_str::<Value>(schema).expect("schema is valid JSON")
+        );
+    }
 }
+

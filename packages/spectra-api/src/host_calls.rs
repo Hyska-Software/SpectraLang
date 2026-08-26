@@ -548,6 +548,10 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
         function: routing::routes_export_openapi,
     },
     HostCallSpec {
+        name: "spectra.api.routing.routes_set_request_schema",
+        function: routing::routes_set_request_schema,
+    },
+    HostCallSpec {
         name: "spectra.api.query.type_string",
         function: query::type_string,
     },

@@ -359,14 +359,127 @@ struct FragmentState {
     payload: Vec<u8>,
 }
 
+/// Incremental assembly of data frames into complete WebSocket messages.
+/// Shared verbatim by the synchronous `receive_message` machine and the
+/// async TLS-gateway pump so both legs enforce identical fragmentation,
+/// compression, and size-limit semantics.
+#[derive(Default)]
+struct MessageAssembler {
+    fragments: Option<FragmentState>,
+}
+
+impl MessageAssembler {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    /// Feeds one data frame (opcode 0x0/0x1/0x2). Returns the completed
+    /// message when a FIN frame closes a fragmented sequence.
+    fn assemble(
+        &mut self,
+        frame: WebSocketFrame,
+        config: &WebSocketConfig,
+        per_message_deflate: bool,
+    ) -> Result<Option<WebSocketMessage>, WebSocketError> {
+        match frame.opcode {
+            0x0 => {
+                let Some(mut state) = self.fragments.take() else {
+                    return Err(WebSocketError::new(
+                        WebSocketErrorKind::Protocol,
+                        "continuation frame without a fragmented message",
+                    ));
+                };
+                if frame.rsv1 {
+                    return Err(WebSocketError::new(
+                        WebSocketErrorKind::Protocol,
+                        "continuation frame must not set RSV1",
+                    ));
+                }
+                append_with_limit(
+                    &mut state.payload,
+                    &frame.payload,
+                    config.max_message_bytes,
+                )?;
+                if frame.fin {
+                    return finish_fragment(state, config, per_message_deflate);
+                }
+                self.fragments = Some(state);
+            }
+            0x1 | 0x2 => {
+                if self.fragments.is_some() {
+                    return Err(WebSocketError::new(
+                        WebSocketErrorKind::Protocol,
+                        "new data frame interrupted a fragmented message",
+                    ));
+                }
+                let state = FragmentState {
+                    opcode: frame.opcode,
+                    compressed: frame.rsv1,
+                    payload: frame.payload,
+                };
+                if frame.fin {
+                    return finish_fragment(state, config, per_message_deflate);
+                }
+                self.fragments = Some(state);
+            }
+            _ => {
+                return Err(WebSocketError::new(
+                    WebSocketErrorKind::Protocol,
+                    "reserved WebSocket opcode",
+                ));
+            }
+        }
+        Ok(None)
+    }
+}
+
+fn finish_fragment(
+    state: FragmentState,
+    config: &WebSocketConfig,
+    per_message_deflate: bool,
+) -> Result<Option<WebSocketMessage>, WebSocketError> {
+    let payload = if state.compressed {
+        if !per_message_deflate {
+            return Err(WebSocketError::new(
+                WebSocketErrorKind::Protocol,
+                "compressed WebSocket message was not negotiated",
+            ));
+        }
+        decompress_message(&state.payload, config.max_message_bytes)?
+    } else {
+        state.payload
+    };
+    if payload.len() > config.max_message_bytes {
+        return Err(WebSocketError::new(
+            WebSocketErrorKind::PayloadTooLarge,
+            "WebSocket message exceeds the configured limit",
+        ));
+    }
+    match state.opcode {
+        0x1 => String::from_utf8(payload)
+            .map(|value| Some(WebSocketMessage::Text(value)))
+            .map_err(|_| {
+                WebSocketError::new(
+                    WebSocketErrorKind::Utf8,
+                    "WebSocket text message is not valid UTF-8",
+                )
+            }),
+        0x2 => Ok(Some(WebSocketMessage::Binary(payload))),
+        _ => Err(WebSocketError::new(
+            WebSocketErrorKind::Protocol,
+            "invalid fragmented message opcode",
+        )),
+    }
+}
+
 pub struct WebSocketConnection {
     stream: WebSocketTransport,
     peer: SocketAddr,
     config: WebSocketConfig,
     role: FrameRole,
     per_message_deflate: bool,
+    assembler: MessageAssembler,
     buffered: Vec<u8>,
-    fragments: Option<FragmentState>,
     closed: bool,
 }
 
@@ -476,115 +589,21 @@ impl WebSocketConnection {
                     self.send_pong(frame.payload)?;
                 }
                 0xA => {}
-                0x0 => {
-                    let Some(mut state) = self.fragments.take() else {
-                        return Err(WebSocketError::new(
-                            WebSocketErrorKind::Protocol,
-                            "continuation frame without a fragmented message",
-                        ));
-                    };
-                    if frame.rsv1 {
-                        return Err(WebSocketError::new(
-                            WebSocketErrorKind::Protocol,
-                            "continuation frame must not set RSV1",
-                        ));
-                    }
-                    append_with_limit(
-                        &mut state.payload,
-                        &frame.payload,
-                        self.config.max_message_bytes,
-                    )?;
-                    if frame.fin {
-                        return self.finish_message(state);
-                    }
-                    self.fragments = Some(state);
-                }
-                0x1 | 0x2 => {
-                    if self.fragments.is_some() {
-                        return Err(WebSocketError::new(
-                            WebSocketErrorKind::Protocol,
-                            "new data frame interrupted a fragmented message",
-                        ));
-                    }
-                    if frame.fin {
-                        return self.finish_message(FragmentState {
-                            opcode: frame.opcode,
-                            compressed: frame.rsv1,
-                            payload: frame.payload,
-                        });
-                    }
-                    self.fragments = Some(FragmentState {
-                        opcode: frame.opcode,
-                        compressed: frame.rsv1,
-                        payload: frame.payload,
-                    });
-                }
                 _ => {
-                    return Err(WebSocketError::new(
-                        WebSocketErrorKind::Protocol,
-                        "reserved WebSocket opcode",
-                    ));
+                    if let Some(message) =
+                        self.assembler
+                            .assemble(frame, &self.config, self.per_message_deflate)?
+                    {
+                        return Ok(Some(message));
+                    }
                 }
             }
         }
     }
 
-    fn finish_message(
-        &self,
-        state: FragmentState,
-    ) -> Result<Option<WebSocketMessage>, WebSocketError> {
-        let payload = if state.compressed {
-            if !self.per_message_deflate {
-                return Err(WebSocketError::new(
-                    WebSocketErrorKind::Protocol,
-                    "compressed WebSocket message was not negotiated",
-                ));
-            }
-            decompress_message(&state.payload, self.config.max_message_bytes)?
-        } else {
-            state.payload
-        };
-        if payload.len() > self.config.max_message_bytes {
-            return Err(WebSocketError::new(
-                WebSocketErrorKind::PayloadTooLarge,
-                "WebSocket message exceeds the configured limit",
-            ));
-        }
-        match state.opcode {
-            0x1 => String::from_utf8(payload)
-                .map(WebSocketMessage::Text)
-                .map(Some)
-                .map_err(|_| {
-                    WebSocketError::new(
-                        WebSocketErrorKind::Utf8,
-                        "WebSocket text message is not valid UTF-8",
-                    )
-                }),
-            0x2 => Ok(Some(WebSocketMessage::Binary(payload))),
-            _ => Err(WebSocketError::new(
-                WebSocketErrorKind::Protocol,
-                "invalid fragmented message opcode",
-            )),
-        }
-    }
 
     fn handle_peer_close(&mut self, payload: &[u8]) -> Result<(), WebSocketError> {
-        if payload.len() == 1 {
-            return Err(WebSocketError::new(
-                WebSocketErrorKind::Protocol,
-                "close frame payload cannot contain one byte",
-            ));
-        }
-        if payload.len() >= 2 {
-            let code = u16::from_be_bytes([payload[0], payload[1]]);
-            validate_close_code(code)?;
-            std::str::from_utf8(&payload[2..]).map_err(|_| {
-                WebSocketError::new(
-                    WebSocketErrorKind::Utf8,
-                    "WebSocket close reason is not valid UTF-8",
-                )
-            })?;
-        }
+        validate_close_payload(payload)?;
         if !self.closed {
             self.write_frame(WebSocketFrame {
                 fin: true,
@@ -750,7 +769,7 @@ impl RoutedUpgradeState {
         }
     }
 
-    fn config(&self) -> WebSocketConfig {
+    pub(crate) fn config(&self) -> WebSocketConfig {
         self.config
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -882,6 +901,216 @@ pub(crate) fn enqueue_routed_upgrade(
             "WebSocket upgrade workers are unavailable",
         )),
     }
+}
+
+/// Bidirectional async pump for WebSocket upgrades served by the TLS
+/// gateway's HTTP/1.1 leg.
+///
+/// Design: the proven synchronous frame machine (`read_frame`,
+/// `receive_message`) is bound to a blocking `std::io` transport, and a
+/// tokio-rustls server stream cannot be borrowed as one without parking a
+/// thread. Wrapping every frame read in `spawn_blocking` would keep one
+/// blocking thread alive per upgraded connection and still need shared
+/// mutable state between the blocking and async halves. The lower-risk port
+/// chosen here keeps the pump fully async (`read_exact`/`write_all` over the
+/// TLS stream) while reusing the machine's pure building blocks verbatim:
+/// [`encode_frame`], [`MessageAssembler`], [`validate_close_payload`], and
+/// byte-identical frame-header validation (mask requirement for client
+/// frames, RSV rules, control-frame limits, configured size caps).
+///
+/// Semantics mirror `receive_message`: ping frames are answered with pongs,
+/// pong frames are ignored, completed messages are echoed back unmasked and
+/// uncompressed, and any protocol or limit violation terminates the
+/// connection exactly as the synchronous path drops it.
+pub(crate) async fn serve_tls_upgrade_pump<I>(
+    mut io: I,
+    negotiation: RoutedUpgradeNegotiation,
+    config: WebSocketConfig,
+    buffered: Vec<u8>,
+) where
+    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::AsyncWriteExt;
+
+    let mut buffered = buffered;
+    let mut assembler = MessageAssembler::new();
+    if io.write_all(negotiation.response.as_bytes()).await.is_err() {
+        return;
+    }
+    loop {
+        let Some(frame) =
+            tls_read_frame(&mut io, &mut buffered, &config, negotiation.per_message_deflate)
+                .await
+        else {
+            return;
+        };
+        match frame.opcode {
+            0x8 => {
+                if validate_close_payload(&frame.payload).is_err() {
+                    return;
+                }
+                let echo = WebSocketFrame {
+                    fin: true,
+                    rsv1: false,
+                    opcode: 0x8,
+                    masked: false,
+                    payload: frame.payload,
+                };
+                if tls_write_frame(&mut io, echo).await.is_err() {
+                    return;
+                }
+                return;
+            }
+            0x9 => {
+                let pong = WebSocketFrame {
+                    fin: true,
+                    rsv1: false,
+                    opcode: 0xA,
+                    masked: false,
+                    payload: frame.payload,
+                };
+                if tls_write_frame(&mut io, pong).await.is_err() {
+                    return;
+                }
+            }
+            0xA => {}
+            _ => {
+                let assembled = assembler.assemble(
+                    frame,
+                    &config,
+                    negotiation.per_message_deflate,
+                );
+                match assembled {
+                    Ok(Some(message)) => {
+                        let (opcode, payload) = match &message {
+                            WebSocketMessage::Text(value) => (0x1_u8, value.as_bytes().to_vec()),
+                            WebSocketMessage::Binary(payload) => (0x2_u8, payload.clone()),
+                        };
+                        let echo = WebSocketFrame {
+                            fin: true,
+                            rsv1: false,
+                            opcode,
+                            masked: false,
+                            payload,
+                        };
+                        if tls_write_frame(&mut io, echo).await.is_err() {
+                            return;
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(_) => return,
+                }
+            }
+        }
+    }
+}
+
+/// Async counterpart of `WebSocketConnection::read_exact_buffered`.
+async fn tls_read_exact<I>(
+    io: &mut I,
+    buffered: &mut Vec<u8>,
+    length: usize,
+    max_buffered: usize,
+) -> Option<Vec<u8>>
+where
+    I: tokio::io::AsyncRead + Unpin,
+{
+    use tokio::io::AsyncReadExt;
+
+    while buffered.len() < length {
+        let mut chunk = [0_u8; 8_192];
+        let read = io.read(&mut chunk).await.ok()?;
+        if read == 0 {
+            return None;
+        }
+        buffered.extend_from_slice(&chunk[..read]);
+        if buffered.len() > max_buffered {
+            return None;
+        }
+    }
+    Some(buffered.drain(..length).collect())
+}
+
+/// Async counterpart of `WebSocketConnection::read_frame` with identical
+/// validation; any violation returns `None`, which ends the connection.
+async fn tls_read_frame<I>(
+    io: &mut I,
+    buffered: &mut Vec<u8>,
+    config: &WebSocketConfig,
+    per_message_deflate: bool,
+) -> Option<WebSocketFrame>
+where
+    I: tokio::io::AsyncRead + Unpin,
+{
+    let max_buffered = config.max_frame_bytes.saturating_add(14);
+    let header = tls_read_exact(io, buffered, 2, max_buffered).await?;
+    let first = header[0];
+    let second = header[1];
+    if first & 0x30 != 0 {
+        return None;
+    }
+    let fin = first & 0x80 != 0;
+    let rsv1 = first & 0x40 != 0;
+    let opcode = first & 0x0f;
+    // The TLS gateway always pumps the server side of an upgraded
+    // connection, so client-to-server frames must be masked.
+    let masked = second & 0x80 != 0;
+    if !masked {
+        return None;
+    }
+    if rsv1 && (!per_message_deflate || !matches!(opcode, 0x1 | 0x2)) {
+        return None;
+    }
+    let length_marker = second & 0x7f;
+    let length = match length_marker {
+        value @ 0..=125 => value as u64,
+        126 => {
+            let bytes = tls_read_exact(io, buffered, 2, max_buffered).await?;
+            u16::from_be_bytes(bytes.try_into().ok()?) as u64
+        }
+        127 => {
+            let bytes = tls_read_exact(io, buffered, 8, max_buffered).await?;
+            let value = u64::from_be_bytes(bytes.try_into().ok()?);
+            if value & (1 << 63) != 0 {
+                return None;
+            }
+            value
+        }
+        _ => return None,
+    };
+    let is_control = opcode & 0x8 != 0;
+    if is_control && (!fin || length > 125) {
+        return None;
+    }
+    let length = usize::try_from(length).ok()?;
+    if length > config.max_frame_bytes || length > config.max_message_bytes {
+        return None;
+    }
+    let mask_bytes = tls_read_exact(io, buffered, 4, max_buffered).await?;
+    let mask: [u8; 4] = mask_bytes.try_into().ok()?;
+    let mut payload = tls_read_exact(io, buffered, length, max_buffered).await?;
+    for (index, byte) in payload.iter_mut().enumerate() {
+        *byte ^= mask[index % 4];
+    }
+    Some(WebSocketFrame {
+        fin,
+        rsv1,
+        opcode,
+        masked,
+        payload,
+    })
+}
+
+
+async fn tls_write_frame<I>(io: &mut I, frame: WebSocketFrame) -> Result<(), ()>
+where
+    I: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::AsyncWriteExt;
+
+    let encoded = encode_frame(&frame, FrameRole::Server).map_err(|_| ())?;
+    io.write_all(&encoded).await.map_err(|_| ())?;
+    io.flush().await.map_err(|_| ())
 }
 
 pub struct WebSocketServer {
@@ -1171,6 +1400,36 @@ fn accept_handshake_request(
     request: ParsedRequest,
     buffered: Vec<u8>,
 ) -> Result<WebSocketConnection, WebSocketError> {
+    let negotiation = negotiate_upgrade_response(&request, &config)?;
+    stream.write_all(negotiation.response.as_bytes())?;
+    stream.flush()?;
+    Ok(WebSocketConnection {
+        stream: WebSocketTransport::Tcp(stream),
+        peer,
+        config,
+        role: FrameRole::Server,
+        per_message_deflate: negotiation.per_message_deflate,
+        buffered,
+        assembler: MessageAssembler::new(),
+        closed: false,
+    })
+}
+
+/// Negotiated WebSocket upgrade outcome, decoupled from any socket so both
+/// the cleartext upgrade workers and the TLS gateway's async pump can write
+/// the identical 101 response through their own transport.
+pub(crate) struct RoutedUpgradeNegotiation {
+    /// Complete `HTTP/1.1 101` response head, terminated by a blank line.
+    pub(crate) response: String,
+    pub(crate) per_message_deflate: bool,
+}
+
+/// Validates an upgrade request and renders the 101 response without
+/// touching I/O. Mirrors [`accept_handshake_request`] byte for byte.
+pub(crate) fn negotiate_upgrade_response(
+    request: &ParsedRequest,
+    config: &WebSocketConfig,
+) -> Result<RoutedUpgradeNegotiation, WebSocketError> {
     if request.method != "GET" || request.version.major != 1 || request.version.minor != 1 {
         return Err(WebSocketError::new(
             WebSocketErrorKind::Handshake,
@@ -1230,17 +1489,9 @@ fn accept_handshake_request(
         );
     }
     response.push_str("\r\n");
-    stream.write_all(response.as_bytes())?;
-    stream.flush()?;
-    Ok(WebSocketConnection {
-        stream: WebSocketTransport::Tcp(stream),
-        peer,
-        config,
-        role: FrameRole::Server,
+    Ok(RoutedUpgradeNegotiation {
+        response,
         per_message_deflate,
-        buffered,
-        fragments: None,
-        closed: false,
     })
 }
 
@@ -1322,7 +1573,7 @@ fn client_handshake(
         role: FrameRole::Client,
         per_message_deflate: negotiated_per_message_deflate,
         buffered: remaining,
-        fragments: None,
+        assembler: MessageAssembler::new(),
         closed: false,
     })
 }
@@ -1523,6 +1774,25 @@ fn validate_close_code(code: u16) -> Result<(), WebSocketError> {
             WebSocketErrorKind::Protocol,
             "invalid WebSocket close code",
         ));
+    }
+    Ok(())
+}
+fn validate_close_payload(payload: &[u8]) -> Result<(), WebSocketError> {
+    if payload.len() == 1 {
+        return Err(WebSocketError::new(
+            WebSocketErrorKind::Protocol,
+            "close frame payload cannot contain one byte",
+        ));
+    }
+    if payload.len() >= 2 {
+        let code = u16::from_be_bytes([payload[0], payload[1]]);
+        validate_close_code(code)?;
+        std::str::from_utf8(&payload[2..]).map_err(|_| {
+            WebSocketError::new(
+                WebSocketErrorKind::Utf8,
+                "WebSocket close reason is not valid UTF-8",
+            )
+        })?;
     }
     Ok(())
 }

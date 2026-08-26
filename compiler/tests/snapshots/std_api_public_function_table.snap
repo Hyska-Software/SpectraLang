@@ -206,6 +206,7 @@ func std.api.routing.put: func(Router, string) returns Route
 func std.api.routing.patch: func(Router, string) returns Route
 func std.api.routing.delete: func(Router, string) returns Route
 func std.api.routing.routes_export_openapi: func(Router, string, string) returns string
+func std.api.routing.routes_set_request_schema: func(Router, int, string, string) returns bool
 func std.api.query.type_string: func() returns int
 func std.api.query.type_int: func() returns int
 func std.api.query.type_bool: func() returns int

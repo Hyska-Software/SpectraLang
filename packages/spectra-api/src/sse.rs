@@ -651,17 +651,26 @@ impl RoutedSseConnection {
     }
 }
 
+/// Header pairs of every routed SSE response, shared by the cleartext
+/// serializer and the TLS gateway legs (HTTP/1.1 wire bytes and the HTTP/2
+/// header translation).
+pub(crate) const ROUTED_SSE_HEADERS: [(&str, &str); 4] = [
+    ("Content-Type", "text/event-stream; charset=utf-8"),
+    ("Cache-Control", "no-cache"),
+    ("Connection", "keep-alive"),
+    ("X-Accel-Buffering", "no"),
+];
+
 fn routed_response_headers() -> Vec<u8> {
-    concat!(
-        "HTTP/1.1 200 OK\r\n",
-        "Content-Type: text/event-stream; charset=utf-8\r\n",
-        "Cache-Control: no-cache\r\n",
-        "Connection: keep-alive\r\n",
-        "X-Accel-Buffering: no\r\n",
-        "\r\n"
-    )
-    .as_bytes()
-    .to_vec()
+    let mut head = String::from("HTTP/1.1 200 OK\r\n");
+    for (name, value) in ROUTED_SSE_HEADERS {
+        head.push_str(name);
+        head.push_str(": ");
+        head.push_str(value);
+        head.push_str("\r\n");
+    }
+    head.push_str("\r\n");
+    head.into_bytes()
 }
 
 fn routed_responses() -> &'static Mutex<HashMap<SpectraHostValue, Arc<RoutedSseResponse>>> {

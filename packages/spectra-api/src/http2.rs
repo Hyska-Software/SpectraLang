@@ -7,6 +7,7 @@
 //! server boundary. The public request/response types stay independent from
 //! the external `http` crate used by the protocol implementation.
 
+use crate::server::ServerResponse;
 use bytes::Bytes;
 use h2::client;
 use h2::server::{self, SendResponse};
@@ -992,13 +993,18 @@ fn is_forbidden_http2_header(name: &str) -> bool {
 // this gateway on an additional OS-assigned port on the same host. The gateway
 // terminates TLS, inspects the negotiated ALPN protocol, and fans out:
 //
-//   * `h2`           -> HTTP/2 pipeline (`serve_gateway_h2_connection`)
+//   * `h2`           -> HTTP/2 pipeline (`serve_gateway_h2_connection`);
+//                      routed SSE responses stream as DATA frames, while
+//                      RFC 8441 WebSocket-over-h2 is refused (501) because
+//                      extended CONNECT upgrades are not implemented
 //   * `http/1.1`/none -> async HTTP/1.1 loop over the TLS stream that calls
-//                        the same dispatcher chain as the mio event loop
+//                        the same dispatcher chain as the mio event loop;
+//                        routed SSE streams chunked events + heartbeats and
+//                        WebSocket upgrades complete the 101 handshake and
+//                        pump bidirectional frames, all over this leg
 //
-// Limitations of the gateway's HTTP/1.1 leg: SSE and WebSocket upgrades need
-// the mio connection surface and answer 501 there; everything else (sync and
-// async handlers included) behaves like the cleartext pipeline.
+// Everything else (sync and async handlers included) behaves like the
+// cleartext pipeline on both legs.
 // ---------------------------------------------------------------------------
 
 pub(crate) struct TlsGatewayOptions {
@@ -1164,9 +1170,25 @@ async fn serve_gateway_h2_connection<I>(
             let (parts, body_stream) = request.into_parts();
             match collect_h2_stream_body(body_stream, max_body_bytes).await {
                 Ok(body) => {
-                    let response =
-                        dispatch_to_http2_response(&dispatcher, parts, body, read_timeout).await;
-                    send_gateway_h2_response(respond, response);
+                    let parsed = gateway_parsed_request(parts, body);
+                    match resolve_dispatch_result(&dispatcher, parsed.clone(), read_timeout).await
+                    {
+                        Http2Outcome::Ready(response) => {
+                            send_gateway_h2_response(
+                                respond,
+                                http2_response_from_server(response),
+                            );
+                        }
+                        Http2Outcome::Refused(response) => {
+                            send_gateway_h2_response(
+                                respond,
+                                http2_response_from_server(response),
+                            );
+                        }
+                        Http2Outcome::Sse(route) => {
+                            stream_routed_sse_over_h2(respond, route, parsed).await;
+                        }
+                    }
                 }
                 Err(()) => {
                     let response = H2Response::builder()
@@ -1197,13 +1219,17 @@ async fn collect_h2_stream_body(
     Ok(body)
 }
 
-async fn dispatch_to_http2_response(
-    dispatcher: &crate::server::DispatchHandler,
+/// Cadence at which the gateway legs drain routed SSE subscribers; events
+/// and heartbeats are queued by publishers and by `poll_into` itself, so a
+/// short poll keeps latency low without busy-spinning.
+const SSE_GATEWAY_POLL_INTERVAL: Duration = Duration::from_millis(20);
+
+/// Builds the gateway's internal request from an h2 stream head.
+fn gateway_parsed_request(
     parts: http::request::Parts,
     body: Vec<u8>,
-    read_timeout: Duration,
-) -> Http2Response {
-    let request = crate::http::ParsedRequest {
+) -> crate::http::ParsedRequest {
+    crate::http::ParsedRequest {
         method: parts.method.to_string(),
         target: parts
             .uri
@@ -1223,8 +1249,10 @@ async fn dispatch_to_http2_response(
             .collect(),
         body: crate::http::HttpBody::from_bytes(body),
         keep_alive: true,
-    };
-    let response = resolve_dispatch_result(dispatcher, request, read_timeout).await;
+    }
+}
+
+fn http2_response_from_server(response: ServerResponse) -> Http2Response {
     Http2Response {
         status_code: response.status_code,
         headers: response
@@ -1239,36 +1267,91 @@ async fn dispatch_to_http2_response(
     }
 }
 
-/// Resolves a dispatcher outcome into a concrete response for the TLS
-/// gateway's protocol legs. Mirrors the mio pipeline semantics for `Ready`
-/// and `Pending`; SSE and WebSocket outcomes require the mio connection
-/// surface and are refused here.
-async fn resolve_dispatch_result(
+/// Streams a routed SSE response over h2: the fixed event-stream headers go
+/// out once, then subscriber events plus self-scheduled heartbeat comments
+/// are forwarded as DATA frames until the route closes or the peer goes
+/// away.
+async fn stream_routed_sse_over_h2(
+    mut respond: SendResponse<Bytes>,
+    route: Arc<crate::sse::RoutedSseResponse>,
+    request: crate::http::ParsedRequest,
+) {
+    let Ok((_, sse)) = route.open(&request) else {
+        let response = H2Response::builder()
+            .status(http::StatusCode::BAD_REQUEST)
+            .body(())
+            .expect("HTTP/2 400 response is valid");
+        let _ = respond.send_response(response, true);
+        return;
+    };
+    let mut builder = H2Response::builder().status(http::StatusCode::OK);
+    for (name, value) in crate::sse::ROUTED_SSE_HEADERS {
+        if let (Ok(name), Ok(value)) = (
+            http::header::HeaderName::try_from(name),
+            http::header::HeaderValue::try_from(value),
+        ) {
+            builder = builder.header(name, value);
+        }
+    }
+    let Ok(built) = builder.body(()) else {
+        return;
+    };
+    let Ok(mut sender) = respond.send_response(built, false) else {
+        return;
+    };
+    loop {
+        let mut chunk = Vec::new();
+        let alive = sse.poll_into(std::time::Instant::now(), &mut chunk);
+        if !chunk.is_empty() && sender.send_data(Bytes::from(chunk), false).is_err() {
+            return;
+        }
+        if !alive {
+            let _ = sender.send_data(Bytes::new(), true);
+            return;
+        }
+        tokio::time::sleep(SSE_GATEWAY_POLL_INTERVAL).await;
+    }
+}
+/// Dispatcher outcome resolved far enough for a gateway leg to act on it.
+enum GatewayOutcome {
+    Ready(ServerResponse),
+    Sse(Arc<crate::sse::RoutedSseResponse>),
+    WebSocket(Arc<crate::websocket::RoutedUpgradeState>),
+}
+
+/// Resolves a dispatcher outcome for the TLS gateway's protocol legs,
+/// mirroring the mio pipeline: `Ready` passes through, routed SSE and
+/// WebSocket handles surface to the leg that owns the connection stream,
+/// and `Pending` async tasks are polled to completion exactly like the mio
+/// pending-response servicing.
+async fn resolve_gateway_outcome(
     dispatcher: &crate::server::DispatchHandler,
     request: crate::http::ParsedRequest,
     read_timeout: Duration,
-) -> crate::server::ServerResponse {
+) -> GatewayOutcome {
     match dispatcher(request) {
-        crate::server::HandlerResult::Ready(response) => response,
-        crate::server::HandlerResult::Sse(_) | crate::server::HandlerResult::WebSocket(_) => {
-            crate::server::ServerResponse::text(
-                501,
-                "streaming responses are not served over the TLS gateway",
-            )
-        }
+        crate::server::HandlerResult::Ready(response) => GatewayOutcome::Ready(response),
+        crate::server::HandlerResult::Sse(route) => GatewayOutcome::Sse(route),
+        crate::server::HandlerResult::WebSocket(state) => GatewayOutcome::WebSocket(state),
         crate::server::HandlerResult::Pending(pending) => {
             let deadline = std::time::Instant::now() + read_timeout;
             loop {
                 match spectra_runtime::stdlib::poll_task_once(pending.task) {
                     Err(_) => {
-                        return crate::server::ServerResponse::text(500, "async handler failed")
+                        return GatewayOutcome::Ready(crate::server::ServerResponse::text(
+                            500,
+                            "async handler failed",
+                        ))
                     }
                     Ok(true) => break,
                     Ok(false) => {}
                 }
                 if std::time::Instant::now() >= deadline {
                     let _ = spectra_runtime::stdlib::cancel_task_handle(pending.task);
-                    return crate::server::ServerResponse::text(504, "async handler timeout");
+                    return GatewayOutcome::Ready(crate::server::ServerResponse::text(
+                        504,
+                        "async handler timeout",
+                    ));
                 }
                 tokio::time::sleep(Duration::from_millis(2)).await;
             }
@@ -1276,12 +1359,36 @@ async fn resolve_dispatch_result(
                 .ok()
                 .and_then(crate::http::clone_response)
                 .map(crate::server::server_response_from_http);
-            response
-                .unwrap_or_else(|| crate::server::ServerResponse::text(500, "async handler failed"))
+            GatewayOutcome::Ready(response.unwrap_or_else(|| {
+                crate::server::ServerResponse::text(500, "async handler failed")
+            }))
         }
     }
 }
 
+/// HTTP/2-leg resolution. The h2 responder writes single-shot bodies except
+/// for the dedicated SSE streaming path; RFC 8441 WebSocket upgrades have no
+/// non-extended-CONNECT mapping and stay refused.
+async fn resolve_dispatch_result(
+    dispatcher: &crate::server::DispatchHandler,
+    request: crate::http::ParsedRequest,
+    read_timeout: Duration,
+) -> Http2Outcome {
+    match resolve_gateway_outcome(dispatcher, request, read_timeout).await {
+        GatewayOutcome::Ready(response) => Http2Outcome::Ready(response),
+        GatewayOutcome::Sse(route) => Http2Outcome::Sse(route),
+        GatewayOutcome::WebSocket(_) => Http2Outcome::Refused(ServerResponse::text(
+            501,
+            "WebSocket over HTTP/2 requires the HTTP/1.1 leg of the TLS gateway",
+        )),
+    }
+}
+
+enum Http2Outcome {
+    Ready(ServerResponse),
+    Sse(Arc<crate::sse::RoutedSseResponse>),
+    Refused(ServerResponse),
+}
 fn send_gateway_h2_response(mut respond: SendResponse<Bytes>, response: Http2Response) {
     let status = http::StatusCode::from_u16(response.status_code)
         .unwrap_or(http::StatusCode::INTERNAL_SERVER_ERROR);
@@ -1348,14 +1455,102 @@ async fn serve_http11_over_tls<I>(
         };
         let head_only = request.method == "HEAD";
         let keep_alive = request.keep_alive;
-        let response = resolve_dispatch_result(&dispatcher, request, read_timeout).await;
-        let close = !keep_alive || response.close;
-        let wire = crate::server::response_to_wire(response, head_only, close);
-        if io.write_all(&wire).await.is_err() {
+        let request_for_stream = request.clone();
+        match resolve_gateway_outcome(&dispatcher, request, read_timeout).await {
+            GatewayOutcome::Ready(response) => {
+                let close = !keep_alive || response.close;
+                let wire = crate::server::response_to_wire(response, head_only, close);
+                if io.write_all(&wire).await.is_err() {
+                    return;
+                }
+                if close {
+                    return;
+                }
+            }
+            GatewayOutcome::WebSocket(state) => {
+                serve_websocket_over_tls(io, state, request_for_stream, parser.take_buffered())
+                    .await;
+                return;
+            }
+            GatewayOutcome::Sse(route) => {
+                // The stream owns the connection from here on: events and
+                // heartbeats flow until the route closes or the peer hangs
+                // up, so this connection never returns to the keep-alive
+                // loop.
+                serve_sse_over_tls(io, route, request_for_stream).await;
+                return;
+            }
+            GatewayOutcome::WebSocket(state) => {
+                serve_websocket_over_tls(io, state, request_for_stream, parser.take_buffered())
+                    .await;
+                return;
+            }
+        }
+    }
+}
+
+/// Serves a routed SSE response over the TLS stream: the fixed event-stream
+/// head goes out once, then a poll loop drains queued subscriber events plus
+/// the heartbeat comments `RoutedSseConnection` schedules itself into chunked
+/// writes. (The shared heartbeat driver thread is intentionally not reused:
+/// it writes heartbeats synchronously into its own accepted sockets, while a
+/// TLS sink must be written through the async runtime that owns it.)
+async fn serve_sse_over_tls<I>(
+    mut io: I,
+    route: Arc<crate::sse::RoutedSseResponse>,
+    request: crate::http::ParsedRequest,
+) where
+    I: AsyncRead + AsyncWrite + Unpin,
+{
+    use tokio::io::AsyncWriteExt;
+
+    let Ok((headers, sse)) = route.open(&request) else {
+        let mut response = ServerResponse::text(400, "SSE handshake failed");
+        response.close = true;
+        let wire = crate::server::response_to_wire(response, false, true);
+        let _ = io.write_all(&wire).await;
+        return;
+    };
+    if io.write_all(&headers).await.is_err() {
+        return;
+    }
+    loop {
+        let mut chunk = Vec::new();
+        let alive = sse.poll_into(std::time::Instant::now(), &mut chunk);
+        if !chunk.is_empty() && io.write_all(&chunk).await.is_err() {
             return;
         }
-        if close {
+        if !alive {
             return;
+        }
+        tokio::time::sleep(SSE_GATEWAY_POLL_INTERVAL).await;
+    }
+}
+
+/// Completes a routed WebSocket upgrade on the TLS stream and pumps frames
+/// bidirectionally until the close handshake or an error ends the
+/// connection.
+async fn serve_websocket_over_tls<I>(
+    io: I,
+    state: Arc<crate::websocket::RoutedUpgradeState>,
+    request: crate::http::ParsedRequest,
+    buffered: Vec<u8>,
+) where
+    I: AsyncRead + AsyncWrite + Unpin,
+{
+    use tokio::io::AsyncWriteExt;
+
+    let config = state.config();
+    match crate::websocket::negotiate_upgrade_response(&request, &config) {
+        Ok(negotiation) => {
+            crate::websocket::serve_tls_upgrade_pump(io, negotiation, config, buffered).await;
+        }
+        Err(error) => {
+            let mut response = ServerResponse::text(400, error.to_string());
+            response.close = true;
+            let wire = crate::server::response_to_wire(response, false, true);
+            let mut io = io;
+            let _ = io.write_all(&wire).await;
         }
     }
 }

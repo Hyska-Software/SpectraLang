@@ -91,7 +91,7 @@ mod tests {
             assert!(spec.name.starts_with(HOST_PREFIX), "{}", spec.name);
             assert!(names.insert(spec.name), "duplicate {}", spec.name);
         }
-        assert_eq!(HOST_CALLS.len(), 443);
+        assert_eq!(HOST_CALLS.len(), 444);
         let registered_names: HashSet<_> = HOST_CALLS.iter().map(|spec| spec.name).collect();
         for (name, _) in db::POSTGRES_HOST_CALLS {
             assert!(
@@ -383,6 +383,136 @@ mod tests {
         assert_eq!(id_param["required"], true);
         assert_eq!(id_param["schema"]["type"], "integer");
         assert_eq!(users["get"]["responses"]["200"]["description"], "OK");
+
+        clear_host_functions();
+        spectra_rt_manual_clear();
+    }
+
+    #[test]
+    fn routes_set_request_schema_stores_hint_and_export_embeds_request_body() {
+        let _guard = test_guard();
+        clear_host_functions();
+        spectra_rt_manual_clear();
+        register();
+
+        let (_, router) = call("spectra.api.routing.router_new", &[]);
+        let get_route = call(
+            "spectra.api.routing.get",
+            &[router, alloc_spectra_string("/users/{id:int}")],
+        );
+        assert_eq!(get_route.0, HOST_STATUS_SUCCESS);
+        let post_route = call(
+            "spectra.api.routing.post",
+            &[router, alloc_spectra_string("/users/{id:int}")],
+        );
+        assert_eq!(post_route.0, HOST_STATUS_SUCCESS);
+
+        // No hint yet: POST must not carry a requestBody.
+        let (status, spec) = call(
+            "spectra.api.routing.routes_export_openapi",
+            &[
+                router,
+                alloc_spectra_string("Users API"),
+                alloc_spectra_string("1.0.0"),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let value: serde_json::Value =
+            serde_json::from_str(&read_spectra_string(spec).expect("spec string"))
+                .expect("spec parses as JSON");
+        assert!(
+            value["paths"]["/users/{id}"]["post"]["requestBody"].is_null(),
+            "no requestBody without a schema hint"
+        );
+
+        // Store the hint; template may use the registered constraint form.
+        let schema = r#"{"type":"object","required":["email"],"properties":{"email":{"type":"string"}}}"#;
+        let stored = call(
+            "spectra.api.routing.routes_set_request_schema",
+            &[
+                router,
+                3,
+                alloc_spectra_string("/users/{id:int}"),
+                alloc_spectra_string(schema),
+            ],
+        );
+        assert_eq!(stored.0, HOST_STATUS_SUCCESS);
+        assert_eq!(stored.1, 1, "schema hint stored for registered route");
+
+        // Unregistered path: no route matches, reports false.
+        let missing = call(
+            "spectra.api.routing.routes_set_request_schema",
+            &[
+                router,
+                3,
+                alloc_spectra_string("/orders"),
+                alloc_spectra_string(schema),
+            ],
+        );
+        assert_eq!(missing.0, HOST_STATUS_SUCCESS);
+        assert_eq!(missing.1, 0);
+
+        let (status, spec) = call(
+            "spectra.api.routing.routes_export_openapi",
+            &[
+                router,
+                alloc_spectra_string("Users API"),
+                alloc_spectra_string("1.0.0"),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let value: serde_json::Value =
+            serde_json::from_str(&read_spectra_string(spec).expect("spec string"))
+                .expect("spec parses as JSON");
+        let post = &value["paths"]["/users/{id}"]["post"];
+        assert_eq!(
+            post["requestBody"]["content"]["application/json"]["schema"],
+            serde_json::json!({
+                "type": "object",
+                "required": ["email"],
+                "properties": { "email": { "type": "string" } },
+            }),
+            "POST embeds the stored schema verbatim"
+        );
+        assert!(
+            value["paths"]["/users/{id}"]["get"]["requestBody"].is_null(),
+            "GET stays requestBody-free even with a POST hint"
+        );
+
+        clear_host_functions();
+        spectra_rt_manual_clear();
+    }
+
+    #[test]
+    fn routes_set_request_schema_rejects_invalid_json_with_typed_error() {
+        let _guard = test_guard();
+        clear_host_functions();
+        spectra_rt_manual_clear();
+        register();
+
+        let (_, router) = call("spectra.api.routing.router_new", &[]);
+        let route = call(
+            "spectra.api.routing.post",
+            &[router, alloc_spectra_string("/users")],
+        );
+        assert_eq!(route.0, HOST_STATUS_SUCCESS);
+
+        let bad = call(
+            "spectra.api.routing.routes_set_request_schema",
+            &[
+                router,
+                3,
+                alloc_spectra_string("/users"),
+                alloc_spectra_string("{\"type\": \"object\""),
+            ],
+        );
+        assert_eq!(bad.0, HOST_STATUS_INVALID_ARGUMENT);
+        let (_, conflict) = call("spectra.api.routing.last_conflict", &[]);
+        let message = read_spectra_string(conflict).expect("error message");
+        assert!(
+            message.contains("invalid JSON request schema"),
+            "typed error surfaced, got: {message}"
+        );
 
         clear_host_functions();
         spectra_rt_manual_clear();

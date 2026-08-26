@@ -713,6 +713,344 @@ mod tests {
         server.shutdown().expect("shutdown TLS server");
     }
 
+    #[test]
+    fn tls_gateway_streams_routed_sse_events_and_heartbeats_on_the_tls_port() {
+        use crate::tls::{TlsCertificateStore, TlsClientConfig, TlsServerConfig};
+        use rcgen::generate_simple_self_signed;
+        use rustls::pki_types::ServerName;
+        use tokio::net::TcpStream;
+        use tokio::runtime::Builder;
+        use tokio_rustls::TlsConnector;
+
+        let sse_server = Arc::new(Mutex::new(sse::SseServer::new()));
+        sse_server
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .set_heartbeat_interval(Duration::from_millis(40))
+            .expect("configure gateway SSE heartbeat");
+        let mut router = routing::Router::default();
+        let route = router
+            .add(routing::RouteMethod::Get, "/events")
+            .expect("gateway SSE route");
+        let response_handle = sse::store_routed_response(Arc::clone(&sse_server))
+            .expect("store gateway SSE response");
+        handler::register_sync_response_handle_for_route(route, response_handle);
+
+        let certified = generate_simple_self_signed(vec![
+            "localhost".to_string(),
+            "127.0.0.1".to_string(),
+        ])
+        .expect("self-signed SSE gateway certificate");
+        let cert_der = certified.cert.der().to_vec();
+        let certificates = TlsCertificateStore::new(TlsServerConfig::new(
+            vec![cert_der.clone()],
+            certified.key_pair.serialize_der(),
+        ))
+        .expect("SSE gateway certificate store");
+
+        let mut server = HttpServer::start_with_dispatcher(
+            ServerConfig {
+                tls_certificates: Some(std::sync::Arc::new(certificates)),
+                shutdown_grace_period: Duration::from_millis(200),
+                ..ServerConfig::default()
+            },
+            routed_handler(router),
+        )
+        .expect("start SSE TLS gateway");
+        let tls_addr = server.tls_local_addr().expect("TLS gateway address");
+
+        let publisher = Arc::clone(&sse_server);
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(150));
+            for index in 0..3_u32 {
+                let event = sse::SseEvent::new(
+                    Some(index.to_string()),
+                    Some("update".to_string()),
+                    format!("tls-{index}"),
+                    None,
+                )
+                .expect("create gateway SSE event");
+                assert_eq!(
+                    publisher
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .publish_event(&event)
+                        .expect("publish gateway SSE event"),
+                    1
+                );
+            }
+        });
+
+        let runtime = Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .expect("SSE gateway test runtime");
+        runtime.block_on(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+            let client_config = TlsClientConfig::with_roots(vec![cert_der])
+                .with_alpn_protocols(vec![b"http/1.1".to_vec()])
+                .build()
+                .expect("SSE gateway client config");
+            let stream = TcpStream::connect(tls_addr)
+                .await
+                .expect("connect SSE gateway");
+            let connector = TlsConnector::from(client_config);
+            let name = ServerName::try_from("localhost").expect("server name");
+            let mut tls_stream = connector
+                .connect(name, stream)
+                .await
+                .expect("SSE gateway TLS handshake");
+            assert_eq!(
+                tls_stream.get_ref().1.alpn_protocol(),
+                Some(&b"http/1.1"[..])
+            );
+            tls_stream
+                .write_all(
+                    b"GET /events HTTP/1.1\r\nHost: localhost\r\nAccept: text/event-stream\r\n\r\n",
+                )
+                .await
+                .expect("write gateway SSE request");
+
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let mut raw = Vec::new();
+            let mut buffer = [0_u8; 1024];
+            loop {
+                if std::time::Instant::now() >= deadline {
+                    break;
+                }
+                let read = tokio::time::timeout(
+                    Duration::from_millis(500),
+                    tls_stream.read(&mut buffer),
+                )
+                .await;
+                match read {
+                    Ok(Ok(0)) | Ok(Err(_)) | Err(_) => break,
+                    Ok(Ok(read)) => raw.extend_from_slice(&buffer[..read]),
+                }
+                let text = String::from_utf8_lossy(&raw);
+                if text.matches("data: tls-").count() >= 3 && text.contains(": heartbeat") {
+                    break;
+                }
+            }
+            let text = String::from_utf8_lossy(&raw);
+            assert!(
+                text.contains("text/event-stream"),
+                "gateway SSE response missing headers: {text}"
+            );
+            for index in 0..3_u32 {
+                assert!(
+                    text.contains(&format!("id: {index}\nevent: update\ndata: tls-{index}\n")),
+                    "gateway SSE event {index} missing: {text}"
+                );
+            }
+            assert!(
+                text.contains(": heartbeat"),
+                "gateway SSE stream missing heartbeat: {text}"
+            );
+        });
+
+        server.shutdown().expect("shutdown SSE TLS gateway");
+    }
+
+    #[test]
+    fn tls_gateway_upgrades_routed_websocket_and_echoes_masked_frames_on_the_tls_port() {
+        use crate::tls::{TlsCertificateStore, TlsClientConfig, TlsServerConfig};
+        use crate::websocket::{encode_frame, FrameRole, WebSocketFrame};
+        use rcgen::generate_simple_self_signed;
+        use rustls::pki_types::ServerName;
+        use tokio::net::TcpStream;
+        use tokio::runtime::Builder;
+        use tokio_rustls::TlsConnector;
+
+        type TlsClientLeg = tokio_rustls::client::TlsStream<TcpStream>;
+
+        async fn write_client_frame(
+            stream: &mut TlsClientLeg,
+            opcode: u8,
+            payload: Vec<u8>,
+        ) -> bool {
+            use tokio::io::AsyncWriteExt;
+
+            let frame = WebSocketFrame {
+                fin: true,
+                rsv1: false,
+                opcode,
+                masked: true,
+                payload,
+            };
+            match encode_frame(&frame, FrameRole::Client) {
+                Ok(encoded) => stream.write_all(&encoded).await.is_ok(),
+                Err(_) => false,
+            }
+        }
+
+        /// Reads one server frame (unmasked per RFC 6455) into
+        /// `(fin, opcode, payload)`.
+        async fn read_server_frame(
+            stream: &mut TlsClientLeg,
+            pending: &mut Vec<u8>,
+        ) -> Option<(bool, u8, Vec<u8>)> {
+            use tokio::io::AsyncReadExt;
+
+            let mut chunk = [0_u8; 4096];
+            loop {
+                if pending.len() >= 2 {
+                    let fin = pending[0] & 0x80 != 0;
+                    assert_eq!(
+                        pending[1] & 0x80,
+                        0,
+                        "server frames must not be masked"
+                    );
+                    let opcode = pending[0] & 0x0f;
+                    let length_marker = (pending[1] & 0x7f) as usize;
+                    let header_len = 2 + if length_marker == 126 { 2 } else { 0 };
+                    if length_marker != 127 && pending.len() >= header_len {
+                        let length = if length_marker == 126 {
+                            u16::from_be_bytes([pending[2], pending[3]]) as usize
+                        } else {
+                            length_marker
+                        };
+                        if pending.len() >= header_len + length {
+                            let payload =
+                                pending[header_len..header_len + length].to_vec();
+                            pending.drain(..header_len + length);
+                            return Some((fin, opcode, payload));
+                        }
+                    }
+                }
+                let read = tokio::time::timeout(Duration::from_secs(3), stream.read(&mut chunk))
+                    .await
+                    .ok()?
+                    .ok()?;
+                if read == 0 {
+                    return None;
+                }
+                pending.extend_from_slice(&chunk[..read]);
+            }
+        }
+
+        let websocket_server = Arc::new(Mutex::new(crate::websocket::WebSocketServer::new()));
+        let mut router = routing::Router::default();
+        let route = router
+            .add(routing::RouteMethod::Get, "/socket")
+            .expect("gateway WebSocket route");
+        crate::websocket::register_server_route(Arc::clone(&websocket_server), route)
+            .expect("attach gateway WebSocket route");
+
+        let certified = generate_simple_self_signed(vec![
+            "localhost".to_string(),
+            "127.0.0.1".to_string(),
+        ])
+        .expect("self-signed WebSocket gateway certificate");
+        let cert_der = certified.cert.der().to_vec();
+        let certificates = TlsCertificateStore::new(TlsServerConfig::new(
+            vec![cert_der.clone()],
+            certified.key_pair.serialize_der(),
+        ))
+        .expect("WebSocket gateway certificate store");
+
+        let mut server = HttpServer::start_with_dispatcher(
+            ServerConfig {
+                tls_certificates: Some(std::sync::Arc::new(certificates)),
+                shutdown_grace_period: Duration::from_millis(200),
+                ..ServerConfig::default()
+            },
+            routed_handler(router),
+        )
+        .expect("start WebSocket TLS gateway");
+        let tls_addr = server.tls_local_addr().expect("TLS gateway address");
+
+        let runtime = Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .expect("WebSocket gateway test runtime");
+        runtime.block_on(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+            let client_config = TlsClientConfig::with_roots(vec![cert_der])
+                .with_alpn_protocols(vec![b"http/1.1".to_vec()])
+                .build()
+                .expect("WebSocket gateway client config");
+            let stream = TcpStream::connect(tls_addr)
+                .await
+                .expect("connect WebSocket gateway");
+            let connector = TlsConnector::from(client_config);
+            let name = ServerName::try_from("localhost").expect("server name");
+            let mut tls_stream = connector
+                .connect(name, stream)
+                .await
+                .expect("WebSocket gateway TLS handshake");
+            assert_eq!(
+                tls_stream.get_ref().1.alpn_protocol(),
+                Some(&b"http/1.1"[..])
+            );
+            tls_stream
+                .write_all(
+                    b"GET /socket HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
+                )
+                .await
+                .expect("write gateway upgrade request");
+
+            let mut head = Vec::new();
+            let mut chunk = [0_u8; 512];
+            while !head.windows(4).any(|window| window == b"\r\n\r\n") {
+                let read = tokio::time::timeout(Duration::from_secs(3), tls_stream.read(&mut chunk))
+                    .await
+                    .expect("upgrade head read did not time out")
+                    .expect("upgrade head read succeeds");
+                assert!(read > 0, "peer closed before the 101 handshake");
+                head.extend_from_slice(&chunk[..read]);
+            }
+            let head_end = head
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")
+                .expect("upgrade head terminator");
+            let head_text = String::from_utf8_lossy(&head[..head_end]).to_string();
+            assert!(
+                head_text.starts_with("HTTP/1.1 101 Switching Protocols"),
+                "unexpected upgrade response: {head_text}"
+            );
+            assert!(
+                head_text.contains("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo="),
+                "unexpected Sec-WebSocket-Accept: {head_text}"
+            );
+
+            // Frames may share the final TLS record with the 101 head.
+            let mut pending = head.split_off(head_end + 4);
+
+            // Masked text frame echoes back with identical payload.
+            assert!(write_client_frame(&mut tls_stream, 0x1, b"tls-mask".to_vec()).await);
+            let (_, opcode, payload) =
+                read_server_frame(&mut tls_stream, &mut pending).await.expect("text echo");
+            assert_eq!((opcode, payload), (0x1, b"tls-mask".to_vec()));
+
+            // Masked binary frame echoes back as binary.
+            assert!(write_client_frame(&mut tls_stream, 0x2, vec![9, 8, 7]).await);
+            let (_, opcode, payload) =
+                read_server_frame(&mut tls_stream, &mut pending).await.expect("binary echo");
+            assert_eq!((opcode, payload), (0x2, vec![9, 8, 7]));
+
+            // Ping is answered by a pong carrying the application payload.
+            assert!(write_client_frame(&mut tls_stream, 0x9, b"hb".to_vec()).await);
+            let (_, opcode, payload) =
+                read_server_frame(&mut tls_stream, &mut pending).await.expect("pong");
+            assert_eq!((opcode, payload), (0xA, b"hb".to_vec()));
+
+            // Close handshake echoes the close code and ends the pump.
+            let mut close_payload = 1000_u16.to_be_bytes().to_vec();
+            close_payload.extend_from_slice(b"done");
+            assert!(write_client_frame(&mut tls_stream, 0x8, close_payload.clone()).await);
+            let (_, opcode, payload) =
+                read_server_frame(&mut tls_stream, &mut pending).await.expect("close echo");
+            assert_eq!((opcode, payload), (0x8, close_payload));
+        });
+
+        server.shutdown().expect("shutdown WebSocket TLS gateway");
+    }
+
     fn wait_until(timeout: Duration, mut condition: impl FnMut() -> bool) {
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
