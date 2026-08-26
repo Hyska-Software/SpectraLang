@@ -764,14 +764,36 @@ pub fn matmul_batched(
             "gpu batched matmul shape mismatch",
         ));
     }
-    let mut out = Vec::with_capacity(b * m * n);
-    for batch in 0..b {
-        let l_off = batch * m * k;
-        let r_off = batch * k * n;
-        let part = matmul(&left[l_off..l_off + m * k], &right[r_off..r_off + k * n], m, k, n)?;
-        out.extend_from_slice(&part);
-    }
-    Ok(out)
+    let total = b * m * n;
+    let shader = format!(
+        r#"
+@group(0) @binding(0) var<storage, read> left: array<f32>;
+@group(0) @binding(1) var<storage, read> right: array<f32>;
+@group(0) @binding(2) var<storage, read_write> out: array<f32>;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
+    let idx = id.x;
+    if (idx >= {total}u) {{ return; }}
+    let mn = {m}u * {n}u;
+    let batch = idx / mn;
+    let rem = idx % mn;
+    let row = rem / {n}u;
+    let col = rem % {n}u;
+    var acc = 0.0;
+    for (var kk = 0u; kk < {k}u; kk = kk + 1u) {{
+        let l_off = batch * {m}u * {k}u + row * {k}u + kk;
+        let r_off = batch * {k}u * {n}u + kk * {n}u + col;
+        acc = acc + left[l_off] * right[r_off];
+    }}
+    out[idx] = acc;
+}}
+"#,
+        total = total,
+        m = m,
+        n = n,
+        k = k
+    );
+    dispatch_two_inputs(left, right, total, &shader, [total as u32, 1, 1])
 }
 
 pub fn maxpool2d(
