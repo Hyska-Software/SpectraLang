@@ -750,6 +750,111 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
     dispatch_two_inputs(left, right, m * n, &shader, [(m * n) as u32, 1, 1])
 }
 
+pub fn matmul_batched(
+    left: &[f32],
+    right: &[f32],
+    b: usize,
+    m: usize,
+    k: usize,
+    n: usize,
+) -> Result<Vec<f32>, GpuError> {
+    if left.len() != b * m * k || right.len() != b * k * n {
+        return Err(GpuError::new(
+            GpuErrorKind::ShapeMismatch,
+            "gpu batched matmul shape mismatch",
+        ));
+    }
+    let mut out = Vec::with_capacity(b * m * n);
+    for batch in 0..b {
+        let l_off = batch * m * k;
+        let r_off = batch * k * n;
+        let part = matmul(&left[l_off..l_off + m * k], &right[r_off..r_off + k * n], m, k, n)?;
+        out.extend_from_slice(&part);
+    }
+    Ok(out)
+}
+
+pub fn maxpool2d(
+    input: &[f32],
+    n: usize,
+    c: usize,
+    h: usize,
+    w: usize,
+    kh: usize,
+    kw: usize,
+    stride_h: usize,
+    stride_w: usize,
+) -> Result<Vec<f32>, GpuError> {
+    let oh = (h - kh) / stride_h + 1;
+    let ow = (w - kw) / stride_w + 1;
+    if input.len() != n * c * h * w {
+        return Err(GpuError::new(GpuErrorKind::ShapeMismatch, "maxpool2d shape mismatch"));
+    }
+    let shader = format!(
+        r#"
+@group(0) @binding(0) var<storage, read> inp: array<f32>;
+@group(0) @binding(1) var<storage, read_write> out: array<f32>;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
+    let idx = id.x;
+    if (idx >= {out_len}u) {{ return; }}
+    let owu = {ow}u; let ohu = {oh}u; let wu = {w}u; let kwu = {kw}u; let khu = {khu}u;
+    let sh = {sh}u; let sw = {sw}u; let cu = {c}u; let hu = {h}u;
+    let n_idx = idx / (cu * ohu * owu);
+    let rem1 = idx % (cu * ohu * owu);
+    let c_idx = rem1 / (ohu * owu);
+    let rem2 = rem1 % (ohu * owu);
+    let oh_idx = rem2 / owu;
+    let ow_idx = rem2 % owu;
+    var best = bitcast<f32>(0xff800000u);
+    for (var kh_idx = 0u; kh_idx < khu; kh_idx = kh_idx + 1u) {{
+        for (var kw_idx = 0u; kw_idx < kwu; kw_idx = kw_idx + 1u) {{
+            let ih = oh_idx * sh + kh_idx;
+            let iw = ow_idx * sw + kw_idx;
+            let off = ((n_idx * cu + c_idx) * hu + ih) * wu + iw;
+            let v = inp[off];
+            if (v > best) {{ best = v; }}
+        }}
+    }}
+    out[idx] = best;
+}}
+"#,
+        out_len = n * c * oh * ow, ow = ow, oh = oh, w = w, kw = kw, khu = kh, sh = stride_h, sw = stride_w, c = c, h = h
+    );
+    dispatch_one_input(input, n * c * oh * ow, &shader, [(n * c * oh * ow) as u32, 1, 1])
+}
+
+pub fn dropout_device(input: &[f32], p: f32, seed: u64) -> Result<Vec<f32>, GpuError> {
+    if !(0.0..1.0).contains(&p) {
+        return Err(GpuError::new(GpuErrorKind::InvalidArgument, "dropout p must be in [0,1)"));
+    }
+    let scale = if p >= 1.0 { 0.0 } else { 1.0 / (1.0 - p) };
+    let shader = format!(
+        r#"
+@group(0) @binding(0) var<storage, read> inp: array<f32>;
+@group(0) @binding(1) var<storage, read_write> out: array<f32>;
+fn splitmix64(state: ptr<function, u64>) -> u64 {{
+    var z = *state + 0x9E3779B97F4A7C15u;
+    *state = z;
+    z = (z ^ (z >> 30u)) * 0xBF58476D1CE4E5B9u;
+    z = (z ^ (z >> 27u)) * 0x94D049BB133111EBu;
+    return z ^ (z >> 31u);
+}}
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
+    let idx = id.x;
+    if (idx >= {len}u) {{ return; }}
+    var s = {seed}u + idx * 0x9E3779B97F4A7C15u;
+    let r = splitmix64(&s);
+    let prob = f32((r >> 11u) & 0x1FFFFFu) / 2097152.0;
+    if (prob < {p}f) {{ out[idx] = 0.0; }} else {{ out[idx] = inp[idx] * {scale}f; }}
+}}
+"#,
+        len = input.len(), p = p, scale = scale, seed = seed
+    );
+    dispatch_one_input(input, input.len(), &shader, [(input.len() as u32 + 63) / 64 * 64, 1, 1])
+}
+
 pub fn conv2d(
     input: &[f32],
     kernel: &[f32],

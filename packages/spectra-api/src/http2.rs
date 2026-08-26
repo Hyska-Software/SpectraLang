@@ -1188,6 +1188,9 @@ async fn serve_gateway_h2_connection<I>(
                         Http2Outcome::Sse(route) => {
                             stream_routed_sse_over_h2(respond, route, parsed).await;
                         }
+                        Http2Outcome::WebSocket(state) => {
+                            stream_routed_websocket_over_h2(respond, state, parsed).await;
+                        }
                     }
                 }
                 Err(()) => {
@@ -1312,6 +1315,38 @@ async fn stream_routed_sse_over_h2(
         tokio::time::sleep(SSE_GATEWAY_POLL_INTERVAL).await;
     }
 }
+
+async fn stream_routed_websocket_over_h2(
+    mut respond: SendResponse<Bytes>,
+    state: Arc<crate::websocket::RoutedUpgradeState>,
+    request: crate::http::ParsedRequest,
+) {
+    let config = state.config();
+    match crate::websocket::negotiate_h2_websocket_response(&request, &config) {
+        Ok(headers) => {
+            let mut builder = H2Response::builder().status(http::StatusCode::OK);
+            for (name, value) in headers {
+                if let (Ok(n), Ok(v)) = (
+                    http::header::HeaderName::try_from(name.as_str()),
+                    http::header::HeaderValue::try_from(value.as_str()),
+                ) {
+                    builder = builder.header(n, v);
+                }
+            }
+            let Ok(built) = builder.body(()) else { return; };
+            let Ok(mut stream) = respond.send_response(built, false) else { return; };
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let _ = stream.send_data(Bytes::new(), true);
+        }
+        Err(_error) => {
+            let response = H2Response::builder()
+                .status(http::StatusCode::BAD_REQUEST)
+                .body(())
+                .expect("HTTP/2 400 response is valid");
+            let _ = respond.send_response(response, true);
+        }
+    }
+}
 /// Dispatcher outcome resolved far enough for a gateway leg to act on it.
 enum GatewayOutcome {
     Ready(ServerResponse),
@@ -1377,18 +1412,17 @@ async fn resolve_dispatch_result(
     match resolve_gateway_outcome(dispatcher, request, read_timeout).await {
         GatewayOutcome::Ready(response) => Http2Outcome::Ready(response),
         GatewayOutcome::Sse(route) => Http2Outcome::Sse(route),
-        GatewayOutcome::WebSocket(_) => Http2Outcome::Refused(ServerResponse::text(
-            501,
-            "WebSocket over HTTP/2 requires the HTTP/1.1 leg of the TLS gateway",
-        )),
+        GatewayOutcome::WebSocket(state) => Http2Outcome::WebSocket(state),
     }
 }
 
 enum Http2Outcome {
     Ready(ServerResponse),
     Sse(Arc<crate::sse::RoutedSseResponse>),
+    WebSocket(Arc<crate::websocket::RoutedUpgradeState>),
     Refused(ServerResponse),
 }
+
 fn send_gateway_h2_response(mut respond: SendResponse<Bytes>, response: Http2Response) {
     let status = http::StatusCode::from_u16(response.status_code)
         .unwrap_or(http::StatusCode::INTERNAL_SERVER_ERROR);
