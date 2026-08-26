@@ -64,6 +64,9 @@ pub(crate) struct DistRunOutcome {
 //   SPECTRA_DIST_BIND   interface the coordinator binds (default "127.0.0.1";
 //                       "0.0.0.0" exposes it to other containers/hosts)
 //   SPECTRA_DIST_TOKEN  shared secret appended to HELLO frames (optional)
+//   SPECTRA_DIST_COORDINATOR_ADDR
+//                       address workers dial (split-topology runs; default
+//                       "127.0.0.1", overridden per worker namespace)
 
 pub(crate) fn dist_encode_frame(msg_type: u8, payload: &[u8]) -> Vec<u8> {
     let mut frame = Vec::with_capacity(ML_DIST_FRAME_HEADER_LEN + payload.len());
@@ -1682,10 +1685,17 @@ mod dist_tcp_fault_tests {
             .expect("SPECTRA_DIST_WORKER_ID")
             .parse()
             .expect("parse worker id");
+        // Split-topology runs (network namespaces / containers) point the
+        // worker at the coordinator's routable address; loopback remains the
+        // default so plain local invocations are behavior-identical.
+        let host = std::env::var("SPECTRA_DIST_COORDINATOR_ADDR")
+            .ok()
+            .filter(|host| !host.trim().is_empty())
+            .unwrap_or_else(|| "127.0.0.1".to_owned());
         let spec = e2e_spec();
         let shard = dist_build_shard(&spec, worker_id);
         let (_, loss_sum, samples) = dist_tcp_worker(
-            "127.0.0.1",
+            &host,
             port,
             worker_id,
             shard,
@@ -1697,29 +1707,69 @@ mod dist_tcp_fault_tests {
         .expect("worker conversation over real TCP");
         assert!(loss_sum.is_finite());
         assert!(samples > 0);
-        println!("dist e2e worker {worker_id}: samples={samples} loss_sum={loss_sum:.6}");
+        println!("dist e2e worker {worker_id}@{host}:{port}: samples={samples} loss_sum={loss_sum:.6}");
+    }
+
+    /// Coordinator-only half of the split topology: bind
+    /// SPECTRA_DIST_BIND:SPECTRA_DIST_PORT (the ns-cluster script passes
+    /// SPECTRA_DIST_BIND=0.0.0.0) and run one real training session against
+    /// remote workers attaching from other network namespaces. Driven by
+    /// scripts/distributed_ns_cluster.sh / .github/workflows/distributed-ns.yml.
+    fn e2e_coordinator_role() {
+        let bind = std::env::var("SPECTRA_DIST_BIND")
+            .ok()
+            .filter(|bind| !bind.trim().is_empty())
+            .unwrap_or_else(|| "127.0.0.1".to_owned());
+        let port: u16 = std::env::var("SPECTRA_DIST_PORT")
+            .expect("SPECTRA_DIST_PORT")
+            .parse()
+            .expect("parse SPECTRA_DIST_PORT");
+        let addr: std::net::SocketAddr = format!("{bind}:{port}")
+            .parse()
+            .expect("coordinator bind address");
+        let listener =
+            mio::net::TcpListener::bind(addr).expect("coordinator bind succeeded");
+        println!("dist e2e coordinator listening on {addr}");
+        let spec = e2e_spec();
+        let (global_step, last_loss) =
+            dist_coord_loop(listener, &spec, DistTiming::default(), None)
+                .expect("cross-namespace coordination over real TCP");
+        assert_eq!(global_step, spec.steps as i64);
+        assert!(last_loss.is_finite());
+        println!("dist e2e coordinator done: step={global_step} loss={last_loss:.6}");
     }
 
     /// Multi-process e2e: THIS process runs the coordinator event loop while
-    /// two separate OS processes re-invoke the compiled test binary with
+    /// two separate OS processes re-invoking the compiled test binary with
     /// SPECTRA_DIST_ROLE=worker and drive the byte-level protocol over real
     /// TCP loopback — no shared memory, no threads-as-workers. Used directly
     /// by `.github/workflows/distributed-e2e.yml`; also safe to run locally
-    /// via `cargo test -p spectra-runtime --lib dist_tcp_e2e`.
+    /// via `cargo test -p spectra-runtime --lib dist_tcp_e2e`. With
+    /// SPECTRA_DIST_ROLE=coordinator|worker both halves can instead run as
+    /// separate processes across real networks — see
+    /// scripts/distributed_ns_cluster.sh.
     #[test]
     fn dist_tcp_e2e_two_os_processes_over_real_tcp() {
         // ── Fork-bomb guards ────────────────────────────────────────────
-        // A child re-invokes THIS test binary filtered to THIS test with
-        // SPECTRA_DIST_ROLE=worker. The role MUST route to the worker path
-        // and exit BEFORE any spawn; nesting is otherwise impossible.
-        if std::env::var("SPECTRA_DIST_ROLE").as_deref() == Ok("worker") {
-            e2e_worker_child();
-            std::process::exit(0);
+        // A child re-invokes THIS test binary filtered to THIS test with a
+        // role set. The role MUST route to its path and exit BEFORE any
+        // spawn; nesting is otherwise impossible.
+        match std::env::var("SPECTRA_DIST_ROLE").as_deref() {
+            Ok("worker") => {
+                e2e_worker_child();
+                std::process::exit(0);
+            }
+            Ok("coordinator") => {
+                e2e_coordinator_role();
+                std::process::exit(0);
+            }
+            other => {
+                assert!(
+                    other.unwrap_or_default().is_empty(),
+                    "unknown SPECTRA_DIST_ROLE inside the coordinator process: {other:?}"
+                );
+            }
         }
-        assert!(
-            std::env::var("SPECTRA_DIST_ROLE").is_err(),
-            "unknown SPECTRA_DIST_ROLE inside the coordinator process"
-        );
         static E2E_SPAWN_BUDGET: std::sync::atomic::AtomicU32 =
             std::sync::atomic::AtomicU32::new(0);
         let spawns = E2E_SPAWN_BUDGET.fetch_add(1, std::sync::atomic::Ordering::SeqCst);

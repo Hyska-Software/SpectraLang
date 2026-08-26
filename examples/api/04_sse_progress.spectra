@@ -1,0 +1,36 @@
+module sse_progress
+
+from std.api.http import Response, response_status
+from std.api.routing import Route, Router, get, route_id, router
+from std.api.handler import HandlerHandle, register_sync
+from std.api.sse import SseServer, server_new as sse_server_new, server_response, server_listen, server_local_port, server_set_heartbeat_interval, server_set_replay_capacity, server_set_max_event_bytes
+
+public func main() returns int {
+    let server: SseServer = sse_server_new()
+    if server_set_heartbeat_interval(server, 1000) != true {
+        return 1
+    }
+    if server_set_replay_capacity(server, 8) != true {
+        return 2
+    }
+    if server_set_max_event_bytes(server, 4096) != true {
+        return 3
+    }
+    let response: Response = server_response(server)
+    if response_status(response) != 200 {
+        return 4
+    }
+    let routes: Router = router()
+    let route: Route = get(routes, "/progress")
+    if route_id(route) == 0 {
+        return 5
+    }
+    let _handler: HandlerHandle = register_sync(route_id(route), response)
+    if server_listen(server, 0) != true {
+        return 6
+    }
+    if server_local_port(server) <= 0 {
+        return 7
+    }
+    return 0
+}

@@ -107,7 +107,16 @@ via manual dispatch, one matrix job per target:
   `cargo fuzz cmin` and the updated `corpus/<target>/` is uploaded as an
   artifact `fuzz-corpus-<target>` (retention 7 days)
 
-To fold nightly discoveries back into the repo, download the
-`fuzz-corpus-<target>` artifact, drop interesting new inputs into
-`corpus/<target>/`, and commit them as seeds; crashes follow the same triage
-flow as the smoke job above.
+The corpus folds back into the repo automatically. After every successful
+nightly run, the `merge-corpus` job downloads the `fuzz-corpus-<target>`
+artifacts, merges them into `corpus/<target>/` (deduplicated by SHA-256
+content hash against the committed seeds), and opens an automated pull
+request on branch `fuzz/corpus-update` (`fuzz: refresh nightly corpus`,
+labeled `fuzz` / `corpus`).
+
+The cycle is: nightly runs → corpus PR is opened → a human reviews and
+approves the merge. When reviewing, skim the diff for oversized or sensitive
+inputs; crash-derived regression seeds still go through manual triage
+(reproduce with `cargo fuzz run <target> fuzz/artifacts/<crash-file>`,
+minimize with `cargo fuzz tmin`, add the seed here, fix the bug, and add a
+checked-in regression test).

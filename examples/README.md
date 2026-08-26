@@ -22,13 +22,13 @@ Demonstrações gerais da linguagem e fixtures de regressão históricas:
 | `01_rest_crud.spectra` | REST CRUD completo com router e middleware |
 | `02_jwt_auth_crud.spectra` | Autenticação JWT (HS256) protegendo rotas |
 | `03_middleware_composition.spectra` | Composição de middlewares (logging, rate-limit, CORS) |
+| `04_sse_progress.spectra` | SSE com progresso em tempo real e replay |
+| `05_websocket_echo.spectra` | WebSocket echo com permessage-deflate |
 | `06_rest_sqlite_crud.spectra` | REST + SQLite (prepared statements) |
+| `07_request_validation.spectra` | Validação de requests com schemas e problem+json |
+| `08_sessions_login.spectra` | Sessões com login, lookup e revogação |
 | `09_migrations.spectra` | Migrations com checksum e rollback |
 | `10_otel_prometheus.spectra` | Observabilidade: OpenTelemetry traces + Prometheus |
-
-> Nota de numeração: os slots 04, 05, 07 e 08 pertenciam a exemplos
-> removidos por obsolescência; os números foram preservados para não
-> quebrar referências em docs e histórico.
 
 ## examples/ai — pipeline de IA
 

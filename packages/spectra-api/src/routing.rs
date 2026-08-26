@@ -93,6 +93,8 @@ pub enum RouteError {
     InvalidPath(String),
     Conflict(RouteConflict),
     InvalidSchema(String),
+    InvalidStatusCode(i64),
+    InvalidServers(String),
 }
 
 impl fmt::Display for RouteError {
@@ -102,6 +104,12 @@ impl fmt::Display for RouteError {
             Self::InvalidPath(path) => write!(f, "invalid request path {path:?}"),
             Self::Conflict(conflict) => write!(f, "{conflict}"),
             Self::InvalidSchema(detail) => write!(f, "invalid JSON request schema: {detail}"),
+            Self::InvalidStatusCode(code) => {
+                write!(f, "invalid HTTP status code {code}: expected 100..=599")
+            }
+            Self::InvalidServers(detail) => {
+                write!(f, "invalid OpenAPI servers list: {detail}")
+            }
         }
     }
 }
@@ -133,6 +141,8 @@ pub struct Router {
     routes: HashMap<SpectraHostValue, Route>,
     root: RouteNode,
     request_schemas: HashMap<(RouteMethod, String), Value>,
+    response_schemas: HashMap<(RouteMethod, String), BTreeMap<u16, Value>>,
+    servers: Vec<String>,
 }
 
 impl Router {
@@ -216,6 +226,55 @@ impl Router {
             }
             None => Ok(false),
         }
+    }
+
+    pub fn set_response_schema(
+        &mut self,
+        method: RouteMethod,
+        path_template: &str,
+        status: i64,
+        json_schema: &str,
+    ) -> Result<bool, RouteError> {
+        if !(100..=599).contains(&status) {
+            return Err(RouteError::InvalidStatusCode(status));
+        }
+        let schema: Value = serde_json::from_str(json_schema)
+            .map_err(|e| RouteError::InvalidSchema(e.to_string()))?;
+        let segments = parse_pattern(path_template)?;
+        let matches = |route: &Route| {
+            route.method == method
+                && route.segments.len() == segments.len()
+                && route.segments.iter().zip(&segments).all(|(a, b)| match (a, b) {
+                    (RouteSegment::Param { name: a, .. }, RouteSegment::Param { name: b, .. }) => a == b,
+                    (RouteSegment::Wildcard { name: a }, RouteSegment::Wildcard { name: b }) => a == b,
+                    (RouteSegment::Literal(a), RouteSegment::Literal(b)) => a == b,
+                    _ => false,
+                })
+        };
+        let pattern = self.routes.values().find(|r| matches(r)).map(|r| r.pattern.clone());
+        match pattern {
+            Some(p) => {
+                self.response_schemas.entry((method, p)).or_default().insert(status as u16, schema);
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    pub fn set_servers(&mut self, servers_json: &str) -> Result<(), RouteError> {
+        let value: Value = serde_json::from_str(servers_json)
+            .map_err(|e| RouteError::InvalidServers(e.to_string()))?;
+        let arr = value.as_array().ok_or_else(|| RouteError::InvalidServers("servers must be a JSON array".to_string()))?;
+        let mut servers = Vec::new();
+        for v in arr {
+            let s = v.as_str().ok_or_else(|| RouteError::InvalidServers("each server must be a string URL".to_string()))?;
+            if s.trim().is_empty() {
+                return Err(RouteError::InvalidServers("server URL must not be empty".to_string()));
+            }
+            servers.push(s.to_string());
+        }
+        self.servers = servers;
+        Ok(())
     }
 }
 
@@ -924,11 +983,19 @@ pub fn export_openapi(router: &Router, title: &str, version: &str) -> String {
                 parameter.insert("schema".to_string(), openapi_param_schema(constraint));
                 parameters.push(Value::Object(parameter));
             }
+            let mut responses = Map::new();
+            responses.insert("200".to_string(), json!({ "description": "OK" }));
+            if let Some(schemas) = router.response_schemas.get(&(route.method, route.pattern.clone())) {
+                for (status, schema) in schemas {
+                    responses.insert(status.to_string(), json!({
+                        "description": "",
+                        "content": { "application/json": { "schema": schema } }
+                    }));
+                }
+            }
             let mut operation = json!({
                 "parameters": parameters,
-                "responses": {
-                    "200": { "description": "OK" },
-                },
+                "responses": Value::Object(responses),
             });
             if let Some(schema) = router
                 .request_schemas
@@ -948,7 +1015,7 @@ pub fn export_openapi(router: &Router, title: &str, version: &str) -> String {
         paths.insert(template, Value::Object(item));
     }
 
-    let spec = json!({
+    let mut spec = json!({
         "openapi": "3.1.0",
         "info": {
             "title": title,
@@ -956,6 +1023,9 @@ pub fn export_openapi(router: &Router, title: &str, version: &str) -> String {
         },
         "paths": Value::Object(paths),
     });
+    if !router.servers.is_empty() {
+        spec["servers"] = Value::Array(router.servers.iter().map(|url| json!({ "url": url })).collect());
+    }
     serde_json::to_string(&spec).expect("OpenAPI spec serializes")
 }
 

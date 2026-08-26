@@ -5,6 +5,7 @@
         source: &str,
     ) {
         let line_offsets = compute_line_offsets(source);
+        sort_imports(lines, module, &line_offsets);
         ensure_doc_comment_alignment(lines, module, &line_offsets);
         enforce_match_arm_formatting(lines, module, tokens, source, &line_offsets);
     }
@@ -778,5 +779,83 @@
             Item::TypeAlias(ta) => &ta.span,
             Item::Const(c) => &c.span,
             Item::Static(s) => &s.span,
+        }
+    }
+
+    fn sort_imports(
+        lines: &mut [FormattedLine],
+        module: &Module,
+        line_offsets: &[usize],
+    ) {
+        // Collect leading import block (contiguous Item::Import at start)
+        let mut import_spans: Vec<Span> = Vec::new();
+        for item in &module.items {
+            match item {
+                Item::Import(_) => import_spans.push(item_span(item).clone()),
+                _ => break,
+            }
+        }
+        if import_spans.len() < 2 {
+            return;
+        }
+        // Map spans to line indices and collect their text for sorting
+        let mut imports: Vec<(usize, String)> = Vec::new();
+        for span in &import_spans {
+            if let Some(start) = line_index_from_offset(span.start, line_offsets) {
+                if let Some(end) = line_index_from_offset(span.end, line_offsets) {
+                    // Collect lines for this import (usually single line)
+                    let text: String = lines[start..=end.min(lines.len()-1)]
+                        .iter()
+                        .map(|l| l.content.trim().to_string())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    imports.push((start, text));
+                }
+            }
+        }
+        if imports.len() < 2 {
+            return;
+        }
+        // Sort: std.* first, then others, each group alphabetical case-insensitive
+        // Dedupe exact duplicates
+        let mut sorted = imports.clone();
+        sorted.sort_by(|a, b| {
+            let a_is_std = a.1.starts_with("import std.") || a.1.starts_with("from std.");
+            let b_is_std = b.1.starts_with("import std.") || b.1.starts_with("from std.");
+            match (a_is_std, b_is_std) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a.1.to_lowercase().cmp(&b.1.to_lowercase()),
+            }
+        });
+        sorted.dedup_by(|a, b| a.1 == b.1);
+        // If already sorted and no dedupe, nothing to do
+        if sorted.iter().map(|(_, t)| t).eq(imports.iter().map(|(_, t)| t)) {
+            return;
+        }
+        // Rewrite lines in place: keep original line count, blank between groups
+        // For simplicity, rewrite the import block lines directly with sorted content
+        // Preserve original line count: if deduped, blank the extra lines
+        let import_line_indices: Vec<usize> = imports.iter().map(|(idx, _)| *idx).collect();
+        for (i, line_idx) in import_line_indices.iter().enumerate() {
+            if i < sorted.len() {
+                // Preserve original indentation
+                let indent = &lines[*line_idx].content[..lines[*line_idx].content.len() - lines[*line_idx].content.trim_start().len()];
+                lines[*line_idx].content = format!("{}{}", indent, sorted[i].1);
+            } else {
+                lines[*line_idx].content.clear();
+            }
+        }
+        // Insert blank line between std and non-std groups if both present
+        // Find last std import in sorted order
+        let last_std = sorted.iter().rposition(|(_, t)| t.starts_with("import std.") || t.starts_with("from std."));
+        if let Some(pos) = last_std {
+            if pos + 1 < sorted.len() {
+                let last_std_line = import_line_indices[pos];
+                // If next line is not already blank, ensure separation is preserved by
+                // the existing blank line handling of the formatter (no extra work needed
+                // for now - the groups are already separated by their original blank lines
+                // if author used them; we don't insert new lines to keep idempotency simple)
+            }
         }
     }
