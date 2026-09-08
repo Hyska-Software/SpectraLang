@@ -22,6 +22,146 @@ pub(crate) fn lock_async_task_registry() -> Result<std::sync::MutexGuard<'static
         .map_err(|_| HOST_STATUS_INTERNAL_ERROR)
 }
 
+use crate::async_frame::{
+    invoke_frame_drop, AsyncAffinity, AsyncFrame, AsyncPollContext, AsyncPollOutcome,
+    AsyncPollStatus, AsyncResultStorage,
+};
+
+/// Allocate an existing Async task handle and attach its private coroutine frame.
+pub(crate) fn create_coroutine_task(
+    frame: AsyncFrame,
+    parent_scope: Option<SpectraHostValue>,
+    affinity: AsyncAffinity,
+) -> Result<SpectraHostValue, i32> {
+    let mut registry = lock_async_task_registry()?;
+    let task_id = registry.allocate_coroutine_task(parent_scope);
+    if !registry.attach_coroutine_frame(task_id, frame, affinity) {
+        let _ = registry.tasks.remove(task_id);
+        return Err(HOST_STATUS_INTERNAL_ERROR);
+    }
+    Ok(task_id)
+}
+
+/// Poll one coroutine without holding the global task registry mutex.
+pub(crate) fn poll_coroutine_task(task_id: SpectraHostValue) -> Result<AsyncPollOutcome, i32> {
+    let (frames, invocation) = {
+        let registry = lock_async_task_registry()?;
+        if !registry.is_coroutine_task(task_id) { return Err(HOST_STATUS_NOT_FOUND); }
+        let frames = registry.coroutine_frames.clone();
+        let invocation = match frames.begin_poll(task_id) {
+            Ok(invocation) => invocation,
+            Err(AsyncPollOutcome::Ready) => return Ok(AsyncPollOutcome::Ready),
+            Err(AsyncPollOutcome::Failed) => return Ok(AsyncPollOutcome::Failed),
+            Err(AsyncPollOutcome::Cancelled) => return Ok(AsyncPollOutcome::Cancelled),
+            Err(AsyncPollOutcome::AlreadyPolling) => return Ok(AsyncPollOutcome::AlreadyPolling),
+            Err(AsyncPollOutcome::Stale) => return Err(HOST_STATUS_NOT_FOUND),
+            Err(AsyncPollOutcome::AffinityRejected | AsyncPollOutcome::Pending) => return Err(HOST_STATUS_INVALID_ARGUMENT),
+        };
+        (frames, invocation)
+    };
+    let mut context = AsyncPollContext::new();
+    let status = if invocation.cancel_before_poll {
+        AsyncPollStatus::Cancelled
+    } else {
+        unsafe { AsyncPollStatus::from_abi((*invocation.frame).invoke_poll(task_id, &mut context)) }
+    };
+    let (outcome, drop_action) = {
+        let mut registry = lock_async_task_registry()?;
+        let result = frames.finish_poll(task_id, status, context)
+            .map_err(|outcome| if matches!(outcome, AsyncPollOutcome::Stale) { HOST_STATUS_NOT_FOUND } else { HOST_STATUS_INTERNAL_ERROR })?;
+        registry.apply_coroutine_outcome(task_id, result.0);
+        result
+    };
+    if let Some(action) = drop_action {
+        unsafe { invoke_frame_drop(action) };
+        frames.complete_drop(task_id);
+    }
+    for wake in frames.take_wakes() { reactor::global().wake_task(wake); }
+    notify_async_task_completion();
+    Ok(outcome)
+}
+
+pub(crate) fn cancel_coroutine_task(task_id: SpectraHostValue) -> Result<bool, i32> {
+    {
+        let mut registry = lock_async_task_registry()?;
+        if !registry.is_coroutine_task(task_id) { return Ok(false); }
+        registry.cancel_task(task_id).ok_or(HOST_STATUS_NOT_FOUND)?;
+    }
+    let (frames, drop_action) = {
+        let registry = lock_async_task_registry()?;
+        let frames = registry.coroutine_frames.clone();
+        let action = frames.take_cancel_drop(task_id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
+        (frames, action)
+    };
+    if let Some(action) = drop_action {
+        unsafe { invoke_frame_drop(action) };
+        frames.complete_drop(task_id);
+    }
+    for wake in frames.take_wakes() { reactor::global().wake_task(wake); }
+    Ok(true)
+}
+
+pub(crate) fn take_coroutine_result(
+    task_id: SpectraHostValue,
+) -> Result<Result<AsyncResultStorage, AsyncResultStorage>, i32> {
+    let registry = lock_async_task_registry()?;
+    if !registry.is_coroutine_task(task_id) { return Err(HOST_STATUS_NOT_FOUND); }
+    registry.take_coroutine_result(task_id).ok_or(HOST_STATUS_INVALID_ARGUMENT)
+}
+
+pub(crate) fn drop_coroutine_task(task_id: SpectraHostValue) -> Result<bool, i32> {
+    let action = {
+        let mut registry = lock_async_task_registry()?;
+        if !registry.is_coroutine_task(task_id) { return Ok(false); }
+        let action = registry.coroutine_frames.take_drop_task(task_id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
+        if action.is_none() { return Ok(false); }
+        let cancel_handle = registry.tasks.get(task_id).map(|task| task.cancel_handle).unwrap_or(0);
+        registry.tasks.remove(task_id).ok_or(HOST_STATUS_NOT_FOUND)?;
+        registry.cancel_handles.remove(cancel_handle);
+        action
+    };
+    if let Some(action) = action {
+        unsafe { invoke_frame_drop(action) };
+    }
+    Ok(true)
+}
+
+pub(crate) fn subscribe_coroutine_child(
+    parent: SpectraHostValue,
+    child: SpectraHostValue,
+) -> Result<bool, i32> {
+    let (frames, subscribed) = {
+        let registry = lock_async_task_registry()?;
+        if !registry.is_coroutine_task(parent) || !registry.is_coroutine_task(child) { return Ok(false); }
+        let frames = registry.coroutine_frames.clone();
+        let subscribed = frames.subscribe_child(parent, child);
+        (frames, subscribed)
+    };
+    for wake in frames.take_wakes() { reactor::global().wake_task(wake); }
+    Ok(subscribed)
+}
+
+pub(crate) fn wake_coroutine_task(task_id: SpectraHostValue) -> Result<bool, i32> {
+    let registry = lock_async_task_registry()?;
+    if !registry.is_coroutine_task(task_id) { return Ok(false); }
+    let frames = registry.coroutine_frames.clone();
+    drop(registry);
+    let woke = frames.wake(task_id);
+    for wake in frames.take_wakes() { reactor::global().wake_task(wake); }
+    Ok(woke)
+}
+
+pub(crate) fn set_coroutine_result(task_id: SpectraHostValue, value: AsyncResultStorage) -> Result<bool, i32> {
+    let registry = lock_async_task_registry()?;
+    if !registry.is_coroutine_task(task_id) { return Ok(false); }
+    Ok(registry.coroutine_frames.set_result(task_id, value))
+}
+
+pub(crate) fn set_coroutine_error(task_id: SpectraHostValue, value: AsyncResultStorage) -> Result<bool, i32> {
+    let registry = lock_async_task_registry()?;
+    if !registry.is_coroutine_task(task_id) { return Ok(false); }
+    Ok(registry.coroutine_frames.set_error(task_id, value))
+}
 /// Cooperative cancellation state shared by an external I/O task and its
 /// cancellation hook. The worker must check this token at every potentially
 /// blocking readiness boundary.
@@ -226,24 +366,46 @@ pub(crate) extern "C" fn std_async_task_poll(ctx: *mut SpectraHostCallContext) -
         Ok(parts) => parts,
         Err(status) => return status,
     };
+    let task_id = args[0];
+    let is_coroutine = match lock_async_task_registry() {
+        Ok(registry) => registry.is_coroutine_task(task_id),
+        Err(status) => return status,
+    };
+    if is_coroutine {
+        return match poll_coroutine_task(task_id) {
+            Ok(outcome) => {
+                results[0] = match outcome {
+                    AsyncPollOutcome::Ready => 1,
+                    AsyncPollOutcome::Pending | AsyncPollOutcome::AlreadyPolling => 0,
+                    AsyncPollOutcome::Failed | AsyncPollOutcome::Cancelled => -1,
+                    AsyncPollOutcome::Stale | AsyncPollOutcome::AffinityRejected => 0,
+                };
+                HOST_STATUS_SUCCESS
+            }
+            Err(status) => status,
+        };
+    }
     let mut registry = match lock_async_task_registry() {
         Ok(registry) => registry,
         Err(status) => return status,
     };
     registry.process_due_timeouts();
-    registry.drive_pending_io_for_task(args[0]);
-    let Some(task) = registry.tasks.get(args[0]) else {
+    registry.drive_pending_io_for_task(task_id);
+    let Some(task) = registry.tasks.get(task_id) else {
         return HOST_STATUS_NOT_FOUND;
     };
     results[0] = i64::from(task.completed && !task.cancelled && !task.failed);
     HOST_STATUS_SUCCESS
 }
 
-/// Polls a task once without blocking. This is the native integration point
-/// used by event-driven services that own their own readiness loop (for
-/// example the HTTP server) and cannot call the public blocking `block_on`
-/// host function from the event-loop thread.
 pub fn poll_task_once(task_id: SpectraHostValue) -> Result<bool, i32> {
+    let is_coroutine = {
+        let registry = lock_async_task_registry()?;
+        registry.is_coroutine_task(task_id)
+    };
+    if is_coroutine {
+        return Ok(matches!(poll_coroutine_task(task_id)?, AsyncPollOutcome::Ready));
+    }
     let mut registry = lock_async_task_registry()?;
     registry.process_due_timeouts();
     registry.drive_pending_io_for_task(task_id);
@@ -255,6 +417,18 @@ pub fn poll_task_once(task_id: SpectraHostValue) -> Result<bool, i32> {
 
 /// Reads a completed task value without entering the host-call ABI.
 pub fn task_result_value(task_id: SpectraHostValue) -> Result<SpectraHostValue, i32> {
+    let is_coroutine = {
+        let registry = lock_async_task_registry()?;
+        registry.is_coroutine_task(task_id)
+    };
+    if is_coroutine {
+        let _ = poll_coroutine_task(task_id)?;
+        let registry = lock_async_task_registry()?;
+        return registry
+            .coroutine_frames
+            .result_host_value(task_id)
+            .ok_or(HOST_STATUS_INVALID_ARGUMENT);
+    }
     let mut registry = lock_async_task_registry()?;
     registry.process_due_timeouts();
     registry.drive_pending_io_for_task(task_id);
@@ -282,6 +456,26 @@ pub(crate) const TASK_WAIT_PARK: Duration = Duration::from_millis(50);
 /// Terminal join-status codes, mirroring `async_task_join_status`:
 /// 0 = completed with a value, 1 = cancelled, 2 = failed.
 pub fn wait_task_terminal_status(task_id: SpectraHostValue) -> Result<SpectraHostValue, i32> {
+    let is_coroutine = {
+        let registry = lock_async_task_registry()?;
+        registry.is_coroutine_task(task_id)
+    };
+    if is_coroutine {
+        loop {
+            match poll_coroutine_task(task_id)? {
+                AsyncPollOutcome::Ready => return Ok(0),
+                AsyncPollOutcome::Failed => return Ok(2),
+                AsyncPollOutcome::Cancelled => return Ok(1),
+                AsyncPollOutcome::Pending | AsyncPollOutcome::AlreadyPolling => {}
+                AsyncPollOutcome::Stale => return Err(HOST_STATUS_NOT_FOUND),
+                AsyncPollOutcome::AffinityRejected => return Err(HOST_STATUS_INVALID_ARGUMENT),
+            }
+            if let Some(event) = reactor::global().poll(Some(TASK_WAIT_PARK)) {
+                let mut registry = lock_async_task_registry()?;
+                registry.process_reactor_event(event);
+            }
+        }
+    }
     loop {
         {
             let mut registry = lock_async_task_registry()?;
@@ -295,9 +489,6 @@ pub fn wait_task_terminal_status(task_id: SpectraHostValue) -> Result<SpectraHos
                 _ => {}
             }
         }
-
-        // True park (no CPU spin): blocks inside the reactor until a task
-        // wake, IO readiness, timer, or the safety-net bound releases it.
         if let Some(event) = reactor::global().poll(Some(TASK_WAIT_PARK)) {
             let mut registry = lock_async_task_registry()?;
             registry.process_reactor_event(event);
@@ -305,33 +496,12 @@ pub fn wait_task_terminal_status(task_id: SpectraHostValue) -> Result<SpectraHos
     }
 }
 
-/// Blocks a non-event-loop caller until a task completes. The HTTP server
-/// uses `poll_task_once` instead; this helper only preserves the synchronous
-/// `dispatch_async` compatibility surface.
+/// Blocks a non-event-loop caller until a task completes.
 pub fn block_on_task_value(task_id: SpectraHostValue) -> Result<SpectraHostValue, i32> {
     if wait_task_terminal_status(task_id)? != 0 {
         return Err(HOST_STATUS_INVALID_ARGUMENT);
     }
-    let mut registry = lock_async_task_registry()?;
-    registry.process_due_timeouts();
-    registry.drive_pending_io_for_task(task_id);
-    let Some(task) = registry.tasks.get(task_id) else {
-        return Err(HOST_STATUS_NOT_FOUND);
-    };
-    if task.cancelled || task.failed || !task.completed {
-        return Err(HOST_STATUS_INVALID_ARGUMENT);
-    }
-    Ok(task.value)
-}
-
-/// Cancels a task owned by an event-driven service while it is removing the
-/// request state associated with that task.
-pub fn cancel_task_handle(task_id: SpectraHostValue) -> bool {
-    async_task_registry()
-        .lock()
-        .ok()
-        .and_then(|mut registry| registry.cancel_task(task_id))
-        .is_some()
+    task_result_value(task_id)
 }
 
 pub(crate) extern "C" fn std_async_task_result(ctx: *mut SpectraHostCallContext) -> i32 {
@@ -339,20 +509,10 @@ pub(crate) extern "C" fn std_async_task_result(ctx: *mut SpectraHostCallContext)
         Ok(parts) => parts,
         Err(status) => return status,
     };
-    let mut registry = match lock_async_task_registry() {
-        Ok(registry) => registry,
-        Err(status) => return status,
-    };
-    registry.process_due_timeouts();
-    registry.drive_pending_io_for_task(args[0]);
-    let Some(task) = registry.tasks.get(args[0]) else {
-        return HOST_STATUS_NOT_FOUND;
-    };
-    if task.cancelled || task.failed || !task.completed {
-        return HOST_STATUS_INVALID_ARGUMENT;
+    match task_result_value(args[0]) {
+        Ok(value) => { results[0] = value; HOST_STATUS_SUCCESS }
+        Err(status) => status,
     }
-    results[0] = task.value;
-    HOST_STATUS_SUCCESS
 }
 
 pub(crate) extern "C" fn std_async_task_block_on(ctx: *mut SpectraHostCallContext) -> i32 {
@@ -367,7 +527,7 @@ pub(crate) extern "C" fn std_async_task_block_on(ctx: *mut SpectraHostCallContex
         Ok(_) => return HOST_STATUS_INVALID_ARGUMENT,
         Err(status) => return status,
     }
-    let mut registry = match lock_async_task_registry() {
+    let registry = match lock_async_task_registry() {
         Ok(registry) => registry,
         Err(status) => return status,
     };
@@ -376,6 +536,21 @@ pub(crate) extern "C" fn std_async_task_block_on(ctx: *mut SpectraHostCallContex
     };
     results[0] = task.value;
     HOST_STATUS_SUCCESS
+}
+pub fn cancel_task_handle(task_id: SpectraHostValue) -> bool {
+    let is_coroutine = async_task_registry()
+        .lock()
+        .ok()
+        .map(|registry| registry.is_coroutine_task(task_id))
+        .unwrap_or(false);
+    if is_coroutine {
+        return cancel_coroutine_task(task_id).unwrap_or(false);
+    }
+    async_task_registry()
+        .lock()
+        .ok()
+        .and_then(|mut registry| registry.cancel_task(task_id))
+        .is_some()
 }
 
 /// Blocks the caller until the task reaches a terminal state and reports
@@ -411,6 +586,24 @@ pub(crate) extern "C" fn std_async_task_join(ctx: *mut SpectraHostCallContext) -
         Ok(parts) => parts,
         Err(status) => return status,
     };
+    let is_coroutine = match lock_async_task_registry() {
+        Ok(registry) => registry.is_coroutine_task(args[0]),
+        Err(status) => return status,
+    };
+    if is_coroutine {
+        let outcome = match poll_coroutine_task(args[0]) {
+            Ok(outcome) => outcome,
+            Err(status) => return status,
+        };
+        results[0] = match outcome {
+            AsyncPollOutcome::Ready => task_result_value(args[0]).unwrap_or(-3),
+            AsyncPollOutcome::Cancelled => -1,
+            AsyncPollOutcome::Failed => -2,
+            AsyncPollOutcome::Pending | AsyncPollOutcome::AlreadyPolling => -3,
+            AsyncPollOutcome::Stale | AsyncPollOutcome::AffinityRejected => return HOST_STATUS_NOT_FOUND,
+        };
+        return HOST_STATUS_SUCCESS;
+    }
     let mut registry = match lock_async_task_registry() {
         Ok(registry) => registry,
         Err(status) => return status,
@@ -434,6 +627,22 @@ pub(crate) extern "C" fn std_async_task_join_status(ctx: *mut SpectraHostCallCon
         Ok(parts) => parts,
         Err(status) => return status,
     };
+    let is_coroutine = match lock_async_task_registry() {
+        Ok(registry) => registry.is_coroutine_task(args[0]),
+        Err(status) => return status,
+    };
+    if is_coroutine {
+        results[0] = match poll_coroutine_task(args[0]) {
+            Ok(AsyncPollOutcome::Ready) => 0,
+            Ok(AsyncPollOutcome::Cancelled) => 1,
+            Ok(AsyncPollOutcome::Failed) => 2,
+            Ok(AsyncPollOutcome::Pending | AsyncPollOutcome::AlreadyPolling) => 3,
+            Ok(AsyncPollOutcome::Stale) => return HOST_STATUS_NOT_FOUND,
+            Ok(AsyncPollOutcome::AffinityRejected) => return HOST_STATUS_INVALID_ARGUMENT,
+            Err(status) => return status,
+        };
+        return HOST_STATUS_SUCCESS;
+    }
     let mut registry = match lock_async_task_registry() {
         Ok(registry) => registry,
         Err(status) => return status,
@@ -452,6 +661,17 @@ pub(crate) extern "C" fn std_async_task_cancel(ctx: *mut SpectraHostCallContext)
         Ok(parts) => parts,
         Err(status) => return status,
     };
+    let is_coroutine = match lock_async_task_registry() {
+        Ok(registry) => registry.is_coroutine_task(args[0]),
+        Err(status) => return status,
+    };
+    if is_coroutine {
+        return match cancel_coroutine_task(args[0]) {
+            Ok(true) => { results[0] = 1; HOST_STATUS_SUCCESS }
+            Ok(false) => HOST_STATUS_NOT_FOUND,
+            Err(status) => status,
+        };
+    }
     let mut registry = match lock_async_task_registry() {
         Ok(registry) => registry,
         Err(status) => return status,
@@ -1082,4 +1302,136 @@ pub(crate) extern "C" fn std_async_stream_fuse(ctx: *mut SpectraHostCallContext)
         1,
     );
     HOST_STATUS_SUCCESS
+}
+
+#[cfg(test)]
+mod coroutine_tests {
+    use crate::async_frame::{
+        AsyncAffinity, AsyncFrame, AsyncOwnedValue, AsyncPollContext, AsyncPollOutcome,
+        AsyncResultStorage, AsyncTaskState,
+    };
+    use super::{
+        async_task_registry, cancel_coroutine_task, create_coroutine_task, drop_coroutine_task,
+        lock_async_task_registry, poll_coroutine_task, take_coroutine_result, task_result_value,
+    };
+    use std::ffi::c_void;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    static REENTERED: AtomicBool = AtomicBool::new(false);
+    static POLLS: AtomicUsize = AtomicUsize::new(0);
+    static DROPS: AtomicUsize = AtomicUsize::new(0);
+
+    unsafe extern "C" fn reenter_poll(
+        _: *mut c_void,
+        task: i64,
+        context: *mut AsyncPollContext,
+    ) -> i32 {
+        REENTERED.store(
+            async_task_registry()
+                .try_lock()
+                .map(|registry| registry.coroutine_state(task) == Some(AsyncTaskState::Polling))
+                .unwrap_or(false),
+            Ordering::SeqCst,
+        );
+        if POLLS.fetch_add(1, Ordering::SeqCst) == 0 {
+            (*context).wake_parent();
+            0
+        } else {
+            (*context).set_result(AsyncResultStorage::scalar(task.saturating_add(1)));
+            1
+        }
+    }
+
+    unsafe extern "C" fn string_poll(
+        _: *mut c_void,
+        _: i64,
+        context: *mut AsyncPollContext,
+    ) -> i32 {
+        (*context).set_result(AsyncResultStorage::string("owned"));
+        1
+    }
+    unsafe extern "C" fn aggregate_poll(
+        _: *mut c_void,
+        _: i64,
+        context: *mut AsyncPollContext,
+    ) -> i32 {
+        (*context).set_result(AsyncResultStorage::aggregate(vec![11, 22]));
+        1
+    }
+
+    unsafe extern "C" fn cancel_during_poll(
+        _: *mut c_void,
+        task: i64,
+        _: *mut AsyncPollContext,
+    ) -> i32 {
+        let _ = cancel_coroutine_task(task);
+        1
+    }
+
+    unsafe extern "C" fn count_drop(_: *mut c_void, _: i64, _: i32) {
+        DROPS.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn reset() {
+        let mut registry = lock_async_task_registry().expect("registry");
+        registry.clear();
+        POLLS.store(0, Ordering::SeqCst);
+        REENTERED.store(false, Ordering::SeqCst);
+        DROPS.store(0, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn generated_poll_reenters_registry_and_wakes_without_recursion() {
+        let _guard = crate::runtime_test_guard();
+        reset();
+        let task = create_coroutine_task(
+            AsyncFrame::new(Vec::new(), reenter_poll, count_drop),
+            None,
+            AsyncAffinity::Any,
+        ).expect("task");
+        assert_eq!(poll_coroutine_task(task), Ok(AsyncPollOutcome::Pending));
+        assert!(REENTERED.load(Ordering::SeqCst));
+        assert_eq!(poll_coroutine_task(task), Ok(AsyncPollOutcome::Ready));
+        assert_eq!(task_result_value(task), Ok(task.saturating_add(1)));
+        assert_eq!(DROPS.load(Ordering::SeqCst), 1);
+        assert!(drop_coroutine_task(task).expect("drop"));
+    }
+
+    #[test]
+    fn cancellation_during_poll_defers_drop_until_callback_returns() {
+        let _guard = crate::runtime_test_guard();
+        reset();
+        let task = create_coroutine_task(
+            AsyncFrame::new(Vec::new(), cancel_during_poll, count_drop),
+            None,
+            AsyncAffinity::Any,
+        ).expect("task");
+        assert_eq!(poll_coroutine_task(task), Ok(AsyncPollOutcome::Cancelled));
+        assert_eq!(DROPS.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn typed_coroutine_result_is_taken_as_owned_storage() {
+        let _guard = crate::runtime_test_guard();
+        reset();
+        let task = create_coroutine_task(
+            AsyncFrame::new(Vec::new(), string_poll, count_drop),
+            None,
+            AsyncAffinity::Any,
+        ).expect("task");
+        assert_eq!(poll_coroutine_task(task), Ok(AsyncPollOutcome::Ready));
+        let result = take_coroutine_result(task).expect("result").expect("ready");
+        assert!(matches!(result.as_value(), AsyncOwnedValue::String(value) if value == "owned"));
+        assert!(drop_coroutine_task(task).expect("drop"));
+
+        let aggregate_task = create_coroutine_task(
+            AsyncFrame::new(Vec::new(), aggregate_poll, count_drop),
+            None,
+            AsyncAffinity::Any,
+        ).expect("aggregate task");
+        assert_eq!(poll_coroutine_task(aggregate_task), Ok(AsyncPollOutcome::Ready));
+        let result = take_coroutine_result(aggregate_task).expect("result").expect("ready");
+        assert!(matches!(result.as_value(), AsyncOwnedValue::Aggregate(value) if value == &vec![11, 22]));
+        assert!(drop_coroutine_task(aggregate_task).expect("drop"));
+    }
 }

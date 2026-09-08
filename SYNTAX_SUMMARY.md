@@ -97,9 +97,12 @@ import {
 |---|---|---|---|
 | `import X` | `use X` | `import X` | `import X` |
 | `import {a,b} from X` | `use X::{a,b}` | `from X import a,b` | `import {a,b} from X` |
+| `import {a as b} from X` | `use X::{a as b}` | `from X import a as b` | `import {a as b} from X` |
 | `import X as Y` | `use X as Y` | `import X as Y` | `import X as Y` |
 
-→ **Python-like** com chaves estilo TS para named imports.
+→ **Python-like** com chaves estilo TS para named imports. Brace imports desaguam na
+mesma forma de named import do parser (`NamedImport`), então alias, re-export
+(`public`/`internal`) e semântica são idênticos ao canonical `from X import ...`.
 
 ---
 

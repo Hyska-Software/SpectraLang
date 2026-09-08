@@ -31,6 +31,7 @@ pub(crate) const SERVE_HTTP_ACCEPT_POLL_MS: u64 = 100;
 
 /// Live HTTP runtime attached to a `ServeServer`. Dropping it signals the
 /// worker to stop; the worker observes the flag within one accept-poll cycle.
+#[allow(dead_code)] // `port` is resolved at bind time and surfaced through http_start's return value.
 pub(crate) struct ServeHttpRuntime {
     /// Port actually bound (resolves ephemeral port 0).
     pub(crate) port: u16,

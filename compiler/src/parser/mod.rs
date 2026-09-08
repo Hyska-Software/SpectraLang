@@ -866,44 +866,130 @@ mod tests {
     }
 
     #[test]
-    fn parses_struct_literal_field_shorthand() {
+    fn parses_brace_import_forms() {
         let source = r#"
             module demo
 
-            record Point {
-                x: int,
-                y: int,
-            }
-
-            func main()  returns  int {
-                let x = 1
-                let point = Point { x, y: 2 }
-                return point.x
-            }
+            import { println, print } from std.io
+            import { abs as absolute } from std.math
+            public import { min } from std.math
+            import {
+                max,
+                sign,
+            } from std.math
         "#;
 
-        assert!(parse_with_features(source, &[]).is_ok());
+        let module = parse_with_features(source, &[]).expect("brace imports should parse");
+        let imports: Vec<_> = module
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                crate::ast::Item::Import(import) => Some(import),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(imports.len(), 4);
+
+        assert_eq!(imports[0].path, vec!["std".to_string(), "io".to_string()]);
+        assert_eq!(imports[0].alias, None);
+        assert_eq!(
+            imports[0]
+                .names
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|entry| (entry.name.as_str(), entry.alias.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![("println", None), ("print", None)]
+        );
+        assert!(!imports[0].is_reexport);
+
+        // Alias inside braces desugars to the same NamedImport shape as the
+        // canonical `from X import name as alias` form.
+        assert_eq!(
+            imports[1]
+                .names
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|entry| (entry.name.as_str(), entry.alias.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![("abs", Some("absolute"))]
+        );
+
+        assert!(imports[2].is_reexport);
+        assert_eq!(
+            imports[2].names.as_ref().unwrap()[0].name,
+            "min".to_string()
+        );
+
+        // Multi-line brace list with trailing comma.
+        assert_eq!(
+            imports[3]
+                .names
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["max", "sign"]
+        );
     }
 
     #[test]
-    fn match_expression_is_not_misclassified_as_struct_literal_shorthand() {
+    fn wildcard_and_identifier_patterns_carry_real_spans() {
         let source = r#"
             module demo
 
-            enum OptionInt {
-                Some(int),
-                None,
+            func pick(value: int) returns int {
+                match value {
+                    otherwise then 0
+                }
             }
 
-            func main(value: OptionInt)  returns  int {
-                return match value {
-                    when OptionInt::Some(x) then x,
-                    when OptionInt::None then 0,
+            func bind(value: int) returns int {
+                match value {
+                    when n then n
                 }
             }
         "#;
 
-        assert!(parse_with_features(source, &[]).is_ok());
+        let module =
+            parse_with_features(source, &[]).expect("match expressions should parse");
+
+        let mut spans = Vec::new();
+        for item in &module.items {
+            if let crate::ast::Item::Function(function) = item {
+                for statement in &function.body.statements {
+                    if let crate::ast::StatementKind::Expression(expression) = &statement.kind {
+                        collect_match_arm_pattern_spans(expression, &mut spans);
+                    }
+                }
+            }
+        }
+
+        assert_eq!(spans.len(), 2, "expected two match arm patterns");
+
+        for span in &spans {
+            // Span::dummy() has start == end == 0.
+            assert!(
+                !(span.start == 0 && span.end == 0),
+                "pattern span should not be dummy, got {:?}",
+                span
+            );
+        }
+        // The `otherwise` wildcard sits on an earlier line than `when n`.
+        assert!(spans[0].start_location.line < spans[1].start_location.line);
+    }
+
+    fn collect_match_arm_pattern_spans(expression: &crate::ast::Expression, spans: &mut Vec<Span>) {
+        if let crate::ast::ExpressionKind::Match { scrutinee, arms } = &expression.kind {
+            let _ = scrutinee;
+            for arm in arms {
+                spans.push(arm.pattern.span());
+            }
+        }
     }
 
     #[test]
@@ -1034,6 +1120,62 @@ mod tests {
                     .hint
                     .as_deref()
                     .is_some_and(|hint| hint.contains("struct"))
+        }));
+    }
+
+    #[test]
+    fn for_of_misuse_produces_coded_diagnostic() {
+        let source = r#"
+            module demo
+
+            func sum(values: [int]) returns int {
+                for item of values {
+                    return item
+                }
+                return 0
+            }
+        "#;
+        let errors = parse_with_features(source, &[]).expect_err("`for x of` must fail");
+        assert!(errors.iter().any(|error| {
+            error.code.as_deref() == Some("P016")
+                && error.hint.as_deref().is_some_and(|hint| hint.contains("for x in"))
+        }));
+    }
+
+    #[test]
+    fn missing_in_after_iterator_produces_coded_diagnostic() {
+        let source = r#"
+            module demo
+
+            func sum(values: [int]) returns int {
+                for item values {
+                    return item
+                }
+                return 0
+            }
+        "#;
+        let errors =
+            parse_with_features(source, &[]).expect_err("missing `in` must fail");
+        assert!(errors
+            .iter()
+            .any(|error| error.code.as_deref() == Some("P017")));
+    }
+
+    #[test]
+    fn invalid_assignment_target_produces_coded_diagnostic() {
+        let source = r#"
+            module demo
+
+            func broken() returns int {
+                1 + 2 = 3
+                return 0
+            }
+        "#;
+        let errors = parse_with_features(source, &[])
+            .expect_err("assignment to a literal expression must fail");
+        assert!(errors.iter().any(|error| {
+            error.code.as_deref() == Some("P018")
+                && error.hint.as_deref().is_some_and(|hint| hint.contains("field accesses"))
         }));
     }
 

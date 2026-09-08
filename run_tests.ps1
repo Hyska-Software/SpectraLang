@@ -575,7 +575,8 @@ if (Test-Path $errorDir) {
     $runtimeErrorFixtures = @(
         "exact_width_float_nonfinite.spectra",
         "exact_width_invalid_cast.spectra",
-        "exact_width_runtime_overflow.spectra"
+        "exact_width_runtime_overflow.spectra",
+        "integer_division_by_zero.spectra"
     )
     Write-Host ""
     Write-Host "--- $errorDir ($($files.Count) testes: devem falhar) ---" -ForegroundColor Yellow

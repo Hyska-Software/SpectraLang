@@ -6,7 +6,7 @@ impl ASTLowering {
         match &stmt.kind {
             StatementKind::Let(let_stmt) => {
                 let binding_name = match &let_stmt.pattern {
-                    spectra_compiler::ast::Pattern::Identifier(name) => Some(name.clone()),
+                    spectra_compiler::ast::Pattern::Identifier(name, _) => Some(name.clone()),
                     _ => None,
                 };
 

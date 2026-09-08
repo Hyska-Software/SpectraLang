@@ -128,6 +128,9 @@ pub(crate) fn api_task(output: Type) -> Type {
 fn register_std_api_modules(registry: &mut ModuleRegistry, prefix: &str) {
     registry.register_module(prefix.to_string(), make_std_api_root(prefix));
     registry.register_module(format!("{prefix}.http"), make_std_api_http(prefix));
+    registry.register_module(format!("{prefix}.http3"), make_std_api_http3(prefix));
+    registry.register_module(format!("{prefix}.grpc"), make_std_api_grpc(prefix));
+    registry.register_module(format!("{prefix}.graphql"), make_std_api_graphql(prefix));
     registry.register_module(format!("{prefix}.server"), make_std_api_server(prefix));
     registry.register_module(format!("{prefix}.client"), make_std_api_client(prefix));
     registry.register_module(format!("{prefix}.json"), make_std_api_json(prefix));
@@ -939,6 +942,210 @@ fn make_std_api_db_migrate(prefix: &str) -> ModuleExports {
             vec![connection, Type::String],
             Type::String,
         ),
+    ];
+    for (name, params, return_type) in functions {
+        exports
+            .functions
+            .insert(name.to_string(), pub_fn(params, return_type));
+    }
+    exports
+}
+fn make_std_api_http3(prefix: &str) -> ModuleExports {
+    let mut exports = api_module(prefix, Some("http3"));
+    let functions = [
+        ("server_start", vec![Type::Int, Type::Int], Type::Int),
+        ("server_local_port", vec![Type::Int], Type::Int),
+        ("server_shutdown", vec![Type::Int], api_task(Type::Int)),
+        ("client_connect", vec![Type::Int, Type::String], api_task(Type::Int)),
+        ("client_shutdown", vec![Type::Int], api_task(Type::Int)),
+        (
+            "client_request_new",
+            vec![Type::Int, Type::String, Type::String],
+            Type::Int,
+        ),
+        (
+            "client_request_header",
+            vec![Type::Int, Type::String, Type::String],
+            Type::Bool,
+        ),
+        ("client_request_open", vec![Type::Int], api_task(Type::Int)),
+        (
+            "client_request_send_body",
+            vec![Type::Int, Type::String],
+            api_task(Type::Int),
+        ),
+        (
+            "client_request_send_trailers",
+            vec![Type::Int, Type::String, Type::String],
+            api_task(Type::Int),
+        ),
+        ("client_request_finish", vec![Type::Int], api_task(Type::Int)),
+        (
+            "client_request_receive_response",
+            vec![Type::Int],
+            api_task(Type::Int),
+        ),
+        ("client_request_cancel", vec![Type::Int], Type::Bool),
+        ("response_status", vec![Type::Int], Type::Int),
+        ("response_header", vec![Type::Int, Type::String], Type::String),
+        ("response_trailer", vec![Type::Int, Type::String], Type::String),
+        ("response_body_base64", vec![Type::Int], Type::String),
+        ("response_body_len", vec![Type::Int], Type::Int),
+        ("task_result", vec![Type::Int], Type::Int),
+        ("task_cancel", vec![Type::Int], Type::Bool),
+        ("result_ok", vec![Type::Int], Type::Bool),
+        ("result_value", vec![Type::Int], Type::Int),
+        ("result_error_code", vec![Type::Int], Type::Int),
+        ("result_error_message", vec![Type::Int], Type::String),
+        ("handle_drop", vec![Type::Int], Type::Bool),
+    ];
+    for (name, params, return_type) in functions {
+        exports
+            .functions
+            .insert(name.to_string(), pub_fn(params, return_type));
+    }
+    exports
+}
+
+fn make_std_api_grpc(prefix: &str) -> ModuleExports {
+    let mut exports = api_module(prefix, Some("grpc"));
+    let functions = [
+        ("message_from_base64", vec![Type::String], Type::Int),
+        ("message_to_base64", vec![Type::Int], Type::String),
+        ("message_len", vec![Type::Int], Type::Int),
+        ("message_free", vec![Type::Int], Type::Bool),
+        ("metadata_new", vec![], Type::Int),
+        (
+            "metadata_insert",
+            vec![Type::Int, Type::String, Type::String],
+            Type::Bool,
+        ),
+        (
+            "metadata_append",
+            vec![Type::Int, Type::String, Type::String],
+            Type::Bool,
+        ),
+        ("metadata_get", vec![Type::Int, Type::String], Type::String),
+        ("metadata_len", vec![Type::Int], Type::Int),
+        ("metadata_free", vec![Type::Int], Type::Bool),
+        ("status_new", vec![Type::Int, Type::String], Type::Int),
+        ("status_code", vec![Type::Int], Type::Int),
+        ("status_message", vec![Type::Int], Type::String),
+        ("status_details_base64", vec![Type::Int], Type::String),
+        (
+            "status_set_details_base64",
+            vec![Type::Int, Type::String],
+            Type::Bool,
+        ),
+        ("status_free", vec![Type::Int], Type::Bool),
+        ("response_message", vec![Type::Int], Type::Int),
+        ("response_status", vec![Type::Int], Type::Int),
+        ("response_metadata", vec![Type::Int], Type::Int),
+        ("response_free", vec![Type::Int], Type::Bool),
+        ("error_code", vec![Type::Int], Type::Int),
+        ("error_message", vec![Type::Int], Type::String),
+        ("error_details_base64", vec![Type::Int], Type::String),
+        ("error_free", vec![Type::Int], Type::Bool),
+        ("client_connect", vec![Type::String], api_task(Type::Int)),
+        (
+            "client_unary",
+            vec![Type::Int, Type::String, Type::Int, Type::Int, Type::Int],
+            api_task(Type::Int),
+        ),
+        (
+            "client_client_streaming",
+            vec![Type::Int, Type::String, Type::Int, Type::Int, Type::Int],
+            api_task(Type::Int),
+        ),
+        (
+            "client_server_streaming",
+            vec![Type::Int, Type::String, Type::Int, Type::Int, Type::Int],
+            api_task(Type::Int),
+        ),
+        (
+            "client_bidi_streaming",
+            vec![Type::Int, Type::String, Type::Int, Type::Int, Type::Int],
+            api_task(Type::Int),
+        ),
+        ("stream_send", vec![Type::Int, Type::Int], api_task(Type::Int)),
+        ("stream_recv", vec![Type::Int], api_task(Type::Int)),
+        ("stream_finish", vec![Type::Int], api_task(Type::Int)),
+        ("stream_cancel", vec![Type::Int], api_task(Type::Int)),
+        ("stream_free", vec![Type::Int], Type::Bool),
+        (
+            "server_bind",
+            vec![Type::String, Type::Int, Type::Int, Type::Int, Type::Int],
+            api_task(Type::Int),
+        ),
+        ("server_local_port", vec![Type::Int], Type::Int),
+        ("server_shutdown", vec![Type::Int], Type::Bool),
+        ("server_free", vec![Type::Int], Type::Bool),
+    ];
+    for (name, params, return_type) in functions {
+        exports
+            .functions
+            .insert(name.to_string(), pub_fn(params, return_type));
+    }
+    exports
+}
+
+fn make_std_api_graphql(prefix: &str) -> ModuleExports {
+    let mut exports = api_module(prefix, Some("graphql"));
+    let functions = [
+        ("schema_new", vec![], Type::Int),
+        ("schema_set_workers", vec![Type::Int, Type::Int], Type::Bool),
+        (
+            "schema_set_subscription_capacity",
+            vec![Type::Int, Type::Int],
+            Type::Bool,
+        ),
+        (
+            "schema_field_json",
+            vec![Type::Int, Type::Int, Type::String, Type::String, Type::String],
+            Type::Bool,
+        ),
+        (
+            "schema_field_callback",
+            vec![Type::Int, Type::Int, Type::String, Type::String, Type::Int],
+            Type::Bool,
+        ),
+        (
+            "schema_subscription_json",
+            vec![Type::Int, Type::String, Type::String, Type::String],
+            Type::Bool,
+        ),
+        (
+            "schema_subscription_callback",
+            vec![Type::Int, Type::String, Type::String, Type::Int],
+            Type::Bool,
+        ),
+        ("schema_finish", vec![Type::Int], Type::Int),
+        ("schema_drop", vec![Type::Int], Type::Bool),
+        ("schema_sdl", vec![Type::Int], Type::String),
+        ("execute", vec![Type::Int, Type::String, Type::String], Type::Int),
+        (
+            "execute_named",
+            vec![Type::Int, Type::String, Type::String, Type::String],
+            Type::Int,
+        ),
+        (
+            "execute_http",
+            vec![Type::Int, Type::Int, Type::String, Type::String, Type::String],
+            Type::Int,
+        ),
+        ("response_json", vec![Type::Int], Type::String),
+        ("response_status", vec![Type::Int], Type::Int),
+        ("response_is_ok", vec![Type::Int], Type::Bool),
+        ("response_errors_json", vec![Type::Int], Type::String),
+        ("response_data_json", vec![Type::Int], Type::String),
+        ("response_drop", vec![Type::Int], Type::Bool),
+        ("subscribe", vec![Type::Int, Type::String, Type::String], Type::Int),
+        ("subscription_next", vec![Type::Int], Type::Int),
+        ("subscription_pending", vec![Type::Int], Type::Int),
+        ("subscription_capacity", vec![Type::Int], Type::Int),
+        ("subscription_is_cancelled", vec![Type::Int], Type::Bool),
+        ("subscription_cancel", vec![Type::Int], Type::Bool),
+        ("subscription_drop", vec![Type::Int], Type::Bool),
     ];
     for (name, params, return_type) in functions {
         exports

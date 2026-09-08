@@ -1,0 +1,40 @@
+// Regression: TS-style brace imports desugar to named imports.
+// Exercises the parser surface `import {a, b as c} from path` end-to-end
+// (parse -> semantic binding -> execution) against std.string/std.math,
+// with multi-line brace lists, trailing commas, aliases, and bare names.
+module stability_import_braces_named
+
+import { len } from std.string
+import {
+    contains,
+    eq as same_text,
+} from std.string
+import { abs, max as upper } from std.math
+
+public func main() returns int {
+    // Bare name from braces: std.string.len.
+    if len("Spectra") != 7 {
+        return 1
+    }
+
+    // Multi-line brace list: std.string.contains.
+    if !contains("Spectra", "pect") {
+        return 2
+    }
+
+    // Aliased brace import: eq bound as same_text.
+    if !same_text("abc", "abc") {
+        return 3
+    }
+
+    // Mixed bare + aliased brace import from another module.
+    let value = abs(0 - 12)
+    if value != 12 {
+        return 4
+    }
+    if upper(value, 100) != 100 {
+        return 5
+    }
+
+    return 0
+}

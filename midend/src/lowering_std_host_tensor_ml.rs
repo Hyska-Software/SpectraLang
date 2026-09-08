@@ -282,6 +282,12 @@ pub(crate) fn lookup_std_host_group_tensor_ml(module: &str, function: &str) -> O
             ("ml", "distributed_summary") => {
                 Some(host_string("spectra.std.ml.distributed_summary"))
             }
+            ("ml", "distributed_train_multithread") => {
+                Some(host_int("spectra.std.ml.distributed_train_multithread"))
+            }
+            ("ml", "distributed_train_tcp") => {
+                Some(host_int("spectra.std.ml.distributed_train_tcp"))
+            }
             ("ml", "onnx_export") => Some(host_string("spectra.std.ml.onnx_export")),
             ("ml", "onnx_import_summary") => {
                 Some(host_string("spectra.std.ml.onnx_import_summary"))
@@ -300,11 +306,19 @@ pub(crate) fn lookup_std_host_group_tensor_ml(module: &str, function: &str) -> O
             ("ml", "kv_cache_values") => Some(host_int("spectra.std.ml.kv_cache_values")),
             ("ml", "kv_cache_len") => Some(host_int("spectra.std.ml.kv_cache_len")),
             ("ml", "logits_sample") => Some(host_int("spectra.std.ml.logits_sample")),
+            ("ml", "generate_ex") => Some(host_int("spectra.std.ml.generate_ex")),
             ("ml", "tokenizer_wordpiece") => Some(host_int("spectra.std.ml.tokenizer_wordpiece")),
             ("ml", "tokenizer_load") => Some(host_int("spectra.std.ml.tokenizer_load")),
             ("ml", "tokenizer_encode") => Some(host_int("spectra.std.ml.tokenizer_encode")),
             ("ml", "tokenizer_decode") => Some(host_string("spectra.std.ml.tokenizer_decode")),
+            ("ml", "train_bpe") => Some(host_int("spectra.std.ml.train_bpe")),
+            ("ml", "train_wordpiece") => Some(host_int("spectra.std.ml.train_wordpiece")),
+            ("ml", "tokenizer_vocab") => Some(host_string("spectra.std.ml.tokenizer_vocab")),
             ("ml", "text_embed") => Some(host_int("spectra.std.ml.text_embed")),
+            ("ml", "text_embed_model_session") => {
+                Some(host_int("spectra.std.ml.text_embed_model_session"))
+            }
+            ("ml", "text_embed_model") => Some(host_int("spectra.std.ml.text_embed_model")),
             ("ml", "embedding_load") => Some(host_int("spectra.std.ml.embedding_load")),
             ("ml", "vector_index_new") => Some(host_int("spectra.std.ml.vector_index_new")),
             ("ml", "vector_index_insert") => Some(host_int("spectra.std.ml.vector_index_insert")),
@@ -467,6 +481,38 @@ pub(crate) fn lookup_std_host_group_tensor_ml(module: &str, function: &str) -> O
             ("serve", "export_monitoring") => {
                 Some(host_string("spectra.std.serve.export_monitoring"))
             }
+            ("serve", "server_register_model_linear") => {
+                Some(host_int(
+                    "spectra.std.serve.server_register_model_linear",
+                ))
+            }
+            ("serve", "server_register_named_model_linear") => {
+                Some(host_int(
+                    "spectra.std.serve.server_register_named_model_linear",
+                ))
+            }
+            ("serve", "server_register_model_onnx") => {
+                Some(host_int("spectra.std.serve.server_register_model_onnx"))
+            }
+            ("serve", "server_register_named_model_onnx") => {
+                Some(host_int(
+                    "spectra.std.serve.server_register_named_model_onnx",
+                ))
+            }
+            ("serve", "server_infer") => {
+                Some(host_int("spectra.std.serve.server_infer"))
+            }
+            ("serve", "server_result_vector") => {
+                Some(host_int("spectra.std.serve.server_result_vector"))
+            }
+            ("serve", "http_start") => {
+                Some(host_int("spectra.std.serve.http_start"))
+            }
+            ("serve", "http_stop") => Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.serve.http_stop",
+                return_type: IRType::Bool,
+                returns_value: true,
+            }),
             ("serve", "reset") => Some(host_void("spectra.std.serve.reset")),
         _ => None,
     }

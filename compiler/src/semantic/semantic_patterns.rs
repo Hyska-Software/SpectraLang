@@ -5,10 +5,10 @@ impl SemanticAnalyzer {
         use crate::ast::Pattern;
 
         match pattern {
-            Pattern::Wildcard => {
+            Pattern::Wildcard(_) => {
                 // Não cria bindings
             }
-            Pattern::Identifier(name) => {
+            Pattern::Identifier(name, _) => {
                 let is_local = self.symbols.len() > 1;
                 // Registra a variável no escopo atual
                 // Tipo será inferido posteriormente
@@ -77,7 +77,7 @@ impl SemanticAnalyzer {
         }
 
         match pattern {
-            Pattern::Identifier(variant_name) => {
+            Pattern::Identifier(variant_name, _) => {
                 let is_variant = self
                     .specialized_enum_context(enum_name)
                     .map(|(_, info, _)| info.variants.contains_key(variant_name))
@@ -113,13 +113,13 @@ impl SemanticAnalyzer {
             }
         }
         // Declaring a pattern binding revives any prior release state (E034).
-        if let Pattern::Identifier(name) = pattern {
+        if let Pattern::Identifier(name, _) = pattern {
             self.uaf_on_bind(name, &effective_type);
         }
 
         match pattern {
-            Pattern::Wildcard | Pattern::Literal(_) => {}
-            Pattern::Identifier(name) => {
+            Pattern::Wildcard(_) | Pattern::Literal(_) => {}
+            Pattern::Identifier(name, _) => {
                 let is_local = self.symbols.len() > 1;
                 if let Some(scope) = self.symbols.last_mut() {
                     scope.insert(

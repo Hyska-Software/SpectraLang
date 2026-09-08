@@ -3,6 +3,7 @@ pub mod error;
 pub mod language_service;
 pub mod lexer;
 pub mod lint;
+pub mod numeric;
 pub mod parser;
 pub mod pipeline;
 pub mod semantic;

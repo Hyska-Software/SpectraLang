@@ -421,7 +421,7 @@ impl ASTLowering {
         names: &mut HashSet<String>,
     ) {
         match pattern {
-            spectra_compiler::ast::Pattern::Identifier(name) => {
+            spectra_compiler::ast::Pattern::Identifier(name, _) => {
                 names.insert(name.clone());
             }
             spectra_compiler::ast::Pattern::Tuple(items) => {
@@ -453,7 +453,7 @@ impl ASTLowering {
                     Self::collect_pattern_names(pattern, names);
                 }
             }
-            spectra_compiler::ast::Pattern::Wildcard
+            spectra_compiler::ast::Pattern::Wildcard(_)
             | spectra_compiler::ast::Pattern::Literal(_) => {}
         }
     }

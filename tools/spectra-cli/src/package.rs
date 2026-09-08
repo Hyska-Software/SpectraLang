@@ -574,7 +574,7 @@ struct InstalledGitPackage {
 
 // APPEND-ONLY (GitPinned): Debug needed by package_remote.rs expect_err tests.
 #[derive(Debug)]
-struct InstalledRegistryPackage {
+pub(crate) struct InstalledRegistryPackage {
     canonical_name: String,
     version: String,
     path: PathBuf,

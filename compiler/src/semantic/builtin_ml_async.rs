@@ -279,6 +279,34 @@ pub(crate) fn make_std_ml() -> ModuleExports {
         ("distributed_resume", vec![Type::String], int.clone()),
         ("distributed_summary", vec![int.clone()], Type::String),
         (
+            "distributed_train_multithread",
+            vec![
+                Type::String,
+                Type::String,
+                int.clone(),
+                int.clone(),
+                float.clone(),
+                int.clone(),
+                int.clone(),
+                int.clone(),
+            ],
+            int.clone(),
+        ),
+        (
+            "distributed_train_tcp",
+            vec![
+                Type::String,
+                Type::String,
+                int.clone(),
+                int.clone(),
+                float.clone(),
+                int.clone(),
+                int.clone(),
+                int.clone(),
+            ],
+            int.clone(),
+        ),
+        (
             "onnx_export",
             vec![Type::String, Type::String],
             Type::String,
@@ -326,6 +354,19 @@ pub(crate) fn make_std_ml() -> ModuleExports {
             vec![int.clone(), float.clone()],
             int.clone(),
         ),
+        (
+            "generate_ex",
+            vec![
+                int.clone(),
+                int.clone(),
+                int.clone(),
+                int.clone(),
+                float.clone(),
+                int.clone(),
+                int.clone(),
+            ],
+            int.clone(),
+        ),
         ("tokenizer_wordpiece", vec![Type::String], int.clone()),
         ("tokenizer_load", vec![Type::String], int.clone()),
         (
@@ -338,7 +379,16 @@ pub(crate) fn make_std_ml() -> ModuleExports {
             vec![int.clone(), int.clone()],
             Type::String,
         ),
+        ("train_bpe", vec![Type::String, int.clone()], int.clone()),
+        ("train_wordpiece", vec![Type::String, int.clone()], int.clone()),
+        ("tokenizer_vocab", vec![int.clone()], Type::String),
         ("text_embed", vec![Type::String, int.clone()], int.clone()),
+        ("text_embed_model_session", vec![Type::String], int.clone()),
+        (
+            "text_embed_model",
+            vec![int.clone(), int.clone(), Type::String],
+            int.clone(),
+        ),
         ("embedding_load", vec![Type::String, Type::String], int.clone()),
         ("vector_index_new", vec![int.clone()], int.clone()),
         (
@@ -617,6 +667,44 @@ pub(crate) fn make_std_serve() -> ModuleExports {
             ],
             Type::String,
         ),
+        (
+            "server_register_model_linear",
+            vec![int.clone(), int.clone(), int.clone(), int.clone()],
+            int.clone(),
+        ),
+        (
+            "server_register_named_model_linear",
+            vec![
+                int.clone(),
+                Type::String,
+                int.clone(),
+                int.clone(),
+                int.clone(),
+            ],
+            int.clone(),
+        ),
+        (
+            "server_register_model_onnx",
+            vec![int.clone(), int.clone()],
+            int.clone(),
+        ),
+        (
+            "server_register_named_model_onnx",
+            vec![int.clone(), Type::String, int.clone()],
+            int.clone(),
+        ),
+        (
+            "server_infer",
+            vec![int.clone(), Type::String, int.clone()],
+            int.clone(),
+        ),
+        (
+            "server_result_vector",
+            vec![int.clone(), int.clone()],
+            int.clone(),
+        ),
+        ("http_start", vec![int.clone(), int.clone()], int.clone()),
+        ("http_stop", vec![int.clone()], bool_ty.clone()),
         ("reset", vec![], Type::Unit),
     ];
 

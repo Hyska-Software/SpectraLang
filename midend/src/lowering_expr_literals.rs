@@ -4,31 +4,36 @@ impl ASTLowering {
     pub(crate) fn lower_expression_literals(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
         match &expr.kind {
             ExpressionKind::NumberLiteral(n) => {
-                // Try to parse as integer first, then float
-                if let Ok(int_val) = n.parse::<i64>() {
-                    if let Some(annotation) = self.current_expected_annotation.clone() {
-                        let ty = self.lower_type_annotation(&annotation);
-                        if matches!(ty, IRType::ExactInt { .. }) {
-                            self.builder.build_const_int_typed(ir_func, int_val, ty)
+                // The token carries raw text; the shared parser understands
+                // radix prefixes, `_` separators, and scientific notation.
+                match spectra_compiler::numeric::parse_number_literal(n) {
+                    Some(spectra_compiler::numeric::ParsedNumber::Int(int_val)) => {
+                        if let Some(annotation) = self.current_expected_annotation.clone() {
+                            let ty = self.lower_type_annotation(&annotation);
+                            if matches!(ty, IRType::ExactInt { .. }) {
+                                self.builder.build_const_int_typed(ir_func, int_val, ty)
+                            } else {
+                                self.builder.build_const_int(ir_func, int_val)
+                            }
                         } else {
                             self.builder.build_const_int(ir_func, int_val)
                         }
-                    } else {
-                        self.builder.build_const_int(ir_func, int_val)
                     }
-                } else if let Ok(float_val) = n.parse::<f64>() {
-                    if let Some(annotation) = self.current_expected_annotation.clone() {
-                        let ty = self.lower_type_annotation(&annotation);
-                        if matches!(ty, IRType::ExactFloat { .. }) {
-                            self.builder.build_const_float_typed(ir_func, float_val, ty)
+                    Some(spectra_compiler::numeric::ParsedNumber::Float(float_val)) => {
+                        if let Some(annotation) = self.current_expected_annotation.clone() {
+                            let ty = self.lower_type_annotation(&annotation);
+                            if matches!(ty, IRType::ExactFloat { .. }) {
+                                self.builder.build_const_float_typed(ir_func, float_val, ty)
+                            } else {
+                                self.builder.build_const_float(ir_func, float_val)
+                            }
                         } else {
                             self.builder.build_const_float(ir_func, float_val)
                         }
-                    } else {
-                        self.builder.build_const_float(ir_func, float_val)
                     }
-                } else {
-                    self.invalid_value(format!("numeric literal '{}' could not be lowered", n))
+                    None => {
+                        self.invalid_value(format!("numeric literal '{}' could not be lowered", n))
+                    }
                 }
             }
             ExpressionKind::StringLiteral(s) => self.lower_string_literal(s, ir_func),

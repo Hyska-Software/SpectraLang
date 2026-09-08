@@ -15,6 +15,12 @@ use spectra_runtime::ffi::{
     HOST_STATUS_INVALID_ARGUMENT, HOST_STATUS_SUCCESS,
 };
 
+#[cfg(feature = "http3")]
+pub mod http3;
+#[cfg(feature = "http3")]
+mod http3_host;
+mod grpc_host;
+mod graphql_host;
 pub mod client;
 pub mod conformance;
 pub mod cors;
@@ -24,6 +30,8 @@ pub mod form;
 pub mod handler;
 mod handles;
 pub mod health;
+pub mod grpc;
+pub mod graphql;
 pub mod http;
 pub mod http2;
 pub mod json;

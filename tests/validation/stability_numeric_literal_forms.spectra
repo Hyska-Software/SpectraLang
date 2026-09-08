@@ -1,0 +1,83 @@
+module stability_numeric_literal_forms
+
+static MASK: int = 0xFF
+
+func check_radix_forms() returns int {
+    let hex_value: int = 0xDE_AD
+    if hex_value != 57005 {
+        return 1
+    }
+    if 0xff as int != 255 {
+        return 2
+    }
+    let octal_value: int = 0o17
+    if octal_value != 15 {
+        return 3
+    }
+    if 0b1011 != 11 {
+        return 4
+    }
+    if 0b1010_0001 != 161 {
+        return 5
+    }
+    return 0
+}
+
+func check_separators_and_scientific() returns int {
+    let grouped: int = 1_000_000
+    if grouped != 1000000 {
+        return 6
+    }
+    if MASK != 255 {
+        return 7
+    }
+    let small: float = 2.5E-3
+    if small > 0.003 or small < 0.002 {
+        return 8
+    }
+    let big: float = 1e5
+    if big < 99999.0 or big > 100001.0 {
+        return 9
+    }
+    let signed_exp: float = 7E+2
+    if signed_exp < 699.0 or signed_exp > 701.0 {
+        return 10
+    }
+    let fractional: float = 3.25
+    if fractional <= 3.0 or fractional >= 3.5 {
+        return 11
+    }
+    return 0
+}
+
+public func main() returns int {
+    let radix_status = check_radix_forms()
+    if radix_status != 0 {
+        return radix_status
+    }
+    let literal_status = check_separators_and_scientific()
+    if literal_status != 0 {
+        return literal_status
+    }
+
+    // Radix forms keep working inside arithmetic and comparisons.
+    if (0x10 + 0o10 + 0b10) != 26 {
+        return 12
+    }
+    if 0xFF - MASK != 0 {
+        return 13
+    }
+
+    // Scientific literals classify as float and participate in arithmetic.
+    if 1e2 + 1.0 != 101.0 {
+        return 14
+    }
+
+    // Decimal classification is unchanged for plain integers.
+    let plain: int = 42
+    if plain + 0x10 != 58 {
+        return 15
+    }
+
+    return 0
+}

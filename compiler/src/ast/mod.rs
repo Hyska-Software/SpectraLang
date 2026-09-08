@@ -548,13 +548,13 @@ pub struct MatchArm {
 #[derive(Debug, Clone)]
 pub enum Pattern {
     // Wildcard pattern: _
-    Wildcard,
+    Wildcard(Span),
 
     // Literal patterns: 42, true, "hello"
     Literal(Expression),
 
     // Identifier pattern: x (binds value)
-    Identifier(String),
+    Identifier(String, Span),
 
     // Tuple pattern: (a, b, _)
     Tuple(Vec<Pattern>),
@@ -582,9 +582,9 @@ pub enum Pattern {
 impl Pattern {
     pub fn span(&self) -> Span {
         match self {
-            Pattern::Wildcard => Span::dummy(),
+            Pattern::Wildcard(span) => *span,
             Pattern::Literal(expr) => expr.span,
-            Pattern::Identifier(_) => Span::dummy(),
+            Pattern::Identifier(_, span) => *span,
             Pattern::Tuple(elements) => elements
                 .iter()
                 .map(Pattern::span)

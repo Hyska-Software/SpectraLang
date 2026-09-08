@@ -848,7 +848,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
 
 pub fn dropout_device(input: &[f32], p: f32, seed: u64) -> Result<Vec<f32>, GpuError> {
     if !(0.0..1.0).contains(&p) {
-        return Err(GpuError::new(GpuErrorKind::InvalidArgument, "dropout p must be in [0,1)"));
+        return Err(GpuError::new(GpuErrorKind::Other, "dropout p must be in [0,1)"));
     }
     let scale = if p >= 1.0 { 0.0 } else { 1.0 / (1.0 - p) };
     let shader = format!(

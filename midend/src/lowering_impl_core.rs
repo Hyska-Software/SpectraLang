@@ -353,10 +353,14 @@ impl ASTLowering {
     pub(crate) fn eval_const_expression(&self, expr: &Expression) -> Option<LoweredConstValue> {
         match &expr.kind {
             ExpressionKind::NumberLiteral(raw) => {
-                if raw.contains('.') {
-                    raw.parse::<f64>().ok().map(LoweredConstValue::Float)
-                } else {
-                    raw.parse::<i64>().ok().map(LoweredConstValue::Int)
+                match spectra_compiler::numeric::parse_number_literal(raw) {
+                    Some(spectra_compiler::numeric::ParsedNumber::Int(v)) => {
+                        Some(LoweredConstValue::Int(v))
+                    }
+                    Some(spectra_compiler::numeric::ParsedNumber::Float(v)) => {
+                        Some(LoweredConstValue::Float(v))
+                    }
+                    None => None,
                 }
             }
             ExpressionKind::StringLiteral(value) => Some(LoweredConstValue::String(value.clone())),

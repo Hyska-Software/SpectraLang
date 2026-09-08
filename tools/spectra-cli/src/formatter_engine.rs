@@ -34,6 +34,9 @@ fn legacy_format_source(input: &str, config: &FormatterConfig) -> String {
     let mut indent_level: usize = 0;
     let mut anchor_indent: usize = 0;
     let mut pending_open: i32 = 0;
+    // Same signal as the CST loop: when the previously emitted line ended
+    // with a binary operator, this line continues that expression.
+    let mut prev_ends_open = false;
     let mut lines = Vec::new();
 
     for line in input.split('\n') {
@@ -53,10 +56,11 @@ fn legacy_format_source(input: &str, config: &FormatterConfig) -> String {
 
         let normalized = normalize_spacing(trimmed_leading);
         let delta = net_round_bracket_delta(&normalized);
-        // Operator continuations only apply at bracket depth zero; inside a
-        // multi-line delimited group the paren machinery already indents.
-        let continuation =
+        let ends_open = ends_with_binary_operator(&normalized);
+        let starts_open =
             pending_open <= 0 && is_wrapped_continuation_line(&normalized);
+        let _ = starts_open;
+        let continuation = prev_ends_open;
         let indent_for_line = if continuation {
             anchor_indent + 1
         } else {
@@ -73,6 +77,7 @@ fn legacy_format_source(input: &str, config: &FormatterConfig) -> String {
         if !continuation {
             anchor_indent = indent_for_line;
         }
+        prev_ends_open = ends_open;
     }
 
     finalize_output(lines, config)
@@ -579,6 +584,22 @@ fn is_wrapped_continuation_line(content: &str) -> bool {
     )
 }
 
+/// True when a line's text ends with a binary operator, per Spectra's
+/// operator-at-line-end continuation rule produced by [`wrap_long_lines`].
+fn ends_with_binary_operator(content: &str) -> bool {
+    let trimmed = content.trim_end();
+    if trimmed.starts_with("//") {
+        return false;
+    }
+    if WRAP_BINARY_PAIR_OPS.iter().any(|op| trimmed.ends_with(op)) {
+        return true;
+    }
+    matches!(
+        trimmed.chars().next_back(),
+        Some(ch) if WRAP_BINARY_SINGLE_OPS.contains(&ch)
+    )
+}
+
 /// Net count of `(`/`[` opened by this line (outside strings, char literals
 /// and comments). Positive means a delimited group continues on the next
 /// line, where operator-continuation indentation must not apply.
@@ -885,7 +906,7 @@ fn try_wrap_binary_expression(content: &str) -> Option<(String, Vec<String>)> {
         return None;
     }
 
-    let (eq_byte, _) = assignment.unwrap();
+    let (eq_byte, _) = assignment?;
     let mut operands = Vec::with_capacity(ops.len() + 1);
     let mut cursor = rhs_start;
     for &(start, end) in &ops {
@@ -904,25 +925,45 @@ fn try_wrap_binary_expression(content: &str) -> Option<(String, Vec<String>)> {
 
     let lhs = content[..eq_byte].trim_end();
     let assign_op = content[eq_byte..rhs_start].trim();
+    // Operator-at-end rule: every wrapped line except the last ends with the
+    // operator joining it to the next operand. Head carries ops[0],
+    // continuation i carries ops[i + 1].
+    let head_op = ops
+        .first()
+        .map(|&(start, end)| content[start..end].to_string())
+        .unwrap_or_default();
     let head = if lhs == "return" {
+        format!("return {} {}", operands[0], head_op)
+    } else {
+        format!("{} {} {} {}", lhs, assign_op, operands[0], head_op)
+    };
+    let tail_len = ops.len();
+    let continuations: Vec<String> = (0..tail_len)
+        .map(|position| {
+            let next_op = ops
+                .get(position + 1)
+                .map(|&(start, end)| format!(" {}", &content[start..end]))
+                .unwrap_or_default();
+            format!("{}{}", operands[position + 1], next_op)
+        })
+        .collect();
+
+    // Collapse check compares against the canonical operator-first join,
+    // which mirrors the original content order even though the rendered
+    // lines put the operator at the end. The base already consumed ops[0]
+    // via the head, so the canonical join starts at ops[1].
+    let base = if lhs == "return" {
         format!("return {}", operands[0])
     } else {
         format!("{} {} {}", lhs, assign_op, operands[0])
     };
-    let continuations: Vec<String> = ops
-        .iter()
-        .enumerate()
-        .map(|(position, &(start, end))| {
-            format!("{} {}", &content[start..end], operands[position + 1])
-        })
-        .collect();
-
-    let mut rejoined = String::with_capacity(content.len());
-    rejoined.push_str(&head);
-    for continuation in &continuations {
-        rejoined.push_str(continuation);
+    let mut canonical = String::with_capacity(content.len());
+    canonical.push_str(&base);
+    for (position, &(start, end)) in ops.iter().enumerate() {
+        canonical.push_str(&content[start..end]);
+        canonical.push_str(&operands[position + 1]);
     }
-    if !collapses_to(&rejoined, content) {
+    if !collapses_to(&canonical, content) {
         return None;
     }
 

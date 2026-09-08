@@ -296,6 +296,7 @@ impl Parser {
         // `otherwise` surface.
         while !self.check_symbol('}') && !self.is_at_end() {
             let is_otherwise = self.check_keyword(Keyword::Otherwise);
+            let otherwise_span = self.current().span;
             if is_otherwise || self.check_keyword(Keyword::When) {
                 self.advance();
             } else {
@@ -305,7 +306,7 @@ impl Parser {
 
             // Parse pattern.  `otherwise` is the existing wildcard pattern.
             let pattern = if is_otherwise {
-                crate::ast::Pattern::Wildcard
+                crate::ast::Pattern::Wildcard(otherwise_span)
             } else {
                 self.parse_pattern()?
             };

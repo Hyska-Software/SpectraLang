@@ -188,7 +188,7 @@ pub(crate) fn pattern_is_irrefutable(pattern: &spectra_compiler::ast::Pattern) -
     use spectra_compiler::ast::Pattern;
 
     match pattern {
-        Pattern::Wildcard | Pattern::Identifier(_) => true,
+        Pattern::Wildcard(_) | Pattern::Identifier(_, _) => true,
         Pattern::Tuple(elements) => elements.iter().all(pattern_is_irrefutable),
         Pattern::Struct { fields, .. } => fields.iter().all(|(_, p)| pattern_is_irrefutable(p)),
         Pattern::Or(patterns) => patterns.iter().any(pattern_is_irrefutable),

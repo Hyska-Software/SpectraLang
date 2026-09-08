@@ -350,15 +350,21 @@ pub(crate) extern "C" fn std_tensor_matmul_batched(ctx: *mut SpectraHostCallCont
     }
 }
 
+/// Dense f64 matmul over row-major slices. The inner product takes the
+/// runtime-dispatched SIMD dot kernel (`dot_f64`) over contiguous lanes
+/// after one transpose of the right operand. SIMD lane accumulation
+/// reorders summation relative to a strictly sequential loop; results agree
+/// within floating-point tolerance (~1e-12 relative for well-scaled
+/// inputs), matching the tolerance policy documented beside the kernels in
+/// `tensor_helpers_kernels.rs`.
 pub(crate) fn matmul_f64(left: &[f64], right: &[f64], m: usize, k: usize, n: usize) -> Vec<f64> {
     let mut out = vec![0.0; m * n];
+    let mut row_buf = vec![0.0f64; k];
+    let right_t = transpose_f64(right, k, n);
     for row in 0..m {
+        row_buf.copy_from_slice(&left[row * k..row * k + k]);
         for col in 0..n {
-            let mut acc = 0.0;
-            for inner in 0..k {
-                acc += left[row * k + inner] * right[inner * n + col];
-            }
-            out[row * n + col] = acc;
+            out[row * n + col] = kernel_dot_f64(&row_buf, &right_t[col * k..col * k + k]);
         }
     }
     out

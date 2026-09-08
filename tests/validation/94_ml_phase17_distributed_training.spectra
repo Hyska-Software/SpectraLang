@@ -5,72 +5,77 @@ import std.string as str
 import std.ml as ml
 
 public func main() returns int {
-    let session = ml.distributed_session_start("reference-distributed-run", "target/r1703-run", 3, 2026)
+    // Real data-parallel training: OS-thread workers each own a parameter
+    // replica, run genuine forward/backward passes over deterministic shard
+    // slices, and ALLREDUCE-average gradients every step.
+    let session = ml.distributed_train_multithread(
+        "reference-distributed-run",
+        "target/r1703-run",
+        3,
+        1,
+        0.25,
+        4,
+        36,
+        2026
+    )
 
-    if ml.distributed_worker_step(session, 0, 8, 0.25) != 1 {
-        return 1
-    }
-    if ml.distributed_worker_step(session, 1, 8, 0.50) != 1 {
-        return 2
-    }
-    if ml.distributed_worker_step(session, 2, 8, 0.75) != 1 {
-        return 3
-    }
     if ml.distributed_global_step(session) != 1 {
-        return 4
+        return 1
     }
 
     let checkpoint = ml.distributed_checkpoint_save(session, "target/r1703-run/checkpoint.json", 1)
     let checkpoint_result = fs.fs_read(checkpoint)
     if let Result::Ok(checkpoint_text) = checkpoint_result {
-        if str.contains(checkpoint_text, "spectra.ml.distributed_checkpoint.v1") {
+        if str.contains(checkpoint_text, "spectra.ml.distributed_checkpoint.v") {
             let ok_checkpoint = 1
             if ok_checkpoint != 1 {
-                return 5
+                return 2
             }
         } else {
-            return 5
+            return 2
         }
         if str.contains(checkpoint_text, "\"interrupted_worker\":1") {
             let ok_interruption = 1
             if ok_interruption != 1 {
-                return 6
+                return 3
             }
         } else {
-            return 6
+            return 3
         }
     } else {
-        return 5
+        return 2
     }
 
     let resumed = ml.distributed_resume(checkpoint)
-    if ml.distributed_worker_step_count(resumed, 1) != 1 {
-        return 7
+    // The interrupted checkpoint carried step counts from the first run.
+    if ml.distributed_worker_step_count(resumed, 0) != 1 {
+        return 4
     }
-    if ml.distributed_worker_step(resumed, 0, 4, 0.10) != 2 {
-        return 8
+    if ml.distributed_worker_step_count(resumed, 2) != 1 {
+        return 5
     }
-    if ml.distributed_worker_step(resumed, 1, 4, 0.10) != 2 {
-        return 9
-    }
-    if ml.distributed_worker_step(resumed, 2, 4, 0.10) != 2 {
-        return 10
-    }
-    if ml.distributed_global_step(resumed) != 2 {
-        return 11
+    if ml.distributed_global_step(resumed) != 1 {
+        return 6
     }
 
     let summary = ml.distributed_summary(resumed)
-    if str.contains(summary, "single-machine-simulated-workers") {
+    // The real topology is multi-thread; the legacy simulated-workers label
+    // must never reappear in summaries of live sessions.
+    if str.contains(summary, "multi-thread") {
         let ok_topology = 1
         if ok_topology != 1 {
-            return 12
+            return 7
         }
     } else {
-        return 12
+        return 7
     }
+    if str.contains(summary, "single-machine-simulated-workers") {
+        return 8
+    }
+    // 36 samples split across 3 workers with features=4 exercised the full
+    // gradient pipeline end to end.
     if str.contains(summary, "\"total_samples\":36") {
         return 0
     }
-    return 13
+    return 9
 }

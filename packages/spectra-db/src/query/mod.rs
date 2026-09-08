@@ -9,8 +9,8 @@ mod dialect;
 mod error;
 
 pub use ast::{
-    Blob, Boolean, Column, ColumnRef, Delete, Expr, Insert, Integer, Null, Order, Predicate, Query,
-    Real, Select, SqlType, Text, Update, Value,
+    Aggregate, AggregateArgument, Blob, Boolean, Column, ColumnRef, Delete, Expr, Insert, Integer,
+    JoinKind, Null, Order, Predicate, Query, Real, Select, SqlType, Text, Update, Value,
 };
 pub use compile::{CompiledQuery, QueryOutput};
 pub use dialect::{Dialect, PostgresDialect, SqliteDialect};

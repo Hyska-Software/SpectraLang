@@ -458,7 +458,7 @@ impl ASTLowering {
             match &stmt.kind {
                 StatementKind::Let(let_stmt) => {
                     if let (
-                        spectra_compiler::ast::Pattern::Identifier(name),
+                        spectra_compiler::ast::Pattern::Identifier(name, _),
                         Some(value),
                     ) = (&let_stmt.pattern, &let_stmt.value)
                     {
@@ -730,7 +730,12 @@ impl ASTLowering {
 
     pub(crate) fn evaluate_int_constant(&self, expr: &Expression) -> Option<i64> {
         match &expr.kind {
-            ExpressionKind::NumberLiteral(value) => value.parse::<i64>().ok(),
+            ExpressionKind::NumberLiteral(value) => {
+                match spectra_compiler::numeric::parse_number_literal(value) {
+                    Some(spectra_compiler::numeric::ParsedNumber::Int(int_value)) => Some(int_value),
+                    _ => None,
+                }
+            }
             ExpressionKind::BoolLiteral(value) => Some(if *value { 1 } else { 0 }),
             ExpressionKind::Grouping(inner) => self.evaluate_int_constant(inner),
             ExpressionKind::Unary { operator, operand } => {

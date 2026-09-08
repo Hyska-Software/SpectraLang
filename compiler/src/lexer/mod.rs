@@ -107,18 +107,38 @@ impl<'source> Lexer<'source> {
                             let (_, sc) = characters[index];
                             if sc == '\\' && index + 1 < length {
                                 let (_, escaped) = characters[index + 1];
+                                let escape_offset = characters[index].0;
+                                let escape_start = Location::new(line, column);
                                 bump_position('\\', &mut line, &mut column);
                                 bump_position(escaped, &mut line, &mut column);
                                 match escaped {
                                     '"' => raw_content.push('"'),
+                                    '\'' => raw_content.push('\''),
                                     '\\' => raw_content.push('\\'),
                                     'n' => raw_content.push('\n'),
                                     't' => raw_content.push('\t'),
                                     'r' => raw_content.push('\r'),
                                     '0' => raw_content.push('\0'),
                                     other => {
+                                        // Unknown escape: keep the characters in the
+                                        // raw content but report a coded lexical error.
                                         raw_content.push('\\');
                                         raw_content.push(other);
+                                        errors.push(
+                                            LexError::new(
+                                                format!("unknown escape sequence `\\{}`", other),
+                                                Span::new(
+                                                    escape_offset,
+                                                    escape_offset + 1 + other.len_utf8(),
+                                                    escape_start,
+                                                    Location::new(line, column),
+                                                ),
+                                            )
+                                            .with_code("L008")
+                                            .with_hint(
+                                                "Supported escapes are \\n, \\t, \\r, \\\\, \\', \\\" and \\0.",
+                                            ),
+                                        );
                                     }
                                 }
                                 index += 2;
@@ -196,25 +216,197 @@ impl<'source> Lexer<'source> {
                 ch if ch.is_ascii_digit() => {
                     bump_position(ch, &mut line, &mut column);
                     let mut end_index = index + 1;
-                    let mut seen_dot = false;
 
-                    while end_index < length {
-                        let (_, next_char) = characters[end_index];
-                        if next_char.is_ascii_digit() {
-                            bump_position(next_char, &mut line, &mut column);
+                    // Radix prefixes: 0x (hexadecimal), 0o (octal), 0b (binary).
+                    // The prefix selects which digit alphabet plus `_` may follow.
+                    let radix = if ch == '0' && end_index < length {
+                        match characters[end_index].1 {
+                            'x' => Some((16u32, "hexadecimal")),
+                            'o' => Some((8u32, "octal")),
+                            'b' => Some((2u32, "binary")),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+
+                    // A malformed literal still consumes its characters so the
+                    // cursor stays coherent, but no Number token is produced.
+                    let mut fatal = false;
+
+                    match radix {
+                        Some((_radix_value, radix_name)) => {
+                            bump_position(characters[end_index].1, &mut line, &mut column);
                             end_index += 1;
-                        } else if next_char == '.' && !seen_dot {
-                            if end_index + 1 < length
-                                && characters[end_index + 1].1.is_ascii_digit()
-                            {
-                                seen_dot = true;
-                                bump_position(next_char, &mut line, &mut column);
-                                end_index += 1;
-                            } else {
-                                break;
+
+                            let is_radix_digit = |c: char| match _radix_value {
+                                16 => c.is_ascii_hexdigit(),
+                                8 => ('0'..='7').contains(&c),
+                                _ => c == '0' || c == '1',
+                            };
+
+                            let mut saw_digit = false;
+                            let mut prev_was_digit = false;
+                            while end_index < length {
+                                let (_, next_char) = characters[end_index];
+                                if is_radix_digit(next_char) {
+                                    saw_digit = true;
+                                    prev_was_digit = true;
+                                    bump_position(next_char, &mut line, &mut column);
+                                    end_index += 1;
+                                } else if next_char == '_' {
+                                    let separator_ok = prev_was_digit
+                                        && end_index + 1 < length
+                                        && is_radix_digit(characters[end_index + 1].1);
+                                    let separator_offset = characters[end_index].0;
+                                    let separator_start = Location::new(line, column);
+                                    bump_position('_', &mut line, &mut column);
+                                    end_index += 1;
+                                    if !separator_ok {
+                                        errors.push(
+                                            LexError::new(
+                                                format!(
+                                                    "invalid `_` placement in {} literal",
+                                                    radix_name
+                                                ),
+                                                Span::new(
+                                                    separator_offset,
+                                                    separator_offset + 1,
+                                                    separator_start,
+                                                    Location::new(line, column),
+                                                ),
+                                            )
+                                            .with_code("L007")
+                                            .with_hint(
+                                                "`_` separates groups of digits and cannot lead, trail, or repeat.",
+                                            ),
+                                        );
+                                        fatal = true;
+                                    }
+                                    prev_was_digit = false;
+                                } else {
+                                    break;
+                                }
                             }
-                        } else {
-                            break;
+
+                            if !saw_digit {
+                                errors.push(
+                                    LexError::new(
+                                        format!("missing digits in {} literal", radix_name),
+                                        Span::new(
+                                            offset,
+                                            self.source.len(),
+                                            start_location,
+                                            Location::new(line, column),
+                                        ),
+                                    )
+                                    .with_code("L007")
+                                    .with_hint(
+                                        "The `0x`, `0o`, and `0b` prefixes require at least one valid digit.",
+                                    ),
+                                );
+                                fatal = true;
+                            }
+                        }
+                        None => {
+                            // Decimal literal, optionally fractional and/or in
+                            // scientific notation: digits, `_` separators, one
+                            // dot and one `e`/`E` exponent with optional sign.
+                            let mut seen_dot = false;
+                            let mut seen_exponent = false;
+                            let mut prev_was_digit = true;
+
+                            while end_index < length {
+                                let (_, next_char) = characters[end_index];
+                                if next_char.is_ascii_digit() {
+                                    prev_was_digit = true;
+                                    bump_position(next_char, &mut line, &mut column);
+                                    end_index += 1;
+                                } else if next_char == '_' {
+                                    let separator_ok = prev_was_digit
+                                        && end_index + 1 < length
+                                        && characters[end_index + 1].1.is_ascii_digit();
+                                    let separator_offset = characters[end_index].0;
+                                    let separator_start = Location::new(line, column);
+                                    bump_position('_', &mut line, &mut column);
+                                    end_index += 1;
+                                    if !separator_ok {
+                                        errors.push(
+                                            LexError::new(
+                                                "invalid `_` placement in decimal literal",
+                                                Span::new(
+                                                    separator_offset,
+                                                    separator_offset + 1,
+                                                    separator_start,
+                                                    Location::new(line, column),
+                                                ),
+                                            )
+                                            .with_code("L007")
+                                            .with_hint(
+                                                "`_` separates groups of digits and cannot lead, trail, or repeat.",
+                                            ),
+                                        );
+                                        fatal = true;
+                                    }
+                                    prev_was_digit = false;
+                                } else if next_char == '.'
+                                    && !seen_dot
+                                    && !seen_exponent
+                                    && end_index + 1 < length
+                                    && characters[end_index + 1].1.is_ascii_digit()
+                                {
+                                    seen_dot = true;
+                                    prev_was_digit = true;
+                                    bump_position(next_char, &mut line, &mut column);
+                                    end_index += 1;
+                                } else if (next_char == 'e' || next_char == 'E')
+                                    && !seen_exponent
+                                    && prev_was_digit
+                                {
+                                    // Exponent marker: an optional +/- sign followed
+                                    // by at least one digit.
+                                    let unsigned_digit = end_index + 1 < length
+                                        && characters[end_index + 1].1.is_ascii_digit();
+                                    let signed_digit = end_index + 2 < length
+                                        && matches!(characters[end_index + 1].1, '+' | '-')
+                                        && characters[end_index + 2].1.is_ascii_digit();
+                                    if !(unsigned_digit || signed_digit) {
+                                        let marker_offset = characters[end_index].0;
+                                        let marker_start = Location::new(line, column);
+                                        bump_position(next_char, &mut line, &mut column);
+                                        end_index += 1;
+                                        errors.push(
+                                            LexError::new(
+                                                "missing digits in numeric exponent",
+                                                Span::new(
+                                                    marker_offset,
+                                                    self.source.len(),
+                                                    marker_start,
+                                                    Location::new(line, column),
+                                                ),
+                                            )
+                                            .with_code("L007")
+                                            .with_hint(
+                                                "Scientific notation needs digits after `e`/`E`, e.g. `1e5` or `2.5E-3`.",
+                                            ),
+                                        );
+                                        fatal = true;
+                                        break;
+                                    }
+                                    seen_exponent = true;
+                                    prev_was_digit = false;
+                                    bump_position(next_char, &mut line, &mut column);
+                                    end_index += 1;
+                                    if end_index < length
+                                        && matches!(characters[end_index].1, '+' | '-')
+                                    {
+                                        bump_position(characters[end_index].1, &mut line, &mut column);
+                                        end_index += 1;
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
                         }
                     }
 
@@ -224,11 +416,13 @@ impl<'source> Lexer<'source> {
                         self.source.len()
                     };
                     let end_location = Location::new(line, column);
-                    let text = &self.source[offset..end_offset];
-                    tokens.push(Token::new(
-                        TokenKind::Number(text.to_string()),
-                        Span::new(offset, end_offset, start_location, end_location),
-                    ));
+                    if !fatal {
+                        let text = &self.source[offset..end_offset];
+                        tokens.push(Token::new(
+                            TokenKind::Number(text.to_string()),
+                            Span::new(offset, end_offset, start_location, end_location),
+                        ));
+                    }
                     index = end_index;
                 }
                 '"' => {
@@ -244,19 +438,38 @@ impl<'source> Lexer<'source> {
                         if sc == '\\' && scan + 1 < length {
                             // Escape sequence
                             let (_, escaped) = characters[scan + 1];
+                            let escape_offset = characters[scan].0;
+                            let escape_start = Location::new(line, column);
                             bump_position('\\', &mut line, &mut column);
                             bump_position(escaped, &mut line, &mut column);
                             match escaped {
                                 '"' => string_value.push('"'),
+                                '\'' => string_value.push('\''),
                                 '\\' => string_value.push('\\'),
                                 'n' => string_value.push('\n'),
                                 't' => string_value.push('\t'),
                                 'r' => string_value.push('\r'),
                                 '0' => string_value.push('\0'),
                                 other => {
-                                    // Unknown escape: keep as-is
+                                    // Unknown escape: keep the characters in the
+                                    // value but report a coded lexical error.
                                     string_value.push('\\');
                                     string_value.push(other);
+                                    errors.push(
+                                        LexError::new(
+                                            format!("unknown escape sequence `\\{}`", other),
+                                            Span::new(
+                                                escape_offset,
+                                                escape_offset + 1 + other.len_utf8(),
+                                                escape_start,
+                                                Location::new(line, column),
+                                            ),
+                                        )
+                                        .with_code("L008")
+                                        .with_hint(
+                                            "Supported escapes are \\n, \\t, \\r, \\\\, \\', \\\" and \\0.",
+                                        ),
+                                    );
                                 }
                             }
                             scan += 2;
@@ -387,13 +600,11 @@ impl<'source> Lexer<'source> {
 
                     let (token_kind, chars_consumed) = match (ch, next_char) {
                         ('=', Some('=')) => (TokenKind::Operator(Operator::EqualEqual), 2),
-                        ('=', Some('>')) => (TokenKind::Operator(Operator::FatArrow), 2),
                         ('!', Some('=')) => (TokenKind::Operator(Operator::NotEqual), 2),
                         ('<', Some('=')) => (TokenKind::Operator(Operator::LessEqual), 2),
                         ('>', Some('=')) => (TokenKind::Operator(Operator::GreaterEqual), 2),
                         ('&', Some('&')) => (TokenKind::Operator(Operator::And), 2),
                         ('|', Some('|')) => (TokenKind::Operator(Operator::Or), 2),
-                        ('-', Some('>')) => (TokenKind::Operator(Operator::Arrow), 2),
                         // Range operators: ..= and ..
                         ('.', Some('.')) => {
                             let third = if index + 2 < length {
@@ -406,6 +617,34 @@ impl<'source> Lexer<'source> {
                             } else {
                                 (TokenKind::Operator(Operator::Range), 2)
                             }
+                        }
+                        // Arrow sequences (`->` and `=>`) are not part of the
+                        // language surface. Emit a coded diagnostic that points
+                        // at the correct replacement syntax and fall through to
+                        // the single-character symbol handling.
+                        ('-', Some('>')) | ('=', Some('>')) => {
+                            let (replacement, usage) = if ch == '-' {
+                                ("returns", "function return types")
+                            } else {
+                                ("then", "match arms")
+                            };
+                            errors.push(
+                                LexError::new(
+                                    format!("arrow operator `{}` is not valid Spectra syntax", ch),
+                                    Span::new(
+                                        offset,
+                                        offset + 2,
+                                        start_location,
+                                        Location::new(line, column + 1),
+                                    ),
+                                )
+                                .with_code("L007")
+                                .with_hint(format!(
+                                    "Use `{}` for {} instead of `{}`.",
+                                    replacement, usage, ch
+                                )),
+                            );
+                            (TokenKind::Symbol(ch), 1)
                         }
                         _ => (TokenKind::Symbol(ch), 1),
                     };
@@ -533,5 +772,121 @@ mod tests {
         assert!(tokens.iter().any(
             |token| matches!(token.kind, TokenKind::Identifier(ref ident) if ident == "main")
         ));
+    }
+
+    fn number_tokens(source: &str) -> Vec<String> {
+        Lexer::new(source)
+            .tokenize()
+            .expect("lexer should succeed")
+            .into_iter()
+            .filter_map(|token| match token.kind {
+                TokenKind::Number(text) => Some(text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn lexes_radix_prefixed_literals() {
+        assert_eq!(number_tokens("0xFF"), vec!["0xFF"]);
+        assert_eq!(number_tokens("0xDE_AD"), vec!["0xDE_AD"]);
+        assert_eq!(number_tokens("0o17"), vec!["0o17"]);
+        assert_eq!(number_tokens("0b1011"), vec!["0b1011"]);
+        assert_eq!(number_tokens("0b1010_0001"), vec!["0b1010_0001"]);
+    }
+
+    #[test]
+    fn lexes_decimal_separators() {
+        assert_eq!(number_tokens("1_000_000"), vec!["1_000_000"]);
+        assert_eq!(number_tokens("1_2.3_4"), vec!["1_2.3_4"]);
+    }
+
+    #[test]
+    fn lexes_scientific_notation() {
+        assert_eq!(number_tokens("1e5"), vec!["1e5"]);
+        assert_eq!(number_tokens("2.5E-3"), vec!["2.5E-3"]);
+        assert_eq!(number_tokens("7E+10"), vec!["7E+10"]);
+        assert_eq!(number_tokens("1.5e0"), vec!["1.5e0"]);
+    }
+
+    #[test]
+    fn keeps_plain_integer_and_float_classification_text() {
+        assert_eq!(number_tokens("42 3.25"), vec!["42", "3.25"]);
+        // `1e` must not swallow the identifier boundary: `e` alone is invalid
+        // exponent syntax so the token text stops before producing a value.
+        let result = Lexer::new("2x").tokenize();
+        assert!(result.is_ok());
+        // Hex literal with no digits is rejected.
+        assert!(Lexer::new("let x = 0x\n").tokenize().is_err());
+        assert!(Lexer::new("let x = 0b2\n").tokenize().is_err());
+        assert!(Lexer::new("let x = 0o8\n").tokenize().is_err());
+    }
+
+    #[test]
+    fn rejects_leading_trailing_and_double_separators_with_l007() {
+        for source in ["1_000_", "1__000", "0x_FF", "0xFF_", "0b__1011"] {
+            let errors = Lexer::new(source)
+                .tokenize()
+                .expect_err("bad separator placement should fail");
+            assert!(
+                errors.iter().any(|error| error.code.as_deref() == Some("L007")),
+                "expected L007 for `{}`, got {:?}",
+                source,
+                errors.iter().map(|e| &e.message).collect::<Vec<_>>(),
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_missing_exponent_digits_with_l007() {
+        let errors = Lexer::new("1e")
+            .tokenize()
+            .expect_err("`1e` without digits should fail");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code.as_deref() == Some("L007")),
+            "expected L007, got {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn accepts_all_documented_escapes() {
+        let tokens = Lexer::new(r#""\n\t\r\\\'\"\0""#)
+            .tokenize()
+            .expect("documented escapes should lex");
+        assert!(tokens.iter().any(|token| matches!(
+            &token.kind,
+            TokenKind::StringLiteral(value)
+                if value == &"\n\t\r\\'\"\0".to_string()
+        )));
+    }
+
+    #[test]
+    fn rejects_unknown_string_escape_with_l008() {
+        let errors = Lexer::new(r#""bad \q escape""#)
+            .tokenize()
+            .expect_err("unknown escape should fail");
+        assert!(
+            errors.iter().any(|error| {
+                error.code.as_deref() == Some("L008")
+                    && error.message.contains("\\q")
+            }),
+            "expected L008 naming \\q, got {:?}",
+            errors.iter().map(|e| (&e.code, &e.message)).collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_fstring_escape_with_l008() {
+        let errors = Lexer::new(r#"f"value \x here""#)
+            .tokenize()
+            .expect_err("unknown f-string escape should fail");
+        assert!(
+            errors.iter().any(|error| error.code.as_deref() == Some("L008")),
+            "expected L008, got {:?}",
+            errors
+        );
     }
 }

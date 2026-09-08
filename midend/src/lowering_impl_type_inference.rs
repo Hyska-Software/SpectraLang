@@ -259,7 +259,9 @@ impl ASTLowering {
     pub(crate) fn infer_expr_type_annotation(&mut self, expr: &Expression) -> Option<TypeAnnotation> {
         match &expr.kind {
             ExpressionKind::NumberLiteral(num) => {
-                Some(Self::simple_type_annotation(if num.contains('.') {
+                Some(Self::simple_type_annotation(if
+                    spectra_compiler::numeric::number_literal_is_float(num)
+                {
                     "float"
                 } else {
                     "int"

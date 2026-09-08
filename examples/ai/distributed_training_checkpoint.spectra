@@ -1,4 +1,5 @@
-// AI reference example: deterministic single-machine distributed training simulation.
+// AI reference example: deterministic distributed training with real
+// OS-thread workers, checkpoint persistence, resume, and topology summary.
 module ai_distributed_training_checkpoint
 
 import std.fs as fs
@@ -6,11 +7,22 @@ import std.ml as ml
 import std.string as str
 
 public func main() returns int {
-    let session = ml.distributed_session_start("ai-distributed-reference", "target/ai-examples/distributed-run", 2, 2026)
-
-    ml.distributed_worker_step(session, 0, 16, 0.30)
-    ml.distributed_worker_step(session, 1, 16, 0.35)
-    ml.distributed_global_step(session)
+    // Real data-parallel training: each worker owns a parameter replica and
+    // runs genuine forward/backward passes over its deterministic shard;
+    // gradients are ALLREDUCE-averaged every step.
+    let session = ml.distributed_train_multithread(
+        "ai-distributed-reference",
+        "target/ai-examples/distributed-run",
+        2,
+        1,
+        0.30,
+        4,
+        24,
+        2026
+    )
+    if ml.distributed_global_step(session) != 1 {
+        return 4
+    }
 
     let checkpoint = ml.distributed_checkpoint_save(
         session,
@@ -20,7 +32,7 @@ public func main() returns int {
 
     let checkpoint_result = fs.fs_read(checkpoint)
     if let Result::Ok(checkpoint_text) = checkpoint_result {
-        if str.contains(checkpoint_text, "spectra.ml.distributed_checkpoint.v1") {
+        if str.contains(checkpoint_text, "spectra.ml.distributed_checkpoint.v") {
             let ok_checkpoint = 1
             if ok_checkpoint != 1 {
                 return 1
@@ -33,14 +45,20 @@ public func main() returns int {
     }
 
     let resumed = ml.distributed_resume(checkpoint)
-    ml.distributed_worker_step(resumed, 0, 8, 0.20)
-    ml.distributed_worker_step(resumed, 1, 8, 0.22)
-    if ml.distributed_global_step(resumed) != 2 {
+    if ml.distributed_worker_step_count(resumed, 0) != 1 {
+        return 5
+    }
+    if ml.distributed_global_step(resumed) != 1 {
         return 2
     }
 
     let summary = ml.distributed_summary(resumed)
+    // Live sessions always carry the real multi-thread topology; the legacy
+    // simulated-workers label must never appear.
     if str.contains(summary, "single-machine-simulated-workers") {
+        return 3
+    }
+    if str.contains(summary, "multi-thread") {
         return 0
     }
     return 3

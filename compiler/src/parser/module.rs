@@ -61,10 +61,30 @@ impl Parser {
     }
 
     pub(super) fn parse_import(&mut self, is_reexport: bool) -> Result<Import, ()> {
-        // Supports namespace imports and public re-exports. Named imports use
-        // the canonical `from path import name` order and are parsed by
+        // Supports namespace imports, public re-exports, and TS-style brace
+        // imports (`import {a, b as c} from path`). Canonical ordered named
+        // imports use the `from path import name` surface parsed by
         // `parse_from_import`.
         let start_span = self.consume_keyword(Keyword::Import, "Expected 'import' keyword")?;
+
+        // Brace import: import {name, other as alias} from module.path
+        if self.check_symbol('{') {
+            self.advance(); // consume '{'
+            let names = self.parse_named_import_list(true)?;
+            self.consume_symbol('}', "Expected '}' to close the imported name list")?;
+            self.consume_keyword(Keyword::From, "Expected 'from' after imported names")?;
+            let (path, path_span) = self.parse_module_path()?;
+            let end_span =
+                self.consume_statement_terminator("Expected a line break after import")?;
+
+            return Ok(Import {
+                path,
+                alias: None,
+                names: Some(names),
+                is_reexport,
+                span: span_union(start_span, span_union(path_span, end_span)),
+            });
+        }
 
         // Standard path form
         let (path, path_span) = self.parse_module_path()?;
@@ -95,6 +115,27 @@ impl Parser {
         let (path, path_span) = self.parse_module_path()?;
         self.consume_keyword(Keyword::Import, "Expected 'import' after module path")?;
 
+        let names = self.parse_named_import_list(false)?;
+
+        let end_span =
+            self.consume_statement_terminator("Expected a line break after import declaration")?;
+        Ok(Import {
+            path,
+            alias: None,
+            names: Some(names),
+            is_reexport,
+            span: span_union(start_span, span_union(path_span, end_span)),
+        })
+    }
+
+
+    /// Parses a comma-separated imported-name list. When `inside_braces` is
+    /// set (TS-style brace imports), the list may span multiple lines and the
+    /// closing `}` terminates it; otherwise a line break ends the statement.
+    fn parse_named_import_list(
+        &mut self,
+        inside_braces: bool,
+    ) -> Result<Vec<NamedImport>, ()> {
         let mut names = Vec::new();
         loop {
             let (name, name_span) = self.consume_identifier("Expected imported name")?;
@@ -109,20 +150,14 @@ impl Parser {
                 break;
             }
             self.advance();
-            if self.statement_ends_before_current() {
+            if self.check_symbol('}') && inside_braces {
+                break;
+            }
+            if !inside_braces && self.statement_ends_before_current() {
                 break;
             }
         }
-
-        let end_span =
-            self.consume_statement_terminator("Expected a line break after import declaration")?;
-        Ok(Import {
-            path,
-            alias: None,
-            names: Some(names),
-            is_reexport,
-            span: span_union(start_span, span_union(path_span, end_span)),
-        })
+        Ok(names)
     }
 
     fn parse_module_path(&mut self) -> Result<(Vec<String>, crate::span::Span), ()> {

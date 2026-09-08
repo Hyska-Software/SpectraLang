@@ -23,6 +23,12 @@ public func run_monitored_request(input: int) returns int {
 
     let server = serve.server_new(2)
     serve.server_set_model_version(server, "guarded-v1")
+    let weights = tensor.full2_f(1, 1, 2.0)
+    let biases = tensor.full_f(1, 0.0)
+    if serve.server_register_model_linear(server, weights, biases, 0) != 1 {
+        tensor.free_all()
+        return 5
+    }
     serve.server_warmup(server)
     let req = serve.server_enqueue(server, input)
     serve.server_process_batch(server, 1)

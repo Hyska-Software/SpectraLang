@@ -1,4 +1,8 @@
 use super::*;
+use crate::async_frame::{
+    AsyncAffinity, AsyncFrame, AsyncFrameRegistry, AsyncPollOutcome, AsyncResultStorage,
+    AsyncTaskState,
+};
 pub(crate) struct AsyncTaskRegistry {
     pub(crate) now_ms: SpectraHostValue,
     pub(crate) next_join_order: SpectraHostValue,
@@ -10,6 +14,7 @@ pub(crate) struct AsyncTaskRegistry {
     pub(crate) tcp_streams: AsyncHandleTable<AsyncTcpStreamState>,
     pub(crate) udp_sockets: AsyncHandleTable<AsyncUdpSocketState>,
     pub(crate) async_channels: AsyncHandleTable<AsyncChannelState>,
+    pub(crate) coroutine_frames: AsyncFrameRegistry,
 }
 
 impl AsyncTaskRegistry {
@@ -25,6 +30,7 @@ impl AsyncTaskRegistry {
             tcp_streams: AsyncHandleTable::new(HandleKind::AsyncTcpStream),
             udp_sockets: AsyncHandleTable::new(HandleKind::AsyncUdpSocket),
             async_channels: AsyncHandleTable::new(HandleKind::AsyncChannel),
+            coroutine_frames: AsyncFrameRegistry::new(),
         }
     }
 
@@ -33,6 +39,7 @@ impl AsyncTaskRegistry {
         self.now_ms = 0;
         self.next_join_order = 1;
         self.tasks.clear();
+        self.coroutine_frames.clear();
         self.scopes.clear();
         self.cancel_handles.clear();
         self.streams.clear();
@@ -157,12 +164,85 @@ impl AsyncTaskRegistry {
             if let Some(scope) = self.scopes.get_mut(scope_id) {
                 scope.children.push(task_id);
             }
+
         }
         if wake {
             reactor::global().wake_task(task_id);
         }
         task_id
     }
+    /// Allocates an incomplete task in the public Async handle table. The
+    /// generated frame is attached separately so lowering can construct it
+    /// without exposing a second handle domain.
+    pub(crate) fn allocate_coroutine_task(
+        &mut self,
+        parent_scope: Option<SpectraHostValue>,
+    ) -> SpectraHostValue {
+        self.allocate_task_with_completion_impl(
+            0,
+            parent_scope,
+            None,
+            None,
+            false,
+            false,
+            false,
+        )
+    }
+
+    pub(crate) fn attach_coroutine_frame(
+        &mut self,
+        task_id: SpectraHostValue,
+        frame: AsyncFrame,
+        affinity: AsyncAffinity,
+    ) -> bool {
+        self.tasks.get(task_id).is_some()
+            && self.coroutine_frames.attach_frame(task_id, frame, affinity)
+    }
+
+    pub(crate) fn is_coroutine_task(&self, task_id: SpectraHostValue) -> bool {
+        self.coroutine_frames.contains(task_id)
+    }
+    pub(crate) fn coroutine_state(&self, task_id: SpectraHostValue) -> Option<AsyncTaskState> {
+        self.coroutine_frames.state(task_id)
+    }
+
+    pub(crate) fn apply_coroutine_outcome(
+        &mut self,
+        task_id: SpectraHostValue,
+        outcome: AsyncPollOutcome,
+    ) {
+        let value = self.coroutine_frames.result_host_value(task_id);
+        if let Some(task) = self.tasks.get_mut(task_id) {
+            match outcome {
+                AsyncPollOutcome::Pending | AsyncPollOutcome::AlreadyPolling => {
+                    task.completed = false;
+                }
+                AsyncPollOutcome::Ready => {
+                    task.completed = true;
+                    task.failed = false;
+                    task.cancelled = false;
+                    if let Some(value) = value { task.value = value; }
+                }
+                AsyncPollOutcome::Failed => {
+                    task.completed = true;
+                    task.failed = true;
+                }
+                AsyncPollOutcome::Cancelled => {
+                    task.completed = true;
+                    task.cancelled = true;
+                }
+                AsyncPollOutcome::Stale | AsyncPollOutcome::AffinityRejected => {}
+            }
+        }
+    }
+
+    pub(crate) fn take_coroutine_result(
+        &self,
+        task_id: SpectraHostValue,
+    ) -> Option<Result<AsyncResultStorage, AsyncResultStorage>> {
+        self.coroutine_frames.take_result(task_id)
+    }
+
 
     pub(crate) fn complete_task(&mut self, task_id: SpectraHostValue, value: SpectraHostValue) -> Option<()> {
         let task = self.tasks.get_mut(task_id)?;
@@ -246,11 +326,16 @@ impl AsyncTaskRegistry {
     }
 
     pub(crate) fn cancel_task(&mut self, task_id: SpectraHostValue) -> Option<()> {
-        let inner = {
+        let (inner, is_coroutine) = {
             let task = self.tasks.get_mut(task_id)?;
             task.cancelled = true;
-            task.timeout_inner
+            (task.timeout_inner, self.coroutine_frames.contains(task_id))
         };
+        if is_coroutine {
+            // The callback is invoked by the lock-free integration wrapper.
+            // Marking cancellation here is safe even when a poll is active.
+            let _ = self.coroutine_frames.request_cancel(task_id);
+        }
         if let Some(inner) = inner {
             let _ = self.cancel_task(inner);
         }

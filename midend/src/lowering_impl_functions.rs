@@ -5,8 +5,7 @@ impl ASTLowering {
     pub(crate) fn infer_expr_ir_type(&mut self, expr: &Expression) -> IRType {
         match &expr.kind {
             ExpressionKind::NumberLiteral(s) => {
-                // Se tem ponto, é float, senão int
-                if s.contains('.') {
+                if spectra_compiler::numeric::number_literal_is_float(s) {
                     IRType::Float
                 } else {
                     IRType::Int
@@ -597,8 +596,8 @@ impl ASTLowering {
         use spectra_compiler::ast::Pattern;
 
         match pattern {
-            Pattern::Wildcard | Pattern::Literal(_) => {}
-            Pattern::Identifier(name) => {
+            Pattern::Wildcard(_) | Pattern::Literal(_) => {}
+            Pattern::Identifier(name, _) => {
                 if let Some(ty) = scrutinee_type {
                     out.insert(name.clone(), ty.clone());
                 }

@@ -10,9 +10,13 @@ use crate::handles::{HandleId, HandleKind, HandleTable};
 use std::cell::RefCell;
 use std::io::{Read, Write};
 use rustls::pki_types::{pem::PemObject, CertificateDer, ServerName};
-use rustls::{ClientConfig, ClientConnection, RootCertStore, ServerConnection, StreamOwned};
+use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
+#[cfg(test)]
+use rustls::ServerConnection;
 use std::fs;
-use std::net::{TcpListener, TcpStream, ToSocketAddrs};
+#[cfg(test)]
+use std::net::TcpListener;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex, OnceLock};

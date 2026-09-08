@@ -3,7 +3,7 @@ pub(crate) fn tensor_binary(
     ctx: *mut SpectraHostCallContext,
     op: AutogradOp,
     int_op: impl Fn(i64, i64) -> i64,
-    float_op: impl Fn(f64, f64) -> f64,
+    float_op: ElementwiseOp,
 ) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
@@ -62,28 +62,14 @@ pub(crate) fn tensor_binary(
                         if let Some(data) = gpu_data {
                             data
                         } else {
-                            left_data
-                                .iter()
-                                .zip(right_data.iter())
-                                .map(|(a, b)| {
-                                    float_op(f64::from_bits(*a as u64), f64::from_bits(*b as u64))
-                                        .to_bits() as i64
-                                })
-                                .collect()
+                            tensor_binary_float_kernel(&left_data, &right_data, float_op)
                         }
                         #[cfg(not(feature = "gpu"))]
                         {
                             if left.device.is_accelerator() {
                                 return None;
                             }
-                            left_data
-                                .iter()
-                                .zip(right_data.iter())
-                                .map(|(a, b)| {
-                                    float_op(f64::from_bits(*a as u64), f64::from_bits(*b as u64))
-                                        .to_bits() as i64
-                                })
-                                .collect()
+                            tensor_binary_float_kernel(&left_data, &right_data, float_op)
                         }
                     }
                 };

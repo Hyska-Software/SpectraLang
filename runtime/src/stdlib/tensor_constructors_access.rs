@@ -960,15 +960,15 @@ pub(crate) extern "C" fn std_tensor_stack(ctx: *mut SpectraHostCallContext) -> i
 }
 
 pub(crate) extern "C" fn std_tensor_add(ctx: *mut SpectraHostCallContext) -> i32 {
-    tensor_binary(ctx, AutogradOp::Add, |a, b| a + b, |a, b| a + b)
+    tensor_binary(ctx, AutogradOp::Add, |a, b| a + b, ElementwiseOp::Add)
 }
 
 pub(crate) extern "C" fn std_tensor_sub(ctx: *mut SpectraHostCallContext) -> i32 {
-    tensor_binary(ctx, AutogradOp::Sub, |a, b| a - b, |a, b| a - b)
+    tensor_binary(ctx, AutogradOp::Sub, |a, b| a - b, ElementwiseOp::Sub)
 }
 
 pub(crate) extern "C" fn std_tensor_mul(ctx: *mut SpectraHostCallContext) -> i32 {
-    tensor_binary(ctx, AutogradOp::Mul, |a, b| a * b, |a, b| a * b)
+    tensor_binary(ctx, AutogradOp::Mul, |a, b| a * b, ElementwiseOp::Mul)
 }
 
 pub(crate) extern "C" fn std_tensor_div(ctx: *mut SpectraHostCallContext) -> i32 {
@@ -976,6 +976,6 @@ pub(crate) extern "C" fn std_tensor_div(ctx: *mut SpectraHostCallContext) -> i32
         ctx,
         AutogradOp::Div,
         |a, b| if b == 0 { 0 } else { a / b },
-        |a, b| if b == 0.0 { f64::NAN } else { a / b },
+        ElementwiseOp::Div,
     )
 }

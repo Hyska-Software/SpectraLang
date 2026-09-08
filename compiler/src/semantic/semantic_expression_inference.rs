@@ -4,7 +4,7 @@ impl SemanticAnalyzer {
     pub(crate) fn infer_expression_type(&mut self, expr: &Expression) -> Type {
         match &expr.kind {
             ExpressionKind::NumberLiteral(num) => {
-                if num.contains('.') {
+                if crate::numeric::number_literal_is_float(num) {
                     Type::Float
                 } else {
                     Type::Int

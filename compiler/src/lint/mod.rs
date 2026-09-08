@@ -377,7 +377,7 @@ impl<'a> LintRunner<'a> {
         span: Span,
     ) {
         match pattern {
-            ast::Pattern::Identifier(name) => {
+            ast::Pattern::Identifier(name, _) => {
                 let exact_num = ty.and_then(|annotation| ExactNum::from_annotation(Some(annotation)));
                 self.declare_binding(name.clone(), span, BindingKind::Variable, exact_num);
             }
@@ -410,7 +410,7 @@ impl<'a> LintRunner<'a> {
                     self.declare_let_pattern_bindings(first, None, span);
                 }
             }
-            ast::Pattern::Wildcard | ast::Pattern::Literal(_) => {}
+            ast::Pattern::Wildcard(_) | ast::Pattern::Literal(_) => {}
         }
     }
 

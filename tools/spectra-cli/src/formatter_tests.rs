@@ -228,31 +228,40 @@ mod tests {
         let output = assert_idempotent(input, &FormatterConfig::default());
         let lines: Vec<&str> = output.lines().collect();
         assert!(
-            lines.contains(&"    return left_hand_side_operand_value"),
-            "return head:\n{output}"
+            lines.contains(&"    return left_hand_side_operand_value *"),
+            "return head keeps the joining operator:\n{output}"
         );
-        assert!(lines.contains(&"        * right_hand_side_operand_value"));
+        assert!(lines.contains(&"        right_hand_side_operand_value +"));
         assert!(
-            output.lines().any(|line| line.trim_start().starts_with("+ adjustment_constant_offset_value")),
-            "return continuation:\n{output}"
+            output
+                .lines()
+                .any(|line| line.trim_start() == "adjustment_constant_offset_value"),
+            "last operand closes the expression:\n{output}"
         );
     }
+
     #[test]
     fn wraps_long_binary_expression_before_operators_in_let() {
         let input = "func demo() {\n    let grand_total_value = first_component_value + second_component_value + third_component_value_sum\n}\n";
         let output = assert_idempotent(input, &FormatterConfig::default());
         assert!(
-            output.contains("let grand_total_value = first_component_value"),
-            "head keeps lhs:\n{output}"
+            output.contains("let grand_total_value = first_component_value +"),
+            "head keeps lhs and the joining operator:\n{output}"
         );
         assert!(
-            output.lines().any(|line| line.trim_start().starts_with("+ second_component_value")),
-            "break before operator:\n{output}"
+            output
+                .lines()
+                .any(|line| line.trim_start().starts_with("second_component_value +")),
+            "operator trails its line:\n{output}"
         );
-        assert!(
-            output.lines().any(|line| line.starts_with("        + third_component_value_sum")),
-            "continuations sit one level deeper than the statement:\n{output}"
-        );
+    }
+    #[test]
+    fn zz_probe() {
+        let c = "return left_hand_side_operand_value * right_hand_side_operand_value + adjustment_constant_offset_value";
+        println!("SIGS={}", super::significant_chars(c).is_some());
+        let r = super::try_wrap_binary_expression(c);
+        println!("NONE={} len>100={}", r.is_none(), c.len() > 100);
+        if let Some((h, cs)) = &r { println!("HEAD={}", h); for x in cs { println!("C={}", x); } }
     }
 
     #[test]

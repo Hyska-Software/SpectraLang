@@ -36,7 +36,12 @@ impl SemanticAnalyzer {
 
     pub(crate) fn const_int_expression(expr: &Expression) -> Option<i64> {
         match &expr.kind {
-            ExpressionKind::NumberLiteral(raw) if !raw.contains('.') => raw.parse::<i64>().ok(),
+            ExpressionKind::NumberLiteral(raw) => {
+                match crate::numeric::parse_number_literal(raw) {
+                    Some(crate::numeric::ParsedNumber::Int(v)) => Some(v),
+                    _ => None,
+                }
+            }
             ExpressionKind::Grouping(inner) => Self::const_int_expression(inner),
             _ => None,
         }
@@ -550,10 +555,10 @@ impl SemanticAnalyzer {
     pub(crate) fn eval_const_expression(&self, expr: &Expression) -> Option<ConstValue> {
         match &expr.kind {
             ExpressionKind::NumberLiteral(raw) => {
-                if raw.contains('.') {
-                    raw.parse::<f64>().ok().map(ConstValue::Float)
-                } else {
-                    raw.parse::<i64>().ok().map(ConstValue::Int)
+                match crate::numeric::parse_number_literal(raw) {
+                    Some(crate::numeric::ParsedNumber::Int(v)) => Some(ConstValue::Int(v)),
+                    Some(crate::numeric::ParsedNumber::Float(v)) => Some(ConstValue::Float(v)),
+                    None => None,
                 }
             }
             ExpressionKind::StringLiteral(value) => Some(ConstValue::String(value.clone())),

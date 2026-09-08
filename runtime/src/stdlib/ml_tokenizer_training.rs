@@ -253,6 +253,7 @@ pub(crate) fn ml_training_vocab_spec(vocab: &[String]) -> String {
 
 /// Serialize a vocabulary into the artifact `vocab_json` metadata payload
 /// consumed by `ml_parse_artifact_tokenizer`.
+#[cfg(test)]
 pub(crate) fn ml_training_vocab_json(vocab: &[String]) -> String {
     let tokens: Vec<serde_json::Value> = vocab
         .iter()

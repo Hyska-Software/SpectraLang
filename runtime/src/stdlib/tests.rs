@@ -7741,3 +7741,265 @@ pub(crate) fn serve_real_rejects_inference_without_registered_model() {
         );
         let _ = call_host(TENSOR_FREE_ALL, &[]);
     }
+
+    /// R-3052 regression: a device-resident gradient flowing into an op
+    /// with no GPU backward kernel must fall back to the CPU backward math
+    /// over a device->host readback instead of silently vanishing.
+    ///
+    /// Graph: i (device leaf) -> sigmoid -> h (device) -> ml_linear(h,w,b)
+    /// -> y -> sum -> loss. The linear node's GPU backward emits
+    /// `ParentGrad::Device` gradients; the sigmoid node then receives a
+    /// device gradient it has no WGSL kernel for. Pre-fix behavior left
+    /// `i.grad` untouched (silent zeros); post-fix it must equal the
+    /// analytic reference `grad_upstream * sigma(x) * (1 - sigma(x))` and
+    /// agree with a pure-CPU twin of the same graph.
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn tensor_runtime_r3052_device_grad_without_gpu_backward_uses_cpu_readback() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+
+        if !crate::gpu::is_available() {
+            return;
+        }
+
+        let bit = |v: f64| v.to_bits() as i64;
+        let input_values = [0.25f64, -0.5, 0.75, 1.5];
+        let input_bits: Vec<i64> = input_values.iter().map(|v| bit(*v)).collect();
+
+        // Device-resident graph leaves: input (4), weight 4x2 all ones,
+        // bias (2). All-ones weights keep every upstream gradient element
+        // nonzero after the linear backward so a silent zeroing cannot be
+        // mistaken for legitimate cancellation.
+        let alloc_device_leaf = |shape: Vec<usize>,
+                                 values: &[f64]|
+         -> Result<usize, i32> {
+            tensor_alloc_autograd_on_device(
+                TensorDType::Float,
+                shape,
+                values.iter().map(|v| bit(*v)).collect(),
+                true,
+                None,
+                TensorDevice::Wgpu,
+                TensorPrecision::F64,
+            )
+        };
+        let i_h = alloc_device_leaf(vec![4], &input_values).expect("alloc input leaf");
+        let weight_values = [1.0f64; 8];
+        let w_h = alloc_device_leaf(vec![4, 2], &weight_values).expect("alloc weight leaf");
+        let bias_values = [0.0f64, 0.0];
+        let b_h = alloc_device_leaf(vec![2], &bias_values).expect("alloc bias leaf");
+
+        // h = sigmoid(i), allocated device-resident exactly like the GPU
+        // unary forward path does; the creator caches host copies like
+        // `tensor_float_unary`.
+        let sigmoid_of = |x: f64| 1.0 / (1.0 + (-x).exp());
+        let sigmoid_out: Vec<f64> = input_values.iter().map(|x| sigmoid_of(*x)).collect();
+        let sigmoid_creator = AutogradNode::unary(
+            AutogradOp::Sigmoid,
+            i_h,
+            vec![4],
+            input_values.to_vec(),
+            sigmoid_out.clone(),
+        );
+        let h_h = tensor_alloc_autograd_on_device(
+            TensorDType::Float,
+            vec![4],
+            sigmoid_out.iter().map(|v| bit(*v)).collect(),
+            true,
+            Some(sigmoid_creator),
+            TensorDevice::Wgpu,
+            TensorPrecision::F64,
+        )
+        .expect("alloc sigmoid node");
+
+        // y = ml_linear(h, w, b) with batch=1, in=4, out=2; its backward
+        // has a WGSL kernel and emits ParentGrad::Device to all parents.
+        const BATCH: usize = 1;
+        const IN_FEATURES: usize = 4;
+        const OUT_FEATURES: usize = 2;
+        let mut y_values = vec![0.0f64; OUT_FEATURES];
+        for oc in 0..OUT_FEATURES {
+            y_values[oc] = bias_values[oc]
+                + (0..IN_FEATURES)
+                    .map(|ic| sigmoid_out[ic] * weight_values[ic * OUT_FEATURES + oc])
+                    .sum::<f64>();
+        }
+        let linear_creator = AutogradNode {
+            op: AutogradOp::MlLinear,
+            parents: vec![h_h, w_h, b_h],
+            input_shape: vec![BATCH, IN_FEATURES],
+            left_shape: Vec::new(),
+            right_shape: Vec::new(),
+            input: Vec::new(),
+            output: Vec::new(),
+            left: sigmoid_out.clone(),
+            right: weight_values.to_vec(),
+            aux: vec![BATCH, IN_FEATURES, OUT_FEATURES],
+            #[cfg(feature = "gpu")]
+            device_aux: None,
+        };
+        let y_h = tensor_alloc_autograd(
+            TensorDType::Float,
+            vec![OUT_FEATURES],
+            y_values.iter().map(|v| bit(*v)).collect(),
+            true,
+            Some(linear_creator),
+        )
+        .expect("alloc linear node");
+
+        // loss = sum(y).
+        let total: f64 = y_values.iter().sum();
+        let sum_creator = AutogradNode {
+            op: AutogradOp::SumTensor,
+            parents: vec![y_h],
+            input_shape: vec![OUT_FEATURES],
+            left_shape: Vec::new(),
+            right_shape: Vec::new(),
+            input: y_values.clone(),
+            output: vec![total],
+            left: Vec::new(),
+            right: Vec::new(),
+            aux: Vec::new(),
+            #[cfg(feature = "gpu")]
+            device_aux: None,
+        };
+        let loss_h = tensor_alloc_autograd(
+            TensorDType::Float,
+            vec![1],
+            vec![bit(total)],
+            true,
+            Some(sum_creator),
+        )
+        .expect("alloc loss");
+
+        tensor_backward_impl(loss_h).expect("backward must succeed loudly");
+
+        // Pure-CPU twin of the identical graph for reference comparison.
+        let cpu_i = tensor_alloc_autograd(
+            TensorDType::Float,
+            vec![4],
+            input_bits.clone(),
+            true,
+            None,
+        )
+        .expect("alloc cpu input");
+        let cpu_w = tensor_alloc_autograd(
+            TensorDType::Float,
+            vec![4, 2],
+            weight_values.iter().map(|v| bit(*v)).collect(),
+            true,
+            None,
+        )
+        .expect("alloc cpu weight");
+        let cpu_b = tensor_alloc_autograd(
+            TensorDType::Float,
+            vec![2],
+            bias_values.iter().map(|v| bit(*v)).collect(),
+            true,
+            None,
+        )
+        .expect("alloc cpu bias");
+        let cpu_sigmoid_creator = AutogradNode::unary(
+            AutogradOp::Sigmoid,
+            cpu_i,
+            vec![4],
+            input_values.to_vec(),
+            sigmoid_out.clone(),
+        );
+        let cpu_h = tensor_alloc_autograd(
+            TensorDType::Float,
+            vec![4],
+            sigmoid_out.iter().map(|v| bit(*v)).collect(),
+            true,
+            Some(cpu_sigmoid_creator),
+        )
+        .expect("alloc cpu sigmoid");
+        let cpu_linear_creator = AutogradNode {
+            op: AutogradOp::MlLinear,
+            parents: vec![cpu_h, cpu_w, cpu_b],
+            input_shape: vec![BATCH, IN_FEATURES],
+            left_shape: Vec::new(),
+            right_shape: Vec::new(),
+            input: Vec::new(),
+            output: Vec::new(),
+            left: sigmoid_out.clone(),
+            right: weight_values.to_vec(),
+            aux: vec![BATCH, IN_FEATURES, OUT_FEATURES],
+            #[cfg(feature = "gpu")]
+            device_aux: None,
+        };
+        let cpu_y = tensor_alloc_autograd(
+            TensorDType::Float,
+            vec![OUT_FEATURES],
+            y_values.iter().map(|v| bit(*v)).collect(),
+            true,
+            Some(cpu_linear_creator),
+        )
+        .expect("alloc cpu linear");
+        let cpu_sum_creator = AutogradNode {
+            op: AutogradOp::SumTensor,
+            parents: vec![cpu_y],
+            input_shape: vec![OUT_FEATURES],
+            left_shape: Vec::new(),
+            right_shape: Vec::new(),
+            input: y_values.clone(),
+            output: vec![total],
+            left: Vec::new(),
+            right: Vec::new(),
+            aux: Vec::new(),
+            #[cfg(feature = "gpu")]
+            device_aux: None,
+        };
+        let cpu_loss = tensor_alloc_autograd(
+            TensorDType::Float,
+            vec![1],
+            vec![bit(total)],
+            true,
+            Some(cpu_sum_creator),
+        )
+        .expect("alloc cpu loss");
+        tensor_backward_impl(cpu_loss).expect("cpu twin backward must succeed");
+
+        let device_grad = with_tensor_registry(|registry| {
+            registry
+                .get(i_h)
+                .expect("input registered")
+                .grad
+                .clone()
+        })
+        .expect("gradient must be accumulated via CPU readback, not silently dropped");
+        let cpu_grad = with_tensor_registry(|registry| {
+            registry.get(cpu_i).expect("cpu input registered").grad.clone()
+        })
+        .expect("cpu twin gradient");
+
+        assert_eq!(device_grad.len(), 4);
+        assert_eq!(cpu_grad.len(), 4);
+        for index in 0..4 {
+            let s = sigmoid_out[index];
+            // Upstream grad ones(2) @ W^T over all-ones W gives
+            // grad_h = OUT_FEATURES per element; then sigmoid':
+            // grad_i = grad_h * s * (1 - s).
+            let expected = (OUT_FEATURES as f64) * s * (1.0 - s);
+            assert!(
+                device_grad[index].abs() > 1e-12,
+                "element {index} was silently zeroed"
+            );
+            assert!(
+                (device_grad[index] - cpu_grad[index]).abs() <= 1e-5 * cpu_grad[index].abs().max(1e-3),
+                "element {index}: device fallback {} vs cpu twin {}",
+                device_grad[index],
+                cpu_grad[index]
+            );
+            assert!(
+                (device_grad[index] - expected).abs() <= 5e-5,
+                "element {index}: {} vs analytic {}",
+                device_grad[index],
+                expected
+            );
+        }
+    }

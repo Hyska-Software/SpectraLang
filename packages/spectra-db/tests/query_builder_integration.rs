@@ -1,7 +1,8 @@
 use spectra_db::query::{
-    Boolean, Column, Delete, Insert, Integer, Order, Predicate, Query, Real, Select, SqliteDialect,
-    Text, Update, Value,
+    Aggregate, Boolean, Column, Delete, Insert, Integer, JoinKind, Order, Predicate, Query, Real,
+    Select, SqliteDialect, Text, Update, Value,
 };
+use spectra_db::query::{PostgresDialect, QueryError};
 use spectra_db::sqlite::{open_pool, SqliteConnection, SqliteValue};
 use spectra_db::PoolConfig;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -179,4 +180,213 @@ fn executes_compiled_queries_through_the_shared_pool() {
     assert_eq!(inserted.affected_rows, 1);
     lease.release().unwrap();
     pool.shutdown().unwrap();
+}
+
+
+#[test]
+fn compiles_join_group_by_having_in_deterministic_clause_order() {
+    let pg = PostgresDialect;
+    let lite = SqliteDialect;
+
+    let status = Column::<Text>::new("orders.status");
+    let order_customer = Column::<Integer>::new("orders.customer_id");
+    let total = Column::<Real>::new("orders.total");
+    let customer_id = Column::<Integer>::new("customers.id");
+    let region = Column::<Text>::new("customers.region");
+
+    let select = Select::from("orders")
+        .columns(&[status.clone()])
+        .add_join(
+            JoinKind::Inner,
+            "customers",
+            Predicate::eq(order_customer.expr(), customer_id.expr()),
+        )
+        .aggregate(Aggregate::count_all())
+        .aliased_aggregate(Aggregate::sum(total.clone()), "total_revenue")
+        .where_(status.not_equals(Value::text("draft")))
+        .group_by(&[region.clone()])
+        .having(Aggregate::sum(total).ge(Value::real(250.0)))
+        .order_by(region, Order::Desc)
+        .limit(10)
+        .offset(20);
+
+    assert_eq!(
+        select.compile(&lite).unwrap().sql,
+        "SELECT \"orders\".\"status\", COUNT(*), SUM(\"orders\".\"total\") AS \"total_revenue\" \
+         FROM \"orders\" INNER JOIN \"customers\" ON \"orders\".\"customer_id\" = \"customers\".\"id\" \
+         WHERE \"orders\".\"status\" <> ?1 GROUP BY \"customers\".\"region\" \
+         HAVING SUM(\"orders\".\"total\") >= ?2 ORDER BY \"customers\".\"region\" DESC \
+         LIMIT 10 OFFSET 20"
+    );
+    assert_eq!(
+        select.compile(&pg).unwrap().sql,
+        "SELECT \"orders\".\"status\", COUNT(*), SUM(\"orders\".\"total\") AS \"total_revenue\" \
+         FROM \"orders\" INNER JOIN \"customers\" ON \"orders\".\"customer_id\" = \"customers\".\"id\" \
+         WHERE \"orders\".\"status\" <> $1 GROUP BY \"customers\".\"region\" \
+         HAVING SUM(\"orders\".\"total\") >= $2 ORDER BY \"customers\".\"region\" DESC \
+         LIMIT 10 OFFSET 20"
+    );
+
+    let compiled = select.compile(&pg).unwrap();
+    assert_eq!(
+        compiled.params,
+        vec![
+            SqliteValue::Text("draft".to_owned()),
+            SqliteValue::Real(250.0),
+        ]
+    );
+}
+
+#[test]
+fn compiles_left_joins_before_the_where_clause() {
+    let user_id = Column::<Integer>::new("users.id");
+    let profile_user = Column::<Integer>::new("profiles.user_id");
+    let compiled = Select::from("users")
+        .add_join(
+            JoinKind::Left,
+            "profiles",
+            Predicate::eq(user_id.expr(), profile_user.expr()),
+        )
+        .compile(&PostgresDialect)
+        .unwrap();
+    assert_eq!(
+        compiled.sql,
+        "SELECT * FROM \"users\" LEFT JOIN \"profiles\" ON \"users\".\"id\" = \"profiles\".\"user_id\""
+    );
+    assert!(compiled.params.is_empty());
+}
+
+#[test]
+fn expands_where_in_placeholders_deterministically_per_dialect() {
+    let id = Column::<Integer>::new("items.id");
+    let name = Column::<Text>::new("name");
+    let values = [
+        Value::integer(1),
+        Value::integer(2),
+        Value::integer(3),
+        Value::integer(5),
+    ];
+
+    let select = Select::from("items")
+        .where_(name.equals(Value::text("pinned")))
+        .where_in(id.clone(), &values)
+        .unwrap()
+        .order_by(id.clone(), Order::Asc);
+
+    let lite = select.compile(&SqliteDialect).unwrap();
+    assert_eq!(
+        lite.sql,
+        "SELECT * FROM \"items\" WHERE \"name\" = ?1 AND \"items\".\"id\" IN (?2, ?3, ?4, ?5) ORDER BY \"items\".\"id\" ASC"
+    );
+    assert_eq!(
+        lite.params,
+        vec![
+            SqliteValue::Text("pinned".to_owned()),
+            SqliteValue::Integer(1),
+            SqliteValue::Integer(2),
+            SqliteValue::Integer(3),
+            SqliteValue::Integer(5),
+        ]
+    );
+
+    let pg = select.compile(&PostgresDialect).unwrap();
+    assert_eq!(
+        pg.sql,
+        "SELECT * FROM \"items\" WHERE \"name\" = $1 AND \"items\".\"id\" IN ($2, $3, $4, $5) ORDER BY \"items\".\"id\" ASC"
+    );
+    assert_eq!(pg.params.len(), 5);
+}
+
+#[test]
+fn rejects_empty_where_in_lists() {
+    let id = Column::<Integer>::new("id");
+    let result = Select::from("items").where_in(id, &[]);
+    match result {
+        Err(QueryError::InvalidParameter(message)) => {
+            assert_eq!(message, "empty IN list");
+        }
+        other => panic!("expected empty IN list error, got {other:?}"),
+    }
+}
+
+#[test]
+fn binds_like_patterns_and_escape_characters_as_parameters() {
+    let name = Column::<Text>::new("name");
+
+    // Wildcard pattern kept verbatim; the escape character travels as a parameter.
+    let wildcards = Select::from("items")
+        .where_(name.clone().like("50%_off"))
+        .compile(&SqliteDialect)
+        .unwrap();
+    assert_eq!(
+        wildcards.sql,
+        "SELECT * FROM \"items\" WHERE \"name\" LIKE ?1 ESCAPE ?2"
+    );
+    assert_eq!(
+        wildcards.params,
+        vec![
+            SqliteValue::Text("50%_off".to_owned()),
+            SqliteValue::Text("\\".to_owned()),
+        ]
+    );
+
+    // Same query compiled against Postgres keeps ordered numbered placeholders.
+    let pg_wildcards = Select::from("items")
+        .where_(name.clone().like("%_x"))
+        .compile(&PostgresDialect)
+        .unwrap();
+    assert_eq!(
+        pg_wildcards.sql,
+        "SELECT * FROM \"items\" WHERE \"name\" LIKE $1 ESCAPE $2"
+    );
+
+    // Exact matching pre-escapes %, _, and \ before binding.
+    let exact = Predicate::like_exact(name.expr(), "50%_of\\f");
+    let escaped_pattern = Select::from("items")
+        .where_(exact)
+        .compile(&PostgresDialect)
+        .unwrap();
+    assert_eq!(
+        escaped_pattern.sql,
+        "SELECT * FROM \"items\" WHERE \"name\" LIKE $1 ESCAPE $2"
+    );
+    assert_eq!(
+        escaped_pattern.params[0],
+        SqliteValue::Text("50\\%\\_of\\\\f".to_owned())
+    );
+}
+
+#[test]
+fn handles_order_by_limit_offset_edge_cases() {
+    let score = Column::<Real>::new("score");
+
+    // Negative limits are rejected everywhere.
+    let negative = Select::from("items")
+        .order_by(score.clone(), Order::Desc)
+        .limit(-1);
+    assert!(matches!(
+        negative.compile(&SqliteDialect),
+        Err(QueryError::NegativeLimit)
+    ));
+
+    // SQLite requires a LIMIT before OFFSET: an unbounded LIMIT is inserted.
+    let offset_only_sqlite = Select::from("items").offset(15).compile(&SqliteDialect).unwrap();
+    assert_eq!(
+        offset_only_sqlite.sql,
+        "SELECT * FROM \"items\" LIMIT -1 OFFSET 15"
+    );
+
+    // Postgres accepts a bare OFFSET.
+    let offset_only_pg = Select::from("items").offset(15).compile(&PostgresDialect).unwrap();
+    assert_eq!(offset_only_pg.sql, "SELECT * FROM \"items\" OFFSET 15");
+
+    // Combined ORDER BY, LIMIT and OFFSET keep their mandatory ordering.
+    let combined = Select::from("items")
+        .order_by(score, Order::Desc)
+        .offset(10)
+        .limit(5);
+    assert_eq!(
+        combined.compile(&SqliteDialect).unwrap().sql,
+        "SELECT * FROM \"items\" ORDER BY \"score\" DESC LIMIT 5 OFFSET 10"
+    );
 }

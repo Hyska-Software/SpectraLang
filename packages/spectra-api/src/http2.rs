@@ -1179,12 +1179,6 @@ async fn serve_gateway_h2_connection<I>(
                                 http2_response_from_server(response),
                             );
                         }
-                        Http2Outcome::Refused(response) => {
-                            send_gateway_h2_response(
-                                respond,
-                                http2_response_from_server(response),
-                            );
-                        }
                         Http2Outcome::Sse(route) => {
                             stream_routed_sse_over_h2(respond, route, parsed).await;
                         }
@@ -1420,7 +1414,6 @@ enum Http2Outcome {
     Ready(ServerResponse),
     Sse(Arc<crate::sse::RoutedSseResponse>),
     WebSocket(Arc<crate::websocket::RoutedUpgradeState>),
-    Refused(ServerResponse),
 }
 
 fn send_gateway_h2_response(mut respond: SendResponse<Bytes>, response: Http2Response) {
@@ -1512,11 +1505,6 @@ async fn serve_http11_over_tls<I>(
                 // up, so this connection never returns to the keep-alive
                 // loop.
                 serve_sse_over_tls(io, route, request_for_stream).await;
-                return;
-            }
-            GatewayOutcome::WebSocket(state) => {
-                serve_websocket_over_tls(io, state, request_for_stream, parser.take_buffered())
-                    .await;
                 return;
             }
         }

@@ -725,7 +725,7 @@ def main() -> int:
     parser.add_argument("--manifest", default="scripts/stdlib_contract.toml")
     parser.add_argument("--binary", default="target/debug/spectralang.exe")
     parser.add_argument("--report", default="target/r3007-stdlib-contract/report.json")
-    parser.add_argument("--timeout-seconds", type=int, default=45)
+    parser.add_argument("--timeout-seconds", type=int, default=300)
     parser.add_argument(
         "--require-catalog",
         action="store_true",

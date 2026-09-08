@@ -22,7 +22,7 @@ public func main() returns int {
         let found = 0
         let k     = 0
         while k < n {
-            if col.map_contains(m, k * 7) == 1 {
+            if col.map_contains(m, k * 7) {
                 found = found + 1
             }
             k = k + 1

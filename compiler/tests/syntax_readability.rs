@@ -87,7 +87,23 @@ fn doubled_comma_in_array_literal_remains_a_parse_error() {
 
 #[test]
 fn legacy_surface_is_rejected_with_migration_diagnostics() {
+    // The `->` arrow is no longer a token: the lexer rejects it with L007 and
+    // points at the canonical `returns` keyword.
     let source = "module legacy;\nfn main() -> int { return 0; }\n";
+    let lex_errors = Lexer::new(source)
+        .tokenize()
+        .expect_err("legacy arrow syntax must fail lexing");
+
+    assert!(lex_errors.iter().any(|error| {
+        error.code.as_deref() == Some("L007")
+            && error
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("returns"))
+    }));
+
+    // Semicolons remain rejected by the parser (P012).
+    let source = "module legacy\nfn main() returns int { return 0; }\n";
     let tokens = Lexer::new(source).tokenize().expect("lexer should succeed");
     let errors = Parser::new(tokens, HashSet::new())
         .parse()

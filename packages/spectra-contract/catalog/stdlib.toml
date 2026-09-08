@@ -9049,6 +9049,20 @@ docs = "docs/AI-AGENT-REFERENCE.md"
 fixture = "tests/validation/77_concurrency_pipeline.spectra"
 
 [[entry]]
+path = "std.concurrent.task_spawn_fn"
+kind = "function"
+namespace = "std.concurrent"
+signature = "fn(any, int) -> Task"
+abi = "host(ctx: SpectraHostCallContext, invoke_fn) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.concurrent.task_spawn_fn"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/AI-AGENT-REFERENCE.md"
+fixture = "tests/validation/350_spawn_fn_concurrent.spectra"
+
+[[entry]]
 path = "std.concurrent.task_spawn_join"
 kind = "function"
 namespace = "std.concurrent"
@@ -10645,6 +10659,34 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
 
 [[entry]]
+path = "std.ml.distributed_train_multithread"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(string, string, int, int, float, int, int, int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.distributed_train_multithread"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+
+[[entry]]
+path = "std.ml.distributed_train_tcp"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(string, string, int, int, float, int, int, int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.distributed_train_tcp"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+
+[[entry]]
 path = "std.ml.distributed_worker_step"
 kind = "function"
 namespace = "std.ml"
@@ -11429,6 +11471,34 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
 
 [[entry]]
+path = "std.ml.text_embed_model"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(int, int, string, int_tensor) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.text_embed_model"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+
+[[entry]]
+path = "std.ml.text_embed_model_session"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(string) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.text_embed_model_session"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+
+[[entry]]
 path = "std.ml.tokenizer_decode"
 kind = "function"
 namespace = "std.ml"
@@ -11471,6 +11541,20 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
 
 [[entry]]
+path = "std.ml.tokenizer_vocab"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(int) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.tokenizer_vocab"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+
+[[entry]]
 path = "std.ml.tokenizer_wordpiece"
 kind = "function"
 namespace = "std.ml"
@@ -11479,6 +11563,34 @@ abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.std.ml.tokenizer_wordpiece"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+
+[[entry]]
+path = "std.ml.train_bpe"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(string, int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.train_bpe"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+
+[[entry]]
+path = "std.ml.train_wordpiece"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(string, int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.train_wordpiece"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
@@ -12969,6 +13081,34 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/78_serving_foundations.spectra"
 
 [[entry]]
+path = "std.serve.http_start"
+kind = "function"
+namespace = "std.serve"
+signature = "fn(int, int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.serve.http_start"
+maturity = "experimental"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/78_serving_foundations.spectra"
+
+[[entry]]
+path = "std.serve.http_stop"
+kind = "function"
+namespace = "std.serve"
+signature = "fn(int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.serve.http_stop"
+maturity = "experimental"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/78_serving_foundations.spectra"
+
+[[entry]]
 path = "std.serve.reset"
 kind = "function"
 namespace = "std.serve"
@@ -13047,6 +13187,20 @@ abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.std.serve.server_enqueue"
+maturity = "experimental"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/78_serving_foundations.spectra"
+
+[[entry]]
+path = "std.serve.server_infer"
+kind = "function"
+namespace = "std.serve"
+signature = "fn(int, string, int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.serve.server_infer"
 maturity = "experimental"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
@@ -13137,6 +13291,62 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/78_serving_foundations.spectra"
 
 [[entry]]
+path = "std.serve.server_register_model_linear"
+kind = "function"
+namespace = "std.serve"
+signature = "fn(int, ...int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.serve.server_register_model_linear"
+maturity = "experimental"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/78_serving_foundations.spectra"
+
+[[entry]]
+path = "std.serve.server_register_model_onnx"
+kind = "function"
+namespace = "std.serve"
+signature = "fn(int, int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.serve.server_register_model_onnx"
+maturity = "experimental"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/78_serving_foundations.spectra"
+
+[[entry]]
+path = "std.serve.server_register_named_model_linear"
+kind = "function"
+namespace = "std.serve"
+signature = "fn(int, string, ...int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.serve.server_register_named_model_linear"
+maturity = "experimental"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/78_serving_foundations.spectra"
+
+[[entry]]
+path = "std.serve.server_register_named_model_onnx"
+kind = "function"
+namespace = "std.serve"
+signature = "fn(int, string, int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.serve.server_register_named_model_onnx"
+maturity = "experimental"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/78_serving_foundations.spectra"
+
+[[entry]]
 path = "std.serve.server_resident_model"
 kind = "function"
 namespace = "std.serve"
@@ -13159,6 +13369,20 @@ abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.std.serve.server_result"
+maturity = "experimental"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/78_serving_foundations.spectra"
+
+[[entry]]
+path = "std.serve.server_result_vector"
+kind = "function"
+namespace = "std.serve"
+signature = "fn(int, int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.serve.server_result_vector"
 maturity = "experimental"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
@@ -15679,6 +15903,20 @@ abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.std.ml.generate"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/97_ml_phase18_rag_toolkit.spectra"
+
+[[entry]]
+path = "std.ml.generate_ex"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(int, int_tensor, int, int, float, int, int) -> int_tensor"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.generate_ex"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"

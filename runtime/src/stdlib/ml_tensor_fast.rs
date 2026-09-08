@@ -210,7 +210,7 @@ pub fn tensor_autodiff_apply_fast(
             }
             tensor_values_as_f64(upstream)
         };
-        let parent_grads = autograd_parent_grads(&node, &ParentGrad::Host(grad), registry)?;
+        let parent_grads = autograd_parent_grads(&node, &ParentGrad::Host(grad), registry).ok()?;
         for (parent, parent_grad) in parent_grads {
             if !targets.contains(&parent) {
                 return None;

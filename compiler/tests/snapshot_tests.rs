@@ -132,8 +132,8 @@ fn expression(expr: &Expression) -> String {
 
 fn pattern(pattern: &Pattern) -> String {
     match pattern {
-        Pattern::Identifier(name) => format!("bind({name})"),
-        Pattern::Wildcard => "_".to_string(),
+        Pattern::Identifier(name, _) => format!("bind({name})"),
+        Pattern::Wildcard(_) => "_".to_string(),
         other => format!("{other:?}"),
     }
 }

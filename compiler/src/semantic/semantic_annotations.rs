@@ -185,7 +185,7 @@ impl SemanticAnalyzer {
 
     fn collect_pattern_binding_names_into(&self, pattern: &Pattern, names: &mut Vec<String>) {
         match pattern {
-            Pattern::Identifier(name) => names.push(name.clone()),
+            Pattern::Identifier(name, _) => names.push(name.clone()),
             Pattern::Tuple(elements) => {
                 for element in elements {
                     self.collect_pattern_binding_names_into(element, names);
@@ -215,7 +215,7 @@ impl SemanticAnalyzer {
                     self.collect_pattern_binding_names_into(first, names);
                 }
             }
-            Pattern::Wildcard | Pattern::Literal(_) => {}
+            Pattern::Wildcard(_) | Pattern::Literal(_) => {}
         }
     }
 

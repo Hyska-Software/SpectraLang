@@ -133,6 +133,46 @@ pub(crate) fn accumulate_parent_grad(
     }
 }
 
+/// Loud-CPU-fallback for device gradients: when no GPU backward kernel
+/// handled the op, transfer the incoming device gradient back to the host
+/// and run the exact same CPU backward math used by the pure-CPU tape path
+/// (`autograd_parent_grads_cpu`). This replaces the previous silent stop,
+/// which emitted all-zero parent gradients for any op whose GPU backward
+/// was missing. The cached host copies on `AutogradNode` (`left`, `right`,
+/// `input`, `output`) are populated even for device-resident tensors, so
+/// the CPU backward needs nothing else. If even the readback fails, an
+/// explicit host-call error status is propagated instead of zeros.
+#[cfg(feature = "gpu")]
+pub(crate) fn autograd_parent_grads_device_readback(
+    node: &AutogradNode,
+    grad_buf: &crate::gpu::DeviceBuffer,
+    registry: &mut TensorRegistry,
+) -> Result<Vec<(usize, ParentGrad)>, i32> {
+    use crate::gpu;
+
+    registry.note_cpu_fallback();
+    if !gpu::is_available() {
+        return Err(HOST_STATUS_INTERNAL_ERROR);
+    }
+    let readback = gpu::with_device_queue(|device, queue| {
+        gpu::readback_device_f32(grad_buf, device, queue)
+    });
+    let f32_values = match readback {
+        Ok(Ok(values)) => values,
+        Ok(Err(err)) | Err(err) => {
+            registry.note_gpu_error(err.kind);
+            return Err(HOST_STATUS_INTERNAL_ERROR);
+        }
+    };
+    if f32_values.is_empty() {
+        // Nothing flowed into this node; the correct accumulation is empty.
+        return Ok(Vec::new());
+    }
+    let host_values: Vec<f64> = f32_values.iter().map(|v| *v as f64).collect();
+    autograd_parent_grads_cpu(node, &ParentGrad::Host(host_values))
+        .ok_or(HOST_STATUS_INTERNAL_ERROR)
+}
+
 /// R-3080: GPU-accelerated backward for autograd. Returns `None` to
 /// signal that the CPU path should be used. GPU is only attempted when
 /// the parents are on the Wgpu device and the op has a WGSL backward
@@ -439,278 +479,4 @@ pub(crate) fn autograd_parent_grads_gpu_dispatch(
         note_gpu_backward_op();
     }
     output
-}
-
-#[cfg(all(feature = "gpu", any()))]
-pub(crate) fn autograd_parent_grads_gpu_dispatch(
-    node: &AutogradNode,
-    grad: &ParentGrad,
-    registry: &TensorRegistry,
-) -> Option<Vec<(usize, ParentGrad)>> {
-    use crate::gpu;
-
-    if !gpu::is_available() {
-        return None;
-    }
-    let parents_on_wgpu = |handles: &[usize]| -> bool {
-        handles.iter().all(|h| {
-            registry
-                .get(*h)
-                .map(|t| t.device == TensorDevice::Wgpu)
-                .unwrap_or(false)
-        })
-    };
-    let parents_have_storage = |handles: &[usize]| -> bool {
-        handles.iter().all(|h| {
-            registry
-                .get(*h)
-                .map(|t| t.device_storage.contains_key(&crate::gpu::PoolDevice::Wgpu))
-                .unwrap_or(false)
-        })
-    };
-    let residency_applies = parents_on_wgpu(&node.parents) && parents_have_storage(&node.parents);
-
-    // If the incoming grad is host, we need to promote it to a device
-    // buffer for the GPU backward. The promotion is a one-time host->device
-    // upload (not a "readback" in the hot-path sense).
-    let host_grad_f32: Vec<f32> = match grad {
-        ParentGrad::Host(values) => values.iter().map(|v| *v as f32).collect(),
-        ParentGrad::Device(_) => Vec::new(),
-    };
-    let host_grad_owned: ParentGrad = ParentGrad::Host(Vec::new());
-
-    let grad_for_kernel: Option<crate::gpu::DeviceBuffer> = match grad {
-        ParentGrad::Device(buf) => Some(buf.clone()),
-        ParentGrad::Host(values) => {
-            // Upload host grad to a device buffer. The host->device upload
-            // is the boundary entry to the GPU backward, not a chained op.
-            if !residency_applies {
-                return None;
-            }
-            let n = values.len();
-            if n == 0 {
-                return None;
-            }
-            let upload = with_tensor_registry(|reg| {
-                let f32_values: Vec<f32> = values.iter().map(|v| *v as f32).collect();
-                gpu::with_device_queue(|device, queue| {
-                    let buf = reg.device_arena.acquire(
-                        crate::gpu::PoolDevice::Wgpu,
-                        crate::gpu::PoolDType::Float,
-                        n,
-                        device,
-                    );
-                    queue.write_buffer(&buf.buffer, 0, bytemuck::cast_slice(&f32_values));
-                    queue.submit(None);
-                    buf
-                })
-            });
-            match upload {
-                Ok(buf) => Some(buf),
-                Err(_) => return None,
-            }
-        }
-    };
-    let _ = host_grad_owned;
-    let grad_f32_local = host_grad_f32; // suppress unused
-    let _ = grad_f32_local;
-
-    let grad_buf = grad_for_kernel.as_ref()?;
-
-    let result: Option<Vec<(usize, ParentGrad)>> = match node.op {
-        AutogradOp::Matmul if parents_on_wgpu(&node.parents) => {
-            let m = node.left_shape.first().copied().unwrap_or(0);
-            let k = node.left_shape.get(1).copied().unwrap_or(0);
-            let n = node.right_shape.get(1).copied().unwrap_or(0);
-            if m == 0 || k == 0 || n == 0 || grad_buf.elements != m * n {
-                return None;
-            }
-            let left_buf = registry
-                .get(node.parents[0])?
-                .device_storage
-                .get(&crate::gpu::PoolDevice::Wgpu)?
-                .clone();
-            let right_buf = registry
-                .get(node.parents[1])?
-                .device_storage
-                .get(&crate::gpu::PoolDevice::Wgpu)?
-                .clone();
-            let (gl, gr) = with_tensor_registry(|reg| {
-                gpu::with_device_queue(|device, queue| -> Option<(crate::gpu::DeviceBuffer, crate::gpu::DeviceBuffer)> {
-                    let out_left = reg.device_arena.acquire(
-                        crate::gpu::PoolDevice::Wgpu, crate::gpu::PoolDType::Float, m * k, device);
-                    let out_right = reg.device_arena.acquire(
-                        crate::gpu::PoolDevice::Wgpu, crate::gpu::PoolDType::Float, k * n, device);
-                    let rl = gpu::backward_matmul_left_device(grad_buf, &right_buf, m, k, n, &out_left, device, queue);
-                    let rr = gpu::backward_matmul_right_device(&left_buf, grad_buf, m, k, n, &out_right, device, queue);
-                    match (rl, rr) {
-                        (Ok(()), Ok(())) => Some((out_left, out_right)),
-                        _ => None,
-                    }
-                })
-            });
-            match gl {
-                Ok(Some((gl, gr))) => {
-                    note_gpu_backward_op();
-                    Some(vec![
-                        (node.parents[0], ParentGrad::Device(gl)),
-                        (node.parents[1], ParentGrad::Device(gr)),
-                    ])
-                }
-                _ => None,
-            }
-        }
-        AutogradOp::MlLinear if node.parents.len() == 3 && parents_on_wgpu(&node.parents) => {
-            let batch = node.aux.first().copied().unwrap_or(0);
-            let in_features = node.aux.get(1).copied().unwrap_or(0);
-            let out_features = node.aux.get(2).copied().unwrap_or(0);
-            if batch == 0
-                || in_features == 0
-                || out_features == 0
-                || grad_buf.elements != batch * out_features
-            {
-                return None;
-            }
-            let left_buf = registry
-                .get(node.parents[0])?
-                .device_storage
-                .get(&crate::gpu::PoolDevice::Wgpu)?
-                .clone();
-            let right_buf = registry
-                .get(node.parents[1])?
-                .device_storage
-                .get(&crate::gpu::PoolDevice::Wgpu)?
-                .clone();
-            let (gi, gw, gb) = with_tensor_registry(|reg| {
-                gpu::with_device_queue(
-                    |device,
-                     queue|
-                     -> Option<(
-                        crate::gpu::DeviceBuffer,
-                        crate::gpu::DeviceBuffer,
-                        crate::gpu::DeviceBuffer,
-                    )> {
-                        let out_input = reg.device_arena.acquire(
-                            crate::gpu::PoolDevice::Wgpu,
-                            crate::gpu::PoolDType::Float,
-                            batch * in_features,
-                            device,
-                        );
-                        let out_weight = reg.device_arena.acquire(
-                            crate::gpu::PoolDevice::Wgpu,
-                            crate::gpu::PoolDType::Float,
-                            in_features * out_features,
-                            device,
-                        );
-                        let out_bias = reg.device_arena.acquire(
-                            crate::gpu::PoolDevice::Wgpu,
-                            crate::gpu::PoolDType::Float,
-                            out_features,
-                            device,
-                        );
-                        let ri = gpu::backward_matmul_left_device(
-                            grad_buf,
-                            &right_buf,
-                            batch,
-                            out_features,
-                            in_features,
-                            &out_input,
-                            device,
-                            queue,
-                        );
-                        let rw = gpu::backward_matmul_right_device(
-                            &left_buf,
-                            grad_buf,
-                            batch,
-                            in_features,
-                            out_features,
-                            &out_weight,
-                            device,
-                            queue,
-                        );
-                        let rb = gpu::backward_matmul_right_device(
-                            grad_buf,
-                            grad_buf,
-                            batch,
-                            out_features,
-                            1,
-                            &out_bias,
-                            device,
-                            queue,
-                        );
-                        // rb is wrong above; we need a sum-reduction kernel for grad_bias.
-                        // For now, fall through to the CPU path for grad_bias.
-                        let _ = rb;
-                        match (ri, rw) {
-                            (Ok(()), Ok(())) => Some((out_input, out_weight, out_bias)),
-                            _ => None,
-                        }
-                    },
-                )
-            });
-            match gi {
-                Ok(Some((gi, gw, gb))) => {
-                    note_gpu_backward_op();
-                    Some(vec![
-                        (node.parents[0], ParentGrad::Device(gi)),
-                        (node.parents[1], ParentGrad::Device(gw)),
-                        (node.parents[2], ParentGrad::Device(gb)),
-                    ])
-                }
-                _ => None,
-            }
-        }
-        AutogradOp::Relu if parents_on_wgpu(&node.parents) => {
-            if grad_buf.elements != node.input.len() {
-                return None;
-            }
-            // For relu, output > 0 iff input > 0, so we can use the
-            // parent's input device buffer as the gate.
-            let input_buf = registry
-                .get(node.parents[0])?
-                .device_storage
-                .get(&crate::gpu::PoolDevice::Wgpu)?
-                .clone();
-            let out_buf = with_tensor_registry(|reg| {
-                gpu::with_device_queue(|device, queue| -> Option<crate::gpu::DeviceBuffer> {
-                    let n = grad_buf.elements;
-                    let buf = reg.device_arena.acquire(
-                        crate::gpu::PoolDevice::Wgpu,
-                        crate::gpu::PoolDType::Float,
-                        n,
-                        device,
-                    );
-                    let r = gpu::backward_relu_device(grad_buf, &input_buf, &buf, device, queue);
-                    match r {
-                        Ok(()) => Some(buf),
-                        _ => None,
-                    }
-                })
-            });
-            match out_buf {
-                Ok(Some(buf)) => {
-                    note_gpu_backward_op();
-                    Some(vec![(node.parents[0], ParentGrad::Device(buf))])
-                }
-                _ => None,
-            }
-        }
-        AutogradOp::Sigmoid if parents_on_wgpu(&node.parents) => {
-            // Sigmoid has no forward GPU kernel (plan: do not add it).
-            // Fall back to the CPU path.
-            None
-        }
-        _ => None,
-    };
-    // Release the temporary grad buffer if we uploaded from host.
-    if matches!(grad, ParentGrad::Host(_)) {
-        if let Some(buf) = grad_for_kernel {
-            with_tensor_registry(|reg| {
-                reg.device_arena.release(buf);
-            });
-        }
-    } else {
-        // The caller owns the device grad; do not release.
-    }
-    result
 }

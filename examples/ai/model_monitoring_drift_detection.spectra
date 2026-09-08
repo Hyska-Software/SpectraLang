@@ -1,14 +1,23 @@
 module model_monitoring_drift_detection
 
 import std.fs as fs
+import std.tensor as tensor
 import std.serve as serve
 import std.string as str
 
 public func main() returns int {
     serve.reset()
 
+    // ServeReal requires an explicitly registered model: y = relu(2*x + 0),
+    // matching the expected scaling used by every assertion below.
+    let model_weight = tensor.full2_f(1, 1, 2.0)
+    let model_biases = tensor.full_f(1, 0.0)
+
     let reference_server = serve.server_new(2)
     serve.server_set_model_version(reference_server, "fraud-detector-v1")
+    if serve.server_register_model_linear(reference_server, model_weight, model_biases, 0) != 1 {
+        return 7
+    }
     serve.server_warmup(reference_server)
     let ref_a = serve.server_enqueue(reference_server, 10)
     let ref_b = serve.server_enqueue(reference_server, 20)
@@ -25,6 +34,9 @@ public func main() returns int {
     let live_server = serve.server_new(2)
     serve.server_set_model_version(live_server, "fraud-detector-v1")
     serve.server_warmup(live_server)
+    if serve.server_register_model_linear(live_server, model_weight, model_biases, 0) != 1 {
+        return 8
+    }
     let live_a = serve.server_enqueue(live_server, 120)
     let live_b = serve.server_enqueue(live_server, 140)
     serve.server_process_batch(live_server, 2)

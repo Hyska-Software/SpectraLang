@@ -5,8 +5,8 @@ impl SemanticAnalyzer {
         use crate::ast::Pattern;
 
         match pattern {
-            Pattern::Wildcard => None,
-            Pattern::Identifier(_) => Some(Type::Unknown),
+            Pattern::Wildcard(_) => None,
+            Pattern::Identifier(_, _) => Some(Type::Unknown),
             Pattern::Literal(expr) => Some(self.infer_expression_type(expr)),
             Pattern::Tuple(elements) => Some(Type::Tuple {
                 elements: elements
@@ -46,8 +46,8 @@ impl SemanticAnalyzer {
         }
 
         match pattern {
-            Pattern::Wildcard => {}
-            Pattern::Identifier(name) => {
+            Pattern::Wildcard(_) => {}
+            Pattern::Identifier(name, _) => {
                 if let Some(scope) = self.symbols.last_mut() {
                     if let Some(info) = scope.get_mut(name) {
                         info.ty = effective_type.clone();

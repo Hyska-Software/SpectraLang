@@ -1,0 +1,9 @@
+// Public Spectra surface for the HTTP/3 transport.
+//
+// Handles use the ABI's integer representation. Server configuration and
+// handlers remain Rust-owned; this binding intentionally exposes no string
+// constructors for TLS material or callbacks. Native function declarations
+// are supplied by the compiler's std.api.http3 module and target the
+// spectra.api.http3 host namespace.
+
+module std.api.http3

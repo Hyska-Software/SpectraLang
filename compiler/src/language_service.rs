@@ -577,7 +577,7 @@ fn hints_from_statement(
 ) {
     match &stmt.kind {
         StatementKind::Let(let_stmt) if let_stmt.ty.is_none() => {
-            if let crate::ast::Pattern::Identifier(name) = &let_stmt.pattern {
+            if let crate::ast::Pattern::Identifier(name, _) = &let_stmt.pattern {
                 if let Some(info) = analysis.symbols.get(&let_stmt.span) {
                     let ty_str = type_to_string(&info.ty);
                     if ty_str != "unknown" {

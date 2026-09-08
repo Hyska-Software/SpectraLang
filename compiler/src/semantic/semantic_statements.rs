@@ -58,7 +58,7 @@ impl SemanticAnalyzer {
                 };
 
                 if let Some(ann) = &let_stmt.ty {
-                    if !matches!(let_stmt.pattern, Pattern::Identifier(_)) {
+                    if !matches!(let_stmt.pattern, Pattern::Identifier(_, _)) {
                         self.error_with_hint(
                             "Typed destructuring is not supported yet on `let` patterns",
                             ann.span,
@@ -81,7 +81,7 @@ impl SemanticAnalyzer {
                 }
 
                 self.register_typed_pattern_bindings(&let_stmt.pattern, &binding_type);
-                if let Pattern::Identifier(_) = &let_stmt.pattern {
+                if let Pattern::Identifier(_, _) = &let_stmt.pattern {
                     self.record_symbol_resolution(
                         let_stmt.span,
                         SymbolInfo {
@@ -828,7 +828,7 @@ impl SemanticAnalyzer {
 
     fn constant_integer_expression(expr: &Expression) -> Option<i128> {
         match &expr.kind {
-            ExpressionKind::NumberLiteral(value) => value.replace('_', "").parse().ok(),
+            ExpressionKind::NumberLiteral(value) => crate::numeric::parse_number_literal_as_i128(value),
             ExpressionKind::Unary {
                 operator: crate::ast::UnaryOperator::Negate,
                 operand,

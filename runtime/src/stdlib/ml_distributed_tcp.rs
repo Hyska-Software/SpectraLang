@@ -159,6 +159,7 @@ pub(crate) fn dist_decode_tensor_payload(payload: &[u8], cursor: &mut usize) -> 
     Some((shape, values))
 }
 
+#[cfg(test)]
 pub(crate) fn dist_encode_hello(worker_id: usize) -> Vec<u8> {
     dist_encode_hello_tokenized(worker_id, None)
 }
@@ -251,6 +252,7 @@ pub(crate) fn dist_decode_hello_full(payload: &[u8]) -> Option<DistHello> {
 }
 
 /// Legacy tuple decode used by the shared protocol-roundtrip tests.
+#[cfg(test)]
 pub(crate) fn dist_decode_hello(payload: &[u8]) -> Option<(u32, usize)> {
     dist_decode_hello_full(payload).map(|hello| (hello.version, hello.worker_id))
 }

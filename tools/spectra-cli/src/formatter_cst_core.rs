@@ -1,13 +1,13 @@
     use super::{
-        count_brace_transitions, count_leading_closing_braces, finalize_output,
-        is_wrapped_continuation_line, net_round_bracket_delta, normalize_spacing, FormattedLine,
-        FormatterConfig,
+        count_brace_transitions, count_leading_closing_braces, ends_with_binary_operator,
+        finalize_output, is_wrapped_continuation_line, net_round_bracket_delta, normalize_spacing,
+        FormattedLine, FormatterConfig,
     };
     use spectra_compiler::ast::{
         Block, Enum, Expression, ExpressionKind, Function, ImplBlock, Import, Item, Method, Module,
         Statement, StatementKind, Struct, TraitDeclaration, TraitImpl,
     };
-    use spectra_compiler::token::{Keyword, Operator, Token, TokenKind};
+    use spectra_compiler::token::{Keyword, Token, TokenKind};
     use spectra_compiler::{span::Span, Lexer, Parser};
     use std::collections::HashSet;
     use std::mem;
@@ -26,6 +26,9 @@
         let mut indent_level = 0usize;
         let mut anchor_indent = 0usize;
         let mut pending_open: i32 = 0;
+        // True when the previously emitted content line ended with a binary
+        // operator, per Spectra's operator-at-line-end continuation rule.
+        let mut prev_ends_open = false;
 
         for line in lines {
             match line {
@@ -50,8 +53,13 @@
                     // Operator continuations only apply at bracket depth
                     // zero; inside a multi-line delimited group the paren
                     // machinery already indents.
-                    let continuation =
-                        pending_open <= 0 && is_wrapped_continuation_line(&normalized);
+                    let ends_open = ends_with_binary_operator(&normalized);
+                    let starts_open = pending_open <= 0 && is_wrapped_continuation_line(&normalized);
+                    // A line whose predecessor ended with an operator always
+                    // indents one level deeper; the wrap-opening line itself
+                    // keeps the statement indent.
+                    let continuation = prev_ends_open;
+                    let _ = starts_open;
                     let indent_for_line = if continuation {
                         anchor_indent + 1
                     } else {
@@ -67,6 +75,7 @@
                     if !continuation {
                         anchor_indent = indent_for_line;
                     }
+                    prev_ends_open = ends_open;
                 }
             }
         }

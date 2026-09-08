@@ -68,6 +68,7 @@ pub(crate) const ML_GENERATION_FIXTURE_VOCAB: usize = 6;
 /// inlet and first remaining (logits) outlet. `pairs` keeps INPUT
 /// declaration order — stable even when the model declares its present
 /// outputs in a different order.
+#[cfg_attr(not(feature = "onnx"), allow(dead_code))]
 pub(crate) struct MlKvCacheBinding {
     /// `(past_input_name, present_output_name)`, input-declaration order.
     pub pairs: Vec<(String, String)>,
@@ -77,7 +78,9 @@ pub(crate) struct MlKvCacheBinding {
     pub logits_output: String,
 }
 
+#[cfg_attr(not(feature = "onnx"), allow(dead_code))]
 const ML_KV_PAST_PREFIX: &str = "past_";
+#[cfg_attr(not(feature = "onnx"), allow(dead_code))]
 const ML_KV_PRESENT_PREFIX: &str = "present_";
 
 /// Detects a generic past/present KV-cache interface by suffix pairing.
@@ -87,6 +90,7 @@ const ML_KV_PRESENT_PREFIX: &str = "present_";
 /// (the logits outlet). Bare `past_`/`present_` names have empty suffixes
 /// and are treated as ordinary names; duplicate suffixes are ambiguous and
 /// reject the whole interface.
+#[cfg_attr(not(feature = "onnx"), allow(dead_code))]
 pub(crate) fn ml_kv_cache_binding(
     input_names: &[String],
     output_names: &[String],
@@ -142,6 +146,7 @@ pub(crate) fn ml_kv_cache_binding(
 /// verbatim, symbolic dims default to 1, and the penultimate (cache-length)
 /// dim becomes 0. A fixed positive penultimate dim means the model cannot
 /// accept an empty cache (`None`); rank < 2 is not a cache tensor (`None`).
+#[cfg_attr(not(feature = "onnx"), allow(dead_code))]
 pub(crate) fn ml_kv_empty_past_shape(dims: &[String]) -> Option<Vec<i64>> {
     if dims.len() < 2 {
         return None;
@@ -450,8 +455,15 @@ fn ml_generate_kv(
                 ));
             }
         } else {
-            for (name, tensor) in past.take().ok_or(HOST_STATUS_INTERNAL_ERROR)? {
-                feed.push((name.as_str(), tensor.into_dyn()));
+            let carried = past.take().ok_or(HOST_STATUS_INTERNAL_ERROR)?;
+            if carried.len() != binding.pairs.len() {
+                return Err(HOST_STATUS_INTERNAL_ERROR);
+            }
+            for ((expected_name, _), (name, tensor)) in binding.pairs.iter().zip(carried.into_iter()) {
+                if expected_name != &name {
+                    return Err(HOST_STATUS_INTERNAL_ERROR);
+                }
+                feed.push((expected_name.as_str(), tensor.into_dyn()));
             }
         }
 

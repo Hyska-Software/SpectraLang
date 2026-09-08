@@ -12,7 +12,7 @@ pub(crate) fn autograd_parent_grads(
     node: &AutogradNode,
     grad: &ParentGrad,
     registry: &mut TensorRegistry,
-) -> Option<Vec<(usize, ParentGrad)>> {
+) -> Result<Vec<(usize, ParentGrad)>, i32> {
     // R-3080: try the GPU backward path first when both parents are
     // device-resident. The CPU path is the source of truth and is the
     // fall-through on any error or non-Wgpu device. The counter is
@@ -20,9 +20,17 @@ pub(crate) fn autograd_parent_grads(
     // mutex must not be re-acquired here because the caller is still
     // holding it through `with_tensor_registry`.
     if let Some(gpu_grads) = autograd_parent_grads_gpu_dispatch(node, grad, registry) {
-        return Some(gpu_grads);
+        return Ok(gpu_grads);
     }
-    autograd_parent_grads_cpu(node, grad)
+    // Loud correctness: a device gradient whose op has no GPU backward
+    // kernel must never silently become zeros. Transfer the gradient back
+    // to the host and run the same CPU backward math as the pure-CPU tape
+    // path; propagate an explicit error status if even that fails.
+    #[cfg(feature = "gpu")]
+    if let ParentGrad::Device(grad_buf) = grad {
+        return autograd_parent_grads_device_readback(node, grad_buf, registry);
+    }
+    autograd_parent_grads_cpu(node, grad).ok_or(HOST_STATUS_INTERNAL_ERROR)
 }
 
 pub(crate) fn autograd_parent_grads_cpu(
@@ -250,7 +258,7 @@ pub(crate) fn tensor_backward_impl(loss_handle: usize) -> Result<(), i32> {
             let Some(node) = node else {
                 return Ok(Vec::new());
             };
-            Ok(autograd_parent_grads(&node, &grad_for_parents, registry).unwrap_or_default())
+            autograd_parent_grads(&node, &grad_for_parents, registry)
         })?;
         stack.extend(next);
     }

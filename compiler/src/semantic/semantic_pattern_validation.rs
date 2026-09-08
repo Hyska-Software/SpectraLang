@@ -11,7 +11,7 @@ impl SemanticAnalyzer {
         use crate::ast::Pattern;
 
         match pattern {
-            Pattern::Wildcard | Pattern::Identifier(_) => {}
+            Pattern::Wildcard(_) | Pattern::Identifier(_, _) => {}
             Pattern::Literal(expr) => {
                 if matches!(scrutinee_type, Type::Unknown) {
                     return;

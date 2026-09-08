@@ -1,7 +1,7 @@
 use super::async_ops::RedisFuture;
 use super::error::{RedisError, RedisResult};
 use super::value::RedisValue;
-use crate::{ConnectionFactory, ConnectionPool, PoolConfig};
+use crate::ConnectionFactory;
 use redis::Commands;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -448,11 +448,6 @@ impl ConnectionFactory for RedisFactory {
         let _ = connection.close();
     }
 }
-pub type RedisPool = ConnectionPool<RedisFactory>;
-pub fn open_pool(config: RedisConfig, pool_config: PoolConfig) -> RedisResult<RedisPool> {
-    ConnectionPool::new(RedisFactory { config }, pool_config)
-        .map_err(|e| RedisError::new("DB2507_POOL", e.to_string()))
-}
 pub trait RedisKeyValueStore {
     fn get(&self, key: String) -> RedisFuture<Option<RedisValue>>;
     fn set(&self, key: String, value: RedisValue, expiration: Option<Duration>) -> RedisFuture<()>;
@@ -473,7 +468,7 @@ impl RedisKeyValueStore for RedisConnection {
         RedisConnection::expire(self, key, ttl)
     }
 }
-fn validate_key(key: &str) -> RedisResult<()> {
+pub(crate) fn validate_key(key: &str) -> RedisResult<()> {
     if key.is_empty() || key.len() > 1024 {
         Err(RedisError::invalid_argument(
             "Redis key must contain 1..1024 bytes",

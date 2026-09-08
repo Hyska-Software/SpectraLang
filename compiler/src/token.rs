@@ -7,7 +7,6 @@ pub enum Keyword {
     Module,
     Import,
     From,
-    Export,
 
     // Declarations
     Func,
@@ -48,7 +47,6 @@ pub enum Keyword {
     Do,
     For,
     In,
-    Of,
     Loop,
 
     // Control flow - jumps
@@ -82,7 +80,6 @@ impl Keyword {
             "module" => Some(Self::Module),
             "import" => Some(Self::Import),
             "from" => Some(Self::From),
-            "export" => Some(Self::Export),
 
             // Declarations
             "func" => Some(Self::Func),
@@ -123,7 +120,6 @@ impl Keyword {
             "do" => Some(Self::Do),
             "for" => Some(Self::For),
             "in" => Some(Self::In),
-            "of" => Some(Self::Of),
             "loop" => Some(Self::Loop),
             // Control flow - jumps
             "return" => Some(Self::Return),
@@ -160,7 +156,6 @@ impl fmt::Display for Keyword {
             Keyword::Module => "module",
             Keyword::Import => "import",
             Keyword::From => "from",
-            Keyword::Export => "export",
 
             // Declarations
             Keyword::Func => "func",
@@ -201,7 +196,6 @@ impl fmt::Display for Keyword {
             Keyword::Do => "do",
             Keyword::For => "for",
             Keyword::In => "in",
-            Keyword::Of => "of",
             Keyword::Loop => "loop",
             // Control flow - jumps
             Keyword::Return => "return",
@@ -258,10 +252,6 @@ pub enum Operator {
     And, // &&
     Or,  // ||
 
-    // Arrows
-    Arrow,    // -> (for function returns)
-    FatArrow, // => (for match arms, etc.)
-
     // Range operators
     Range,          // ..
     RangeInclusive, // ..=
@@ -288,8 +278,6 @@ impl fmt::Display for Operator {
             Operator::GreaterEqual => ">=",
             Operator::And => "&&",
             Operator::Or => "||",
-            Operator::Arrow => "->",
-            Operator::FatArrow => "=>",
             Operator::Range => "..",
             Operator::RangeInclusive => "..=",
         };

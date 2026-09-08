@@ -208,11 +208,11 @@ impl ASTLowering {
         use spectra_compiler::ast::Pattern;
 
         match pattern {
-            Pattern::Wildcard => {
+            Pattern::Wildcard(_) => {
                 // Wildcard sempre match
                 self.builder.build_const_int(ir_func, 1)
             }
-            Pattern::Identifier(_name) => {
+            Pattern::Identifier(_name, _) => {
                 // Binding sempre match
                 self.builder.build_const_int(ir_func, 1)
             }

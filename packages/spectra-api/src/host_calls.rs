@@ -1604,4 +1604,121 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
     HostCallSpec { name: "spectra.api.db.pool.with_connection", function: db::pool_with_connection },
     HostCallSpec { name: "spectra.api.db.migrate.apply_sqlite", function: db::migrate_apply_sqlite },
     HostCallSpec { name: "spectra.api.db.migrate.status_sqlite", function: db::migrate_status_sqlite },
+    // ── HTTP/3 over QUIC ────────────────────────────────────────────────
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.server_start", function: http3_host::http3_server_start },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.server_local_port", function: http3_host::http3_server_local_port },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.server_shutdown", function: http3_host::http3_server_shutdown },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.client_connect", function: http3_host::http3_client_connect },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.client_shutdown", function: http3_host::http3_client_shutdown },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.client_request_new", function: http3_host::http3_client_request_new },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.client_request_header", function: http3_host::http3_client_request_header },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.client_request_open", function: http3_host::http3_client_request_open },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.client_request_send_body", function: http3_host::http3_client_request_send_body },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.client_request_send_trailers", function: http3_host::http3_client_request_send_trailers },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.client_request_finish", function: http3_host::http3_client_request_finish },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.client_request_receive_response", function: http3_host::http3_client_request_receive_response },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.client_request_cancel", function: http3_host::http3_client_request_cancel },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.response_status", function: http3_host::http3_response_status },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.response_header", function: http3_host::http3_response_header },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.response_trailer", function: http3_host::http3_response_trailer },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.response_body_base64", function: http3_host::http3_response_body_base64 },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.response_body_len", function: http3_host::http3_response_body_len },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.task_result", function: http3_host::http3_task_result },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.task_cancel", function: http3_host::http3_task_cancel },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.result_ok", function: http3_host::http3_result_ok },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.result_value", function: http3_host::http3_result_value },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.result_error_code", function: http3_host::http3_result_error_code },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.result_error_message", function: http3_host::http3_result_error_message },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.handle_drop", function: http3_host::http3_handle_drop },
+    // ── gRPC over HTTP/2 ────────────────────────────────────────────────
+    HostCallSpec { name: "spectra.api.grpc.message_from_base64", function: grpc_host::grpc_message_from_base64 },
+    HostCallSpec { name: "spectra.api.grpc.message_to_base64", function: grpc_host::grpc_message_to_base64 },
+    HostCallSpec { name: "spectra.api.grpc.message_len", function: grpc_host::grpc_message_len },
+    HostCallSpec { name: "spectra.api.grpc.message_free", function: grpc_host::grpc_message_free },
+    HostCallSpec { name: "spectra.api.grpc.metadata_new", function: grpc_host::grpc_metadata_new },
+    HostCallSpec { name: "spectra.api.grpc.metadata_insert", function: grpc_host::grpc_metadata_insert },
+    HostCallSpec { name: "spectra.api.grpc.metadata_append", function: grpc_host::grpc_metadata_append },
+    HostCallSpec { name: "spectra.api.grpc.metadata_get", function: grpc_host::grpc_metadata_get },
+    HostCallSpec { name: "spectra.api.grpc.metadata_len", function: grpc_host::grpc_metadata_len },
+    HostCallSpec { name: "spectra.api.grpc.metadata_free", function: grpc_host::grpc_metadata_free },
+    HostCallSpec { name: "spectra.api.grpc.status_new", function: grpc_host::grpc_status_new },
+    HostCallSpec { name: "spectra.api.grpc.status_code", function: grpc_host::grpc_status_code },
+    HostCallSpec { name: "spectra.api.grpc.status_message", function: grpc_host::grpc_status_message },
+    HostCallSpec { name: "spectra.api.grpc.status_details_base64", function: grpc_host::grpc_status_details_base64 },
+    HostCallSpec { name: "spectra.api.grpc.status_set_details_base64", function: grpc_host::grpc_status_set_details_base64 },
+    HostCallSpec { name: "spectra.api.grpc.status_free", function: grpc_host::grpc_status_free },
+    HostCallSpec { name: "spectra.api.grpc.response_message", function: grpc_host::grpc_response_message },
+    HostCallSpec { name: "spectra.api.grpc.response_status", function: grpc_host::grpc_response_status },
+    HostCallSpec { name: "spectra.api.grpc.response_metadata", function: grpc_host::grpc_response_metadata },
+    HostCallSpec { name: "spectra.api.grpc.response_free", function: grpc_host::grpc_response_free },
+    HostCallSpec { name: "spectra.api.grpc.error_code", function: grpc_host::grpc_error_code },
+    HostCallSpec { name: "spectra.api.grpc.error_message", function: grpc_host::grpc_error_message },
+    HostCallSpec { name: "spectra.api.grpc.error_details_base64", function: grpc_host::grpc_error_details_base64 },
+    HostCallSpec { name: "spectra.api.grpc.error_free", function: grpc_host::grpc_error_free },
+    HostCallSpec { name: "spectra.api.grpc.client_connect", function: grpc_host::grpc_client_connect },
+    HostCallSpec { name: "spectra.api.grpc.client_unary", function: grpc_host::grpc_client_unary },
+    HostCallSpec { name: "spectra.api.grpc.client_client_streaming", function: grpc_host::grpc_client_client_streaming },
+    HostCallSpec { name: "spectra.api.grpc.client_server_streaming", function: grpc_host::grpc_client_server_streaming },
+    HostCallSpec { name: "spectra.api.grpc.client_bidi_streaming", function: grpc_host::grpc_client_bidi_streaming },
+    HostCallSpec { name: "spectra.api.grpc.stream_send", function: grpc_host::grpc_stream_send },
+    HostCallSpec { name: "spectra.api.grpc.stream_recv", function: grpc_host::grpc_stream_recv },
+    HostCallSpec { name: "spectra.api.grpc.stream_finish", function: grpc_host::grpc_stream_finish },
+    HostCallSpec { name: "spectra.api.grpc.stream_cancel", function: grpc_host::grpc_stream_cancel },
+    HostCallSpec { name: "spectra.api.grpc.stream_free", function: grpc_host::grpc_stream_free },
+    HostCallSpec { name: "spectra.api.grpc.server_bind", function: grpc_host::grpc_server_bind },
+    HostCallSpec { name: "spectra.api.grpc.server_local_port", function: grpc_host::grpc_server_local_port },
+    HostCallSpec { name: "spectra.api.grpc.server_shutdown", function: grpc_host::grpc_server_shutdown },
+    HostCallSpec { name: "spectra.api.grpc.server_free", function: grpc_host::grpc_server_free },
+    // ── GraphQL ─────────────────────────────────────────────────────────
+    HostCallSpec { name: "spectra.api.graphql.schema_new", function: graphql_host::schema_new },
+    HostCallSpec { name: "spectra.api.graphql.schema_set_workers", function: graphql_host::schema_set_workers },
+    HostCallSpec { name: "spectra.api.graphql.schema_set_subscription_capacity", function: graphql_host::schema_set_subscription_capacity },
+    HostCallSpec { name: "spectra.api.graphql.schema_field_json", function: graphql_host::schema_field_json },
+    HostCallSpec { name: "spectra.api.graphql.schema_field_callback", function: graphql_host::schema_field_callback },
+    HostCallSpec { name: "spectra.api.graphql.schema_subscription_json", function: graphql_host::schema_subscription_json },
+    HostCallSpec { name: "spectra.api.graphql.schema_subscription_callback", function: graphql_host::schema_subscription_callback },
+    HostCallSpec { name: "spectra.api.graphql.schema_finish", function: graphql_host::schema_finish },
+    HostCallSpec { name: "spectra.api.graphql.schema_drop", function: graphql_host::schema_drop },
+    HostCallSpec { name: "spectra.api.graphql.schema_sdl", function: graphql_host::schema_sdl },
+    HostCallSpec { name: "spectra.api.graphql.execute", function: graphql_host::execute },
+    HostCallSpec { name: "spectra.api.graphql.execute_named", function: graphql_host::execute_named },
+    HostCallSpec { name: "spectra.api.graphql.execute_http", function: graphql_host::execute_http },
+    HostCallSpec { name: "spectra.api.graphql.response_json", function: graphql_host::response_json },
+    HostCallSpec { name: "spectra.api.graphql.response_status", function: graphql_host::response_status },
+    HostCallSpec { name: "spectra.api.graphql.response_is_ok", function: graphql_host::response_is_ok },
+    HostCallSpec { name: "spectra.api.graphql.response_errors_json", function: graphql_host::response_errors_json },
+    HostCallSpec { name: "spectra.api.graphql.response_data_json", function: graphql_host::response_data_json },
+    HostCallSpec { name: "spectra.api.graphql.response_drop", function: graphql_host::response_drop },
+    HostCallSpec { name: "spectra.api.graphql.subscribe", function: graphql_host::subscribe },
+    HostCallSpec { name: "spectra.api.graphql.subscription_next", function: graphql_host::subscription_next },
+    HostCallSpec { name: "spectra.api.graphql.subscription_pending", function: graphql_host::subscription_pending },
+    HostCallSpec { name: "spectra.api.graphql.subscription_capacity", function: graphql_host::subscription_capacity },
+    HostCallSpec { name: "spectra.api.graphql.subscription_is_cancelled", function: graphql_host::subscription_is_cancelled },
+    HostCallSpec { name: "spectra.api.graphql.subscription_cancel", function: graphql_host::subscription_cancel },
+    HostCallSpec { name: "spectra.api.graphql.subscription_drop", function: graphql_host::subscription_drop },
 ];

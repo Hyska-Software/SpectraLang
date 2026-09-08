@@ -278,7 +278,7 @@ fn download_remote_payload(
     Ok(())
 }
 
-pub fn install_from_remote_registry(
+pub(crate) fn install_from_remote_registry(
     workspace_root: &Path,
     base_url: &str,
     name: &str,

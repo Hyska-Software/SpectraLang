@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 415
+PACKAGE_HOST_CALL_COUNT = 444
 RUNTIME_REQUIRED_HOST_CALL_COUNT = 347
 
 
@@ -52,7 +52,7 @@ def validate_implementation() -> None:
         "pub enum RequestLogFormat",
         "pub struct RequestLogRecord",
         "pub struct StructuredLoggingMiddleware",
-        "NEXT_REQUEST_ID",
+        "REQUEST_ID_FALLBACK_SEQ",
         "context.begin_request(&request)",
         "register_logging",
         "logging_len",

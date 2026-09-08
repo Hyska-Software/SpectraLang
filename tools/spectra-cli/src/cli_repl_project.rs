@@ -98,11 +98,11 @@ impl ReplSession {
     fn run(&mut self) -> CliResult<()> {
         println!("SpectraLang session REPL");
         println!(
-            "  declarations accumulate in module '{}' and are recompiled as a whole;",
+            "  declarations and 'let' bindings accumulate in module '{}' and are recompiled",
             REPL_MODULE_NAME
         );
         println!(
-            "  bare expressions evaluate immediately. Type ':help' for commands."
+            "  as a whole; bare expressions evaluate immediately. Type ':help' for commands."
         );
 
         let stdin = io::stdin();
@@ -169,26 +169,33 @@ impl ReplSession {
     }
 
     fn process_input(&mut self, text: &str) {
-        if repl_is_declaration(text) {
-            match self.buffer.append_checked(text, &self.base_options) {
-                Ok(()) => println!("  appended to session buffer"),
+        match repl_classify_input(text) {
+            ReplInput::Expression(expression) => {
+                self.evaluate_expression(expression);
+            }
+            _ => match self.buffer.append_checked(text, &self.base_options) {
+                Ok(AppendedEntry::Binding { name }) => {
+                    // Echo the bound type like a minimal language REPL.
+                    match self.buffer.infer_binding_type(&name, &self.base_options) {
+                        Ok(inferred) => println!("  {} : {}", name, inferred),
+                        Err(_) => println!("  bound '{}'", name),
+                    }
+                }
+                Ok(AppendedEntry::Declaration) => println!("  appended to session buffer"),
                 Err(diagnostics) => {
                     println!("  rejected; buffer unchanged:");
                     for diagnostic in &diagnostics {
                         println!("    {}", diagnostic);
                     }
                 }
-            }
-            return;
+            },
         }
-
-        self.evaluate_expression(text);
     }
 
     fn evaluate_expression(&self, expression: &str) {
         // Front-end gate first so broken expressions never reach the JIT.
-        let snapshot = self.buffer.expression_snapshot(expression);
-        let diagnostics = repl_session_diagnostics(&snapshot, &self.base_options);
+        let snapshot = self.buffer.build_snapshot(SnapshotTail::Expression(expression));
+        let diagnostics = snapshot.render_diagnostics(&self.base_options);
         if !diagnostics.is_empty() {
             for diagnostic in &diagnostics {
                 println!("  {}", diagnostic);
@@ -196,7 +203,7 @@ impl ReplSession {
             return;
         }
 
-        if let Err(error) = fs::write(&self.scratch_path, &snapshot) {
+        if let Err(error) = fs::write(&self.scratch_path, &snapshot.source) {
             log_error(&format!(
                 "Failed to write REPL session scratch file: {}",
                 error
@@ -234,7 +241,7 @@ impl ReplSession {
                 println!("  session buffer cleared");
             }
             "buffer" | "b" => {
-                println!("{}", self.buffer.source());
+                println!("{}", self.buffer.summary());
             }
             "save" | "s" => {
                 if rest.is_empty() {
@@ -271,7 +278,7 @@ impl ReplSession {
                     println!("Usage: :type <expression>");
                     return Ok(true);
                 }
-                match repl_infer_expression_type(self.buffer.source(), rest, &self.base_options) {
+                match repl_infer_expression_type(&self.buffer, rest, &self.base_options) {
                     Ok(inferred) => println!("  {}", inferred),
                     Err(diagnostics) => {
                         for diagnostic in &diagnostics {

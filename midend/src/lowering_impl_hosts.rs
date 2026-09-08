@@ -11,7 +11,7 @@ impl ASTLowering {
                 match &arg.kind {
                     ExpressionKind::NumberLiteral(n) => {
                         // Try to determine if int or float
-                        if n.contains('.') {
+                        if spectra_compiler::numeric::number_literal_is_float(n) {
                             IRType::Float
                         } else {
                             IRType::Int

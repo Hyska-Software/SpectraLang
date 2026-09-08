@@ -13,10 +13,10 @@ impl ASTLowering {
         use spectra_compiler::ast::Pattern;
 
         match pattern {
-            Pattern::Wildcard => {
+            Pattern::Wildcard(_) => {
                 // Wildcard não cria bindings
             }
-            Pattern::Identifier(name) => {
+            Pattern::Identifier(name, _) => {
                 // Criar variável local para o identifier binding
                 // Usar value_map (valores diretos, não precisam de alloca/load)
                 self.value_map.insert(name.clone(), scrutinee);

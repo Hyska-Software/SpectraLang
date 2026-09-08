@@ -124,7 +124,15 @@ impl Parser {
                             (crate::ast::LValue::FieldAccess { object, field }, expr.span)
                         }
                         _ => {
-                            self.error("Invalid assignment target");
+                            self.push_error_coded(
+                                "P018",
+                                "Invalid assignment target",
+                                expr.span,
+                                Some(
+                                    "Only variables (`x`), index accesses (`a[i]`) and field accesses (`obj.field`) can appear on the left of `=`.".to_string(),
+                                ),
+                                None,
+                            );
                             return Err(());
                         }
                     };
@@ -309,8 +317,26 @@ impl Parser {
 
         if self.check_keyword(Keyword::In) {
             self.advance();
+        } else if matches!(&self.current().kind, TokenKind::Identifier(name) if name == "of") {
+            // `for x of y` is TypeScript/JS surface. Spectra iterates with
+            // `for x in y`, so emit a coded diagnostic pointing at `in`.
+            let span = self.current().span;
+            self.push_error_coded(
+                "P016",
+                "`of` is not a Spectra keyword; iteration uses `in`",
+                span,
+                Some("Write `for x in collection { ... }` instead of `for x of ...`.".to_string()),
+                None,
+            );
+            return Err(());
         } else {
-            self.error("Expected 'in' after iterator variable");
+            self.push_error_coded(
+                "P017",
+                "Expected `in` after the iterator variable",
+                self.current().span,
+                Some("Loops iterate with `for x in iterable { ... }`.".to_string()),
+                None,
+            );
             return Err(());
         }
 

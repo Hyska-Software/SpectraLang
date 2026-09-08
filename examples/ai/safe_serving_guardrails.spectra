@@ -3,6 +3,7 @@ module safe_serving_guardrails
 import std.fs as fs
 import std.serve as serve
 import std.string as str
+import std.tensor as tensor
 
 public func main() returns int {
     serve.reset()
@@ -13,6 +14,14 @@ public func main() returns int {
     serve.server_set_output_policy(server, 0, 120)
     serve.server_set_rate_limit(server, 2)
     serve.server_warmup(server)
+    // ServeReal requires an explicitly registered model: y = relu(4*x + 0),
+    // so the accepted request 10 -> 40 exactly as asserted below. Requests
+    // rejected by guardrails keep their configured fallback value.
+    let model_weight = tensor.full2_f(1, 1, 4.0)
+    let model_biases = tensor.full_f(1, 0.0)
+    if serve.server_register_model_linear(server, model_weight, model_biases, 0) != 1 {
+        return 7
+    }
 
     let first  = serve.server_enqueue(server, 10)
     let second = serve.server_enqueue(server, 51)

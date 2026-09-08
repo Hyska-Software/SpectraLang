@@ -67,6 +67,10 @@ static NEXT_CONNECTION_ID: AtomicU64 = AtomicU64::new(1);
 struct HandlerJob {
     conn_id: u64,
     request: ParsedRequest,
+    /// W3C context of the `http.server` span so spans created on the
+    /// worker thread (db.*, handler children) keep the request's trace
+    /// instead of starting orphan roots.
+    context: Option<tracing::TraceContext>,
 }
 
 /// Handler outcome produced by a worker. SSE and WebSocket variants carry
@@ -613,9 +617,12 @@ impl HandlerPool {
                             break;
                         };
                         let outcome =
-                            catch_unwind(AssertUnwindSafe(|| handler(job.request)))
-                                .map(offload_handler_result)
-                                .unwrap_or(OffloadedOutcome::Panicked);
+                            catch_unwind(AssertUnwindSafe(|| {
+                                tracing::with_context(job.context, || handler(job.request))
+                            }))
+                            .map(offload_handler_result)
+                            .unwrap_or(OffloadedOutcome::Panicked);
+
                         let _ = completion_sender.send(HandlerCompletion {
                             conn_id: job.conn_id,
                             outcome,
@@ -636,11 +643,16 @@ impl HandlerPool {
         &self,
         conn_id: u64,
         request: ParsedRequest,
+        context: Option<tracing::TraceContext>,
     ) -> Result<(), mpsc::TrySendError<HandlerJob>> {
         self.jobs
             .as_ref()
             .expect("handler pool submits only while running")
-            .try_send(HandlerJob { conn_id, request })
+            .try_send(HandlerJob {
+                conn_id,
+                request,
+                context,
+            })
     }
 
     /// Stops accepting jobs, waits for in-flight handlers to finish, and
@@ -1498,13 +1510,18 @@ fn service_connection(
                     let _ = tracing::span_set_attribute(id, "http.request.method", &method);
                     let _ = tracing::span_set_attribute(id, "url.path", &request.target);
                 }
+                // Worker threads start with an empty context stack; carry the
+                // freshly created `http.server` context so handler-created
+                // spans (db.*, downstream calls) stay children of this span.
+                let worker_context =
+                    trace_span.and_then(|id| tracing::context(id).ok());
                 let request_for_stream = request.clone();
                 let reserved = reserved_metrics_response(&request, metrics)
                     .or_else(|| reserved_health_response(&request, health))
                     .map(HandlerResult::Ready);
                 let result = match reserved {
                     Some(result) => result,
-                    None => match pool.submit(connection.id, request) {
+                    None => match pool.submit(connection.id, request, worker_context) {
                         Ok(()) => {
                             connection.awaiting_worker = Some(AwaitingWorker {
                                 request: request_for_stream,

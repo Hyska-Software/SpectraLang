@@ -8,6 +8,10 @@ crate-type = ["staticlib", "rlib"]
 
 [features]
 default = []
+# Opt-in integration hook only: no BLAS dependency is linked and no kernel
+# call site consumes this flag today. Strategy reporting lives in
+# `TensorKernelStrategy` (runtime/src/stdlib/tensor_helpers_kernels.rs) and
+# reflects the real dispatch path (GPU, AVX2/NEON SIMD, or scalar).
 blas = []
 gpu = ["dep:bytemuck", "dep:pollster", "dep:wgpu"]
 # Real ONNX inference via the `ort` bindings (official onnxruntime Rust

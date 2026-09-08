@@ -3,7 +3,7 @@ use super::*;
 impl SemanticAnalyzer {
     pub(crate) fn collect_pattern_names_for_closure(pattern: &Pattern, names: &mut HashSet<String>) {
         match pattern {
-            Pattern::Identifier(name) => {
+            Pattern::Identifier(name, _) => {
                 names.insert(name.clone());
             }
             Pattern::Tuple(items) => {
@@ -35,7 +35,7 @@ impl SemanticAnalyzer {
                     Self::collect_pattern_names_for_closure(pattern, names);
                 }
             }
-            Pattern::Wildcard | Pattern::Literal(_) => {}
+            Pattern::Wildcard(_) | Pattern::Literal(_) => {}
         }
     }
 

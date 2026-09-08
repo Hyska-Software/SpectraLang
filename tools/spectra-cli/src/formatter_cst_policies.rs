@@ -600,9 +600,7 @@
         let mut bracket_depth = 0usize;
         let mut in_match_body = false;
 
-        let mut current_arm_start = None;
         let mut current_arm: Option<(Range<usize>, usize)> = None;
-        let mut last_token_end = span.start;
 
         for token in &tokens[start_index..=end_index] {
             match &token.kind {
@@ -612,7 +610,6 @@
                     } else {
                         in_match_body = true;
                         brace_depth = 1;
-                        current_arm_start = Some(token.span.end);
                     }
                 }
                 TokenKind::Symbol('}') => {
@@ -640,19 +637,6 @@
                 TokenKind::Symbol(']') => {
                     bracket_depth = bracket_depth.saturating_sub(1);
                 }
-                TokenKind::Operator(Operator::FatArrow)
-                    if in_match_body
-                        && brace_depth == 1
-                        && paren_depth == 0
-                        && bracket_depth == 0 =>
-                {
-                    let start = current_arm_start.unwrap_or(last_token_end);
-                    let pattern_range = Range {
-                        start,
-                        end: token.span.start,
-                    };
-                    current_arm = Some((pattern_range, token.span.end));
-                }
                 TokenKind::Symbol(',')
                     if in_match_body
                         && brace_depth == 1
@@ -669,13 +653,10 @@
                             true,
                             line_offsets,
                         );
-                        current_arm_start = Some(token.span.end);
                     }
                 }
                 _ => {}
             }
-
-            last_token_end = token.span.end;
         }
     }
 
@@ -787,75 +768,99 @@
         module: &Module,
         line_offsets: &[usize],
     ) {
-        // Collect leading import block (contiguous Item::Import at start)
-        let mut import_spans: Vec<Span> = Vec::new();
+        // Collect the leading import block (contiguous Item::Import items at
+        // the start of the module). Each import is rewritten to its canonical
+        // single-line form derived from the AST, so multi-line brace lists
+        // collapse deterministically instead of leaving stale fragments.
+        let mut imports: Vec<Import> = Vec::new();
         for item in &module.items {
             match item {
-                Item::Import(_) => import_spans.push(item_span(item).clone()),
+                Item::Import(import) => imports.push(import.clone()),
                 _ => break,
-            }
-        }
-        if import_spans.len() < 2 {
-            return;
-        }
-        // Map spans to line indices and collect their text for sorting
-        let mut imports: Vec<(usize, String)> = Vec::new();
-        for span in &import_spans {
-            if let Some(start) = line_index_from_offset(span.start, line_offsets) {
-                if let Some(end) = line_index_from_offset(span.end, line_offsets) {
-                    // Collect lines for this import (usually single line)
-                    let text: String = lines[start..=end.min(lines.len()-1)]
-                        .iter()
-                        .map(|l| l.content.trim().to_string())
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    imports.push((start, text));
-                }
             }
         }
         if imports.len() < 2 {
             return;
         }
-        // Sort: std.* first, then others, each group alphabetical case-insensitive
-        // Dedupe exact duplicates
-        let mut sorted = imports.clone();
+        // Map every import span onto its full physical line range.
+        let mut spans: Vec<(usize, usize)> = Vec::new();
+        for import in &imports {
+            let Some(start) = line_index_from_offset(import.span.start, line_offsets) else {
+                return;
+            };
+            let Some(end) = line_index_from_offset(import.span.end, line_offsets) else {
+                return;
+            };
+            spans.push((start, end.min(lines.len().saturating_sub(1))));
+        }
+        // Canonicalize each import to one line; keep each slot's indentation.
+        let mut entries: Vec<(usize, String)> = Vec::with_capacity(imports.len());
+        for (index, import) in imports.iter().enumerate() {
+            let (start, _) = spans[index];
+            let indent = lines[start]
+                .content
+                [..lines[start].content.len() - lines[start].content.trim_start().len()]
+                .to_string();
+            entries.push((index, format!("{}{}", indent, import_canonical_text(import))));
+        }
+        // Sort: std.* first, then others; alphabetical case-insensitive.
+        // Dedupe identical canonical forms.
+        let mut sorted = entries.clone();
         sorted.sort_by(|a, b| {
-            let a_is_std = a.1.starts_with("import std.") || a.1.starts_with("from std.");
-            let b_is_std = b.1.starts_with("import std.") || b.1.starts_with("from std.");
-            match (a_is_std, b_is_std) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => a.1.to_lowercase().cmp(&b.1.to_lowercase()),
-            }
+            let key = |text: &String| {
+                let trimmed = text.trim_start().trim_start_matches("public ");
+                let is_std = trimmed.starts_with("import std.") || trimmed.starts_with("from std.");
+                (!is_std, trimmed.to_lowercase())
+            };
+            key(&a.1).cmp(&key(&b.1))
         });
-        sorted.dedup_by(|a, b| a.1 == b.1);
-        // If already sorted and no dedupe, nothing to do
-        if sorted.iter().map(|(_, t)| t).eq(imports.iter().map(|(_, t)| t)) {
+        sorted.dedup_by(|a, b| a.1.trim() == b.1.trim());
+        // Nothing changed when the ordering and contents already match.
+        if sorted.iter().map(|(_, t)| t.as_str()).eq(entries.iter().map(|(_, t)| t.as_str())) {
             return;
         }
-        // Rewrite lines in place: keep original line count, blank between groups
-        // For simplicity, rewrite the import block lines directly with sorted content
-        // Preserve original line count: if deduped, blank the extra lines
-        let import_line_indices: Vec<usize> = imports.iter().map(|(idx, _)| *idx).collect();
-        for (i, line_idx) in import_line_indices.iter().enumerate() {
-            if i < sorted.len() {
-                // Preserve original indentation
-                let indent = &lines[*line_idx].content[..lines[*line_idx].content.len() - lines[*line_idx].content.trim_start().len()];
-                lines[*line_idx].content = format!("{}{}", indent, sorted[i].1);
-            } else {
-                lines[*line_idx].content.clear();
+        // Rewrite every slot: first line gets the canonical text, remaining
+        // lines of that slot's old span are cleared so no fragment survives.
+        for (slot, (_, text)) in sorted.iter().enumerate() {
+            let (start, end) = spans[slot];
+            for line_index in start..=end {
+                if line_index == start {
+                    lines[line_index].content = text.clone();
+                } else {
+                    lines[line_index].content.clear();
+                    lines[line_index].is_blank = true;
+                }
             }
         }
-        // Insert blank line between std and non-std groups if both present
-        // Find last std import in sorted order
-        let last_std = sorted.iter().rposition(|(_, t)| t.starts_with("import std.") || t.starts_with("from std."));
-        if let Some(pos) = last_std {
-            if pos + 1 < sorted.len() {
-                let last_std_line = import_line_indices[pos];
-                // If next line is not already blank, ensure separation is preserved by
-                // the existing blank line handling of the formatter (no extra work needed
-                // for now - the groups are already separated by their original blank lines
-                // if author used them; we don't insert new lines to keep idempotency simple)
+        // Slots left over after deduping are cleared across their full range.
+        for (_, (start, end)) in spans.iter().enumerate().skip(sorted.len()) {
+            for line_index in *start..=*end {
+                lines[line_index].content.clear();
+                lines[line_index].is_blank = true;
             }
+        }
+    }
+
+    /// Renders an [`Import`] back to its canonical source text: re-exports
+    /// keep their `public` prefix, module imports carry optional aliases, and
+    /// named groups always use the `from path import name, other as alias`
+    /// surface.
+    fn import_canonical_text(import: &Import) -> String {
+        let prefix = if import.is_reexport { "public " } else { "" };
+        let path = import.path.join(".");
+        match (&import.names, &import.alias) {
+            (Some(names), _) => {
+                let rendered = names
+                    .iter()
+                    .map(|named| match &named.alias {
+                        Some(alias) => format!("{} as {}", named.name, alias),
+                        None => named.name.clone(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{}from {} import {}", prefix, path, rendered)
+            }
+            (None, Some(alias)) => format!("{}import {} as {}", prefix, path, alias),
+            (None, None) => format!("{}import {}", prefix, path),
         }
     }

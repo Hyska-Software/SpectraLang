@@ -12,7 +12,7 @@ impl SemanticAnalyzer {
 
         fn pattern_is_catch_all(pattern: &Pattern) -> bool {
             match pattern {
-                Pattern::Wildcard | Pattern::Identifier(_) => true,
+                Pattern::Wildcard(_) | Pattern::Identifier(_, _) => true,
                 Pattern::Or(patterns) => patterns.iter().any(pattern_is_catch_all),
                 _ => false,
             }
@@ -94,7 +94,7 @@ impl SemanticAnalyzer {
                                 if let Some(payload_patterns) = data {
                                     if payload_patterns.len() == expected_len
                                         && payload_patterns.iter().all(|p| {
-                                            matches!(p, Pattern::Wildcard | Pattern::Identifier(_))
+                                            matches!(p, Pattern::Wildcard(_) | Pattern::Identifier(_, _))
                                         })
                                     {
                                         *flag = true;

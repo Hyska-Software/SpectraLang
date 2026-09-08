@@ -108,7 +108,7 @@ fn let_stmt(name: &str, value: Expression) -> Statement {
     Statement {
         span: s(),
         kind: StatementKind::Let(LetStatement {
-            pattern: Pattern::Identifier(name.to_string()),
+            pattern: Pattern::Identifier(name.to_string(), s()),
             span: s(),
             ty: None,
             value: Some(value),

@@ -28,8 +28,9 @@ impl Parser {
 
         // Wildcard pattern: _
         if self.check_symbol('_') {
+            let wildcard_span = self.current().span;
             self.advance();
-            return Ok(Pattern::Wildcard);
+            return Ok(Pattern::Wildcard(wildcard_span));
         }
 
         // Tuple pattern: (a, b, _)
@@ -52,6 +53,7 @@ impl Parser {
         // Check for enum variant pattern: EnumName::VariantName or EnumName<Type>::VariantName
         if let TokenKind::Identifier(name) = &self.current().kind {
             let first_name = name.clone();
+            let first_span = self.current().span;
             self.advance();
 
             // Parse optional type arguments: EnumName<Type>
@@ -120,13 +122,13 @@ impl Parser {
 
                     let mut fields = Vec::new();
                     while !self.check_symbol('}') && !self.is_at_end() {
-                        let (field_name, _) = self
+                        let (field_name, field_span) = self
                             .consume_identifier("Expected field name in struct variant pattern")?;
                         let field_pattern = if self.check_symbol(':') {
                             self.advance();
                             self.parse_pattern()?
                         } else {
-                            Pattern::Identifier(field_name.clone())
+                            Pattern::Identifier(field_name.clone(), field_span)
                         };
                         fields.push((field_name, field_pattern));
 
@@ -155,13 +157,13 @@ impl Parser {
                 self.advance();
                 let mut fields = Vec::new();
                 while !self.check_symbol('}') && !self.is_at_end() {
-                    let (field_name, _) =
+                    let (field_name, field_span) =
                         self.consume_identifier("Expected field name in struct pattern")?;
                     let field_pattern = if self.check_symbol(':') {
                         self.advance();
                         self.parse_pattern()?
                     } else {
-                        Pattern::Identifier(field_name.clone())
+                        Pattern::Identifier(field_name.clone(), field_span)
                     };
                     fields.push((field_name, field_pattern));
 
@@ -177,7 +179,7 @@ impl Parser {
             }
 
             // Just an identifier pattern (binding)
-            return Ok(Pattern::Identifier(first_name));
+            return Ok(Pattern::Identifier(first_name, first_span));
         }
 
         // Literal patterns (números, booleanos, etc.)
