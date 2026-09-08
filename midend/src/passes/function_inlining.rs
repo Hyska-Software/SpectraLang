@@ -38,6 +38,9 @@ impl Pass for FunctionInlining {
 
             let mut round_modified = false;
             for function in &mut module.functions {
+                if function.suspension_barrier {
+                    continue;
+                }
                 if inline_calls_in_function(function, &candidates) {
                     round_modified = true;
                 }
@@ -88,7 +91,7 @@ fn collect_candidates(
 }
 
 fn is_inline_candidate(function: &Function, call_graph: &HashMap<String, HashSet<String>>) -> bool {
-    if function.name == "main" || function.params.len() > 8 {
+    if function.name == "main" || function.params.len() > 8 || function.suspension_barrier {
         return false;
     }
     if !matches!(function.return_type, Type::Int | Type::Bool | Type::Void) {

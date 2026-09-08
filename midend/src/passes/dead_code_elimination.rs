@@ -22,6 +22,9 @@ impl Pass for DeadCodeElimination {
         let mut modified = false;
 
         for func in &mut module.functions {
+            if func.suspension_barrier {
+                continue;
+            }
             // Itera até fixpoint: remover uma instrução morta pode revelar que
             // os produtores dos seus operandos também se tornaram mortos.
             loop {

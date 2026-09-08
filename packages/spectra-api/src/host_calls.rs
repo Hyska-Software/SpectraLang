@@ -1606,6 +1606,12 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
     HostCallSpec { name: "spectra.api.db.migrate.status_sqlite", function: db::migrate_status_sqlite },
     // ── HTTP/3 over QUIC ────────────────────────────────────────────────
     #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.server_config_new", function: http3_host::http3_server_config_new },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.client_config_new", function: http3_host::http3_client_config_new },
+    #[cfg(feature = "http3")]
+    HostCallSpec { name: "spectra.api.http3.handler_text", function: http3_host::http3_handler_text },
+    #[cfg(feature = "http3")]
     HostCallSpec { name: "spectra.api.http3.server_start", function: http3_host::http3_server_start },
     #[cfg(feature = "http3")]
     HostCallSpec { name: "spectra.api.http3.server_local_port", function: http3_host::http3_server_local_port },

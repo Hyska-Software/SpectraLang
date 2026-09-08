@@ -16,6 +16,7 @@ pub mod metrics;
 pub mod numeric;
 pub mod reactor;
 pub(crate) mod async_frame;
+pub(crate) mod async_abi;
 pub mod stdlib;
 pub mod tracing;
 pub(crate) mod vector_index;

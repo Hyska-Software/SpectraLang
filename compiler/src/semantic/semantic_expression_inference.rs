@@ -500,24 +500,89 @@ impl SemanticAnalyzer {
             }
             ExpressionKind::CharLiteral(_) => Type::Char,
             ExpressionKind::FString(_) => Type::String,
-            ExpressionKind::Lambda { params, body, .. } => {
+            ExpressionKind::Lambda {
+                is_async,
+                params,
+                body,
+            } => {
+                let expected_fn = match self.current_expected_type.as_ref() {
+                    Some(Type::Fn {
+                        params,
+                        return_type,
+                    }) => Some((params.clone(), return_type.as_ref().clone())),
+                    _ => None,
+                };
+                let expected_output = expected_fn.as_ref().and_then(|(_, return_type)| {
+                    if *is_async {
+                        match return_type {
+                            Type::Task { output } => Some(output.as_ref().clone()),
+                            _ => None,
+                        }
+                    } else {
+                        Some(return_type.clone())
+                    }
+                });
+
                 self.push_scope();
 
                 let param_types: Vec<Type> = params
                     .iter()
-                    .map(|param| {
-                        let ty = self.type_annotation_to_type_checked(&param.ty);
+                    .enumerate()
+                    .map(|(index, param)| {
+                        let annotated = self.type_annotation_to_type_checked(&param.ty);
+                        let ty = if matches!(annotated, Type::Unknown) {
+                            expected_fn
+                                .as_ref()
+                                .and_then(|(expected_params, _)| expected_params.get(index))
+                                .cloned()
+                                .unwrap_or(annotated)
+                        } else {
+                            annotated
+                        };
                         self.declare_symbol(param.name.clone(), param.span, ty.clone());
                         ty
                     })
                     .collect();
 
-                let return_type = self.infer_expression_type(body);
+                let saved_expected = self.current_expected_type.clone();
+                self.current_expected_type = expected_output.clone();
+                let body_type = self.infer_expression_type(body);
+                self.current_expected_type = saved_expected;
                 self.pop_scope();
 
-                Type::Fn {
-                    params: param_types,
-                    return_type: Box::new(return_type),
+                let output_type = if matches!(body_type, Type::Unknown) {
+                    expected_output.unwrap_or(body_type)
+                } else if *is_async {
+                    if let Some(expected) = expected_output.as_ref() {
+                        if !self.types_match(&body_type, expected) {
+                            self.error_with_hint(
+                                format!(
+                                    "Async closure body has type {}, but {} was expected",
+                                    type_name(&body_type),
+                                    type_name(expected)
+                                ),
+                                expr.span,
+                                "Return a value matching the callback's Task output type.",
+                            );
+                        }
+                    }
+                    body_type
+                } else {
+                    body_type
+                };
+
+                if *is_async {
+                    Type::Fn {
+                        params: param_types,
+                        return_type: Box::new(Type::Task {
+                            output: Box::new(output_type),
+                        }),
+                    }
+                } else {
+                    Type::Fn {
+                        params: param_types,
+                        return_type: Box::new(output_type),
+                    }
                 }
             }
             ExpressionKind::Try(inner) => self.infer_expression_type(inner),

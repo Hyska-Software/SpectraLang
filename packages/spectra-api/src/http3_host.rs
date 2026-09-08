@@ -1,9 +1,9 @@
 //! Host-call adapter for the HTTP/3 transport.
 //!
-//! This file is intentionally included by `http3.rs` rather than registered here.  The
-//! registration table is owned by the integration layer so this adapter can be tested with
-//! Rust-owned TLS and handler values without pretending that certificates or callbacks are
-//! safely representable by the Spectra string ABI.
+//! This file is registered as a sibling host adapter by `lib.rs`. The registration table
+//! is owned by the integration layer so this adapter can be tested with Rust-owned TLS and
+//! handler values without pretending that certificates or callbacks are safely representable
+//! by the Spectra string ABI.
 
 use bytes::Bytes;
 use crate::http3::{
@@ -20,7 +20,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
-use tokio::runtime::Handle;
+use tokio::runtime::{Builder as RuntimeBuilder, Handle, Runtime};
 use tokio::sync::{watch, Mutex as AsyncMutex};
 
 const MAX_HANDLE_SLOTS: usize = 4096;
@@ -205,6 +205,116 @@ pub fn register_http3_handler(handler: Http3Handler) -> Result<SpectraHostValue,
     lock_store().handlers.insert(handler).ok_or_else(|| store_error("HTTP/3 handler table is full"))
 }
 
+fn decode_base64(value: &str) -> Option<Vec<u8>> {
+    if value.is_empty() || value.len() % 4 != 0 {
+        return None;
+    }
+    let mut output = Vec::with_capacity(value.len() / 4 * 3);
+    for (chunk_index, chunk) in value.as_bytes().chunks_exact(4).enumerate() {
+        let mut number = 0u32;
+        let mut padding = 0usize;
+        for (position, byte) in chunk.iter().copied().enumerate() {
+            let digit = match byte {
+                b'A'..=b'Z' => Some(byte - b'A'),
+                b'a'..=b'z' => Some(byte - b'a' + 26),
+                b'0'..=b'9' => Some(byte - b'0' + 52),
+                b'+' => Some(62),
+                b'/' => Some(63),
+                b'=' if position >= 2 => {
+                    padding += 1;
+                    None
+                }
+                _ => return None,
+            };
+            if let Some(digit) = digit {
+                if padding != 0 {
+                    return None;
+                }
+                number = (number << 6) | u32::from(digit);
+            } else {
+                number <<= 6;
+            }
+        }
+        if padding > 2 || (padding != 0 && chunk_index + 1 != value.len() / 4) {
+            return None;
+        }
+        if padding == 1 && chunk[3] != b'=' {
+            return None;
+        }
+        if padding == 2 && !(chunk[2] == b'=' && chunk[3] == b'=') {
+            return None;
+        }
+        output.push((number >> 16) as u8);
+        if padding < 2 {
+            output.push((number >> 8) as u8);
+        }
+        if padding == 0 {
+            output.push(number as u8);
+        }
+    }
+    Some(output)
+}
+
+pub extern "C" fn http3_server_config_new(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 3) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Some(address) = read_bounded_string(args[0], 256).and_then(|value| value.parse::<SocketAddr>().ok()) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let (Some(cert), Some(key)) = (
+        read_bounded_string(args[1], MAX_PUBLIC_STRING_BYTES).and_then(|value| decode_base64(&value)),
+        read_bounded_string(args[2], MAX_PUBLIC_STRING_BYTES).and_then(|value| decode_base64(&value)),
+    ) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Ok(tls) = crate::tls::server_config_from_der(vec![cert], key, vec![b"h3".to_vec()]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(handle) = lock_store().configs.insert(ConfigEntry::Server(
+        Http3ServerConfig::from_tls(address, tls),
+    )) else {
+        return HOST_STATUS_INTERNAL_ERROR;
+    };
+    write_result(ctx, handle)
+}
+
+pub extern "C" fn http3_client_config_new(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Some(encoded) = read_bounded_string(args[0], MAX_PUBLIC_STRING_BYTES) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut roots = rustls::RootCertStore::empty();
+    if !encoded.is_empty() {
+        let Some(cert) = decode_base64(&encoded) else { return HOST_STATUS_INVALID_ARGUMENT; };
+        if roots.add(rustls::pki_types::CertificateDer::from(cert)).is_err() {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+    }
+    let config = Http3ClientConfig::default().with_root_certificates(Arc::new(roots));
+    let Some(handle) = lock_store().configs.insert(ConfigEntry::Client(config)) else {
+        return HOST_STATUS_INTERNAL_ERROR;
+    };
+    write_result(ctx, handle)
+}
+
+pub extern "C" fn http3_handler_text(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 2) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Ok(status) = u16::try_from(args[0]) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    if !(100..=999).contains(&status) {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    let Some(body) = read_bounded_string(args[1], MAX_PUBLIC_STRING_BYTES) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let handler: Http3Handler = Arc::new(move |_| {
+        let body = body.clone();
+        Box::pin(async move { Ok(Http3Response::text(status, body)) })
+    });
+    let Some(handle) = lock_store().handlers.insert(handler) else {
+        return HOST_STATUS_INTERNAL_ERROR;
+    };
+    write_result(ctx, handle)
+}
+
 fn insert_outcome(outcome: OutcomeEntry) -> Result<SpectraHostValue, ()> {
     lock_store().outcomes.insert(outcome).ok_or(())
 }
@@ -223,11 +333,26 @@ where
     }
 }
 
+fn background_runtime() -> &'static Runtime {
+    static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
+        RuntimeBuilder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("HTTP/3 background runtime")
+    });
+    &RUNTIME
+}
+
+fn runtime_handle() -> Handle {
+    Handle::try_current().unwrap_or_else(|_| background_runtime().handle().clone())
+}
+
 fn spawn_http3_task<F>(future: F) -> Result<SpectraHostValue, i32>
 where
     F: Future<Output = Result<SpectraHostValue, Http3Error>> + Send + 'static,
 {
-    let runtime = Handle::try_current().map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
+    let runtime = runtime_handle();
     spectra_runtime::stdlib::spawn_cancellable_io_task_with_token(move |token| {
         let outcome = runtime.block_on(cancellable(token, future));
         insert_outcome(outcome).map_err(|_| ())
@@ -258,6 +383,8 @@ pub extern "C" fn http3_server_start(ctx: *mut SpectraHostCallContext) -> i32 {
         let Some(handler) = store.handlers.get(args[1]).cloned() else { return HOST_STATUS_INVALID_ARGUMENT; };
         (config, handler)
     };
+    let runtime = runtime_handle();
+    let _guard = runtime.enter();
     let server = match Http3Server::start(config, handler) {
         Ok(server) => Arc::new(AsyncMutex::new(server)),
         Err(_) => return HOST_STATUS_INVALID_ARGUMENT,

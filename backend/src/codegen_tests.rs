@@ -107,6 +107,8 @@ mod tests {
             return_type: IRType::Int,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             next_value_id: 5,
             next_block_id: 1,
             blocks: vec![IRBasicBlock {
@@ -177,6 +179,8 @@ mod tests {
             return_type: IRType::Int,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             next_value_id: 3,
             next_block_id: 1,
             blocks: vec![IRBasicBlock {
@@ -235,6 +239,8 @@ mod tests {
             return_type: IRType::Int,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             next_value_id: 3,
             next_block_id: 1,
             blocks: vec![IRBasicBlock {
@@ -293,6 +299,8 @@ mod tests {
             return_type: IRType::Void,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             next_value_id: 1,
             next_block_id: 1,
             blocks: vec![IRBasicBlock {
@@ -337,6 +345,8 @@ mod tests {
             },
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             next_value_id: 1,
             next_block_id: 1,
             blocks: vec![IRBasicBlock {
@@ -379,6 +389,8 @@ mod tests {
             return_type: IRType::Int,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             next_value_id: 5,
             next_block_id: 1,
             blocks: vec![IRBasicBlock {
@@ -462,6 +474,8 @@ mod tests {
             },
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             next_value_id: 5,
             next_block_id: 1,
             blocks: vec![IRBasicBlock {

@@ -220,6 +220,7 @@ pub fn builtin_contract_symbols() -> Vec<BuiltinContractSymbol> {
 
 pub const STD_API_MODULE_PATHS: &[&str] = &[
     "std.api",
+    "std.api.http",
     "std.api.http3",
     "std.api.grpc",
     "std.api.graphql",
@@ -332,6 +333,12 @@ pub const STD_API_PUBLIC_TYPES: &[(&str, &str)] = &[
 ];
 
 pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
+    (
+        "std.api.http3.server_config_new",
+        "func(string, string, string) returns int",
+    ),
+    ("std.api.http3.client_config_new", "func(string) returns int"),
+    ("std.api.http3.handler_text", "func(int, string) returns int"),
     ("std.api.http3.server_start", "func(int, int) returns int"),
     ("std.api.http3.server_local_port", "func(int) returns int"),
     ("std.api.http3.server_shutdown", "func(int) returns Task<int>"),

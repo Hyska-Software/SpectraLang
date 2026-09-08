@@ -9,8 +9,8 @@ use std::ffi::c_void;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, ThreadId};
 
-pub(crate) type AsyncPollFn = unsafe extern "C" fn(*mut c_void, i64, *mut AsyncPollContext) -> i32;
-pub(crate) type AsyncDropFn = unsafe extern "C" fn(*mut c_void, i64, i32);
+pub(crate) type AsyncPollFn = unsafe extern "C" fn(i64, i64, i64) -> i64;
+pub(crate) type AsyncDropFn = unsafe extern "C" fn(i64, i64, i64);
 type SlotDropFn = unsafe fn(SpectraHostValue);
 type ResultDropFn = unsafe fn(SpectraHostValue);
 
@@ -24,7 +24,7 @@ pub(crate) enum AsyncPollStatus {
 }
 
 impl AsyncPollStatus {
-    pub(crate) fn from_abi(code: i32) -> Self {
+    pub(crate) fn from_abi(code: i64) -> Self {
         match code {
             0 => Self::Pending,
             1 => Self::Ready,
@@ -219,17 +219,49 @@ impl AsyncFrame {
         }
     }
 
+    /// Creates a frame owned by the codegen ABI before its callbacks are
+    /// attached by `CoroutineCreate`.
+    pub(crate) fn allocated(slot_count: usize) -> Self {
+        unsafe fn no_drop(_: SpectraHostValue) {}
+        unsafe extern "C" fn no_poll(_: i64, _: i64, _: i64) -> i64 {
+            AsyncPollStatus::Failed as i64
+        }
+        unsafe extern "C" fn no_frame_drop(_: i64, _: i64, _: i64) {}
+        Self::new(
+            (0..slot_count).map(|_| AsyncFrameSlot::new(no_drop)).collect(),
+            no_poll,
+            no_frame_drop,
+        )
+    }
+
+    pub(crate) fn set_callbacks(&mut self, poll: AsyncPollFn, drop: AsyncDropFn) {
+        self.poll = poll;
+        self.drop = drop;
+    }
+
     pub(crate) fn state_index(&self) -> u32 { self.header.state_index }
     pub(crate) fn set_state_index(&mut self, state: u32) { self.header.state_index = state; }
     pub(crate) fn slots(&self) -> &[AsyncFrameSlot] { &self.slots }
 
-    fn pointer(&mut self) -> *mut c_void { (self as *mut AsyncFrame).cast::<c_void>() }
+    pub(crate) fn store_slot(&mut self, slot: usize, value: SpectraHostValue) -> bool {
+        let Some(slot) = self.slots.get_mut(slot) else { return false };
+        slot.initialize(value);
+        true
+    }
+
+    pub(crate) fn load_slot(&self, slot: usize) -> Option<SpectraHostValue> {
+        let slot = self.slots.get(slot)?;
+        slot.is_initialized().then_some(slot.value)
+    }
+
+    pub(crate) fn pointer(&mut self) -> *mut c_void { (self as *mut AsyncFrame).cast::<c_void>() }
+
     pub(crate) unsafe fn invoke_poll(
         &mut self,
         task: SpectraHostValue,
         context: *mut AsyncPollContext,
-    ) -> i32 {
-        (self.poll)(self.pointer(), task, context)
+    ) -> i64 {
+        (self.poll)(self.pointer() as i64, task, context as i64)
     }
 
     unsafe fn invoke_drop(&mut self, task: SpectraHostValue, state: i32) {
@@ -237,7 +269,7 @@ impl AsyncFrame {
             return;
         }
         self.header.drop_invoked = true;
-        (self.drop)(self.pointer(), task, state);
+        (self.drop)(self.pointer() as i64, task, state as i64);
         for slot in &mut self.slots {
             slot.drop_now();
         }
@@ -248,6 +280,7 @@ struct ChildSubscription { child: SpectraHostValue }
 
 #[derive(Default)]
 struct WaiterState { notified: bool }
+
 
 pub(crate) struct AsyncTaskWaiter {
     state: Arc<(Mutex<WaiterState>, Condvar)>,
@@ -283,8 +316,12 @@ struct FrameRecord {
 
 impl FrameRecord {
     fn new(frame: AsyncFrame, affinity: AsyncAffinity) -> Self {
+        Self::new_boxed(Box::new(frame), affinity)
+    }
+
+    fn new_boxed(frame: Box<AsyncFrame>, affinity: AsyncAffinity) -> Self {
         Self {
-            frame: Box::new(frame),
+            frame,
             state: AsyncTaskState::Created,
             affinity,
             polling: false,
@@ -349,11 +386,20 @@ impl AsyncFrameRegistry {
         frame: AsyncFrame,
         affinity: AsyncAffinity,
     ) -> bool {
+        self.attach_boxed_frame(task, Box::new(frame), affinity)
+    }
+
+    pub(crate) fn attach_boxed_frame(
+        &self,
+        task: SpectraHostValue,
+        frame: Box<AsyncFrame>,
+        affinity: AsyncAffinity,
+    ) -> bool {
         let mut inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
         if inner.frames.contains_key(&task) {
             return false;
         }
-        inner.frames.insert(task, FrameRecord::new(frame, affinity));
+        inner.frames.insert(task, FrameRecord::new_boxed(frame, affinity));
         true
     }
 
@@ -363,6 +409,50 @@ impl AsyncFrameRegistry {
 
     pub(crate) fn state(&self, task: SpectraHostValue) -> Option<AsyncTaskState> {
         self.inner.lock().unwrap_or_else(|poison| poison.into_inner()).frames.get(&task).map(|record| record.state)
+    }
+
+    pub(crate) fn store_slot_ptr(
+        &self,
+        frame_ptr: i64,
+        slot: usize,
+        value: SpectraHostValue,
+    ) -> bool {
+        let mut inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
+        inner.frames.values_mut().any(|record| {
+            (record.frame.as_mut() as *mut AsyncFrame as i64 == frame_ptr)
+                && record.frame.store_slot(slot, value)
+        })
+    }
+
+    pub(crate) fn load_slot_ptr(&self, frame_ptr: i64, slot: usize) -> Option<SpectraHostValue> {
+        let inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
+        inner
+            .frames
+            .values()
+            .find(|record| record.frame.as_ref() as *const AsyncFrame as i64 == frame_ptr)
+            .and_then(|record| record.frame.load_slot(slot))
+    }
+
+    pub(crate) fn state_ptr(&self, frame_ptr: i64) -> Option<u32> {
+        let inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
+        inner
+            .frames
+            .values()
+            .find(|record| record.frame.as_ref() as *const AsyncFrame as i64 == frame_ptr)
+            .map(|record| record.frame.state_index())
+    }
+
+    pub(crate) fn store_state_ptr(&self, frame_ptr: i64, state: u32) -> bool {
+        let mut inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
+        let Some(record) = inner
+            .frames
+            .values_mut()
+            .find(|record| record.frame.as_ref() as *const AsyncFrame as i64 == frame_ptr)
+        else {
+            return false;
+        };
+        record.frame.set_state_index(state);
+        true
     }
 
     pub(crate) fn begin_poll(
@@ -565,6 +655,7 @@ impl AsyncFrameRegistry {
         for parent in parents { if !inner.wake_queue.contains(&parent) { inner.wake_queue.push(parent); } }
         true
     }
+
     pub(crate) fn result_host_value(&self, task: SpectraHostValue) -> Option<SpectraHostValue> {
         let inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
         inner.frames.get(&task).and_then(|record| {
@@ -587,17 +678,31 @@ impl AsyncFrameRegistry {
     /// so the outer task-registry lock is not held during generated callbacks.
     #[allow(dead_code)]
     pub(crate) fn poll(&self, task: SpectraHostValue) -> AsyncPollOutcome {
-        let invocation = match self.begin_poll(task) { Ok(invocation) => invocation, Err(outcome) => return outcome };
+        let invocation = match self.begin_poll(task) {
+            Ok(invocation) => invocation,
+            Err(outcome) => return outcome,
+        };
         let mut context = AsyncPollContext::new();
-        let status = if invocation.cancel_before_poll { AsyncPollStatus::Cancelled } else { AsyncPollStatus::from_abi(unsafe { ((*invocation.frame).poll)(invocation.frame.cast(), task, &mut context) }) };
-        let (outcome, drop) = match self.finish_poll(task, status, context) { Ok(result) => result, Err(outcome) => return outcome };
-        if let Some(mut drop) = drop { unsafe { drop.frame.invoke_drop(drop.task, drop.state) }; self.complete_drop(task); }
+        let status = if invocation.cancel_before_poll {
+            AsyncPollStatus::Cancelled
+        } else {
+            AsyncPollStatus::from_abi(unsafe {
+                (*invocation.frame).invoke_poll(task, &mut context)
+            })
+        };
+        let (outcome, drop) = match self.finish_poll(task, status, context) {
+            Ok(result) => result,
+            Err(outcome) => return outcome,
+        };
+        if let Some(mut drop) = drop {
+            unsafe { drop.frame.invoke_drop(drop.task, drop.state) };
+            self.complete_drop(task);
+        }
         outcome
     }
 }
-
-unsafe extern "C" fn dummy_poll(_: *mut c_void, _: i64, _: *mut AsyncPollContext) -> i32 { 3 }
-unsafe extern "C" fn dummy_drop(_: *mut c_void, _: i64, _: i32) {}
+unsafe extern "C" fn dummy_poll(_: i64, _: i64, _: i64) -> i64 { 3 }
+unsafe extern "C" fn dummy_drop(_: i64, _: i64, _: i64) {}
 
 pub(crate) unsafe fn invoke_frame_drop(mut action: AsyncFrameDrop) {
     action.frame.invoke_drop(action.task, action.state);
@@ -616,8 +721,13 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static DROPS: AtomicUsize = AtomicUsize::new(0);
-    unsafe extern "C" fn ready(_: *mut c_void, _: i64, context: *mut AsyncPollContext) -> i32 { (*context).set_result(AsyncResultStorage::scalar(42)); 1 }
-    unsafe extern "C" fn drop_frame(_: *mut c_void, _: i64, _: i32) { DROPS.fetch_add(1, Ordering::SeqCst); }
+    unsafe extern "C" fn ready(_: i64, _: i64, context: i64) -> i64 {
+        (*((context as *mut AsyncPollContext))).set_result(AsyncResultStorage::scalar(42));
+        1
+    }
+    unsafe extern "C" fn drop_frame(_: i64, _: i64, _: i64) {
+        DROPS.fetch_add(1, Ordering::SeqCst);
+    }
     unsafe fn drop_slot(_: SpectraHostValue) {}
 
     #[test]

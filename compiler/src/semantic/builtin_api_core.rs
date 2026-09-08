@@ -950,9 +950,13 @@ fn make_std_api_db_migrate(prefix: &str) -> ModuleExports {
     }
     exports
 }
+
 fn make_std_api_http3(prefix: &str) -> ModuleExports {
     let mut exports = api_module(prefix, Some("http3"));
     let functions = [
+        ("server_config_new", vec![Type::String, Type::String, Type::String], Type::Int),
+        ("client_config_new", vec![Type::String], Type::Int),
+        ("handler_text", vec![Type::Int, Type::String], Type::Int),
         ("server_start", vec![Type::Int, Type::Int], Type::Int),
         ("server_local_port", vec![Type::Int], Type::Int),
         ("server_shutdown", vec![Type::Int], api_task(Type::Int)),

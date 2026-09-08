@@ -339,29 +339,81 @@ impl GrpcClientStream {
     pub fn finish(&self) { self.sender.finish(); }
     pub fn cancel(&self) { let _=self.cancel.send(true); self.sender.cancel(); self.receiver.cancel(); }
 }
-async fn write_request(mut stream:h2::SendStream<Bytes>,mut input:mpsc::Receiver<Result<GrpcMessage,GrpcError>>,mut cancel:watch::Receiver<bool>,mut end:watch::Receiver<bool>,max:usize,timeout:Option<Duration>) {
-    if let Some(duration)=timeout {
-        let sleep=tokio::time::sleep(duration); tokio::pin!(sleep);
-        loop { tokio::select! {
-            _=cancel.changed()=>{stream.send_reset(Reason::CANCEL);return},
-            _=end.changed()=>{let _=stream.send_data(Bytes::new(),true);return},
-            _=&mut sleep=>{stream.send_reset(Reason::CANCEL);return},
-            item=input.recv()=>match item {
-                Some(Ok(message))=>match encode_grpc_message_with_limit(&message,GrpcCompression::Identity,max){Ok(frame)=>{if send_data_bounded(&mut stream,Bytes::from(frame)).await.is_err(){return}},Err(_)=>{stream.send_reset(Reason::PROTOCOL_ERROR);return}},
-                Some(Err(_))=>{stream.send_reset(Reason::CANCEL);return},
-                None=>{let _=stream.send_data(Bytes::new(),true);return}
+async fn flush_queued_request_messages(
+    stream: &mut h2::SendStream<Bytes>,
+    input: &mut mpsc::Receiver<Result<GrpcMessage, GrpcError>>,
+    max: usize,
+) -> bool {
+    loop {
+        match input.try_recv() {
+            Ok(Ok(message)) => {
+                let frame = match encode_grpc_message_with_limit(
+                    &message,
+                    GrpcCompression::Identity,
+                    max,
+                ) {
+                    Ok(frame) => frame,
+                    Err(_) => {
+                        let _ = stream.send_reset(Reason::PROTOCOL_ERROR);
+                        return false;
+                    }
+                };
+                if send_data_bounded(stream, Bytes::from(frame)).await.is_err() {
+                    return false;
+                }
             }
-        }}
+            Ok(Err(_)) => {
+                let _ = stream.send_reset(Reason::CANCEL);
+                return false;
+            }
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+            | Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
+        }
+    }
+    stream.send_data(Bytes::new(), true).is_ok()
+}
+
+async fn write_request(
+    mut stream: h2::SendStream<Bytes>,
+    mut input: mpsc::Receiver<Result<GrpcMessage, GrpcError>>,
+    mut cancel: watch::Receiver<bool>,
+    mut end: watch::Receiver<bool>,
+    max: usize,
+    timeout: Option<Duration>,
+) {
+    if let Some(duration) = timeout {
+        let sleep = tokio::time::sleep(duration);
+        tokio::pin!(sleep);
+        loop {
+            tokio::select! {
+                _ = cancel.changed() => { let _ = stream.send_reset(Reason::CANCEL); return; }
+                _ = end.changed() => { let _ = flush_queued_request_messages(&mut stream, &mut input, max).await; return; }
+                _ = &mut sleep => { let _ = stream.send_reset(Reason::CANCEL); return; }
+                item = input.recv() => match item {
+                    Some(Ok(message)) => match encode_grpc_message_with_limit(&message, GrpcCompression::Identity, max) {
+                        Ok(frame) => { if send_data_bounded(&mut stream, Bytes::from(frame)).await.is_err() { return; } }
+                        Err(_) => { let _ = stream.send_reset(Reason::PROTOCOL_ERROR); return; }
+                    },
+                    Some(Err(_)) => { let _ = stream.send_reset(Reason::CANCEL); return; }
+                    None => { let _ = stream.send_data(Bytes::new(), true); return; }
+                }
+            }
+        }
     } else {
-        loop { tokio::select! {
-            _=end.changed()=>{let _=stream.send_data(Bytes::new(),true);return},
-            _=cancel.changed()=>{stream.send_reset(Reason::CANCEL);return},
-            item=input.recv()=>match item {
-                Some(Ok(message))=>match encode_grpc_message_with_limit(&message,GrpcCompression::Identity,max){Ok(frame)=>{if send_data_bounded(&mut stream,Bytes::from(frame)).await.is_err(){return}},Err(_)=>{stream.send_reset(Reason::PROTOCOL_ERROR);return}},
-                Some(Err(_))=>{stream.send_reset(Reason::CANCEL);return},
-                None=>{let _=stream.send_data(Bytes::new(),true);return}
+        loop {
+            tokio::select! {
+                _ = end.changed() => { let _ = flush_queued_request_messages(&mut stream, &mut input, max).await; return; }
+                _ = cancel.changed() => { let _ = stream.send_reset(Reason::CANCEL); return; }
+                item = input.recv() => match item {
+                    Some(Ok(message)) => match encode_grpc_message_with_limit(&message, GrpcCompression::Identity, max) {
+                        Ok(frame) => { if send_data_bounded(&mut stream, Bytes::from(frame)).await.is_err() { return; } }
+                        Err(_) => { let _ = stream.send_reset(Reason::PROTOCOL_ERROR); return; }
+                    },
+                    Some(Err(_)) => { let _ = stream.send_reset(Reason::CANCEL); return; }
+                    None => { let _ = stream.send_data(Bytes::new(), true); return; }
+                }
             }
-        }}
+        }
     }
 }
 fn build_request(path:&str,metadata:&GrpcMetadata,timeout:Option<Duration>)->Result<Request<()>,GrpcError>{let mut b=Request::builder().method(Method::POST).uri(path).header("content-type","application/grpc").header("te","trailers"); if let Some(t)=timeout{b=b.header("grpc-timeout",format_grpc_timeout(t));} for e in metadata.iter(){let n=HeaderName::try_from(e.key.as_str()).map_err(|_|GrpcError::InvalidMetadata(e.key.clone()))?;let v=HeaderValue::from_bytes(&e.value).map_err(|_|GrpcError::InvalidMetadata(e.key.clone()))?;b=b.header(n,v);} b.body(()).map_err(|e|GrpcError::Protocol(e.to_string()))}

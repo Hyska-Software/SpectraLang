@@ -1,5 +1,8 @@
 module std.api
 module std.api.http
+module std.api.http3
+module std.api.grpc
+module std.api.graphql
 module std.api.server
 module std.api.client
 module std.api.json
@@ -73,6 +76,98 @@ type std.api.websocket.WebSocketMessage: record WebSocketMessage
 type std.api.sse.SseServer: record SseServer
 type std.api.sse.SseConnection: record SseConnection
 type std.api.sse.SseEvent: record SseEvent
+func std.api.http3.server_config_new: func(string, string, string) returns int
+func std.api.http3.client_config_new: func(string) returns int
+func std.api.http3.handler_text: func(int, string) returns int
+func std.api.http3.server_start: func(int, int) returns int
+func std.api.http3.server_local_port: func(int) returns int
+func std.api.http3.server_shutdown: func(int) returns Task<int>
+func std.api.http3.client_connect: func(int, string) returns Task<int>
+func std.api.http3.client_shutdown: func(int) returns Task<int>
+func std.api.http3.client_request_new: func(int, string, string) returns int
+func std.api.http3.client_request_header: func(int, string, string) returns bool
+func std.api.http3.client_request_open: func(int) returns Task<int>
+func std.api.http3.client_request_send_body: func(int, string) returns Task<int>
+func std.api.http3.client_request_send_trailers: func(int, string, string) returns Task<int>
+func std.api.http3.client_request_finish: func(int) returns Task<int>
+func std.api.http3.client_request_receive_response: func(int) returns Task<int>
+func std.api.http3.client_request_cancel: func(int) returns bool
+func std.api.http3.response_status: func(int) returns int
+func std.api.http3.response_header: func(int, string) returns string
+func std.api.http3.response_trailer: func(int, string) returns string
+func std.api.http3.response_body_base64: func(int) returns string
+func std.api.http3.response_body_len: func(int) returns int
+func std.api.http3.task_result: func(int) returns int
+func std.api.http3.task_cancel: func(int) returns bool
+func std.api.http3.result_ok: func(int) returns bool
+func std.api.http3.result_value: func(int) returns int
+func std.api.http3.result_error_code: func(int) returns int
+func std.api.http3.result_error_message: func(int) returns string
+func std.api.http3.handle_drop: func(int) returns bool
+func std.api.grpc.message_from_base64: func(string) returns int
+func std.api.grpc.message_to_base64: func(int) returns string
+func std.api.grpc.message_len: func(int) returns int
+func std.api.grpc.message_free: func(int) returns bool
+func std.api.grpc.metadata_new: func() returns int
+func std.api.grpc.metadata_insert: func(int, string, string) returns bool
+func std.api.grpc.metadata_append: func(int, string, string) returns bool
+func std.api.grpc.metadata_get: func(int, string) returns string
+func std.api.grpc.metadata_len: func(int) returns int
+func std.api.grpc.metadata_free: func(int) returns bool
+func std.api.grpc.status_new: func(int, string) returns int
+func std.api.grpc.status_code: func(int) returns int
+func std.api.grpc.status_message: func(int) returns string
+func std.api.grpc.status_details_base64: func(int) returns string
+func std.api.grpc.status_set_details_base64: func(int, string) returns bool
+func std.api.grpc.status_free: func(int) returns bool
+func std.api.grpc.response_message: func(int) returns int
+func std.api.grpc.response_status: func(int) returns int
+func std.api.grpc.response_metadata: func(int) returns int
+func std.api.grpc.response_free: func(int) returns bool
+func std.api.grpc.error_code: func(int) returns int
+func std.api.grpc.error_message: func(int) returns string
+func std.api.grpc.error_details_base64: func(int) returns string
+func std.api.grpc.error_free: func(int) returns bool
+func std.api.grpc.client_connect: func(string) returns Task<int>
+func std.api.grpc.client_unary: func(int, string, int, int, int) returns Task<int>
+func std.api.grpc.client_client_streaming: func(int, string, int, int, int) returns Task<int>
+func std.api.grpc.client_server_streaming: func(int, string, int, int, int) returns Task<int>
+func std.api.grpc.client_bidi_streaming: func(int, string, int, int, int) returns Task<int>
+func std.api.grpc.stream_send: func(int, int) returns Task<int>
+func std.api.grpc.stream_recv: func(int) returns Task<int>
+func std.api.grpc.stream_finish: func(int) returns Task<int>
+func std.api.grpc.stream_cancel: func(int) returns Task<int>
+func std.api.grpc.stream_free: func(int) returns bool
+func std.api.grpc.server_bind: func(string, int, int, int, int) returns Task<int>
+func std.api.grpc.server_local_port: func(int) returns int
+func std.api.grpc.server_shutdown: func(int) returns bool
+func std.api.grpc.server_free: func(int) returns bool
+func std.api.graphql.schema_new: func() returns int
+func std.api.graphql.schema_set_workers: func(int, int) returns bool
+func std.api.graphql.schema_set_subscription_capacity: func(int, int) returns bool
+func std.api.graphql.schema_field_json: func(int, int, string, string, string) returns bool
+func std.api.graphql.schema_field_callback: func(int, int, string, string, int) returns bool
+func std.api.graphql.schema_subscription_json: func(int, string, string, string) returns bool
+func std.api.graphql.schema_subscription_callback: func(int, string, string, int) returns bool
+func std.api.graphql.schema_finish: func(int) returns int
+func std.api.graphql.schema_drop: func(int) returns bool
+func std.api.graphql.schema_sdl: func(int) returns string
+func std.api.graphql.execute: func(int, string, string) returns int
+func std.api.graphql.execute_named: func(int, string, string, string) returns int
+func std.api.graphql.execute_http: func(int, int, string, string, string) returns int
+func std.api.graphql.response_json: func(int) returns string
+func std.api.graphql.response_status: func(int) returns int
+func std.api.graphql.response_is_ok: func(int) returns bool
+func std.api.graphql.response_errors_json: func(int) returns string
+func std.api.graphql.response_data_json: func(int) returns string
+func std.api.graphql.response_drop: func(int) returns bool
+func std.api.graphql.subscribe: func(int, string, string) returns int
+func std.api.graphql.subscription_next: func(int) returns int
+func std.api.graphql.subscription_pending: func(int) returns int
+func std.api.graphql.subscription_capacity: func(int) returns int
+func std.api.graphql.subscription_is_cancelled: func(int) returns bool
+func std.api.graphql.subscription_cancel: func(int) returns bool
+func std.api.graphql.subscription_drop: func(int) returns bool
 func std.api.http.method_name: func(int) returns string
 func std.api.http.method_allows_body: func(int) returns bool
 func std.api.http.method_is_safe: func(int) returns bool

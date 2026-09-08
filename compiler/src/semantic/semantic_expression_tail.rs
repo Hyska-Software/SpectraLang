@@ -13,7 +13,11 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            ExpressionKind::Lambda { params, body, .. } => {
+            ExpressionKind::Lambda {
+                is_async,
+                params,
+                body,
+            } => {
                 // Closures get a fresh flow-state frame (E034): captured
                 // handles are analyzed by value at the capture site, not
                 // tracked across the closure boundary.
@@ -33,14 +37,48 @@ impl SemanticAnalyzer {
                     }
                 }
                 self.push_scope();
-                for p in params {
-                    let ty = self.type_annotation_to_type(&p.ty);
+                let expected_params = match self.current_expected_type.as_ref() {
+                    Some(Type::Fn { params, .. }) => Some(params.clone()),
+                    _ => None,
+                };
+                for (index, p) in params.iter().enumerate() {
+                    let annotated = self.type_annotation_to_type(&p.ty);
+                    let ty = if matches!(annotated, Type::Unknown) {
+                        expected_params
+                            .as_ref()
+                            .and_then(|types| types.get(index))
+                            .cloned()
+                            .unwrap_or(annotated)
+                    } else {
+                        annotated
+                    };
                     self.uaf_on_bind(&p.name, &ty);
                     self.declare_symbol(p.name.clone(), p.span, ty);
                 }
+                let expected_output = match self.current_expected_type.as_ref() {
+                    Some(Type::Fn { return_type, .. }) if *is_async => match return_type.as_ref() {
+                        Type::Task { output } => Some(output.as_ref().clone()),
+                        _ => None,
+                    },
+                    Some(Type::Fn { return_type, .. }) => Some(return_type.as_ref().clone()),
+                    _ => None,
+                };
+                let previous_return = self
+                    .current_return_type
+                    .replace(expected_output.unwrap_or(Type::Unknown));
+                let previous_async_depth = self.async_context_depth;
+                if *is_async {
+                    self.async_context_depth += 1;
+                }
                 self.analyze_expression(body);
+                self.async_context_depth = previous_async_depth;
+                self.current_return_type = previous_return;
                 self.pop_scope();
                 self.uaf_restore(previous_uaf);
+
+                if *is_async {
+                    self.validate_async_send_sync_lambda(params, body, expr.span);
+                }
             }
             ExpressionKind::Try(inner) => {
                 self.analyze_expression(inner);

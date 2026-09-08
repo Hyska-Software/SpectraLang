@@ -360,12 +360,27 @@ impl AotCodeGenerator {
             // because only Spectra-compiled code calls these functions.
             sig.call_conv = isa::CallConv::Tail;
         }
-        for param in &ir_func.params {
-            let cl_type = CodeGenerator::ir_type_to_cranelift(&param.ty)?;
+        let callback = CodeGenerator::async_callback_kind(ir_func);
+        let callback_params = if callback.is_some() {
+            &ir_func.params[..ir_func.params.len().min(3)]
+        } else {
+            &ir_func.params[..]
+        };
+        for param in callback_params {
+            let cl_type = if callback.is_some() { types::I64 } else { CodeGenerator::ir_type_to_cranelift(&param.ty)? };
             sig.params.push(AbiParam::new(cl_type));
         }
-        let return_type = CodeGenerator::ir_type_to_cranelift(&ir_func.return_type)?;
-        if return_type != types::I8 || ir_func.return_type != IRType::Void {
+        if callback.is_some() && sig.params.len() != 3 {
+            while sig.params.len() < 3 { sig.params.push(AbiParam::new(types::I64)); }
+        }
+        let return_type = if matches!(callback, Some(false)) {
+            types::I8
+        } else if matches!(callback, Some(true)) {
+            types::I64
+        } else {
+            CodeGenerator::ir_type_to_cranelift(&ir_func.return_type)?
+        };
+        if return_type != types::I8 || ir_func.return_type != IRType::Void || matches!(callback, Some(true)) {
             sig.returns.push(AbiParam::new(return_type));
         }
 
@@ -454,10 +469,34 @@ impl AotCodeGenerator {
         for (param, &cl_value) in ir_func.params.iter().zip(params.iter()) {
             value_map.insert(param.id, cl_value);
         }
+        if CodeGenerator::async_callback_kind(ir_func).is_some() {
+            for (index, &cl_value) in params.iter().enumerate() {
+                let id = ir_func.params.get(index).map(|param| param.id).unwrap_or(index);
+                value_map.insert(id, cl_value);
+            }
+        }
+        CodeGenerator::seed_async_source_values(
+            &mut self.module,
+            &HostCallLoweringContext {
+                bindings: &self.runtime_bindings,
+                host_call_sites: &self.host_call_sites,
+                string_literal_data: &mut self.string_literal_data,
+                string_literal_storage: &mut self.string_literal_storage,
+                batch_stats: &mut self.hostcall_batch_stats,
+                finalized_function_ptrs: None,
+            },
+            &mut builder,
+            ir_func,
+            &mut value_map,
+        )?;
 
+        // Async poll functions may move a generated dispatch block to the
+        // front without renumbering existing CFG block IDs. The first IR
+        // block, not necessarily ID zero, is the native entry.
+        let entry_ir_id = ir_func.blocks.first().map(|block| block.id).unwrap_or(0);
         for ir_block in &ir_func.blocks {
-            if ir_block.id == 0 {
-                block_map.insert(0, entry_block);
+            if ir_block.id == entry_ir_id {
+                block_map.insert(ir_block.id, entry_block);
             } else {
                 let block = builder.create_block();
                 block_map.insert(ir_block.id, block);
@@ -531,8 +570,9 @@ impl AotCodeGenerator {
             )?;
         }
 
+        let entry_ir_id = ir_func.blocks.first().map(|block| block.id).unwrap_or(0);
         for ir_block in &ir_func.blocks {
-            if ir_block.id != 0 {
+            if ir_block.id != entry_ir_id {
                 if let Some(&block) = block_map.get(&ir_block.id) {
                     builder.seal_block(block);
                 }
@@ -959,7 +999,7 @@ impl AotCodeGenerator {
 /// exactly one result.
 pub(crate) fn instruction_result_value(kind: &InstructionKind) -> Option<IRValue> {
     match kind {
-        | InstructionKind::Add { result, .. }
+        InstructionKind::Add { result, .. }
         | InstructionKind::Sub { result, .. }
         | InstructionKind::Mul { result, .. }
         | InstructionKind::Div { result, .. }
@@ -973,6 +1013,10 @@ pub(crate) fn instruction_result_value(kind: &InstructionKind) -> Option<IRValue
         | InstructionKind::And { result, .. }
         | InstructionKind::Or { result, .. }
         | InstructionKind::Alloca { result, .. }
+        | InstructionKind::FrameAlloc { result, .. }
+        | InstructionKind::FrameLoad { result, .. }
+        | InstructionKind::StateLoad { result, .. }
+        | InstructionKind::CoroutineCreate { result, .. }
         | InstructionKind::GlobalAddr { result, .. }
         | InstructionKind::ManualAlloc { result, .. }
         | InstructionKind::Load { result, .. }
@@ -997,9 +1041,20 @@ pub(crate) fn instruction_result_value(kind: &InstructionKind) -> Option<IRValue
         | InstructionKind::HostCall { result, .. }
         | InstructionKind::AutodiffStep { result, .. }
         | InstructionKind::CallIndirect { result, .. } => *result,
+        InstructionKind::CoroutinePollChild { status, .. } => Some(*status),
         InstructionKind::Not { .. }
         | InstructionKind::Store { .. }
-        | InstructionKind::EscapeManualAlloc { .. } => None,
+        | InstructionKind::EscapeManualAlloc { .. }
+        | InstructionKind::FrameStore { .. }
+        | InstructionKind::StateStore { .. }
+        | InstructionKind::CoroutineSubscribe { .. }
+        | InstructionKind::CoroutineWake { .. }
+        | InstructionKind::CoroutineSuspend { .. }
+        | InstructionKind::CoroutineComplete { .. }
+        | InstructionKind::CoroutineError { .. }
+        | InstructionKind::CoroutineCancelled { .. }
+        | InstructionKind::CoroutinePollReturn { .. }
+        | InstructionKind::Await { .. } => None,
     }
 }
 

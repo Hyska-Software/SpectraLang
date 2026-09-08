@@ -326,6 +326,33 @@ impl CodeGenerator {
             InstructionKind::Not { operand, .. } => {
                 Self::mark_scalar_alloca_value(candidate_mask, escaped, operand)
             }
+            InstructionKind::Await { task, .. } => {
+                Self::mark_scalar_alloca_value(candidate_mask, escaped, task)
+            }
+            InstructionKind::FrameStore { frame, value, .. } => {
+                Self::mark_scalar_alloca_value(candidate_mask, escaped, frame);
+                Self::mark_scalar_alloca_value(candidate_mask, escaped, value);
+            }
+            InstructionKind::FrameLoad { frame, .. }
+            | InstructionKind::StateLoad { frame, .. }
+            | InstructionKind::StateStore { frame, .. }
+            | InstructionKind::CoroutineCreate { frame, .. } => {
+                Self::mark_scalar_alloca_value(candidate_mask, escaped, frame)
+            }
+            InstructionKind::CoroutinePollChild { task, .. }
+            | InstructionKind::CoroutineWake { task }
+            | InstructionKind::CoroutineCancelled { task } => {
+                Self::mark_scalar_alloca_value(candidate_mask, escaped, task)
+            }
+            InstructionKind::CoroutineSubscribe { task, parent } => {
+                Self::mark_scalar_alloca_value(candidate_mask, escaped, task);
+                Self::mark_scalar_alloca_value(candidate_mask, escaped, parent);
+            }
+            InstructionKind::CoroutineSuspend { task, .. }
+            | InstructionKind::CoroutineComplete { task, .. }
+            | InstructionKind::CoroutineError { task, .. } => {
+                Self::mark_scalar_alloca_value(candidate_mask, escaped, task)
+            }
             InstructionKind::Alloca { .. }
             | InstructionKind::GlobalAddr { .. }
             | InstructionKind::ManualAlloc { .. }
@@ -336,7 +363,9 @@ impl CodeGenerator {
             | InstructionKind::ConstFloatTyped { .. }
             | InstructionKind::ConstBool { .. }
             | InstructionKind::ConstString { .. }
-            | InstructionKind::EscapeManualAlloc { .. } => {}
+            | InstructionKind::EscapeManualAlloc { .. }
+            | InstructionKind::FrameAlloc { .. }
+            | InstructionKind::CoroutinePollReturn { .. } => {}
         }
     }
 

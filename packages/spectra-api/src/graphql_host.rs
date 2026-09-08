@@ -152,7 +152,36 @@ fn graphql_type(name: String) -> Option<graphql::TypeRef> {
     if name.is_empty() || name.len() > 256 || name.bytes().any(|byte| byte.is_ascii_whitespace()) {
         return None;
     }
-    Some(graphql::TypeRef::named(name))
+    let mut offset = 0;
+    let value = parse_graphql_type_ref(&name, &mut offset)?;
+    (offset == name.len()).then_some(value)
+}
+
+fn parse_graphql_type_ref(input: &str, offset: &mut usize) -> Option<graphql::TypeRef> {
+    let bytes = input.as_bytes();
+    let mut value = if bytes.get(*offset) == Some(&b'[') {
+        *offset += 1;
+        let inner = parse_graphql_type_ref(input, offset)?;
+        if bytes.get(*offset) != Some(&b']') {
+            return None;
+        }
+        *offset += 1;
+        graphql::TypeRef::List(Box::new(inner))
+    } else {
+        let start = *offset;
+        while bytes
+            .get(*offset)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        {
+            *offset += 1;
+        }
+        (start != *offset).then(|| graphql::TypeRef::named(&input[start..*offset]))?
+    };
+    if bytes.get(*offset) == Some(&b'!') {
+        *offset += 1;
+        value = graphql::TypeRef::NonNull(Box::new(value));
+    }
+    Some(value)
 }
 
 fn json_to_graphql(value: JsonValue) -> Option<Value> {

@@ -115,10 +115,25 @@ pub enum RuntimeImport {
     SpectraPanic,
     /// Real-concurrency spawn of a JIT closure onto the worker pool.
     ConcurrentSpawnFn,
+    CoroutineFrameAlloc,
+    CoroutineFrameStore,
+    CoroutineFrameLoad,
+    CoroutineStateLoad,
+    CoroutineStateStore,
+    CoroutineCreate,
+    CoroutinePollChild,
+    CoroutinePollResult,
+    CoroutineSubscribe,
+    CoroutineWake,
+    CoroutineSuspend,
+    CoroutineComplete,
+    CoroutineError,
+    CoroutineCancelled,
+    CoroutinePollReturn,
 }
 
 impl RuntimeImport {
-    pub const COUNT: usize = 44;
+    pub const COUNT: usize = 59;
 
     pub const ALL: &'static [Self] = &[
         Self::ManualAlloc,
@@ -165,8 +180,23 @@ impl RuntimeImport {
         Self::HostInvokeCachedBatch,
         Self::SpectraPanic,
         Self::ConcurrentSpawnFn,
-    ];
+        Self::CoroutineFrameAlloc,
+        Self::CoroutineFrameStore,
+        Self::CoroutineFrameLoad,
+        Self::CoroutineStateLoad,
+        Self::CoroutineStateStore,
+        Self::CoroutineCreate,
+        Self::CoroutinePollChild,
+        Self::CoroutinePollResult,
+        Self::CoroutineSubscribe,
+        Self::CoroutineWake,
+        Self::CoroutineSuspend,
+        Self::CoroutineComplete,
+        Self::CoroutineError,
+        Self::CoroutineCancelled,
+        Self::CoroutinePollReturn,
 
+    ];
     pub const fn index(self) -> usize {
         self as usize
     }
@@ -217,6 +247,21 @@ impl RuntimeImport {
             Self::HostInvokeCached => "spectra_rt_host_invoke_cached",
             Self::HostInvokeCachedBatch => "spectra_rt_host_invoke_cached_batch",
             Self::SpectraPanic => "spectra_rt_panic",
+            Self::CoroutineFrameAlloc => "spectra_rt_coroutine_frame_alloc",
+            Self::CoroutineFrameStore => "spectra_rt_coroutine_frame_store",
+            Self::CoroutineFrameLoad => "spectra_rt_coroutine_frame_load",
+            Self::CoroutineStateLoad => "spectra_rt_coroutine_state_load",
+            Self::CoroutineStateStore => "spectra_rt_coroutine_state_store",
+            Self::CoroutineCreate => "spectra_rt_coroutine_create",
+            Self::CoroutinePollChild => "spectra_rt_coroutine_poll_child",
+            Self::CoroutinePollResult => "spectra_rt_coroutine_poll_result",
+            Self::CoroutineSubscribe => "spectra_rt_coroutine_subscribe",
+            Self::CoroutineWake => "spectra_rt_coroutine_wake",
+            Self::CoroutineSuspend => "spectra_rt_coroutine_suspend",
+            Self::CoroutineComplete => "spectra_rt_coroutine_complete",
+            Self::CoroutineError => "spectra_rt_coroutine_error",
+            Self::CoroutineCancelled => "spectra_rt_coroutine_cancelled",
+            Self::CoroutinePollReturn => "spectra_rt_coroutine_poll_return",
         }
     }
 
@@ -266,6 +311,21 @@ impl RuntimeImport {
             Self::ChannelClose => (I64, I32),
             Self::ChannelLen => (I64, I64),
             Self::SpectraPanic => (I64, EMPTY),
+            Self::CoroutineFrameAlloc => (I64, I64),
+            Self::CoroutineFrameStore => (I64_I64_I64, I64),
+            Self::CoroutineFrameLoad => (I64_I64, I64),
+            Self::CoroutineStateLoad => (I64, I64),
+            Self::CoroutineStateStore => (I64_I64, I64),
+            Self::CoroutineCreate => (I64_I64_I64, I64),
+            Self::CoroutinePollChild => (I64, I64),
+            Self::CoroutinePollResult => (I64, I64),
+            Self::CoroutineSubscribe => (I64_I64, I64),
+            Self::CoroutineWake => (I64, I64),
+            Self::CoroutineSuspend => (I64_I64, I64),
+            Self::CoroutineComplete => (I64_I64, I64),
+            Self::CoroutineError => (I64_I64, I64),
+            Self::CoroutineCancelled => (I64, I64),
+            Self::CoroutinePollReturn => (I64, EMPTY),
         };
         AbiSignature { params, returns }
     }
@@ -322,6 +382,21 @@ impl RuntimeImport {
             Self::HostInvokeCached => ffi::spectra_rt_host_invoke_cached as *const u8,
             Self::HostInvokeCachedBatch => ffi::spectra_rt_host_invoke_cached_batch as *const u8,
             Self::SpectraPanic => crate::panic::spectra_rt_panic as *const u8,
+            Self::CoroutineFrameAlloc => crate::async_abi::spectra_rt_coroutine_frame_alloc as *const u8,
+            Self::CoroutineFrameStore => crate::async_abi::spectra_rt_coroutine_frame_store as *const u8,
+            Self::CoroutineFrameLoad => crate::async_abi::spectra_rt_coroutine_frame_load as *const u8,
+            Self::CoroutineStateLoad => crate::async_abi::spectra_rt_coroutine_state_load as *const u8,
+            Self::CoroutineStateStore => crate::async_abi::spectra_rt_coroutine_state_store as *const u8,
+            Self::CoroutineCreate => crate::async_abi::spectra_rt_coroutine_create as *const u8,
+            Self::CoroutinePollChild => crate::async_abi::spectra_rt_coroutine_poll_child as *const u8,
+            Self::CoroutinePollResult => crate::async_abi::spectra_rt_coroutine_poll_result as *const u8,
+            Self::CoroutineSubscribe => crate::async_abi::spectra_rt_coroutine_subscribe as *const u8,
+            Self::CoroutineWake => crate::async_abi::spectra_rt_coroutine_wake as *const u8,
+            Self::CoroutineSuspend => crate::async_abi::spectra_rt_coroutine_suspend as *const u8,
+            Self::CoroutineComplete => crate::async_abi::spectra_rt_coroutine_complete as *const u8,
+            Self::CoroutineError => crate::async_abi::spectra_rt_coroutine_error as *const u8,
+            Self::CoroutineCancelled => crate::async_abi::spectra_rt_coroutine_cancelled as *const u8,
+            Self::CoroutinePollReturn => crate::async_abi::spectra_rt_coroutine_poll_return as *const u8,
         }
     }
 }

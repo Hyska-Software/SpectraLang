@@ -48,6 +48,16 @@ fn format_function(output: &mut String, function: &Function) -> std::fmt::Result
         params,
         fmt_type(&function.return_type)
     )?;
+    if let Some(layout) = &function.async_layout {
+        writeln!(
+            output,
+            "    coroutine layout poll={} drop={} states={} slots={} abi=(i64,i64,i64)->i64",
+            layout.poll_name,
+            layout.drop_name,
+            layout.states.len(),
+            layout.frame_slots.len()
+        )?;
+    }
 
     for block in &function.blocks {
         format_block(output, block)?;
@@ -415,6 +425,50 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                     fmt_value(*vtable_ptr)
                 )
             }
+            InstructionKind::Await { result, task, output_type } => format!(
+                "{} = await<{}> {}",
+                fmt_value(*result), fmt_type(output_type), fmt_value(*task)
+            ),
+            InstructionKind::FrameAlloc { result, layout, slot_count } => format!(
+                "{} = frame.alloc {} slots={} ",
+                fmt_value(*result), layout, slot_count
+            ),
+            InstructionKind::FrameStore { frame, slot, value } => format!(
+                "frame.store {}[{}] <- {}", fmt_value(*frame), slot, fmt_value(*value)
+            ),
+            InstructionKind::FrameLoad { result, frame, slot, ty } => format!(
+                "{} = frame.load {}[{}]:{}", fmt_value(*result), fmt_value(*frame), slot, fmt_type(ty)
+            ),
+            InstructionKind::StateLoad { result, frame } => format!(
+                "{} = state.load {}", fmt_value(*result), fmt_value(*frame)
+            ),
+            InstructionKind::StateStore { frame, state } => format!(
+                "state.store {} <- {}", fmt_value(*frame), state
+            ),
+            InstructionKind::CoroutineCreate { result, frame, poll, drop, output_type } => format!(
+                "{} = coroutine.create {} poll={} drop={} : Task<{}>",
+                fmt_value(*result), fmt_value(*frame), poll, drop, fmt_type(output_type)
+            ),
+            InstructionKind::CoroutinePollChild { status, result, task, output_type } => format!(
+                "poll.child status={} result={} task={} : {}",
+                fmt_value(*status), result.map(fmt_value).unwrap_or_else(|| "unit".into()),
+                fmt_value(*task), fmt_type(output_type)
+            ),
+            InstructionKind::CoroutineSubscribe { task, parent } => format!(
+                "coroutine.subscribe {} <- {}", fmt_value(*parent), fmt_value(*task)
+            ),
+            InstructionKind::CoroutineWake { task } => format!("coroutine.wake {}", fmt_value(*task)),
+            InstructionKind::CoroutineSuspend { task, state } => format!(
+                "coroutine.suspend {} state={}", fmt_value(*task), state
+            ),
+            InstructionKind::CoroutineComplete { task, value } => format!(
+                "coroutine.complete {} {}", fmt_value(*task), value.map(fmt_value).unwrap_or_else(|| "unit".into())
+            ),
+            InstructionKind::CoroutineError { task, error } => format!(
+                "coroutine.error {} {}", fmt_value(*task), error.map(fmt_value).unwrap_or_else(|| "unknown".into())
+            ),
+            InstructionKind::CoroutineCancelled { task } => format!("coroutine.cancelled {}", fmt_value(*task)),
+            InstructionKind::CoroutinePollReturn { status } => format!("coroutine.return {}", fmt_value(*status)),
         };
 
         writeln!(output, "      {}", text)?;

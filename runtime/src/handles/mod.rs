@@ -191,6 +191,9 @@ impl HandleKind {
             75 => Self::ApiValidationResult,
             76 => Self::ApiError,
             77 => Self::ApiCsrfPolicy,
+            78 => Self::ApiSsrfPolicy,
+            79 => Self::ApiSessionStore,
+            80 => Self::ApiSession,
             68 => Self::Set,
             69 => Self::Iterator,
             89 => Self::ApiHttp3Config,
@@ -231,9 +234,6 @@ impl HandleKind {
             65 => Self::DatabaseRedisConnection,
             66 => Self::TracingConfig,
             67 => Self::TracingSpan,
-            68 => Self::Set,
-            69 => Self::Iterator,
-            255 => Self::User,
             _ => return None,
         })
     }

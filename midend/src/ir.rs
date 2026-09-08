@@ -54,7 +54,11 @@ pub struct Global {
     pub initializer: Option<Constant>,
 }
 
-/// Function in IR
+/// Function in IR.
+///
+/// Async functions are represented by a public ramp and a generated poll
+/// function. `async_layout` is present on both functions: it is the machine
+/// readable contract shared with the backend and runtime.
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
@@ -65,6 +69,47 @@ pub struct Function {
     pub next_block_id: usize,
     pub source_span: Option<SourceSpan>,
     pub locals: Vec<LocalDebugInfo>,
+    pub async_layout: Option<AsyncCoroutineLayout>,
+    /// Generated poll/drop functions are opaque to ordinary CFG rewrites.
+    pub suspension_barrier: bool,
+}
+
+/// Stable frame slot assigned by async lowering.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AsyncFrameSlot {
+    pub id: usize,
+    pub name: String,
+    pub ty: Type,
+}
+
+/// A resume point. State zero is the entry state; every await gets one
+/// additional stable state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AsyncState {
+    pub id: usize,
+    pub resume_block: usize,
+    pub await_slot: Option<usize>,
+}
+
+/// ABI metadata for a stackless coroutine.
+///
+/// Poll parameters are always exactly `(frame_ptr:i64, task_id:i64,
+/// poll_ctx:i64)`, and the return value is an i64 status:
+/// `0 = Pending`, `1 = Ready`, `2 = Failed`, `3 = Cancelled`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AsyncCoroutineLayout {
+    pub poll_name: String,
+    pub drop_name: String,
+    pub output_type: Type,
+    pub frame_slots: Vec<AsyncFrameSlot>,
+    /// Source SSA values restored from the frame at poll entry.
+    pub source_slots: Vec<AsyncFrameSlot>,
+    pub states: Vec<AsyncState>,
+    pub poll_params: Vec<Type>,
+    pub status_pending: i64,
+    pub status_ready: i64,
+    pub status_failed: i64,
+    pub status_cancelled: i64,
 }
 
 /// Function parameter
@@ -261,13 +306,85 @@ pub enum InstructionKind {
         /// Return type of the callee signature.
         signature_return: Box<Type>,
     },
-    /// Produce a ready task handle from a completed async result.
+    /// Source-level await marker. Async lowering consumes this marker when
+    /// constructing the poll state machine; it must not reach the backend.
+    Await {
+        result: Value,
+        task: Value,
+        output_type: Type,
+    },
+    /// Allocate the opaque coroutine frame and initialize its state to zero.
+    FrameAlloc {
+        result: Value,
+        layout: String,
+        slot_count: usize,
+    },
+    FrameStore {
+        frame: Value,
+        slot: usize,
+        value: Value,
+    },
+    FrameLoad {
+        result: Value,
+        frame: Value,
+        slot: usize,
+        ty: Type,
+    },
+    StateLoad {
+        result: Value,
+        frame: Value,
+    },
+    StateStore {
+        frame: Value,
+        state: usize,
+    },
+    /// Construct a task without evaluating the poll body.
+    CoroutineCreate {
+        result: Value,
+        frame: Value,
+        poll: String,
+        drop: String,
+        output_type: Type,
+    },
+    /// Poll a child exactly once for this invocation of the parent poll.
+    CoroutinePollChild {
+        status: Value,
+        result: Option<Value>,
+        task: Value,
+        output_type: Type,
+    },
+    CoroutineSubscribe {
+        task: Value,
+        parent: Value,
+    },
+    CoroutineWake {
+        task: Value,
+    },
+    CoroutineSuspend {
+        task: Value,
+        state: usize,
+    },
+    CoroutineComplete {
+        task: Value,
+        value: Option<Value>,
+    },
+    CoroutineError {
+        task: Value,
+        error: Option<Value>,
+    },
+    CoroutineCancelled {
+        task: Value,
+    },
+    /// Internal marker used by pass barriers and diagnostics. The actual ABI
+    /// return remains an ordinary i64 `Return` terminator.
+    CoroutinePollReturn {
+        status: Value,
+    },
     AsyncReady {
         result: Value,
         value: Option<Value>,
         output_type: Type,
     },
-
     // PHI node for SSA
     Phi {
         result: Value,
@@ -498,10 +615,12 @@ impl Function {
             params,
             return_type,
             blocks: Vec::new(),
-            next_value_id: param_count, // Start after parameters
+            next_value_id: param_count,
             next_block_id: 0,
             source_span: None,
             locals: Vec::new(),
+            async_layout: None,
+            suspension_barrier: false,
         }
     }
 

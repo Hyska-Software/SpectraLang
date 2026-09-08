@@ -15921,3 +15921,1333 @@ maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/97_ml_phase18_rag_toolkit.spectra"
+[[entry]]
+path = 'std.api.graphql'
+kind = 'module'
+namespace = 'std.api'
+signature = 'module spectra.std.api.graphql'
+abi = 'semantic descriptor'
+effects = []
+error_model = 'none'
+binding = 'spectra.module.std.api.graphql'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.execute'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int, string, string) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.execute'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.execute_http'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int, int, string, string, string) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.execute_http'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.execute_named'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int, string, string, string) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.execute_named'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.response_data_json'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.response_data_json'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.response_drop'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.response_drop'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.response_errors_json'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.response_errors_json'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.response_is_ok'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.response_is_ok'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.response_json'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.response_json'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.response_status'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.response_status'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.schema_drop'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.schema_drop'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.schema_field_callback'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int, int, string, string, int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.schema_field_callback'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.schema_field_json'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int, int, string, string, string) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.schema_field_json'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.schema_finish'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.schema_finish'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.schema_new'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn() -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.schema_new'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.schema_sdl'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.schema_sdl'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.schema_set_subscription_capacity'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int, int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.schema_set_subscription_capacity'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.schema_set_workers'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int, int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.schema_set_workers'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.schema_subscription_callback'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int, string, string, int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.schema_subscription_callback'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.schema_subscription_json'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int, string, string, string) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.schema_subscription_json'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.subscribe'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int, string, string) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.subscribe'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.subscription_cancel'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.subscription_cancel'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.subscription_capacity'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.subscription_capacity'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.subscription_drop'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.subscription_drop'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.subscription_is_cancelled'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.subscription_is_cancelled'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.subscription_next'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.subscription_next'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.subscription_pending'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.subscription_pending'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc'
+kind = 'module'
+namespace = 'std.api'
+signature = 'module spectra.std.api.grpc'
+abi = 'semantic descriptor'
+effects = []
+error_model = 'none'
+binding = 'spectra.module.std.api.grpc'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.client_bidi_streaming'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int, string, int, int, int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.client_bidi_streaming'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.client_client_streaming'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int, string, int, int, int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.client_client_streaming'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.client_connect'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(string) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.client_connect'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.client_server_streaming'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int, string, int, int, int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.client_server_streaming'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.client_unary'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int, string, int, int, int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.client_unary'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.error_code'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.error_code'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.error_details_base64'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.error_details_base64'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.error_free'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.error_free'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.error_message'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.error_message'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.message_free'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.message_free'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.message_from_base64'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(string) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.message_from_base64'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.message_len'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.message_len'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.message_to_base64'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.message_to_base64'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.metadata_append'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int, string, string) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.metadata_append'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.metadata_free'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.metadata_free'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.metadata_get'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int, string) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.metadata_get'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.metadata_insert'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int, string, string) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.metadata_insert'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.metadata_len'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.metadata_len'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.metadata_new'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn() -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.metadata_new'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.response_free'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.response_free'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.response_message'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.response_message'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.response_metadata'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.response_metadata'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.response_status'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.response_status'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.server_bind'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(string, int, int, int, int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.server_bind'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.server_free'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.server_free'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.server_local_port'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.server_local_port'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.server_shutdown'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.server_shutdown'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.status_code'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.status_code'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.status_details_base64'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.status_details_base64'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.status_free'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.status_free'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.status_message'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.status_message'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.status_new'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int, string) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.status_new'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.status_set_details_base64'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int, string) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.status_set_details_base64'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.stream_cancel'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.stream_cancel'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.stream_finish'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.stream_finish'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.stream_free'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.stream_free'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.stream_recv'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.stream_recv'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.stream_send'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int, int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.stream_send'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3'
+kind = 'module'
+namespace = 'std.api'
+signature = 'module spectra.std.api.http3'
+abi = 'semantic descriptor'
+effects = []
+error_model = 'none'
+binding = 'spectra.module.std.api.http3'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.client_config_new'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(string) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.client_config_new'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.client_connect'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int, string) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.client_connect'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.client_request_cancel'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.client_request_cancel'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.client_request_finish'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.client_request_finish'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.client_request_header'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int, string, string) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.client_request_header'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.client_request_new'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int, string, string) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.client_request_new'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.client_request_open'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.client_request_open'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.client_request_receive_response'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.client_request_receive_response'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.client_request_send_body'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int, string) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.client_request_send_body'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.client_request_send_trailers'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int, string, string) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.client_request_send_trailers'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.client_shutdown'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.client_shutdown'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.handle_drop'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.handle_drop'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.handler_text'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int, string) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.handler_text'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.response_body_base64'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.response_body_base64'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.response_body_len'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.response_body_len'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.response_header'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int, string) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.response_header'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.response_status'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.response_status'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.response_trailer'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int, string) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.response_trailer'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.result_error_code'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.result_error_code'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.result_error_message'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> string'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.result_error_message'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.result_ok'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.result_ok'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.result_value'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.result_value'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.server_config_new'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(string, string, string) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.server_config_new'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.server_local_port'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.server_local_port'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.server_shutdown'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.server_shutdown'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.server_start'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int, int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.server_start'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.task_cancel'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.task_cancel'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.http3.task_result'
+kind = 'function'
+namespace = 'std.api.http3'
+signature = 'fn(int) -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.http3.task_result'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+

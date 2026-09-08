@@ -523,27 +523,25 @@ impl ASTLowering {
             }
             ExpressionKind::CharLiteral(_) => IRType::Char,
             ExpressionKind::FString(_) => IRType::String,
-            ExpressionKind::Lambda { params, body, .. } => {
-                // Return IRType::Function so callers can emit CallIndirect with the right sig.
+            ExpressionKind::Lambda { is_async, params, body } => {
+                // Async closures retain the normal function parameter shape,
+                // but their public result is a lazy Task<T>.
                 let param_types: Vec<IRType> = params
                     .iter()
-                    .map(|p| {
-                        p.ty.as_ref()
-                            .map(|t| self.lower_type_annotation(t))
-                            .unwrap_or(IRType::Unknown)
-                    })
+                    .map(|p| p.ty.as_ref().map(|t| self.lower_type_annotation(t)).unwrap_or(IRType::Unknown))
                     .collect();
                 self.variable_types.push_scope();
                 for (param, param_type) in params.iter().zip(param_types.iter()) {
-                    self.variable_types
-                        .insert(param.name.clone(), param_type.clone());
+                    self.variable_types.insert(param.name.clone(), param_type.clone());
                 }
                 let ret = self.infer_expr_ir_type(body);
                 self.variable_types.pop_scope();
-                IRType::Function {
-                    params: param_types,
-                    return_type: Box::new(ret),
-                }
+                let return_type = if *is_async {
+                    IRType::Task { output: Box::new(ret) }
+                } else {
+                    ret
+                };
+                IRType::Function { params: param_types, return_type: Box::new(return_type) }
             }
             ExpressionKind::Try(inner) => {
                 // `?` unwraps the Ok payload; infer from the inner type's first data field.

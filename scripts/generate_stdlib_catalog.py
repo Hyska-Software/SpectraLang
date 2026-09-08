@@ -115,6 +115,11 @@ def runtime_only_signature(path: str, semantic: dict[str, dict[str, str]]) -> tu
         # the common iterator protocol. It is catalogued so the runtime
         # binding remains auditable, but it is not a source-level export.
         return "function", "fn(int, ...int) -> Iterator<int>"
+    if path == "std.ml.generate":
+        return "function", "fn(int, int_tensor, int, int) -> int_tensor"
+    if path == "std.ml.generate_ex":
+        return "function", "fn(int, int_tensor, int, int, float, int, int) -> int_tensor"
+
 
     raise RuntimeError(f"no explicit signature rule for runtime-only symbol {path}")
 
@@ -145,7 +150,9 @@ def main() -> int:
 
     manifest = tomllib.loads((ROOT / "scripts" / "stdlib_contract.toml").read_text(encoding="utf-8"))
     current_path = ROOT / args.output
-    current = tomllib.loads(current_path.read_text(encoding="utf-8")) if current_path.is_file() else {}
+    source_catalog = ROOT / str(manifest.get("catalog", "packages/spectra-contract/catalog/stdlib.toml"))
+    catalog_path = current_path if current_path.is_file() else source_catalog
+    current = tomllib.loads(catalog_path.read_text(encoding="utf-8")) if catalog_path.is_file() else {}
     current_entries = {str(entry["path"]): entry for entry in current.get("entry", [])}
 
     snapshot = subprocess.run(
@@ -175,7 +182,14 @@ def main() -> int:
             kind = semantic_symbols[path]["kind"]
             signature = semantic_symbols[path]["signature"]
         else:
-            kind, signature = runtime_only_signature(path, semantic_symbols)
+            try:
+                kind, signature = runtime_only_signature(path, semantic_symbols)
+            except RuntimeError:
+                old = current_entries.get(path)
+                if not old or "kind" not in old or "signature" not in old:
+                    raise
+                kind = str(old["kind"])
+                signature = str(old["signature"])
         contract = audit.matching_contract(path, manifest)
         if contract is None:
             raise RuntimeError(f"no maturity contract for catalog symbol {path}")

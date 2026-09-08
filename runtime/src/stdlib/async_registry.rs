@@ -15,6 +15,8 @@ pub(crate) struct AsyncTaskRegistry {
     pub(crate) udp_sockets: AsyncHandleTable<AsyncUdpSocketState>,
     pub(crate) async_channels: AsyncHandleTable<AsyncChannelState>,
     pub(crate) coroutine_frames: AsyncFrameRegistry,
+    /// Coroutine parents waiting on scalar/background task completion.
+    pub(crate) scalar_child_parents: HashMap<SpectraHostValue, Vec<SpectraHostValue>>,
 }
 
 impl AsyncTaskRegistry {
@@ -31,6 +33,7 @@ impl AsyncTaskRegistry {
             udp_sockets: AsyncHandleTable::new(HandleKind::AsyncUdpSocket),
             async_channels: AsyncHandleTable::new(HandleKind::AsyncChannel),
             coroutine_frames: AsyncFrameRegistry::new(),
+            scalar_child_parents: HashMap::new(),
         }
     }
 
@@ -40,6 +43,7 @@ impl AsyncTaskRegistry {
         self.next_join_order = 1;
         self.tasks.clear();
         self.coroutine_frames.clear();
+        self.scalar_child_parents.clear();
         self.scopes.clear();
         self.cancel_handles.clear();
         self.streams.clear();
@@ -199,11 +203,67 @@ impl AsyncTaskRegistry {
             && self.coroutine_frames.attach_frame(task_id, frame, affinity)
     }
 
+    pub(crate) fn attach_coroutine_frame_boxed(
+        &mut self,
+        task_id: SpectraHostValue,
+        frame: Box<AsyncFrame>,
+        affinity: AsyncAffinity,
+    ) -> bool {
+        self.tasks.get(task_id).is_some()
+            && self.coroutine_frames.attach_boxed_frame(task_id, frame, affinity)
+    }
+
     pub(crate) fn is_coroutine_task(&self, task_id: SpectraHostValue) -> bool {
         self.coroutine_frames.contains(task_id)
     }
     pub(crate) fn coroutine_state(&self, task_id: SpectraHostValue) -> Option<AsyncTaskState> {
         self.coroutine_frames.state(task_id)
+    }
+
+    /// Register a coroutine waiting on a scalar/background task.
+    pub(crate) fn subscribe_scalar_child(
+        &mut self,
+        parent: SpectraHostValue,
+        child: SpectraHostValue,
+    ) -> bool {
+        if !self.is_coroutine_task(parent)
+            || self.is_coroutine_task(child)
+            || self.tasks.get(child).is_none()
+        {
+            return false;
+        }
+        let parents = self.scalar_child_parents.entry(child).or_default();
+        if !parents.contains(&parent) {
+            parents.push(parent);
+        }
+        let terminal = self
+            .tasks
+            .get(child)
+            .is_some_and(|task| task.completed || task.cancelled || task.failed);
+        if terminal {
+            let _ = self.coroutine_frames.wake(parent);
+            for wake in self.coroutine_frames.take_wakes() {
+                reactor::global().wake_task(wake);
+            }
+        }
+        true
+    }
+
+    pub(crate) fn remove_scalar_parent(&mut self, parent: SpectraHostValue) {
+        self.scalar_child_parents.retain(|_, parents| {
+            parents.retain(|candidate| *candidate != parent);
+            !parents.is_empty()
+        });
+    }
+
+    fn wake_scalar_child_parents(&mut self, child: SpectraHostValue) {
+        let parents = self.scalar_child_parents.remove(&child).unwrap_or_default();
+        for parent in parents {
+            let _ = self.coroutine_frames.wake(parent);
+        }
+        for wake in self.coroutine_frames.take_wakes() {
+            reactor::global().wake_task(wake);
+        }
     }
 
     pub(crate) fn apply_coroutine_outcome(
@@ -245,26 +305,29 @@ impl AsyncTaskRegistry {
 
 
     pub(crate) fn complete_task(&mut self, task_id: SpectraHostValue, value: SpectraHostValue) -> Option<()> {
-        let task = self.tasks.get_mut(task_id)?;
-        if task.cancelled {
-            lock_unpoisoned(background_cancel_hooks()).remove(&task_id);
-            notify_async_task_completion();
-            return Some(());
+        {
+            let task = self.tasks.get_mut(task_id)?;
+            if !task.cancelled {
+                task.value = value;
+                task.completed = true;
+            }
         }
-        task.value = value;
-        task.completed = true;
         lock_unpoisoned(background_cancel_hooks()).remove(&task_id);
         reactor::global().wake_task(task_id);
+        self.wake_scalar_child_parents(task_id);
         notify_async_task_completion();
         Some(())
     }
 
     pub(crate) fn fail_task(&mut self, task_id: SpectraHostValue) -> Option<()> {
-        let task = self.tasks.get_mut(task_id)?;
-        task.failed = true;
-        task.completed = true;
+        {
+            let task = self.tasks.get_mut(task_id)?;
+            task.failed = true;
+            task.completed = true;
+        }
         lock_unpoisoned(background_cancel_hooks()).remove(&task_id);
         reactor::global().wake_task(task_id);
+        self.wake_scalar_child_parents(task_id);
         notify_async_task_completion();
         Some(())
     }
@@ -343,7 +406,7 @@ impl AsyncTaskRegistry {
             cancel();
         }
         reactor::global().wake_task(task_id);
-        notify_async_task_completion();
+        self.wake_scalar_child_parents(task_id);
         Some(())
     }
 

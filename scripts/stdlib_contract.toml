@@ -172,6 +172,16 @@ kind = "external"
 command = ["python", "scripts/validate_r2220_api_conformance_v0.py"]
 covers = ["std.api.*"]
 
+[[probe]]
+id = "api-protocol-bindings"
+path = "tests/validation/350_api_protocol_bindings.spectra"
+covers = ["std.api.grpc.*", "std.api.graphql.*"]
+
+[[probe]]
+id = "api-http3-bindings"
+path = "tests/validation/352_api_http3_bindings.spectra"
+covers = ["std.api.http3.*"]
+
 [[follow_up]]
 prefix = "std.tensor.diff"
 owner = "ml"

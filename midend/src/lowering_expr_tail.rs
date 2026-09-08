@@ -1,4 +1,5 @@
 use super::*;
+use crate::ir::InstructionKind;
 
 impl ASTLowering {
     pub(crate) fn lower_expression_tail(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
@@ -110,40 +111,20 @@ impl ASTLowering {
                         ));
                     }
                 };
-                // Execution model: threads/worker-pool concurrency with
-                // reactor-park waiting — see docs/adr/
-                // 0015-async-execution-model.md. There are no suspend/resume
-                // IR markers; the waiting contract of `await` is carried
-                // entirely by the host calls below.
-                // Block until the task reaches a terminal state. The host
-                // parks inside the reactor (no CPU spin) and reports the
-                // join status: 0 = completed, 1 = cancelled, 2 = failed.
-                // The status value itself is intentionally discarded:
-                // `spectra.async.task.result` below re-checks the task and
-                // fails with HOST_STATUS_INVALID_ARGUMENT for cancelled or
-                // failed tasks, which is how cancellation surfaces to the
-                // executing backend today.
-                let _ = self.builder.build_typed_host_call(
-                    ir_func,
-                    "spectra.async.task.wait".to_string(),
-                    vec![task],
-                    IRType::Int,
-                    true,
-                );
-                if output_type == IRType::Void {
-                    self.builder.build_const_int(ir_func, 0)
-                } else {
-                    self.require_value(
-                        self.builder.build_typed_host_call(
-                            ir_func,
-                            "spectra.async.task.result".to_string(),
-                            vec![task],
-                            output_type,
-                            true,
-                        ),
-                        "async task.result host call did not produce its declared result",
-                    )
-                }
+                // Await is deliberately a pure source marker here. The
+                // coroutine transform splits the CFG and emits child polling,
+                // subscription, wake, and frame operations. Lowering it to a
+                // blocking host call would execute async bodies eagerly.
+                let result = ir_func.next_value();
+                ir_func
+                    .get_block_mut(self.builder.get_current_block().unwrap())
+                    .expect("current block exists while lowering await")
+                    .add_instruction(InstructionKind::Await {
+                        result,
+                        task,
+                        output_type,
+                    });
+                result
             }
             ExpressionKind::Range {
                 start,
@@ -153,13 +134,13 @@ impl ASTLowering {
                 self.lower_range_expression(start, end, *inclusive, ir_func)
                     .0
             }
-            ExpressionKind::Lambda { params, body, .. } => {
+            ExpressionKind::Lambda { is_async, params, body } => {
                 // Lower as a top-level IR function with a generated unique name.
                 let lambda_name = format!("__lambda_{}", self.lambda_counter);
                 self.lambda_counter += 1;
 
                 let captures = self.collect_lambda_captures(params, body);
-                let lambda_func = self.lower_lambda(lambda_name.clone(), &captures, params, body);
+                let lambda_func = self.lower_lambda(lambda_name.clone(), &captures, params, body, *is_async);
                 self.pending_lambdas.push(lambda_func);
 
                 self.build_closure_object(ir_func, lambda_name, &captures)
@@ -248,48 +229,25 @@ impl ASTLowering {
                 loss
             }
             ExpressionKind::AsyncBlock(block) => {
-                let output_type = self
-                    .expected_async_output_type()
-                    .or_else(|| self.infer_block_result_type(block))
-                    .unwrap_or(IRType::Void);
-                let saved_async_output = self.current_async_output_type.clone();
-                self.current_async_output_type = Some(output_type.clone());
-
-                let stmts = &block.statements;
-                let value = if stmts.is_empty() {
-                    None
-                } else {
-                    for stmt in &stmts[..stmts.len() - 1] {
-                        self.lower_statement(stmt, ir_func);
-                    }
-                    match &stmts[stmts.len() - 1].kind {
-                        StatementKind::Expression(expr) => {
-                            if output_type == IRType::Void {
-                                self.lower_expression(expr, ir_func);
-                                None
-                            } else {
-                                Some(self.lower_expression(expr, ir_func))
-                            }
-                        }
-                        last => {
-                            let stmt = Statement {
-                                kind: last.clone(),
-                                span: stmts[stmts.len() - 1].span,
-                            };
-                            self.lower_statement(&stmt, ir_func);
-                            None
-                        }
-                    }
+                // An async block is a lazy closure, not an eager body splice.
+                // Lowering it as a generated async function preserves captures
+                // and ensures no Await marker reaches the backend.
+                let lambda_name = format!("__async_block_{}", self.lambda_counter);
+                self.lambda_counter += 1;
+                let body_expression = Expression {
+                    span: expr.span,
+                    kind: ExpressionKind::Block(block.clone()),
                 };
-
-                let result = if self.current_block_is_terminated(ir_func) {
-                    self.builder.build_const_int(ir_func, 0)
-                } else {
-                    self.wrap_async_return_value(ir_func, value, output_type)
-                };
-
-                self.current_async_output_type = saved_async_output;
-                result
+                let captures = self.collect_lambda_captures(&[], &body_expression);
+                let lambda_func =
+                    self.lower_lambda(lambda_name.clone(), &captures, &[], &body_expression, true);
+                self.pending_lambdas.push(lambda_func);
+                let environment = self.build_closure_object(ir_func, lambda_name.clone(), &captures);
+                self.require_value(
+                    self.builder
+                        .build_call(ir_func, lambda_name, vec![environment], true),
+                    "async block ramp did not produce a task",
+                )
             }
             _ => unreachable!("lowering expression category mismatch"),
         }

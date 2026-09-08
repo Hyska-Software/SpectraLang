@@ -70,7 +70,65 @@ impl SemanticAnalyzer {
         }
 
         self.collect_async_send_sync_events_block(&func.body, &mut events);
+        self.validate_async_send_sync_events(&events);
+    }
 
+    pub(crate) fn validate_async_send_sync_lambda(
+        &mut self,
+        params: &[crate::ast::LambdaParam],
+        body: &Expression,
+        lambda_span: Span,
+    ) {
+        let mut events = AsyncSendSyncEvents::new();
+
+        let expected_params = match self.current_expected_type.as_ref() {
+            Some(Type::Fn { params, .. }) => Some(params),
+            _ => None,
+        };
+        for (index, param) in params.iter().enumerate() {
+            let annotated = self.type_annotation_to_type(&param.ty);
+            let ty = if matches!(annotated, Type::Unknown) {
+                expected_params
+                    .and_then(|types| types.get(index))
+                    .cloned()
+                    .unwrap_or(annotated)
+            } else {
+                annotated
+            };
+            events.env.insert(param.name.clone(), ty.clone());
+            let order = events.bump();
+            events.locals.push(AsyncLocalEvent {
+                name: param.name.clone(),
+                ty,
+                span: param.span,
+                order,
+            });
+        }
+        let mut captures: Vec<String> = self
+            .collect_lambda_capture_names(params, body)
+            .into_iter()
+            .collect();
+        captures.sort();
+        for name in captures {
+            let Some(info) = self.lookup_symbol(&name) else {
+                continue;
+            };
+            let ty = info.ty.clone();
+            events.env.insert(name.clone(), ty.clone());
+            let order = events.bump();
+            events.locals.push(AsyncLocalEvent {
+                name,
+                ty,
+                span: info.def_span.unwrap_or(lambda_span),
+                order,
+            });
+        }
+
+        self.collect_async_send_sync_events_expression(body, &mut events);
+        self.validate_async_send_sync_events(&events);
+    }
+
+    fn validate_async_send_sync_events(&mut self, events: &AsyncSendSyncEvents) {
         for await_event in &events.awaits {
             for local in &events.locals {
                 if local.order >= await_event.order || self.type_is_send(&local.ty) {
@@ -402,9 +460,10 @@ impl SemanticAnalyzer {
                     self.collect_async_send_sync_events_expression(arg, events);
                 }
             }
-            ExpressionKind::Lambda { body, .. } => {
-                self.collect_async_send_sync_events_expression(body, events);
-            }
+            // A closure body executes only when invoked. Its own async
+            // validator runs when the lambda is analyzed, so do not merge
+            // its suspension points into the enclosing function's frame.
+            ExpressionKind::Lambda { .. } => {}
             ExpressionKind::Cast { expr: inner, .. } => {
                 self.collect_async_send_sync_events_expression(inner, events);
             }
@@ -926,3 +985,147 @@ impl SemanticAnalyzer {
     }
 
 }
+
+#[cfg(test)]
+mod async_lambda_tests {
+    use crate::ast::{ExpressionKind, Item, StatementKind};
+    use crate::{CompilationOptions, CompilationPipeline, Lexer, Parser};
+    use std::collections::HashSet;
+
+    fn compile(source: &str) -> Result<(), Vec<crate::CompilerError>> {
+        let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
+        pipeline.compile(source, "async_lambda.spectra").map(|_| ())
+    }
+
+    #[test]
+    fn async_lambda_infers_task_return_and_matches_callback() {
+        let source = r#"
+            module async_lambda_type
+
+            func apply(callback: func(int) returns Task<int>) returns int {
+                return 0
+            }
+
+            func main() returns int {
+                let callback = async |value: int| value + 1
+                return apply(callback)
+            }
+        "#;
+        compile(source).expect("async lambda should infer Fn(int) -> Task<int>");
+    }
+
+    #[test]
+    fn async_lambda_allows_await_in_its_body() {
+        let source = r#"
+            module async_lambda_await
+
+            async func ready() returns int {
+                return 1
+            }
+
+            func main() returns int {
+                let callback = async || await ready()
+                return 0
+            }
+        "#;
+        compile(source).expect("await should be legal in an async lambda");
+    }
+
+    #[test]
+    fn async_lambda_rejects_non_send_capture_across_await() {
+        let source = r#"
+            module async_lambda_non_send
+
+            record NonSend {
+                value: int
+            }
+
+            async func ready() returns int {
+                return 1
+            }
+
+            async func bad() returns int {
+                let local = NonSend { value: 41 }
+                let callback = async || {
+                    let waited = await ready()
+                    local.value + waited
+                }
+                return await callback()
+            }
+        "#;
+        let errors = compile(source).expect_err("non-Send captures must not cross await");
+        assert!(
+            errors.iter().any(|error| matches!(
+                error,
+                crate::CompilerError::Semantic(semantic)
+                    if semantic.code.as_deref() == Some("E2101")
+                        && semantic.message.contains("local")
+            )),
+            "expected E2101 for the captured local: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn async_lambda_marker_is_preserved_in_ast() {
+        let source = r#"
+            module async_lambda_marker
+
+            func main() returns int {
+                let callback = async |value: int| value
+                return 0
+            }
+        "#;
+        let tokens = Lexer::new(source)
+            .tokenize()
+            .expect("async lambda source should lex");
+        let module = Parser::new(tokens, HashSet::new())
+            .parse()
+            .expect("async lambda source should parse");
+        let Item::Function(function) = &module.items[0] else {
+            panic!("expected function item");
+        };
+        let StatementKind::Let(binding) = &function.body.statements[0].kind else {
+            panic!("expected callback binding");
+        };
+        assert!(matches!(
+            binding.value.as_ref().map(|expr| &expr.kind),
+            Some(ExpressionKind::Lambda {
+                is_async: true,
+                ..
+            })
+        ));
+    }
+ 
+    #[test]
+    fn async_closure_lazy_fixture_is_compile_valid() {
+        compile(include_str!(
+            "../../../tests/validation/133_async_closure_lazy.spectra"
+        ))
+        .expect("the async closure laziness fixture should remain compile-valid");
+    }
+    #[test]
+    fn async_callback_shape_diagnostic_points_at_lambda() {
+        let source = r#"
+            module async_lambda_callback_shape
+
+            func apply(callback: func(int) returns Task<int>) returns int {
+                return 0
+            }
+
+            func main() returns int {
+                return apply(async |value: int| true)
+            }
+        "#;
+        let errors = compile(source).expect_err("callback output must be Task<int>");
+        assert!(
+            errors.iter().any(|error| matches!(
+                error,
+                crate::CompilerError::Semantic(semantic)
+                    if semantic.message.contains("Async closure body has type bool")
+                        && semantic.span.start_location.line == 9
+            )),
+            "expected a lambda-span callback diagnostic: {errors:?}"
+        );
+    }
+}
+

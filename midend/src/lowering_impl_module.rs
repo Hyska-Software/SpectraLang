@@ -557,12 +557,18 @@ impl ASTLowering {
             }
         }
 
-        // Emit any lambda functions collected during lowering
-        let lambdas = std::mem::take(&mut self.pending_lambdas);
-        for lambda_func in lambdas {
-            ir_module.add_function(lambda_func);
+        // Emit generated coroutine bodies after all public ramps. Their names
+        // are now visible to FuncAddr/Call verification and backend linkage.
+        let coroutines = std::mem::take(&mut self.pending_coroutines);
+        for coroutine_func in coroutines {
+            ir_module.add_function(coroutine_func);
         }
 
+        // Emit any lambda functions collected during lowering.
+        let lambdas = std::mem::take(&mut self.pending_lambdas);
+        for lambda in lambdas {
+            ir_module.add_function(lambda);
+        }
         // Mark direct self-tail-recursion so the backend can emit native
         // Cranelift `return_call`s (see passes::tail_call_marking).
         crate::passes::tail_call_marking::mark_tail_self_recursion(&mut ir_module);

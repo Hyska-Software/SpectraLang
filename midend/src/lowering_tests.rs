@@ -18,7 +18,7 @@ mod tests {
     }
 
     #[test]
-    fn r2103_async_await_lowers_to_task_and_host_calls() {
+    fn r2103_async_await_lowers_to_lazy_coroutine() {
         let ir = lower_source(
             r#"
             module r2103_async_await
@@ -37,16 +37,17 @@ mod tests {
         let pretty = crate::ir::pretty::format_module(&ir);
         assert!(pretty.contains("fn ready() -> Task<int>"));
         assert!(pretty.contains("fn add_one() -> Task<int>"));
-        assert!(pretty.contains("async.ready"));
-        assert!(pretty.contains("spectra.async.task.ready"));
-        assert!(pretty.contains("spectra.async.task.wait"));
-        assert!(!pretty.contains("spectra.async.task.poll"));
-        assert!(!pretty.contains("spectra.async.task.block_on"));
-        assert!(pretty.contains("spectra.async.task.result"));
+        assert!(pretty.contains("fn ready__poll("));
+        assert!(pretty.contains("fn add_one__poll("));
+        assert!(pretty.contains("coroutine.create"));
+        assert!(pretty.contains("poll.child"));
+        assert!(pretty.contains("coroutine.suspend"));
+        assert!(!pretty.contains("spectra.async.task.wait"));
+        assert!(!pretty.contains("async.ready"));
     }
 
     #[test]
-    fn r2103_async_early_return_lowers_every_exit_to_ready_task() {
+    fn r2103_async_early_return_completes_each_poll_exit() {
         let ir = lower_source(
             r#"
             module r2103_async_early_return
@@ -61,10 +62,11 @@ mod tests {
         );
 
         let pretty = crate::ir::pretty::format_module(&ir);
-        let ready_markers = pretty.matches("async.ready").count();
         assert!(pretty.contains("fn choose(bool flag) -> Task<int>"));
-        assert!(ready_markers >= 2, "{pretty}");
+        assert!(pretty.contains("fn choose__poll("));
+        assert!(pretty.matches("coroutine.complete").count() >= 2, "{pretty}");
     }
+
 
     #[test]
     fn array_for_loop_lowers_to_direct_index_loop_without_host_calls() {

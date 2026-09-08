@@ -60,9 +60,7 @@ pub fn mark_tail_self_recursion(module: &mut Module) -> usize {
 /// A function qualifies for tail-fusion analysis only when none of its
 /// instructions require backend machinery that a tail jump would skip.
 fn function_is_tail_fusion_candidate(func: &Function) -> bool {
-    // `main` is entered externally (JIT harness / AOT runtime shim), so its
-    // calling convention must stay the platform default.
-    if func.name == "main" {
+    if func.name == "main" || func.suspension_barrier {
         return false;
     }
     func.blocks.iter().all(|block| {

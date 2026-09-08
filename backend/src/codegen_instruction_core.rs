@@ -82,9 +82,31 @@ impl CodeGenerator {
                 stack_array_lengths,
                 string_literal_lengths,
             ),
-            InstructionKind::AsyncReady { .. } => {
-                Self::generate_async_instruction(builder, kind, value_map)
-            }
+            InstructionKind::Await { .. } => Err(BackendCodegenError::invalid_ir(
+                "source-level Await reached backend after async lowering",
+            )),
+            InstructionKind::FrameAlloc { .. }
+            | InstructionKind::FrameStore { .. }
+            | InstructionKind::FrameLoad { .. }
+            | InstructionKind::StateLoad { .. }
+            | InstructionKind::StateStore { .. }
+            | InstructionKind::CoroutineCreate { .. }
+            | InstructionKind::CoroutinePollChild { .. }
+            | InstructionKind::CoroutineSubscribe { .. }
+            | InstructionKind::CoroutineWake { .. }
+            | InstructionKind::CoroutineSuspend { .. }
+            | InstructionKind::CoroutineComplete { .. }
+            | InstructionKind::CoroutineError { .. }
+            | InstructionKind::CoroutineCancelled { .. }
+            | InstructionKind::CoroutinePollReturn { .. }
+            | InstructionKind::AsyncReady { .. } => Self::generate_async_instruction(
+                module,
+                function_map,
+                hostcall,
+                builder,
+                kind,
+                value_map,
+            ),
             InstructionKind::FuncAddr { .. } | InstructionKind::CallIndirect { .. } => {
                 Self::generate_indirect_instruction(
                     module,

@@ -418,15 +418,17 @@ pub struct ASTLowering {
     lambda_counter: usize,
     /// Lambdas collected during lowering that will be emitted as top-level IR functions.
     pending_lambdas: Vec<IRFunction>,
-    /// Maps variable names that hold closures to their generated function and captured values.
+    /// Maps variables that hold closures to their generated function metadata.
     closure_var_map: HashMap<String, ClosureInfo>,
+    /// Generated coroutine poll/drop functions emitted after user functions.
+    pending_coroutines: Vec<IRFunction>,
     /// Return type annotation of the function currently being lowered.
-    /// Used to resolve Generic enum type args when they can't be fully inferred from
-    /// the construction expression (e.g., Result::Ok(x) in a fn -> Result<int, string>).
     current_function_return_annotation: Option<TypeAnnotation>,
     current_async_output_type: Option<IRType>,
-    /// Expected expression type annotation from a local binding or other typed context.
-    /// This refines generic aggregate constructors such as `Result::Ok(x)` when the
+    /// While lowering an async function body, emit the body as poll work.
+    /// The public function is built only after this body has been transformed
+    /// into a separate generated poll function.
+    lowering_async_poll: bool,
     /// expression itself only determines part of the generic argument list.
     current_expected_annotation: Option<TypeAnnotation>,
     /// Maps trait names to their methods in declaration order (for vtable slot lookup).
@@ -463,6 +465,8 @@ pub struct ASTLowering {
 #[path = "lowering_impl_hosts.rs"] mod lowering_impl_hosts;
 #[path = "lowering_impl_expression.rs"] mod lowering_impl_expression;
 #[path = "lowering_expr_literals.rs"] mod lowering_expr_literals;
+#[path = "lowering_async.rs"]
+mod lowering_async;
 #[path = "lowering_expr_binary.rs"] mod lowering_expr_binary;
 #[path = "lowering_expr_calls.rs"] mod lowering_expr_calls;
 #[path = "lowering_expr_aggregates.rs"] mod lowering_expr_aggregates;

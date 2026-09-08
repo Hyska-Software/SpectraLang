@@ -81,10 +81,20 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
         for block in &function.blocks {
             for instruction in &block.instructions {
                 if let Some(result) = instruction_result(instruction) {
-                    if !defined_values.insert(result.id) {
+                    if !defined_values.insert(result.id)
+                        && !matches!(instruction.kind, InstructionKind::FrameLoad { .. })
+                    {
                         errors.push(format!(
                             "Function '{}' defines value {} more than once",
                             function.name, result.id
+                        ));
+                    }
+                }
+                if let InstructionKind::CoroutinePollChild { status, .. } = &instruction.kind {
+                    if !defined_values.insert(status.id) {
+                        errors.push(format!(
+                            "Function '{}' defines value {} more than once",
+                            function.name, status.id
                         ));
                     }
                 }
@@ -400,13 +410,28 @@ fn instruction_result(instruction: &Instruction) -> Option<Value> {
         | InstructionKind::MakeDynFatPtr { result, .. }
         | InstructionKind::LoadDynDataPtr { result, .. }
         | InstructionKind::LoadDynVtablePtr { result, .. }
-        | InstructionKind::LoadVtableSlot { result, .. } => Some(*result),
-        InstructionKind::AutodiffStep { result, .. } => *result,
-        InstructionKind::Call { result, .. }
+        | InstructionKind::LoadVtableSlot { result, .. }
+        | InstructionKind::FrameAlloc { result, .. }
+        | InstructionKind::FrameLoad { result, .. }
+        | InstructionKind::StateLoad { result, .. }
+        | InstructionKind::CoroutineCreate { result, .. } => Some(*result),
+        InstructionKind::AutodiffStep { result, .. }
+        | InstructionKind::Call { result, .. }
         | InstructionKind::HostCall { result, .. }
-        | InstructionKind::CallIndirect { result, .. } => *result,
+        | InstructionKind::CallIndirect { result, .. } => result.as_ref().copied(),
+        InstructionKind::CoroutinePollChild { result, .. } => *result,
+        InstructionKind::Await { result, .. } => Some(*result),
         InstructionKind::Store { .. }
-        | InstructionKind::EscapeManualAlloc { .. } => None,
+        | InstructionKind::EscapeManualAlloc { .. }
+        | InstructionKind::FrameStore { .. }
+        | InstructionKind::StateStore { .. }
+        | InstructionKind::CoroutineSubscribe { .. }
+        | InstructionKind::CoroutineWake { .. }
+        | InstructionKind::CoroutineSuspend { .. }
+        | InstructionKind::CoroutineComplete { .. }
+        | InstructionKind::CoroutineError { .. }
+        | InstructionKind::CoroutineCancelled { .. }
+        | InstructionKind::CoroutinePollReturn { .. } => None,
     }
 }
 
@@ -459,6 +484,20 @@ fn instruction_operands(instruction: &Instruction) -> Vec<Value> {
             vtable_ptr,
             ..
         } => vec![*data_ptr, *vtable_ptr],
+        InstructionKind::Await { task, .. } => vec![*task],
+        InstructionKind::FrameAlloc { .. } | InstructionKind::StateLoad { .. } => Vec::new(),
+        InstructionKind::FrameStore { frame, value, .. } => vec![*frame, *value],
+        InstructionKind::FrameLoad { frame, .. } => vec![*frame],
+        InstructionKind::StateStore { frame, .. } => vec![*frame],
+        InstructionKind::CoroutineCreate { frame, .. } => vec![*frame],
+        InstructionKind::CoroutinePollChild { task, .. } => vec![*task],
+        InstructionKind::CoroutineSubscribe { task, parent } => vec![*task, *parent],
+        InstructionKind::CoroutineWake { task }
+        | InstructionKind::CoroutineSuspend { task, .. }
+        | InstructionKind::CoroutineComplete { task, .. }
+        | InstructionKind::CoroutineError { task, .. }
+        | InstructionKind::CoroutineCancelled { task } => vec![*task],
+        InstructionKind::CoroutinePollReturn { status } => vec![*status],
         InstructionKind::Alloca { .. }
         | InstructionKind::GlobalAddr { .. }
         | InstructionKind::ManualAlloc { .. }

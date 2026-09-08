@@ -33,9 +33,17 @@ pub(crate) fn create_coroutine_task(
     parent_scope: Option<SpectraHostValue>,
     affinity: AsyncAffinity,
 ) -> Result<SpectraHostValue, i32> {
+    create_coroutine_task_boxed(Box::new(frame), parent_scope, affinity)
+}
+
+pub(crate) fn create_coroutine_task_boxed(
+    frame: Box<AsyncFrame>,
+    parent_scope: Option<SpectraHostValue>,
+    affinity: AsyncAffinity,
+) -> Result<SpectraHostValue, i32> {
     let mut registry = lock_async_task_registry()?;
     let task_id = registry.allocate_coroutine_task(parent_scope);
-    if !registry.attach_coroutine_frame(task_id, frame, affinity) {
+    if !registry.attach_coroutine_frame_boxed(task_id, frame, affinity) {
         let _ = registry.tasks.remove(task_id);
         return Err(HOST_STATUS_INTERNAL_ERROR);
     }
@@ -139,6 +147,26 @@ pub(crate) fn subscribe_coroutine_child(
     };
     for wake in frames.take_wakes() { reactor::global().wake_task(wake); }
     Ok(subscribed)
+}
+
+/// Subscribe a coroutine parent to either a coroutine or a scalar task.
+pub(crate) fn subscribe_task_child(
+    parent: SpectraHostValue,
+    child: SpectraHostValue,
+) -> Result<bool, i32> {
+    let child_is_coroutine = {
+        let registry = lock_async_task_registry()?;
+        if !registry.is_coroutine_task(parent) || registry.tasks.get(child).is_none() {
+            return Ok(false);
+        }
+        registry.is_coroutine_task(child)
+    };
+    if child_is_coroutine {
+        subscribe_coroutine_child(parent, child)
+    } else {
+        let mut registry = lock_async_task_registry()?;
+        Ok(registry.subscribe_scalar_child(parent, child))
+    }
 }
 
 pub(crate) fn wake_coroutine_task(task_id: SpectraHostValue) -> Result<bool, i32> {
@@ -1314,7 +1342,6 @@ mod coroutine_tests {
         async_task_registry, cancel_coroutine_task, create_coroutine_task, drop_coroutine_task,
         lock_async_task_registry, poll_coroutine_task, take_coroutine_result, task_result_value,
     };
-    use std::ffi::c_void;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     static REENTERED: AtomicBool = AtomicBool::new(false);
@@ -1322,10 +1349,10 @@ mod coroutine_tests {
     static DROPS: AtomicUsize = AtomicUsize::new(0);
 
     unsafe extern "C" fn reenter_poll(
-        _: *mut c_void,
+        _: i64,
         task: i64,
-        context: *mut AsyncPollContext,
-    ) -> i32 {
+        context: i64,
+    ) -> i64 {
         REENTERED.store(
             async_task_registry()
                 .try_lock()
@@ -1334,41 +1361,41 @@ mod coroutine_tests {
             Ordering::SeqCst,
         );
         if POLLS.fetch_add(1, Ordering::SeqCst) == 0 {
-            (*context).wake_parent();
+            (*(context as *mut AsyncPollContext)).wake_parent();
             0
         } else {
-            (*context).set_result(AsyncResultStorage::scalar(task.saturating_add(1)));
+            (*(context as *mut AsyncPollContext)).set_result(AsyncResultStorage::scalar(task.saturating_add(1)));
             1
         }
     }
 
     unsafe extern "C" fn string_poll(
-        _: *mut c_void,
         _: i64,
-        context: *mut AsyncPollContext,
-    ) -> i32 {
-        (*context).set_result(AsyncResultStorage::string("owned"));
+        _: i64,
+        context: i64,
+    ) -> i64 {
+        (*(context as *mut AsyncPollContext)).set_result(AsyncResultStorage::string("owned"));
         1
     }
     unsafe extern "C" fn aggregate_poll(
-        _: *mut c_void,
         _: i64,
-        context: *mut AsyncPollContext,
-    ) -> i32 {
-        (*context).set_result(AsyncResultStorage::aggregate(vec![11, 22]));
+        _: i64,
+        context: i64,
+    ) -> i64 {
+        (*(context as *mut AsyncPollContext)).set_result(AsyncResultStorage::aggregate(vec![11, 22]));
         1
     }
 
     unsafe extern "C" fn cancel_during_poll(
-        _: *mut c_void,
+        _: i64,
         task: i64,
-        _: *mut AsyncPollContext,
-    ) -> i32 {
+        _: i64,
+    ) -> i64 {
         let _ = cancel_coroutine_task(task);
         1
     }
 
-    unsafe extern "C" fn count_drop(_: *mut c_void, _: i64, _: i32) {
+    unsafe extern "C" fn count_drop(_: i64, _: i64, _: i64) {
         DROPS.fetch_add(1, Ordering::SeqCst);
     }
 

@@ -112,12 +112,15 @@ impl ASTLowering {
             self.alloca_map.insert(var_name.clone(), alloca_value);
         }
 
-        // Lower function body
+        // Lower async bodies as poll work. The ramp is generated below and
+        // therefore cannot execute any body instruction.
         self.current_function = Some(ir_func.clone());
         self.current_function_return_annotation = ast_func.return_type.clone();
         let saved_async_output = self.current_async_output_type.clone();
+        let saved_async_poll = self.lowering_async_poll;
+        self.lowering_async_poll = ast_func.is_async;
         if ast_func.is_async {
-            self.current_async_output_type = Some(body_return_type.clone());
+            self.current_async_output_type = None;
         }
 
         // Check if last statement is an expression (implicit return)
@@ -130,17 +133,11 @@ impl ASTLowering {
                         self.lower_statement(stmt, &mut ir_func);
                     }
                 }
-                // Lower the last expression for side effects. Only treat it as an
-                // implicit return value when the function does not return void.
                 let last_type = self.infer_expr_ir_type(expr);
                 let last_value = self.lower_expression(expr, &mut ir_func);
                 if body_return_type != IRType::Void {
                     self.emit_escape_for_value(last_value, &last_type, &mut ir_func);
-                    implicit_return_value = Some(self.wrap_async_return_value(
-                        &mut ir_func,
-                        Some(last_value),
-                        body_return_type.clone(),
-                    ));
+                    implicit_return_value = Some(last_value);
                 }
                 let mut skipped_names = HashSet::new();
                 Self::collect_moved_identifiers(expr, &mut skipped_names);
@@ -162,19 +159,17 @@ impl ASTLowering {
                 .map(|block| block.terminator.is_none())
                 .unwrap_or(false);
             if needs_terminator {
-                let value = if ast_func.is_async && implicit_return_value.is_none() {
-                    Some(self.wrap_async_return_value(&mut ir_func, None, body_return_type.clone()))
-                } else {
-                    implicit_return_value
-                };
+                let value = implicit_return_value;
                 if let Some(block) = ir_func.get_block_mut(current_block_id) {
                     block.set_terminator(Terminator::Return { value });
                 }
             }
         }
 
+        self.current_async_output_type = saved_async_output;
+        self.lowering_async_poll = saved_async_poll;
         if ast_func.is_async {
-            self.current_async_output_type = saved_async_output;
+            return self.finish_async_coroutine(ir_func, params, body_return_type);
         }
 
         ir_func
@@ -314,8 +309,10 @@ impl ASTLowering {
         self.current_function = Some(ir_func.clone());
         self.current_function_return_annotation = method.return_type.clone();
         let saved_async_output = self.current_async_output_type.clone();
+        let saved_async_poll = self.lowering_async_poll;
+        self.lowering_async_poll = method.is_async;
         if method.is_async {
-            self.current_async_output_type = Some(body_return_type.clone());
+            self.current_async_output_type = None;
         }
 
         // Lower the body; support implicit returns (last expression = return value).
@@ -325,17 +322,13 @@ impl ASTLowering {
                 if method.body.statements.len() > 1 {
                     for stmt in &method.body.statements[..method.body.statements.len() - 1] {
                         self.lower_statement(stmt, &mut ir_func);
-                    }
+                }
                 }
                 let last_type = self.infer_expr_ir_type(expr);
                 let last_value = self.lower_expression(expr, &mut ir_func);
                 if body_return_type != IRType::Void {
                     self.emit_escape_for_value(last_value, &last_type, &mut ir_func);
-                    implicit_return_value = Some(self.wrap_async_return_value(
-                        &mut ir_func,
-                        Some(last_value),
-                        body_return_type.clone(),
-                    ));
+                    implicit_return_value = Some(last_value);
                 }
                 let mut skipped_names = HashSet::new();
                 Self::collect_moved_identifiers(expr, &mut skipped_names);
@@ -354,19 +347,16 @@ impl ASTLowering {
                 .map(|block| block.terminator.is_none())
                 .unwrap_or(false);
             if needs_terminator {
-                let value = if method.is_async && implicit_return_value.is_none() {
-                    Some(self.wrap_async_return_value(&mut ir_func, None, body_return_type.clone()))
-                } else {
-                    implicit_return_value
-                };
                 if let Some(block) = ir_func.get_block_mut(current_block_id) {
-                    block.set_terminator(Terminator::Return { value });
+                    block.set_terminator(Terminator::Return { value: implicit_return_value });
                 }
             }
         }
 
+        self.current_async_output_type = saved_async_output;
+        self.lowering_async_poll = saved_async_poll;
         if method.is_async {
-            self.current_async_output_type = saved_async_output;
+            return self.finish_async_coroutine(ir_func, params, body_return_type);
         }
 
         ir_func
@@ -416,6 +406,7 @@ impl ASTLowering {
         captures: &[ClosureCapture],
         params: &[spectra_compiler::ast::LambdaParam],
         body: &Expression,
+        is_async: bool,
     ) -> IRFunction {
         use crate::ir::Parameter;
 
@@ -426,16 +417,10 @@ impl ASTLowering {
             name: "__closure_env".to_string(),
             ty: IRType::Int,
         }];
-        ir_params.extend(params.iter().enumerate().map(|(idx, p)| {
-            Parameter {
-                id: idx + 1,
-                name: p.name.clone(),
-                ty: p
-                    .ty
-                    .as_ref()
-                    .map(|t| self.lower_type_annotation(t))
-                    .unwrap_or(IRType::Unknown),
-            }
+        ir_params.extend(params.iter().enumerate().map(|(idx, p)| Parameter {
+            id: idx + 1,
+            name: p.name.clone(),
+            ty: p.ty.as_ref().map(|t| self.lower_type_annotation(t)).unwrap_or(IRType::Unknown),
         }));
 
         // --- Save outer function state ---
@@ -443,8 +428,12 @@ impl ASTLowering {
         let saved_variable_types = self.variable_types.clone();
         let saved_alloca_map = std::mem::take(&mut self.alloca_map);
         let saved_array_map = self.array_map.clone();
-        let saved_struct_var_map = self.struct_var_map.clone();
+        let saved_async_output = self.current_async_output_type.clone();
+        let saved_async_poll = self.lowering_async_poll;
+        self.lowering_async_poll = is_async;
+        self.current_async_output_type = None;
         let saved_current_function = self.current_function.take();
+        let saved_struct_var_map = self.struct_var_map.clone();
         let saved_builder_block = self.builder.get_current_block();
 
         // --- Reset state for lambda body ---
@@ -563,10 +552,14 @@ impl ASTLowering {
         self.array_map = saved_array_map;
         self.struct_var_map = saved_struct_var_map;
         self.current_function = saved_current_function;
+        self.current_async_output_type = saved_async_output;
+        self.lowering_async_poll = saved_async_poll;
         if let Some(block_id) = saved_builder_block {
             self.builder.set_current_block(block_id);
         }
-
+        if is_async {
+            return self.finish_async_coroutine(lambda_func, ir_params, return_type);
+        }
         lambda_func
     }
 

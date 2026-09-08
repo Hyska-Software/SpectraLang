@@ -37,6 +37,9 @@ impl Pass for ConcurrentSpawnJoinFusion {
     fn run(&mut self, module: &mut Module) -> bool {
         let mut modified = false;
         for function in &mut module.functions {
+            if function.suspension_barrier {
+                continue;
+            }
             let mut uses = HashMap::<usize, usize>::new();
             for block in &function.blocks {
                 for instruction in &block.instructions {
@@ -201,6 +204,20 @@ fn instruction_inputs(kind: &InstructionKind) -> Vec<Value> {
             ..
         } => vec![*data_ptr, *vtable_ptr],
         InstructionKind::LoadVtableSlot { vtable_ptr, .. } => vec![*vtable_ptr],
+        InstructionKind::Await { task, .. } => vec![*task],
+        InstructionKind::FrameAlloc { .. } | InstructionKind::StateLoad { .. } => Vec::new(),
+        InstructionKind::FrameStore { frame, value, .. } => vec![*frame, *value],
+        InstructionKind::FrameLoad { frame, .. } => vec![*frame],
+        InstructionKind::StateStore { frame, .. } => vec![*frame],
+        InstructionKind::CoroutineCreate { frame, .. } => vec![*frame],
+        InstructionKind::CoroutinePollChild { task, .. } => vec![*task],
+        InstructionKind::CoroutineSubscribe { task, parent } => vec![*task, *parent],
+        InstructionKind::CoroutineWake { task }
+        | InstructionKind::CoroutineSuspend { task, .. }
+        | InstructionKind::CoroutineComplete { task, .. }
+        | InstructionKind::CoroutineError { task, .. }
+        | InstructionKind::CoroutineCancelled { task } => vec![*task],
+        InstructionKind::CoroutinePollReturn { status } => vec![*status],
         InstructionKind::Alloca { .. }
         | InstructionKind::GlobalAddr { .. }
         | InstructionKind::ManualAlloc { .. }

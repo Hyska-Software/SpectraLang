@@ -354,6 +354,9 @@ pub const REQUIRED_HOST_CALLS: &[&str] = &[
     "spectra.api.trace.extract",
     "spectra.api.trace.flush",
     "spectra.api.trace.last_error",
+    "spectra.api.http3.server_config_new",
+    "spectra.api.http3.client_config_new",
+    "spectra.api.http3.handler_text",
     "spectra.api.http3.server_start",
     "spectra.api.http3.server_local_port",
     "spectra.api.http3.server_shutdown",
@@ -461,6 +464,6 @@ mod tests {
             assert!(name.starts_with(HOST_PREFIX), "{name}");
             assert!(seen.insert(*name), "{name}");
         }
-        assert_eq!(required_host_call_count(), 436);
+        assert_eq!(required_host_call_count(), 439);
     }
 }

@@ -17,6 +17,8 @@ fn test_constant_folding_add() {
             next_block_id: 1,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             blocks: vec![BasicBlock {
                 id: 0,
                 label: "entry".to_string(),
@@ -88,6 +90,8 @@ fn test_constant_folding_mul() {
             next_block_id: 1,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             blocks: vec![BasicBlock {
                 id: 0,
                 label: "entry".to_string(),
@@ -156,6 +160,8 @@ fn test_dead_code_elimination_basic() {
             next_block_id: 1,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             blocks: vec![BasicBlock {
                 id: 0,
                 label: "entry".to_string(),
@@ -223,6 +229,8 @@ fn test_dead_code_elimination_preserves_used() {
             next_block_id: 1,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             blocks: vec![BasicBlock {
                 id: 0,
                 label: "entry".to_string(),
@@ -269,6 +277,8 @@ fn test_combined_optimizations() {
             next_block_id: 1,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             blocks: vec![BasicBlock {
                 id: 0,
                 label: "entry".to_string(),
@@ -339,6 +349,8 @@ fn test_no_optimization_when_not_applicable() {
             next_block_id: 1,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             blocks: vec![BasicBlock {
                 id: 0,
                 label: "entry".to_string(),
@@ -384,6 +396,8 @@ fn test_dead_code_elimination_preserves_cast_operands() {
             next_block_id: 1,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             blocks: vec![BasicBlock {
                 id: 0,
                 label: "entry".to_string(),
@@ -458,6 +472,8 @@ fn test_function_inlining_remaps_parameters() {
                 next_block_id: 1,
                 source_span: None,
                 locals: vec![],
+                async_layout: None,
+                suspension_barrier: false,
                 blocks: vec![BasicBlock {
                     id: 0,
                     label: "entry".to_string(),
@@ -484,6 +500,8 @@ fn test_function_inlining_remaps_parameters() {
                 next_block_id: 1,
                 source_span: None,
                 locals: vec![],
+                async_layout: None,
+                suspension_barrier: false,
                 blocks: vec![BasicBlock {
                     id: 0,
                     label: "entry".to_string(),
@@ -586,6 +604,8 @@ fn test_function_inlining_allows_stack_safe_alloca_helpers() {
                 next_block_id: 1,
                 source_span: None,
                 locals: vec![],
+                async_layout: None,
+                suspension_barrier: false,
                 blocks: vec![BasicBlock {
                     id: 0,
                     label: "entry".to_string(),
@@ -642,6 +662,8 @@ fn test_function_inlining_allows_stack_safe_alloca_helpers() {
                 next_block_id: 1,
                 source_span: None,
                 locals: vec![],
+                async_layout: None,
+                suspension_barrier: false,
                 blocks: vec![BasicBlock {
                     id: 0,
                     label: "entry".to_string(),
@@ -730,6 +752,8 @@ fn test_dce_preserves_autodiff_step_with_unused_result() {
             next_block_id: 1,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             blocks: vec![BasicBlock {
                 id: 0,
                 label: "entry".to_string(),
@@ -813,6 +837,8 @@ fn test_dce_iterates_to_fixpoint() {
             next_block_id: 1,
             source_span: None,
             locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
             blocks: vec![BasicBlock {
                 id: 0,
                 label: "entry".to_string(),
