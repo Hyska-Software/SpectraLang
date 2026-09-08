@@ -100,7 +100,11 @@ def main() -> int:
         "fn drive_stream(dyn Stream stream) -> Task<int>",
         "fn drive_worker(dyn AsyncWorker worker) -> Task<int>",
         "call_indirect",
-        "hostcall spectra.async.task.result",
+        # Real suspension (no eager blocking wait): child polling and the
+        # generated poll/dispatch state machine replace task.result markers.
+        "poll.child",
+        "coroutine.dispatch",
+        "__poll",
     ]:
         if needle not in ir:
             print(ir)

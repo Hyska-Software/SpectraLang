@@ -4502,7 +4502,7 @@ that `std.api.*` will dispatch into.
 
 - Added the `packages/spectra-api` Rust crate and the `spectra.api` package
   manifest at `packages/spectra-api/spectra.toml`.
-- Added 444 public `spectra.api.*` host calls covering the Phase 22, R-2301, R-2302, R-2303, R-2304, R-2305, R-2306, R-2307, R-2308, R-2309, R-2312, R-2313, R-2314, R-2316, R-2317, R-2311, R-2401, R-2402, and R-2403 registration
+- Added 536 public `spectra.api.*` host calls covering the Phase 22, R-2301, R-2302, R-2303, R-2304, R-2305, R-2306, R-2307, R-2308, R-2309, R-2312, R-2313, R-2314, R-2316, R-2317, R-2311, R-2401, R-2402, R-2403, HTTP/3 over QUIC, gRPC over HTTP/2, and GraphQL registration
   surface for version metadata, HTTP method/status/header helpers, request and
   response handles, server/client handles, JSON classification, TLS config
   handles, routing handles, error metadata, and sync/async handler callback
@@ -4512,7 +4512,7 @@ that `std.api.*` will dispatch into.
   `spectra_api::register()`, and the crate exports
   `spectra_api_register_host_calls` for native integration.
 - Added `runtime/src/api/mod.rs` as the runtime-side namespace contract for the
-  required 347-name `spectra.api.*` namespace; the package registry may expose
+  required 439-name `spectra.api.*` namespace; the package registry may expose
   additional public calls beyond that runtime-required subset.
 - Added stable `request_body` and `request_with_body` bridges so handlers and
   clients can read and construct UTF-8 request payloads through `std.api.http`.

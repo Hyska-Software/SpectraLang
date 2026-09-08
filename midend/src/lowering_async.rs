@@ -22,15 +22,6 @@ impl ASTLowering {
         let base = body.name.clone();
         let poll_name = format!("{base}__poll");
         let drop_name = format!("{base}__drop");
-        let mut slots = source_params
-            .iter()
-            .enumerate()
-            .map(|(id, p)| AsyncFrameSlot {
-                id: id + 3,
-                name: p.name.clone(),
-                ty: p.ty.clone(),
-            })
-            .collect::<Vec<_>>();
         shift_body_values(&mut body, 3);
         let mut type_hints = collect_value_types(&body);
         for (index, parameter) in source_params.iter().enumerate() {
@@ -47,26 +38,8 @@ impl ASTLowering {
         body.suspension_barrier = true;
         body.next_value_id = body.next_value_id.max(body.params.len());
 
-        // Reserve stable slots for SSA values that cross a boundary. This is
-        // intentionally conservative: an unused slot is harmless and makes
-        // layout ids deterministic across branch/loop shapes.
-        let mut seen_values = std::collections::BTreeSet::new();
-        for block in &body.blocks {
-            for instruction in &block.instructions {
-                if let Some(value) = instruction_result(instruction) {
-                    seen_values.insert(value.id);
-                }
-            }
-        }
-        for id in seen_values {
-            if !slots.iter().any(|slot| slot.id == id) {
-                slots.push(AsyncFrameSlot {
-                    id,
-                    name: format!("ssa{id}"),
-                    ty: type_hints.get(&id).cloned().unwrap_or(IRType::Int),
-                });
-            }
-        }
+        // Frame slots are built comprehensively after all splits (see below):
+        // every value id gets a slot, so any conservative reload set is safe.
 
         let dispatch = body.add_block("coroutine.dispatch");
         let mut states = vec![AsyncState { id: 0, resume_block: body.blocks.first().map(|b| b.id).unwrap_or(0), await_slot: None }];
@@ -98,19 +71,14 @@ impl ASTLowering {
             next_state += 1;
 
             let status = body.next_value();
-            let child_result = body.next_value();
             let ready_test = body.next_value();
+            // The split itself only moves code and appends machine
+            // instructions using ORIGINAL ids. A uniform post-split pass (see
+            // below) prepends frame reloads with fresh ids wherever a block
+            // uses values it does not define, which keeps the backend's
+            // flow-insensitive value map sound on every resume path.
             let mut pre = before;
-            let mut cross_values = (0..source_params.len()).map(|id| id + 3).collect::<Vec<_>>();
-            cross_values.extend(pre.iter().filter_map(instruction_result).map(|value| value.id));
-            cross_values.extend(3..result.id);
-            cross_values.push(child.id);
-            cross_values.sort_unstable();
-            cross_values.dedup();
-            for value_id in cross_values.iter().copied() {
-                pre.push(Instruction { id: pre.len(), kind: InstructionKind::FrameStore { frame, slot: value_id, value: Value { id: value_id } }, source_span: None });
-            }
-            pre.push(Instruction { id: pre.len(), kind: InstructionKind::CoroutinePollChild { status, result: Some(child_result), task: child, output_type: output_type.clone() }, source_span: None });
+            pre.push(Instruction { id: pre.len(), kind: InstructionKind::CoroutinePollChild { status, result: None, task: child, output_type: output_type.clone() }, source_span: None });
             let ready_const = body.next_value();
             pre.push(Instruction { id: pre.len(), kind: InstructionKind::ConstInt { result: ready_const, value: POLL_READY }, source_span: None });
             pre.push(Instruction { id: pre.len(), kind: InstructionKind::Eq { result: ready_test, lhs: status, rhs: ready_const }, source_span: None });
@@ -118,18 +86,11 @@ impl ASTLowering {
             switch_cases.sort_by_key(|(value, _)| *value);
             body.blocks[block_index].instructions = pre;
             body.blocks[block_index].terminator = Some(Terminator::Switch { value: status, cases: switch_cases, default: pending });
-
             let status2 = body.next_value();
             let ready_test2 = body.next_value();
             let ready_const2 = body.next_value();
-            let resumed_child = body.next_value();
-            let mut continuation_instructions = cross_values.iter().enumerate().map(|(index, value_id)| Instruction {
-                id: index,
-                kind: InstructionKind::FrameLoad { result: Value { id: *value_id }, frame, slot: *value_id, ty: type_hints.get(value_id).cloned().unwrap_or(IRType::Int) },
-                source_span: None,
-            }).collect::<Vec<_>>();
-            continuation_instructions.push(Instruction { id: continuation_instructions.len(), kind: InstructionKind::FrameLoad { result: resumed_child, frame, slot: child.id, ty: IRType::Int }, source_span: None });
-            continuation_instructions.push(Instruction { id: continuation_instructions.len(), kind: InstructionKind::CoroutinePollChild { status: status2, result: Some(result), task: resumed_child, output_type: output_type.clone() }, source_span: None });
+            let mut continuation_instructions = Vec::new();
+            continuation_instructions.push(Instruction { id: continuation_instructions.len(), kind: InstructionKind::CoroutinePollChild { status: status2, result: Some(result), task: child, output_type: output_type.clone() }, source_span: None });
             continuation_instructions.push(Instruction { id: continuation_instructions.len(), kind: InstructionKind::ConstInt { result: ready_const2, value: POLL_READY }, source_span: None });
             continuation_instructions.push(Instruction { id: continuation_instructions.len(), kind: InstructionKind::Eq { result: ready_test2, lhs: status2, rhs: ready_const2 }, source_span: None });
             if let Some(block) = body.get_block_mut(continuation) {
@@ -138,20 +99,14 @@ impl ASTLowering {
             }
             if let Some(block) = body.get_block_mut(ready_block) {
                 block.instructions = after;
-                block.terminator = old.terminator;
+                block.terminator = old.terminator.clone();
             }
 
-            let pending_child = body.next_value();
             let pending_status = body.next_value();
             if let Some(block) = body.get_block_mut(pending) {
-                block.instructions = vec![Instruction {
-                    id: 0,
-                    kind: InstructionKind::FrameLoad { result: pending_child, frame, slot: child.id, ty: IRType::Int },
-                    source_span: None,
-                }];
                 block.instructions.push(Instruction { id: block.instructions.len(), kind: InstructionKind::StateStore { frame, state: state_id }, source_span: None });
-                block.instructions.push(Instruction { id: block.instructions.len(), kind: InstructionKind::CoroutineSubscribe { task: pending_child, parent: task }, source_span: None });
-                block.instructions.push(Instruction { id: block.instructions.len(), kind: InstructionKind::CoroutineWake { task: pending_child }, source_span: None });
+                block.instructions.push(Instruction { id: block.instructions.len(), kind: InstructionKind::CoroutineSubscribe { task: child, parent: task }, source_span: None });
+                block.instructions.push(Instruction { id: block.instructions.len(), kind: InstructionKind::CoroutineWake { task: child }, source_span: None });
                 block.instructions.push(Instruction { id: block.instructions.len(), kind: InstructionKind::CoroutineSuspend { task, state: state_id }, source_span: None });
                 block.instructions.push(Instruction { id: block.instructions.len(), kind: InstructionKind::ConstInt { result: pending_status, value: POLL_PENDING }, source_span: None });
                 block.instructions.push(Instruction { id: block.instructions.len(), kind: InstructionKind::CoroutinePollReturn { status: pending_status }, source_span: None });
@@ -168,6 +123,125 @@ impl ASTLowering {
                 }
             }
             states.push(AsyncState { id: state_id, resume_block: continuation, await_slot: Some(state_id) });
+        }
+
+        // Uniform suspension dataflow pass. For EVERY block, every operand it
+        // uses but does not define (and which is not a function parameter) is
+        // reloaded from the frame into a FRESH id prepended to the block, and
+        // the uses are rewritten. Fresh ids keep the backend's
+        // flow-insensitive value map sound: each is defined by its own load,
+        // which dominates every use in the block and is generated immediately
+        // before it. Original ids are never redefined, so blocks generated
+        // earlier keep valid mappings. This covers pre blocks, continuations,
+        // ready blocks, and untouched downstream blocks uniformly, on both
+        // the fall-through path and every resume path.
+        // Runtime soundness: slots are task-private and persist across polls;
+        // every slot is written at its value's definition site (see below),
+        // and each value id is defined exactly once, so a slot always holds
+        // the reaching definition's value. Phi incoming edges keep their
+        // original ids (predecessor-supplied block arguments).
+        let post_param_ids: std::collections::BTreeSet<usize> =
+            [0, 1, 2].into_iter().chain((0..source_params.len()).map(|id| id + 3)).collect();
+        // Phase 1 (immutable): compute the reload set per block.
+        let mut reload_plan: Vec<(usize, Vec<usize>)> = Vec::new();
+        for block in body.blocks.iter() {
+            let mut defs = std::collections::BTreeSet::new();
+            let mut uses = Vec::new();
+            for instruction in block.instructions.iter() {
+                if matches!(instruction.kind, InstructionKind::Phi { .. }) {
+                    if let Some(result) = instruction_result(instruction) {
+                        defs.insert(result.id);
+                    }
+                    continue;
+                }
+                collect_instruction_uses(instruction, &mut uses);
+                if let Some(result) = instruction_result(instruction) {
+                    defs.insert(result.id);
+                }
+                if let InstructionKind::CoroutinePollChild { status, .. } = &instruction.kind {
+                    defs.insert(status.id);
+                }
+            }
+            if let Some(terminator) = block.terminator.as_ref() {
+                collect_terminator_uses(terminator, &mut uses);
+            }
+            let mut need: Vec<usize> = uses
+                .into_iter()
+                .filter(|id| !defs.contains(id) && !post_param_ids.contains(id))
+                .collect();
+            need.sort_unstable();
+            need.dedup();
+            if !need.is_empty() {
+                reload_plan.push((block.id, need));
+            }
+        }
+        // Phase 2 (mutable): prepend fresh loads and rewrite uses.
+        for (block_id, need) in reload_plan {
+            let mut remap: std::collections::HashMap<usize, Value> = std::collections::HashMap::new();
+            let mut loads = Vec::with_capacity(need.len());
+            for orig_id in need {
+                let fresh = body.next_value();
+                loads.push(Instruction {
+                    id: loads.len(),
+                    kind: InstructionKind::FrameLoad {
+                        result: fresh,
+                        frame,
+                        slot: orig_id,
+                        ty: type_hints.get(&orig_id).cloned().unwrap_or(IRType::Int),
+                    },
+                    source_span: None,
+                });
+                remap.insert(orig_id, fresh);
+            }
+            let Some(block) = body.get_block_mut(block_id) else { continue };
+            for instruction in block.instructions.iter_mut() {
+                if matches!(instruction.kind, InstructionKind::Phi { .. }) {
+                    continue;
+                }
+                remap_instruction_operands(&mut instruction.kind, &remap);
+            }
+            if let Some(terminator) = block.terminator.as_mut() {
+                remap_terminator_operands(terminator, &remap);
+            }
+            loads.extend(block.instructions.drain(..));
+            for (index, instruction) in loads.iter_mut().enumerate() {
+                instruction.id = index;
+            }
+            block.instructions = loads;
+        }
+
+        // Store every SSA value at its definition site. The store sits in the
+        // same block immediately after the defining instruction, so the stored
+        // Cranelift value dominates the store in both generation and CFG
+        // order. FrameLoad results are already frame contents and need no
+        // write-back. Terminal await-machine blocks (pending/failed/cancelled)
+        // only hold block-local temps and are skipped.
+        for block in body.blocks.iter_mut() {
+            if block.label.contains(".pending")
+                || block.label.contains(".failed")
+                || block.label.contains(".cancelled")
+            {
+                continue;
+            }
+            let mut with_stores = Vec::with_capacity(block.instructions.len() * 2);
+            for instruction in block.instructions.iter() {
+                with_stores.push(instruction.clone());
+                let store_value = match &instruction.kind {
+                    InstructionKind::FrameLoad { .. } | InstructionKind::StateLoad { .. } => None,
+                    _ => instruction_result(instruction),
+                };
+                if let Some(value) = store_value {
+                    with_stores.push(Instruction {
+                        id: with_stores.len(),
+                        kind: InstructionKind::FrameStore { frame, slot: value.id, value },
+                        source_span: None,
+                    });
+                }
+            }
+            for (index, instruction) in with_stores.iter_mut().enumerate() {
+                instruction.id = index;
+            }
+            block.instructions = with_stores;
         }
 
         // Every ordinary terminal return completes the parent task and returns
@@ -219,6 +293,25 @@ impl ASTLowering {
             let block = body.blocks.remove(index);
             body.blocks.insert(0, block);
         }
+
+        // Comprehensive frame slots: every value id (params, original SSA,
+        // and machine temps) owns the slot with its own id. Unused slots are
+        // harmless; this keeps every conservative reload/store in range.
+        let final_hints = collect_value_types(&body);
+        let slots: Vec<AsyncFrameSlot> = (0..body.next_value_id)
+            .map(|id| {
+                let (name, ty) = match id {
+                    0 => ("frame_ptr".to_string(), IRType::Int),
+                    1 => ("task_id".to_string(), IRType::Int),
+                    2 => ("poll_ctx".to_string(), IRType::Int),
+                    _ => (
+                        format!("ssa{id}"),
+                        final_hints.get(&id).cloned().unwrap_or(IRType::Int),
+                    ),
+                };
+                AsyncFrameSlot { id, name, ty }
+            })
+            .collect();
 
         let layout = AsyncCoroutineLayout {
             poll_name: poll_name.clone(),
@@ -274,6 +367,91 @@ fn instruction_result(instruction: &Instruction) -> Option<Value> {
         InstructionKind::CoroutinePollChild { result, .. } => *result,
         InstructionKind::Await { result, .. } => Some(*result),
         InstructionKind::Store { .. } | InstructionKind::EscapeManualAlloc { .. } | InstructionKind::FrameStore { .. } | InstructionKind::StateStore { .. } | InstructionKind::CoroutineSubscribe { .. } | InstructionKind::CoroutineWake { .. } | InstructionKind::CoroutineSuspend { .. } | InstructionKind::CoroutineComplete { .. } | InstructionKind::CoroutineError { .. } | InstructionKind::CoroutineCancelled { .. } | InstructionKind::CoroutinePollReturn { .. } => None,
+    }
+}
+
+/// Rewrite operand ids through `map`, leaving result ids untouched. Used when
+/// moved suspension-boundary code must name a resume block's fresh reloads
+/// instead of the original SSA ids.
+fn remap_value(value: &mut Value, map: &std::collections::HashMap<usize, Value>) {
+    if let Some(replacement) = map.get(&value.id) {
+        value.id = replacement.id;
+    }
+}
+
+fn remap_instruction_operands(kind: &mut InstructionKind, map: &std::collections::HashMap<usize, Value>) {
+    match kind {
+        InstructionKind::Add { lhs, rhs, .. } | InstructionKind::Sub { lhs, rhs, .. } | InstructionKind::Mul { lhs, rhs, .. } | InstructionKind::Div { lhs, rhs, .. } | InstructionKind::Rem { lhs, rhs, .. } | InstructionKind::Eq { lhs, rhs, .. } | InstructionKind::Ne { lhs, rhs, .. } | InstructionKind::Lt { lhs, rhs, .. } | InstructionKind::Le { lhs, rhs, .. } | InstructionKind::Gt { lhs, rhs, .. } | InstructionKind::Ge { lhs, rhs, .. } | InstructionKind::And { lhs, rhs, .. } | InstructionKind::Or { lhs, rhs, .. } => { remap_value(lhs, map); remap_value(rhs, map); }
+        InstructionKind::Not { operand, .. } | InstructionKind::Load { ptr: operand, .. } | InstructionKind::Copy { source: operand, .. } | InstructionKind::Cast { operand, .. } | InstructionKind::LoadDynDataPtr { fat_ptr: operand, .. } | InstructionKind::LoadDynVtablePtr { fat_ptr: operand, .. } | InstructionKind::LoadVtableSlot { vtable_ptr: operand, .. } | InstructionKind::EscapeManualAlloc { ptr: operand, .. } => remap_value(operand, map),
+        InstructionKind::Store { ptr, value } => { remap_value(ptr, map); remap_value(value, map); }
+        InstructionKind::GetElementPtr { ptr, index, .. } => { remap_value(ptr, map); remap_value(index, map); }
+        InstructionKind::FieldPtr { ptr, .. } => remap_value(ptr, map),
+        InstructionKind::Call { args, .. } | InstructionKind::HostCall { args, .. } => { for arg in args.iter_mut() { remap_value(arg, map); } }
+        InstructionKind::CallIndirect { fn_ptr, args, .. } => { remap_value(fn_ptr, map); for arg in args.iter_mut() { remap_value(arg, map); } }
+        InstructionKind::AsyncReady { value, .. } => { if let Some(value) = value { remap_value(value, map); } }
+        InstructionKind::Phi { incoming, .. } => { for (value, _) in incoming.iter_mut() { remap_value(value, map); } }
+        InstructionKind::MakeDynFatPtr { data_ptr, vtable_ptr, .. } => { remap_value(data_ptr, map); remap_value(vtable_ptr, map); }
+        InstructionKind::Await { task, .. } => remap_value(task, map),
+        InstructionKind::FrameStore { frame, value, .. } => { remap_value(frame, map); remap_value(value, map); }
+        InstructionKind::FrameLoad { frame, .. } => remap_value(frame, map),
+        InstructionKind::StateStore { frame, .. } => remap_value(frame, map),
+        InstructionKind::CoroutineCreate { frame, .. } => remap_value(frame, map),
+        InstructionKind::CoroutinePollChild { task, .. } => remap_value(task, map),
+        InstructionKind::CoroutineSubscribe { task, parent } => { remap_value(task, map); remap_value(parent, map); }
+        InstructionKind::CoroutineWake { task } | InstructionKind::CoroutineSuspend { task, .. } | InstructionKind::CoroutineCancelled { task } => remap_value(task, map),
+        InstructionKind::CoroutineComplete { task, value } => { remap_value(task, map); if let Some(value) = value { remap_value(value, map); } }
+        InstructionKind::CoroutineError { task, error } => { remap_value(task, map); if let Some(error) = error { remap_value(error, map); } }
+        InstructionKind::CoroutinePollReturn { status } => remap_value(status, map),
+        InstructionKind::AutodiffStep { output, upstream, inputs, targets, .. } => { remap_value(output, map); if let Some(upstream) = upstream { remap_value(upstream, map); } for value in inputs.iter_mut().chain(targets.iter_mut()) { remap_value(value, map); } }
+        _ => {}
+    }
+}
+
+/// Collect operand ids read by an instruction (results excluded).
+fn collect_instruction_uses(instruction: &Instruction, out: &mut Vec<usize>) {
+    match &instruction.kind {
+        InstructionKind::Add { lhs, rhs, .. } | InstructionKind::Sub { lhs, rhs, .. } | InstructionKind::Mul { lhs, rhs, .. } | InstructionKind::Div { lhs, rhs, .. } | InstructionKind::Rem { lhs, rhs, .. } | InstructionKind::Eq { lhs, rhs, .. } | InstructionKind::Ne { lhs, rhs, .. } | InstructionKind::Lt { lhs, rhs, .. } | InstructionKind::Le { lhs, rhs, .. } | InstructionKind::Gt { lhs, rhs, .. } | InstructionKind::Ge { lhs, rhs, .. } | InstructionKind::And { lhs, rhs, .. } | InstructionKind::Or { lhs, rhs, .. } => out.extend([lhs.id, rhs.id]),
+        InstructionKind::Not { operand, .. } | InstructionKind::Load { ptr: operand, .. } | InstructionKind::Copy { source: operand, .. } | InstructionKind::Cast { operand, .. } | InstructionKind::LoadDynDataPtr { fat_ptr: operand, .. } | InstructionKind::LoadDynVtablePtr { fat_ptr: operand, .. } | InstructionKind::LoadVtableSlot { vtable_ptr: operand, .. } | InstructionKind::EscapeManualAlloc { ptr: operand, .. } => out.push(operand.id),
+        InstructionKind::Store { ptr, value } => out.extend([ptr.id, value.id]),
+        InstructionKind::GetElementPtr { ptr, index, .. } => out.extend([ptr.id, index.id]),
+        InstructionKind::FieldPtr { ptr, .. } => out.push(ptr.id),
+        InstructionKind::Call { args, .. } | InstructionKind::HostCall { args, .. } => out.extend(args.iter().map(|arg| arg.id)),
+        InstructionKind::CallIndirect { fn_ptr, args, .. } => { out.push(fn_ptr.id); out.extend(args.iter().map(|arg| arg.id)); }
+        InstructionKind::AsyncReady { value, .. } => out.extend(value.iter().map(|value| value.id)),
+        InstructionKind::Phi { incoming, .. } => out.extend(incoming.iter().map(|(value, _)| value.id)),
+        InstructionKind::MakeDynFatPtr { data_ptr, vtable_ptr, .. } => out.extend([data_ptr.id, vtable_ptr.id]),
+        InstructionKind::Await { task, .. } => out.push(task.id),
+        InstructionKind::FrameStore { frame, value, .. } => out.extend([frame.id, value.id]),
+        InstructionKind::FrameLoad { frame, .. } => out.push(frame.id),
+        InstructionKind::StateStore { frame, .. } => out.push(frame.id),
+        InstructionKind::CoroutineCreate { frame, .. } => out.push(frame.id),
+        InstructionKind::CoroutinePollChild { task, .. } => out.push(task.id),
+        InstructionKind::CoroutineSubscribe { task, parent } => out.extend([task.id, parent.id]),
+        InstructionKind::CoroutineWake { task } | InstructionKind::CoroutineSuspend { task, .. } | InstructionKind::CoroutineCancelled { task } => out.push(task.id),
+        InstructionKind::CoroutineComplete { task, value } => { out.push(task.id); out.extend(value.iter().map(|value| value.id)); }
+        InstructionKind::CoroutineError { task, error } => { out.push(task.id); out.extend(error.iter().map(|error| error.id)); }
+        InstructionKind::CoroutinePollReturn { status } => out.push(status.id),
+        InstructionKind::AutodiffStep { output, upstream, inputs, targets, .. } => { out.push(output.id); out.extend(upstream.iter().map(|value| value.id)); out.extend(inputs.iter().map(|value| value.id)); out.extend(targets.iter().map(|value| value.id)); }
+        _ => {}
+    }
+}
+
+/// Collect value ids read by a terminator (branch targets excluded).
+fn collect_terminator_uses(terminator: &Terminator, out: &mut Vec<usize>) {
+    match terminator {
+        Terminator::Return { value } => out.extend(value.iter().map(|value| value.id)),
+        Terminator::CondBranch { condition, .. } => out.push(condition.id),
+        Terminator::Switch { value, .. } => out.push(value.id),
+        _ => {}
+    }
+}
+
+fn remap_terminator_operands(terminator: &mut Terminator, map: &std::collections::HashMap<usize, Value>) {
+    match terminator {
+        Terminator::Return { value } => { if let Some(value) = value { remap_value(value, map); } }
+        Terminator::CondBranch { condition, .. } => remap_value(condition, map),
+        Terminator::Switch { value, .. } => remap_value(value, map),
+        _ => {}
     }
 }
 fn shift_body_values(function: &mut IRFunction, amount: usize) {
