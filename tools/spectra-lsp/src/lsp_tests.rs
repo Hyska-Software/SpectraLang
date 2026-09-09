@@ -416,4 +416,46 @@ public async func handle(request: std.api.http.Request)  returns  std.api.http.R
             "server-side CLI default must target the real binary name"
         );
     }
+    fn e005_diagnostic(source: &str, message: &str) -> Diagnostic {
+        let offset = source.find("\n    return\n").map(|index| index + 5).expect("bare return");
+        Diagnostic {
+            range: Range::new(
+                offset_to_position(source, offset),
+                offset_to_position(source, offset + "return".len()),
+            ),
+            severity: Some(DiagnosticSeverity::ERROR),
+            code: Some(NumberOrString::String("E005".to_string())),
+            message: message.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn return_quick_fix_uses_analyzed_annotation_not_message_text() {
+        let source = "module demo\nfunc f() returns int {\n    return\n}\n";
+        let document = analyzed_document(source);
+        // The message lies about the type; the annotation (int) must win.
+        let diagnostic = e005_diagnostic(source, "Return statement missing value of type Bool");
+        let uri = Url::parse("file:///demo.spectra").expect("uri");
+        let action =
+            quick_fix_for_diagnostic(&uri, &document, &diagnostic).expect("fix offered");
+        assert!(
+            action.title.contains("(0)"),
+            "fix must insert the int default, got: {}",
+            action.title
+        );
+    }
+
+    #[test]
+    fn return_quick_fix_offers_nothing_without_scalar_annotation() {
+        let source = "module demo\nfunc f() {\n    return\n}\n";
+        let document = analyzed_document(source);
+        let diagnostic = e005_diagnostic(source, "Return statement missing value of type Int");
+        let uri = Url::parse("file:///demo.spectra").expect("uri");
+        assert!(
+            quick_fix_for_diagnostic(&uri, &document, &diagnostic).is_none(),
+            "unannotated functions get no invented default"
+        );
+    }
 }
+

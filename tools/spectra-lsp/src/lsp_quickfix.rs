@@ -22,12 +22,7 @@ fn quick_fix_for_diagnostic(
         "E002" => return duplicate_binding_quick_fix(uri, &document.text, diagnostic),
         // E005: Return statement missing value — insert a default literal.
         "E005" => {
-            return missing_return_value_quick_fix(
-                uri,
-                &document.text,
-                diagnostic,
-                &diagnostic.message,
-            )
+            return missing_return_value_quick_fix(uri, &document.text, diagnostic, document)
         }
         // E001: Undefined variable — prefix with `_` to suppress or declare it.
         // E003: Type mismatch in assignment — fall through to hint-based fix.
@@ -56,11 +51,8 @@ fn semantic_error_quick_fix(
         return duplicate_binding_quick_fix(uri, &document.text, diagnostic);
     }
 
-    // "Return statement missing value of type ..."
-    // → inserir um valor padrão compatível com o tipo mencionado
-    if msg.starts_with("Return statement missing value of type") {
-        return missing_return_value_quick_fix(uri, &document.text, diagnostic, msg);
-    }
+    // E005 without a code routes nowhere: the default literal comes only
+    // from the analyzed return-type annotation, never from message text.
 
     None
 }
@@ -89,32 +81,16 @@ fn missing_return_value_quick_fix(
     uri: &Url,
     text: &str,
     diagnostic: &Diagnostic,
-    message: &str,
+    document: &DocumentState,
 ) -> Option<CodeAction> {
-    // Extrair o tipo da mensagem. Formato: 'Return statement missing value of type Int'
-    let type_str = message
-        .strip_prefix("Return statement missing value of type")
-        .map(|s| s.trim())
-        // Remover delimitadores de debug como `Int` ou `{...}`
-        .map(|s| s.trim_matches(|c: char| c == '`' || c == '"'))
-        .unwrap_or("");
-
-    let default_value = match type_str.to_lowercase().as_str() {
-        "int" => "0",
-        "bool" => "false",
-        "string" => "\"\"",
-        "float" => "0.0",
-        "char" => "'\\0'",
-        _ => return None,
-    };
-
-    // Localizar a posição do `return` sem valor — o range aponta para o `return` keyword.
-    // Inserimos o valor entre `return` e `;`.
+    // The default literal comes from the analyzed return-type annotation of
+    // the enclosing function, never from parsing the diagnostic message.
     let start_offset = position_to_offset(text, diagnostic.range.start);
     let end_offset = position_to_offset(text, diagnostic.range.end);
     if start_offset >= text.len() || end_offset > text.len() {
         return None;
     }
+    let default_value = default_return_literal(document, start_offset)?;
 
     let slice = &text[start_offset..end_offset];
     // Encontra o ponto de inserção: logo após 'return', antes do ';' ou final do range
@@ -136,6 +112,42 @@ fn missing_return_value_quick_fix(
             new_text: format!(" {}", default_value),
         }],
     ))
+}
+
+/// Default literal for the annotated return type of the innermost function
+/// enclosing `offset`. Anything but a scalar annotation (or none at all)
+/// yields no fix rather than an invented value.
+fn default_return_literal(document: &DocumentState, offset: usize) -> Option<&'static str> {
+    use spectra_compiler::ast::TypeAnnotationKind;
+
+    let module = document.analysis.module.as_ref()?;
+    let mut enclosing: Option<(&spectra_compiler::ast::Function, usize)> = None;
+    for item in &module.items {
+        let spectra_compiler::ast::Item::Function(function) = item else {
+            continue;
+        };
+        if function.span.start <= offset && offset < function.span.end {
+            let width = function.span.end - function.span.start;
+            let replace = enclosing.map(|(_, best)| width < best).unwrap_or(true);
+            if replace {
+                enclosing = Some((function, width));
+            }
+        }
+    }
+    let annotation = enclosing?.0.return_type.as_ref()?;
+    match &annotation.kind {
+        TypeAnnotationKind::Simple { segments } if segments.len() == 1 => {
+            match segments[0].as_str() {
+                "int" => Some("0"),
+                "bool" => Some("false"),
+                "string" => Some("\"\""),
+                "float" => Some("0.0"),
+                "char" => Some("'\\0'"),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 fn unused_binding_quick_fix(uri: &Url, text: &str, diagnostic: &Diagnostic) -> Option<CodeAction> {
