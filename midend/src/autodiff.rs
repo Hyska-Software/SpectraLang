@@ -276,8 +276,14 @@ fn materialize_node(
     };
     let tensor_args = tensor_arguments(host, args);
     if tensor_args.is_empty() {
+        // Every ruled operation takes at least one tensor input by
+        // construction (`tensor_arguments` covers positions 0-2 of each
+        // rule); reaching here means the call was malformed upstream.
+        // Failing loudly beats silently dropping the gradient.
         visiting.remove(&output.id);
-        return Ok(());
+        return Err(format!(
+            "E3004: operation '{host}' reached compiler-native diff without tensor inputs"
+        ));
     }
     let step_source = node_source.clone().or_else(|| source.clone());
     let effective_upstream = if upstream.is_some() { upstream } else { None };
