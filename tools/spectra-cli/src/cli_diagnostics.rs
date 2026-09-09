@@ -168,21 +168,26 @@ fn emit_sarif_report(report: &JsonDiagnosticReport, has_errors: bool) -> CliResu
                 })
             });
 
+            let mut physical_location = json!({
+                "artifactLocation": { "uri": file.path }
+            });
+            // Spanless diagnostics carry no region: pinning file-start
+            // coordinates would invent a location the error never had.
+            if let Some(range) = &diagnostic.range {
+                physical_location["region"] = json!({
+                    "startLine": range.start.line,
+                    "startColumn": range.start.column,
+                    "endLine": range.end.line,
+                    "endColumn": range.end.column
+                });
+            }
             let mut result = json!({
                 "ruleId": rule_id,
                 "level": diagnostic.severity.sarif_level(),
                 "message": { "text": diagnostic.message },
                 "locations": [
                     {
-                        "physicalLocation": {
-                            "artifactLocation": { "uri": file.path },
-                            "region": {
-                                "startLine": diagnostic.range.start.line,
-                                "startColumn": diagnostic.range.start.column,
-                                "endLine": diagnostic.range.end.line,
-                                "endColumn": diagnostic.range.end.column
-                            }
-                        }
+                        "physicalLocation": physical_location
                     }
                 ]
             });
@@ -283,7 +288,7 @@ fn convert_lint_diagnostic(diagnostic: LintDiagnostic) -> JsonDiagnostic {
         message,
         phase: Some("lint".to_string()),
         hint: note,
-        range: span_to_range(&span),
+        range: Some(span_to_range(&span)),
         related,
     }
 }
@@ -330,7 +335,7 @@ fn span_error_to_json(
         message,
         phase: Some(phase.to_string()),
         hint,
-        range: span_to_range(&span),
+        range: Some(span_to_range(&span)),
         related,
     }
 }
@@ -340,13 +345,16 @@ fn io_error_diagnostic(error: &io::Error) -> JsonDiagnostic {
 }
 
 fn generic_error_diagnostic(message: String, phase: Option<&str>) -> JsonDiagnostic {
+    // Spanless errors (midend, backend, I/O, CLI) carry no location: the
+    // range stays null instead of pinning a fabricated 1:1 file-start
+    // position the way `default_range` used to.
     JsonDiagnostic {
         severity: JsonSeverity::Error,
         code: phase.map(|value| value.to_string()),
         message,
         phase: phase.map(|value| value.to_string()),
         hint: None,
-        range: default_range(),
+        range: None,
         related: Vec::new(),
     }
 }
@@ -361,13 +369,6 @@ fn span_to_range(span: &Span) -> JsonRange {
             line: span.end_location.line,
             column: span.end_location.column,
         },
-    }
-}
-
-fn default_range() -> JsonRange {
-    JsonRange {
-        start: JsonPosition { line: 1, column: 1 },
-        end: JsonPosition { line: 1, column: 1 },
     }
 }
 
@@ -397,7 +398,7 @@ struct JsonDiagnostic {
     message: String,
     phase: Option<String>,
     hint: Option<String>,
-    range: JsonRange,
+    range: Option<JsonRange>,
     related: Vec<JsonRelated>,
 }
 
@@ -495,3 +496,40 @@ fn is_directory_empty(path: &Path) -> Result<bool, io::Error> {
     Ok(entries.next().transpose()?.is_none())
 }
 
+
+#[cfg(test)]
+mod diagnostics_tests {
+    use super::*;
+
+    #[test]
+    fn spanless_errors_render_without_location() {
+        let diagnostic = generic_error_diagnostic("midend error: boom".to_string(), Some("midend"));
+        let json = serde_json::to_value(&diagnostic).expect("diagnostic serializes");
+        assert_eq!(json.get("range"), Some(&serde_json::Value::Null));
+        let text = serde_json::to_string(&json).expect("diagnostic renders");
+        assert!(
+            !text.contains("\"line\":1") && !text.contains("1:1"),
+            "spanless error must not pin file-start coordinates, got: {text}"
+        );
+    }
+
+    #[test]
+    fn spanned_errors_keep_their_range() {
+        let diagnostic = span_error_to_json(
+            "syntax",
+            None,
+            "boom".to_string(),
+            spectra_compiler::span::Span::new(
+                0,
+                1,
+                spectra_compiler::span::Location::new(3, 7),
+                spectra_compiler::span::Location::new(3, 12),
+            ),
+            None,
+            None,
+        );
+        let json = serde_json::to_value(&diagnostic).expect("diagnostic serializes");
+        let range = json.get("range").expect("spanned error keeps a range");
+        assert_eq!(range.get("start").and_then(|start| start.get("line")), Some(&serde_json::json!(3)));
+    }
+}
