@@ -250,6 +250,71 @@ mod tests {
         }
     }
     #[test]
+    fn vtable_order_and_signatures_agree_for_every_trait() {
+        // `lower_dyn_method_call` resolves the signature before the slot and
+        // never guesses slot 0. That is sound only while every ordered
+        // method has a signature and vice versa; lock the agreement here,
+        // including through trait inheritance.
+        let source = r#"
+            module vtable_agreement
+            trait Printable {
+                func render(&self) returns int
+            }
+            trait Debug: Printable {
+                func debug(&self) returns int
+            }
+            record Point {
+                x: int,
+                y: int,
+            }
+            impl Debug for Point {
+                func render(&self) returns int {
+                    return self.x + self.y
+                }
+                func debug(&self) returns int {
+                    return self.x * self.y
+                }
+            }
+            public func main() returns int {
+                let p = Point { x: 10, y: 20 }
+                let d = p as dyn Debug
+                return d.debug() + d.render()
+            }
+            "#;
+        let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
+        let mut module = Parser::new(tokens, HashSet::new())
+            .parse()
+            .expect("parsing should pass");
+        analyze_modules(&mut [&mut module]).expect("semantic analysis should pass");
+        let mut lowering = ASTLowering::new();
+        lowering
+            .lower_module(&module)
+            .expect("lowering should pass");
+        for (trait_name, order) in &lowering.trait_method_order {
+            let signatures = lowering
+                .trait_method_signatures
+                .get(trait_name)
+                .unwrap_or_else(|| panic!("trait '{trait_name}' has order but no signatures"));
+            for method in order {
+                assert!(
+                    signatures.contains_key(method),
+                    "trait '{trait_name}' orders method '{method}' without a signature"
+                );
+            }
+        }
+        for (trait_name, signatures) in &lowering.trait_method_signatures {
+            let order = lowering.trait_method_order.get(trait_name).unwrap_or_else(|| {
+                panic!("trait '{trait_name}' has signatures but no order")
+            });
+            for method in signatures.keys() {
+                assert!(
+                    order.iter().any(|ordered| ordered == method),
+                    "trait '{trait_name}' signs method '{method}' without an order slot"
+                );
+            }
+        }
+    }
+    #[test]
     fn mixed_layout_field_offsets_cover_every_field() {
         // Mixed int/char/bool/float/string fields have distinct padded
         // offsets (char is 4 bytes, bool is 1); every construction and field

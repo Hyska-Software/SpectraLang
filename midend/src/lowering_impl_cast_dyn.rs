@@ -97,24 +97,8 @@ impl ASTLowering {
         let data_ptr = self.builder.build_load_dyn_data_ptr(ir_func, fat_ptr);
         let vtable_ptr = self.builder.build_load_dyn_vtable_ptr(ir_func, fat_ptr);
 
-        // Determine slot index by looking up the trait's method order
-        let slot_index = self
-            .trait_method_order
-            .get(&trait_name)
-            .and_then(|methods| methods.iter().position(|m| m == method_name))
-            .unwrap_or(0);
-
-        // Load function pointer from vtable
-        let fn_ptr = self
-            .builder
-            .build_load_vtable_slot(ir_func, vtable_ptr, slot_index);
-
-        // Build argument list: data_ptr first, then the other args
-        let mut call_args = vec![data_ptr];
-        for arg in arguments {
-            call_args.push(self.lower_expression(arg, ir_func));
-        }
-
+        // Resolve the signature first: a missing or stale method entry must
+        // fail loudly instead of dispatching a guessed slot.
         let Some((sig_params, sig_return)) = self
             .trait_method_signatures
             .get(&trait_name)
@@ -127,10 +111,33 @@ impl ASTLowering {
             })
         else {
             return self.invalid_value(format!(
-                "unresolved trait method '{}::{}' during lowering",
-                trait_name, method_name
+                "unresolved trait method '{trait_name}::{method_name}' during lowering"
             ));
         };
+
+        // Determine slot index by looking up the trait's method order. The
+        // order entry is resolved only after the signature above: a method
+        // present in one map but missing here previously dispatched slot 0.
+        let Some(slot_index) = self
+            .trait_method_order
+            .get(&trait_name)
+            .and_then(|methods| methods.iter().position(|m| m == method_name))
+        else {
+            return self.invalid_value(format!(
+                "unresolved trait method order for '{trait_name}::{method_name}' during lowering"
+            ));
+        };
+
+        // Load function pointer from vtable
+        let fn_ptr = self
+            .builder
+            .build_load_vtable_slot(ir_func, vtable_ptr, slot_index);
+
+        // Build argument list: data_ptr first, then the other args
+        let mut call_args = vec![data_ptr];
+        for arg in arguments {
+            call_args.push(self.lower_expression(arg, ir_func));
+        }
 
         self.require_value(
             self.builder
