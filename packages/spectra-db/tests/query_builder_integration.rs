@@ -6,14 +6,21 @@ use spectra_db::query::{PostgresDialect, QueryError};
 use spectra_db::sqlite::{open_pool, SqliteConnection, SqliteValue};
 use spectra_db::PoolConfig;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Same coarse-tick collision-proofing as migrations_integration.rs: nanos
+/// alone can repeat across parallel test threads sharing one database file.
+static DATABASE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn database() -> SqliteConnection {
     let path = std::env::temp_dir().join(format!(
-        "spectra-r2502-{}.sqlite",
+        "spectra-r2502-{}-{}-{}.sqlite",
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        std::process::id(),
+        DATABASE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
     ));
     let connection = SqliteConnection::open(&path, std::time::Duration::from_secs(1)).unwrap();
     connection.execute_batch("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL, score REAL NOT NULL, active INTEGER NOT NULL);").unwrap();
