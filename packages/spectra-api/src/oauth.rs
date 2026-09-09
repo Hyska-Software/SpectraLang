@@ -168,7 +168,7 @@ impl OAuthClient {
         form.push(("code", code.to_string()));
         form.push(("code_verifier", code_verifier));
         form.push(("redirect_uri", self.redirect_uri()));
-        request_token(&self.token_url(), form, None)
+        request_token(&self.token_url(), form, None, None)
     }
 
     pub fn refresh(&self, token: &OAuthToken) -> Result<OAuthToken, OAuthError> {
@@ -185,7 +185,7 @@ impl OAuthClient {
         };
         form.push(("grant_type", "refresh_token".to_string()));
         form.push(("refresh_token", refresh_token.clone()));
-        request_token(&self.token_url(), form, Some(refresh_token))
+        request_token(&self.token_url(), form, Some(refresh_token), None)
     }
 
     pub fn revoke(&self, token: &OAuthToken) -> Result<(), OAuthError> {
@@ -202,7 +202,7 @@ impl OAuthClient {
         };
         form.push(("token", token.access_token.clone()));
         form.push(("token_type_hint", token.token_type.clone()));
-        let response = post_form(&url, form)?;
+        let response = post_form(&url, form, None)?;
         if (200..=299).contains(&response.status_code) {
             Ok(())
         } else {
@@ -344,24 +344,38 @@ fn form_encode(fields: &[(&str, String)]) -> String {
 fn post_form(
     url: &str,
     fields: Vec<(&'static str, String)>,
+    tls: Option<crate::tls::TlsClientConfig>,
 ) -> Result<crate::client::ClientResponse, OAuthError> {
-    let config = ClientConfig {
+    let base = ClientConfig {
         max_redirects: 0,
         ..ClientConfig::default()
     };
     #[cfg(test)]
-    let config = {
+    let base = {
         // OAuth unit tests use a loopback mock server; production OAuth
         // requests retain the default SSRF-deny policy.
-        config.allow_private_networks(true)
+        base.allow_private_networks(true)
     };
+    let mut config = base;
+    if let Some(tls) = tls {
+        let roots = tls
+            .build()
+            .map_err(|error| OAuthError::Network(error.to_string()))?;
+        config = config.with_tls_config(roots);
+    }
     let client = HttpClient::new(config);
     let request = ClientRequest::new("POST", url)
         .with_header("Content-Type", "application/x-www-form-urlencoded")
         .with_header("Accept", "application/json")
         .with_body(form_encode(&fields).into_bytes());
+    // The nonblocking client speaks HTTPS via the webpki trust store (or the
+    // caller-supplied roots above); the sync client it replaces hard-codes
+    // `allow_https = false`, so every real identity provider failed here.
+    // Cancellation is never requested on this path; the token only satisfies
+    // the bridge signature.
+    let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     client
-        .request(request)
+        .request_nonblocking(request, cancelled)
         .map_err(|error| OAuthError::Network(error.to_string()))
 }
 
@@ -375,8 +389,9 @@ fn request_token(
     token_url: &str,
     mut fields: Vec<(&'static str, String)>,
     fallback_refresh_token: Option<String>,
+    tls: Option<crate::tls::TlsClientConfig>,
 ) -> Result<OAuthToken, OAuthError> {
-    let response = post_form(token_url, std::mem::take(&mut fields))?;
+    let response = post_form(token_url, std::mem::take(&mut fields), tls)?;
     if !(200..=299).contains(&response.status_code) {
         return Err(OAuthError::HttpStatus(
             response.status_code,
@@ -807,5 +822,86 @@ mod tests {
             Err(OAuthError::InvalidState)
         ));
         assert!(!client.set_revocation_url(String::new()));
+    }
+
+    #[test]
+    fn token_exchange_over_https_with_custom_roots() {
+        use rcgen::generate_simple_self_signed;
+        use rustls::ServerConfig;
+        use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+
+        let cert = generate_simple_self_signed(vec!["127.0.0.1".into(), "localhost".into()])
+            .expect("certificate");
+        let der = cert.cert.der().clone();
+        let key =
+            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der()));
+        let server_config = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(vec![der.clone()], key)
+            .expect("server config");
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind TLS mock");
+        let address = listener.local_addr().expect("mock address");
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept");
+            let mut stream = stream;
+            let mut conn = rustls::ServerConnection::new(std::sync::Arc::new(server_config))
+                .expect("server connection");
+            let mut tls = rustls::Stream::new(&mut conn, &mut stream);
+            let mut bytes = Vec::new();
+            let mut buffer = [0_u8; 1024];
+            loop {
+                use std::io::Read;
+                let count = tls.read(&mut buffer).expect("read mock request");
+                if count == 0 {
+                    break;
+                }
+                bytes.extend_from_slice(&buffer[..count]);
+                let Some(header_end) =
+                    bytes.windows(4).position(|window| window == b"\r\n\r\n")
+                else {
+                    continue;
+                };
+                let header_end = header_end + 4;
+                let header = String::from_utf8_lossy(&bytes[..header_end]);
+                let content_length = header
+                    .lines()
+                    .find_map(|line| line.strip_prefix("Content-Length:"))
+                    .and_then(|value| value.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                if bytes.len() >= header_end + content_length {
+                    break;
+                }
+            }
+            let text = String::from_utf8(bytes).expect("mock request is UTF-8");
+            assert!(text.starts_with("POST /token "), "mock IdP saw: {text}");
+            assert!(text.contains("grant_type=authorization_code"));
+            let body = r#"{"access_token":"https-token","token_type":"Bearer","expires_in":3600,"refresh_token":"https-refresh","scope":"openid"}"#;
+            use std::io::Write;
+            write!(
+                tls,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write mock response");
+        });
+        let roots =
+            crate::tls::TlsClientConfig::with_roots(vec![CertificateDer::from(der).to_vec()]);
+        let token = request_token(
+            &format!("https://127.0.0.1:{}/token", address.port()),
+            vec![
+                ("grant_type", "authorization_code".to_string()),
+                ("code", "code-123".to_string()),
+            ],
+            None,
+            Some(roots),
+        )
+        .expect("HTTPS token exchange");
+        assert_eq!(token.access_token, "https-token");
+        assert_eq!(token.token_type, "Bearer");
+        assert_eq!(token.refresh_token.as_deref(), Some("https-refresh"));
+        assert_eq!(token.scope.as_deref(), Some("openid"));
+        assert!(token.expires_at_ms.is_some());
+        server.join().expect("mock IdP served");
     }
 }
