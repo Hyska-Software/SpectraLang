@@ -15,8 +15,25 @@ For `#[derive(Deserialize)]`:
 - `Type::json_error_field(json: string) -> string`
 
 The generated surface is specified in terms of `std.api.json.*`: serialization
-is the typed wrapper over `std.api.json.encode`, and deserialization is the
-typed wrapper over `std.api.json.decode` plus field-level validation.
+walks the derived fields and encodes each value through the JSON codec hosts
+(`std.api.json.quote_string`, `std.api.json.quote_char`,
+`std.api.json.encode_number`, string concatenation), and
+deserialization parses with `std.api.json.parse` and extracts each field through
+`std.api.json.decode_field` plus field-level validation. `json_error_field` reports
+the first violating path through `std.api.json.typed_error_field`.
+
+Supported field types are `int`, `float`, `bool`, `string`, `char`, nested
+derived structs, and `#[json(optional)]` on those scalar fields. Anything
+else (arrays, enums, tuples, maps, exact-width numerics, `optional` on
+aggregate fields, recursive types) is rejected at compile time with a typed
+lowering error naming the struct and field. `to_json` additionally supports
+unit-only enums (data-carrying variants are rejected); `from_json` and
+`json_error_field` on enums are rejected by the semantic pass.
+
+Runtime failures (malformed documents, missing required fields, wrong field
+types) print `spectra.api.json decode error at '<path>'` to stderr and abort
+with `runtime error: host call 'spectra.api.json.decode_field' failed`
+(exit 101) instead of synthesizing default values.
 
 ## Field Options
 

@@ -124,8 +124,10 @@ def validate_docs_and_planning() -> None:
     docs = read("docs/api/std-api-json-derive.md")
     for term in [
         "#[derive(Serialize, Deserialize)]",
-        "std.api.json.encode",
-        "std.api.json.decode",
+        "std.api.json.quote_string",
+        "std.api.json.encode_number",
+        "std.api.json.decode_field",
+        "std.api.json.typed_error_field",
         "rename",
         "optional",
         "EJSON003",
@@ -179,7 +181,16 @@ def run_regressions() -> None:
     run_command([CARGO, "test", "-q", "-p", "spectra-midend", "--offline"])
     run_command([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"])
     run_command([str(SPECTRALANG), "compile", "tests/validation/133_json_derive_surface.spectra"])
-
+    run_command([str(SPECTRALANG), "run", "tests/validation/133_json_derive_surface.spectra"])
+    run_command([str(SPECTRALANG), "run", "tests/validation/357_json_derive_roundtrip.spectra"])
+    malformed = run_command(
+        [str(SPECTRALANG), "run", "tests/errors/json_malformed_rejects.spectra"],
+        expect_success=False,
+    )
+    require(
+        "decode error at 'user_id'" in malformed,
+        "malformed JSON must name the violating field path",
+    )
     expected_errors = {
         "tests/errors/json_derive_missing_field.spectra": "missing required field 'name'",
         "tests/errors/json_derive_wrong_type.spectra": "field 'user_id' has wrong type",

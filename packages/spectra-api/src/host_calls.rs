@@ -424,6 +424,26 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
         function: json::json_stringify,
     },
     HostCallSpec {
+        name: "spectra.api.json.quote_string",
+        function: json::json_quote_string,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.quote_char",
+        function: json::json_quote_char,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.encode_number",
+        function: json::json_encode_number,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.decode_field",
+        function: json::json_decode_field,
+    },
+    HostCallSpec {
+        name: "spectra.api.json.typed_error_field",
+        function: json::json_typed_error_field,
+    },
+    HostCallSpec {
         name: "spectra.api.jwt.sign",
         function: jwt::jwt_sign,
     },

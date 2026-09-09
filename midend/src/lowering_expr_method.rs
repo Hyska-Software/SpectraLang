@@ -72,7 +72,18 @@ impl ASTLowering {
                 };
 
                 if method_name == "to_json" {
-                    return self.lower_string_literal("{}", ir_func);
+                    if self.json_struct_schemas.contains_key(&obj_type_name) {
+                        let mut stack = Vec::new();
+                        return self.lower_derive_encode_struct(
+                            &obj_type_name,
+                            obj_value,
+                            ir_func,
+                            &mut stack,
+                        );
+                    }
+                    if self.json_enum_schemas.contains_key(&obj_type_name) {
+                        return self.lower_enum_to_json(&obj_type_name, obj_value, ir_func);
+                    }
                 }
 
                 // 3. Construir nome da função: Type_method

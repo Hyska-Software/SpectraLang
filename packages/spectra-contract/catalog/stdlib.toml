@@ -4105,6 +4105,75 @@ maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-json.md"
 fixture = "tests/validation/json_roundtrip.spectra"
+[[entry]]
+path = "std.api.json.quote_string"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(string) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.quote_string"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/357_json_derive_roundtrip.spectra"
+
+[[entry]]
+path = "std.api.json.quote_char"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(int) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.quote_char"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/357_json_derive_roundtrip.spectra"
+
+[[entry]]
+path = "std.api.json.encode_number"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(int) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.encode_number"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/357_json_derive_roundtrip.spectra"
+
+[[entry]]
+path = "std.api.json.decode_field"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(int, string, string, int, int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.decode_field"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/357_json_derive_roundtrip.spectra"
+
+[[entry]]
+path = "std.api.json.typed_error_field"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(string, string) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.typed_error_field"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/357_json_derive_roundtrip.spectra"
 
 [[entry]]
 path = "std.api.jwt"

@@ -1,0 +1,106 @@
+module json_derive_roundtrip
+
+#[derive(Serialize, Deserialize)]
+record Address {
+    city: string,
+    zip: int,
+}
+
+#[derive(Serialize, Deserialize)]
+record Measurement {
+    #[json(rename = "sensor_id")]
+    id: int,
+    temp: float,
+    active: bool,
+    label: string,
+    unit: char,
+    #[json(optional)]
+    note: string,
+    location: Address,
+}
+
+#[derive(Serialize, Deserialize)]
+enum Role {
+    #[json(rename = "admin_user")]
+    Admin,
+    Guest,
+}
+
+public func main() returns int {
+    let home = Address { city: "Lima", zip: 15001 }
+    let m = Measurement {
+        id: 7,
+        temp: 21.5,
+        active: true,
+        label: "Ada \"ace\"",
+        unit: 'X',
+        note: "hi",
+        location: home,
+    }
+    let encoded: string = m.to_json()
+    let back: Measurement = Measurement::from_json(encoded)
+    if back.id != 7 {
+        return 1
+    }
+    if back.temp != 21.5 {
+        return 2
+    }
+    if back.active != true {
+        return 3
+    }
+    if back.label != "Ada \"ace\"" {
+        return 4
+    }
+    if back.unit != 'X' {
+        return 5
+    }
+    if back.note != "hi" {
+        return 6
+    }
+    if back.location.city != "Lima" {
+        return 7
+    }
+    if back.location.zip != 15001 {
+        return 8
+    }
+    // Omitted optional decodes to its default.
+    let sparse: Measurement = Measurement::from_json("{\"sensor_id\":8,\"temp\":0.5,\"active\":false,\"label\":\"b\",\"unit\":\"Y\",\"location\":{\"city\":\"Oslo\",\"zip\":0}}")
+    if sparse.id != 8 {
+        return 9
+    }
+    if sparse.note != "" {
+        return 10
+    }
+    if sparse.location.city != "Oslo" {
+        return 11
+    }
+    // Valid documents report no error field.
+    if Measurement::json_error_field(encoded) != "" {
+        return 12
+    }
+    // Violations report the exact wire path. Bad documents are let-bound so
+    // the semantic literal validation does not reject them at compile time;
+    // these exercise the runtime check.
+    let missing_temp = "{\"sensor_id\":7}"
+    if Measurement::json_error_field(missing_temp) != "temp" {
+        return 13
+    }
+    let wrong_id = "{\"sensor_id\":\"7\",\"temp\":0.5,\"active\":false,\"label\":\"b\",\"unit\":\"Y\",\"location\":{\"city\":\"Oslo\",\"zip\":0}}"
+    if Measurement::json_error_field(wrong_id) != "sensor_id" {
+        return 14
+    }
+    let missing_zip = "{\"sensor_id\":7,\"temp\":0.5,\"active\":false,\"label\":\"b\",\"unit\":\"Y\",\"location\":{\"city\":\"Oslo\"}}"
+    if Measurement::json_error_field(missing_zip) != "location.zip" {
+        return 15
+    }
+    // Unit-only enums encode to their quoted wire name.
+    let admin = Role::Admin
+    if admin.to_json() != "\"admin_user\"" {
+        return 16
+    }
+    let guest = Role::Guest
+    if guest.to_json() != "\"Guest\"" {
+        return 17
+    }
+    return 0
+}

@@ -181,6 +181,10 @@ covers = ["std.api.grpc.*", "std.api.graphql.*"]
 id = "api-http3-bindings"
 path = "tests/validation/352_api_http3_bindings.spectra"
 covers = ["std.api.http3.*"]
+[[probe]]
+id = "api-json-derive"
+path = "tests/validation/357_json_derive_roundtrip.spectra"
+covers = ["std.api.json.quote_string", "std.api.json.quote_char", "std.api.json.encode_number", "std.api.json.decode_field", "std.api.json.typed_error_field"]
 
 [[follow_up]]
 prefix = "std.tensor.diff"

@@ -20,6 +20,8 @@ impl ASTLowering {
             alloca_map: HashMap::new(),
             array_map: ArrayScopeStack::new(),
             range_map: RangeScopeStack::new(),
+            json_struct_schemas: HashMap::new(),
+            json_enum_schemas: HashMap::new(),
             struct_definitions: HashMap::new(),
             struct_var_map: StructScopeStack::new(),
             enum_definitions: HashMap::new(),

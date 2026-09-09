@@ -536,6 +536,409 @@ pub extern "C" fn json_stringify(ctx: *mut SpectraHostCallContext) -> i32 {
         .unwrap_or_default();
     write_result(ctx, alloc_spectra_string(&encoded))
 }
+/// Derive support: quote a raw Spectra string as a JSON string literal.
+///
+/// Used by `#[derive(Serialize)]` lowering for string fields. Escaping follows
+/// `serde_json` so embedded quotes, backslashes, and control characters can
+/// never break the encoded object.
+pub extern "C" fn json_quote_string(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(text) = read_spectra_string(args[0]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let quoted = serde_json::to_string(&text).unwrap_or_default();
+    write_result(ctx, alloc_spectra_string(&quoted))
+}
+
+/// Derive support: quote a single Unicode scalar as a JSON string literal.
+///
+/// Used by `#[derive(Serialize)]` lowering for `char` fields. There is no
+/// `char` to `string` host elsewhere, and routing codepoints through
+/// `int_to_string` would emit `65` instead of `"A"`.
+pub extern "C" fn json_quote_char(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let codepoint = args[0] as u32;
+    let Some(ch) = char::from_u32(codepoint) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut text = String::with_capacity(ch.len_utf8());
+    text.push(ch);
+    let quoted = serde_json::to_string(&text).unwrap_or_default();
+    write_result(ctx, alloc_spectra_string(&quoted))
+}
+
+/// Derive support: format f64 bits as a canonical JSON number.
+///
+/// Used by `#[derive(Serialize)]` lowering for `float` fields. The generic
+/// `float_to_string` conversion emits Rust `Display` (`7` for `7.0`), which
+/// would change the JSON type on round-trip; non-finite values are rejected
+/// with an error status instead of emitting invalid JSON.
+pub extern "C" fn json_encode_number(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let value = f64::from_bits(args[0] as u64);
+    let Some(number) = Number::from_f64(value) else {
+        eprintln!("spectra.api.json encode error: non-finite float cannot be encoded as JSON");
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    write_result(ctx, alloc_spectra_string(&number.to_string()))
+}
+
+/// Report a typed decode failure to stderr and fail the host call.
+///
+/// The backend turns the error status into `runtime error: host call ...`,
+/// exit 101; this line names the exact JSON path first so the diagnostic
+/// points at the offending field.
+fn decode_failure(path: &str, reason: &str) -> i32 {
+    eprintln!("spectra.api.json decode error at '{path}': {reason}");
+    HOST_STATUS_INVALID_ARGUMENT
+}
+
+/// Derive support: extract and validate one field for `#[derive(Deserialize)]`.
+///
+/// Arguments: `(child_handle, path, type_name, optional, default_value)`.
+/// `child_handle` is the total-lookup result (`value_get`/`value_at`/`parse`):
+/// 0 (or an unknown handle, or JSON null) means absent. `type_name` is one of
+/// `int`, `float`, `bool`, `string`, `char`; anything else selects object
+/// mode for nested derived structs and returns the child handle unchanged.
+/// Absent `optional` fields yield `default_value`; any other violation fails
+/// loudly instead of synthesizing a silent zero.
+pub extern "C" fn json_decode_field(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 5) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let path = read_spectra_string(args[1]).unwrap_or_else(|| "$".to_string());
+    let type_name = read_spectra_string(args[2]).unwrap_or_default();
+    let optional = args[3] != 0;
+    let default = args[4];
+    let missing = |reason: String| decode_failure(&path, &reason);
+    let field = if args[0] == 0 {
+        None
+    } else {
+        stored_json_value(args[0]).filter(|value| !value.is_null())
+    };
+    let Some(field) = field else {
+        if optional {
+            return write_result(ctx, default);
+        }
+        if path == "$" {
+            return missing("invalid JSON document: expected object at root".to_string());
+        }
+        return missing("missing required field".to_string());
+    };
+    match type_name.as_str() {
+        "bool" => match field.as_bool() {
+            Some(flag) => write_result(ctx, i64::from(flag)),
+            None => missing(format!(
+                "expected boolean, found {}",
+                json_kind_name(&field)
+            )),
+        },
+        "int" => match field
+            .as_i64()
+            .or_else(|| field.as_u64().and_then(|value| i64::try_from(value).ok()))
+        {
+            Some(number) => write_result(ctx, number),
+            None if field.is_number() => {
+                missing("expected integer, found non-integral number".to_string())
+            }
+            None => missing(format!(
+                "expected integer, found {}",
+                json_kind_name(&field)
+            )),
+        },
+        "float" => match field.as_f64() {
+            Some(number) => write_result(ctx, number.to_bits() as i64),
+            None => missing("expected number".to_string()),
+        },
+        "string" => match field.as_str() {
+            Some(text) => write_result(ctx, alloc_spectra_string(text)),
+            None => missing("expected string".to_string()),
+        },
+        "char" => match field.as_str() {
+            Some(text) if text.chars().count() == 1 => {
+                write_result(ctx, text.chars().next().unwrap_or_default() as i64)
+            }
+            _ => missing("expected single-character string".to_string()),
+        },
+        _ => {
+            if !field.is_object() {
+                return missing("expected object".to_string());
+            }
+            write_result(ctx, args[0])
+        }
+    }
+}
+
+/// Compact schema DSL consumed by [`json_typed_error_field`], generated by
+/// midend derive lowering (never hand-written):
+/// `Type{f1:int!;f2:string?;nested:{x:float!};tags:[int]!}`.
+/// `!` marks required fields, `?` optional ones; paths join with `.` and
+/// array indices render as `[i]`. Root problems report as `$`.
+#[derive(Clone, Debug, PartialEq)]
+enum DeriveSchemaType {
+    Int,
+    Float,
+    Bool,
+    String,
+    Char,
+    Object(Vec<DeriveSchemaField>),
+    Array(Box<DeriveSchemaType>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct DeriveSchemaField {
+    json_name: String,
+    optional: bool,
+    ty: DeriveSchemaType,
+}
+
+struct SchemaParser<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> SchemaParser<'a> {
+    fn new(text: &'a str) -> Self {
+        Self {
+            bytes: text.as_bytes(),
+            pos: 0,
+        }
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.bytes.get(self.pos).copied()
+    }
+
+    fn eat(&mut self, expected: u8) -> bool {
+        if self.peek() == Some(expected) {
+            self.pos += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn parse_name(&mut self) -> Option<String> {
+        let start = self.pos;
+        while matches!(
+            self.peek(),
+            Some(b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_')
+        ) {
+            self.pos += 1;
+        }
+        if self.pos == start {
+            return None;
+        }
+        Some(String::from_utf8_lossy(&self.bytes[start..self.pos]).into_owned())
+    }
+
+    fn parse_type(&mut self) -> Option<DeriveSchemaType> {
+        match self.peek() {
+            Some(b'{') => {
+                self.pos += 1;
+                let mut fields = Vec::new();
+                if self.eat(b'}') {
+                    return Some(DeriveSchemaType::Object(fields));
+                }
+                loop {
+                    let json_name = self.parse_name()?;
+                    self.eat(b':');
+                    let ty = self.parse_type()?;
+                    let optional = if self.eat(b'?') {
+                        true
+                    } else if self.eat(b'!') {
+                        false
+                    } else {
+                        return None;
+                    };
+                    fields.push(DeriveSchemaField {
+                        json_name,
+                        optional,
+                        ty,
+                    });
+                    if self.eat(b';') {
+                        if self.eat(b'}') {
+                            return Some(DeriveSchemaType::Object(fields));
+                        }
+                        continue;
+                    }
+                    if self.eat(b'}') {
+                        return Some(DeriveSchemaType::Object(fields));
+                    }
+                    return None;
+                }
+            }
+            Some(b'[') => {
+                self.pos += 1;
+                let element = self.parse_type()?;
+                if !self.eat(b']') {
+                    return None;
+                }
+                Some(DeriveSchemaType::Array(Box::new(element)))
+            }
+            _ => {
+                let name = self.parse_name()?;
+                match name.as_str() {
+                    "int" => Some(DeriveSchemaType::Int),
+                    "float" => Some(DeriveSchemaType::Float),
+                    "bool" => Some(DeriveSchemaType::Bool),
+                    "string" => Some(DeriveSchemaType::String),
+                    "char" => Some(DeriveSchemaType::Char),
+                    _ => None,
+                }
+            }
+        }
+    }
+
+    fn parse_schema(&mut self) -> Option<Vec<DeriveSchemaField>> {
+        self.parse_name()?;
+        match self.parse_type()? {
+            DeriveSchemaType::Object(fields) => {
+                if self.pos == self.bytes.len() {
+                    Some(fields)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
+fn json_kind_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
+fn check_schema_type(value: &Value, ty: &DeriveSchemaType, path: &str) -> Option<String> {
+    match ty {
+        DeriveSchemaType::Int => {
+            let integral = value.as_i64().is_some()
+                || value
+                    .as_u64()
+                    .and_then(|number| i64::try_from(number).ok())
+                    .is_some();
+            if integral {
+                None
+            } else {
+                Some(path.to_string())
+            }
+        }
+        DeriveSchemaType::Float => {
+            if value.as_f64().is_some() {
+                None
+            } else {
+                Some(path.to_string())
+            }
+        }
+        DeriveSchemaType::Bool => {
+            if value.is_boolean() {
+                None
+            } else {
+                Some(path.to_string())
+            }
+        }
+        DeriveSchemaType::String => {
+            if value.is_string() {
+                None
+            } else {
+                Some(path.to_string())
+            }
+        }
+        DeriveSchemaType::Char => {
+            let single = value
+                .as_str()
+                .map(|text| text.chars().count() == 1)
+                .unwrap_or(false);
+            if single {
+                None
+            } else {
+                Some(path.to_string())
+            }
+        }
+        DeriveSchemaType::Object(fields) => {
+            let Some(object) = value.as_object() else {
+                return Some(path.to_string());
+            };
+            for field in fields {
+                let field_path = format!("{path}.{}", field.json_name);
+                match object.get(&field.json_name) {
+                    None => {
+                        if !field.optional {
+                            return Some(field_path);
+                        }
+                    }
+                    Some(item) if item.is_null() => {
+                        if !field.optional {
+                            return Some(field_path);
+                        }
+                    }
+                    Some(item) => {
+                        if let Some(bad) = check_schema_type(item, &field.ty, &field_path) {
+                            return Some(bad);
+                        }
+                    }
+                }
+            }
+            None
+        }
+        DeriveSchemaType::Array(element) => {
+            let Some(items) = value.as_array() else {
+                return Some(path.to_string());
+            };
+            for (index, item) in items.iter().enumerate() {
+                if item.is_null() {
+                    return Some(format!("{path}[{index}]"));
+                }
+                if let Some(bad) = check_schema_type(item, element, &format!("{path}[{index}]")) {
+                    return Some(bad);
+                }
+            }
+            None
+        }
+    }
+}
+
+/// Derive support: report the first JSON path violating a derived schema.
+///
+/// Arguments: `(schema, input)`. Returns `""` when `input` satisfies the
+/// schema, otherwise the offending path (`user_id`, `address.city`,
+/// `tags[2]`; `$` for root problems such as invalid syntax or a non-object
+/// root). A malformed schema (a compiler bug, never user input) also yields
+/// `$`: this host never reports valid input it could not check.
+pub extern "C" fn json_typed_error_field(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let (Some(schema_text), Some(input)) =
+        (read_spectra_string(args[0]), read_spectra_string(args[1]))
+    else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut parser = SchemaParser::new(&schema_text);
+    let bad = match parser.parse_schema() {
+        None => Some("$".to_string()),
+        Some(fields) => match serde_json::from_str::<Value>(&input) {
+            Err(_) => Some("$".to_string()),
+            Ok(value) if !value.is_object() => Some("$".to_string()),
+            Ok(value) => check_schema_type(&value, &DeriveSchemaType::Object(fields), "$")
+                .map(|path| path.strip_prefix("$.").unwrap_or(&path).to_string()),
+        },
+    };
+    write_result(ctx, alloc_spectra_string(bad.as_deref().unwrap_or("")))
+}
 
 #[cfg(test)]
 mod tests {
@@ -622,6 +1025,87 @@ mod tests {
         });
         let err = encode_json(&invalid).expect_err("invalid number repr");
         assert_eq!(err.kind, JsonEncodeErrorKind::InvalidNumber);
+    }
+    #[test]
+    fn derive_schema_reports_first_bad_path() {
+        let mut parser = SchemaParser::new("Profile{user_id:int!;name:string!;nickname:string?}");
+        let fields = parser.parse_schema().expect("schema parses");
+        let check = |input: &str| {
+            let value: Value = serde_json::from_str(input).expect("test input parses");
+            check_schema_type(&value, &DeriveSchemaType::Object(fields.clone()), "$")
+                .map(|path| path.strip_prefix("$.").unwrap_or(&path).to_string())
+        };
+        assert_eq!(check(r#"{"user_id":7,"name":"Ada"}"#), None);
+        assert_eq!(check(r#"{"user_id":7,"name":"Ada","nickname":null}"#), None);
+        assert_eq!(check(r#"{"name":"Ada"}"#).as_deref(), Some("user_id"));
+        assert_eq!(
+            check(r#"{"user_id":"7","name":"Ada"}"#).as_deref(),
+            Some("user_id")
+        );
+        assert_eq!(
+            check(r#"{"user_id":7.5,"name":"Ada"}"#).as_deref(),
+            Some("user_id")
+        );
+    }
+    #[test]
+    fn derive_schema_accepts_trailing_field_separator() {
+        let mut parser = SchemaParser::new("Profile{id:int!;tags:{a:string!;}!;}");
+        let fields = parser.parse_schema().expect("trailing separators parse");
+        assert_eq!(fields.len(), 2);
+        let value: Value = serde_json::from_str(r#"{"id":1,"tags":{"a":"x"}}"#).unwrap();
+        assert_eq!(
+            check_schema_type(&value, &DeriveSchemaType::Object(fields), "$"),
+            None
+        );
+    }
+
+    #[test]
+    fn derive_schema_checks_nested_objects_and_arrays() {
+        let mut parser = SchemaParser::new("Order{id:int!;address:{city:string!}!;tags:[string]!}");
+        let fields = parser.parse_schema().expect("schema parses");
+        let check = |input: &str| {
+            let value: Value = serde_json::from_str(input).expect("test input parses");
+            check_schema_type(&value, &DeriveSchemaType::Object(fields.clone()), "$")
+                .map(|path| path.strip_prefix("$.").unwrap_or(&path).to_string())
+        };
+        assert_eq!(
+            check(r#"{"id":1,"address":{"city":"Lima"},"tags":["a"]}"#),
+            None
+        );
+        assert_eq!(
+            check(r#"{"id":1,"address":{},"tags":[]}"#).as_deref(),
+            Some("address.city")
+        );
+        assert_eq!(
+            check(r#"{"id":1,"address":{"city":"Lima"},"tags":["a",4]}"#).as_deref(),
+            Some("tags[1]")
+        );
+        assert_eq!(
+            check(r#"{"id":1,"address":{"city":"Lima"},"tags":{}}"#).as_deref(),
+            Some("tags")
+        );
+    }
+
+    #[test]
+    fn derive_schema_rejects_malformed_schemas_and_non_objects() {
+        assert!(SchemaParser::new("Profile{user_id:int}")
+            .parse_schema()
+            .is_none());
+        assert!(SchemaParser::new("Profile{user_id:unknown!}")
+            .parse_schema()
+            .is_none());
+        assert!(SchemaParser::new("").parse_schema().is_none());
+        let mut parser = SchemaParser::new("Profile{id:int!}");
+        let fields = parser.parse_schema().expect("schema parses");
+        let root = DeriveSchemaType::Object(fields);
+        assert_eq!(
+            check_schema_type(&Value::Null, &root, "$").as_deref(),
+            Some("$")
+        );
+        assert_eq!(
+            check_schema_type(&Value::Array(vec![]), &root, "$").as_deref(),
+            Some("$")
+        );
     }
 
     #[test]

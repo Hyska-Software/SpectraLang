@@ -137,6 +137,7 @@ impl ASTLowering {
                         .insert(enum_def.name.clone(), field_names);
                 }
             }
+            self.register_json_derive_for_enum(enum_def);
         }
         for struct_def in &ast_module.imported_struct_defs {
             if self.struct_definitions.contains_key(&struct_def.name) {
@@ -173,6 +174,7 @@ impl ASTLowering {
                 self.struct_definitions
                     .insert(struct_def.name.clone(), fields);
             }
+            self.register_json_derive_for_struct(struct_def);
         }
 
         // Preserve imported user-function signatures in the IR so AOT object
@@ -255,6 +257,7 @@ impl ASTLowering {
                     self.struct_definitions
                         .insert(struct_def.name.clone(), fields);
                 }
+                self.register_json_derive_for_struct(struct_def);
             } else if let Item::Enum(enum_def) = item {
                 // Check if this is a generic enum
                 if !enum_def.type_params.is_empty() {
@@ -309,6 +312,7 @@ impl ASTLowering {
                             .insert(enum_def.name.clone(), field_names);
                     }
                 }
+                self.register_json_derive_for_enum(enum_def);
             } else if let Item::Impl(impl_block) = item {
                 // `impl Type { ... }` never has a trait_name (that goes to Item::TraitImpl).
                 // Nothing to do here for trait registration in this path.

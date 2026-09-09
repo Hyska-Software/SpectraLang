@@ -77,11 +77,37 @@ impl ASTLowering {
                 if self.struct_definitions.contains_key(enum_name.as_str())
                     || self.generic_structs.contains_key(enum_name.as_str())
                 {
-                    if variant_name == "json_error_field" {
-                        return self.lower_string_literal("", ir_func);
+                    if variant_name == "json_error_field"
+                        && self.json_struct_schemas.contains_key(enum_name.as_str())
+                    {
+                        let mut call_args: Vec<Value> = Vec::new();
+                        if let Some(data_exprs) = data {
+                            for arg in data_exprs.iter() {
+                                call_args.push(self.lower_expression(arg, ir_func));
+                            }
+                        }
+                        if call_args.len() != 1 {
+                            return self.invalid_value(format!(
+                                "{enum_name}::json_error_field expects a single JSON string argument"
+                            ));
+                        }
+                        return self.lower_derive_error_field(enum_name, call_args[0], ir_func);
                     }
-                    if variant_name == "from_json" {
-                        return self.lower_default_struct_value(enum_name, type_args, ir_func);
+                    if variant_name == "from_json"
+                        && self.json_struct_schemas.contains_key(enum_name.as_str())
+                    {
+                        let mut call_args: Vec<Value> = Vec::new();
+                        if let Some(data_exprs) = data {
+                            for arg in data_exprs.iter() {
+                                call_args.push(self.lower_expression(arg, ir_func));
+                            }
+                        }
+                        if call_args.len() != 1 {
+                            return self.invalid_value(format!(
+                                "{enum_name}::from_json expects a single JSON string argument"
+                            ));
+                        }
+                        return self.lower_derive_from_json(enum_name, call_args[0], ir_func);
                     }
                     let function_name = format!("{}_{}", enum_name, variant_name);
                     let mut call_args: Vec<Value> = Vec::new();

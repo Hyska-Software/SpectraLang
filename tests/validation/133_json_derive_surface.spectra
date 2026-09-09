@@ -23,7 +23,22 @@ public func main() returns int {
         nickname: "ace",
     }
     let encoded: string  = profile.to_json()
+    if encoded != "{\"user_id\":7,\"name\":\"Ada\",\"nickname\":\"ace\"}" {
+        return 1
+    }
     let decoded: Profile = Profile::from_json("{\"user_id\":7,\"name\":\"Ada\"}")
+    if decoded.id != 7 {
+        return 2
+    }
+    if decoded.name != "Ada" {
+        return 3
+    }
+    if decoded.nickname != "" {
+        return 4
+    }
     let field: string    = Profile::json_error_field("{\"user_id\":7,\"name\":\"Ada\"}")
-    return decoded.id
+    if field != "" {
+        return 5
+    }
+    return 0
 }

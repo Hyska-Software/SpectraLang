@@ -357,6 +357,15 @@ impl ASTLowering {
                         _ => return IRType::Unknown,
                     }
                 };
+                // Derive-generated JSON methods have no lowered function body;
+                // report their declared types so callers (e.g. string
+                // interpolation) convert the real value instead of Unknown.
+                if method_name == "to_json"
+                    && (self.json_struct_schemas.contains_key(&obj_type_name)
+                        || self.json_enum_schemas.contains_key(&obj_type_name))
+                {
+                    return IRType::String;
+                }
 
                 let function_name = format!("{}_{}", obj_type_name, method_name);
 

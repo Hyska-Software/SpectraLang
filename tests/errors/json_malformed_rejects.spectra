@@ -1,0 +1,23 @@
+module json_malformed_rejects
+
+#[derive(Serialize, Deserialize)]
+record Profile {
+    #[json(rename = "user_id")]
+    id: int,
+    name: string,
+}
+
+public func main() returns int {
+    // Let-bound so the semantic literal validation does not reject this at
+    // compile time: the failure below must happen at runtime.
+    let bad_json = "{\"user_id\":\"NaN\",\"name\":\"Ada\"}"
+    // Must report the wire path of the violation, not a silent default.
+    let field: string = Profile::json_error_field(bad_json)
+    if field != "user_id" {
+        return 1
+    }
+    // Decoding the same document must fail loudly at runtime (exit 101 with
+    // `decode error at 'user_id'` on stderr) instead of synthesizing zeros.
+    let bad: Profile = Profile::from_json(bad_json)
+    return bad.id
+}

@@ -56,6 +56,20 @@ returning `int`; handles must be released with `value_free`.
 - `spectra.api.json.value_bool(value) -> int` — `1`/`0`/`-1`
 - `spectra.api.json.value_free(value) -> unit`
 - `spectra.api.json.stringify(value) -> string` — compact RFC 8259 output
+- `spectra.api.json.quote_string(text) -> string` — JSON-quoted string
+  literal with `serde_json` escaping (derive lowering support)
+- `spectra.api.json.quote_char(codepoint) -> string` — JSON-quoted
+  single-character literal (derive lowering support for `char` fields)
+- `spectra.api.json.encode_number(float_bits) -> int-as-string` — canonical
+  JSON number text; rejects non-finite values with an error status
+- `spectra.api.json.decode_field(child, path, type_name, optional, default) -> int` —
+  typed field extraction for derive lowering: `child` is a total-lookup
+  result (`value_get`/`value_at`/`parse`), `type_name` is one of `int`,
+  `float`, `bool`, `string`, `char` (anything else selects object mode and
+  returns the handle), absent `optional` fields yield `default`; any other
+  violation prints `decode error at '<path>'` and fails the host call
+- `spectra.api.json.typed_error_field(schema, input) -> string` — first JSON
+  path violating a derive schema, or `""` when valid (`$` for root problems)
 
 
 ## Encoder

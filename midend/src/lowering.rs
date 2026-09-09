@@ -373,6 +373,14 @@ pub struct ASTLowering {
     range_map: RangeScopeStack,
     /// Maps struct names to their field definitions
     struct_definitions: HashMap<String, Vec<(String, IRType)>>,
+    /// JSON derive schemas for lowering: struct name -> per-field mapping.
+    /// Computed from `#[derive(Serialize|Deserialize)]` + `#[json(...)]`
+    /// attributes at struct registration; drives real to_json/from_json
+    /// lowering instead of canned literals.
+    json_struct_schemas: HashMap<String, Vec<JsonFieldSchema>>,
+    /// JSON variant wire names for lowering: enum name -> (variant, json_name)
+    /// in tag order. Only serializable enums are recorded.
+    json_enum_schemas: HashMap<String, Vec<(String, String)>>,
     /// Maps struct variable names to (pointer, struct_name) for field access (scoped)
     struct_var_map: StructScopeStack,
     /// Maps enum names to their variant definitions: (variant_name, tag, data_types)
@@ -490,6 +498,7 @@ mod lowering_async;
 #[path = "lowering_std_host_convert_time.rs"] mod lowering_std_host_convert_time;
 #[path = "lowering_std_host_legacy.rs"] mod lowering_std_host_legacy;
 #[path = "lowering_std_api.rs"] mod lowering_std_api;
+#[path = "lowering_json_derive.rs"] mod lowering_json_derive;
 #[path = "lowering_handles.rs"] mod lowering_handles;
 #[path = "lowering_default.rs"] mod lowering_default;
 
@@ -537,6 +546,7 @@ use {
     lowering_std_host_convert_time::*,
     lowering_std_host_legacy::*,
     lowering_std_api::*,
+    lowering_json_derive::*,
     lowering_handles::*,
     lowering_default::*,
 };
