@@ -28,7 +28,10 @@ TLS is required for the server: `server_quinn_config` returns an error when no
 (`register_http3_server_config`, `register_http3_client_config`,
 `register_http3_handler`); the Spectra string ABI is never used for
 certificates or keys. The client defaults to an empty root store with a 10 s
-connect timeout and 30 s request timeout.
+connect timeout and 30 s request timeout. Client URLs take the standard
+`https://host/path` form with an implicit port 443, like the HTTP/2 parser;
+certificate and root arguments accept one base64 DER blob or a
+comma-separated list of them (empty entries are rejected).
 
 The native tests prove the release surface on loopback only:
 

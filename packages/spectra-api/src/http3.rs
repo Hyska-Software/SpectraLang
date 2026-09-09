@@ -424,14 +424,39 @@ pub struct Http3Client {
 impl fmt::Debug for Http3Client {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.debug_struct("Http3Client").field("authority", &self.authority).field("closed", &self.is_closed()).finish() }
 }
-
 fn parse_endpoint(url: &str) -> Result<(String, u16), Http3Error> {
     let rest = url.strip_prefix("https://").ok_or_else(|| Http3Error::InvalidUrl("HTTP/3 requires https://".into()))?;
     let authority = rest.split('/').next().unwrap_or(rest);
-    let (host, port) = authority.rsplit_once(':').ok_or_else(|| Http3Error::InvalidUrl("URL must include host:port".into()))?;
-    if host.is_empty() { return Err(Http3Error::InvalidUrl("missing host".into())); }
-    let port = port.parse::<u16>().map_err(|e| Http3Error::InvalidUrl(e.to_string()))?;
-    Ok((host.trim_matches(['[', ']']).to_owned(), port))
+    if authority.is_empty() {
+        return Err(Http3Error::InvalidUrl("missing host".into()));
+    }
+    // Bracketed IPv6 literal with an optional :port, defaulting to 443 like
+    // the HTTP/2 endpoint parser.
+    if let Some(rest) = authority.strip_prefix('[') {
+        let end = rest.find(']').ok_or_else(|| Http3Error::InvalidUrl("invalid IPv6 authority".into()))?;
+        let host = &rest[..end];
+        if host.is_empty() {
+            return Err(Http3Error::InvalidUrl("missing host".into()));
+        }
+        let port = match rest[end + 1..].strip_prefix(':') {
+            None if rest.len() == end + 1 => 443,
+            Some(digits) if !digits.is_empty() => digits
+                .parse::<u16>()
+                .map_err(|error| Http3Error::InvalidUrl(error.to_string()))?,
+            _ => return Err(Http3Error::InvalidUrl("invalid IPv6 port".into())),
+        };
+        return Ok((host.to_string(), port));
+    }
+    match authority.rsplit_once(':') {
+        Some((host, digits)) if !host.is_empty() && !digits.is_empty() => {
+            let port = digits
+                .parse::<u16>()
+                .map_err(|error| Http3Error::InvalidUrl(error.to_string()))?;
+            Ok((host.to_string(), port))
+        }
+        Some(_) => Err(Http3Error::InvalidUrl("authority contains an empty host or port".into())),
+        None => Ok((authority.to_string(), 443)),
+    }
 }
 
 impl Http3Client {
@@ -620,4 +645,27 @@ mod tests {
         server.shutdown().await.unwrap();
         client.shutdown().await.unwrap();
     }
+    #[test]
+    fn parse_endpoint_defaults_to_443_without_port() {
+        assert_eq!(
+            parse_endpoint("https://example.com/path").expect("default port"),
+            ("example.com".to_string(), 443)
+        );
+        assert_eq!(
+            parse_endpoint("https://example.com:8443/path").expect("explicit port"),
+            ("example.com".to_string(), 8443)
+        );
+        assert_eq!(
+            parse_endpoint("https://[::1]/path").expect("bracketed IPv6 default port"),
+            ("::1".to_string(), 443)
+        );
+        assert_eq!(
+            parse_endpoint("https://[::1]:9443/path").expect("bracketed IPv6 port"),
+            ("::1".to_string(), 9443)
+        );
+        assert!(parse_endpoint("http://example.com/").is_err());
+        assert!(parse_endpoint("https:///path").is_err());
+        assert!(parse_endpoint("https://example.com:/path").is_err());
+    }
 }
+

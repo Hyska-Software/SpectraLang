@@ -233,18 +233,35 @@ fn decode_base64(value: &str) -> Option<Vec<u8>> {
     Some(output)
 }
 
+/// Decodes one base64 DER blob or a comma-separated list of them. A single
+/// entry behaves exactly as before; empty entries fail fast so a trailing
+/// comma cannot silently arm a partial chain.
+fn decode_base64_list(encoded: &str) -> Option<Vec<Vec<u8>>> {
+    let mut out = Vec::new();
+    for part in encoded.split(',') {
+        if part.is_empty() {
+            return None;
+        }
+        out.push(decode_base64(part)?);
+    }
+    if out.is_empty() {
+        return None;
+    }
+    Some(out)
+}
+
 pub extern "C" fn http3_server_config_new(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = read_args(ctx, 3) else { return HOST_STATUS_INVALID_ARGUMENT; };
     let Some(address) = read_bounded_string(args[0], 256).and_then(|value| value.parse::<SocketAddr>().ok()) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
-    let (Some(cert), Some(key)) = (
-        read_bounded_string(args[1], MAX_PUBLIC_STRING_BYTES).and_then(|value| decode_base64(&value)),
+    let (Some(chain), Some(key)) = (
+        read_bounded_string(args[1], MAX_PUBLIC_STRING_BYTES).and_then(|value| decode_base64_list(&value)),
         read_bounded_string(args[2], MAX_PUBLIC_STRING_BYTES).and_then(|value| decode_base64(&value)),
     ) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
-    let Ok(tls) = crate::tls::server_config_from_der(vec![cert], key, vec![b"h3".to_vec()]) else {
+    let Ok(tls) = crate::tls::server_config_from_der(chain, key, vec![b"h3".to_vec()]) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
     let Some(handle) = lock_store().configs.insert(ConfigEntry::Server(
@@ -262,9 +279,11 @@ pub extern "C" fn http3_client_config_new(ctx: *mut SpectraHostCallContext) -> i
     };
     let mut roots = rustls::RootCertStore::empty();
     if !encoded.is_empty() {
-        let Some(cert) = decode_base64(&encoded) else { return HOST_STATUS_INVALID_ARGUMENT; };
-        if roots.add(rustls::pki_types::CertificateDer::from(cert)).is_err() {
-            return HOST_STATUS_INVALID_ARGUMENT;
+        let Some(chain) = decode_base64_list(&encoded) else { return HOST_STATUS_INVALID_ARGUMENT; };
+        for cert in chain {
+            if roots.add(rustls::pki_types::CertificateDer::from(cert)).is_err() {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            }
         }
     }
     let config = Http3ClientConfig::default().with_root_certificates(Arc::new(roots));
@@ -744,3 +763,80 @@ pub extern "C" fn http3_handle_drop(ctx: *mut SpectraHostCallContext) -> i32 {
     write_result(ctx, i64::from(removed))
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rcgen::generate_simple_self_signed;
+    use spectra_runtime::ffi::HOST_STATUS_SUCCESS;
+
+    fn call_host(
+        function: extern "C" fn(*mut SpectraHostCallContext) -> i32,
+        args: &[SpectraHostValue],
+    ) -> (i32, SpectraHostValue) {
+        let mut result = [0_i64];
+        let mut ctx = SpectraHostCallContext {
+            args: args.as_ptr(),
+            arg_len: args.len(),
+            results: result.as_mut_ptr(),
+            result_len: result.len(),
+            invoke_fn: None,
+        };
+        let status = function(&mut ctx);
+        (status, result[0])
+    }
+
+    fn self_signed_b64(name: &str) -> (String, String) {
+        let certified =
+            generate_simple_self_signed(vec![name.to_string()]).expect("certificate");
+        (
+            crate::grpc_host::encode_base64(certified.cert.der()),
+            crate::grpc_host::encode_base64(&certified.key_pair.serialize_der()),
+        )
+    }
+
+    #[test]
+    fn server_config_accepts_multi_entry_chain_and_rejects_trailing_comma() {
+        let (cert, key) = self_signed_b64("localhost");
+        // Two entries (same cert twice keeps the key matching) must behave
+        // like the proven single-entry path.
+        let chain = format!("{cert},{cert}");
+        let (status, handle) = call_host(
+            http3_server_config_new,
+            &[
+                alloc_spectra_string("127.0.0.1:0"),
+                alloc_spectra_string(&chain),
+                alloc_spectra_string(&key),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!(handle != 0);
+        let trailing = format!("{cert},");
+        let (status, _) = call_host(
+            http3_server_config_new,
+            &[
+                alloc_spectra_string("127.0.0.1:0"),
+                alloc_spectra_string(&trailing),
+                alloc_spectra_string(&key),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_INVALID_ARGUMENT);
+    }
+
+    #[test]
+    fn client_config_accepts_multi_entry_roots() {
+        let (first, _) = self_signed_b64("one.example");
+        let (second, _) = self_signed_b64("two.example");
+        let (status, handle) = call_host(
+            http3_client_config_new,
+            &[alloc_spectra_string(&format!("{first},{second}"))],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!(handle != 0);
+        let (status, _) = call_host(
+            http3_client_config_new,
+            &[alloc_spectra_string("!!!not-base64!!!")],
+        );
+        assert_eq!(status, HOST_STATUS_INVALID_ARGUMENT);
+    }
+}
