@@ -442,7 +442,7 @@ reason = "onnx_export emits a deterministic seeded fixture template, not a train
 prefix = "std.ml.text_embed"
 classification = "baseline"
 roadmap = "R-3005"
-reason = "text_embed currently produces deterministic hash embeddings rather than model-backed embeddings."
+reason = "text_embed produces deterministic hash embeddings rather than model-backed embeddings; no host-alias mechanism exists in the runtime registry, so the demoted name is kept behind the deprecated-text-embed lint instead of being renamed to text_embed_hash."
 
 [[rule]]
 prefix = "std.ml.tokenizer_wordpiece"

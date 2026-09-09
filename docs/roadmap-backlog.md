@@ -7670,6 +7670,9 @@ consumes a validated rank-2 embedding tensor. `tokenizer_encode`,
 `tokenizer_decode`, and `embedding_lookup` are production when used with those
 loaded handles. The legacy inline tokenizer and hash `text_embed` remain
 compatibility baselines and never serve as silent fallbacks.
+(2026-09-09: no host-alias mechanism exists in
+`runtime/src/stdlib/registration.rs`, so `text_embed` keeps its demoted
+name behind the `deprecated-text-embed` lint instead of a rename.)
 
 Fixtures are versioned under `tests/fixtures/r3005/`; the executable contract
 is `tests/validation/187_ml_tokenization_embedding_artifacts.spectra`, and
