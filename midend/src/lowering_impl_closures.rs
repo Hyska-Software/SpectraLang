@@ -30,6 +30,9 @@ impl ASTLowering {
             signature_params,
             public_return.clone(),
         );
+        // Void calls have no observable value: semantic analysis leaves any
+        // use of a Void-bound variable untyped, so this placeholder only ever
+        // flows into discarded statement positions. Keep it a plain zero.
         if public_return == IRType::Void {
             result.unwrap_or_else(|| self.builder.build_const_int(ir_func, 0))
         } else {

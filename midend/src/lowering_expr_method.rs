@@ -33,6 +33,8 @@ impl ASTLowering {
                             "qualified standard-library method did not produce its declared result",
                         )
                     } else {
+                        // Discarded Void results keep a plain zero (unobservable;
+                        // any use is untyped at the semantic level).
                         result.unwrap_or_else(|| self.builder.build_const_int(ir_func, 0))
                     };
                 }

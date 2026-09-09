@@ -282,15 +282,24 @@ impl ASTLowering {
         output_type: IRType,
     ) -> Value {
         if self.current_async_output_type.is_none() {
-            return value.unwrap_or_else(|| self.builder.build_const_int(ir_func, 0));
+            let Some(value) = value else {
+                return self.invalid_value(
+                    "async return wrapper reached without a value outside async output",
+                );
+            };
+            return value;
         }
 
-        let payload = value.unwrap_or_else(|| self.builder.build_const_int(ir_func, 0));
+        let Some(payload) = value else {
+            return self.invalid_value(
+                "async function is missing its return value payload",
+            );
+        };
         self.builder
             .build_async_ready(ir_func, Some(payload), output_type.clone());
 
-        self.builder
-            .build_typed_host_call(
+        self.require_value(
+            self.builder.build_typed_host_call(
                 ir_func,
                 "spectra.async.task.ready".to_string(),
                 vec![payload],
@@ -298,8 +307,9 @@ impl ASTLowering {
                     output: Box::new(output_type),
                 },
                 true,
-            )
-            .unwrap_or_else(|| self.builder.build_const_int(ir_func, 0))
+            ),
+            "async task-ready host call did not produce its task handle",
+        )
     }
 
     pub(crate) fn current_block_is_terminated(&self, ir_func: &IRFunction) -> bool {

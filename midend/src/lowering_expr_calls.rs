@@ -124,6 +124,9 @@ impl ASTLowering {
                                 "I/O host call did not produce its declared result",
                             )
                         } else {
+                            // Void host calls (e.g. print as a statement) have
+                            // no observable value; any use of one is untyped
+                            // at the semantic level, so this never surfaces.
                             result_value.unwrap_or_else(|| self.builder.build_const_int(ir_func, 0))
                         };
                     }
@@ -141,6 +144,7 @@ impl ASTLowering {
                             "standard-library host call did not produce its declared result",
                         )
                     } else {
+                        // Same as above: discarded Void results keep a plain zero.
                         result_value.unwrap_or_else(|| self.builder.build_const_int(ir_func, 0))
                     };
                 }
