@@ -432,29 +432,54 @@ pub(crate) extern "C" fn std_ml_dropout(ctx: *mut SpectraHostCallContext) -> i32
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let (shape, data, requires_grad) = match ml_tensor_float_data(args[0] as usize) {
-            Some(v) => v,
-            None => return HOST_STATUS_INVALID_ARGUMENT,
+        let Some((shape, data, requires_grad)) = ml_tensor_float_data(args[0] as usize) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
         };
         let p = f64::from_bits(args[1] as u64);
         let training = args[2] != 0;
         if !(0.0..1.0).contains(&p) {
             return HOST_STATUS_INVALID_ARGUMENT;
         }
+        // Inverted dropout with a seeded per-call mask: the seed advances
+        // the shared global stream, and the recorded node stores it so the
+        // backward pass regenerates the exact keep pattern. Inference mode
+        // stays an identity passthrough.
+        let seed = lcg_next(&mut lock_unpoisoned(random_state()));
+        let scale = 1.0 / (1.0 - p);
+        let mut stream = seed;
         let out = if training {
-            data.into_iter()
-                .enumerate()
-                .map(|(idx, v)| if idx % 2 == 0 { v / (1.0 - p) } else { 0.0 })
+            data.iter()
+                .map(|v| {
+                    if dropout_keep_draw(&mut stream, p) {
+                        v * scale
+                    } else {
+                        0.0
+                    }
+                })
                 .collect::<Vec<_>>()
         } else {
-            data
+            data.clone()
         };
+        let creator = requires_grad.then(|| AutogradNode {
+            op: AutogradOp::Dropout,
+            parents: vec![args[0] as usize],
+            input_shape: shape.clone(),
+            left_shape: Vec::new(),
+            right_shape: Vec::new(),
+            input: data,
+            output: out.clone(),
+            left: Vec::new(),
+            right: Vec::new(),
+            aux: vec![seed as usize, training as usize, p.to_bits() as usize],
+            #[cfg(feature = "gpu")]
+            device_aux: None,
+        });
         match tensor_alloc_autograd(
             TensorDType::Float,
             shape,
             f64_values_to_host(&out),
             requires_grad,
-            None,
+            creator,
         ) {
             Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
             Err(code) => code,
@@ -479,7 +504,7 @@ pub(crate) extern "C" fn std_ml_max_pool2d(ctx: *mut SpectraHostCallContext) -> 
         if pool_h == 0 || pool_w == 0 || h % pool_h != 0 || w % pool_w != 0 {
             return HOST_STATUS_INVALID_ARGUMENT;
         }
-        let Some((_shape, data, _requires_grad)) = ml_tensor_float_data(input_h) else {
+        let Some((shape, data, requires_grad)) = ml_tensor_float_data(input_h) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
         if data.len() != batch * channels * h * w {
@@ -504,10 +529,29 @@ pub(crate) extern "C" fn std_ml_max_pool2d(ctx: *mut SpectraHostCallContext) -> 
                 }
             }
         }
-        match tensor_alloc(
+        // Record the argmax-routing node so gradients flow back to the
+        // winning input positions. Values are untouched, so existing
+        // forward-only callers observe identical outputs.
+        let creator = requires_grad.then(|| AutogradNode {
+            op: AutogradOp::MaxPool2d,
+            parents: vec![input_h],
+            input_shape: shape.clone(),
+            left_shape: Vec::new(),
+            right_shape: Vec::new(),
+            input: data,
+            output: out.clone(),
+            left: Vec::new(),
+            right: Vec::new(),
+            aux: vec![batch, channels, h, w, pool_h, pool_w, out_h, out_w],
+            #[cfg(feature = "gpu")]
+            device_aux: None,
+        });
+        match tensor_alloc_autograd(
             TensorDType::Float,
             vec![out.len()],
             f64_values_to_host(&out),
+            requires_grad,
+            creator,
         ) {
             Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
             Err(code) => code,

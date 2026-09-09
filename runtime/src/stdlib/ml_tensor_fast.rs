@@ -186,6 +186,17 @@ pub fn tensor_autodiff_apply_fast(
         14 => AutogradOp::View,
         15 => AutogradOp::MlLinear,
         16 => AutogradOp::MlMse,
+        17 => AutogradOp::Tanh,
+        18 => AutogradOp::Sqrt,
+        19 => AutogradOp::MlBce,
+        20 => AutogradOp::MlConv2d,
+        21 => AutogradOp::MaxPool2d,
+        22 => AutogradOp::Dropout,
+        23 => AutogradOp::BatchedMatmul,
+        24 => AutogradOp::Concat,
+        25 => AutogradOp::Stack,
+        26 => AutogradOp::Slice,
+        27 => AutogradOp::Permute,
         _ => return HOST_STATUS_INVALID_ARGUMENT,
     };
     let targets = [target0, target1, target2]

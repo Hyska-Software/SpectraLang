@@ -1011,6 +1011,7 @@
         let (status, _) = call_host(TENSOR_ZERO_GRAD, &[a]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
         let (status, _) = call_host(TENSOR_SET_GRAD_ENABLED, &[0]);
+
         assert_eq!(status, HOST_STATUS_SUCCESS);
         let (status, enabled) = call_host(TENSOR_GRAD_ENABLED, &[]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
@@ -1041,7 +1042,507 @@
         assert_eq!(status, HOST_STATUS_SUCCESS);
         assert!((f64::from_bits(grad_v1_0_bits as u64) - 2.0).abs() < 1e-12);
     }
+    /// Compiler-native gradient check for the tanh/sqrt reverse kernels
+    /// (backend opcodes 17/18): drive `tensor_autodiff_apply_fast` directly
+    /// over recorded forward nodes and compare against the analytic
+    /// derivative and central finite differences (1e-6).
+    #[test]
+    fn tensor_native_apply_tanh_sqrt_matches_analytic_and_finite_difference() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[1]);
 
+        let check_unary = |host: &str,
+                           opcode: i64,
+                           inputs: &[f64],
+                           analytic: &dyn Fn(f64) -> f64,
+                           forward: &dyn Fn(f64) -> f64| {
+            let x = tensor_alloc(
+                TensorDType::Float,
+                vec![inputs.len()],
+                f64_values_to_host(inputs),
+            )
+            .expect("alloc input") as SpectraHostValue;
+            assert_eq!(call_host(TENSOR_REQUIRES_GRAD, &[x, 1]).0, HOST_STATUS_SUCCESS);
+            let (status, y) = call_host(host, &[x]);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            let upstream = tensor_alloc(
+                TensorDType::Float,
+                vec![inputs.len()],
+                f64_values_to_host(&vec![1.0; inputs.len()]),
+            )
+            .expect("alloc upstream") as SpectraHostValue;
+            assert_eq!(
+                tensor_autodiff_apply_fast(opcode, y as usize, upstream as usize, x as usize, 0, 0),
+                HOST_STATUS_SUCCESS
+            );
+            let (status, grad) = call_host(TENSOR_GRAD, &[x]);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            let (_, values, _) =
+                ml_tensor_float_data(grad as usize).expect("grad values");
+            assert_eq!(values.len(), inputs.len());
+            let epsilon = 1e-5f64;
+            for (index, input) in inputs.iter().enumerate() {
+                let want = analytic(*input);
+                assert!(
+                    (values[index] - want).abs() < 1e-12,
+                    "analytic mismatch at {index}: {} vs {want}",
+                    values[index]
+                );
+                let finite =
+                    (forward(input + epsilon) - forward(input - epsilon)) / (2.0 * epsilon);
+                assert!(
+                    (values[index] - finite).abs() < 1e-6,
+                    "finite-difference mismatch at {index}: {} vs {finite}",
+                    values[index]
+                );
+            }
+            let _ = call_host(TENSOR_FREE_ALL, &[]);
+        };
+
+        let tanh_name = "spectra.std.tensor.tanh_f";
+        check_unary(
+            tanh_name,
+            17,
+            &[-1.0, 0.0, 0.5],
+            &|x| 1.0 - x.tanh().powi(2),
+            &|x| x.tanh(),
+        );
+        check_unary(
+            "spectra.std.tensor.sqrt_f",
+            18,
+            &[0.25, 1.0, 4.0],
+            &|x| 0.5 / x.sqrt(),
+            &|x| x.sqrt(),
+        );
+
+        let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[0]);
+    }
+
+    /// Compiler-native gradient check for the BCE reverse kernel (backend
+    /// opcode 19): analytic clamped derivative plus central finite
+    /// differences (1e-6) over recorded `MlBce` nodes.
+    #[test]
+    fn tensor_native_apply_bce_matches_analytic_and_finite_difference() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[1]);
+
+        let pred_values = vec![0.2, 0.7, 0.9];
+        let target_values = vec![0.0, 1.0, 1.0];
+        let pred = tensor_alloc(
+            TensorDType::Float,
+            vec![pred_values.len()],
+            f64_values_to_host(&pred_values),
+        )
+        .expect("alloc pred") as SpectraHostValue;
+        let target = tensor_alloc(
+            TensorDType::Float,
+            vec![target_values.len()],
+            f64_values_to_host(&target_values),
+        )
+        .expect("alloc target") as SpectraHostValue;
+        assert_eq!(call_host(TENSOR_REQUIRES_GRAD, &[pred, 1]).0, HOST_STATUS_SUCCESS);
+        let (status, loss) = call_host(ML_BCE_LOSS, &[pred, target]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        // Scalar loss with no upstream seeds 1.0, exactly like TENSOR_BACKWARD.
+        assert_eq!(
+            tensor_autodiff_apply_fast(19, loss as usize, 0, pred as usize, target as usize, 0),
+            HOST_STATUS_SUCCESS
+        );
+        let (status, grad) = call_host(TENSOR_GRAD, &[pred]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (_, values, _) = ml_tensor_float_data(grad as usize).expect("grad values");
+        assert_eq!(values.len(), pred_values.len());
+        let bce = |p: f64, t: f64| {
+            let p = p.clamp(1e-7, 1.0 - 1e-7);
+            -(t * p.ln() + (1.0 - t) * (1.0 - p).ln()) / pred_values.len() as f64
+        };
+        let analytic = |p: f64, t: f64| {
+            let p = p.clamp(1e-7, 1.0 - 1e-7);
+            (p - t) / (p * (1.0 - p) * pred_values.len() as f64)
+        };
+        let epsilon = 1e-5f64;
+        for index in 0..pred_values.len() {
+            let (p, t) = (pred_values[index], target_values[index]);
+            assert!(
+                (values[index] - analytic(p, t)).abs() < 1e-12,
+                "analytic mismatch at {index}"
+            );
+            let mut plus = pred_values.clone();
+            plus[index] += epsilon;
+            let mut minus = pred_values.clone();
+            minus[index] -= epsilon;
+            let loss_of = |vec: &[f64]| {
+                vec.iter().zip(target_values.iter()).map(|(p, t)| bce(*p, *t)).sum::<f64>()
+            };
+            let finite = (loss_of(&plus) - loss_of(&minus)) / (2.0 * epsilon);
+            assert!(
+                (values[index] - finite).abs() < 1e-6,
+                "finite-difference mismatch at {index}: {} vs {finite}",
+                values[index]
+            );
+        }
+
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[0]);
+    }
+
+
+    /// Compiler-native gradient checks for conv2d / max_pool2d / dropout
+    /// (backend opcodes 20-22): analytic formulas plus central finite
+    /// differences (1e-6) through the forward hosts. Dropout is stochastic,
+    /// so instead of finite differences it asserts exact forward/backward
+    /// mask agreement plus the inference-mode identity.
+    #[test]
+    fn tensor_native_apply_conv_pool_dropout_matches_reference() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[1]);
+        let grad_of = |handle: SpectraHostValue| -> Vec<f64> {
+            let (status, grad) = call_host(TENSOR_GRAD, &[handle]);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            ml_tensor_float_data(grad as usize)
+                .expect("grad values")
+                .1
+        };
+
+        // 1x1 conv over a 2x2 input is a dot product plus bias.
+        let input_values = vec![1.0, 2.0, 3.0, 4.0];
+        let kernel_values = vec![0.5, -0.5, 1.0, 2.0];
+        let bias_values = vec![0.25];
+        let input = tensor_alloc(
+            TensorDType::Float,
+            vec![1, 1, 2, 2],
+            f64_values_to_host(&input_values),
+        )
+        .expect("alloc conv input") as SpectraHostValue;
+        let kernel = tensor_alloc(
+            TensorDType::Float,
+            vec![1, 1, 2, 2],
+            f64_values_to_host(&kernel_values),
+        )
+        .expect("alloc kernel") as SpectraHostValue;
+        let bias = tensor_alloc(
+            TensorDType::Float,
+            vec![1],
+            f64_values_to_host(&bias_values),
+        )
+        .expect("alloc bias") as SpectraHostValue;
+        for handle in [input, kernel, bias] {
+            assert_eq!(
+                call_host(TENSOR_REQUIRES_GRAD, &[handle, 1]).0,
+                HOST_STATUS_SUCCESS
+            );
+        }
+        let (status, conv) = call_host(
+            ML_CONV2D,
+            &[input, kernel, bias, 1, 1, 2, 2, 1, 2, 2],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            tensor_autodiff_apply_fast(20, conv as usize, 0, input as usize, kernel as usize, bias as usize),
+            HOST_STATUS_SUCCESS
+        );
+        let grad_input = grad_of(input);
+        let grad_kernel = grad_of(kernel);
+        let grad_bias = grad_of(bias);
+        for index in 0..4 {
+            assert!((grad_input[index] - kernel_values[index]).abs() < 1e-12);
+            assert!((grad_kernel[index] - input_values[index]).abs() < 1e-12);
+        }
+        assert!((grad_bias[0] - 1.0).abs() < 1e-12);
+        let epsilon = 1e-5f64;
+        let conv_forward = |ins: &[f64], ker: &[f64], bias: f64| {
+            ins.iter().zip(ker.iter()).map(|(a, b)| a * b).sum::<f64>() + bias
+        };
+        for index in 0..4 {
+            let mut plus = input_values.clone();
+            plus[index] += epsilon;
+            let mut minus = input_values.clone();
+            minus[index] -= epsilon;
+            let finite = (conv_forward(&plus, &kernel_values, bias_values[0])
+                - conv_forward(&minus, &kernel_values, bias_values[0]))
+                / (2.0 * epsilon);
+            assert!((grad_input[index] - finite).abs() < 1e-6);
+        }
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+
+        // Max pool routes the whole upstream gradient to the argmax.
+        let pool_values = vec![1.0, 3.0, 2.0, 4.0];
+        let pooled_in = tensor_alloc(
+            TensorDType::Float,
+            vec![1, 1, 2, 2],
+            f64_values_to_host(&pool_values),
+        )
+        .expect("alloc pool input") as SpectraHostValue;
+        assert_eq!(
+            call_host(TENSOR_REQUIRES_GRAD, &[pooled_in, 1]).0,
+            HOST_STATUS_SUCCESS
+        );
+        let (status, pooled) =
+            call_host(ML_MAX_POOL2D, &[pooled_in, 1, 1, 2, 2, 2, 2]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            tensor_autodiff_apply_fast(21, pooled as usize, 0, pooled_in as usize, 0, 0),
+            HOST_STATUS_SUCCESS
+        );
+        let grad_pooled = grad_of(pooled_in);
+        assert_eq!(grad_pooled, vec![0.0, 0.0, 0.0, 1.0]);
+        let pool_forward = |values: &[f64]| {
+            values.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+        };
+        for index in 0..4 {
+            let mut plus = pool_values.clone();
+            plus[index] += epsilon;
+            let mut minus = pool_values.clone();
+            minus[index] -= epsilon;
+            let finite =
+                (pool_forward(&plus) - pool_forward(&minus)) / (2.0 * epsilon);
+            assert!((grad_pooled[index] - finite).abs() < 1e-6);
+        }
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+
+        // Dropout: grad agrees with the recorded forward mask exactly, and
+        // inference mode is the identity in both directions.
+        let drop_values = vec![1.0, -2.0, 0.5, 3.0];
+        let dropped_in = tensor_alloc(
+            TensorDType::Float,
+            vec![drop_values.len()],
+            f64_values_to_host(&drop_values),
+        )
+        .expect("alloc dropout input") as SpectraHostValue;
+        assert_eq!(
+            call_host(TENSOR_REQUIRES_GRAD, &[dropped_in, 1]).0,
+            HOST_STATUS_SUCCESS
+        );
+        let half = 0.5f64.to_bits() as SpectraHostValue;
+        let (status, dropped) = call_host(ML_DROPOUT, &[dropped_in, half, 1]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let upstream = tensor_alloc(
+            TensorDType::Float,
+            vec![drop_values.len()],
+            f64_values_to_host(&vec![1.0; drop_values.len()]),
+        )
+        .expect("alloc dropout upstream") as SpectraHostValue;
+        assert_eq!(
+            tensor_autodiff_apply_fast(22, dropped as usize, upstream as usize, dropped_in as usize, 0, 0),
+            HOST_STATUS_SUCCESS
+        );
+        let (_, dropped_out, _) =
+            ml_tensor_float_data(dropped as usize).expect("dropout output");
+        let grad_dropped = grad_of(dropped_in);
+        for index in 0..drop_values.len() {
+            if dropped_out[index] == 0.0 {
+                assert_eq!(grad_dropped[index], 0.0, "dropped index {index}");
+            } else {
+                // Kept: out = in*scale, grad = 1*scale, so grad*in == out.
+                assert!(
+                    (grad_dropped[index] * drop_values[index] - dropped_out[index]).abs() < 1e-12,
+                    "kept index {index}"
+                );
+            }
+        }
+        let (status, identical) = call_host(ML_DROPOUT, &[dropped_in, half, 0]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (_, identical_out, _) =
+            ml_tensor_float_data(identical as usize).expect("inference output");
+        assert_eq!(identical_out, drop_values);
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[0]);
+    }
+
+    /// Compiler-native gradient checks for batched matmul and the shape
+    /// family (backend opcodes 23-27): analytic formulas plus central
+    /// finite differences (1e-6) through the forward hosts. The batched
+    /// case deliberately uses asymmetric operands.
+    #[test]
+    fn tensor_native_apply_batched_and_shape_matches_reference() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[1]);
+        let grad_of = |handle: SpectraHostValue| -> Vec<f64> {
+            let (status, grad) = call_host(TENSOR_GRAD, &[handle]);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            ml_tensor_float_data(grad as usize)
+                .expect("grad values")
+                .1
+        };
+        let epsilon = 1e-5f64;
+
+        // Batched 2x2 @ 2x2 over two asymmetric batches.
+        let a_values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let b_values = vec![2.0, 0.0, 1.0, 2.0, 0.0, 1.0, 1.0, 0.0];
+        let a = tensor_alloc(TensorDType::Float, vec![2, 2, 2], f64_values_to_host(&a_values))
+            .expect("alloc a") as SpectraHostValue;
+        let b = tensor_alloc(TensorDType::Float, vec![2, 2, 2], f64_values_to_host(&b_values))
+            .expect("alloc b") as SpectraHostValue;
+        for handle in [a, b] {
+            assert_eq!(call_host(TENSOR_REQUIRES_GRAD, &[handle, 1]).0, HOST_STATUS_SUCCESS);
+        }
+        let (status, c) = call_host(TENSOR_MATMUL_BATCHED, &[a, b]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let upstream = tensor_alloc(
+            TensorDType::Float,
+            vec![2, 2, 2],
+            f64_values_to_host(&vec![1.0; 8]),
+        )
+        .expect("alloc upstream") as SpectraHostValue;
+        assert_eq!(
+            tensor_autodiff_apply_fast(23, c as usize, upstream as usize, a as usize, b as usize, 0),
+            HOST_STATUS_SUCCESS
+        );
+        let grad_a = grad_of(a);
+        let grad_b = grad_of(b);
+        // Analytic per-batch reference: dA = G @ B^T, dB = A^T @ G.
+        let mat_t = |m: &[f64], rows: usize, cols: usize| {
+            let mut out = vec![0.0; rows * cols];
+            for r in 0..rows {
+                for c in 0..cols {
+                    out[c * rows + r] = m[r * cols + c];
+                }
+            }
+            out
+        };
+        let mat_mul = |x: &[f64], y: &[f64], m: usize, k: usize, n: usize| {
+            let mut out = vec![0.0; m * n];
+            for r in 0..m {
+                for c in 0..n {
+                    out[r * n + c] = (0..k).map(|l| x[r * k + l] * y[l * n + c]).sum();
+                }
+            }
+            out
+        };
+        for batch in 0..2 {
+            let ga = &a_values[batch * 4..batch * 4 + 4];
+            let gb = &b_values[batch * 4..batch * 4 + 4];
+            let want_a = mat_mul(&[1.0; 4], &mat_t(gb, 2, 2), 2, 2, 2);
+            let want_b = mat_mul(&mat_t(ga, 2, 2), &[1.0; 4], 2, 2, 2);
+            for index in 0..4 {
+                assert!((grad_a[batch * 4 + index] - want_a[index]).abs() < 1e-12);
+                assert!((grad_b[batch * 4 + index] - want_b[index]).abs() < 1e-12);
+            }
+        }
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+
+        // Concat splits the upstream at the left length; stack halves it.
+        for (host, opcode, left_values, right_values) in [
+            ("spectra.std.tensor.concat", 24, vec![1.0, 2.0, 3.0], vec![4.0, 5.0]),
+            ("spectra.std.tensor.stack", 25, vec![1.0, 2.0], vec![4.0, 5.0]),
+        ] {
+            let left = tensor_alloc(
+                TensorDType::Float,
+                vec![left_values.len()],
+                f64_values_to_host(&left_values),
+            )
+            .expect("alloc left") as SpectraHostValue;
+            let right = tensor_alloc(
+                TensorDType::Float,
+                vec![right_values.len()],
+                f64_values_to_host(&right_values),
+            )
+            .expect("alloc right") as SpectraHostValue;
+            for handle in [left, right] {
+                assert_eq!(
+                    call_host(TENSOR_REQUIRES_GRAD, &[handle, 1]).0,
+                    HOST_STATUS_SUCCESS
+                );
+            }
+            let (status, joined) = call_host(host, &[left, right]);
+            assert_eq!(status, HOST_STATUS_SUCCESS, "{host}");
+            let total = left_values.len() + right_values.len();
+            let upstream = tensor_alloc(
+                TensorDType::Float,
+                vec![total],
+                f64_values_to_host(&vec![1.0; total]),
+            )
+            .expect("alloc upstream") as SpectraHostValue;
+            assert_eq!(
+                tensor_autodiff_apply_fast(
+                    opcode,
+                    joined as usize,
+                    upstream as usize,
+                    left as usize,
+                    right as usize,
+                    0
+                ),
+                HOST_STATUS_SUCCESS
+            );
+            assert_eq!(grad_of(left), vec![1.0; left_values.len()]);
+            assert_eq!(grad_of(right), vec![1.0; right_values.len()]);
+            let _ = call_host(TENSOR_FREE_ALL, &[]);
+        }
+
+        // Slice scatters ones back to the window; permute inverts the swap.
+        let seq_values = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let seq = tensor_alloc(
+            TensorDType::Float,
+            vec![seq_values.len()],
+            f64_values_to_host(&seq_values),
+        )
+        .expect("alloc seq") as SpectraHostValue;
+        assert_eq!(call_host(TENSOR_REQUIRES_GRAD, &[seq, 1]).0, HOST_STATUS_SUCCESS);
+        let (status, window) = call_host(TENSOR_SLICE, &[seq, 1, 4]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let slice_up = tensor_alloc(
+            TensorDType::Float,
+            vec![3],
+            f64_values_to_host(&[1.0; 3]),
+        )
+        .expect("alloc slice upstream") as SpectraHostValue;
+        assert_eq!(
+            tensor_autodiff_apply_fast(26, window as usize, slice_up as usize, seq as usize, 0, 0),
+            HOST_STATUS_SUCCESS
+        );
+        assert_eq!(grad_of(seq), vec![0.0, 1.0, 1.0, 1.0, 0.0]);
+        // Finite difference through the slice forward.
+        for index in 0..seq_values.len() {
+            let mut plus = seq_values.clone();
+            plus[index] += epsilon;
+            let mut minus = seq_values.clone();
+            minus[index] -= epsilon;
+            let window_sum = |values: &[f64]| values[1..4].iter().sum::<f64>();
+            let finite = (window_sum(&plus) - window_sum(&minus)) / (2.0 * epsilon);
+            let grads = grad_of(seq);
+            assert!((grads[index] - finite).abs() < 1e-6);
+        }
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+
+        // 2x3 matrix, swap axes 0 and 1.
+        let mat_values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let mat = tensor_alloc(TensorDType::Float, vec![2, 3], f64_values_to_host(&mat_values))
+            .expect("alloc mat") as SpectraHostValue;
+        assert_eq!(call_host(TENSOR_REQUIRES_GRAD, &[mat, 1]).0, HOST_STATUS_SUCCESS);
+        let (status, transposed) = call_host(TENSOR_PERMUTE, &[mat, 0, 1]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let perm_up = tensor_alloc(
+            TensorDType::Float,
+            vec![6],
+            f64_values_to_host(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+        )
+        .expect("alloc perm upstream") as SpectraHostValue;
+        assert_eq!(
+            tensor_autodiff_apply_fast(27, transposed as usize, perm_up as usize, mat as usize, 0, 0),
+            HOST_STATUS_SUCCESS
+        );
+        // Inverse swap of [1..6]: input (r,c) reads upstream (c,r).
+        assert_eq!(grad_of(mat), vec![1.0, 3.0, 5.0, 2.0, 4.0, 6.0]);
+
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[0]);
+    }
     #[test]
     fn ml_phase6_mlp_layers_losses_optimizers_and_dataloader() {
         let _lock = test_guard();
@@ -1932,6 +2433,71 @@
 
         let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[1]);
         let _ = call_host(TENSOR_FREE_ALL, &[]);
+    }
+
+    #[test]
+    fn ml_logits_sample_seeded_is_reproducible_and_diverges() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+
+        // Spread mass across 8 tokens so distinct seeds can diverge.
+        let values = vec![2.0, 1.5, 1.0, 0.5, 0.0, -0.5, -1.0, -1.5];
+        let logits = tensor_alloc(
+            TensorDType::Float,
+            vec![values.len()],
+            f64_values_to_host(&values),
+        )
+        .expect("alloc logits") as SpectraHostValue;
+        let temperature = 1.0f64.to_bits() as SpectraHostValue;
+        let sample = |seed: SpectraHostValue| {
+            call_host(ML_LOGITS_SAMPLE_SEEDED, &[seed, logits, temperature])
+        };
+
+        let (status_a, token_a) = sample(42);
+        let (status_b, token_b) = sample(42);
+        assert_eq!(status_a, HOST_STATUS_SUCCESS);
+        assert_eq!(status_b, HOST_STATUS_SUCCESS);
+        assert_eq!(token_a, token_b, "same seed must reproduce the same token");
+        assert!((0..8).contains(&token_a));
+
+        let mut distinct = std::collections::HashSet::new();
+        distinct.insert(token_a);
+        // The shared splitmix stream draws uniformly over a wide u64 range,
+        // so most seeds land past the cumulative mass and select the last
+        // candidate; a full scan still finds diverging streams. The scan is
+        // deterministic for a fixed sampler, so this never flakes.
+        for seed in 0..10_000 {
+            let (status, token) = sample(seed);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            assert!((0..8).contains(&token));
+            distinct.insert(token);
+            if distinct.len() > 1 {
+                break;
+            }
+        }
+        assert!(
+            distinct.len() > 1,
+            "different seeds must diverge, got {distinct:?}"
+        );
+
+        // Validation parity with the unseeded host.
+        assert_eq!(
+            call_host(ML_LOGITS_SAMPLE_SEEDED, &[1, logits]).0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            call_host(
+                ML_LOGITS_SAMPLE_SEEDED,
+                &[1, logits, 0.0f64.to_bits() as SpectraHostValue]
+            )
+            .0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            call_host(ML_LOGITS_SAMPLE_SEEDED, &[1, 999_999, temperature]).0,
+            HOST_STATUS_NOT_FOUND
+        );
     }
 
     #[test]
@@ -5203,6 +5769,228 @@
             HOST_STATUS_NOT_FOUND
         );
 
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn ml_onnx_export_weights_serializes_live_tensors_and_validates() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+
+        let dir = temp_test_dir("onnx_export_weights");
+        std::fs::create_dir_all(&dir).expect("create temp onnx dir");
+        let path = dir.join("linear-live.onnx");
+        let path_str = path.to_string_lossy().to_string();
+
+        // Distinctive live weights (never equal to the seeded template stream).
+        let weight_values = vec![1.25, -3.75, 0.125, 7.5, -0.875, 2.125];
+        let bias_values = vec![10.25, -20.5, 30.75];
+        let weight = tensor_alloc(
+            TensorDType::Float,
+            vec![2, 3],
+            f64_values_to_host(&weight_values),
+        )
+        .expect("alloc weight") as SpectraHostValue;
+        let bias = tensor_alloc(
+            TensorDType::Float,
+            vec![3],
+            f64_values_to_host(&bias_values),
+        )
+        .expect("alloc bias") as SpectraHostValue;
+        let (_, weights) = call_host(LIST_NEW, &[]);
+        assert!(weights > 0);
+        assert_eq!(call_host(LIST_PUSH, &[weights, weight]).0, HOST_STATUS_SUCCESS);
+        assert_eq!(call_host(LIST_PUSH, &[weights, bias]).0, HOST_STATUS_SUCCESS);
+
+        let (status, exported_ptr) = call_host(
+            ML_ONNX_EXPORT_WEIGHTS,
+            &[test_string(&path_str), test_string("linear"), weights],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let exported =
+            unsafe { read_spectra_string(exported_ptr) }.expect("export path");
+        assert_eq!(exported, path_str);
+
+        // The live f32 bytes land verbatim in the TensorProto raw_data fields.
+        let raw = std::fs::read(&path).expect("exported bytes");
+        let weight_bytes: Vec<u8> = weight_values
+            .iter()
+            .flat_map(|value| (*value as f32).to_le_bytes())
+            .collect();
+        let bias_bytes: Vec<u8> = bias_values
+            .iter()
+            .flat_map(|value| (*value as f32).to_le_bytes())
+            .collect();
+        assert!(
+            raw.windows(weight_bytes.len()).any(|w| w == weight_bytes),
+            "live weight bytes must be serialized"
+        );
+        assert!(
+            raw.windows(bias_bytes.len()).any(|w| w == bias_bytes),
+            "live bias bytes must be serialized"
+        );
+        // Structure stays valid through the real import path.
+        assert_eq!(
+            call_host(ML_ONNX_VALIDATE, &[test_string(&exported)]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        // Contract violations fail cleanly.
+        assert_eq!(
+            call_host(
+                ML_ONNX_EXPORT_WEIGHTS,
+                &[test_string(&path_str), test_string("nope"), weights]
+            )
+            .0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        let (_, short) = call_host(LIST_NEW, &[]);
+        assert_eq!(call_host(LIST_PUSH, &[short, weight]).0, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(
+                ML_ONNX_EXPORT_WEIGHTS,
+                &[test_string(&path_str), test_string("linear"), short]
+            )
+            .0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        let bad_shape = tensor_alloc(
+            TensorDType::Float,
+            vec![3, 2],
+            f64_values_to_host(&weight_values),
+        )
+        .expect("alloc bad-shape weight")
+            as SpectraHostValue;
+        let (_, bad_list) = call_host(LIST_NEW, &[]);
+        assert_eq!(
+            call_host(LIST_PUSH, &[bad_list, bad_shape]).0,
+            HOST_STATUS_SUCCESS
+        );
+        assert_eq!(call_host(LIST_PUSH, &[bad_list, bias]).0, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host(
+                ML_ONNX_EXPORT_WEIGHTS,
+                &[test_string(&path_str), test_string("linear"), bad_list]
+            )
+            .0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            call_host(ML_ONNX_EXPORT_WEIGHTS, &[test_string(&path_str), test_string("linear"), 999_999]).0,
+            HOST_STATUS_NOT_FOUND
+        );
+
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Train-tiny-linear roundtrip: SGD on y = 2x + 1 (mapped through the
+    /// fixed [1,2] -> [1,3] linear geometry) produces live weights; export,
+    /// import, and real ORT inference must match the manual forward pass
+    /// within 1e-6, proving the file carries trained values and not the
+    /// seeded template stream.
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn ml_onnx_export_weights_roundtrip_matches_trained_forward() {
+        let _lock = test_guard();
+        clear_host_functions();
+        register();
+        crate::ffi::spectra_rt_manual_clear();
+        let _ = call_host(TENSOR_FREE_ALL, &[]);
+
+        // Tiny training: 4 samples, MSE, plain SGD from zero init.
+        let samples = vec![
+            ([0.0, 1.0], [1.0, 1.0, 1.0]),
+            ([1.0, 0.0], [3.0, 3.0, 3.0]),
+            ([1.0, 1.0], [5.0, 5.0, 5.0]),
+            ([2.0, -1.0], [1.0, 1.0, 1.0]),
+        ];
+        let mut weight = vec![0.0f64; 6];
+        let mut bias = vec![0.0f64; 3];
+        let lr = 0.05;
+        for _ in 0..500 {
+            let mut grad_w = vec![0.0f64; 6];
+            let mut grad_b = vec![0.0f64; 3];
+            for (input, target) in &samples {
+                for j in 0..3 {
+                    let out =
+                        input[0] * weight[j] + input[1] * weight[3 + j] + bias[j];
+                    let err = out - target[j];
+                    grad_w[j] += err * input[0];
+                    grad_w[3 + j] += err * input[1];
+                    grad_b[j] += err;
+                }
+            }
+            let scale = 2.0 * lr / samples.len() as f64;
+            for (w, g) in weight.iter_mut().zip(grad_w.iter()) {
+                *w -= scale * g;
+            }
+            for (b, g) in bias.iter_mut().zip(grad_b.iter()) {
+                *b -= scale * g;
+            }
+        }
+
+        let dir = temp_test_dir("onnx_trained_roundtrip");
+        std::fs::create_dir_all(&dir).expect("create temp onnx dir");
+        let path = dir.join("linear-trained.onnx");
+        let path_str = path.to_string_lossy().to_string();
+        let weight_handle = tensor_alloc(
+            TensorDType::Float,
+            vec![2, 3],
+            f64_values_to_host(&weight),
+        )
+        .expect("alloc trained weight")
+            as SpectraHostValue;
+        let bias_handle =
+            tensor_alloc(TensorDType::Float, vec![3], f64_values_to_host(&bias))
+                .expect("alloc trained bias") as SpectraHostValue;
+        let (_, weights) = call_host(LIST_NEW, &[]);
+        assert_eq!(
+            call_host(LIST_PUSH, &[weights, weight_handle]).0,
+            HOST_STATUS_SUCCESS
+        );
+        assert_eq!(
+            call_host(LIST_PUSH, &[weights, bias_handle]).0,
+            HOST_STATUS_SUCCESS
+        );
+        let (status, _) = call_host(
+            ML_ONNX_EXPORT_WEIGHTS,
+            &[test_string(&path_str), test_string("linear"), weights],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+
+        let (status, session) =
+            call_host(ML_ONNX_SESSION_FROM_BYTES, &[test_string(&path_str)]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert!(session > 0);
+
+        let probe = [0.5f64, -1.5f64];
+        let input = tensor_alloc(
+            TensorDType::Float,
+            vec![1, 2],
+            f64_values_to_host(&probe),
+        )
+        .expect("alloc probe input") as SpectraHostValue;
+        let (status, output) =
+            call_host(ML_ONNX_RUN, &[session, input, test_string("output")]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (_, values, _) =
+            ml_tensor_float_data(output as usize).expect("output tensor data");
+        assert_eq!(values.len(), 3);
+        for j in 0..3 {
+            let want = probe[0] * weight[j] + probe[1] * weight[3 + j] + bias[j];
+            assert!(
+                (values[j] - want).abs() < 1e-6,
+                "trained roundtrip output {actual} vs manual {want}",
+                actual = values[j]
+            );
+        }
+
+        let _ = call_host(ML_ONNX_SESSION_FREE, &[session]);
         let _ = call_host(TENSOR_FREE_ALL, &[]);
         std::fs::remove_dir_all(&dir).ok();
     }

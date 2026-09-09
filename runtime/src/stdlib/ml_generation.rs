@@ -286,8 +286,9 @@ mod kv_binding_tests {
     }
 }
 
-/// Sampling controls for `spectra.std.ml.generate_ex`.
-#[cfg(feature = "onnx")]
+/// Sampling controls for `spectra.std.ml.generate_ex` (also shared by
+/// `spectra.std.ml.logits_sample_seeded`, which reuses the same splitmix64
+/// stream and top-k sampler without requiring an ONNX session).
 #[derive(Clone, Copy)]
 pub(crate) struct MlGenerateSampling {
     /// Softmax temperature; `<= 0.0` selects greedy decoding.
@@ -298,12 +299,7 @@ pub(crate) struct MlGenerateSampling {
     pub seed: u64,
 }
 
-#[cfg(feature = "onnx")]
 impl MlGenerateSampling {
-    fn is_greedy(&self) -> bool {
-        self.temperature <= 0.0 || self.top_k <= 1
-    }
-
     /// One splitmix64 step. The golden-ratio increment makes every seed —
     /// including 0 — a usable stream state, keeping "seed 0" reproducible
     /// instead of degenerate.
@@ -316,14 +312,21 @@ impl MlGenerateSampling {
     }
 }
 
+#[cfg(feature = "onnx")]
+impl MlGenerateSampling {
+    fn is_greedy(&self) -> bool {
+        self.temperature <= 0.0 || self.top_k <= 1
+    }
+}
+
 /// Samples one token from the LAST-position logits row: keeps the `top_k`
 /// highest logits, temperature-scales them into a softmax and walks the
 /// cumulative distribution with a uniform draw from the deterministic
 /// stream. The stable sort keeps equal logits in LOWEST-token-id order —
 /// the same tie-break contract as greedy decoding. Non-finite logits were
-/// already rejected by the caller.
-#[cfg(feature = "onnx")]
-fn ml_generate_sample_top_k(
+/// already rejected by the caller. Shared by `generate_ex` and
+/// `logits_sample_seeded` (full-vocabulary pool).
+pub(crate) fn ml_generate_sample_top_k(
     last: &[f32],
     vocab: usize,
     options: &MlGenerateSampling,
@@ -477,18 +480,26 @@ fn ml_generate_kv(
         let (out_shape, flat) = output
             .try_extract_tensor::<f32>()
             .map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
-        if out_shape.len() != 3 || out_shape[0] != 1 || out_shape[1] != feed_len as i64 {
+        // Contract: logits are [batch=1, S, vocab] float32. GPT-2-style graphs
+        // emit only the fed positions (S == feed_len); full-sequence graphs
+        // (like the KV fixture's `MatMul(Concat(past, hidden), lm_head)`)
+        // emit the whole prefix (S == past_len + feed_len). Either way the
+        // next-token logits are the LAST row: each row is a pure function of
+        // its own position's id, so the newest token is decided by row S-1.
+        let out_seq = usize::try_from(*out_shape.get(1).unwrap_or(&0))
+            .map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
+        if out_shape.len() != 3 || out_shape[0] != 1 || out_seq < feed_len {
             return Err(HOST_STATUS_INVALID_ARGUMENT);
         }
         let vocab = usize::try_from(out_shape[2]).map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
-        if vocab == 0 || flat.len() != feed_len * vocab {
+        if vocab == 0 || flat.len() != out_seq * vocab {
             return Err(HOST_STATUS_INTERNAL_ERROR);
         }
         if flat.iter().any(|value| !value.is_finite()) {
             return Err(HOST_STATUS_INTERNAL_ERROR);
         }
 
-        let last = &flat[(feed_len - 1) * vocab..];
+        let last = &flat[(out_seq - 1) * vocab..];
         let next = ml_generate_pick_token(last, vocab, sampling, rng_state);
         if next == eos_id {
             // EOS terminates generation and is NOT appended.

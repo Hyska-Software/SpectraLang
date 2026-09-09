@@ -136,6 +136,30 @@ pub(crate) fn autograd_parent_grads_cpu(
                 matmul_f64(&left_t, grad, k, m, n),
             ))
         }
+        AutogradOp::BatchedMatmul => {
+            // left_shape/right_shape are [batch, m, k] / [batch, k, n];
+            // each batch differentiates exactly like `Matmul`.
+            let (batch, m, k) = (
+                node.left_shape[0],
+                node.left_shape[1],
+                node.left_shape[2],
+            );
+            let n = node.right_shape[2];
+            let mut grad_left = vec![0.0; batch * m * k];
+            let mut grad_right = vec![0.0; batch * k * n];
+            for b in 0..batch {
+                let go = &grad[b * m * n..(b + 1) * m * n];
+                let left = &node.left[b * m * k..(b + 1) * m * k];
+                let right = &node.right[b * k * n..(b + 1) * k * n];
+                let right_t = transpose_f64(right, k, n);
+                let left_t = transpose_f64(left, m, k);
+                grad_left[b * m * k..(b + 1) * m * k]
+                    .copy_from_slice(&matmul_f64(go, &right_t, m, n, k));
+                grad_right[b * k * n..(b + 1) * k * n]
+                    .copy_from_slice(&matmul_f64(&left_t, go, k, m, n));
+            }
+            Some(pair(grad_left, grad_right))
+        }
         AutogradOp::MlLinear => {
             let (batch, in_features, out_features) = (node.aux[0], node.aux[1], node.aux[2]);
             let weight_t = transpose_f64(&node.right, in_features, out_features);
@@ -228,6 +252,136 @@ pub(crate) fn autograd_parent_grads_cpu(
                 (node.parents[1], host_grad(grad_kernel)),
                 (node.parents[2], host_grad(grad_bias)),
             ])
+        }
+        AutogradOp::MaxPool2d => {
+            // aux: [batch, channels, h, w, pool_h, pool_w, out_h, out_w].
+            // The forward max keeps the first maximum on ties (`f64::max`
+            // over ascending window order), so the backward scan uses a
+            // strict `>` comparison to route each upstream gradient back to
+            // exactly that position. Any max position is a valid
+            // subgradient; first-max is the deterministic choice.
+            let (batch, channels, h, w, pool_h, pool_w, out_h, out_w) = (
+                node.aux[0],
+                node.aux[1],
+                node.aux[2],
+                node.aux[3],
+                node.aux[4],
+                node.aux[5],
+                node.aux[6],
+                node.aux[7],
+            );
+            let mut grad_input = vec![0.0; batch * channels * h * w];
+            for n in 0..batch {
+                for c in 0..channels {
+                    for oy in 0..out_h {
+                        for ox in 0..out_w {
+                            let g = grad[((n * channels + c) * out_h + oy) * out_w + ox];
+                            let mut best = f64::NEG_INFINITY;
+                            let mut best_idx = ((n * channels + c) * h + oy * pool_h) * w + ox * pool_w;
+                            for py in 0..pool_h {
+                                for px in 0..pool_w {
+                                    let iy = oy * pool_h + py;
+                                    let ix = ox * pool_w + px;
+                                    let idx = ((n * channels + c) * h + iy) * w + ix;
+                                    let value = node.input[idx];
+                                    if value > best {
+                                        best = value;
+                                        best_idx = idx;
+                                    }
+                                }
+                            }
+                            grad_input[best_idx] += g;
+                        }
+                    }
+                }
+            }
+            Some(single(grad_input))
+        }
+        AutogradOp::Dropout => {
+            // aux: [seed, training, p_bits]. The forward mask is a seeded
+            // stream (`dropout_keep_draw` per element), so regenerating it
+            // from the stored seed yields the exact forward keep pattern.
+            // `p_bits` round-trips through `usize` (64-bit targets, matching
+            // the codebase-wide handle-bit convention).
+            let training = node.aux[1] != 0;
+            if !training {
+                return Some(single(grad.to_vec()));
+            }
+            let p = f64::from_bits(node.aux[2] as u64);
+            let scale = 1.0 / (1.0 - p);
+            let mut stream = node.aux[0] as u64;
+            Some(single(
+                grad.iter()
+                    .map(|g| {
+                        let keep = dropout_keep_draw(&mut stream, p);
+                        if keep { g * scale } else { 0.0 }
+                    })
+                    .collect(),
+            ))
+        }
+        AutogradOp::Concat => {
+            // aux[0] is the left operand length; the upstream splits there.
+            let split = node.aux[0].min(grad.len());
+            Some(vec![
+                (node.parents[0], host_grad(grad[..split].to_vec())),
+                (node.parents[1], host_grad(grad[split..].to_vec())),
+            ])
+        }
+        AutogradOp::Stack => {
+            // Two equal halves stacked along a new leading axis.
+            let half = grad.len() / 2;
+            Some(pair(grad[..half].to_vec(), grad[half..].to_vec()))
+        }
+        AutogradOp::Slice => {
+            // aux: [start, len, total]. Scatter the upstream slice back
+            // into a zero gradient of the original length.
+            let (start, len, total) = (node.aux[0], node.aux[1], node.aux[2]);
+            let mut grad_input = vec![0.0; total];
+            let end = (start + len).min(total).min(start + grad.len());
+            grad_input[start..end].copy_from_slice(&grad[..end - start]);
+            Some(single(grad_input))
+        }
+        AutogradOp::Permute => {
+            // aux: [axis_a, axis_b]. An axis swap is its own inverse: the
+            // input element at coordinates `c` sits upstream at `c` with
+            // the same two axes swapped.
+            let (axis_a, axis_b) = (node.aux[0], node.aux[1]);
+            let rank = node.input_shape.len();
+            if axis_a >= rank || axis_b >= rank || rank == 0 {
+                return None;
+            }
+            let strides_of = |shape: &[usize]| {
+                let mut strides = vec![0usize; shape.len()];
+                let mut stride = 1usize;
+                for axis in (0..shape.len()).rev() {
+                    strides[axis] = stride;
+                    stride = stride.saturating_mul(shape[axis]);
+                }
+                (strides, stride)
+            };
+            let (in_strides, total) = strides_of(&node.input_shape);
+            let mut out_shape = node.input_shape.clone();
+            out_shape.swap(axis_a, axis_b);
+            let (out_strides, out_total) = strides_of(&out_shape);
+            if grad.len() != out_total {
+                return None;
+            }
+            let mut grad_input = vec![0.0; total];
+            for in_idx in 0..total {
+                let mut remainder = in_idx;
+                let mut coords = vec![0usize; rank];
+                for axis in 0..rank {
+                    coords[axis] = remainder / in_strides[axis];
+                    remainder %= in_strides[axis];
+                }
+                coords.swap(axis_a, axis_b);
+                let mut out_idx = 0usize;
+                for axis in 0..rank {
+                    out_idx += coords[axis] * out_strides[axis];
+                }
+                grad_input[in_idx] = grad[out_idx];
+            }
+            Some(single(grad_input))
         }
     }
 }

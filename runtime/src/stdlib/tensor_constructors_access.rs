@@ -848,6 +848,25 @@ pub(crate) extern "C" fn std_tensor_permute(ctx: *mut SpectraHostCallContext) ->
             )?;
             result.device = tensor.device;
             result.precision = tensor.precision;
+            let requires_grad = tensor.dtype == TensorDType::Float
+                && tensor_requires_autograd(registry, &[args[0] as usize]);
+            if requires_grad {
+                result.requires_grad = true;
+                result.creator = Some(AutogradNode {
+                    op: AutogradOp::Permute,
+                    parents: vec![args[0] as usize],
+                    input_shape: tensor.shape.clone(),
+                    left_shape: Vec::new(),
+                    right_shape: Vec::new(),
+                    input: tensor_values_as_f64(tensor),
+                    output: Vec::new(),
+                    left: Vec::new(),
+                    right: Vec::new(),
+                    aux: vec![axis_a, axis_b],
+                    #[cfg(feature = "gpu")]
+                    device_aux: None,
+                });
+            }
             Some(result)
         }) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -884,6 +903,25 @@ pub(crate) extern "C" fn std_tensor_slice(ctx: *mut SpectraHostCallContext) -> i
             )?;
             result.device = tensor.device;
             result.precision = tensor.precision;
+            let requires_grad = tensor.dtype == TensorDType::Float
+                && tensor_requires_autograd(registry, &[handle]);
+            if requires_grad {
+                result.requires_grad = true;
+                result.creator = Some(AutogradNode {
+                    op: AutogradOp::Slice,
+                    parents: vec![handle],
+                    input_shape: tensor.shape.clone(),
+                    left_shape: Vec::new(),
+                    right_shape: Vec::new(),
+                    input: tensor_values_as_f64(tensor),
+                    output: Vec::new(),
+                    left: Vec::new(),
+                    right: Vec::new(),
+                    aux: vec![start as usize, (end - start) as usize, tensor.len()],
+                    #[cfg(feature = "gpu")]
+                    device_aux: None,
+                });
+            }
             Some(result)
         }) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -900,30 +938,58 @@ pub(crate) extern "C" fn std_tensor_concat(ctx: *mut SpectraHostCallContext) -> 
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let Some((dtype, shape, data)) = with_tensor_registry(|registry| {
-            let left = registry.get(args[0] as usize)?;
-            let right = registry.get(args[1] as usize)?;
-            if left.dtype != right.dtype || left.shape.len() != right.shape.len() {
-                return None;
-            }
-            let mut shape = left.shape.clone();
-            if left.shape.len() == 1 {
-                shape[0] = left.shape[0].checked_add(right.shape[0])?;
-            } else {
-                if left.shape[1..] != right.shape[1..] {
+        let Some((dtype, shape, data, requires_grad, creator)) = with_tensor_registry(|registry| {
+            let (dtype, shape, left_shape, right_shape, left_data, right_data) = {
+                let left = registry.get(args[0] as usize)?;
+                let right = registry.get(args[1] as usize)?;
+                if left.dtype != right.dtype || left.shape.len() != right.shape.len() {
                     return None;
                 }
-                shape[0] = left.shape[0].checked_add(right.shape[0])?;
-            }
-            let mut data = left.materialize();
-            data.extend(right.materialize());
-            let dtype = left.dtype;
+                let mut shape = left.shape.clone();
+                if left.shape.len() == 1 {
+                    shape[0] = left.shape[0].checked_add(right.shape[0])?;
+                } else {
+                    if left.shape[1..] != right.shape[1..] {
+                        return None;
+                    }
+                    shape[0] = left.shape[0].checked_add(right.shape[0])?;
+                }
+                (
+                    left.dtype,
+                    shape,
+                    left.shape.clone(),
+                    right.shape.clone(),
+                    left.materialize(),
+                    right.materialize(),
+                )
+            };
+            let mut data = left_data.clone();
+            data.extend(right_data);
             registry.note_kernel(data.len());
-            Some((dtype, shape, data))
+            let requires_grad = dtype == TensorDType::Float
+                && tensor_requires_autograd(
+                    registry,
+                    &[args[0] as usize, args[1] as usize],
+                );
+            let creator = requires_grad.then(|| AutogradNode {
+                op: AutogradOp::Concat,
+                parents: vec![args[0] as usize, args[1] as usize],
+                input_shape: shape.clone(),
+                left_shape,
+                right_shape,
+                input: Vec::new(),
+                output: Vec::new(),
+                left: Vec::new(),
+                right: Vec::new(),
+                aux: vec![left_data.len()],
+                #[cfg(feature = "gpu")]
+                device_aux: None,
+            });
+            Some((dtype, shape, data, requires_grad, creator))
         }) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        match tensor_alloc(dtype, shape, data) {
+        match tensor_alloc_autograd(dtype, shape, data, requires_grad, creator) {
             Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
             Err(code) => code,
         }
@@ -935,24 +1001,52 @@ pub(crate) extern "C" fn std_tensor_stack(ctx: *mut SpectraHostCallContext) -> i
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let Some((dtype, shape, data)) = with_tensor_registry(|registry| {
-            let left = registry.get(args[0] as usize)?;
-            let right = registry.get(args[1] as usize)?;
-            if left.dtype != right.dtype || left.shape != right.shape {
-                return None;
-            }
-            let mut shape = Vec::with_capacity(left.shape.len() + 1);
-            shape.push(2);
-            shape.extend(left.shape.iter().copied());
-            let mut data = left.materialize();
-            data.extend(right.materialize());
-            let dtype = left.dtype;
+        let Some((dtype, shape, data, requires_grad, creator)) = with_tensor_registry(|registry| {
+            let (dtype, shape, left_shape, right_shape, left_data, right_data) = {
+                let left = registry.get(args[0] as usize)?;
+                let right = registry.get(args[1] as usize)?;
+                if left.dtype != right.dtype || left.shape != right.shape {
+                    return None;
+                }
+                let mut shape = Vec::with_capacity(left.shape.len() + 1);
+                shape.push(2);
+                shape.extend(left.shape.iter().copied());
+                (
+                    left.dtype,
+                    shape,
+                    left.shape.clone(),
+                    right.shape.clone(),
+                    left.materialize(),
+                    right.materialize(),
+                )
+            };
+            let mut data = left_data.clone();
+            data.extend(right_data);
             registry.note_kernel(data.len());
-            Some((dtype, shape, data))
+            let requires_grad = dtype == TensorDType::Float
+                && tensor_requires_autograd(
+                    registry,
+                    &[args[0] as usize, args[1] as usize],
+                );
+            let creator = requires_grad.then(|| AutogradNode {
+                op: AutogradOp::Stack,
+                parents: vec![args[0] as usize, args[1] as usize],
+                input_shape: shape.clone(),
+                left_shape,
+                right_shape,
+                input: Vec::new(),
+                output: Vec::new(),
+                left: Vec::new(),
+                right: Vec::new(),
+                aux: vec![left_data.len()],
+                #[cfg(feature = "gpu")]
+                device_aux: None,
+            });
+            Some((dtype, shape, data, requires_grad, creator))
         }) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        match tensor_alloc(dtype, shape, data) {
+        match tensor_alloc_autograd(dtype, shape, data, requires_grad, creator) {
             Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
             Err(code) => code,
         }
@@ -962,7 +1056,6 @@ pub(crate) extern "C" fn std_tensor_stack(ctx: *mut SpectraHostCallContext) -> i
 pub(crate) extern "C" fn std_tensor_add(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_binary(ctx, AutogradOp::Add, |a, b| a + b, ElementwiseOp::Add)
 }
-
 pub(crate) extern "C" fn std_tensor_sub(ctx: *mut SpectraHostCallContext) -> i32 {
     tensor_binary(ctx, AutogradOp::Sub, |a, b| a - b, ElementwiseOp::Sub)
 }

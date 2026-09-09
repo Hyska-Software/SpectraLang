@@ -156,6 +156,14 @@ pub(crate) fn random_unit_f64(state: &mut u64) -> f64 {
     (lcg_next(state) >> 11) as f64 / (1u64 << 53) as f64
 }
 
+/// One inverted-dropout keep draw from a caller-owned stream: uniform in
+/// `[0, 1)` keeps the element with probability `1 - p`. Forward and backward
+/// share this exact draw so a recorded seed reproduces the identical mask.
+#[inline]
+pub(crate) fn dropout_keep_draw(state: &mut u64, p: f64) -> bool {
+    random_unit_f64(state) >= p
+}
+
 pub(crate) fn register_random() {
     register_host_function(RAND_SEED, std_random_seed);
     register_host_function(RAND_INT, std_random_int);

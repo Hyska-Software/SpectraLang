@@ -349,7 +349,7 @@ pub(crate) fn ml_onnx_model_spec(kind: &str) -> Option<MlOnnxModel> {
     }
 }
 
-pub(crate) fn ml_onnx_initializer_proto(init: &MlOnnxInitializer) -> Vec<u8> {
+pub(crate) fn ml_onnx_initializer_proto_with_values(init: &MlOnnxInitializer, values: &[f32]) -> Vec<u8> {
     let mut out = Vec::new();
     for dim in init.shape {
         pb_i64(1, *dim, &mut out);
@@ -357,22 +357,23 @@ pub(crate) fn ml_onnx_initializer_proto(init: &MlOnnxInitializer) -> Vec<u8> {
     // TensorProto data_type FLOAT = 1.
     pb_i32(2, 1, &mut out);
     pb_string(8, init.name, &mut out);
-    let mut raw = Vec::with_capacity(init.values().len() * 4);
-    for value in init.values() {
+    let mut raw = Vec::with_capacity(values.len() * 4);
+    for value in values {
         raw.extend_from_slice(&value.to_le_bytes());
     }
     pb_message(9, raw, &mut out);
     out
 }
 
-pub(crate) fn ml_onnx_model_proto(model: &MlOnnxModel) -> Vec<u8> {
+
+pub(crate) fn ml_onnx_model_proto_with_values(model: &MlOnnxModel, values: &[Vec<f32>]) -> Vec<u8> {
     let mut graph = Vec::new();
     for node in &model.nodes {
         pb_message(1, ml_onnx_node(node), &mut graph);
     }
     pb_string(2, &format!("spectra_{}_graph", model.kind), &mut graph);
-    for initializer in &model.initializers {
-        pb_message(5, ml_onnx_initializer_proto(initializer), &mut graph);
+    for (initializer, live) in model.initializers.iter().zip(values.iter()) {
+        pb_message(5, ml_onnx_initializer_proto_with_values(initializer, live), &mut graph);
     }
     for input in &model.inputs {
         pb_message(11, ml_onnx_value_info(input), &mut graph);
@@ -394,6 +395,11 @@ pub(crate) fn ml_onnx_model_proto(model: &MlOnnxModel) -> Vec<u8> {
     pb_message(7, graph, &mut out);
     pb_message(8, opset, &mut out);
     out
+}
+
+pub(crate) fn ml_onnx_model_proto(model: &MlOnnxModel) -> Vec<u8> {
+    let seeded: Vec<Vec<f32>> = model.initializers.iter().map(|init| init.values()).collect();
+    ml_onnx_model_proto_with_values(model, &seeded)
 }
 
 pub(crate) fn pb_read_varint(bytes: &[u8], index: &mut usize) -> Option<u64> {
@@ -738,7 +744,8 @@ pub(crate) fn ml_onnx_multi_error(status: i32, message: String) -> MlOnnxMultiRu
 /// 'seq', '?', ...) carry no static constraint — onnxruntime resolves them
 /// against the actual feed — so they accept any concrete value; likewise a
 /// model input with no declared shape accepts every feed.
-#[cfg(feature = "onnx")]
+/// Also reused by `onnx_export_weights`, where the "model metadata" is the
+/// spec shape for each initializer.
 pub(crate) fn ml_onnx_shape_compatible(model_shape: &str, provided_dims: &[i64]) -> bool {
     if model_shape.is_empty() {
         return true;

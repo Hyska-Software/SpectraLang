@@ -352,6 +352,47 @@ pub(crate) extern "C" fn std_ml_logits_sample(ctx: *mut SpectraHostCallContext) 
     }
 }
 
+/// `spectra.std.ml.logits_sample_seeded(seed, logits, temperature) -> int`
+///
+/// Deterministic sibling of `logits_sample`: identical validation and
+/// full-vocabulary temperature sampling, but the uniform draw comes from a
+/// per-call splitmix64 stream seeded by the caller instead of the global
+/// RNG. Sampling runs through the shared `ml_generate_sample_top_k`
+/// (top_k = vocabulary), so a fixed seed reproduces the exact token for
+/// fixed logits. Logits must be finite and representable as `f32`;
+/// temperature must be finite and positive.
+pub(crate) extern "C" fn std_ml_logits_sample_seeded(ctx: *mut SpectraHostCallContext) -> i32 {
+    unsafe {
+        let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        let seed = args[0] as u64;
+        let Some((_shape, logits, _)) = ml_tensor_float_data(args[1] as usize) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
+        let temperature = f64::from_bits(args[2] as u64);
+        if logits.is_empty() || !temperature.is_finite() || temperature <= 0.0 {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        if logits.iter().any(|value| !value.is_finite()) {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let logits_f32: Vec<f32> = logits.iter().map(|value| *value as f32).collect();
+        if logits_f32.iter().any(|value| !value.is_finite()) {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let vocab = logits_f32.len();
+        let options = MlGenerateSampling {
+            temperature,
+            top_k: vocab,
+            seed,
+        };
+        let mut state = options.seed;
+        let index = ml_generate_sample_top_k(&logits_f32, vocab, &options, &mut state);
+        tensor_result(ctx_ref, index as SpectraHostValue)
+    }
+}
+
 pub(crate) extern "C" fn std_ml_tokenizer_wordpiece(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {

@@ -301,7 +301,7 @@ pub(crate) extern "C" fn std_tensor_matmul_batched(ctx: *mut SpectraHostCallCont
         let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let Some((dtype, shape, data)) = with_tensor_registry(|registry| {
+        let Some((dtype, shape, data, requires_grad, creator)) = with_tensor_registry(|registry| {
             let a = registry.get(args[0] as usize)?;
             let b = registry.get(args[1] as usize)?;
             if a.shape.len() != 3 || b.shape.len() != 3 || a.dtype != b.dtype {
@@ -339,11 +339,36 @@ pub(crate) extern "C" fn std_tensor_matmul_batched(ctx: *mut SpectraHostCallCont
             }
             registry.note_scratch_reuse();
             registry.note_kernel(batch.saturating_mul(m).saturating_mul(n).saturating_mul(k));
-            Some((dtype, vec![batch, m, n], out))
+            let requires_grad = dtype == TensorDType::Float
+                && tensor_requires_autograd(
+                    registry,
+                    &[args[0] as usize, args[1] as usize],
+                );
+            let creator = requires_grad.then(|| AutogradNode {
+                op: AutogradOp::BatchedMatmul,
+                parents: vec![args[0] as usize, args[1] as usize],
+                input_shape: vec![batch, m, n],
+                left_shape: vec![batch, m, k],
+                right_shape: vec![batch, k, n],
+                input: Vec::new(),
+                output: Vec::new(),
+                left: a_data
+                    .iter()
+                    .map(|raw| f64::from_bits(*raw as u64))
+                    .collect(),
+                right: b_data
+                    .iter()
+                    .map(|raw| f64::from_bits(*raw as u64))
+                    .collect(),
+                aux: Vec::new(),
+                #[cfg(feature = "gpu")]
+                device_aux: None,
+            });
+            Some((dtype, vec![batch, m, n], out, requires_grad, creator))
         }) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        match tensor_alloc(dtype, shape, data) {
+        match tensor_alloc_autograd(dtype, shape, data, requires_grad, creator) {
             Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
             Err(code) => code,
         }

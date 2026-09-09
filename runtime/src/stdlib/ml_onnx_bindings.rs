@@ -26,6 +26,86 @@ pub(crate) extern "C" fn std_ml_onnx_export(ctx: *mut SpectraHostCallContext) ->
     }
 }
 
+/// `spectra.std.ml.onnx_export_weights(path, kind, weights) -> string`
+///
+/// Real export: every initializer in the kind's model spec is filled from a
+/// caller-supplied live float-tensor handle instead of the deterministic
+/// seeded stream. `weights` is a `List<int>` of tensor handles in the spec's
+/// initializer order (for example `linear` takes `[weight[2,3], bias[3]]`;
+/// `activation` takes `[]`). Each tensor is validated the way
+/// `ml_onnx_run_multi_inner` validates feeds against session metadata —
+/// float dtype, static-shape compatibility with the spec, finite values
+/// representable as `f32` — and the kind allowlist is unchanged: unknown
+/// kinds are rejected exactly like `onnx_export`.
+pub(crate) extern "C" fn std_ml_onnx_export_weights(ctx: *mut SpectraHostCallContext) -> i32 {
+    unsafe {
+        let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        let Some(path) = ml_read_path_arg(args[0]) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        let Some(kind) = ml_read_path_arg(args[1]) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        if args[2] <= 0 {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let Some(model) = ml_onnx_model_spec(&kind) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        let weight_values =
+            match with_list_registry(|registry| registry.snapshot(args[2] as usize)) {
+                Ok(values) => values,
+                Err(code) => return code,
+            };
+        if weight_values.len() != model.initializers.len() {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let mut live: Vec<Vec<f32>> = Vec::with_capacity(model.initializers.len());
+        for (initializer, handle) in model.initializers.iter().zip(weight_values.iter()) {
+            if *handle <= 0 {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            }
+            let Some((shape, values, _)) = ml_tensor_float_data(*handle as usize) else {
+                return HOST_STATUS_NOT_FOUND;
+            };
+            let spec_shape: Vec<i64> =
+                initializer.shape.iter().map(|dim| *dim).collect();
+            let provided: Vec<i64> =
+                shape.iter().map(|dim| *dim as i64).collect();
+            let spec_rendered = spec_shape
+                .iter()
+                .map(|dim| dim.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            if values.len() != spec_shape.iter().product::<i64>() as usize
+                || !ml_onnx_shape_compatible(&spec_rendered, &provided)
+            {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            }
+            if values.iter().any(|value| !value.is_finite()) {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            }
+            let as_f32: Vec<f32> = values.iter().map(|value| *value as f32).collect();
+            if as_f32.iter().any(|value| !value.is_finite()) {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            }
+            live.push(as_f32);
+        }
+        if let Some(parent) = std::path::Path::new(&path).parent() {
+            if std::fs::create_dir_all(parent).is_err() {
+                return HOST_STATUS_INTERNAL_ERROR;
+            }
+        }
+        let payload = ml_onnx_model_proto_with_values(&model, &live);
+        if std::fs::write(&path, payload).is_err() {
+            return HOST_STATUS_INTERNAL_ERROR;
+        }
+        tensor_result(ctx_ref, alloc_spectra_string(&path))
+    }
+}
+
 pub(crate) extern "C" fn std_ml_onnx_import_summary(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
