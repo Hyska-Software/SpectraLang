@@ -250,6 +250,24 @@ mod tests {
         }
     }
     #[test]
+    fn array_ir_type_round_trips_to_array_annotation() {
+        // Generic inference records annotations via `ir_type_to_annotation`;
+        // an `Array<int>` actual must stay an array so the callee
+        // specializes on the array instead of the bare element type.
+        let lowering = ASTLowering::new();
+        let annotation = lowering.ir_type_to_annotation(&crate::ir::Type::Array {
+            element_type: Box::new(crate::ir::Type::Int),
+            size: 0,
+        });
+        match &annotation.kind {
+            spectra_compiler::ast::TypeAnnotationKind::Generic { name, type_args } => {
+                assert_eq!(name, "array");
+                assert_eq!(type_args.len(), 1);
+            }
+            other => panic!("array IR type must round-trip to an array annotation, got {other:?}"),
+        }
+    }
+    #[test]
     fn vtable_order_and_signatures_agree_for_every_trait() {
         // `lower_dyn_method_call` resolves the signature before the slot and
         // never guesses slot 0. That is sound only while every ordered

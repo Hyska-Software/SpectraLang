@@ -453,10 +453,18 @@ impl ASTLowering {
                 .specialized_generic_annotation_from_enum(name, variants)
                 .or_else(|| self.specialized_generic_annotation(name))
                 .unwrap_or_else(|| Self::simple_type_annotation(name)),
-            IRType::Array { element_type, .. } => {
-                // Represent arrays by their element type (best effort)
-                self.ir_type_to_annotation(element_type.as_ref())
-            }
+            IRType::Array { element_type, .. } => TypeAnnotation {
+                // Arrays parse as `Generic{array, [T]}` annotations; round-trip
+                // through that form so generic inference records `array<int>`
+                // instead of mis-specializing on the bare element type.
+                // (Sizes erase to 0 before lowering, so there is no length
+                // to preserve at this layer.)
+                kind: TypeAnnotationKind::Generic {
+                    name: "array".to_string(),
+                    type_args: vec![self.ir_type_to_annotation(element_type.as_ref())],
+                },
+                span: Span::dummy(),
+            },
             IRType::Tuple { elements } => TypeAnnotation {
                 kind: TypeAnnotationKind::Tuple {
                     elements: elements
@@ -466,6 +474,10 @@ impl ASTLowering {
                 },
                 span: Span::dummy(),
             },
+            // Pointers have no annotation syntax (`Box` only covers
+            // `Box<dyn Trait>`), so the pointee form is kept: collapsing is
+            // lossy but total, while inventing a `pointer` generic would
+            // break every downstream consumer of annotations.
             IRType::Pointer(inner) => self.ir_type_to_annotation(inner.as_ref()),
             IRType::Void => Self::simple_type_annotation("void"),
             _ => Self::unknown_type_annotation(),
