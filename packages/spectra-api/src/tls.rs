@@ -1,5 +1,5 @@
 use crate::handles::ApiHandleTable;
-use crate::{read_args, write_result};
+use crate::{read_args, read_spectra_string, write_result};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName};
 use rustls::{ClientConfig, ClientConnection, RootCertStore, ServerConfig, ServerConnection};
 use spectra_runtime::ffi::{
@@ -513,8 +513,13 @@ fn io_error(message: &'static str, error: std::io::Error) -> TlsError {
     TlsError::with_cause(TlsErrorKind::Io, message, error.to_string())
 }
 
+struct TlsConfigEntry {
+    mode: SpectraHostValue,
+    roots_der: Vec<Vec<u8>>,
+}
+
 struct TlsStore {
-    modes: ApiHandleTable<SpectraHostValue>,
+    modes: ApiHandleTable<TlsConfigEntry>,
 }
 
 impl TlsStore {
@@ -538,7 +543,13 @@ pub extern "C" fn tls_config_new(ctx: *mut SpectraHostCallContext) -> i32 {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
     let mut store = store().lock().unwrap_or_else(|e| e.into_inner());
-    write_result(ctx, store.modes.insert(args[0]))
+    write_result(
+        ctx,
+        store.modes.insert(TlsConfigEntry {
+            mode: args[0],
+            roots_der: Vec::new(),
+        }),
+    )
 }
 
 /// Creates the default client-side TLS configuration handle exposed by
@@ -550,7 +561,13 @@ pub extern "C" fn tls_client_config(ctx: *mut SpectraHostCallContext) -> i32 {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
     let mut store = store().lock().unwrap_or_else(|e| e.into_inner());
-    write_result(ctx, store.modes.insert(TLS_MODE_CLIENT))
+    write_result(
+        ctx,
+        store.modes.insert(TlsConfigEntry {
+            mode: TLS_MODE_CLIENT,
+            roots_der: Vec::new(),
+        }),
+    )
 }
 
 pub extern "C" fn tls_config_mode(ctx: *mut SpectraHostCallContext) -> i32 {
@@ -558,10 +575,47 @@ pub extern "C" fn tls_config_mode(ctx: *mut SpectraHostCallContext) -> i32 {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
     let store = store().lock().unwrap_or_else(|e| e.into_inner());
-    let Some(mode) = store.modes.get(&args[0]).copied() else {
+    let Some(entry) = store.modes.get(&args[0]) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
-    write_result(ctx, mode)
+    write_result(ctx, entry.mode)
+}
+
+/// Appends one DER trust anchor (base64) to a TLS configuration handle so
+/// `client.set_tls_config` can pin a private CA. Garbage that is not valid
+/// base64 DER fails fast instead of arming a broken trust store.
+pub extern "C" fn tls_config_add_root(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(encoded) = read_spectra_string(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Ok(der) = crate::grpc_host::decode_base64(&encoded) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    if CertificateDer::from(der.clone()).is_empty() {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    let mut store = store().lock().unwrap_or_else(|e| e.into_inner());
+    let Some(entry) = store.modes.get_mut(&args[0]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    entry.roots_der.push(der);
+    write_result(ctx, 1)
+}
+
+/// Resolves a TLS configuration handle to pinnable roots for
+/// `client.set_tls_config`. Only client-mode configs with at least one root
+/// qualify; anything else fails so a misconfigured client never trusts an
+/// empty store.
+pub(crate) fn tls_config_roots_for_client(handle: SpectraHostValue) -> Option<Vec<Vec<u8>>> {
+    let store = store().lock().unwrap_or_else(|e| e.into_inner());
+    let entry = store.modes.get(&handle)?;
+    if entry.mode != TLS_MODE_CLIENT || entry.roots_der.is_empty() {
+        return None;
+    }
+    Some(entry.roots_der.clone())
 }
 
 #[cfg(test)]

@@ -136,6 +136,7 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("tls", "config_new") => Some(host_int("spectra.api.tls.config_new")),
         ("tls", "config_mode") => Some(host_int("spectra.api.tls.config_mode")),
         ("tls", "client_config") => Some(host_int("spectra.api.tls.client_config")),
+        ("tls", "config_add_root") => Some(host_bool("spectra.api.tls.config_add_root")),
         ("errors", "new") => Some(host_int("spectra.api.errors.new")),
         ("errors", "internal_error") => Some(host_int("spectra.api.errors.internal_error")),
         ("errors", "status") => Some(host_int("spectra.api.errors.status")),
@@ -318,6 +319,7 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("client", "set_ssrf_policy") => {
             Some(host_bool("spectra.api.client.set_ssrf_policy"))
         }
+        ("client", "set_tls_config") => Some(host_bool("spectra.api.client.set_tls_config")),
         ("routing", "router") => Some(host_int("spectra.api.routing.router_new")),
         ("routing", "router_new") => Some(host_int("spectra.api.routing.router_new")),
         ("routing", "route_count") => Some(host_int("spectra.api.routing.route_count")),

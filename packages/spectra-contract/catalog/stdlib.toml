@@ -327,6 +327,20 @@ docs = "docs/api/std-api-security.md"
 fixture = "tests/validation/341_api_security.spectra"
 
 [[entry]]
+path = "std.api.client.set_tls_config"
+kind = "function"
+namespace = "std.api.client"
+signature = "fn(Client, TlsConfig) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.client.set_tls_config"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-https-hardening.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
 path = "std.api.client.timeout_ms"
 kind = "function"
 namespace = "std.api.client"
@@ -6749,6 +6763,20 @@ binding = "spectra.api.tls.config_mode"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.api.tls.config_add_root"
+kind = "function"
+namespace = "std.api.tls"
+signature = "fn(TlsConfig, string) -> bool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.tls.config_add_root"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-https-hardening.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]

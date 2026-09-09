@@ -489,6 +489,11 @@ fn make_std_api_client(prefix: &str) -> ModuleExports {
             vec![api_type("Client"), api_type("SsrfPolicy")],
             Type::Bool,
         ),
+        (
+            "set_tls_config",
+            vec![api_type("Client"), api_type("TlsConfig")],
+            Type::Bool,
+        ),
     ];
     for (name, params, return_type) in functions {
         exports
@@ -621,7 +626,12 @@ fn make_std_api_tls(prefix: &str) -> ModuleExports {
     let functions = [
         ("config_new", vec![Type::Int], tls_config.clone()),
         ("config_mode", vec![tls_config.clone()], Type::Int),
-        ("client_config", vec![], tls_config),
+        ("client_config", vec![], tls_config.clone()),
+        (
+            "config_add_root",
+            vec![tls_config, Type::String],
+            Type::Bool,
+        ),
     ];
     for (name, params, return_type) in functions {
         exports

@@ -281,8 +281,14 @@ impl HttpClient {
                 format!("invalid HTTPS server name: {error}"),
             )
         })?;
-        let tls_config = match &self.config.tls_config {
-            Some(config) => Arc::clone(config),
+        let tls_config = match self
+            .tls_override
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+            .or_else(|| self.config.tls_config.clone())
+        {
+            Some(config) => config,
             None => crate::tls::TlsClientConfig::with_webpki_roots()
                 .build()
                 .map_err(|error| {

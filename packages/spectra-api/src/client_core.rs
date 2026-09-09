@@ -203,6 +203,10 @@ pub struct HttpClient {
     ssrf_policy: RwLock<SsrfPolicy>,
     pool: Mutex<HashMap<Authority, Vec<PooledConnection>>>,
     stats: Mutex<ClientStats>,
+    // Per-client trust-anchor override installed by
+    // `spectra.api.client.set_tls_config`. The async bridge prefers it over
+    // `config.tls_config` and falls back to webpki roots when unset.
+    tls_override: RwLock<Option<Arc<rustls::ClientConfig>>>,
 }
 
 impl HttpClient {
@@ -213,7 +217,22 @@ impl HttpClient {
             ssrf_policy: RwLock::new(ssrf_policy),
             pool: Mutex::new(HashMap::new()),
             stats: Mutex::new(ClientStats::default()),
+            tls_override: RwLock::new(None),
         }
+    }
+
+    /// Installs a per-client TLS trust store, replacing webpki defaults for
+    /// subsequent requests. Pooled connections negotiated under the previous
+    /// store are dropped so pinned requests never reuse them.
+    pub fn set_tls_config(&self, tls_config: Arc<rustls::ClientConfig>) {
+        *self
+            .tls_override
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(tls_config);
+        self.pool
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
     }
 
     pub fn set_ssrf_policy(&self, policy: SsrfPolicy) {

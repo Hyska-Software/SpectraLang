@@ -376,6 +376,10 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
         function: client::client_set_ssrf_policy,
     },
     HostCallSpec {
+        name: "spectra.api.client.set_tls_config",
+        function: client::client_set_tls_config,
+    },
+    HostCallSpec {
         name: "spectra.api.json.validate",
         function: json::json_validate,
     },
@@ -506,6 +510,10 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
     HostCallSpec {
         name: "spectra.api.tls.config_mode",
         function: tls::tls_config_mode,
+    },
+    HostCallSpec {
+        name: "spectra.api.tls.config_add_root",
+        function: tls::tls_config_add_root,
     },
     HostCallSpec {
         name: "spectra.api.routing.router_new",

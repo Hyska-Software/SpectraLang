@@ -40,6 +40,33 @@ pub extern "C" fn client_set_ssrf_policy(ctx: *mut SpectraHostCallContext) -> i3
     write_result(ctx, 1)
 }
 
+/// Pins a custom TLS trust store on one client: `tls` is a
+/// `tls.client_config` handle with roots added via `tls.config_add_root`.
+/// The async bridge prefers the pinned roots over webpki defaults; an empty
+/// root set or a non-client config fails fast instead of arming a client
+/// that trusts nothing (or the wrong thing).
+pub extern "C" fn client_set_tls_config(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let client = {
+        let store = store().lock().unwrap_or_else(|e| e.into_inner());
+        let Some(entry) = store.clients.get(&args[0]) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        std::sync::Arc::clone(&entry.client)
+    };
+    let Some(roots) = crate::tls::tls_config_roots_for_client(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let rustls_config = match crate::tls::TlsClientConfig::with_roots(roots).build() {
+        Ok(config) => config,
+        Err(_) => return HOST_STATUS_INVALID_ARGUMENT,
+    };
+    client.set_tls_config(rustls_config);
+    write_result(ctx, 1)
+}
+
 pub extern "C" fn client_request(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = read_args(ctx, 2) else {
         return HOST_STATUS_INVALID_ARGUMENT;

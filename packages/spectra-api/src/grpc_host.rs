@@ -292,7 +292,7 @@ fn runtime() -> Result<Arc<Runtime>, i32> {
         .map_err(|_| HOST_STATUS_INTERNAL_ERROR)
 }
 
-fn decode_base64(value: &str) -> Result<Vec<u8>, ()> {
+pub(crate) fn decode_base64(value: &str) -> Result<Vec<u8>, ()> {
     let bytes = value.as_bytes();
     if bytes.len() % 4 != 0 {
         return Err(());
@@ -346,7 +346,7 @@ fn decode_base64(value: &str) -> Result<Vec<u8>, ()> {
     Ok(output)
 }
 
-fn encode_base64(value: &[u8]) -> String {
+pub(crate) fn encode_base64(value: &[u8]) -> String {
     const TABLE: &[u8; 64] =
         b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut output = String::with_capacity(value.len().div_ceil(3) * 4);

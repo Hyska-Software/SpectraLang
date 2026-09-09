@@ -497,4 +497,146 @@ mod tests {
             .expect("HTTPS exchange");
         assert!(String::from_utf8_lossy(&exchange.request).starts_with("GET /secure HTTP/1.1"));
     }
+    use spectra_runtime::ffi::{SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT, HOST_STATUS_SUCCESS};
+
+    fn call_host(
+        function: extern "C" fn(*mut SpectraHostCallContext) -> i32,
+        args: &[SpectraHostValue],
+    ) -> (i32, SpectraHostValue) {
+        let mut result = [0_i64];
+        let mut ctx = SpectraHostCallContext {
+            args: args.as_ptr(),
+            arg_len: args.len(),
+            results: result.as_mut_ptr(),
+            result_len: result.len(),
+            invoke_fn: None,
+        };
+        let status = function(&mut ctx);
+        (status, result[0])
+    }
+
+    fn spectra_string(text: &str) -> SpectraHostValue {
+        crate::alloc_spectra_string(text)
+    }
+
+    fn tls_loopback_server(
+        cert_der: Vec<u8>,
+        key_der: Vec<u8>,
+        body: &'static str,
+    ) -> (
+        std::net::SocketAddr,
+        thread::JoinHandle<Result<crate::tls::HttpsServerExchange, crate::tls::TlsError>>,
+    ) {
+        use crate::tls::TlsServerConfig;
+        let server_tls = TlsServerConfig::new(vec![cert_der], key_der)
+            .build()
+            .expect("server TLS configuration");
+        let listener = TcpListener::bind("127.0.0.1:0").expect("HTTPS listener");
+        let address = listener.local_addr().expect("HTTPS address");
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let server = thread::spawn(move || {
+            serve_single_https_request(
+                listener,
+                server_tls,
+                response.into_bytes(),
+                Duration::from_secs(5),
+            )
+        });
+        (address, server)
+    }
+
+    fn fetch_status_via_hosts(client: SpectraHostValue, url: &str) -> Result<i64, i32> {
+        let (_, request) = call_host(crate::http::request, &[1, spectra_string(url)]);
+        let (status, task) = call_host(client_request, &[client, request]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let response = spectra_runtime::stdlib::block_on_task_value(task)?;
+        let (status, code) = call_host(crate::http::response_status, &[response]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        Ok(code)
+    }
+
+    #[test]
+    fn client_tls_config_pins_custom_roots_through_hosts() {
+        let _guard = CLIENT_TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let certified = generate_simple_self_signed(vec![
+            "localhost".to_string(),
+            "127.0.0.1".to_string(),
+        ])
+        .expect("self-signed HTTPS certificate");
+        let cert_der = certified.cert.der().to_vec();
+        let key_der = certified.key_pair.serialize_der();
+
+        // Wiring validation first: unknown handles and garbage roots fail fast.
+        let (status, _) = call_host(client_set_tls_config, &[0, 0]);
+        assert_eq!(status, HOST_STATUS_INVALID_ARGUMENT);
+        let (status, tls) = call_host(crate::tls::tls_client_config, &[]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, _) = call_host(
+            crate::tls::tls_config_add_root,
+            &[tls, spectra_string("!!!not-base64!!!")],
+        );
+        assert_eq!(status, HOST_STATUS_INVALID_ARGUMENT);
+        let (status, server_tls) = call_host(crate::tls::tls_config_new, &[1]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, _) = call_host(client_set_tls_config, &[0, server_tls]);
+        assert_eq!(status, HOST_STATUS_INVALID_ARGUMENT);
+
+        // Pinned fetch through the hosts succeeds.
+        let (pinned_address, pinned_server) =
+            tls_loopback_server(cert_der.clone(), key_der.clone(), "pinned");
+        let (status, client) = call_host(client_new, &[]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, policy) = call_host(crate::security::ssrf_policy, &[]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, policy) =
+            call_host(crate::security::ssrf_allow_private_networks, &[policy, 1]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, _) = call_host(client_set_ssrf_policy, &[client, policy]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let cert_b64 = spectra_string(&crate::grpc_host::encode_base64(&cert_der));
+        let (status, added) = call_host(crate::tls::tls_config_add_root, &[tls, cert_b64]);
+        assert_eq!((status, added), (HOST_STATUS_SUCCESS, 1));
+        let (status, pinned) = call_host(client_set_tls_config, &[client, tls]);
+        assert_eq!((status, pinned), (HOST_STATUS_SUCCESS, 1));
+        let code = match fetch_status_via_hosts(
+            client,
+            &format!("https://127.0.0.1:{}/pinned", pinned_address.port()),
+        ) {
+            Ok(code) => code,
+            Err(status) => panic!("pinned fetch failed with host status {status}"),
+        };
+        assert_eq!(code, 200);
+        let exchange = pinned_server.join().expect("pinned server joins");
+        assert!(
+            exchange.is_ok(),
+            "pinned server must complete the HTTPS exchange"
+        );
+
+        // The webpki default honestly fails against the private CA.
+        let (default_address, default_server) =
+            tls_loopback_server(cert_der, key_der, "unpinned");
+        let (status, plain) = call_host(client_new, &[]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, policy) = call_host(crate::security::ssrf_policy, &[]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, policy) =
+            call_host(crate::security::ssrf_allow_private_networks, &[policy, 1]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, _) = call_host(client_set_ssrf_policy, &[plain, policy]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let failure = fetch_status_via_hosts(
+            plain,
+            &format!("https://127.0.0.1:{}/unpinned", default_address.port()),
+        );
+        assert!(failure.is_err(), "webpki default must not trust the private CA");
+        let exchange = default_server.join().expect("default server joins");
+        assert!(
+            exchange.is_err(),
+            "aborted handshake must surface server-side too"
+        );
+    }
 }
