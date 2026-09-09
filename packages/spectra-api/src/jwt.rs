@@ -513,4 +513,18 @@ mod tests {
         );
         assert_eq!(decode_key(&pem), Some(b"key".to_vec()));
     }
+
+    #[test]
+    fn unsupported_algorithms_are_rejected_not_negotiated() {
+        for algorithm in ["HS384", "HS512", "EdDSA", "Ed25519", "none", ""] {
+            assert_eq!(
+                JwtAlgorithm::parse(algorithm),
+                None,
+                "{algorithm} must not parse"
+            );
+        }
+        assert_eq!(JwtAlgorithm::parse("hs256"), Some(JwtAlgorithm::Hs256));
+        assert_eq!(JwtAlgorithm::parse("Rs256"), Some(JwtAlgorithm::Rs256));
+        assert_eq!(JwtAlgorithm::parse("ES256"), Some(JwtAlgorithm::Es256));
+    }
 }

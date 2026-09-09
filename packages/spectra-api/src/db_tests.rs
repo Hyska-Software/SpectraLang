@@ -5,10 +5,7 @@ mod tests {
     use crate::server::{Handler, HttpServer, ServerConfig, ServerResponse};
     use spectra_runtime::tracing::{self, SpanKind, SpanStatus};
     use std::env;
-    use std::sync::OnceLock;
     use std::time::Duration;
-
-    static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     fn traced_sqlite_operation(name: &str, operation: impl FnOnce() -> bool) -> bool {
         let span = tracing::begin_external_span(SpanKind::Internal, name).ok();
@@ -37,7 +34,7 @@ mod tests {
     #[test]
     #[ignore = "requires a real OTLP collector started by validate_r2504_sqlite.py"]
     fn sqlite_query_spans_preserve_http_parent() {
-        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let _guard = crate::SHARED_REGISTRY_TEST_LOCK.lock().unwrap();
         let endpoint = env::var("SPECTRA_R2504_OTLP_ENDPOINT")
             .expect("validator must provide SPECTRA_R2504_OTLP_ENDPOINT");
         let config = tracing::config_new(&endpoint, "spectralang-r2504").unwrap();
@@ -173,7 +170,7 @@ mod tests {
 
     #[test]
     fn pool_hosts_lease_connections_concurrently_and_close_cleanly() {
-        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let _guard = crate::SHARED_REGISTRY_TEST_LOCK.lock().unwrap();
         spectra_runtime::ffi::clear_host_functions();
         crate::register();
 
@@ -248,8 +245,265 @@ mod tests {
     }
 
     #[test]
+    fn pool_postgres_open_validates_and_checkout_fails_cleanly_without_daemon() {
+        let _guard = crate::SHARED_REGISTRY_TEST_LOCK.lock().unwrap();
+        spectra_runtime::ffi::clear_host_functions();
+        crate::register();
+
+        let refused = crate::alloc_spectra_string("postgres://spectra:pool@127.0.0.1:9/spectra_pool_test");
+        // Bad size bounds fail fast without touching the network.
+        assert_eq!(
+            call_host("spectra.api.db.pool.postgres_open", &[refused, 0]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.pool.postgres_open", &[refused, 1025]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+        let garbage = crate::alloc_spectra_string("not a postgres url");
+        assert_eq!(
+            call_host("spectra.api.db.pool.postgres_open", &[garbage, 2]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+        // Unknown pools never hand out connections.
+        assert_eq!(
+            call_host("spectra.api.db.pool.postgres_with_connection", &[123_456_789]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.pool.close", &[123_456_789]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+
+        // Creation is lazy (min_size zero): opening against a refused port
+        // succeeds; only checkout reports the typed connection error, fast.
+        let (status, pool) =
+            call_host("spectra.api.db.pool.postgres_open", &[refused, 2]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_ne!(pool, 0);
+        assert_eq!(
+            call_host("spectra.api.db.pool.postgres_with_connection", &[pool]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+        let (close_status, closed) = call_host("spectra.api.db.pool.close", &[pool]);
+        assert_eq!(close_status, HOST_STATUS_SUCCESS);
+        assert_eq!(closed, 1);
+
+        spectra_runtime::ffi::spectra_rt_manual_clear();
+        spectra_runtime::ffi::clear_host_functions();
+    }
+
+    #[test]
+    fn pool_redis_open_validates_and_checkout_fails_cleanly_without_daemon() {
+        let _guard = crate::SHARED_REGISTRY_TEST_LOCK.lock().unwrap();
+        spectra_runtime::ffi::clear_host_functions();
+        crate::register();
+
+        let refused = crate::alloc_spectra_string("redis://127.0.0.1:9/0");
+        assert_eq!(
+            call_host("spectra.api.db.pool.redis_open", &[refused, 0]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.pool.redis_open", &[refused, -3]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+        let garbage = crate::alloc_spectra_string("not a redis url");
+        assert_eq!(
+            call_host("spectra.api.db.pool.redis_open", &[garbage, 2]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.pool.redis_with_connection", &[123_456_789]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+
+        let (status, pool) = call_host("spectra.api.db.pool.redis_open", &[refused, 2]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_ne!(pool, 0);
+        assert_eq!(
+            call_host("spectra.api.db.pool.redis_with_connection", &[pool]),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+        // A SQLite pool is the wrong driver for a Redis checkout.
+        let database = unique_temp_path("wrong-driver");
+        let database_string = database.to_string_lossy().into_owned();
+        let path_arg = crate::alloc_spectra_string(&database_string);
+        let (_, sqlite_pool) =
+            call_host("spectra.api.db.pool.sqlite_open", &[path_arg, 1]);
+        assert_ne!(sqlite_pool, 0);
+        assert_eq!(
+            call_host(
+                "spectra.api.db.pool.redis_with_connection",
+                &[sqlite_pool]
+            ),
+            (HOST_STATUS_SUCCESS, 0)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.pool.close", &[sqlite_pool]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        let (close_status, closed) = call_host("spectra.api.db.pool.close", &[pool]);
+        assert_eq!(close_status, HOST_STATUS_SUCCESS);
+        assert_eq!(closed, 1);
+
+        let _ = std::fs::remove_file(&database_string);
+        spectra_runtime::ffi::spectra_rt_manual_clear();
+        spectra_runtime::ffi::clear_host_functions();
+    }
+
+    #[test]
+    fn pool_redis_leases_against_fake_server() {
+        let _guard = crate::SHARED_REGISTRY_TEST_LOCK.lock().unwrap();
+        spectra_runtime::ffi::clear_host_functions();
+        crate::register();
+
+        let port = spawn_fake_redis(0);
+        let url = crate::alloc_spectra_string(&format!("redis://127.0.0.1:{port}/0"));
+        let (status, pool) = call_host("spectra.api.db.pool.redis_open", &[url, 1]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_ne!(pool, 0);
+
+        let (lease_status, conn) =
+            call_host("spectra.api.db.pool.redis_with_connection", &[pool]);
+        assert_eq!(lease_status, HOST_STATUS_SUCCESS);
+        assert_ne!(conn, 0);
+
+        let key = crate::alloc_spectra_string("spectra:pool:key");
+        let value = crate::alloc_spectra_string("pooled");
+        assert_eq!(
+            call_host("spectra.api.db.redis.set", &[conn, key, value]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        let (get_status, fetched_ptr) =
+            call_host("spectra.api.db.redis.get", &[conn, key]);
+        assert_eq!(get_status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            unsafe { string(fetched_ptr) }.as_deref(),
+            Some("pooled")
+        );
+
+        // Driver close releases the lease instead of closing the socket.
+        assert_eq!(
+            call_host("spectra.api.db.redis.close", &[conn]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        // The released connection is reusable through the same pool.
+        let (re_status, conn2) =
+            call_host("spectra.api.db.pool.redis_with_connection", &[pool]);
+        assert_eq!(re_status, HOST_STATUS_SUCCESS);
+        assert_ne!(conn2, 0);
+        assert_eq!(
+            call_host("spectra.api.db.redis.close", &[conn2]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.pool.close", &[pool]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        spectra_runtime::ffi::spectra_rt_manual_clear();
+        spectra_runtime::ffi::clear_host_functions();
+    }
+
+    #[test]
+    fn pool_postgres_lease_cycle_against_daemon() {
+        let Ok(url) = env::var("SPECTRA_POSTGRES_URL") else {
+            eprintln!("skipping postgres pool test: SPECTRA_POSTGRES_URL is not set");
+            return;
+        };
+        let _guard = crate::SHARED_REGISTRY_TEST_LOCK.lock().unwrap();
+        spectra_runtime::ffi::clear_host_functions();
+        crate::register();
+
+        let url_arg = crate::alloc_spectra_string(&url);
+        let (status, pool) = call_host("spectra.api.db.pool.postgres_open", &[url_arg, 2]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_ne!(pool, 0);
+        let (lease_status, conn) =
+            call_host("spectra.api.db.pool.postgres_with_connection", &[pool]);
+        assert_eq!(lease_status, HOST_STATUS_SUCCESS);
+        assert_ne!(conn, 0);
+
+        let ddl = crate::alloc_spectra_string(
+            "CREATE TEMP TABLE spectra_pool_fixture(id BIGINT PRIMARY KEY, name TEXT NOT NULL)",
+        );
+        let (prepare_status, create) =
+            call_host("spectra.api.db.postgres.prepare", &[conn, ddl]);
+        assert_eq!(prepare_status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host("spectra.api.db.postgres.step", &[create]),
+            (HOST_STATUS_SUCCESS, 2)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.postgres.finalize", &[create]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        let insert_sql = crate::alloc_spectra_string(
+            "INSERT INTO spectra_pool_fixture(id, name) VALUES($1, $2)",
+        );
+        let (prepare_status, insert) =
+            call_host("spectra.api.db.postgres.prepare", &[conn, insert_sql]);
+        assert_eq!(prepare_status, HOST_STATUS_SUCCESS);
+        let name = crate::alloc_spectra_string("pooled");
+        assert_eq!(
+            call_host("spectra.api.db.postgres.bind_int", &[insert, 1, 1]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.postgres.bind_text", &[insert, 2, name]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.postgres.step", &[insert]),
+            (HOST_STATUS_SUCCESS, 2)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.postgres.finalize", &[insert]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        let query_sql = crate::alloc_spectra_string(
+            "SELECT id, name FROM spectra_pool_fixture ORDER BY id",
+        );
+        let (prepare_status, query) =
+            call_host("spectra.api.db.postgres.prepare", &[conn, query_sql]);
+        assert_eq!(prepare_status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_host("spectra.api.db.postgres.step", &[query]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.postgres.column_int", &[query, 0]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.postgres.step", &[query]),
+            (HOST_STATUS_SUCCESS, 2)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.postgres.finalize", &[query]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        assert_eq!(
+            call_host("spectra.api.db.postgres.close", &[conn]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+        assert_eq!(
+            call_host("spectra.api.db.pool.close", &[pool]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+
+        spectra_runtime::ffi::spectra_rt_manual_clear();
+        spectra_runtime::ffi::clear_host_functions();
+    }
+
+    #[test]
     fn migration_hosts_apply_up_set_report_status_and_roll_back_in_tmpdir() {
-        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let _guard = crate::SHARED_REGISTRY_TEST_LOCK.lock().unwrap();
         spectra_runtime::ffi::clear_host_functions();
         crate::register();
 
@@ -336,7 +590,7 @@ mod tests {
     }
     #[test]
     fn sqlite_execute_async_returns_task_int_awaited_via_block_on() {
-        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let _guard = crate::SHARED_REGISTRY_TEST_LOCK.lock().unwrap();
         spectra_runtime::ffi::clear_host_functions();
         crate::register();
 
@@ -403,7 +657,7 @@ mod tests {
 
     #[test]
     fn concurrent_sqlite_statements_overlap_instead_of_serializing() {
-        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let _guard = crate::SHARED_REGISTRY_TEST_LOCK.lock().unwrap();
         spectra_runtime::ffi::clear_host_functions();
         crate::register();
 
@@ -598,7 +852,7 @@ mod tests {
 
     #[test]
     fn redis_async_hosts_roundtrip_over_real_socket_and_cancel() {
-        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let _guard = crate::SHARED_REGISTRY_TEST_LOCK.lock().unwrap();
         spectra_runtime::ffi::clear_host_functions();
         crate::register();
 

@@ -1312,34 +1312,16 @@ async fn stream_routed_sse_over_h2(
 
 async fn stream_routed_websocket_over_h2(
     mut respond: SendResponse<Bytes>,
-    state: Arc<crate::websocket::RoutedUpgradeState>,
-    request: crate::http::ParsedRequest,
+    _state: Arc<crate::websocket::RoutedUpgradeState>,
+    _request: crate::http::ParsedRequest,
 ) {
-    let config = state.config();
-    match crate::websocket::negotiate_h2_websocket_response(&request, &config) {
-        Ok(headers) => {
-            let mut builder = H2Response::builder().status(http::StatusCode::OK);
-            for (name, value) in headers {
-                if let (Ok(n), Ok(v)) = (
-                    http::header::HeaderName::try_from(name.as_str()),
-                    http::header::HeaderValue::try_from(value.as_str()),
-                ) {
-                    builder = builder.header(n, v);
-                }
-            }
-            let Ok(built) = builder.body(()) else { return; };
-            let Ok(mut stream) = respond.send_response(built, false) else { return; };
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            let _ = stream.send_data(Bytes::new(), true);
-        }
-        Err(_error) => {
-            let response = H2Response::builder()
-                .status(http::StatusCode::BAD_REQUEST)
-                .body(())
-                .expect("HTTP/2 400 response is valid");
-            let _ = respond.send_response(response, true);
-        }
-    }
+    // RFC 8441 extended-CONNECT tunneling is not implemented: refuse honestly
+    // with 501 instead of faking a 200 OK with an immediately-closed stream.
+    let response = H2Response::builder()
+        .status(http::StatusCode::NOT_IMPLEMENTED)
+        .body(())
+        .expect("HTTP/2 501 response is valid");
+    let _ = respond.send_response(response, true);
 }
 /// Dispatcher outcome resolved far enough for a gateway leg to act on it.
 enum GatewayOutcome {
@@ -2062,5 +2044,56 @@ mod tests {
         let stats = server.shutdown().expect("shutdown TLS HTTP/2");
         assert_eq!(stats.completed_streams, 1);
         assert_eq!(stats.active_connections, 0);
+    }
+
+    #[test]
+    fn gateway_h2_leg_refuses_routed_websocket_with_501() {
+        // RFC 8441 extended-CONNECT tunneling is not implemented: a request
+        // the dispatcher routes to a WebSocket upgrade must be refused
+        // honestly instead of faking a 200 OK with an idle stream.
+        let websocket_server =
+            std::sync::Arc::new(std::sync::Mutex::new(crate::websocket::WebSocketServer::new()));
+        let mut router = crate::routing::Router::default();
+        let route = router
+            .add(crate::routing::RouteMethod::Get, "/socket")
+            .expect("h2 WebSocket refusal route");
+        crate::websocket::register_server_route(std::sync::Arc::clone(&websocket_server), route)
+            .expect("attach h2 WebSocket refusal route");
+        let state = crate::websocket::routed_upgrade_for_route(route)
+            .expect("refusal route has upgrade state");
+        let dispatcher: crate::server::DispatchHandler = std::sync::Arc::new(move |_| {
+            crate::server::HandlerResult::WebSocket(std::sync::Arc::clone(&state))
+        });
+
+        let runtime = Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .expect("h2 refusal test runtime");
+        runtime.block_on(async move {
+            let (client_io, server_io) = tokio::io::duplex(65_536);
+            let server = tokio::spawn(serve_gateway_h2_connection(
+                server_io,
+                dispatcher,
+                Duration::from_secs(2),
+            ));
+            let (mut h2_client, h2_connection) =
+                client::handshake(client_io).await.expect("h2 handshake");
+            tokio::spawn(async move {
+                let _ = h2_connection.await;
+            });
+            let request = Request::builder()
+                .method("GET")
+                .uri("/socket")
+                .body(())
+                .expect("h2 refusal request");
+            let (response, _) = h2_client
+                .send_request(request, true)
+                .expect("h2 refusal stream");
+            let response = response.await.expect("h2 refusal response");
+            assert_eq!(response.status(), 501);
+            drop(h2_client);
+            let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
+        });
     }
 }

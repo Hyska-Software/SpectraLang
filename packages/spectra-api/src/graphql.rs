@@ -244,6 +244,9 @@ pub struct GraphqlSchemaBuilder {
     context: Arc<GraphqlContext>,
     workers: GraphqlWorkerExecutor,
     subscription_capacity: usize,
+    max_depth: Option<usize>,
+    max_complexity: Option<usize>,
+    introspection: bool,
 }
 
 impl GraphqlSchemaBuilder {
@@ -259,6 +262,28 @@ impl GraphqlSchemaBuilder {
     pub fn subscription_capacity(mut self, capacity: usize) -> Self {
         assert!(capacity > 0, "GraphQL subscription capacity must be non-zero");
         self.subscription_capacity = capacity;
+        self
+    }
+    /// Cap query depth (`None` = unlimited, the default). Depth is counted
+    /// the async-graphql way: every nested field level adds one.
+    #[must_use]
+    pub fn max_depth(mut self, depth: Option<usize>) -> Self {
+        self.max_depth = depth.filter(|value| *value > 0);
+        self
+    }
+
+    /// Cap query complexity (`None` = unlimited, the default).
+    #[must_use]
+    pub fn max_complexity(mut self, complexity: Option<usize>) -> Self {
+        self.max_complexity = complexity.filter(|value| *value > 0);
+        self
+    }
+
+    /// Toggle introspection (`true` = on, the default). Disabled schemas
+    /// reject `__schema`/`__type` queries.
+    #[must_use]
+    pub fn introspection(mut self, enabled: bool) -> Self {
+        self.introspection = enabled;
         self
     }
 
@@ -305,6 +330,15 @@ impl GraphqlSchemaBuilder {
             self.mutation.as_ref().map(Object::type_name),
             self.subscription.as_ref().map(Subscription::type_name),
         );
+        if let Some(depth) = self.max_depth {
+            builder = builder.limit_depth(depth);
+        }
+        if let Some(complexity) = self.max_complexity {
+            builder = builder.limit_complexity(complexity);
+        }
+        if !self.introspection {
+            builder = builder.disable_introspection();
+        }
         for ty in self.types { builder = builder.register(ty); }
         let schema = builder.register(self.query);
         let schema = if let Some(mutation) = self.mutation { schema.register(mutation) } else { schema };
@@ -328,6 +362,9 @@ impl Default for GraphqlSchemaBuilder {
             context: Arc::new(GraphqlContext::default()),
             workers: GraphqlWorkerExecutor::default(),
             subscription_capacity: 16,
+            max_depth: None,
+            max_complexity: None,
+            introspection: true,
         }
     }
 }
@@ -686,6 +723,46 @@ mod tests {
         assert!(response.is_ok());
         assert_eq!(*order.lock().await, vec!["first", "second"]);
         assert!(worker_ok.load(Ordering::Relaxed));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn max_depth_rejects_over_deep_queries() {
+        let user = || Object::new("User").field(Field::new("name", TypeRef::named_nn("String"), |_| FieldFuture::from_value(Some(Value::from("Ada")))));
+        let build = || {
+            GraphqlSchema::builder()
+                .register_object(user())
+                .field(GraphqlRoot::Query, GraphqlField::new("user", TypeRef::named_nn("User"), static_value_resolver(json_value(json!({"name": "Ada"})))))
+        };
+        let open = build().finish().unwrap();
+        let nested = open.execute_query("{ user { name } }").await;
+        assert!(nested.is_ok());
+        assert_eq!(nested.json_value()["data"]["user"]["name"], "Ada");
+        let guarded = build().max_depth(Some(1)).finish().unwrap();
+        let rejected = guarded.execute_query("{ user { name } }").await;
+        assert!(!rejected.is_ok());
+        assert!(!rejected.errors().is_empty());
+        let roomy = build().max_depth(Some(10)).finish().unwrap();
+        assert!(roomy.execute_query("{ user { name } }").await.is_ok());
+        let cleared = build().max_depth(Some(1)).max_depth(None).finish().unwrap();
+        assert!(cleared.execute_query("{ user { name } }").await.is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn introspection_toggle_hides_schema() {
+        let build = || {
+            GraphqlSchema::builder().field(
+                GraphqlRoot::Query,
+                GraphqlField::new("ok", TypeRef::named_nn("Boolean"), static_value_resolver(Value::from(true))),
+            )
+        };
+        let open = build().finish().unwrap();
+        let visible = open.execute_query("{ __schema { queryType { name } } }").await;
+        assert_eq!(visible.json_value()["data"]["__schema"]["queryType"]["name"], "Query");
+        let closed = build().introspection(false).finish().unwrap();
+        let hidden = closed.execute_query("{ __schema { queryType { name } } }").await;
+        assert!(!hidden.is_ok());
+        assert!(!hidden.errors().is_empty());
+        assert!(closed.execute_query("{ ok }").await.is_ok());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -13,9 +13,7 @@ mod tests {
     use std::time::Duration;
 
     fn test_guard() -> MutexGuard<'static, ()> {
-        static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
-        GUARD
-            .get_or_init(|| Mutex::new(()))
+        crate::SHARED_REGISTRY_TEST_LOCK
             .lock()
             .expect("spectra-api test guard poisoned")
     }
@@ -92,9 +90,9 @@ mod tests {
             assert!(names.insert(spec.name), "duplicate {}", spec.name);
         }
         #[cfg(feature = "http3")]
-        assert_eq!(HOST_CALLS.len(), 536);
+        assert_eq!(HOST_CALLS.len(), 545);
         #[cfg(not(feature = "http3"))]
-        assert_eq!(HOST_CALLS.len(), 508);
+        assert_eq!(HOST_CALLS.len(), 517);
         let registered_names: HashSet<_> = HOST_CALLS.iter().map(|spec| spec.name).collect();
         for (name, _) in db::POSTGRES_HOST_CALLS {
             assert!(

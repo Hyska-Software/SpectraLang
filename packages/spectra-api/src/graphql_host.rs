@@ -14,6 +14,7 @@ use crate::handler::{invoke_callback, CallbackEntry};
 use crate::http::Method;
 use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use futures_util::stream;
+use futures_util::StreamExt;
 use serde_json::{json, Value as JsonValue};
 use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
@@ -216,22 +217,66 @@ fn resolver_from_callback(callback: CallbackEntry) -> graphql::ResolverCallback 
     })
 }
 
+fn pull_batch(callback: CallbackEntry, input: &ResolverInput) -> Result<Vec<graphql::Value>, graphql::Error> {
+    let request = callback_input(input)
+        .ok_or_else(|| graphql::Error::new("failed to encode GraphQL subscription input"))?;
+    let result = invoke_callback(callback, request)
+        .map_err(|status| graphql::Error::new(format!("GraphQL subscription callback failed (status {status})")))?;
+    let encoded = read_spectra_string(result)
+        .ok_or_else(|| graphql::Error::new("GraphQL subscription callback must return a JSON array string"))?;
+    let values = serde_json::from_str::<Vec<JsonValue>>(&encoded)
+        .map_err(|error| graphql::Error::new(format!("GraphQL subscription returned invalid JSON array: {error}")))?;
+    values.into_iter().map(|value| {
+        json_to_graphql(value).ok_or_else(|| graphql::Error::new("GraphQL subscription event cannot be represented as GraphQL value"))
+    }).collect()
+}
+
+struct PullBatches {
+    callback: CallbackEntry,
+    input: ResolverInput,
+    sender: tokio::sync::mpsc::UnboundedSender<Result<graphql::Value, graphql::Error>>,
+    receiver: tokio::sync::mpsc::UnboundedReceiver<Result<graphql::Value, graphql::Error>>,
+    done: bool,
+}
+
 fn subscription_from_callback(callback: CallbackEntry) -> GraphqlSubscriptionCallback {
     graphql::subscription_callback(move |input: ResolverInput| {
         let callback = callback;
         async move {
-            let request = callback_input(&input)
-                .ok_or_else(|| graphql::Error::new("failed to encode GraphQL subscription input"))?;
-            let result = invoke_callback(callback, request)
-                .map_err(|status| graphql::Error::new(format!("GraphQL subscription callback failed (status {status})")))?;
-            let encoded = read_spectra_string(result)
-                .ok_or_else(|| graphql::Error::new("GraphQL subscription callback must return a JSON array string"))?;
-            let values = serde_json::from_str::<Vec<JsonValue>>(&encoded)
-                .map_err(|error| graphql::Error::new(format!("GraphQL subscription returned invalid JSON array: {error}")))?;
-            let values = values.into_iter().map(|value| {
-                json_to_graphql(value).ok_or_else(|| graphql::Error::new("GraphQL subscription event cannot be represented as GraphQL value"))
-            }).collect::<Result<Vec<_>, _>>()?;
-            Ok(stream::iter(values.into_iter().map(Ok)))
+            // Channel-fed pull stream: every poll with an empty buffer
+            // re-invokes the host callback for the next batch and appends
+            // it to the channel. An empty batch closes the stream, so a
+            // producer that yields two distinct batches across two polls
+            // streams incrementally instead of materializing one array.
+            let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+            let pull = PullBatches { callback, input, sender, receiver, done: false };
+            let stream = stream::unfold(pull, |mut state| async move {
+                if let Ok(item) = state.receiver.try_recv() {
+                    return Some((item, state));
+                }
+                if state.done {
+                    return None;
+                }
+                match pull_batch(state.callback, &state.input) {
+                    Ok(batch) if batch.is_empty() => {
+                        // An empty batch closes the stream: returning `None`
+                        // ends the unfold, so no flag write is needed.
+                        None
+                    }
+                    Ok(batch) => {
+                        for value in batch {
+                            let _ = state.sender.send(Ok(value));
+                        }
+                        state.receiver.try_recv().ok().map(|item| (item, state))
+                    }
+                    Err(error) => {
+                        state.done = true;
+                        let _ = state.sender.send(Err(error));
+                        state.receiver.try_recv().ok().map(|item| (item, state))
+                    }
+                }
+            });
+            Ok(stream.boxed())
         }
     })
 }
@@ -339,6 +384,41 @@ pub extern "C" fn schema_set_subscription_capacity(ctx: *mut SpectraHostCallCont
     let Ok(capacity) = usize::try_from(args[1]) else { return invalid(); };
     if capacity == 0 { return invalid(); }
     if !update_builder(args[0], |builder| builder.subscription_capacity(capacity)) { return invalid(); }
+    write_result(ctx, 1)
+}
+
+/// Cap query depth on the in-progress builder. `0` restores the default
+/// unlimited behavior; positive values reject deeper queries at execution.
+pub extern "C" fn schema_set_max_depth(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 2) else { return invalid(); };
+    let depth = match usize::try_from(args[1]) {
+        Ok(0) => None,
+        Ok(limit) => Some(limit),
+        Err(_) => return invalid(),
+    };
+    if !update_builder(args[0], |builder| builder.max_depth(depth)) { return invalid(); }
+    write_result(ctx, 1)
+}
+
+/// Cap query complexity on the in-progress builder. `0` restores the default
+/// unlimited behavior.
+pub extern "C" fn schema_set_max_complexity(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 2) else { return invalid(); };
+    let complexity = match usize::try_from(args[1]) {
+        Ok(0) => None,
+        Ok(limit) => Some(limit),
+        Err(_) => return invalid(),
+    };
+    if !update_builder(args[0], |builder| builder.max_complexity(complexity)) { return invalid(); }
+    write_result(ctx, 1)
+}
+
+/// Toggle introspection on the in-progress builder. `0` disables
+/// `__schema`/`__type` queries; any other value keeps the default enabled
+/// behavior.
+pub extern "C" fn schema_set_introspection(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 2) else { return invalid(); };
+    if !update_builder(args[0], |builder| builder.introspection(args[1] != 0)) { return invalid(); }
     write_result(ctx, 1)
 }
 
@@ -549,4 +629,79 @@ pub extern "C" fn subscription_drop(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = read_args(ctx, 1) else { return invalid(); };
     let mut store = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if store.subscriptions.remove(args[0]).is_some() { write_result(ctx, 1) } else { invalid() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_graphql::dynamic::TypeRef;
+    use spectra_runtime::ffi::HOST_STATUS_SUCCESS;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static BATCH_CALLS_A: AtomicUsize = AtomicUsize::new(0);
+    static BATCH_CALLS_B: AtomicUsize = AtomicUsize::new(0);
+
+    unsafe extern "C" fn batch_invoke(
+        closure: SpectraHostValue,
+        _args: *const SpectraHostValue,
+        _len: usize,
+        result: *mut SpectraHostValue,
+    ) -> i32 {
+        let counter = if closure == 101 { &BATCH_CALLS_A } else { &BATCH_CALLS_B };
+        let batch = match counter.fetch_add(1, Ordering::SeqCst) {
+            0 => "[10, 20]",
+            1 => "[30]",
+            _ => "[]",
+        };
+        unsafe {
+            *result = alloc_spectra_string(batch);
+        }
+        HOST_STATUS_SUCCESS
+    }
+
+    fn batch_schema(closure: SpectraHostValue, counter: &AtomicUsize) -> GraphqlSchema {
+        counter.store(0, Ordering::SeqCst);
+        let callback = CallbackEntry { closure, invoke: batch_invoke };
+        GraphqlSchema::builder()
+            .field(
+                GraphqlRoot::Query,
+                GraphqlField::new(
+                    "health",
+                    TypeRef::named_nn("Boolean"),
+                    graphql::static_value_resolver(graphql::Value::from(true)),
+                ),
+            )
+            .subscription_field(GraphqlSubscriptionField::new(
+                "events",
+                TypeRef::named_nn("Int"),
+                subscription_from_callback(callback),
+            ))
+            .finish()
+            .expect("batch schema builds")
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn consecutive_polls_deliver_distinct_batches_then_close() {
+        let schema = batch_schema(101, &BATCH_CALLS_A);
+        let events = schema.subscribe("subscription { events }");
+        let first = events.next().await.expect("first batch first event");
+        assert_eq!(first.json_value()["data"]["events"], 10);
+        let second = events.next().await.expect("first batch second event");
+        assert_eq!(second.json_value()["data"]["events"], 20);
+        // First batch is drained, so the next poll pulls the second batch.
+        let third = events.next().await.expect("second batch event");
+        assert_eq!(third.json_value()["data"]["events"], 30);
+        // An empty batch closes the stream.
+        assert!(events.next().await.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cancel_ends_an_open_stream() {
+        let schema = batch_schema(202, &BATCH_CALLS_B);
+        let events = schema.subscribe("subscription { events }");
+        let first = events.next().await.expect("event before cancel");
+        assert_eq!(first.json_value()["data"]["events"], 10);
+        events.cancel();
+        assert!(events.is_cancelled());
+        assert!(events.next().await.is_none());
+    }
 }

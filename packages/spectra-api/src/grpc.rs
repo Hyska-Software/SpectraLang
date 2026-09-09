@@ -70,7 +70,7 @@ impl GrpcMessageParser {
         loop {
             if self.buffer.len() < 5 { break; }
             let flag = self.buffer[0];
-            if flag > 1 { return Err(GrpcFrameError::InvalidCompressedFlag(flag)); }
+            if flag != 0 { return Err(GrpcFrameError::InvalidCompressedFlag(flag)); }
             let length = u32::from_be_bytes([self.buffer[1], self.buffer[2], self.buffer[3], self.buffer[4]]) as usize;
             if length > self.max_message_size { return Err(GrpcFrameError::MessageTooLarge { length, max: self.max_message_size }); }
             let total = 5usize.saturating_add(length);
@@ -239,13 +239,19 @@ impl<F,Fut> GrpcService for F where F: Fn(GrpcRequest)->Fut + Send + Sync + 'sta
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GrpcCallType { Unary, ClientStreaming, ServerStreaming, BidiStreaming }
+/// Optional rustls server identity for a gRPC listener. When present the
+/// listener terminates TLS with ALPN `h2` before the h2 handshake; when
+/// absent the listener stays cleartext (h2c), which remains the default
+/// contract for `GrpcServer::bind` and `client_connect`.
+#[derive(Clone, Debug, Default)]
+pub struct GrpcTlsIdentity { pub cert_chain_der: Vec<Vec<u8>>, pub private_key_der: Vec<u8> }
 #[derive(Clone, Debug)]
-pub struct GrpcServerConfig { pub max_message_size:usize, pub stream_capacity:usize, pub max_concurrent_streams:u32 }
-impl Default for GrpcServerConfig { fn default()->Self {Self{max_message_size:DEFAULT_MAX_MESSAGE_SIZE,stream_capacity:DEFAULT_STREAM_CAPACITY,max_concurrent_streams:256}} }
+pub struct GrpcServerConfig { pub max_message_size:usize, pub stream_capacity:usize, pub max_concurrent_streams:u32, pub tls: Option<GrpcTlsIdentity> }
+impl Default for GrpcServerConfig { fn default()->Self {Self{max_message_size:DEFAULT_MAX_MESSAGE_SIZE,stream_capacity:DEFAULT_STREAM_CAPACITY,max_concurrent_streams:256,tls:None}} }
 pub struct GrpcServer { local_addr:SocketAddr, shutdown:watch::Sender<bool> }
-impl GrpcServer { pub async fn bind(addr:SocketAddr,service:Arc<dyn GrpcService>,config:GrpcServerConfig)->Result<Self,GrpcError> { let listener=TcpListener::bind(addr).await?; let local_addr=listener.local_addr()?; let (shutdown,mut stop)=watch::channel(false); tokio::spawn(async move { loop { tokio::select! { _=stop.changed()=>break, result=listener.accept()=>{ let Ok((io,_))=result else {break}; let service=service.clone(); let cfg=config.clone(); tokio::spawn(async move {serve_connection(io,service,cfg).await;}); } } } }); Ok(Self{local_addr,shutdown}) } pub fn local_addr(&self)->SocketAddr {self.local_addr} pub fn shutdown(&self) {let _=self.shutdown.send(true);} }
+impl GrpcServer { pub async fn bind(addr:SocketAddr,service:Arc<dyn GrpcService>,config:GrpcServerConfig)->Result<Self,GrpcError> { let accept_tls = match &config.tls { Some(identity) => Some(tokio_rustls::TlsAcceptor::from(crate::tls::server_config_from_der(identity.cert_chain_der.clone(), identity.private_key_der.clone(), vec![b"h2".to_vec()]).map_err(|e|GrpcError::Protocol(e.to_string()))?)), None => None }; let listener=TcpListener::bind(addr).await?; let local_addr=listener.local_addr()?; let (shutdown,mut stop)=watch::channel(false); tokio::spawn(async move { loop { tokio::select! { _=stop.changed()=>break, result=listener.accept()=>{ let Ok((io,_))=result else {break}; let service=service.clone(); let cfg=config.clone(); let tls=accept_tls.clone(); tokio::spawn(async move { match tls { Some(acceptor) => { let Ok(tls_io)=acceptor.accept(io).await else{return}; serve_connection(tls_io,service,cfg).await; }, None => { serve_connection(io,service,cfg).await; } } }); } } } }); Ok(Self{local_addr,shutdown}) } pub fn local_addr(&self)->SocketAddr {self.local_addr} pub fn shutdown(&self) {let _=self.shutdown.send(true);} }
 
-async fn serve_connection(io:TcpStream,service:Arc<dyn GrpcService>,config:GrpcServerConfig) { let mut builder=server::Builder::new(); builder.max_concurrent_streams(config.max_concurrent_streams); let Ok(mut connection)=builder.handshake(io).await else{return}; while let Some(result)=connection.accept().await { let Ok((request,respond))=result else{break}; let service=service.clone(); let cfg=config.clone(); tokio::spawn(async move {serve_stream(request,respond,service,cfg).await;}); } }
+async fn serve_connection<I>(io:I,service:Arc<dyn GrpcService>,config:GrpcServerConfig) where I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static { let mut builder=server::Builder::new(); builder.max_concurrent_streams(config.max_concurrent_streams); let Ok(mut connection)=builder.handshake(io).await else{return}; while let Some(result)=connection.accept().await { let Ok((request,respond))=result else{break}; let service=service.clone(); let cfg=config.clone(); tokio::spawn(async move {serve_stream(request,respond,service,cfg).await;}); } }
 async fn serve_stream(request:Request<h2::RecvStream>,mut respond:SendResponse<Bytes>,service:Arc<dyn GrpcService>,config:GrpcServerConfig) {
     let (parts,body)=request.into_parts(); let path=parts.uri.path().to_string(); let content_type=parts.headers.get("content-type").and_then(|v|v.to_str().ok()).unwrap_or(""); let te=parts.headers.get("te").and_then(|v|v.to_str().ok());
     if parts.method!=Method::POST || validate_grpc_request(&path,content_type,te).is_err() { let Ok(response)=Response::builder().status(StatusCode::UNSUPPORTED_MEDIA_TYPE).body(()) else{return}; let _=respond.send_response(response,true); return; }
@@ -257,7 +263,7 @@ async fn serve_stream(request:Request<h2::RecvStream>,mut respond:SendResponse<B
     let request=GrpcRequest{path,metadata,inbound:GrpcReceiver{rx:inbound_rx,cancel:cancel.clone()}};
     let result=if let Some(duration)=timeout { match tokio::time::timeout(duration,service.call(request)).await {Ok(v)=>v,Err(_)=>Err(GrpcError::DeadlineExceeded)} } else { service.call(request).await };
     if result.as_ref().err().is_some_and(|error|matches!(error,GrpcError::DeadlineExceeded)){ respond.send_reset(Reason::CANCEL); return; }
-    let response=match result {Ok(v)=>v,Err(e)=>GrpcResponse{metadata:GrpcMetadata::new(),status:match e {GrpcError::DeadlineExceeded=>GrpcStatus::new(GrpcCode::DeadlineExceeded,"deadline exceeded"),GrpcError::Cancelled=>GrpcStatus::new(GrpcCode::Cancelled,"cancelled"),_=>GrpcStatus::new(GrpcCode::Internal,e.to_string())},outbound:stream_pair(1).1}};
+    let response=match result {Ok(v)=>v,Err(e)=>GrpcResponse{metadata:GrpcMetadata::new(),status:match e {GrpcError::DeadlineExceeded=>GrpcStatus::new(GrpcCode::DeadlineExceeded,"deadline exceeded"),GrpcError::Cancelled=>GrpcStatus::new(GrpcCode::Cancelled,"cancelled"),GrpcError::Frame(GrpcFrameError::InvalidCompressedFlag(_))=>GrpcStatus::new(GrpcCode::Unimplemented,"gRPC message compression (grpc-encoding) is not supported"),_=>GrpcStatus::new(GrpcCode::Internal,e.to_string())},outbound:stream_pair(1).1}};
     let mut builder=Response::builder().status(StatusCode::OK).header("content-type","application/grpc"); for e in response.metadata.iter(){if let(Ok(n),Ok(v))=(HeaderName::try_from(e.key.as_str()),HeaderValue::from_bytes(&e.value)){builder=builder.header(n,v);}} let Ok(head)=builder.body(()) else{return}; let Ok(mut sender)=respond.send_response(head,false) else{return};
     let mut outbound=response.outbound;
     while let Some(item)=outbound.recv().await {
@@ -323,13 +329,14 @@ async fn send_data_bounded(sender:&mut h2::SendStream<Bytes>,data:Bytes)->Result
     Ok(())
 }
 pub struct GrpcClient { sender:client::SendRequest<Bytes>, max_message_size:usize }
-impl GrpcClient { pub async fn connect(addr:SocketAddr)->Result<Self,GrpcError>{let io=TcpStream::connect(addr).await?; let(mut sender,connection)=client::Builder::new().handshake(io).await.map_err(|e|GrpcError::Protocol(e.to_string()))?; tokio::spawn(async move{let _=connection.await;}); Ok(Self{sender,max_message_size:DEFAULT_MAX_MESSAGE_SIZE})} pub fn with_max_message_size(mut self,max:usize)->Self{self.max_message_size=max;self}
+impl GrpcClient { pub async fn connect(addr:SocketAddr)->Result<Self,GrpcError>{let io=TcpStream::connect(addr).await?; let(sender,connection)=client::Builder::new().handshake(io).await.map_err(|e|GrpcError::Protocol(e.to_string()))?; tokio::spawn(async move{let _=connection.await;}); Ok(Self{sender,max_message_size:DEFAULT_MAX_MESSAGE_SIZE})} pub fn with_max_message_size(mut self,max:usize)->Self{self.max_message_size=max;self}
     pub async fn unary(&mut self,path:&str,message:GrpcMessage,metadata:GrpcMetadata,timeout:Option<Duration>)->Result<(GrpcMessage,GrpcTrailers),GrpcError>{validate_grpc_path(path)?; let frame=encode_grpc_message_with_limit(&message,GrpcCompression::Identity,self.max_message_size)?; let req=build_request(path,&metadata,timeout)?; let (future,mut stream)=self.sender.send_request(req,false).map_err(|e|GrpcError::Protocol(e.to_string()))?; send_data_bounded(&mut stream,Bytes::from(frame)).await?; stream.send_data(Bytes::new(),true).map_err(|e|GrpcError::Protocol(e.to_string()))?; let response=if let Some(t)=timeout{tokio::time::timeout(t,future).await.map_err(|_|GrpcError::DeadlineExceeded)?.map_err(|e|GrpcError::Protocol(e.to_string()))?}else{future.await.map_err(|e|GrpcError::Protocol(e.to_string()))?}; let mut body=response.into_body(); let mut parser=GrpcMessageParser::new(self.max_message_size); let mut messages=Vec::new(); while let Some(chunk)=body.data().await {let chunk=chunk.map_err(|e|GrpcError::Protocol(e.to_string()))?; let n=chunk.len(); body.flow_control().release_capacity(n).map_err(|e|GrpcError::Protocol(e.to_string()))?; messages.extend(parser.push(&chunk)?);} parser.finish()?; let trailers=body.trailers().await.map_err(|e|GrpcError::Protocol(e.to_string()))?.ok_or(GrpcError::MissingStatus).and_then(|h|parse_grpc_trailers(&h))?; if messages.len()!=1{return Err(GrpcError::Protocol(format!("unary response contained {} messages",messages.len())))} Ok((messages.remove(0),trailers)) }
     pub async fn server_streaming(&mut self,path:&str,message:GrpcMessage,metadata:GrpcMetadata,timeout:Option<Duration>)->Result<GrpcReceiver,GrpcError>{let frame=encode_grpc_message_with_limit(&message,GrpcCompression::Identity,self.max_message_size)?; let req=build_request(path,&metadata,timeout)?; let(future,mut stream)=self.sender.send_request(req,false).map_err(|e|GrpcError::Protocol(e.to_string()))?; send_data_bounded(&mut stream,Bytes::from(frame)).await?; stream.send_data(Bytes::new(),true).map_err(|e|GrpcError::Protocol(e.to_string()))?; let(cap_tx,rx)=stream_pair(DEFAULT_STREAM_CAPACITY); tokio::spawn(read_response(future,cap_tx,self.max_message_size)); Ok(rx)}
     pub async fn client_streaming(&mut self,path:&str,metadata:GrpcMetadata,timeout:Option<Duration>)->Result<GrpcClientStream,GrpcError>{self.open_stream(path,metadata,timeout).await}
     pub async fn bidi_streaming(&mut self,path:&str,metadata:GrpcMetadata,timeout:Option<Duration>)->Result<GrpcClientStream,GrpcError>{self.open_stream(path,metadata,timeout).await}
     async fn open_stream(&mut self,path:&str,metadata:GrpcMetadata,timeout:Option<Duration>)->Result<GrpcClientStream,GrpcError>{validate_grpc_path(path)?;let req=build_request(path,&metadata,timeout)?;let(future,stream)=self.sender.send_request(req,false).map_err(|e|GrpcError::Protocol(e.to_string()))?;let(cap_tx,rx)=stream_pair(DEFAULT_STREAM_CAPACITY);let(capacity_tx,request_rx)=mpsc::channel(DEFAULT_STREAM_CAPACITY);let(cancel,cancel_rx)=watch::channel(false);let(end,end_rx)=watch::channel(false);let request_sender=GrpcSender{tx:capacity_tx,cancel:cancel.clone(),end};tokio::spawn(write_request(stream,request_rx,cancel_rx,end_rx,self.max_message_size,timeout));tokio::spawn(read_response(future,cap_tx,self.max_message_size));Ok(GrpcClientStream{sender:request_sender,receiver:rx,cancel})}
 }
+impl GrpcClient { pub async fn connect_tls(addr:SocketAddr,root_certs_der:Vec<Vec<u8>>,server_name:&str)->Result<Self,GrpcError> { let name = rustls::pki_types::ServerName::try_from(server_name.to_owned()).map_err(|_|GrpcError::Protocol("invalid TLS server name".to_string()))?; let tls = crate::tls::client_config_with_roots(root_certs_der, vec![b"h2".to_vec()]).map_err(|e|GrpcError::Protocol(e.to_string()))?; let io=TcpStream::connect(addr).await?; let connector=tokio_rustls::TlsConnector::from(tls); let tls_io=connector.connect(name,io).await.map_err(|e|GrpcError::Protocol(format!("gRPC TLS handshake failed: {e}")))?; let(sender,connection)=client::Builder::new().handshake(tls_io).await.map_err(|e|GrpcError::Protocol(e.to_string()))?; tokio::spawn(async move{let _=connection.await;}); Ok(Self{sender,max_message_size:DEFAULT_MAX_MESSAGE_SIZE})} }
 /// A bidirectional bounded call. For client-streaming calls, send all request
 /// messages, then call `finish`; for bidi calls sends and receives may overlap.
 pub struct GrpcClientStream { pub sender: GrpcSender, pub receiver: GrpcReceiver, cancel: watch::Sender<bool> }
@@ -486,4 +493,97 @@ mod tests {
         server.shutdown();
     }
     #[test] fn status_round_trip(){let mut m=GrpcMetadata::new();m.insert("x-test",b"ok".to_vec()).unwrap();let mut s=GrpcStatus::new(GrpcCode::InvalidArgument,"bad / bytes");s.details_bin=Some(vec![0,255]);let h=build_grpc_trailers(&s,&m).unwrap();let t=parse_grpc_trailers(&h).unwrap();assert_eq!(t.status,s);assert_eq!(t.metadata.get("x-test"),Some(&b"ok"[..]));}
+    #[test] fn compressed_flag_is_rejected_not_misparsed(){let mut p=GrpcMessageParser::new(16);let error=p.push(&[1,0,0,0,1,9]).expect_err("flag 1 must be rejected");assert_eq!(error,GrpcFrameError::InvalidCompressedFlag(1));let mut p=GrpcMessageParser::new(16);assert!(p.push(&[2,0,0,0,0]).is_err());let msg=GrpcMessage::new(vec![7,8]);let frame=encode_grpc_message_with_limit(&msg,GrpcCompression::Identity,16).unwrap();let mut p=GrpcMessageParser::new(16);assert_eq!(p.push(&frame).unwrap(),vec![msg]);}
+    #[tokio::test(flavor = "current_thread")]
+    async fn compressed_request_maps_to_unimplemented_trailers() {
+        // Inbound frame errors propagated by the service must surface as
+        // grpc-status 12 (UNIMPLEMENTED), never 200/OK or 13/INTERNAL.
+        let service: Arc<dyn GrpcService> = Arc::new(|mut request: GrpcRequest| async move {
+            let message = request.inbound.recv().await.expect("request item")?;
+            Ok(GrpcResponse::unary(message))
+        });
+        let server = GrpcServer::bind("127.0.0.1:0".parse().unwrap(), service, GrpcServerConfig::default()).await.unwrap();
+        let io = TcpStream::connect(server.local_addr()).await.unwrap();
+        let (mut sender, connection) = client::Builder::new().handshake::<_, Bytes>(io).await.expect("h2 handshake");
+        tokio::spawn(async move { let _ = connection.await; });
+        let req = Request::builder().method(Method::POST).uri("/test.Echo/Unary").header("content-type", "application/grpc").header("te", "trailers").body(()).expect("request head");
+        let (future, mut stream) = sender.send_request(req, false).expect("h2 stream");
+        stream.send_data(Bytes::from(vec![1, 0, 0, 0, 3, 9, 9, 9]), true).expect("compressed DATA");
+        let response = future.await.expect("response head");
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut body = response.into_body();
+        while let Some(chunk) = body.data().await { let _ = chunk.expect("body chunk"); }
+        let trailers = body.trailers().await.expect("trailers").expect("trailer block");
+        assert_eq!(trailers.get("grpc-status").expect("grpc-status"), "12");
+        server.shutdown();
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn compressed_response_surfaces_frame_error() {
+        // A peer sending flag-1 frames must surface client-side as
+        // GrpcError::Frame, never as a silently misparsed message.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (io, _) = listener.accept().await.expect("accept");
+            let mut connection = server::handshake(io).await.expect("server handshake");
+            // Keep polling the connection (as serve_connection does) so I/O
+            // progresses while the stream is serviced on its own task.
+            while let Some(result) = connection.accept().await {
+                let (request, mut respond) = result.expect("request");
+                tokio::spawn(async move {
+                    let (_parts, mut req_body) = request.into_parts();
+                    while let Some(_chunk) = req_body.data().await {}
+                    let head = Response::builder().status(StatusCode::OK).header("content-type", "application/grpc").body(()).expect("response head");
+                    let mut sender = respond.send_response(head, false).expect("send head");
+                    sender.send_data(Bytes::from(vec![1, 0, 0, 0, 2, 7, 7]), false).expect("compressed DATA");
+                    let mut trailers = HeaderMap::new();
+                    trailers.insert("grpc-status", HeaderValue::from_static("0"));
+                    sender.send_trailers(trailers).expect("trailers");
+                });
+            }
+        });
+        let mut client = GrpcClient::connect(addr).await.unwrap();
+        let error = client.unary("/test.Echo/Unary", GrpcMessage::new(vec![1]), GrpcMetadata::new(), None).await.expect_err("compressed response must fail");
+        assert!(matches!(error, GrpcError::Frame(GrpcFrameError::InvalidCompressedFlag(1))), "unexpected error: {error}");
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn localhost_tls_unary_round_trip() {
+        use rcgen::generate_simple_self_signed;
+        let certified =
+            generate_simple_self_signed(vec!["localhost".to_string()]).expect("certificate");
+        let cert_der = certified.cert.der().to_vec();
+        let key_der = certified.key_pair.serialize_der();
+        let service: Arc<dyn GrpcService> = Arc::new(|mut request: GrpcRequest| async move {
+            let message = request.inbound.recv().await.expect("request message").expect("valid request");
+            Ok(GrpcResponse::unary(message))
+        });
+        let mut config = GrpcServerConfig::default();
+        assert!(config.tls.is_none(), "cleartext stays the default contract");
+        config.tls = Some(GrpcTlsIdentity { cert_chain_der: vec![cert_der.clone()], private_key_der: key_der });
+        let server = GrpcServer::bind("127.0.0.1:0".parse().unwrap(), service, config).await.unwrap();
+        let mut client = GrpcClient::connect_tls(server.local_addr(), vec![cert_der], "localhost").await.unwrap();
+        let input = GrpcMessage::new(vec![1, 2, 3]);
+        let (output, trailers) = client.unary("/test.Echo/Unary", input.clone(), GrpcMetadata::new(), None).await.unwrap();
+        assert_eq!(output, input);
+        assert_eq!(trailers.status.code, GrpcCode::Ok);
+        server.shutdown();
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn tls_untrusted_root_handshake_fails() {
+        use rcgen::generate_simple_self_signed;
+        let server_cert =
+            generate_simple_self_signed(vec!["localhost".to_string()]).expect("server certificate");
+        let other_cert =
+            generate_simple_self_signed(vec!["localhost".to_string()]).expect("other certificate");
+        let service: Arc<dyn GrpcService> = Arc::new(|mut request: GrpcRequest| async move {
+            let message = request.inbound.recv().await.expect("request message").expect("valid request");
+            Ok(GrpcResponse::unary(message))
+        });
+        let mut config = GrpcServerConfig::default();
+        config.tls = Some(GrpcTlsIdentity { cert_chain_der: vec![server_cert.cert.der().to_vec()], private_key_der: server_cert.key_pair.serialize_der() });
+        let server = GrpcServer::bind("127.0.0.1:0".parse().unwrap(), service, config).await.unwrap();
+        let error = match GrpcClient::connect_tls(server.local_addr(), vec![other_cert.cert.der().to_vec()], "localhost").await { Ok(_) => panic!("untrusted root must fail the handshake"), Err(error) => error };
+        assert!(matches!(&error, GrpcError::Protocol(message) if message.contains("handshake")), "unexpected error: {error}");
+        server.shutdown();
+    }
 }

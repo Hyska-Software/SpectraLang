@@ -60,3 +60,11 @@ include!("host_calls.rs");
 include!("api_registration.rs");
 
 include!("api_tests.rs");
+
+/// Process-wide serialiser for tests that mutate the global host-function
+/// registry (`api_tests` and `db::tests`). The two suites historically used
+/// separate locks, which raced `clear_host_functions`/`register` pairs and
+/// flaked unrelated tests once enough registry-mutating tests overlapped.
+#[cfg(test)]
+pub(crate) static SHARED_REGISTRY_TEST_LOCK: std::sync::LazyLock<std::sync::Mutex<()>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(()));

@@ -1503,50 +1503,6 @@ pub(crate) fn is_upgrade_request(request: &ParsedRequest) -> bool {
         && header_contains_token(&request.headers, "Connection", "upgrade")
 }
 
-pub(crate) fn negotiate_h2_websocket_response(
-    request: &ParsedRequest,
-    config: &WebSocketConfig,
-) -> Result<Vec<(String, String)>, WebSocketError> {
-    if request.method != "CONNECT" {
-        return Err(WebSocketError::new(
-            WebSocketErrorKind::Handshake,
-            "WebSocket over HTTP/2 requires extended CONNECT",
-        ));
-    }
-    let key = header_value(&request.headers, "Sec-WebSocket-Key").ok_or_else(|| {
-        WebSocketError::new(WebSocketErrorKind::Handshake, "Sec-WebSocket-Key header is missing")
-    })?;
-    let decoded_key = base64_decode(key.trim()).ok_or_else(|| {
-        WebSocketError::new(WebSocketErrorKind::Handshake, "Sec-WebSocket-Key is not valid base64")
-    })?;
-    if decoded_key.len() != 16 {
-        return Err(WebSocketError::new(
-            WebSocketErrorKind::Handshake,
-            "Sec-WebSocket-Key must decode to 16 bytes",
-        ));
-    }
-    if header_value(&request.headers, "Sec-WebSocket-Version").map(str::trim) != Some("13") {
-        return Err(WebSocketError::new(
-            WebSocketErrorKind::Handshake,
-            "only WebSocket version 13 is supported",
-        ));
-    }
-    let accept = websocket_accept_value(key.trim());
-    let mut headers = vec![("Sec-WebSocket-Accept".to_string(), accept)];
-    let requested = header_value(&request.headers, "Sec-WebSocket-Protocol").unwrap_or_default();
-    if !requested.is_empty() {
-        // Echo first requested subprotocol if any (minimal)
-        if let Some(first) = requested.split(',').next().map(str::trim).filter(|s| !s.is_empty()) {
-            headers.push(("Sec-WebSocket-Protocol".to_string(), first.to_string()));
-        }
-    }
-    let deflate_requested = header_value(&request.headers, "Sec-WebSocket-Extensions")
-        .is_some_and(|v| extension_contains(v, "permessage-deflate"));
-    if config.per_message_deflate && deflate_requested {
-        headers.push(("Sec-WebSocket-Extensions".to_string(), "permessage-deflate".to_string()));
-    }
-    Ok(headers)
-}
 
 fn client_handshake(
     mut stream: WebSocketTransport,

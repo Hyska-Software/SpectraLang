@@ -209,8 +209,24 @@ pub extern "C" fn postgres_close(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Some((a, r)) = args(ctx) else { return HOST_STATUS_INVALID_ARGUMENT; };
         if a.len() != 1 { return HOST_STATUS_INVALID_ARGUMENT; }
-        let cell = store().lock().unwrap().postgres_connections.remove(&a[0]);
+        let (cell, leased) = {
+            let mut state = store().lock().unwrap();
+            (
+                state.postgres_connections.remove(&a[0]),
+                state.postgres_pool_leases.contains_key(&a[0]),
+            )
+        };
         let Some(cell) = cell else { return fail_postgres(r, spectra_db::postgres::PostgresError::invalid_handle()) };
+        // A pooled lease goes back to its pool instead of being closed; the
+        // underlying physical connection stays alive inside the pool.
+        if leased {
+            drop(cell);
+            if release_postgres_lease(a[0]) {
+                bool_result(r, true)
+            } else {
+                fail_postgres(r, spectra_db::postgres::PostgresError::new("DB2505_POOL", "pool lease was already released"))
+            }
+        } else {
         let result = cell
             .value
             .lock()
@@ -220,6 +236,7 @@ pub extern "C" fn postgres_close(ctx: *mut SpectraHostCallContext) -> i32 {
             cell.last_error.record(error);
         }
         match result { Ok(()) => bool_result(r, true), Err(error) => fail_postgres(r, error) }
+        }
     }
 }
 
@@ -768,7 +785,6 @@ pub const POSTGRES_HOST_CALLS: &[(&str, HostFunction)] = &[
     ("spectra.api.db.postgres.last_error_code", postgres_last_error_code),
     ("spectra.api.db.postgres.last_error_message", postgres_last_error_message),
 ];
-
 pub extern "C" fn redis_open(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Some((a, r)) = args(ctx) else { return HOST_STATUS_INVALID_ARGUMENT; };
@@ -786,9 +802,27 @@ pub extern "C" fn redis_close(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Some((a, r)) = args(ctx) else { return HOST_STATUS_INVALID_ARGUMENT; };
         if a.len() != 1 { return HOST_STATUS_INVALID_ARGUMENT; }
-        let cell = store().lock().unwrap().redis_connections.remove(&a[0]);
+        let (cell, leased) = {
+            let mut state = store().lock().unwrap();
+            (
+                state.redis_connections.remove(&a[0]),
+                state.redis_pool_leases.contains_key(&a[0]),
+            )
+        };
         let span = redis_operation_span("db.redis.close");
         let Some(cell) = cell else { finish_redis_span(span, false); return fail_redis(r, RedisError::invalid_handle()) };
+        // A pooled lease goes back to its pool instead of being closed; the
+        // underlying physical connection stays alive inside the pool.
+        if leased {
+            drop(cell);
+            if release_redis_lease(a[0]) {
+                finish_redis_span(span, true);
+                bool_result(r, true)
+            } else {
+                finish_redis_span(span, false);
+                fail_redis(r, RedisError::new("DB2507_POOL", "pool lease was already released"))
+            }
+        } else {
         let result = cell
             .value
             .lock()
@@ -799,6 +833,7 @@ pub extern "C" fn redis_close(ctx: *mut SpectraHostCallContext) -> i32 {
         }
         finish_redis_span(span, result.is_ok());
         match result { Ok(()) => bool_result(r, true), Err(error) => fail_redis(r, error) }
+        }
     }
 }
 fn redis_connection_cell(

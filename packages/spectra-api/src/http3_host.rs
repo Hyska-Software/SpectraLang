@@ -105,12 +105,6 @@ impl<T> TypedSlots<T> {
         slot.value.as_ref()
     }
 
-    fn get_mut(&mut self, raw: SpectraHostValue) -> Option<&mut T> {
-        let (slot, generation) = self.decode(raw)?;
-        let slot = self.slots.get_mut(slot)?;
-        if slot.generation != generation { return None; }
-        slot.value.as_mut()
-    }
 
     fn remove(&mut self, raw: SpectraHostValue) -> Option<T> {
         let (slot, generation) = self.decode(raw)?;
@@ -145,7 +139,6 @@ enum RequestState {
         finished: Arc<AtomicBool>,
         response_received: Arc<AtomicBool>,
     },
-    Closed,
 }
 
 struct RequestEntry {
@@ -189,21 +182,6 @@ fn store_error(message: impl Into<String>) -> Http3Error {
     Http3Error::Runtime(message.into())
 }
 
-/// Registers a Rust-owned server configuration.  TLS certificates and private keys stay in
-/// Rust-owned `rustls::ServerConfig`; the Spectra string ABI is never used for key material.
-pub fn register_http3_server_config(config: Http3ServerConfig) -> Result<SpectraHostValue, Http3Error> {
-    lock_store().configs.insert(ConfigEntry::Server(config)).ok_or_else(|| store_error("HTTP/3 configuration table is full"))
-}
-
-/// Registers a Rust-owned client configuration, including its root certificate store.
-pub fn register_http3_client_config(config: Http3ClientConfig) -> Result<SpectraHostValue, Http3Error> {
-    lock_store().configs.insert(ConfigEntry::Client(config)).ok_or_else(|| store_error("HTTP/3 configuration table is full"))
-}
-
-/// Registers a Rust-owned HTTP/3 callback for later host binding.
-pub fn register_http3_handler(handler: Http3Handler) -> Result<SpectraHostValue, Http3Error> {
-    lock_store().handlers.insert(handler).ok_or_else(|| store_error("HTTP/3 handler table is full"))
-}
 
 fn decode_base64(value: &str) -> Option<Vec<u8>> {
     if value.is_empty() || value.len() % 4 != 0 {
@@ -766,11 +744,3 @@ pub extern "C" fn http3_handle_drop(ctx: *mut SpectraHostCallContext) -> i32 {
     write_result(ctx, i64::from(removed))
 }
 
-// Keep the constructor useful to integration tests without requiring a string-to-key ABI.
-pub fn register_http3_server_tls(bind_addr: SocketAddr, tls: Arc<rustls::ServerConfig>) -> Result<SpectraHostValue, Http3Error> {
-    register_http3_server_config(Http3ServerConfig::from_tls(bind_addr, tls))
-}
-
-pub fn register_http3_client_roots(roots: Arc<rustls::RootCertStore>) -> Result<SpectraHostValue, Http3Error> {
-    register_http3_client_config(Http3ClientConfig::default().with_root_certificates(roots))
-}

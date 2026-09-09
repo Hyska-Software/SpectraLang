@@ -1,10 +1,12 @@
-use spectra_db::sqlite::{SqliteConnection, SqliteStatement, SqliteValue, StepResult};
 use spectra_db::postgres::{
     Notification, NotificationListener, PostgresConfig, PostgresConnection,
     PostgresOperationCancellation, PostgresStatement, PostgresType, PostgresValue,
 };
-use spectra_db::CompiledQuery;
 use spectra_db::redis::{RedisConfig, RedisConnection, RedisError, RedisValue};
+use spectra_db::postgres::PostgresFactory;
+use spectra_db::redis::RedisFactory;
+use spectra_db::sqlite::{SqliteConnection, SqliteStatement, SqliteValue, StepResult};
+use spectra_db::CompiledQuery;
 use spectra_runtime::ffi::{
     HostFunction, SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
     HOST_STATUS_SUCCESS,
@@ -106,8 +108,19 @@ struct Store {
     postgres_channels: ApiHandleTable<Arc<DriverHandle<NotificationListener>>>,
     postgres_notifications: ApiHandleTable<Notification>,
     redis_connections: ApiHandleTable<Arc<DriverHandle<RedisConnection>>>,
-    pools: ApiHandleTable<Arc<spectra_db::sqlite::SqlitePool>>,
-    pool_leases: HashMap<i64, PoolLease>,
+    pools: ApiHandleTable<Arc<AnyPool>>,
+    pool_leases: HashMap<i64, PoolLease<SqliteFactory>>,
+    postgres_pool_leases: HashMap<i64, PoolLease<PostgresFactory>>,
+    redis_pool_leases: HashMap<i64, PoolLease<RedisFactory>>,
+}
+
+/// One entry of the shared `Store::pools` table. A single id space covers
+/// every driver so `pool.close` never confuses a SQLite pool with a
+/// PostgreSQL or Redis one.
+pub(crate) enum AnyPool {
+    Sqlite(Arc<ConnectionPool<SqliteFactory>>),
+    Postgres(Arc<ConnectionPool<PostgresFactory>>),
+    Redis(Arc<ConnectionPool<RedisFactory>>),
 }
 fn store() -> &'static Mutex<Store> {
     static STORE: OnceLock<Mutex<Store>> = OnceLock::new();
@@ -122,6 +135,8 @@ fn store() -> &'static Mutex<Store> {
             redis_connections: ApiHandleTable::new(HandleKind::DatabaseRedisConnection),
             pools: ApiHandleTable::new(HandleKind::Database),
             pool_leases: HashMap::new(),
+            postgres_pool_leases: HashMap::new(),
+            redis_pool_leases: HashMap::new(),
         })
     })
 }

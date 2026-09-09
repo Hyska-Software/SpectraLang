@@ -7,7 +7,7 @@
 
 use crate::grpc::{
     GrpcClient, GrpcClientStream, GrpcCode, GrpcError, GrpcMessage, GrpcMetadata, GrpcReceiver,
-    GrpcServer, GrpcServerConfig, GrpcService, GrpcStatus, GrpcTrailers,
+    GrpcServer, GrpcServerConfig, GrpcService, GrpcStatus, GrpcTrailers, GrpcTlsIdentity,
 };
 use crate::handles::ApiHandleTable;
 use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
@@ -46,7 +46,6 @@ struct ClientEntry {
 }
 
 struct ServerEntry {
-    runtime: Arc<Runtime>,
     server: GrpcServer,
 }
 
@@ -491,6 +490,51 @@ pub extern "C" fn grpc_client_connect(ctx: *mut SpectraHostCallContext) -> i32 {
     match task { Ok(task) => write_result(ctx, task), Err(status) => status }
 }
 
+/// TLS variant of `grpc_client_connect`: `roots_base64` carries one DER root
+/// certificate (empty string selects no trust anchors, so the handshake
+/// fails honestly) and `server_name` must parse as a rustls server name.
+/// ALPN offers `h2`; the server side must terminate TLS with the same
+/// protocol or the h2 handshake fails loudly instead of degrading.
+pub extern "C" fn grpc_client_connect_tls(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 3) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Some(address) = read_spectra_string(args[0]).and_then(|value| value.parse::<SocketAddr>().ok()) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(roots_encoded) = read_spectra_string(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(server_name) = read_spectra_string(args[2]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let roots = if roots_encoded.is_empty() {
+        Vec::new()
+    } else {
+        let Ok(der) = decode_base64(&roots_encoded) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        vec![der]
+    };
+    if rustls::pki_types::ServerName::try_from(server_name.clone()).is_err() {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    let Ok(runtime) = runtime() else { return HOST_STATUS_INTERNAL_ERROR; };
+    let task = spectra_runtime::stdlib::spawn_cancellable_io_task_with_token(move |token| {
+        let result = runtime.block_on(with_cancellation(GrpcClient::connect_tls(address, roots, &server_name), token));
+        match result {
+            Ok(client) => {
+                let entry = ClientEntry {
+                    runtime: Arc::clone(&runtime),
+                    client: Arc::new(tokio::sync::Mutex::new(client)),
+                };
+                let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                Ok(state.clients.insert(entry))
+            }
+            Err(error) => Ok(error_handle(error)),
+        }
+    });
+    match task { Ok(task) => write_result(ctx, task), Err(status) => status }
+}
+
 pub extern "C" fn grpc_client_unary(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = read_args(ctx, 5) else { return HOST_STATUS_INVALID_ARGUMENT; };
     let (client, runtime, message, metadata, path, timeout) = {
@@ -731,12 +775,51 @@ pub extern "C" fn grpc_server_bind(ctx: *mut SpectraHostCallContext) -> i32 {
     let stream_capacity = usize::try_from(args[3]).ok().filter(|value| *value > 0 && *value <= 4096).unwrap_or(0);
     let max_concurrent_streams = u32::try_from(args[4]).ok().filter(|value| *value > 0).unwrap_or(0);
     if max_message_size == 0 || stream_capacity == 0 || max_concurrent_streams == 0 { return HOST_STATUS_INVALID_ARGUMENT; }
-    let config = GrpcServerConfig { max_message_size, stream_capacity, max_concurrent_streams };
+    let config = GrpcServerConfig { max_message_size, stream_capacity, max_concurrent_streams, tls: None };
     let task = spectra_runtime::stdlib::spawn_cancellable_io_task_with_token(move |token| {
         let result = runtime.block_on(with_cancellation(GrpcServer::bind(address, service, config), token));
         match result {
             Ok(server) => {
-                let entry = ServerEntry { runtime: Arc::clone(&runtime), server };
+                let entry = ServerEntry { server };
+                let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                Ok(state.servers.insert(entry))
+            }
+            Err(error) => Ok(error_handle(error)),
+        }
+    });
+    match task { Ok(task) => write_result(ctx, task), Err(status) => status }
+}
+
+/// TLS variant of `grpc_server_bind`: `cert_base64`/`key_base64` carry the
+/// DER certificate chain (single certificate) and PKCS#8 private key. The
+/// identity is validated with the shared rustls builder (ALPN `h2`) before
+/// any socket binds, so bad material fails fast with INVALID_ARGUMENT.
+pub extern "C" fn grpc_server_bind_tls(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 7) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Some(address) = read_spectra_string(args[0]).and_then(|value| value.parse::<SocketAddr>().ok()) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let (service, runtime) = {
+        let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(service) = state.services.get(&args[1]).cloned() else { return HOST_STATUS_NOT_FOUND; };
+        let Ok(runtime) = runtime() else { return HOST_STATUS_INTERNAL_ERROR; };
+        (service, runtime)
+    };
+    let max_message_size = usize::try_from(args[2]).ok().filter(|value| *value > 0 && *value <= MAX_HOST_BYTES).unwrap_or(0);
+    let stream_capacity = usize::try_from(args[3]).ok().filter(|value| *value > 0 && *value <= 4096).unwrap_or(0);
+    let max_concurrent_streams = u32::try_from(args[4]).ok().filter(|value| *value > 0).unwrap_or(0);
+    if max_message_size == 0 || stream_capacity == 0 || max_concurrent_streams == 0 { return HOST_STATUS_INVALID_ARGUMENT; }
+    let (Some(cert), Some(key)) = (
+        read_spectra_string(args[5]).and_then(|value| decode_base64(&value).ok()),
+        read_spectra_string(args[6]).and_then(|value| decode_base64(&value).ok()),
+    ) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    if crate::tls::server_config_from_der(vec![cert.clone()], key.clone(), vec![b"h2".to_vec()]).is_err() {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    let config = GrpcServerConfig { max_message_size, stream_capacity, max_concurrent_streams, tls: Some(GrpcTlsIdentity { cert_chain_der: vec![cert], private_key_der: key }) };
+    let task = spectra_runtime::stdlib::spawn_cancellable_io_task_with_token(move |token| {
+        let result = runtime.block_on(with_cancellation(GrpcServer::bind(address, service, config), token));
+        match result {
+            Ok(server) => {
+                let entry = ServerEntry { server };
                 let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                 Ok(state.servers.insert(entry))
             }
@@ -770,16 +853,45 @@ pub extern "C" fn grpc_server_free(ctx: *mut SpectraHostCallContext) -> i32 {
 
 /// Registers a real service implementation for `grpc_server_bind`.
 ///
-/// This Rust-only entry point is intentional: a raw Spectra callback cannot safely
-/// satisfy `GrpcService: Send + Sync + 'static` without a callback lifetime protocol.
-/// Integration tests and native embedders can register an owned service and pass the
-/// returned handle to the host bind call. No in-process fake transport is involved.
+/// Rust-side entry point used by `service_registry_tests`: a raw Spectra callback
+/// cannot safely satisfy `GrpcService: Send + Sync + 'static` without a callback
+/// lifetime protocol, so no host call mints service handles today and these helpers
+/// exist only for tests. `grpc_server_bind`/`grpc_server_bind_tls` resolve handles
+/// through the services table. No in-process fake transport is involved.
+#[cfg(test)]
 pub fn grpc_server_register_service(service: Arc<dyn GrpcService>) -> SpectraHostValue {
     let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     state.services.insert(service)
 }
 
+#[cfg(test)]
 pub fn grpc_server_unregister_service(handle: SpectraHostValue) -> bool {
     let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     state.services.remove(&handle).is_some()
+}
+
+#[cfg(test)]
+mod service_registry_tests {
+    use super::*;
+    use crate::grpc::{GrpcError, GrpcRequest};
+
+    #[test]
+    fn registered_service_resolves_for_bind_and_unregisters() {
+        let service: Arc<dyn GrpcService> =
+            Arc::new(|_request: GrpcRequest| async move { Err(GrpcError::Cancelled) });
+        let handle = grpc_server_register_service(service);
+        assert!(handle > 0, "registration must mint a live handle");
+        {
+            let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            assert!(
+                state.services.get(&handle).is_some(),
+                "bind resolves the registered handle through the services table"
+            );
+        }
+        assert!(grpc_server_unregister_service(handle));
+        assert!(
+            !grpc_server_unregister_service(handle),
+            "double unregister must report missing"
+        );
+    }
 }
