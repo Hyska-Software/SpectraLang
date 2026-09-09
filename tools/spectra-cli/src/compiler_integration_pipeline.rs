@@ -38,12 +38,8 @@ impl SpectraCompiler {
         self.pipeline.package_name = name;
     }
 
-    /// Compile source code to native code
-    pub fn compile(&mut self, source: &str, filename: &str) -> Result<(), String> {
-        self.compile_impl(source, filename, source, 0)
-    }
-
-    /// Compile source with diagnostic lines mapped onto a different render source (D6).
+    /// Compile source code to native code, with diagnostic lines mapped onto
+    /// a different render source when a synthetic header was prepended (D6).
     ///
     /// When the caller prepends synthetic header lines (e.g. `module <name>\n`)
     /// to a headerless file, `source` is the compiled (shifted) text while

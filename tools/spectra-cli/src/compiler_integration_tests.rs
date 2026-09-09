@@ -20,7 +20,7 @@ mod tests {
         "#;
 
         let mut compiler = SpectraCompiler::default();
-        let result = compiler.compile(source, "test.spectra");
+        let result = compiler.compile_with_line_shift(source, "test.spectra", source, 0);
 
         assert!(result.is_ok());
     }
@@ -55,7 +55,7 @@ mod tests {
         };
 
         let mut compiler = SpectraCompiler::new(options);
-        let result = compiler.compile(source, "test.spectra");
+        let result = compiler.compile_with_line_shift(source, "test.spectra", source, 0);
 
         assert!(result.is_ok());
     }
@@ -80,7 +80,7 @@ mod tests {
         "#;
 
         let mut compiler = SpectraCompiler::default();
-        let result = compiler.compile(source, "test.spectra");
+        let result = compiler.compile_with_line_shift(source, "test.spectra", source, 0);
 
         assert!(result.is_ok());
     }
@@ -109,7 +109,7 @@ mod tests {
         "#;
 
         let mut compiler = SpectraCompiler::default();
-        let result = compiler.compile(source, "test.spectra");
+        let result = compiler.compile_with_line_shift(source, "test.spectra", source, 0);
 
         assert!(result.is_ok());
     }
@@ -134,23 +134,18 @@ mod tests {
     }
 
     #[test]
-    fn test_line_shift_zero_matches_unshifted() {
-        // shift = 0 renders the compiled text untouched: the same error the
-        // plain path reports (effective line 3 here).
+    fn test_line_shift_zero_reports_compiled_lines() {
+        // shift = 0 applies no adjustment: the compiled (effective) line 3
+        // is reported as-is.
         let disk = "func f() returns int {\n    return \"oops\"\n}\n";
         let effective = format!("module test\n{disk}");
         let mut compiler = SpectraCompiler::default();
-        let plain = compiler
-            .compile(&effective, "shift.spectra")
-            .expect_err("must fail");
-        let mut shifted_compiler = SpectraCompiler::default();
-        let zero = shifted_compiler
+        let zero = compiler
             .compile_with_line_shift(&effective, "shift.spectra", &effective, 0)
             .expect_err("must fail");
         assert!(
-            plain.contains("shift.spectra:3:"),
-            "control must show the effective line, got:\n{plain}"
+            zero.contains("shift.spectra:3:"),
+            "shift 0 must report the compiled line, got:\n{zero}"
         );
-        assert_eq!(zero, plain, "shift 0 must be byte-identical to compile()");
     }
 }
