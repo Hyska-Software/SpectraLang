@@ -249,4 +249,36 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn mixed_layout_field_offsets_cover_every_field() {
+        // Mixed int/char/bool/float/string fields have distinct padded
+        // offsets (char is 4 bytes, bool is 1); every construction and field
+        // read must resolve a real layout offset instead of guessing.
+        let ir = lower_source(
+            r#"
+            module layout_offsets
+            record Mixed {
+                size: int,
+                code: char,
+                flag: bool,
+                score: float,
+                name: string,
+            }
+            func make() returns Mixed {
+                Mixed { size: 1, code: 'a', flag: true, score: 2.5, name: "x" }
+            }
+            public func main() returns int {
+                let m = make()
+                if m.size != 1 { return 1 }
+                if m.code != 'a' { return 2 }
+                if make().score != 2.5 { return 3 }
+                return 0
+            }
+            "#,
+        );
+        let pretty = crate::ir::pretty::format_module(&ir);
+        // Five constructed fields plus three reads: construction, the
+        // identifier field path, and the general expression field path.
+        assert!(pretty.matches("field_ptr").count() >= 8);
+    }
 }

@@ -376,9 +376,12 @@ impl ASTLowering {
 
                         // Step 3: field pointer (padded layout) + store
                         if let Some((field_idx, field_type)) = field_info {
-                            let offsets = match self.infer_expr_ir_type(object) {
-                                IRType::Struct { fields, .. } => {
-                                    layout::layout_of(fields.iter().map(|(_, ty)| ty)).offsets
+                            let (offsets, struct_label) = match self.infer_expr_ir_type(object) {
+                                IRType::Struct { fields, name, .. } => {
+                                    (
+                                        layout::layout_of(fields.iter().map(|(_, ty)| ty)).offsets,
+                                        name,
+                                    )
                                 }
                                 _ => {
                                     if let spectra_compiler::ast::ExpressionKind::Identifier(
@@ -391,22 +394,28 @@ impl ASTLowering {
                                                 self.struct_definitions
                                                     .get(sname.as_str())
                                                     .map(|defs| {
-                                                        layout::layout_of(
-                                                            defs.iter().map(|(_, ty)| ty),
+                                                        (
+                                                            layout::layout_of(
+                                                                defs.iter().map(|(_, ty)| ty),
+                                                            )
+                                                            .offsets,
+                                                            sname.clone(),
                                                         )
-                                                        .offsets
                                                     })
                                             })
                                             .unwrap_or_default()
                                     } else {
-                                        Vec::new()
+                                        (Vec::new(), "<unknown>".to_string())
                                     }
                                 }
                             };
-                            let byte_offset = offsets
-                                .get(field_idx)
-                                .copied()
-                                .unwrap_or(field_idx * 8);
+                            let Some(byte_offset) = offsets.get(field_idx).copied() else {
+                                self.error(format!(
+                                    "field layout for '{struct_label}.{field}' has no offset for field type {field_type:?}"
+                                ));
+                                return;
+                            };
+                            let byte_offset = byte_offset as i64;
                             let field_ptr = self.builder.build_field_ptr(
                                 ir_func,
                                 struct_ptr,

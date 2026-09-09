@@ -15,14 +15,21 @@ impl ASTLowering {
                                 .enumerate()
                                 .find(|(_, (fname, _))| fname == field)
                             {
-                                // Field pointer com offset de layout padded
-                                let byte_offset = layout::layout_of(
+                                // Padded layout offsets are total over the field
+                                // list; a miss here would silently compute a
+                                // wrong pointer, so fail loudly instead.
+                                let Some(byte_offset) = layout::layout_of(
                                     field_defs.iter().map(|(_, ty)| ty),
                                 )
                                 .offsets
                                 .get(field_idx)
                                 .copied()
-                                .unwrap_or(field_idx * 8) as i64;
+                                else {
+                                    return self.invalid_value(format!(
+                                        "field layout for '{struct_name}.{field}' has no offset for field type {field_type:?}"
+                                    ));
+                                };
+                                let byte_offset = byte_offset as i64;
                                 let field_ptr = self
                                     .builder
                                     .build_field_ptr(ir_func, struct_ptr, byte_offset);
@@ -40,7 +47,9 @@ impl ASTLowering {
                 let object_ptr = self.lower_expression(object, ir_func);
                 let object_type = self.infer_expr_ir_type(object);
                 if let IRType::Struct {
-                    fields: field_defs, ..
+                    fields: field_defs,
+                    name: struct_name,
+                    ..
                 } = self.ir_type_representation(&object_type)
                 {
                     if let Some((field_idx, field_ty)) = field_defs
@@ -49,13 +58,18 @@ impl ASTLowering {
                         .find(|(_, (fname, _))| fname == field)
                         .map(|(idx, (_, ty))| (idx, ty.clone()))
                     {
-                        let byte_offset = layout::layout_of(
+                        let Some(byte_offset) = layout::layout_of(
                             field_defs.iter().map(|(_, ty)| ty),
                         )
                         .offsets
                         .get(field_idx)
                         .copied()
-                        .unwrap_or(field_idx * 8) as i64;
+                        else {
+                            return self.invalid_value(format!(
+                                "field layout for '{struct_name}.{field}' has no offset for field type {field_ty:?}"
+                            ));
+                        };
+                        let byte_offset = byte_offset as i64;
                         let field_ptr =
                             self.builder
                                 .build_field_ptr(ir_func, object_ptr, byte_offset);

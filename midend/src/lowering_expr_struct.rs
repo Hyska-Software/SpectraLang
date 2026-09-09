@@ -39,11 +39,16 @@ impl ASTLowering {
                     let field_value =
                         self.lower_expression_as_type(field_expr, &field_type, ir_func);
 
-                    let byte_offset = struct_layout
+                    let Some(byte_offset) = struct_layout
                         .offsets
                         .get(field_idx)
                         .copied()
-                        .unwrap_or(field_idx * 8) as i64;
+                    else {
+                        return self.invalid_value(format!(
+                            "field layout for '{actual_name}.{field_name}' has no offset for field type {field_type:?}"
+                        ));
+                    };
+                    let byte_offset = byte_offset as i64;
                     let field_ptr = self
                         .builder
                         .build_field_ptr(ir_func, struct_ptr, byte_offset);
