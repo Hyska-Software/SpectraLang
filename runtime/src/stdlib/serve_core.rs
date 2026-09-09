@@ -4,6 +4,14 @@ pub(crate) enum ServeRequestState {
     Pending,
     /// Completed with the scalar projection plus the full float output vector.
     Complete(SpectraHostValue, Vec<f64>),
+    /// Rejected by a guardrail before or during inference. Reads as the
+    /// configured fallback value (default `-1`, indistinguishable from
+    /// pending/cancelled by value alone); the guardrail diagnostic, audit
+    /// event, and `blocked_requests` counter carry the reason. Never queued.
+    Blocked {
+        fallback: SpectraHostValue,
+        reason: &'static str,
+    },
     Cancelled,
 }
 

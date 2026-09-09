@@ -128,6 +128,12 @@ serve.server_benchmark(server: int, requests: int, batch: int) returns int
   pending requests and returns the processed count.
 - A server must be warmed before it processes requests.
 - Cancelled and pending requests return `-1` from `server_result`.
+- Guardrail-blocked requests (rate limit, input/output range) return the
+  configured fallback value from `server_result` (set with
+  `server_set_fallback`; default `-1`, which by value alone is
+  indistinguishable from pending/cancelled). The block is recorded in
+  `server_last_diagnostic`, the audit log, and the `blocked_requests`
+  counter instead.
 - `server_benchmark(server, requests, batch)` warms the server, enqueues
   deterministic inputs, processes them in batches, and returns the processed
   request count.

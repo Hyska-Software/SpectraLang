@@ -110,7 +110,10 @@ pub(crate) extern "C" fn std_serve_server_enqueue(ctx: *mut SpectraHostCallConte
             ));
             serve_record_block(server, SERVE_DEFAULT_MODEL_ID, server.fallback);
             if let Some((_, state)) = requests.get_mut(request_id) {
-                *state = ServeRequestState::Complete(server.fallback, Vec::new());
+                *state = ServeRequestState::Blocked {
+                    fallback: server.fallback,
+                    reason: "rate_limit",
+                };
             }
             results[0] = request_id;
             return HOST_STATUS_SUCCESS;
@@ -136,7 +139,10 @@ pub(crate) extern "C" fn std_serve_server_enqueue(ctx: *mut SpectraHostCallConte
             ));
             serve_record_block(server, SERVE_DEFAULT_MODEL_ID, server.fallback);
             if let Some((_, state)) = requests.get_mut(request_id) {
-                *state = ServeRequestState::Complete(server.fallback, Vec::new());
+                *state = ServeRequestState::Blocked {
+                    fallback: server.fallback,
+                    reason: "input_range",
+                };
             }
             results[0] = request_id;
             return HOST_STATUS_SUCCESS;
@@ -255,7 +261,10 @@ pub(crate) extern "C" fn std_serve_server_process_batch(ctx: *mut SpectraHostCal
                 ));
                 serve_record_block(server, SERVE_DEFAULT_MODEL_ID, server.fallback);
                 if let Some((_, state)) = requests.get_mut(request_id) {
-                    *state = ServeRequestState::Complete(server.fallback, Vec::new());
+                    *state = ServeRequestState::Blocked {
+                        fallback: server.fallback,
+                        reason: "output_range",
+                    };
                 }
                 processed += 1;
                 continue;
@@ -301,6 +310,7 @@ pub(crate) extern "C" fn std_serve_server_result(ctx: *mut SpectraHostCallContex
     results[0] = match *state {
         ServeRequestState::Pending | ServeRequestState::Cancelled => -1,
         ServeRequestState::Complete(value, _) => value,
+        ServeRequestState::Blocked { fallback, .. } => fallback,
     };
     HOST_STATUS_SUCCESS
 }
