@@ -1,5 +1,7 @@
 # Build artifacts
 /target/
+target-*/
+**/target/
 **/*.o
 **/*.obj
 **/*.a
@@ -8,6 +10,10 @@
 **/*.dll
 **/*.so
 **/*.dylib
+**/*.ilk
+**/*.pdb
+tmp_*.ilk
+tmp_*.pdb
 
 # Python caches
 __pycache__/
