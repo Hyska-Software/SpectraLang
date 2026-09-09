@@ -617,9 +617,17 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("db.redis", "last_error_code") => Some(host_string("spectra.api.db.redis.last_error_code")),
         ("db.redis", "last_error_message") => Some(host_string("spectra.api.db.redis.last_error_message")),
         ("db.pool", "sqlite_open") => Some(host_int("spectra.api.db.pool.sqlite_open")),
+        ("db.pool", "postgres_open") => Some(host_int("spectra.api.db.pool.postgres_open")),
+        ("db.pool", "redis_open") => Some(host_int("spectra.api.db.pool.redis_open")),
         ("db.pool", "close") => Some(host_bool("spectra.api.db.pool.close")),
         ("db.pool", "with_connection") => {
             Some(host_int("spectra.api.db.pool.with_connection"))
+        }
+        ("db.pool", "postgres_with_connection") => {
+            Some(host_int("spectra.api.db.pool.postgres_with_connection"))
+        }
+        ("db.pool", "redis_with_connection") => {
+            Some(host_int("spectra.api.db.pool.redis_with_connection"))
         }
         ("db.migrate", "apply_sqlite") => Some(host_int("spectra.api.db.migrate.apply_sqlite")),
         ("db.migrate", "status_sqlite") => {
@@ -691,6 +699,7 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("grpc", "error_details_base64") => Some(host_string("spectra.api.grpc.error_details_base64")),
         ("grpc", "error_free") => Some(host_bool("spectra.api.grpc.error_free")),
         ("grpc", "client_connect") => Some(host_task_int("spectra.api.grpc.client_connect")),
+        ("grpc", "client_connect_tls") => Some(host_task_int("spectra.api.grpc.client_connect_tls")),
         ("grpc", "client_unary") => Some(host_task_int("spectra.api.grpc.client_unary")),
         ("grpc", "client_client_streaming") => Some(host_task_int("spectra.api.grpc.client_client_streaming")),
         ("grpc", "client_server_streaming") => Some(host_task_int("spectra.api.grpc.client_server_streaming")),
@@ -701,12 +710,16 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("grpc", "stream_cancel") => Some(host_task_int("spectra.api.grpc.stream_cancel")),
         ("grpc", "stream_free") => Some(host_bool("spectra.api.grpc.stream_free")),
         ("grpc", "server_bind") => Some(host_task_int("spectra.api.grpc.server_bind")),
+        ("grpc", "server_bind_tls") => Some(host_task_int("spectra.api.grpc.server_bind_tls")),
         ("grpc", "server_local_port") => Some(host_int("spectra.api.grpc.server_local_port")),
         ("grpc", "server_shutdown") => Some(host_bool("spectra.api.grpc.server_shutdown")),
         ("grpc", "server_free") => Some(host_bool("spectra.api.grpc.server_free")),
         ("graphql", "schema_new") => Some(host_int("spectra.api.graphql.schema_new")),
         ("graphql", "schema_set_workers") => Some(host_bool("spectra.api.graphql.schema_set_workers")),
         ("graphql", "schema_set_subscription_capacity") => Some(host_bool("spectra.api.graphql.schema_set_subscription_capacity")),
+        ("graphql", "schema_set_max_depth") => Some(host_bool("spectra.api.graphql.schema_set_max_depth")),
+        ("graphql", "schema_set_max_complexity") => Some(host_bool("spectra.api.graphql.schema_set_max_complexity")),
+        ("graphql", "schema_set_introspection") => Some(host_bool("spectra.api.graphql.schema_set_introspection")),
         ("graphql", "schema_field_json") => Some(host_bool("spectra.api.graphql.schema_field_json")),
         ("graphql", "schema_field_callback") => Some(host_bool("spectra.api.graphql.schema_field_callback")),
         ("graphql", "schema_subscription_json") => Some(host_bool("spectra.api.graphql.schema_subscription_json")),

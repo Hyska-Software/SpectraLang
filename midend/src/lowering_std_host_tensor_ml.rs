@@ -289,6 +289,9 @@ pub(crate) fn lookup_std_host_group_tensor_ml(module: &str, function: &str) -> O
                 Some(host_int("spectra.std.ml.distributed_train_tcp"))
             }
             ("ml", "onnx_export") => Some(host_string("spectra.std.ml.onnx_export")),
+            ("ml", "onnx_export_weights") => {
+                Some(host_string("spectra.std.ml.onnx_export_weights"))
+            }
             ("ml", "onnx_import_summary") => {
                 Some(host_string("spectra.std.ml.onnx_import_summary"))
             }
@@ -306,6 +309,9 @@ pub(crate) fn lookup_std_host_group_tensor_ml(module: &str, function: &str) -> O
             ("ml", "kv_cache_values") => Some(host_int("spectra.std.ml.kv_cache_values")),
             ("ml", "kv_cache_len") => Some(host_int("spectra.std.ml.kv_cache_len")),
             ("ml", "logits_sample") => Some(host_int("spectra.std.ml.logits_sample")),
+            ("ml", "logits_sample_seeded") => {
+                Some(host_int("spectra.std.ml.logits_sample_seeded"))
+            }
             ("ml", "generate_ex") => Some(host_int("spectra.std.ml.generate_ex")),
             ("ml", "tokenizer_wordpiece") => Some(host_int("spectra.std.ml.tokenizer_wordpiece")),
             ("ml", "tokenizer_load") => Some(host_int("spectra.std.ml.tokenizer_load")),

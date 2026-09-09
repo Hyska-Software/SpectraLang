@@ -12,9 +12,13 @@ use std::collections::{HashMap, HashSet};
 use spectra_midend::ir::{FloatWidth, IntWidth, Type as IRType};
 
 /// CodeView simple (primitive) type indices, from the canonical `cvconst.h`
-/// table. `T_INT4 == 0x74` matches the historical placeholder this module
-/// used before real type mapping existed, so untyped locals keep the exact
-/// representation MSVC tooling already accepted.
+/// table. `T_INT4 == 0x74` is the real 32-bit signed integer primitive and
+/// is only emitted for compiler-proven `i32` values.
+/// `T_UNKNOWN == 0x0000` is the reserved typeless index, emitted only when
+/// no type information exists at all. It is an explicit unknown marker, not
+/// a claimed type: debuggers must not interpret it as `void`, `int`, or any
+/// other concrete type.
+pub const T_UNKNOWN: u32 = 0x0000;
 pub const T_VOID: u32 = 0x0003;
 pub const T_CHAR: u32 = 0x0010;
 pub const T_UCHAR: u32 = 0x0020;
@@ -74,18 +78,18 @@ pub struct CodeViewFunction {
     pub frame_size: u32,
     /// IR type of each entry of `locals`, index-aligned with it. Empty (or a
     /// shorter vector) means type information was unavailable for the tail
-    /// entries and they fall back to `T_INT4`, exactly like pre-typing output.
+    /// entries and they are marked `T_UNKNOWN`, never a guessed type.
     pub local_types: Vec<IRType>,
     /// Return type used for the procedure record's type index when present;
-    /// without it the procedure falls back to `T_INT4`.
+    /// without it the procedure is marked `T_UNKNOWN`.
     pub return_type: Option<IRType>,
     /// Real source-line rows captured during codegen, sorted by offset:
     /// `(machine-code offset relative to this function's start, 1-based
     /// source line)`. Each row comes from an IR instruction whose lowering
     /// populated `source_span`; Cranelift's post-allocation value-label pass
     /// supplies the machine offset. Empty means no span-derived row exists
-    /// for this function and the line table falls back to the uniform
-    /// heuristic distribution (see [`line_table_rows`]).
+    /// for this function and the emitted line table is empty: addresses map
+    /// to no line rather than to an invented uniform distribution.
     pub line_rows: Vec<(u32, u32)>,
 }
 
@@ -95,37 +99,19 @@ pub type LineRow = (u32, u32);
 
 /// Build the final `(offset, line)` row table for one function.
 ///
-/// `real_rows` are span-derived rows captured during codegen. Rows are kept
-/// sorted by offset; when a span-derived row and a heuristic row collide on
-/// the same offset the real row wins because it is compiler-proven. When no
-/// real row exists at all the table is exactly the historical uniform
-/// distribution over the source lines — that remains the documented fallback
-/// for instructions whose IR carried no `source_span` (compiler-generated
-/// instructions, optimized-out values without a live range, and IR produced
-/// by passes that do not propagate spans).
-pub fn line_table_rows(function_size: u32, source_line_count: u32, real_rows: &[LineRow]) -> Vec<LineRow> {
+/// `real_rows` are span-derived rows captured during codegen. Only
+/// compiler-proven rows are emitted, sorted by offset with out-of-range
+/// rows dropped. When no real row exists the table is empty: debuggers see
+/// no line information instead of an invented uniform distribution over the
+/// source lines. Compiler-generated instructions, optimized-out values
+/// without a live range, and IR from passes that do not propagate spans
+/// therefore contribute silence, not guesses.
+pub fn line_table_rows(function_size: u32, _source_line_count: u32, real_rows: &[LineRow]) -> Vec<LineRow> {
     let function_size = function_size.max(1);
-    let source_line_count = source_line_count.max(1);
-    let mut fallback = Vec::with_capacity(source_line_count as usize);
-    for index in 0..source_line_count {
-        let relative = if source_line_count <= 1 {
-            0
-        } else {
-            (function_size.saturating_sub(1) * index) / (source_line_count - 1)
-        };
-        fallback.push((relative, index + 1));
-    }
-    if real_rows.is_empty() {
-        return fallback;
-    }
-    let mut rows: Vec<LineRow> = fallback
-        .into_iter()
-        .chain(
-            real_rows
-                .iter()
-                .copied()
-                .filter(|(offset, _)| *offset < function_size),
-        )
+    let mut rows: Vec<LineRow> = real_rows
+        .iter()
+        .copied()
+        .filter(|(offset, _)| *offset < function_size)
         .collect();
     rows.sort_unstable();
     rows.dedup();
@@ -647,17 +633,10 @@ fn local_location_ranges(
         .into_iter()
         .collect()
 }
-
-/// Build the symbols subsection for one function.  The COFF object currently
-/// emits one function section at a time, so the linker can relocate the
-/// section-relative procedure address.  The procedure metadata follows the
-/// CodeView C13 record layout, including the frame and local range records
-/// required by MSVC's PDB writer.
-///
 /// `proc_type_index` is the resolved CodeView type index for the return type
 /// and `local_type_indices` holds the per-local indices; both come from the
 /// shared [`CodeViewTypeTable`] built by [`codeview_sections`]. Missing entries
-/// fall back to `T_INT4`, the pre-typing placeholder.
+/// are marked `T_UNKNOWN`, the explicit unknown marker, never a guessed type.
 fn function_symbols(
     function: &CodeViewFunction,
     proc_type_index: u32,
@@ -696,7 +675,7 @@ fn function_symbols(
         let type_index = local_type_indices
             .get(local_index)
             .copied()
-            .unwrap_or(T_INT4);
+            .unwrap_or(T_UNKNOWN);
         push_u32(&mut local, type_index);
         push_u16(&mut local, 0);
         local.extend_from_slice(local_name.as_bytes());
@@ -823,14 +802,14 @@ fn codeview_debug_s(
             .return_type
             .as_ref()
             .map(|ty| type_table.index_for(ty))
-            .unwrap_or(T_INT4);
+            .unwrap_or(T_UNKNOWN);
         let local_type_indices = (0..function.locals.len())
             .map(|index| {
                 function
                     .local_types
                     .get(index)
                     .map(|ty| type_table.index_for(ty))
-                    .unwrap_or(T_INT4)
+                    .unwrap_or(T_UNKNOWN)
             })
             .collect::<Vec<_>>();
         symbols.extend_from_slice(&function_symbols(function, proc_type_index, &local_type_indices));
@@ -1459,36 +1438,23 @@ mod tests {
     }
 
     #[test]
-    fn line_table_rows_falls_back_to_uniform_distribution_without_real_rows() {
-        let rows = super::line_table_rows(32, 5, &[]);
-        assert_eq!(rows.len(), 5);
-        for (index, (offset, line)) in rows.iter().enumerate() {
-            assert_eq!(*line, index as u32 + 1);
-            assert_eq!(
-                *offset,
-                32u32.saturating_sub(1) * index as u32 / 4
-            );
-        }
+    fn line_table_rows_returns_empty_without_real_rows() {
+        assert!(super::line_table_rows(32, 5, &[]).is_empty());
+        assert!(super::line_table_rows(1, 1, &[]).is_empty());
     }
 
     #[test]
-    fn line_table_rows_prefers_real_rows_and_keeps_fallback_coverage() {
+    fn line_table_rows_emits_only_real_rows() {
         // Real, compiler-proven rows at offsets 4 and 20.
         let real = [(4u32, 7u32), (20, 12)];
         let rows = super::line_table_rows(32, 5, &real);
-        assert!(rows.contains(&(4, 7)));
-        assert!(rows.contains(&(20, 12)));
-        // The heuristic rows still cover the rest of the function so every
-        // address maps to some line (documented fallback).
-        assert!(rows.windows(2).all(|pair| pair[0].0 < pair[1].0));
-        assert!(rows.contains(&(7, 2))); // uniform row inside the gap
+        assert_eq!(rows, vec![(4, 7), (20, 12)]);
     }
 
     #[test]
     fn line_table_rows_drops_real_rows_outside_the_function_range() {
         let real = [(100u32, 3u32)];
-        assert!(super::line_table_rows(16, 2, &real).contains(&((15, 2))));
-        assert!(!super::line_table_rows(16, 2, &real).contains(&(100, 3)));
+        assert!(super::line_table_rows(16, 2, &real).is_empty());
     }
 
     #[test]

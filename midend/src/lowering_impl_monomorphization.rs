@@ -11,10 +11,10 @@ impl ASTLowering {
         // Process each pending specialization
         while let Some(request) = self.pending_specializations.pop() {
             if total_processed >= MAX_SPECIALIZATIONS {
-                eprintln!(
-                    "monomorphization limit ({}) reached for '{}'; remaining specializations skipped.",
+                self.error(format!(
+                    "E3011: monomorphization limit ({}) exceeded for '{}'; remaining specializations rejected",
                     MAX_SPECIALIZATIONS, request.generic_name
-                );
+                ));
                 self.pending_specializations.clear();
                 break;
             }
@@ -122,10 +122,10 @@ impl ASTLowering {
     ) {
         const MAX_METHOD_SPECIALIZATIONS: usize = 512;
         if self.generated_specializations.len() > MAX_METHOD_SPECIALIZATIONS {
-            eprintln!(
-                "generic impl method specialization limit ({}) reached; remaining specializations skipped.",
-                MAX_METHOD_SPECIALIZATIONS
-            );
+            self.error(format!(
+                "E3011: generic impl method specialization limit ({}) exceeded for '{}' on '{}'; remaining specializations rejected",
+                MAX_METHOD_SPECIALIZATIONS, request.method_name, request.instantiated_struct
+            ));
             self.pending_method_specializations.clear();
             return;
         }
@@ -535,4 +535,61 @@ impl ASTLowering {
         element_type
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn monomorphization_overflow_is_a_coded_error() {
+        let span = spectra_compiler::span::Span::dummy();
+        let mut lowering = ASTLowering::new();
+        lowering.generic_functions.insert(
+            "synth_id".to_string(),
+            spectra_compiler::ast::Function {
+                name: "synth_id".to_string(),
+                span,
+                visibility: spectra_compiler::ast::Visibility::Private,
+                attributes: Vec::new(),
+                is_async: false,
+                type_params: vec![spectra_compiler::ast::TypeParameter {
+                    name: "T".to_string(),
+                    bounds: Vec::new(),
+                    span,
+                }],
+                params: Vec::new(),
+                return_type: None,
+                body: spectra_compiler::ast::Block {
+                    span,
+                    statements: Vec::new(),
+                },
+            },
+        );
+        for i in 0..513 {
+            lowering.pending_specializations.push(MonomorphizationRequest {
+                generic_name: "synth_id".to_string(),
+                concrete_types: vec![IRType::Struct {
+                    name: format!("OverflowProbe{i}"),
+                    fields: Vec::new(),
+                }],
+            });
+        }
+        let mut module = IRModule::new("overflow_probe");
+        lowering.process_monomorphization_requests(&mut module);
+        assert!(
+            lowering.pending_specializations.is_empty(),
+            "overflow must drain the pending queue"
+        );
+        let coded = lowering.errors.iter().any(|error| {
+            error.message.starts_with("E3011")
+                && error.message.contains("synth_id")
+                && error.message.contains("512")
+        });
+        assert!(
+            coded,
+            "expected E3011 overflow error naming synth_id and 512, got: {:?}",
+            lowering.errors.iter().map(|error| &error.message).collect::<Vec<_>>()
+        );
+    }
 }

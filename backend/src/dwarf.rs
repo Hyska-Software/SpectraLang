@@ -52,9 +52,9 @@ pub fn sections_for_functions(
     let source_line_count = source.lines().count().max(1) as u32;
     for function in functions {
         line_program.begin_sequence(Some(Address::Constant(function.offset as u64)));
-        // Real, span-derived rows when codegen captured them; the uniform
-        // heuristic remains the documented fallback otherwise (see
-        // `debug::line_table_rows`).
+        // Real, span-derived rows when codegen captured them; otherwise the
+        // sequence stays empty (see `debug::line_table_rows`): no line
+        // information instead of invented rows.
         for (relative, line) in crate::debug::line_table_rows(
             function.size,
             source_line_count,

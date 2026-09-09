@@ -155,4 +155,98 @@ mod tests {
         assert!(!pretty.contains("array.cond"), "{pretty}");
         assert!(!pretty.contains("iterator_from_values"), "{pretty}");
     }
+    /// R-2112 regression: `shift_body_values` must move every operand id when a
+    /// coroutine body is renumbered for the poll prologue. Missed fields (seen
+    /// with `GetElementPtr.index` and `CallIndirect.fn_ptr`) leave stale ids that
+    /// still resolve — to whatever value now owns the old number — so async
+    /// trait-object dispatch silently computed `base + 2 * input`. A mere
+    /// definedness check cannot catch the aliasing; instead assert the producer
+    /// shape: a vtable index is always an integer constant and an indirect
+    /// callee always comes from a vtable slot (or a direct function address).
+    /// Any future missed shift field that feeds these positions fails loudly.
+    #[test]
+    fn r2112_async_dyn_dispatch_shift_keeps_every_operand_defined() {
+        let ir = lower_source(
+            r#"
+            module r2112_async_dyn_shift
+
+            trait Worker {
+                async func run(&self, input: int) returns int
+            }
+
+            record SendWorker {
+                base: int
+            }
+
+            impl Worker for SendWorker {
+                async func run(&self, input: int) returns int {
+                    return self.base + input
+                }
+            }
+
+            async func drive(worker: dyn Worker + Send, input: int) returns int {
+                let result = await worker.run(input)
+                return result
+            }
+            "#,
+        );
+
+        let pretty = crate::ir::pretty::format_module(&ir);
+        assert!(pretty.contains("call_indirect"), "{pretty}");
+        assert!(pretty.contains("vtable_slot"), "{pretty}");
+
+        let mut producers: std::collections::HashMap<usize, &'static str> = std::collections::HashMap::new();
+        for function in &ir.functions {
+            for block in &function.blocks {
+                for instruction in &block.instructions {
+                    let produced = match &instruction.kind {
+                        crate::ir::InstructionKind::ConstInt { result, .. }
+                        | crate::ir::InstructionKind::ConstIntTyped { result, .. } => {
+                            Some((result.id, "const"))
+                        }
+                        crate::ir::InstructionKind::LoadVtableSlot { result, .. } => {
+                            Some((result.id, "vtable_slot"))
+                        }
+                        crate::ir::InstructionKind::FuncAddr { result, .. } => {
+                            Some((result.id, "func_addr"))
+                        }
+                        _ => None,
+                    };
+                    if let Some((id, opcode)) = produced {
+                        producers.insert(id, opcode);
+                    }
+                }
+            }
+        }
+        for function in &ir.functions {
+            if !(function.name.ends_with("__poll") || function.name.ends_with("__drop")) {
+                continue;
+            }
+            for block in &function.blocks {
+                for instruction in &block.instructions {
+                    match &instruction.kind {
+                        crate::ir::InstructionKind::GetElementPtr { index, .. } => {
+                            assert_eq!(
+                                producers.get(&index.id),
+                                Some(&"const"),
+                                "vtable index %v{} is not an integer constant in {}",
+                                index.id,
+                                function.name,
+                            );
+                        }
+                        crate::ir::InstructionKind::CallIndirect { fn_ptr, .. } => {
+                            let producer = producers.get(&fn_ptr.id).copied().unwrap_or("undefined");
+                            assert!(
+                                producer == "vtable_slot" || producer == "func_addr",
+                                "indirect callee %v{} comes from {producer}, not a vtable slot, in {}",
+                                fn_ptr.id,
+                                function.name,
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
 }

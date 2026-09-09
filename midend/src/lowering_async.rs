@@ -476,13 +476,22 @@ fn shift_body_values(function: &mut IRFunction, amount: usize) {
                 InstructionKind::Copy { result, source } => { shift(result, amount); shift(source, amount); }
                 InstructionKind::Cast { result, operand, .. } => { shift(result, amount); shift(operand, amount); }
                 InstructionKind::Load { result, ptr, .. }
-                | InstructionKind::GetElementPtr { result, ptr, .. }
                 | InstructionKind::FieldPtr { result, ptr, .. } => { shift(result, amount); shift(ptr, amount); }
+                // The vtable slot index is a value id like any other operand: it must
+                // move with the shift, otherwise dynamic dispatch inside a coroutine
+                // indexes the vtable with a stale id (silent wrong callee/offset).
+                InstructionKind::GetElementPtr { result, ptr, index, .. } => { shift(result, amount); shift(ptr, amount); shift(index, amount); }
                 InstructionKind::Store { ptr, value } => { shift(ptr, amount); shift(value, amount); }
                 InstructionKind::Call { result, args, .. }
-                | InstructionKind::HostCall { result, args, .. }
-                | InstructionKind::CallIndirect { result, args, .. } => {
+                | InstructionKind::HostCall { result, args, .. } => {
                     if let Some(value) = result { shift(value, amount); }
+                    for value in args { shift(value, amount); }
+                }
+                // Same staleness hazard as the GEP index: an unshifted callee id
+                // resolves to whatever value now owns the old id.
+                InstructionKind::CallIndirect { result, fn_ptr, args, .. } => {
+                    if let Some(value) = result { shift(value, amount); }
+                    shift(fn_ptr, amount);
                     for value in args { shift(value, amount); }
                 }
                 InstructionKind::Await { result, task, .. } => { shift(result, amount); shift(task, amount); }
@@ -495,8 +504,10 @@ fn shift_body_values(function: &mut IRFunction, amount: usize) {
                 | InstructionKind::Alloca { result, .. }
                 | InstructionKind::GlobalAddr { result, .. }
                 | InstructionKind::ManualAlloc { result, .. }
-                | InstructionKind::FuncAddr { result, .. }
-                | InstructionKind::AsyncReady { result, .. } => shift(result, amount),
+                | InstructionKind::FuncAddr { result, .. } => shift(result, amount),
+                // `value` is an operand id: without the shift an `async.ready(v)` payload
+                // resolves to a stale id after the coroutine prologue renumbering.
+                InstructionKind::AsyncReady { result, value, .. } => { shift(result, amount); if let Some(value) = value { shift(value, amount); } }
                 InstructionKind::Phi { result, incoming } => { shift(result, amount); for (value, _) in incoming { shift(value, amount); } }
                 InstructionKind::MakeDynFatPtr { result, data_ptr, vtable_ptr } => { shift(result, amount); shift(data_ptr, amount); shift(vtable_ptr, amount); }
                 InstructionKind::LoadDynDataPtr { result, fat_ptr }
@@ -509,8 +520,12 @@ fn shift_body_values(function: &mut IRFunction, amount: usize) {
                     if let Some(value) = upstream { shift(value, amount); }
                     for value in inputs.iter_mut().chain(targets.iter_mut()) { shift(value, amount); }
                 }
-                InstructionKind::FrameAlloc { result, .. } | InstructionKind::FrameLoad { result, .. }
-                | InstructionKind::StateLoad { result, .. } | InstructionKind::CoroutineCreate { result, .. } => shift(result, amount),
+                InstructionKind::FrameAlloc { result, .. } => shift(result, amount),
+                // `frame` is an operand id wherever it appears: an unshifted frame handle
+                // resolves to a stale value after renumbering.
+                InstructionKind::FrameLoad { result, frame, .. }
+                | InstructionKind::StateLoad { result, frame, .. }
+                | InstructionKind::CoroutineCreate { result, frame, .. } => { shift(result, amount); shift(frame, amount); }
                 InstructionKind::FrameStore { frame, value, .. } => { shift(frame, amount); shift(value, amount); }
                 InstructionKind::StateStore { frame, .. } | InstructionKind::CoroutineWake { task: frame }
                 | InstructionKind::CoroutineSuspend { task: frame, .. } | InstructionKind::CoroutineCancelled { task: frame } => shift(frame, amount),

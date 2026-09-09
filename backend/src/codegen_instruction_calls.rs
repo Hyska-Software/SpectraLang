@@ -114,6 +114,17 @@ impl CodeGenerator {
                     "reshape" => 14,
                     "linear" => 15,
                     "mse_loss" => 16,
+                    "tanh" => 17,
+                    "sqrt" => 18,
+                    "bce_loss" => 19,
+                    "conv2d" => 20,
+                    "max_pool2d" => 21,
+                    "dropout" => 22,
+                    "matmul_batched" => 23,
+                    "concat" => 24,
+                    "stack" => 25,
+                    "slice" => 26,
+                    "permute" => 27,
                     other => {
                         return Err(BackendCodegenError::invalid_ir(format!(
                             "E3004: no reverse kernel for {other}"
