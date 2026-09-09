@@ -596,6 +596,7 @@ pub(crate) extern "C" fn std_async_reactor_timer(ctx: *mut SpectraHostCallContex
     HOST_STATUS_SUCCESS
 }
 
+#[cfg(test)]
 pub(crate) extern "C" fn std_async_reactor_io_register(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
@@ -608,6 +609,7 @@ pub(crate) extern "C" fn std_async_reactor_io_register(ctx: *mut SpectraHostCall
     HOST_STATUS_SUCCESS
 }
 
+#[cfg(test)]
 pub(crate) extern "C" fn std_async_reactor_io_notify(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,

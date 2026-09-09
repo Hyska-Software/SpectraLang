@@ -408,6 +408,9 @@ impl Reactor {
         }
     }
 
+    /// Synthetic I/O registration for tests only. Production socket readiness
+    /// must use `register_source` so the platform multiplexer owns the event.
+    #[cfg(test)]
     pub fn register_io(&self, token: i64, interest: Interest) -> bool {
         let Ok(mut state) = self.core.state.lock() else {
             return false;
@@ -416,10 +419,9 @@ impl Reactor {
         true
     }
 
-    /// Register a real mio source with the platform multiplexer.  The
-    /// synthetic `register_io`/`notify_io` pair remains available for host
-    /// adapters, but production socket readiness must use this path so the
-    /// selected epoll/IOCP/kqueue backend owns the event.
+    /// Register a real mio source with the platform multiplexer. Production
+    /// socket readiness must use this path so the selected epoll/IOCP/kqueue
+    /// backend owns the event.
     pub fn register_source<S: mio::event::Source + ?Sized>(
         &self,
         source: &mut S,
@@ -475,6 +477,8 @@ impl Reactor {
         deregistered
     }
 
+    /// Synthetic I/O notification for tests only. Mirrors `register_io`.
+    #[cfg(test)]
     pub fn notify_io(&self, token: i64, readiness: Interest) -> bool {
         let interest = {
             let Ok(state) = self.core.state.lock() else {

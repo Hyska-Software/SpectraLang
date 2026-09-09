@@ -7,7 +7,6 @@ use crate::ffi::SpectraHostValue;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::{Arc, Condvar, Mutex};
-use std::thread::{self, ThreadId};
 
 pub(crate) type AsyncPollFn = unsafe extern "C" fn(i64, i64, i64) -> i64;
 pub(crate) type AsyncDropFn = unsafe extern "C" fn(i64, i64, i64);
@@ -38,17 +37,20 @@ impl AsyncPollStatus {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum AsyncOwnedValue {
     Scalar(SpectraHostValue),
-    Bytes(Vec<u8>),
+    /// Typed payloads below exist only for unit tests: production results flow
+    /// as scalars through `AsyncResultStorage::scalar` (see `set_coroutine_result`).
+    #[cfg(test)]
     String(String),
+    #[cfg(test)]
     Aggregate(Vec<SpectraHostValue>),
-    ProtocolHandle { domain: u16, value: SpectraHostValue },
 }
 
 impl AsyncOwnedValue {
     pub(crate) fn host_value(&self) -> Option<SpectraHostValue> {
         match self {
-            Self::Scalar(value) | Self::ProtocolHandle { value, .. } => Some(*value),
-            Self::Bytes(_) | Self::String(_) | Self::Aggregate(_) => None,
+            Self::Scalar(value) => Some(*value),
+            #[cfg(test)]
+            Self::String(_) | Self::Aggregate(_) => None,
         }
     }
 }
@@ -76,30 +78,20 @@ impl AsyncResultStorage {
         Self { value: AsyncOwnedValue::Scalar(value), drop_glue: None, released: false }
     }
 
-    pub(crate) fn bytes(value: impl Into<Vec<u8>>) -> Self {
-        Self { value: AsyncOwnedValue::Bytes(value.into()), drop_glue: None, released: false }
-    }
-
+    /// Test-only typed payload (see the `AsyncOwnedValue` variants).
+    #[cfg(test)]
     pub(crate) fn string(value: impl Into<String>) -> Self {
         Self { value: AsyncOwnedValue::String(value.into()), drop_glue: None, released: false }
     }
 
+    /// Test-only typed payload (see the `AsyncOwnedValue` variants).
+    #[cfg(test)]
     pub(crate) fn aggregate(value: Vec<SpectraHostValue>) -> Self {
         Self { value: AsyncOwnedValue::Aggregate(value), drop_glue: None, released: false }
     }
 
-    pub(crate) fn protocol_handle(
-        domain: u16,
-        value: SpectraHostValue,
-        drop_glue: Option<ResultDropFn>,
-    ) -> Self {
-        Self { value: AsyncOwnedValue::ProtocolHandle { domain, value }, drop_glue, released: false }
-    }
-
-    pub(crate) fn scalar_with_drop(value: SpectraHostValue, drop_glue: ResultDropFn) -> Self {
-        Self { value: AsyncOwnedValue::Scalar(value), drop_glue: Some(drop_glue), released: false }
-    }
-
+    /// Test-only inspector: production reads results through `host_value`.
+    #[cfg(test)]
     pub(crate) fn as_value(&self) -> &AsyncOwnedValue { &self.value }
     pub(crate) fn host_value(&self) -> Option<SpectraHostValue> { self.value.host_value() }
 }
@@ -127,9 +119,6 @@ impl AsyncFrameSlot {
         Self { value: 0, initialized: false, drop_glue }
     }
 
-    pub(crate) fn initialized(value: SpectraHostValue, drop_glue: SlotDropFn) -> Self {
-        Self { value, initialized: true, drop_glue }
-    }
 
     pub(crate) fn initialize(&mut self, value: SpectraHostValue) {
         self.drop_now();
@@ -162,8 +151,16 @@ pub(crate) struct AsyncPollContext {
 
 impl AsyncPollContext {
     pub(crate) fn new() -> Self { Self { result: None, error: None, woke: false } }
+    /// Test-only writers: in production the poll callback is generated code that
+    /// returns a status while the result travels via `set_coroutine_result`; unit
+    /// tests stand in for generated callbacks through these methods (see
+    /// `coroutine_tests` and the `async_frame` test module), which is their
+    /// only in-repo caller.
+    #[cfg(test)]
     pub(crate) fn set_result(&mut self, value: AsyncResultStorage) { self.result = Some(value); }
+    #[cfg(test)]
     pub(crate) fn set_error(&mut self, value: AsyncResultStorage) { self.error = Some(value); }
+    #[cfg(test)]
     pub(crate) fn wake_parent(&mut self) { self.woke = true; }
 }
 
@@ -175,20 +172,16 @@ pub(crate) enum AsyncTaskState {
     Ready,
     Failed,
     Cancelled,
-    Dropped,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum AsyncAffinity {
     Any,
-    Thread(ThreadId),
 }
 
 impl AsyncAffinity {
-    pub(crate) fn current_thread() -> Self { Self::Thread(thread::current().id()) }
     fn allows(self) -> bool {
         matches!(self, Self::Any)
-            || matches!(self, Self::Thread(id) if id == thread::current().id())
     }
 }
 
@@ -241,7 +234,6 @@ impl AsyncFrame {
 
     pub(crate) fn state_index(&self) -> u32 { self.header.state_index }
     pub(crate) fn set_state_index(&mut self, state: u32) { self.header.state_index = state; }
-    pub(crate) fn slots(&self) -> &[AsyncFrameSlot] { &self.slots }
 
     pub(crate) fn store_slot(&mut self, slot: usize, value: SpectraHostValue) -> bool {
         let Some(slot) = self.slots.get_mut(slot) else { return false };
@@ -282,23 +274,6 @@ struct ChildSubscription { child: SpectraHostValue }
 struct WaiterState { notified: bool }
 
 
-pub(crate) struct AsyncTaskWaiter {
-    state: Arc<(Mutex<WaiterState>, Condvar)>,
-}
-
-impl AsyncTaskWaiter {
-    pub(crate) fn wait(&self) {
-        let (lock, signal) = &*self.state;
-        let mut state = lock.lock().unwrap_or_else(|poison| poison.into_inner());
-        while !state.notified {
-            state = signal.wait(state).unwrap_or_else(|poison| poison.into_inner());
-        }
-    }
-
-    pub(crate) fn is_notified(&self) -> bool {
-        self.state.0.lock().unwrap_or_else(|poison| poison.into_inner()).notified
-    }
-}
 
 struct FrameRecord {
     frame: Box<AsyncFrame>,
@@ -315,10 +290,6 @@ struct FrameRecord {
 }
 
 impl FrameRecord {
-    fn new(frame: AsyncFrame, affinity: AsyncAffinity) -> Self {
-        Self::new_boxed(Box::new(frame), affinity)
-    }
-
     fn new_boxed(frame: Box<AsyncFrame>, affinity: AsyncAffinity) -> Self {
         Self {
             frame,
@@ -380,6 +351,9 @@ impl Default for AsyncFrameRegistry {
 impl AsyncFrameRegistry {
     pub(crate) fn new() -> Self { Self { inner: Arc::new(Mutex::new(RegistryInner::new())) } }
 
+    /// Test-only convenience over [`Self::attach_boxed_frame`]: production attaches
+    /// the boxed frame directly (see `attach_coroutine_frame_boxed`).
+    #[cfg(test)]
     pub(crate) fn attach_frame(
         &self,
         task: SpectraHostValue,
@@ -407,6 +381,8 @@ impl AsyncFrameRegistry {
         self.inner.lock().unwrap_or_else(|poison| poison.into_inner()).frames.contains_key(&task)
     }
 
+    /// Test-only observer: production reads task state through the poll/drop outcomes.
+    #[cfg(test)]
     pub(crate) fn state(&self, task: SpectraHostValue) -> Option<AsyncTaskState> {
         self.inner.lock().unwrap_or_else(|poison| poison.into_inner()).frames.get(&task).map(|record| record.state)
     }
@@ -470,7 +446,7 @@ impl AsyncFrameRegistry {
         match record.state {
             AsyncTaskState::Ready => return Err(AsyncPollOutcome::Ready),
             AsyncTaskState::Failed => return Err(AsyncPollOutcome::Failed),
-            AsyncTaskState::Cancelled | AsyncTaskState::Dropped => {
+            AsyncTaskState::Cancelled => {
                 return Err(AsyncPollOutcome::Cancelled)
             }
             AsyncTaskState::Created | AsyncTaskState::Pending => {}
@@ -549,7 +525,7 @@ impl AsyncFrameRegistry {
     pub(crate) fn request_cancel(&self, task: SpectraHostValue) -> Result<(), bool> {
         let mut inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
         let record = inner.frames.get_mut(&task).ok_or(false)?;
-        if matches!(record.state, AsyncTaskState::Ready | AsyncTaskState::Failed | AsyncTaskState::Cancelled | AsyncTaskState::Dropped) {
+        if matches!(record.state, AsyncTaskState::Ready | AsyncTaskState::Failed | AsyncTaskState::Cancelled) {
             return Ok(());
         }
         record.cancel_requested = true;
@@ -568,6 +544,9 @@ impl AsyncFrameRegistry {
         Ok(Some(AsyncFrameDrop { frame, task, state: AsyncPollStatus::Cancelled as i32 }))
     }
 
+    /// Test-only explicit drop: production drops flow through poll completion
+    /// (`finish_poll` action) and cancellation (`take_cancel_drop`).
+    #[cfg(test)]
     pub(crate) fn take_drop_task(&self, task: SpectraHostValue) -> Result<Option<AsyncFrameDrop>, bool> {
         let mut inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
         let record = inner.frames.get(&task).ok_or(false)?;
@@ -597,6 +576,8 @@ impl AsyncFrameRegistry {
         true
     }
 
+    /// Test-only owned-result take: production reads values via `task_result_value`.
+    #[cfg(test)]
     pub(crate) fn take_result(&self, task: SpectraHostValue) -> Option<Result<AsyncResultStorage, AsyncResultStorage>> {
         let mut inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
         let record = inner.frames.get_mut(&task)?;
@@ -607,33 +588,6 @@ impl AsyncFrameRegistry {
         }
     }
 
-    pub(crate) fn register_waiter(&self, task: SpectraHostValue) -> Option<AsyncTaskWaiter> {
-        let waiter = AsyncTaskWaiter { state: Arc::new((Mutex::new(WaiterState::default()), Condvar::new())) };
-        let mut inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
-        let record = inner.frames.get_mut(&task)?;
-        if matches!(record.state, AsyncTaskState::Ready | AsyncTaskState::Failed | AsyncTaskState::Cancelled | AsyncTaskState::Dropped) {
-            notify_waiter(&waiter.state);
-        } else {
-            record.waiters.push(Arc::clone(&waiter.state));
-        }
-        Some(waiter)
-    }
-    pub(crate) fn take_all_drops(&self) -> Vec<AsyncFrameDrop> {
-        let mut inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
-        let records = std::mem::take(&mut inner.frames);
-        inner.wake_queue.clear();
-        records
-            .into_iter()
-            .filter_map(|(task, record)| {
-                if record.frame.header.drop_invoked { return None; }
-                Some(AsyncFrameDrop {
-                    frame: record.frame,
-                    task,
-                    state: AsyncPollStatus::Cancelled as i32,
-                })
-            })
-            .collect()
-    }
 
     pub(crate) fn subscribe_child(&self, parent: SpectraHostValue, child: SpectraHostValue) -> bool {
         let mut inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
@@ -642,7 +596,7 @@ impl AsyncFrameRegistry {
         if let Some(old) = old { if let Some(record) = inner.frames.get_mut(&old) { record.parents.retain(|value| *value != parent); } }
         if let Some(record) = inner.frames.get_mut(&child) {
             if !record.parents.contains(&parent) { record.parents.push(parent); }
-            if matches!(record.state, AsyncTaskState::Ready | AsyncTaskState::Failed | AsyncTaskState::Cancelled | AsyncTaskState::Dropped) && !inner.wake_queue.contains(&parent) { inner.wake_queue.push(parent); }
+            if matches!(record.state, AsyncTaskState::Ready | AsyncTaskState::Failed | AsyncTaskState::Cancelled) && !inner.wake_queue.contains(&parent) { inner.wake_queue.push(parent); }
             true
         } else { false }
     }

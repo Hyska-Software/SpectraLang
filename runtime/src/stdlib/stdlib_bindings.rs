@@ -432,6 +432,7 @@ pub(crate) const ML_DISTRIBUTED_CHECKPOINT_SAVE: &str = "spectra.std.ml.distribu
 pub(crate) const ML_DISTRIBUTED_RESUME: &str = "spectra.std.ml.distributed_resume";
 pub(crate) const ML_DISTRIBUTED_SUMMARY: &str = "spectra.std.ml.distributed_summary";
 pub(crate) const ML_ONNX_EXPORT: &str = "spectra.std.ml.onnx_export";
+pub(crate) const ML_ONNX_EXPORT_WEIGHTS: &str = "spectra.std.ml.onnx_export_weights";
 pub(crate) const ML_ONNX_IMPORT_SUMMARY: &str = "spectra.std.ml.onnx_import_summary";
 pub(crate) const ML_ONNX_VALIDATE: &str = "spectra.std.ml.onnx_validate";
 pub(crate) const ML_ONNX_ROUNDTRIP: &str = "spectra.std.ml.onnx_roundtrip";
@@ -452,6 +453,7 @@ pub(crate) const ML_KV_CACHE_KEYS: &str = "spectra.std.ml.kv_cache_keys";
 pub(crate) const ML_KV_CACHE_VALUES: &str = "spectra.std.ml.kv_cache_values";
 pub(crate) const ML_KV_CACHE_LEN: &str = "spectra.std.ml.kv_cache_len";
 pub(crate) const ML_LOGITS_SAMPLE: &str = "spectra.std.ml.logits_sample";
+pub(crate) const ML_LOGITS_SAMPLE_SEEDED: &str = "spectra.std.ml.logits_sample_seeded";
 pub(crate) const ML_TOKENIZER_WORDPIECE: &str = "spectra.std.ml.tokenizer_wordpiece";
 pub(crate) const ML_TOKENIZER_LOAD: &str = "spectra.std.ml.tokenizer_load";
 pub(crate) const ML_TOKENIZER_ENCODE: &str = "spectra.std.ml.tokenizer_encode";
@@ -664,7 +666,12 @@ pub(crate) const ASYNC_CHANNEL_LEN: &str = "spectra.async.channel.len";
 pub(crate) const ASYNC_REACTOR_BACKEND: &str = "spectra.async.reactor.backend";
 pub(crate) const ASYNC_REACTOR_WAKE: &str = "spectra.async.reactor.wake";
 pub(crate) const ASYNC_REACTOR_TIMER: &str = "spectra.async.reactor.timer";
+/// Synthetic-I/O host names. Gated like their wrappers (`async_network_reactor.rs`,
+/// `registration.rs`): production I/O uses `register_source`, so these names exist
+/// only in test builds.
+#[cfg(test)]
 pub(crate) const ASYNC_REACTOR_IO_REGISTER: &str = "spectra.async.reactor.io_register";
+#[cfg(test)]
 pub(crate) const ASYNC_REACTOR_IO_NOTIFY: &str = "spectra.async.reactor.io_notify";
 pub(crate) const ASYNC_REACTOR_POLL: &str = "spectra.async.reactor.poll";
 pub(crate) const ASYNC_REACTOR_LAST_KIND: &str = "spectra.async.reactor.last_kind";

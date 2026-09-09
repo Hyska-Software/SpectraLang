@@ -156,13 +156,20 @@ impl<F: ConnectionFactory> ConnectionPool<F> {
                 .unwrap_or_else(|e| e.into_inner());
             state = next;
             if timeout.timed_out() {
-                self.inner
-                    .metrics
-                    .acquisition_timeouts
-                    .fetch_add(1, Ordering::Relaxed);
-                return Err(PoolError::AcquireTimeout(
-                    self.inner.config.acquisition_timeout,
-                ));
+                // The OS wait may report a timeout slightly before the
+                // deadline (millisecond truncation / early wakeup, notably on
+                // Windows). Only fail once the deadline truly elapsed;
+                // otherwise keep waiting for the remainder so the documented
+                // `acquisition_timeout` contract holds exactly.
+                if Instant::now() >= deadline {
+                    self.inner
+                        .metrics
+                        .acquisition_timeouts
+                        .fetch_add(1, Ordering::Relaxed);
+                    return Err(PoolError::AcquireTimeout(
+                        self.inner.config.acquisition_timeout,
+                    ));
+                }
             }
         }
     }
@@ -310,7 +317,9 @@ impl<F: ConnectionFactory> ConnectionPool<F> {
                 .wait_timeout(state, remaining)
                 .unwrap_or_else(|e| e.into_inner());
             state = next;
-            if timeout.timed_out() && state.checked_out != 0 {
+            // Same early-wakeup guard as the acquire path: only report the
+            // timeout once the deadline truly elapsed.
+            if timeout.timed_out() && state.checked_out != 0 && Instant::now() >= deadline {
                 return Err(PoolError::ShutdownTimeout(
                     self.inner.config.shutdown_timeout,
                 ));

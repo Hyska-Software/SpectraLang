@@ -1,8 +1,7 @@
 use super::*;
-use crate::async_frame::{
-    AsyncAffinity, AsyncFrame, AsyncFrameRegistry, AsyncPollOutcome, AsyncResultStorage,
-    AsyncTaskState,
-};
+use crate::async_frame::{AsyncAffinity, AsyncFrame, AsyncFrameRegistry, AsyncPollOutcome};
+#[cfg(test)]
+use crate::async_frame::{AsyncResultStorage, AsyncTaskState};
 pub(crate) struct AsyncTaskRegistry {
     pub(crate) now_ms: SpectraHostValue,
     pub(crate) next_join_order: SpectraHostValue,
@@ -193,15 +192,6 @@ impl AsyncTaskRegistry {
         )
     }
 
-    pub(crate) fn attach_coroutine_frame(
-        &mut self,
-        task_id: SpectraHostValue,
-        frame: AsyncFrame,
-        affinity: AsyncAffinity,
-    ) -> bool {
-        self.tasks.get(task_id).is_some()
-            && self.coroutine_frames.attach_frame(task_id, frame, affinity)
-    }
 
     pub(crate) fn attach_coroutine_frame_boxed(
         &mut self,
@@ -216,6 +206,8 @@ impl AsyncTaskRegistry {
     pub(crate) fn is_coroutine_task(&self, task_id: SpectraHostValue) -> bool {
         self.coroutine_frames.contains(task_id)
     }
+    /// Test-only observer of the frame state machine.
+    #[cfg(test)]
     pub(crate) fn coroutine_state(&self, task_id: SpectraHostValue) -> Option<AsyncTaskState> {
         self.coroutine_frames.state(task_id)
     }
@@ -247,13 +239,6 @@ impl AsyncTaskRegistry {
             }
         }
         true
-    }
-
-    pub(crate) fn remove_scalar_parent(&mut self, parent: SpectraHostValue) {
-        self.scalar_child_parents.retain(|_, parents| {
-            parents.retain(|candidate| *candidate != parent);
-            !parents.is_empty()
-        });
     }
 
     fn wake_scalar_child_parents(&mut self, child: SpectraHostValue) {
@@ -296,6 +281,8 @@ impl AsyncTaskRegistry {
         }
     }
 
+    /// Test-only owned-result take (production reads via `task_result_value`).
+    #[cfg(test)]
     pub(crate) fn take_coroutine_result(
         &self,
         task_id: SpectraHostValue,

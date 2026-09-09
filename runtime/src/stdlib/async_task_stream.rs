@@ -28,6 +28,8 @@ use crate::async_frame::{
 };
 
 /// Allocate an existing Async task handle and attach its private coroutine frame.
+/// Test-only convenience over [`create_coroutine_task_boxed`], used by `coroutine_tests`.
+#[cfg(test)]
 pub(crate) fn create_coroutine_task(
     frame: AsyncFrame,
     parent_scope: Option<SpectraHostValue>,
@@ -109,6 +111,8 @@ pub(crate) fn cancel_coroutine_task(task_id: SpectraHostValue) -> Result<bool, i
     Ok(true)
 }
 
+/// Test-only owned-result take, used by `coroutine_tests`.
+#[cfg(test)]
 pub(crate) fn take_coroutine_result(
     task_id: SpectraHostValue,
 ) -> Result<Result<AsyncResultStorage, AsyncResultStorage>, i32> {
@@ -117,6 +121,8 @@ pub(crate) fn take_coroutine_result(
     registry.take_coroutine_result(task_id).ok_or(HOST_STATUS_INVALID_ARGUMENT)
 }
 
+/// Test-only explicit drop, used by `coroutine_tests` and the `async_abi` tests.
+#[cfg(test)]
 pub(crate) fn drop_coroutine_task(task_id: SpectraHostValue) -> Result<bool, i32> {
     let action = {
         let mut registry = lock_async_task_registry()?;

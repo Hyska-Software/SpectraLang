@@ -769,6 +769,7 @@ pub(crate) fn register_ml() {
     );
     register_host_function(ML_DISTRIBUTED_TRAIN_TCP, std_ml_distributed_train_tcp);
     register_host_function(ML_ONNX_EXPORT, std_ml_onnx_export);
+    register_host_function(ML_ONNX_EXPORT_WEIGHTS, std_ml_onnx_export_weights);
     register_host_function(ML_ONNX_IMPORT_SUMMARY, std_ml_onnx_import_summary);
     register_host_function(ML_ONNX_VALIDATE, std_ml_onnx_validate);
     register_host_function(ML_ONNX_ROUNDTRIP, std_ml_onnx_roundtrip);
@@ -789,6 +790,7 @@ pub(crate) fn register_ml() {
     register_host_function(ML_KV_CACHE_VALUES, std_ml_kv_cache_values);
     register_host_function(ML_KV_CACHE_LEN, std_ml_kv_cache_len);
     register_host_function(ML_LOGITS_SAMPLE, std_ml_logits_sample);
+    register_host_function(ML_LOGITS_SAMPLE_SEEDED, std_ml_logits_sample_seeded);
     register_host_function(ML_TOKENIZER_WORDPIECE, std_ml_tokenizer_wordpiece);
     register_host_function(ML_TOKENIZER_LOAD, std_ml_tokenizer_load);
     register_host_function(ML_TOKENIZER_ENCODE, std_ml_tokenizer_encode);
@@ -925,7 +927,9 @@ pub(crate) fn register_async() {
     register_host_function(ASYNC_REACTOR_BACKEND, std_async_reactor_backend);
     register_host_function(ASYNC_REACTOR_WAKE, std_async_reactor_wake);
     register_host_function(ASYNC_REACTOR_TIMER, std_async_reactor_timer);
+    #[cfg(test)]
     register_host_function(ASYNC_REACTOR_IO_REGISTER, std_async_reactor_io_register);
+    #[cfg(test)]
     register_host_function(ASYNC_REACTOR_IO_NOTIFY, std_async_reactor_io_notify);
     register_host_function(ASYNC_REACTOR_POLL, std_async_reactor_poll);
     register_host_function(ASYNC_REACTOR_LAST_KIND, std_async_reactor_last_kind);
