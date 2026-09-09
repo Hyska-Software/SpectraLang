@@ -79,6 +79,50 @@ fn render_errors(errors: &[CompilerError], source: &str, filename: &str, stage: 
     output
 }
 
+/// Subtract synthetic header lines from diagnostic spans (D6).
+///
+/// When the CLI prepends `module <name>\n` to a headerless file, every span
+/// produced while compiling points one line past the on-disk location.
+/// Shifting the span lines back (and rendering against the on-disk source)
+/// restores the true location. Lines floor at 1: the synthetic header itself
+/// is always valid, so a shifted span can never legitimately land on it.
+pub(crate) fn shift_span_lines(span: &mut Span, shift: usize) {
+    if shift == 0 {
+        return;
+    }
+    span.start_location.line = span.start_location.line.saturating_sub(shift).max(1);
+    span.end_location.line = span.end_location.line.saturating_sub(shift).max(1);
+}
+
+/// Shift every spanned compilation error; spanless midend/backend errors pass
+/// through untouched.
+fn shift_compilation_error_lines(errors: &mut [CompilerError], shift: usize) {
+    if shift == 0 {
+        return;
+    }
+    for error in errors {
+        match error {
+            CompilerError::Lexical(inner) => shift_span_lines(&mut inner.span, shift),
+            CompilerError::Parse(inner) => shift_span_lines(&mut inner.span, shift),
+            CompilerError::Semantic(inner) => shift_span_lines(&mut inner.span, shift),
+            CompilerError::Midend(_) | CompilerError::Backend(_) => {}
+        }
+    }
+}
+
+/// Shift lint warning spans (primary and secondary) the same way.
+fn shift_lint_lines(warnings: &mut [LintDiagnostic], shift: usize) {
+    if shift == 0 {
+        return;
+    }
+    for warning in warnings {
+        shift_span_lines(&mut warning.span, shift);
+        if let Some(secondary) = warning.secondary_span.as_mut() {
+            shift_span_lines(secondary, shift);
+        }
+    }
+}
+
 enum DiagnosticSeverity {
     Error,
     Warning,

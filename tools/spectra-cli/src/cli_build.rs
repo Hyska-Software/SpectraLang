@@ -292,11 +292,14 @@ fn execute_project_executable(
                 ))
             })?;
             let owned_source;
-            let effective_source = if source_has_module_decl(&source) {
-                source.as_str()
+            // A synthetic `module` header shifts every compiled line by one;
+            // the shift travels with the sources so diagnostics render
+            // against the on-disk text (D6).
+            let (effective_source, line_shift) = if source_has_module_decl(&source) {
+                (source.as_str(), 0)
             } else {
                 owned_source = format!("module {}\n{}", module.name, source);
-                owned_source.as_str()
+                (owned_source.as_str(), 1)
             };
             let defines_main = source_defines_main(effective_source);
             if defines_main {
@@ -311,18 +314,23 @@ fn execute_project_executable(
             }
 
             let object_path = temp_dir.join(format!("module-{index:04}.obj"));
+            let module_filename = module.path.to_string_lossy();
             let (object_bytes, debug_metadata) = if defines_main {
                 compiler
-                    .compile_to_executable_object_with_debug_metadata(
+                    .compile_to_executable_object_with_line_shift(
                         effective_source,
-                        &module.path.to_string_lossy(),
+                        &module_filename,
+                        &source,
+                        line_shift,
                     )
                     .map_err(CliError::compilation)?
             } else {
                 compiler
-                    .compile_to_object_with_debug_metadata(
+                    .compile_to_object_with_line_shift(
                         effective_source,
-                        &module.path.to_string_lossy(),
+                        &module_filename,
+                        &source,
+                        line_shift,
                     )
                     .map_err(CliError::compilation)?
             };
@@ -423,14 +431,20 @@ fn compile_plan(
                 // Prepend a synthetic header so the parser receives a valid AST
                 // without requiring boilerplate in every script.
                 let owned;
-                let effective_source: &str = if source_has_module_decl(&source) {
-                    &source
-                } else {
-                    owned = format!("module {}\n{}", module.name, source);
-                    &owned
-                };
+                let (effective_source, line_shift): (&str, usize) =
+                    if source_has_module_decl(&source) {
+                        (&source, 0)
+                    } else {
+                        owned = format!("module {}\n{}", module.name, source);
+                        (&owned, 1)
+                    };
 
-                match compiler.compile(effective_source, &filename) {
+                match compiler.compile_with_line_shift(
+                    effective_source,
+                    &filename,
+                    &source,
+                    line_shift,
+                ) {
                     Ok(()) => {
                         if let Some(summary) = compiler.take_last_summary() {
                             if show_pipeline_summary {

@@ -40,12 +40,64 @@ impl SpectraCompiler {
 
     /// Compile source code to native code
     pub fn compile(&mut self, source: &str, filename: &str) -> Result<(), String> {
-        let report = self
-            .compile_to_report(source, filename)
-            .map_err(|errors| render_errors(&errors, source, filename, "compilation"))?;
+        self.compile_impl(source, filename, source, 0)
+    }
+
+    /// Compile source with diagnostic lines mapped onto a different render source (D6).
+    ///
+    /// When the caller prepends synthetic header lines (e.g. `module <name>\n`)
+    /// to a headerless file, `source` is the compiled (shifted) text while
+    /// `render_source` is the on-disk text and `line_shift` the header height.
+    /// Error and lint spans shift back before rendering against `render_source`,
+    /// so reported line numbers match the file on disk.
+    pub fn compile_with_line_shift(
+        &mut self,
+        source: &str,
+        filename: &str,
+        render_source: &str,
+        line_shift: usize,
+    ) -> Result<(), String> {
+        self.compile_impl(source, filename, render_source, line_shift)
+    }
+
+    /// Render compilation/execution errors, shifting spans back onto the
+    /// on-disk source when a synthetic header was prepended.
+    fn render_shifted_errors(
+        errors: Vec<CompilerError>,
+        compiled_source: &str,
+        filename: &str,
+        render_source: &str,
+        line_shift: usize,
+        stage: &str,
+    ) -> String {
+        if line_shift == 0 {
+            return render_errors(&errors, compiled_source, filename, stage);
+        }
+        let mut errors = errors;
+        shift_compilation_error_lines(&mut errors, line_shift);
+        render_errors(&errors, render_source, filename, stage)
+    }
+
+    /// Compile source code to native code
+    fn compile_impl(
+        &mut self,
+        source: &str,
+        filename: &str,
+        render_source: &str,
+        line_shift: usize,
+    ) -> Result<(), String> {
+        let report = self.compile_to_report(source, filename).map_err(|errors| {
+            Self::render_shifted_errors(errors, source, filename, render_source, line_shift, "compilation")
+        })?;
 
         if self.emit_output {
-            self.emit_lint_warnings(&report.warnings, filename, source);
+            if line_shift == 0 {
+                self.emit_lint_warnings(&report.warnings, filename, source);
+            } else {
+                let mut warnings = report.warnings.clone();
+                shift_lint_lines(&mut warnings, line_shift);
+                self.emit_lint_warnings(&warnings, filename, render_source);
+            }
 
             if self.options.optimize && self.emit_internal_metrics && self.options.collect_metrics {
                 let modified_passes: Vec<_> = report
@@ -94,9 +146,9 @@ impl SpectraCompiler {
         }
 
         if self.options.run_jit {
-            self.pipeline
-                .execute_artifacts(&report.artifacts)
-                .map_err(|errors| render_errors(&errors, source, filename, "execution"))?;
+            self.pipeline.execute_artifacts(&report.artifacts).map_err(|errors| {
+                Self::render_shifted_errors(errors, source, filename, render_source, line_shift, "execution")
+            })?;
         }
 
         Ok(())
@@ -118,9 +170,31 @@ impl SpectraCompiler {
         source: &str,
         filename: &str,
     ) -> Result<(Vec<u8>, NativeDebugMetadata), String> {
-        let report = self
-            .compile_to_report(source, filename)
-            .map_err(|errors| render_errors(&errors, source, filename, "compilation"))?;
+        self.compile_to_object_with_debug_metadata_impl(source, filename, source, 0)
+    }
+
+    /// Object emission with diagnostic lines mapped onto `render_source` (D6);
+    /// see [`SpectraCompiler::compile_with_line_shift`].
+    pub fn compile_to_object_with_line_shift(
+        &mut self,
+        source: &str,
+        filename: &str,
+        render_source: &str,
+        line_shift: usize,
+    ) -> Result<(Vec<u8>, NativeDebugMetadata), String> {
+        self.compile_to_object_with_debug_metadata_impl(source, filename, render_source, line_shift)
+    }
+
+    fn compile_to_object_with_debug_metadata_impl(
+        &mut self,
+        source: &str,
+        filename: &str,
+        render_source: &str,
+        line_shift: usize,
+    ) -> Result<(Vec<u8>, NativeDebugMetadata), String> {
+        let report = self.compile_to_report(source, filename).map_err(|errors| {
+            Self::render_shifted_errors(errors, source, filename, render_source, line_shift, "compilation")
+        })?;
         let metadata = native_debug_metadata(&report.artifacts.ir_module, false);
 
         let aot = AotCodeGenerator::new();
@@ -205,9 +279,36 @@ impl SpectraCompiler {
         source: &str,
         filename: &str,
     ) -> Result<(Vec<u8>, NativeDebugMetadata), String> {
-        let report = self
-            .compile_to_report(source, filename)
-            .map_err(|errors| render_errors(&errors, source, filename, "compilation"))?;
+        self.compile_to_executable_object_with_debug_metadata_impl(source, filename, source, 0)
+    }
+
+    /// Executable-object emission with diagnostic lines mapped onto
+    /// `render_source` (D6); see [`SpectraCompiler::compile_with_line_shift`].
+    pub fn compile_to_executable_object_with_line_shift(
+        &mut self,
+        source: &str,
+        filename: &str,
+        render_source: &str,
+        line_shift: usize,
+    ) -> Result<(Vec<u8>, NativeDebugMetadata), String> {
+        self.compile_to_executable_object_with_debug_metadata_impl(
+            source,
+            filename,
+            render_source,
+            line_shift,
+        )
+    }
+
+    fn compile_to_executable_object_with_debug_metadata_impl(
+        &mut self,
+        source: &str,
+        filename: &str,
+        render_source: &str,
+        line_shift: usize,
+    ) -> Result<(Vec<u8>, NativeDebugMetadata), String> {
+        let report = self.compile_to_report(source, filename).map_err(|errors| {
+            Self::render_shifted_errors(errors, source, filename, render_source, line_shift, "compilation")
+        })?;
         let metadata = native_debug_metadata(&report.artifacts.ir_module, true);
 
         let aot = AotCodeGenerator::new();

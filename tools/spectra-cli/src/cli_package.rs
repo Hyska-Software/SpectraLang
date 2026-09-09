@@ -134,8 +134,10 @@ fn discover_async_test_cases(entries: &[PathBuf]) -> CliResult<Vec<AsyncTestCase
             ))
         })?;
         let owned;
-        let effective_source = if source_has_module_decl(&source) {
-            source.as_str()
+        // Same synthetic-header shift as the build plan (D6): raw error spans
+        // point one line past the on-disk location when the header is present.
+        let (effective_source, line_shift) = if source_has_module_decl(&source) {
+            (source.as_str(), 0)
         } else {
             let module_name = path
                 .file_stem()
@@ -143,19 +145,27 @@ fn discover_async_test_cases(entries: &[PathBuf]) -> CliResult<Vec<AsyncTestCase
                 .map(sanitize_module_name)
                 .unwrap_or_else(|| "test_module".to_string());
             owned = format!("module {}\n{}", module_name, source);
-            owned.as_str()
+            (owned.as_str(), 1)
         };
 
-        let tokens = Lexer::new(effective_source).tokenize().map_err(|errors| {
-            CliError::compilation(format!(
-                "Cannot lex async test source '{}': {:?}",
-                path.display(),
-                errors
-            ))
-        })?;
+        let tokens = Lexer::new(effective_source)
+            .tokenize()
+            .map_err(|mut errors| {
+                for error in &mut errors {
+                    shift_span_lines(&mut error.span, line_shift);
+                }
+                CliError::compilation(format!(
+                    "Cannot lex async test source '{}': {:?}",
+                    path.display(),
+                    errors
+                ))
+            })?;
         let module: Module = Parser::new(tokens, HashSet::new())
             .parse()
-            .map_err(|errors| {
+            .map_err(|mut errors| {
+                for error in &mut errors {
+                    shift_span_lines(&mut error.span, line_shift);
+                }
                 CliError::compilation(format!(
                     "Cannot parse async test source '{}': {:?}",
                     path.display(),

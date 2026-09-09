@@ -113,4 +113,44 @@ mod tests {
 
         assert!(result.is_ok());
     }
+    #[test]
+    fn test_line_shift_reports_disk_lines() {
+        // The mismatch is on disk line 2; the synthetic `module` header moves
+        // it to effective line 3. The shifted render must report line 2.
+        let disk = "func f() returns int {\n    return \"oops\"\n}\n";
+        let effective = format!("module test\n{disk}");
+        let mut compiler = SpectraCompiler::default();
+        let shifted = compiler
+            .compile_with_line_shift(&effective, "shift.spectra", disk, 1)
+            .expect_err("returning a string from an int function must fail");
+        assert!(
+            shifted.contains("shift.spectra:2:"),
+            "expected disk line 2, got:\n{shifted}"
+        );
+        assert!(
+            !shifted.contains("shift.spectra:3:"),
+            "effective line must not leak, got:\n{shifted}"
+        );
+    }
+
+    #[test]
+    fn test_line_shift_zero_matches_unshifted() {
+        // shift = 0 renders the compiled text untouched: the same error the
+        // plain path reports (effective line 3 here).
+        let disk = "func f() returns int {\n    return \"oops\"\n}\n";
+        let effective = format!("module test\n{disk}");
+        let mut compiler = SpectraCompiler::default();
+        let plain = compiler
+            .compile(&effective, "shift.spectra")
+            .expect_err("must fail");
+        let mut shifted_compiler = SpectraCompiler::default();
+        let zero = shifted_compiler
+            .compile_with_line_shift(&effective, "shift.spectra", &effective, 0)
+            .expect_err("must fail");
+        assert!(
+            plain.contains("shift.spectra:3:"),
+            "control must show the effective line, got:\n{plain}"
+        );
+        assert_eq!(zero, plain, "shift 0 must be byte-identical to compile()");
+    }
 }

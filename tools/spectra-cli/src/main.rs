@@ -14,8 +14,8 @@ mod release_channel;
 mod runtime_lib;
 
 use compiler_integration::{
-    forward_program_args, take_last_exec_exit, ModulePipelineSummary, NativeDebugMetadata,
-    SpectraCompiler,
+    forward_program_args, take_last_exec_exit, shift_span_lines, ModulePipelineSummary,
+    NativeDebugMetadata, SpectraCompiler,
 };
 use formatter::{run as run_formatter, ExplainMode, FormatOptions};
 use package::{PackageCommand, PackageInvocation};
