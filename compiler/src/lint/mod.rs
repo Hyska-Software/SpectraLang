@@ -14,6 +14,7 @@ pub enum LintRule {
     NarrowingCast,
     DeprecatedTaskSpawn,
     DeprecatedTextEmbed,
+    DeprecatedOnnxExport,
 }
 
 impl LintRule {
@@ -25,6 +26,7 @@ impl LintRule {
             LintRule::NarrowingCast => "narrowing-cast",
             LintRule::DeprecatedTaskSpawn => "deprecated-task-spawn",
             LintRule::DeprecatedTextEmbed => "deprecated-text-embed",
+            LintRule::DeprecatedOnnxExport => "deprecated-onnx-export",
         }
     }
 
@@ -36,6 +38,7 @@ impl LintRule {
             LintRule::NarrowingCast => "narrowing numeric cast",
             LintRule::DeprecatedTaskSpawn => "deprecated concurrent.task_spawn call",
             LintRule::DeprecatedTextEmbed => "deprecated ml.text_embed hashing-baseline call",
+            LintRule::DeprecatedOnnxExport => "deprecated ml.onnx_export fixture-template call",
         }
     }
 
@@ -47,6 +50,7 @@ impl LintRule {
             LintRule::NarrowingCast,
             LintRule::DeprecatedTaskSpawn,
             LintRule::DeprecatedTextEmbed,
+            LintRule::DeprecatedOnnxExport,
         ];
         ALL
     }
@@ -59,6 +63,7 @@ impl LintRule {
             "narrowing-cast" | "narrowing_cast" => Some(LintRule::NarrowingCast),
             "deprecated-task-spawn" | "deprecated_task_spawn" => Some(LintRule::DeprecatedTaskSpawn),
             "deprecated-text-embed" | "deprecated_text_embed" => Some(LintRule::DeprecatedTextEmbed),
+            "deprecated-onnx-export" | "deprecated_onnx_export" => Some(LintRule::DeprecatedOnnxExport),
             _ => None,
         }
     }
@@ -70,6 +75,7 @@ impl LintRule {
             LintRule::NarrowingCast => Some("E035"),
             LintRule::DeprecatedTaskSpawn => Some("E036"),
             LintRule::DeprecatedTextEmbed => Some("E037"),
+            LintRule::DeprecatedOnnxExport => Some("E038"),
             LintRule::UnusedBinding | LintRule::UnreachableCode | LintRule::Shadowing => None,
         }
     }
@@ -442,6 +448,9 @@ impl<'a> LintRunner<'a> {
                 // BEGIN deprecated-text-embed lint (ML)
                 self.check_deprecated_text_embed(callee);
                 // END deprecated-text-embed lint (ML)
+                // BEGIN deprecated-onnx-export lint (ML)
+                self.check_deprecated_onnx_export(callee);
+                // END deprecated-onnx-export lint (ML)
                 self.visit_expression(callee);
                 for arg in arguments {
                     self.visit_expression(arg);
@@ -533,6 +542,9 @@ impl<'a> LintRunner<'a> {
                 // BEGIN deprecated-text-embed lint (ML)
                 self.check_deprecated_text_embed(expression);
                 // END deprecated-text-embed lint (ML)
+                // BEGIN deprecated-onnx-export lint (ML)
+                self.check_deprecated_onnx_export(expression);
+                // END deprecated-onnx-export lint (ML)
                 self.visit_expression(object);
                 for argument in arguments {
                     self.visit_expression(argument);

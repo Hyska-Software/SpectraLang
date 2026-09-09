@@ -112,6 +112,58 @@ impl<'a> crate::lint::LintRunner<'a> {
     // END deprecated-text-embed rule core (ML)
 }
 
+impl<'a> crate::lint::LintRunner<'a> {
+    /// BEGIN deprecated-onnx-export rule core (ML)
+    ///
+    /// Warns on calls to `ml.onnx_export(path, kind)`, which emits a
+    /// deterministic seeded fixture template, not a model export. Real
+    /// exports belong in `ml.onnx_export_weights`, which fills initializers
+    /// from caller-supplied live tensors. The `fn(string, string) -> string`
+    /// contract is unchanged; this is a steering diagnostic only.
+    pub(crate) fn check_deprecated_onnx_export(&mut self, callee: &Expression) {
+        if !self
+            .options
+            .is_enabled(crate::lint::LintRule::DeprecatedOnnxExport)
+        {
+            return;
+        }
+
+        // `ml.onnx_export(...)` parses as a MethodCall on the module
+        // identifier; a Call whose callee is the same FieldAccess shape is
+        // accepted too so first-class references stay covered.
+        let is_legacy_export = match &callee.kind {
+            crate::ast::ExpressionKind::MethodCall {
+                object,
+                method_name,
+                ..
+            } => {
+                matches!(&object.kind, crate::ast::ExpressionKind::Identifier(name) if name == "ml")
+                    && method_name == "onnx_export"
+            }
+            crate::ast::ExpressionKind::FieldAccess { object, field } => {
+                matches!(&object.kind, crate::ast::ExpressionKind::Identifier(name) if name == "ml")
+                    && field == "onnx_export"
+            }
+            _ => false,
+        };
+        if !is_legacy_export {
+            return;
+        }
+
+        self.diagnostics.push(crate::lint::LintDiagnostic {
+            rule: crate::lint::LintRule::DeprecatedOnnxExport,
+            message: "call to 'ml.onnx_export' emits a deterministic fixture template; it is not a trained-model export".to_string(),
+            span: callee.span,
+            note: Some(
+                "use 'ml.onnx_export_weights' to export live training tensors"
+                    .to_string(),
+            ),
+            secondary_span: None,
+        });
+    }
+    // END deprecated-onnx-export rule core (ML)
+}
+
 #[cfg(test)]
 mod deprecated_task_spawn_tests {
     use crate::lexer::Lexer;
@@ -293,6 +345,81 @@ mod deprecated_text_embed_tests {
         assert_eq!(
             LintRule::DeprecatedTextEmbed.stable_error_code(),
             Some("E037")
+        );
+    }
+}
+
+#[cfg(test)]
+mod deprecated_onnx_export_tests {
+    use crate::lexer::Lexer;
+    use crate::lint::{lint_module, LintOptions, LintRule};
+    use crate::parser::Parser;
+    use std::collections::HashSet;
+
+    pub(crate) fn parse(source: &str) -> crate::ast::Module {
+        let tokens = Lexer::new(source)
+            .tokenize()
+            .expect("lexer should not fail");
+        Parser::new(tokens, HashSet::new()).parse().expect("parse")
+    }
+
+    fn export_diagnostics(source: &str) -> Vec<String> {
+        lint_module(&parse(source), &LintOptions::default())
+            .into_iter()
+            .filter(|diagnostic| diagnostic.rule == LintRule::DeprecatedOnnxExport)
+            .map(|diagnostic| diagnostic.message)
+            .collect()
+    }
+
+    #[test]
+    fn warns_on_ml_onnx_export_fixture_template() {
+        let diagnostics = export_diagnostics(
+            r#"
+            module demo
+            func main() returns int {
+                let path = ml.onnx_export("model.onnx", "linear")
+                return 0
+            }
+        "#,
+        );
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].contains("fixture template"));
+    }
+
+    #[test]
+    fn weights_export_and_other_calls_stay_silent() {
+        assert!(export_diagnostics(
+            r#"
+            module demo
+            func main() returns int {
+                let path = ml.onnx_export_weights("model.onnx", "linear", [])
+                return 0
+            }
+        "#,
+        )
+        .is_empty());
+        assert!(export_diagnostics(
+            r#"
+            module demo
+            func main() returns int {
+                let path = other.onnx_export("model.onnx", "linear")
+                return 0
+            }
+        "#,
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn rule_metadata_uses_reserved_code_e038() {
+        assert_eq!(LintRule::DeprecatedOnnxExport.code(), "deprecated-onnx-export");
+        assert_eq!(
+            LintRule::from_code("deprecated-onnx-export"),
+            Some(LintRule::DeprecatedOnnxExport)
+        );
+        assert_eq!(
+            LintRule::DeprecatedOnnxExport.stable_error_code(),
+            Some("E038")
         );
     }
 }
