@@ -639,4 +639,82 @@ mod tests {
             "aborted handshake must surface server-side too"
         );
     }
+
+    #[test]
+    fn sync_client_parses_bracketed_ipv6_authorities() {
+        assert_eq!(
+            parse_authority("[::1]:8080", 80).expect("bracketed with port"),
+            ("::1".to_string(), 8080)
+        );
+        assert_eq!(
+            parse_authority("[::1]", 80).expect("bracketed default port"),
+            ("::1".to_string(), 80)
+        );
+        assert_eq!(
+            parse_authority("[2001:db8::1]:443", 80).expect("full address"),
+            ("2001:db8::1".to_string(), 443)
+        );
+        assert!(parse_authority("[::1]x", 80).is_err());
+        assert!(parse_authority("[]:80", 80).is_err());
+        assert!(parse_authority("[::1]:", 80).is_err());
+        assert!(parse_authority("[::1]:abc", 80).is_err());
+        // Unbracketed hosts keep the established host:port split.
+        assert_eq!(
+            parse_authority("example.com:8080", 80).expect("hostname port"),
+            ("example.com".to_string(), 8080)
+        );
+        assert_eq!(
+            parse_authority("example.com", 80).expect("hostname default"),
+            ("example.com".to_string(), 80)
+        );
+    }
+
+    #[test]
+    fn sync_client_fetches_bracketed_ipv6_loopback() {
+        let _guard = CLIENT_TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let listener = match TcpListener::bind("[::1]:0") {
+            Ok(listener) => listener,
+            Err(error) => {
+                eprintln!("skipping IPv6 loopback test: {error}");
+                return;
+            }
+        };
+        let address = listener.local_addr().expect("IPv6 loopback address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("IPv6 accept");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("read timeout");
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 1024];
+            loop {
+                let read = stream.read(&mut buffer).expect("read request");
+                assert!(read > 0, "request truncated");
+                request.extend_from_slice(&buffer[..read]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let text = String::from_utf8(request).expect("request is UTF-8");
+            assert!(text.starts_with("GET / HTTP/1.1"), "unexpected request: {text}");
+            assert!(
+                text.lines().any(|line| line.starts_with("Host: [::1]")),
+                "Host header must bracket the literal: {text}"
+            );
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nhi")
+                .expect("write response");
+        });
+        let client = HttpClient::new(local_client_config());
+        let token = Arc::new(AtomicBool::new(false));
+        let response = client
+            .request_nonblocking(
+                ClientRequest::new("GET", format!("http://[::1]:{}/", address.port())),
+                token,
+            )
+            .expect("IPv6 loopback fetch");
+        assert_eq!(response.status_code, 200);
+        assert_eq!(response.body.bytes(), b"hi");
+        server.join().expect("IPv6 server joins");
+    }
 }

@@ -696,11 +696,39 @@ fn parse_url(url: &str, allow_https: bool) -> Result<ParsedUrl, ClientError> {
 }
 
 fn parse_authority(authority: &str, default_port: u16) -> Result<(String, u16), ClientError> {
-    if authority.starts_with('[') {
-        return Err(ClientError::new(
-            ClientErrorKind::InvalidUrl,
-            "IPv6 literal URLs are not supported yet",
-        ));
+    // Bracketed IPv6 literals, mirroring the HTTP/2 endpoint parser: an
+    // optional :port follows the bracket, otherwise the scheme default.
+    if let Some(ipv6_end) = authority.find(']') {
+        if !authority.starts_with('[') {
+            return Err(ClientError::new(
+                ClientErrorKind::InvalidUrl,
+                "IPv6 authorities must use brackets",
+            ));
+        }
+        let host = authority[1..ipv6_end].to_string();
+        if host.is_empty() {
+            return Err(ClientError::new(
+                ClientErrorKind::InvalidUrl,
+                "URL host is empty",
+            ));
+        }
+        let port = authority
+            .get(ipv6_end + 1..)
+            .filter(|suffix| !suffix.is_empty())
+            .map(|suffix| {
+                suffix.strip_prefix(':').ok_or_else(|| {
+                    ClientError::new(ClientErrorKind::InvalidUrl, "invalid IPv6 port")
+                })
+            })
+            .transpose()?
+            .map(|value| {
+                value.parse::<u16>().map_err(|_| {
+                    ClientError::new(ClientErrorKind::InvalidUrl, "URL port is out of range")
+                })
+            })
+            .transpose()?
+            .unwrap_or(default_port);
+        return Ok((host, port));
     }
     match authority.rsplit_once(':') {
         Some((host, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
@@ -756,10 +784,15 @@ fn build_request_wire(
 }
 
 fn host_header_value_for(authority: &Authority, scheme: UrlScheme) -> String {
-    if authority.port == scheme.default_port() {
-        authority.host.clone()
+    let host = if authority.host.contains(':') {
+        format!("[{}]", authority.host)
     } else {
-        format!("{}:{}", authority.host, authority.port)
+        authority.host.clone()
+    };
+    if authority.port == scheme.default_port() {
+        host
+    } else {
+        format!("{host}:{}", authority.port)
     }
 }
 
