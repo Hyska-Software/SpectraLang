@@ -36,6 +36,15 @@ connection handle; a live handle always wins if both interpretations exist.
 5. `pool.close(pool)` releases any leases the program forgot, shuts the pool
    down and drops it, so no pooled connection outlives its pool.
 
+## Fixed pool tuning
+
+The open hosts expose only `max_size` (range-checked fail-fast to 1–1024
+before any network or filesystem touch); every other knob is fixed at the
+`PoolConfig::default` values from `packages/spectra-db/src/pool.rs`:
+acquisition timeout 5s, connection timeout 5s, idle timeout 300s, shutdown
+timeout 5s, minimum size 0. There is no tuning surface beyond `max_size` by
+design, not by omission.
+
 ## PostgreSQL and Redis pools
 
 `postgres_open(url, max_size)` and `redis_open(url, max_size)` mirror
