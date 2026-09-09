@@ -67,7 +67,13 @@ The debug map contains:
 - exported native symbol for debugger breakpoints
 - supported debugger workflow tags such as `gdb` and `lldb`
 
-This is the current production AOT debug strategy. Use the native debugger to break on the exported symbol (`main` for object files, `spectra_user_main` for executable objects) and use the sidecar to resolve the Spectra source span. Native DWARF/PDB source stepping is not claimed by this baseline.
+This is the current production AOT debug strategy. There is no `spectralang debug`
+subcommand: use your platform native debugger (MSVC/CDB/WinDbg on Windows, gdb/lldb
+on Unix) to break on the exported symbol (`main` for object files, `spectra_user_main` for executable objects) and use the sidecar to resolve the Spectra source span. Native DWARF/PDB source stepping is not claimed by this baseline.
+The emitted native sections are honest but partial: line tables contain only
+compiler-proven span rows (functions without span data emit an empty table, never
+invented lines), and locals without proven types carry the explicit unknown-type
+marker (`T_UNKNOWN` in CodeView; omitted `DW_AT_type` in DWARF).
 
 Validation:
 

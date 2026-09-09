@@ -1,0 +1,72 @@
+module branch_adjoint_gradients
+
+import std.tensor as tensor
+
+// R-3004 14e: `if`/`else` joins over tensor values accumulate per-arm
+// adjoints behind a guarded re-branch, so only the taken arm contributes.
+// Both directions are checked against analytic values and straight-line
+// finite differences.
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled(true)
+
+    let x0 = tensor.full_f(2, 3.0)
+    let x = tensor.requires_grad(x0, true)
+    let flag = tensor.full_f(1, 1.0)
+    let taken_mul = if tensor.sum_f(flag) as int == 1 {
+        tensor.mul(x, x)
+    } else {
+        tensor.add(x, x)
+    }
+    let loss_mul = diff {
+        tensor.sum_t(taken_mul)
+    }
+    if tensor.len(loss_mul) != 1 {
+        return 1
+    }
+    // Taken mul arm: d(sum(x*x))/dx = 2x = 6 per element, 12 total.
+    if tensor.sum_f(tensor.grad(x)) as int != 12 {
+        return 2
+    }
+    // Finite difference of the taken arm, computed straight-line.
+    let e = tensor.full_f(2, 0.001)
+    let xp = tensor.add(x, e)
+    let xm = tensor.sub(x, e)
+    let fp = tensor.sum_f(tensor.mul(xp, xp))
+    let fm = tensor.sum_f(tensor.mul(xm, xm))
+    let fd = (fp - fm) / 0.002
+    if (tensor.sum_f(tensor.grad(x)) - fd) as int != 0 {
+        return 3
+    }
+
+    let y0 = tensor.full_f(2, 3.0)
+    let y = tensor.requires_grad(y0, true)
+    let taken_add = if tensor.sum_f(flag) as int == 0 {
+        tensor.mul(y, y)
+    } else {
+        tensor.add(y, y)
+    }
+    let loss_add = diff {
+        tensor.sum_t(taken_add)
+    }
+    if tensor.len(loss_add) != 1 {
+        return 4
+    }
+    // Taken add arm: d(sum(x+x))/dx = 2 per element, 4 total.
+    if tensor.sum_f(tensor.grad(y)) as int != 4 {
+        return 5
+    }
+    let yp = tensor.add(y, e)
+    let ym = tensor.sub(y, e)
+    let gp = tensor.sum_f(tensor.add(yp, yp))
+    let gm = tensor.sum_f(tensor.add(ym, ym))
+    let fd_add = (gp - gm) / 0.002
+    if (tensor.sum_f(tensor.grad(y)) - fd_add) as int != 0 {
+        return 6
+    }
+
+    tensor.free_all()
+    tensor.set_grad_enabled(true)
+    return 0
+}

@@ -2164,7 +2164,7 @@ remain tracked under `R-913`.
 
 ### Production Boundary
 
-- Native DWARF/PDB emission is not claimed. The production-supported strategy for this item is native symbol debugging plus the checked-in Spectra source sidecar until backend-native debug sections are added as a future roadmap item.
+- Native DWARF (Unix) / PDB-CodeView (Windows) sections are emitted (see R-2903), but the production-supported strategy for this item remains native symbol debugging plus the checked-in Spectra source sidecar: there is no `spectralang debug` subcommand. The native sections are honest but partial — line tables carry only compiler-proven rows and untyped locals carry the explicit unknown-type marker — so native source stepping is not claimed.
 
 ## R-1003 Profiling and Benchmark Tooling
 
@@ -4502,7 +4502,7 @@ that `std.api.*` will dispatch into.
 
 - Added the `packages/spectra-api` Rust crate and the `spectra.api` package
   manifest at `packages/spectra-api/spectra.toml`.
-- Added 536 public `spectra.api.*` host calls covering the Phase 22, R-2301, R-2302, R-2303, R-2304, R-2305, R-2306, R-2307, R-2308, R-2309, R-2312, R-2313, R-2314, R-2316, R-2317, R-2311, R-2401, R-2402, R-2403, HTTP/3 over QUIC, gRPC over HTTP/2, and GraphQL registration
+- Added 545 public `spectra.api.*` host calls covering the Phase 22, R-2301, R-2302, R-2303, R-2304, R-2305, R-2306, R-2307, R-2308, R-2309, R-2312, R-2313, R-2314, R-2316, R-2317, R-2311, R-2401, R-2402, R-2403, HTTP/3 over QUIC, gRPC over HTTP/2, and GraphQL registration
   surface for version metadata, HTTP method/status/header helpers, request and
   response handles, server/client handles, JSON classification, TLS config
   handles, routing handles, error metadata, and sync/async handler callback
@@ -5524,10 +5524,18 @@ block with documented behavior.
 - Native tests cover RS256 and ES256 signing and verification.
 - `scripts/validate_r2308_jwt.py` passes and is wired into `run_tests.ps1`.
 
+### Follow-up
+
+- Only `HS256`, `RS256`, and `ES256` are supported. `HS384`, `HS512`, and
+  `EdDSA` are honest `INVALID_ARGUMENT` rejections (`sign`) / `false`
+  (`verify`), documented in `docs/api/std-api-jwt.md`. Additional algorithms
+  are future work, not silently accepted subsets.
+
 ## R-2309 OAuth2 Client (Authorization Code + PKCE + Refresh)
 
 - Status: `complete`
 - Priority: `P1`
+
 - Owner: `web`
 - Risk: `high`
 - Dependencies: `R-2308`
@@ -6015,18 +6023,21 @@ revalidation gate because public endpoint behavior can change.
 - The decision is documented: include HTTP/3 only when a stable Rust QUIC
   implementation is available.
 - HTTP/1.1 and HTTP/2 remain the stable protocol surfaces while HTTP/3 is
-  deferred.
+  localhost-only (productionization continues under R-2422).
 - If deferred, the rationale, entry criteria, and the 2026-11-30 re-evaluation
-  date are documented in ADR 0014.
+  date are documented in ADR 0014, with the FakeToReal-17 supersession note.
 - `scripts/validate_r2406_http3_decision.py` passes and is wired into
   `run_tests.ps1`.
 
 R-2406 is complete as a scope decision, not as an HTTP/3 implementation.
-ADR 0014 records the missing production prerequisites: a maintained compatible
-QUIC stack, independent HTTP/3 peers, Linux/Windows/macOS/BSD evidence,
-cancellation and connection-migration coverage, and a reviewed integration
-with the existing async API contracts. No HTTP/3 capability is exposed until
-those gates are met.
+UPDATE (FakeToReal-17): a localhost-validated quinn 0.11.11 + h3 transport has
+since landed (server/bind, client connect/request, ALPN `h3`, 28
+`spectra.api.http3` hosts, loopback round-trip tests in
+`packages/spectra-api/src/http3.rs`). ADR 0014 is superseded-partial: criterion
+1 (maintained QUIC stack) is met; criteria 2 (two independent peers), 3
+(Linux/Windows/macOS/BSD matrix including migration), and 5 (HTTP/2-relative
+perf budget) are unmet; criterion 4 (Task/Stream mapping) is partial. Full
+production readiness is tracked by R-2422.
 
 ## R-2407 API Versioning (Path, Header, Query)
 
@@ -6218,9 +6229,9 @@ those gates are met.
 - The file layer supports JSON and TOML.
 - Hot reload is supported in dev mode with a documented notification.
 
-## R-2419 gRPC Server and Client (Protobuf, Async Streams)
+## R-2419 gRPC Server and Client (Opaque Bytes, Async Streams)
 
-- Status: `not_started`
+- Status: `in_progress`
 - Priority: `P2`
 - Owner: `web`
 - Risk: `high`
@@ -6228,10 +6239,17 @@ those gates are met.
 
 ### Acceptance
 
-- A `.proto` file compiles to a typed Spectra service.
-- Unary and streaming RPCs are supported on the server and the client.
+- Opaque-bytes unary and streaming RPCs work on the server and the client
+  (done: `packages/spectra-api/src/grpc.rs`, all four cardinalities).
+- TLS transport option exists for server bind and client connect (done:
+  `server_bind_tls`, `client_connect_tls`).
+- Compressed (flag-1) frames are rejected with a typed error, never misparsed
+  (done: `InvalidCompressedFlag`, server status 12 UNIMPLEMENTED).
 - Deadlines and cancellation are honored.
+- A `.proto` file compiles to a typed Spectra service (outstanding: `prost`
+  is not wired to a codec).
 - Tests cover each RPC style and a metadata propagation case.
+- `docs/api/std-api-grpc.md` documents the transport and the codegen boundary.
 
 ## R-2420 WebSocket Example: Real-Time Dashboard
 
@@ -6261,6 +6279,48 @@ those gates are met.
 - `examples/api/05_openapi_swagger.spectra` builds and runs.
 - The example serves `/openapi.json` and `/docs` (Swagger UI).
 - The example wires the generated document into the UI.
+
+## R-2422 HTTP/3 Productionization (Interop, Matrix, Migration, Budget)
+
+- Status: `not_started`
+- Priority: `P3`
+- Owner: `web`
+- Risk: `high`
+- Dependencies: `R-2406`
+
+### Acceptance
+
+- HTTP/3 request/response interop fixtures pass against at least two
+  independent peers.
+- CI evidence covers Linux, Windows, macOS, and the BSD/kqueue path including
+  cancellation, shutdown, flow control, and connection migration.
+- The transport is mapped to the Phase 21 `Task<T>`/`Stream<T>` model and the
+  `spectra.api` TLS, SSRF, timeout, and observability contracts.
+- A documented resource and performance budget compares the HTTP/3 transport
+  with the HTTP/2 implementation.
+- `docs/api/std-api-http3.md` records production readiness once all of the
+  above land.
+
+## R-2423 GraphQL Dynamic Schema, Guards, and Subscriptions
+
+- Status: `in_progress`
+- Priority: `P2`
+- Owner: `web`
+- Risk: `medium`
+- Dependencies: `R-2107`
+
+### Acceptance
+
+- Dynamic schema build, field resolution, and JSON execute work over the host
+  ABI (done: `packages/spectra-api/src/graphql.rs`).
+- Opt-in `max_depth`, `max_complexity`, and introspection guards are enforced
+  at finish (done: defaults unlimited/unlimited/on).
+- Push-backed subscriptions deliver across polls over the existing ABI (done:
+  channel-fed `PullBatches`).
+- `docs/api/std-api-graphql.md` documents the builder, guards, and
+  subscription contract.
+- Conformance fixtures cover guard rejection and multi-poll subscription
+  delivery.
 
 ---
 
@@ -7404,7 +7464,7 @@ production-complete.
 
 ## R-3001 Networked ML Serving Runtime
 
-- Status: `not_started`
+- Status: `in_progress`
 - Priority: `P0`
 - Owner: `runtime`
 - Risk: `high`
@@ -7416,6 +7476,20 @@ production-complete.
   runtime integrated with async I/O, observability, and `spectra.api`.
 - Replace the scalar `input * model` demonstration path with dispatch to a
   loaded `std.ml` model/tensor artifact.
+
+### Completed so far
+
+- Embedded 127.0.0.1-only HTTP/1.1 listener (`runtime/src/stdlib/serve_http.rs`):
+  `POST /infer` dispatches to real dense/ONNX forward passes, `GET /metrics`
+  returns the monitoring snapshot; 404/405/503 semantics; ephemeral-port bind.
+- `tests/validation/355_serving_http_inference.spectra` serves a model from a
+  fresh process and validates inference values over the network.
+
+### Remaining before completion
+
+- Bounded concurrency, back-pressure, and structured errors (connections are
+  sequential with a 5 s per-phase deadline).
+- TLS/auth and traces/metrics through the API observability surface.
 
 ### Acceptance
 
@@ -7429,7 +7503,7 @@ production-complete.
 
 ## R-3002 Distributed Training Real Transport
 
-- Status: `not_started`
+- Status: `in_progress`
 - Priority: `P0`
 - Owner: `ml`
 - Risk: `high`
@@ -7439,6 +7513,22 @@ production-complete.
 
 - Replace deterministic single-process simulated workers with real
   multi-process or networked distributed training transport.
+
+### Completed so far
+
+- Real per-worker forward/backward plus shape-checked mean-ALLREDUCE over two
+  transports (`runtime/src/stdlib/ml_distributed_tcp.rs`): OS-thread barrier
+  runner and TCP-loopback coordinator (framed HELLO/ASSIGN/GRADIENTS/ACK/DONE
+  rendezvous), with a two-OS-process proof in Rust.
+- `tests/validation/356_distributed_train_tcp.spectra` exercises the TCP path
+  with two workers from Spectra.
+
+### Remaining before completion
+
+- Failure/timeout/metric-emission coverage at the fixture level and documented
+  rendezvous configuration (dataset sharding, worker identity, retry policy).
+- Removal or explicit legacy-marking of the single-process simulated-worker
+  hosts that remain alongside the real `train_*` entry points.
 
 ### Acceptance
 
@@ -7681,6 +7771,34 @@ gate is `scripts/validate_r3006_vector_index.py` and its report is written to
   probe coverage, all 411 production claims have passing evidence, and the 58
   remaining source divergences are explicitly assigned to owner and roadmap
   follow-ups rather than hidden by the audit.
+
+## R-3008 Model-Graded Answer Judge Scorer
+
+- Status: `not_started`
+- Priority: `P2`
+- Owner: `ml`
+- Risk: `medium`
+- Dependencies: `R-3003`
+
+### Scope
+
+- Add a model-graded (NLI/judge-model) answer scorer alongside the
+  token-overlap `rag_evaluate_answer` baseline. `rag_evaluate_answer` keeps
+  its symbol and its token-overlap F1 permille (`0..1000`) contract — the
+  same `answer_overlap_score` semantics as `ml.metrics_generation` — so
+  existing callers pass unchanged.
+- Do not stub the judge: land it only with a documented model, prompt,
+  calibration, and determinism analysis.
+
+### Acceptance
+
+- A judge scorer evaluates answer correctness beyond token overlap with a
+  documented model, prompt, and calibration.
+- `rag_evaluate_answer` keeps its token-overlap F1 permille contract and
+  existing callers pass unchanged.
+- Judge verdicts are deterministic for fixed model, prompt, and seed, with
+  disagreement-vs-overlap analysis.
+- Fixtures exercise judge scoring through CLI and runtime paths.
 
 ---
 

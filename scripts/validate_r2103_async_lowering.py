@@ -91,13 +91,17 @@ def main() -> int:
             "tests/validation/121_async_await_lowering.spectra",
         ]
     )
+    # The coroutine lowering shape since the poll/drop split: the ramp allocates a
+    # frame and creates a `Task`, child awaits lower to `poll.child`, and poll
+    # completion flows through `coroutine.complete` (these replaced the earlier
+    # `async.ready` + `spectra.async.task.wait/result` host-call shape).
     require_output(
         dump.stdout,
         [
             "fn add_one() -> Task<int>",
-            "async.ready<int>",
-            "spectra.async.task.wait",
-            "spectra.async.task.result",
+            "coroutine.create",
+            "poll.child",
+            "coroutine.complete",
         ],
     )
 

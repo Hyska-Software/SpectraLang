@@ -68,6 +68,18 @@ public func main() returns int {
         return 12
     }
 
+    let seeded_a = ml.logits_sample_seeded(42, logits, 1.0)
+    let seeded_b = ml.logits_sample_seeded(42, logits, 1.0)
+    if seeded_a != seeded_b {
+        return 13
+    }
+    if seeded_a < 0 {
+        return 14
+    }
+    if seeded_a > 2 {
+        return 15
+    }
+
     tensor.free_all()
     tensor.set_grad_enabled( true)
     return 0

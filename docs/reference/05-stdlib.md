@@ -1258,12 +1258,12 @@ import std.ml as ml
 | `experiment_manifest_path`, `experiment_repro_command`, `experiment_compare_manifests` | Manifest path, reproduction command, and manifest comparison |
 | `distributed_session_start`, `distributed_worker_step`, `distributed_global_step` | Single-machine simulated distributed training coordination |
 | `distributed_checkpoint_save`, `distributed_resume`, `distributed_summary`, `distributed_worker_step_count` | Checkpoint/resume and worker progress inspection |
-| `onnx_export`, `onnx_import_summary`, `onnx_validate`, `onnx_roundtrip` | Binary ONNX subset export/import/round-trip for supported AI model blocks |
+| `onnx_export`, `onnx_import_summary`, `onnx_validate`, `onnx_roundtrip` | Binary ONNX subset export/import/round-trip for supported AI model blocks (`onnx_export` writes deterministic template weights for fixtures; `onnx_export_weights(path, kind, weights)` fills the kind's initializers from live float-tensor handles in spec order, e.g. `linear` takes `[weight[2,3], bias[3]]`) |
 | `embedding_lookup`, `positional_encoding`, `layer_norm`, `gelu`, `swiglu`, `attention` | Transformer tensor primitives |
-| `kv_cache_new`, `kv_cache_append`, `kv_cache_keys`, `kv_cache_values`, `kv_cache_len`, `logits_sample` | LLM KV-cache and logits sampling helpers |
-| `tokenizer_wordpiece`, `tokenizer_encode`, `tokenizer_decode`, `text_embed` | Deterministic tokenization and text embedding utilities |
+| `kv_cache_new`, `kv_cache_append`, `kv_cache_keys`, `kv_cache_values`, `kv_cache_len`, `logits_sample`, `logits_sample_seeded` | LLM KV-cache and logits sampling helpers (`logits_sample` uses the global RNG; `logits_sample_seeded(seed, logits, temperature)` samples the same full-vocabulary distribution from a per-call splitmix64 stream, so a fixed seed reproduces the token) |
+| `tokenizer_wordpiece`, `tokenizer_encode`, `tokenizer_decode`, `text_embed` | Deterministic tokenization utilities and `text_embed`, a deprecated deterministic hashing baseline (not a model-backed embedding; use `text_embed_model` / `text_embed_model_session`) |
 | `vector_index_new`, `vector_index_insert`, `vector_index_query`, `vector_index_persist`, `vector_index_load`, `vector_index_set_metadata`, `vector_index_metrics` | Deterministic HNSW vector index APIs backed by the R-3003 Artifact Container v1; legacy JSON is rejected |
-| `rag_chunk_text`, `rag_build_prompt`, `rag_evaluate_answer` | RAG chunking, prompt assembly, and evaluation |
+| `rag_chunk_text`, `rag_build_prompt`, `rag_evaluate_answer` | RAG chunking, prompt assembly, and token-overlap evaluation (`rag_evaluate_answer` returns token-overlap F1 scaled to permille `0..1000`, the same `answer_overlap_score` semantics as `ml.metrics_generation`; it is not a model-graded judge) |
 
 Exemplos completos estão em:
 

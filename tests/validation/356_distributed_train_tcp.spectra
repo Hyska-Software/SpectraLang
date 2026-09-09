@@ -1,0 +1,76 @@
+// R-3002 acceptance: real distributed training over TCP loopback rendezvous.
+//
+// Mirrors 94_ml_phase17_distributed_training.spectra but calls
+// ml.distributed_train_tcp (same 8 args, 2 workers): OS-thread workers each
+// own a parameter replica, run genuine forward/backward passes over
+// deterministic shard slices, and ALLREDUCE-average gradients every step
+// through a coordinator socket bound to 127.0.0.1. There are no simulated
+// workers: every reported loss and step count comes from an actual pass.
+// Exit code 0 asserts real averaged training (tcp-workers topology, no
+// simulation markers, exact step counts, checkpoint round-trip).
+module ml_phase17_distributed_training_tcp
+
+import std.fs as fs
+import std.string as str
+import std.ml as ml
+
+public func main() returns int {
+    let session = ml.distributed_train_tcp(
+        "reference-distributed-tcp-run",
+        "target/r1703-tcp-run",
+        2,
+        1,
+        0.25,
+        4,
+        36,
+        2026
+    )
+
+    if ml.distributed_global_step(session) != 1 {
+        return 1
+    }
+    if ml.distributed_worker_step_count(session, 0) != 1 {
+        return 2
+    }
+    if ml.distributed_worker_step_count(session, 1) != 1 {
+        return 3
+    }
+
+    let checkpoint = ml.distributed_checkpoint_save(session, "target/r1703-tcp-run/checkpoint.json", 1)
+    let checkpoint_result = fs.fs_read(checkpoint)
+    if let Result::Ok(checkpoint_text) = checkpoint_result {
+        if str.contains(checkpoint_text, "spectra.ml.distributed_checkpoint.v") != true {
+            return 4
+        }
+        if str.contains(checkpoint_text, "\"topology\":\"tcp-workers\"") != true {
+            return 5
+        }
+    } else {
+        return 4
+    }
+
+    let resumed = ml.distributed_resume(checkpoint)
+    // Worker 1 was recorded interrupted in the checkpoint; the surviving
+    // worker's exact step count and the global step carry over.
+    if ml.distributed_worker_step_count(resumed, 0) != 1 {
+        return 6
+    }
+    if ml.distributed_global_step(resumed) != 1 {
+        return 7
+    }
+
+    let summary = ml.distributed_summary(resumed)
+    // The real topology is TCP loopback; the legacy simulated-workers label
+    // must never appear in summaries of live sessions.
+    if str.contains(summary, "tcp-workers") != true {
+        return 8
+    }
+    if str.contains(summary, "single-machine-simulated-workers") {
+        return 9
+    }
+    // Both workers trained over the full 36-sample fixture split.
+    if str.contains(summary, "\"total_samples\":36") != true {
+        return 10
+    }
+    return 0
+}

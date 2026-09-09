@@ -41,7 +41,9 @@ Reference pages:
 - [Server-Sent Events](std-api-sse.md)
 - [HTTP/2 server transport](std-api-http2.md)
 - [HTTP/2 client transport](std-api-http2-client.md)
-- [HTTP/3 and QUIC decision](std-api-http3.md)
+- [HTTP/3 server and client transport](std-api-http3.md) (localhost-validated surface and limits; decision history R-2406 / ADR-0014, productionization R-2422)
+- [gRPC transport over HTTP/2](std-api-grpc.md) (opaque-bytes, 4 cardinalities, TLS option; no `.proto` codegen — R-2419)
+- [GraphQL dynamic schema and execution](std-api-graphql.md) (opt-in guards, push subscriptions — R-2423)
 - [Server lifecycle](std-api-server-lifecycle.md)
 - `std.api.client.request(Client, Request)` returns a `Task<Response>` and
   accepts an absolute `http://` or `https://` URL in the request path for

@@ -26,6 +26,14 @@ expected value is supplied. A zero `now_ms` uses the current Unix clock, while
 a non-zero value makes tests and replay analysis deterministic. Invalid tokens,
 keys, signatures, or claims return `false`.
 
+## Supported algorithms
+
+Only `HS256`, `RS256`, and `ES256` are supported. Any other `alg` value —
+including `HS384`, `HS512`, and `EdDSA` — is rejected instead of negotiated
+down: `sign` returns `HOST_STATUS_INVALID_ARGUMENT` and `verify` returns
+`false` (`0`). Additional algorithms are future work tracked alongside
+R-2308, not silently accepted subsets.
+
 The implementation uses `ring` for HMAC, RSA PKCS#1 v1.5, and P-256 ECDSA;
 signature verification is delegated to constant-time cryptographic primitives.
 

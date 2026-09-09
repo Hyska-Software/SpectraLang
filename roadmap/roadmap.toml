@@ -2224,7 +2224,7 @@ dependencies = ["R-2201"]
 summary = "Add a new workspace crate `spectra-api` that hosts the Rust implementation of HTTP parsing, server, client, JSON, TLS, and registers the host calls that `std.api.*` will dispatch into."
 acceptance = [
   "`packages/spectra-api` compiles in the workspace and links against the existing `spectra-runtime` crate",
-  "536 public `spectra.api.*` host calls are registered through the runtime host-call registry by `spectra_api::register()`, including the runtime's 439-name required namespace, the real `spectra.api.client.request` task bridge, sync/async handler callback bridges, structured request logging, token-bucket/sliding-window rate limiting, API-key authentication, response compression, security headers, JWT signing/verification, OAuth2 authorization-code, PKCE, refresh, and revocation flows, the typed HMAC-signed cookie API, request validation with RFC 7807 responses, unified errors with exception middleware, default-deny CSRF/SSRF threat mitigations with configurable body limits and timeouts, stable request-body construction/reading, pluggable memory/Redis server-side sessions with sliding expiration and forced revocation, and the native WebSocket/SSE transport surfaces",
+  "545 public `spectra.api.*` host calls are registered through the runtime host-call registry by `spectra_api::register()`, including the runtime's 439-name required namespace, the real `spectra.api.client.request` task bridge, sync/async handler callback bridges, structured request logging, token-bucket/sliding-window rate limiting, API-key authentication, response compression, security headers, JWT signing/verification, OAuth2 authorization-code, PKCE, refresh, and revocation flows, the typed HMAC-signed cookie API, request validation with RFC 7807 responses, unified errors with exception middleware, default-deny CSRF/SSRF threat mitigations with configurable body limits and timeouts, stable request-body construction/reading, pluggable memory/Redis server-side sessions with sliding expiration and forced revocation, and the native WebSocket/SSE transport surfaces",
   "`cargo test -p spectra-api` covers the registered host functions and registry behavior",
   "`runtime/src/api/mod.rs` records the required host-call namespace contract",
   "`scripts/validate_r2202_spectra_api_hostcalls.py` verifies host call naming, registration count, CLI integration, package metadata, and planning sync",
@@ -3025,11 +3025,11 @@ priority = "P3"
 status = "complete"
 risk = "high"
 dependencies = ["R-2404"]
-summary = "Record the production decision to defer HTTP/3/QUIC until a maintained implementation and cross-platform interoperability evidence are available."
+summary = "Record the production decision to defer HTTP/3/QUIC until a maintained implementation and cross-platform interoperability evidence are available. UPDATE (FakeToReal-17): a localhost-validated quinn+h3 transport has since landed (28 spectra.api.http3 hosts); the deferral decision is superseded-partial, productionization continues under R-2422."
 acceptance = [
   "the decision is documented: include HTTP/3 only when a stable Rust QUIC implementation is available",
-  "HTTP/1.1 and HTTP/2 remain the stable protocol surfaces while HTTP/3 is deferred",
-  "if deferred, the rationale, entry criteria, and the 2026-11-30 re-evaluation date are documented in ADR 0014",
+  "HTTP/1.1 and HTTP/2 remain the stable protocol surfaces while HTTP/3 is localhost-only (productionization: R-2422)",
+  "if deferred, the rationale, entry criteria, and the 2026-11-30 re-evaluation date are documented in ADR 0014 (supersession recorded)",
   "scripts/validate_r2406_http3_decision.py passes and is wired into run_tests.ps1"
 ]
 
@@ -3239,19 +3239,22 @@ acceptance = [
 
 [[items]]
 id = "R-2419"
-title = "gRPC Server and Client (Protobuf, Async Streams)"
+title = "gRPC Server and Client (Opaque Bytes, Async Streams)"
 phase = "phase_24"
 owner = "web"
 priority = "P2"
-status = "not_started"
+status = "in_progress"
 risk = "high"
 dependencies = ["R-2107", "R-2404"]
-summary = "Add gRPC support: protobuf codec, unary, server streaming, client streaming, and bidirectional streaming over HTTP/2."
+summary = "Land the opaque-bytes gRPC transport over HTTP/2 (unary plus all streaming cardinalities, TLS option, typed rejections); `.proto` codegen to typed Spectra services remains outstanding."
 acceptance = [
-  "a `.proto` file compiles to a typed Spectra service",
-  "unary and streaming RPCs are supported on the server and the client",
+  "opaque-bytes unary and streaming RPCs work on the server and the client (done: packages/spectra-api/src/grpc.rs, 4 cardinalities)",
+  "TLS transport option exists for server bind and client connect (done: server_bind_tls, client_connect_tls)",
+  "compressed (flag-1) frames are rejected with a typed error, never misparsed (done: InvalidCompressedFlag, status 12 UNIMPLEMENTED)",
   "deadlines and cancellation are honored",
-  "tests cover each RPC style and a metadata propagation case"
+  "a `.proto` file compiles to a typed Spectra service (outstanding: prost is not wired to a codec)",
+  "tests cover each RPC style and a metadata propagation case",
+  "docs/api/std-api-grpc.md documents the transport and the codegen boundary"
 ]
 
 [[items]]
@@ -3284,6 +3287,41 @@ acceptance = [
   "`examples/api/05_openapi_swagger.spectra` builds and runs",
   "the example serves `/openapi.json` and `/docs` (Swagger UI)",
   "the example wires the generated document into the UI"
+]
+[[items]]
+id = "R-2422"
+title = "HTTP/3 Productionization (Interop, Matrix, Migration, Budget)"
+phase = "phase_24"
+owner = "web"
+priority = "P3"
+status = "not_started"
+risk = "high"
+dependencies = ["R-2406"]
+summary = "Take the localhost-validated HTTP/3-over-QUIC transport (quinn + h3, ALPN h3, 28 spectra.api.http3 hosts) to production: independent peer interop, 4-platform matrix, migration/cancellation coverage, Task/Stream mapping, and an HTTP/2-relative performance budget."
+acceptance = [
+  "HTTP/3 request/response interop fixtures pass against at least two independent peers",
+  "CI evidence covers Linux, Windows, macOS, and the BSD/kqueue path including cancellation, shutdown, flow control, and connection migration",
+  "the transport is mapped to the Phase 21 Task<T>/Stream<T> model and the spectra.api TLS, SSRF, timeout, and observability contracts",
+  "a documented resource and performance budget compares the HTTP/3 transport with the HTTP/2 implementation",
+  "docs/api/std-api-http3.md records production readiness once all of the above land"
+]
+
+[[items]]
+id = "R-2423"
+title = "GraphQL Dynamic Schema, Guards, and Subscriptions"
+phase = "phase_24"
+owner = "web"
+priority = "P2"
+status = "in_progress"
+risk = "medium"
+dependencies = ["R-2107"]
+summary = "Productize the async-graphql dynamic-schema transport: schema builder plus execute over JSON, opt-in depth/cost/introspection guards, and channel-fed push subscriptions over the existing host ABI."
+acceptance = [
+  "dynamic schema build, field resolution, and JSON execute work over the host ABI (done: packages/spectra-api/src/graphql.rs)",
+  "opt-in max_depth, max_complexity, and introspection guards are enforced at finish (done: defaults unlimited/unlimited/on)",
+  "push-backed subscriptions deliver across polls over the existing ABI (done: channel-fed PullBatches)",
+  "docs/api/std-api-graphql.md documents the builder, guards, and subscription contract",
+  "conformance fixtures cover guard rejection and multi-poll subscription delivery"
 ]
 
 [[items]]
@@ -4121,16 +4159,16 @@ title = "Networked ML Serving Runtime"
 phase = "phase_30"
 owner = "runtime"
 priority = "P0"
-status = "not_started"
+status = "in_progress"
 risk = "high"
 dependencies = ["R-2216", "R-2401", "R-2419", "R-2701"]
-summary = "Turn local `std.serve` model serving into a real networked serving runtime integrated with async I/O, observability, and `spectra.api`."
+summary = "Turn local `std.serve` model serving into a real networked serving runtime integrated with async I/O, observability, and `spectra.api`. Landed so far: embedded localhost HTTP/1.1 listener with real dense/ONNX forward-pass dispatch; outstanding: bounded concurrency, back-pressure, TLS/auth, API observability traces."
 acceptance = [
-  "model serving exposes a real HTTP or gRPC endpoint with request parsing, response serialization, lifecycle, and graceful shutdown",
-  "the endpoint dispatches to a loaded `std.ml` model/tensor artifact rather than the scalar demonstration transform",
-  "serving supports bounded concurrency, back-pressure, timeout handling, and structured errors",
-  "serving emits traces and metrics through the API observability surface",
-  "an executable fixture serves a model from a fresh process and validates inference over the network"
+  "model serving exposes a real HTTP or gRPC endpoint with request parsing, response serialization, lifecycle, and graceful shutdown (done: embedded 127.0.0.1 listener, POST /infer, GET /metrics, 404/405/503 semantics)",
+  "the endpoint dispatches to a loaded `std.ml` model/tensor artifact rather than the scalar demonstration transform (done: serve_forward_linear_f64 plus ONNX delegation)",
+  "serving supports bounded concurrency, back-pressure, timeout handling, and structured errors (outstanding: sequential connections, 5 s per-phase deadline only)",
+  "serving emits traces and metrics through the API observability surface (outstanding: local JSON snapshot only)",
+  "an executable fixture serves a model from a fresh process and validates inference over the network (done: tests/validation/355_serving_http_inference.spectra)"
 ]
 
 [[items]]
@@ -4139,15 +4177,15 @@ title = "Distributed Training Real Transport"
 phase = "phase_30"
 owner = "ml"
 priority = "P0"
-status = "not_started"
+status = "in_progress"
 risk = "high"
 dependencies = ["R-1703", "R-2107", "R-2701"]
-summary = "Replace deterministic single-process simulated workers with real multi-process or networked distributed training transport."
+summary = "Replace deterministic single-process simulated workers with real multi-process or networked distributed training transport. Landed so far: real per-worker forward/backward plus mean-ALLREDUCE over OS-thread and TCP-loopback transports with multi-process proofs; outstanding: failure/timeout/metric coverage and rendezvous docs."
 acceptance = [
-  "distributed training can launch at least two worker processes that communicate over a real transport",
-  "gradient exchange supports deterministic all-reduce or parameter-server semantics with failure reporting",
-  "dataset sharding, worker identity, retry policy, and rendezvous configuration are documented",
-  "tests cover successful training, worker failure, timeout, and metric emission"
+  "distributed training can launch at least two worker processes that communicate over a real transport (done: TCP-loopback coordinator plus OS-thread runner, two-OS-process proof in Rust)",
+  "gradient exchange supports deterministic all-reduce or parameter-server semantics with failure reporting (done: shape-checked mean ALLREDUCE; failure reporting partial: typed WorkerLost/Auth bounds)",
+  "dataset sharding, worker identity, retry policy, and rendezvous configuration are documented (outstanding: env-knob docs only)",
+  "tests cover successful training, worker failure, timeout, and metric emission (partial: success plus fault unit tests; executable fixture tests/validation/356_distributed_train_tcp.spectra covers the success path)"
 ]
 
 [[items]]
@@ -4242,6 +4280,23 @@ acceptance = [
   "the inventory distinguishes semantic modules/types/functions, registered host calls, explicit/generic/API lowering, and backend special paths",
   "every production symbol is covered by a passing declared probe or dedicated external conformance validator",
   "all remaining source divergences have owner, roadmap ID, and follow-up evidence in the report"
+]
+
+[[items]]
+id = "R-3008"
+title = "Model-Graded Answer Judge Scorer"
+phase = "phase_30"
+owner = "ml"
+priority = "P2"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3003"]
+summary = "Add a model-graded (NLI/judge-model) answer scorer alongside the token-overlap rag_evaluate_answer baseline, without changing the existing symbol or its 0..1000 scaling."
+acceptance = [
+  "a judge scorer evaluates answer correctness beyond token overlap with documented model, prompt, and calibration",
+  "rag_evaluate_answer keeps its token-overlap F1 permille contract and existing callers pass unchanged",
+  "judge verdicts are deterministic for fixed model, prompt, and seed, with disagreement-vs-overlap analysis",
+  "fixtures exercise judge scoring through CLI and runtime paths"
 ]
 
 [[phases]]

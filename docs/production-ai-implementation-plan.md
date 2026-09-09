@@ -2046,10 +2046,11 @@ baselines.
   ALPN negotiation, default SSRF blocking, and a server-push callback; local
   multiplexing/HTTPS evidence and the recorded `https://nghttp2.org` external
   round-trip passed)
-- `R-2406` HTTP/3 and QUIC (complete as a scope decision; ADR 0014 defers
-  implementation until a maintained compatible QUIC stack, cross-platform
-  HTTP/3 interoperability evidence, migration/cancellation coverage, and a
-  reviewed async API integration are available; re-evaluate 2026-11-30)
+- `R-2406` HTTP/3 and QUIC (complete as a scope decision; ADR 0014 is now
+  superseded-partial: a localhost-validated quinn + h3 transport with 28
+  `spectra.api.http3` hosts has landed, while two-peer interop, the
+  4-platform matrix, migration coverage, and the perf budget continue under
+  the new `R-2422` productionization item; re-evaluate 2026-11-30)
 - `R-2407` API versioning (path, header, query)
 - `R-2408` Pagination (cursor, offset, RFC 5988 Link header)
 - `R-2409` Content negotiation (JSON, XML, MessagePack, CBOR)
@@ -2062,9 +2063,15 @@ baselines.
 - `R-2416` File storage abstraction (S3-compatible)
 - `R-2417` Cache layer (LRU in-memory, Redis distributed)
 - `R-2418` Configuration management
-- `R-2419` gRPC server and client (protobuf, async streams)
+- `R-2419` gRPC server and client (in_progress; opaque-bytes transport with 4
+  cardinalities, TLS option, and typed flag-1 rejection is landed; `.proto`
+  codegen to typed services is outstanding)
 - `R-2420` WebSocket example: real-time dashboard
 - `R-2421` OpenAPI example: serve Swagger UI
+- `R-2422` HTTP/3 productionization (not_started; two-peer interop,
+  4-platform matrix with migration, Task/Stream mapping, perf budget)
+- `R-2423` GraphQL dynamic schema, guards, and subscriptions (in_progress;
+  dynamic schema plus opt-in guards and push subscriptions landed)
 
 ### Phase 25 — Persistence and Database
 
@@ -2268,15 +2275,16 @@ fails closed for unclassified symbols or contradictory production claims. The
 initial probe is `tests/validation/185_stdlib_contract_audit.spectra`; a failed
 report is evidence for the responsible production task and does not promote
 the underlying implementation.
-
 The completed audit implementation uses typed source inventories rather than
 matching every textual `std.*` occurrence. It ran eleven namespace or external
 conformance probes, covered 651 discovered symbols, and recorded 58 tracked
 follow-ups without promoting the remaining ML, serving, tensor-device, or
 distributed baselines to production.
 
-- `R-3001` Networked ML serving runtime
-- `R-3002` Distributed training real transport
+- `R-3001` Networked ML serving runtime (in_progress; embedded localhost
+  listener with real dense/ONNX dispatch landed, fixture 355)
+- `R-3002` Distributed training real transport (in_progress; OS-thread and
+  TCP-loopback ALLREDUCE landed, fixture 356)
 - `R-3003` Production model artifact formats
 - `R-3004` Compiler-native autodiff lowering
 - `R-3005` Production tokenization and embedding backends

@@ -239,7 +239,7 @@ reason = "ML artifact, tokenizer, embedding, vector-index, and distributed surfa
 prefix = "std.serve"
 owner = "ml"
 roadmap = "R-3001"
-reason = "Serving remains an in-process deterministic baseline until external network serving is implemented."
+reason = "Serving dispatches through a real embedded localhost listener (POST /infer, GET /metrics) to dense/ONNX forward passes; bounded concurrency, TLS/auth, and API observability traces remain R-3001 follow-ups."
 
 [[follow_up]]
 prefix = "std.api"
@@ -405,9 +405,9 @@ roadmap = "R-2107"
 [[namespace]]
 prefix = "std.serve"
 owner = "runtime"
-classification = "simulation"
+classification = "incomplete"
 roadmap = "R-3001"
-reason = "The current server is an in-process deterministic queue and scalar model demonstration, not a networked serving runtime."
+reason = "Embedded 127.0.0.1-only HTTP/1.1 listener with POST /infer and GET /metrics dispatching to real dense/ONNX forward passes; sequential connections, no TLS/auth/back-pressure, and no API observability traces keep it below production."
 
 [[namespace]]
 prefix = "std.api.trace"
@@ -425,9 +425,9 @@ reason = "The std.api surface is covered by its dedicated API conformance valida
 
 [[rule]]
 prefix = "std.ml.distributed_"
-classification = "simulation"
+classification = "incomplete"
 roadmap = "R-3002"
-reason = "Distributed training currently coordinates simulated workers in one process."
+reason = "Real per-worker forward/backward plus mean-ALLREDUCE over OS-thread and TCP-loopback transports with multi-process proofs; legacy single-process session hosts remain alongside, and GPU collectives, elastic membership, and rendezvous docs are outstanding."
 
 [[rule]]
 prefix = "std.ml.text_embed"
@@ -476,6 +476,12 @@ prefix = "std.ml.vector_index"
 classification = "production"
 roadmap = "R-3006"
 reason = "Uses deterministic HNSW search and persists only through the versioned R-3003 Artifact Container v1 with checksums, metadata, atomic replacement, and CLI evidence."
+
+[[rule]]
+prefix = "std.ml.rag_evaluate_answer"
+classification = "baseline"
+roadmap = "R-3008"
+reason = "Returns token-overlap F1 scaled to permille 0..1000 (answer_overlap_score semantics shared with ml.metrics_generation); model-graded judging is tracked as follow-up work."
 
 [[rule]]
 prefix = "std.tensor.device_available"

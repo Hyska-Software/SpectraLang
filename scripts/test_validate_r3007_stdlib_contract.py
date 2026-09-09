@@ -50,7 +50,7 @@ class R3007ContractTests(unittest.TestCase):
 
     def test_rule_overrides_namespace(self) -> None:
         contract = audit.classification_for("std.serve.server_new", self.manifest)
-        self.assertEqual(contract["classification"], "simulation")
+        self.assertEqual(contract["classification"], "incomplete")
         self.assertEqual(contract["roadmap"], "R-3001")
 
     def test_cross_source_gaps_are_blocking(self) -> None:

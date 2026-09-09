@@ -48,3 +48,25 @@ available:
 - Consumers receive no misleading HTTP/3 API surface or runtime success path.
 - The next implementation can start from explicit interoperability and
   platform gates instead of replacing them with local-only smoke tests.
+
+## Supersession (2026-09-08)
+
+The deferral above is superseded in part: a localhost-validated HTTP/3-over-QUIC
+surface now exists (`packages/spectra-api/src/http3.rs`, `quinn 0.11.11` +
+`h3 0.0.8` / `h3-quinn 0.0.10`, ALPN `h3`, `spectra.api.http3.*` hosts behind
+the `http3` feature), described in
+[std-api-http3.md](../api/std-api-http3.md). The original text is kept for
+history; the entry criteria re-evaluate as follows:
+
+| # | Entry criterion | Status | Evidence / note |
+| --- | --- | --- | --- |
+| 1 | Maintained QUIC/HTTP/3 stack with compatible license, security process, stable async integration | MET | `quinn 0.11.11` + `h3` / `h3-quinn` in `packages/spectra-api/Cargo.toml` |
+| 2 | Native server/client coverage plus interop fixtures against two independent peers | NOT MET | Loopback-only tests (`127.0.0.1:0`, `rcgen` self-signed `localhost`); no independent-peer fixtures |
+| 3 | CI evidence for Linux, Windows, macOS, BSD/kqueue incl. cancellation, shutdown, flow control, migration | NOT MET | Cancellation/shutdown/flow-control covered on loopback only; no 4-platform matrix, no migration coverage |
+| 4 | Reviewed mapping to Phase 21 `Task<T>`/`Stream<T>` and TLS/SSRF/timeout/observability contracts | PARTIAL | Own task/result/outcome handle tables; no `Task<T>`/`Stream<T>` mapping claim |
+| 5 | Documented resource/performance budget vs HTTP/2 | NOT MET | No perf budget published |
+
+Status: Superseded-partial. The localhost surface is real and documented with
+its limits; full productionization (2-peer interop, 4-platform matrix,
+migration, `Task`/`Stream` mapping, perf budget) is tracked by R-2422. The
+original decision item remains R-2406.

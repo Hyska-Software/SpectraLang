@@ -1,4 +1,4 @@
-# SQLite connection pool and migrations (`std.api.db.pool`, `std.api.db.migrate`)
+# Connection pools (`std.api.db.pool`, `std.api.db.migrate`)
 
 The language exposes the Rust-only pooling and migration machinery of
 `packages/spectra-db` through two builtin modules:
@@ -8,6 +8,10 @@ The language exposes the Rust-only pooling and migration machinery of
 | `pool.sqlite_open` | `spectra.api.db.pool.sqlite_open` | `fn(string path, int max_size) -> Pool` |
 | `pool.close` | `spectra.api.db.pool.close` | `fn(Pool) -> bool` |
 | `pool.with_connection` | `spectra.api.db.pool.with_connection` | `fn(Pool) -> SqliteConnection` |
+| `pool.postgres_open` | `spectra.api.db.pool.postgres_open` | `fn(string url, int max_size) -> Pool` |
+| `pool.redis_open` | `spectra.api.db.pool.redis_open` | `fn(string url, int max_size) -> Pool` |
+| `pool.postgres_with_connection` | `spectra.api.db.pool.postgres_with_connection` | `fn(Pool) -> PostgresConnection` |
+| `pool.redis_with_connection` | `spectra.api.db.pool.redis_with_connection` | `fn(Pool) -> RedisConnection` |
 | `migrate.apply_sqlite` | `spectra.api.db.migrate.apply_sqlite` | `fn(SqliteConnection, string migrations_dir) -> int` |
 | `migrate.status_sqlite` | `spectra.api.db.migrate.status_sqlite` | `fn(SqliteConnection, string migrations_dir) -> string` |
 
@@ -31,6 +35,23 @@ connection handle; a live handle always wins if both interpretations exist.
    physical connection to the idle queue instead of destroying it.
 5. `pool.close(pool)` releases any leases the program forgot, shuts the pool
    down and drops it, so no pooled connection outlives its pool.
+
+## PostgreSQL and Redis pools
+
+`postgres_open(url, max_size)` and `redis_open(url, max_size)` mirror
+`sqlite_open`: `max_size` must be between 1 and 1024, creation never touches
+the network (the pool starts empty and connects lazily), and checkout blocks
+up to the pool acquisition timeout (5s default) before failing with a typed
+driver error (`DB2505_POOL` / `DB2507_POOL`).
+
+Leased handles live in the regular driver tables, so every existing
+`std.api.db.postgres.*` / `std.api.db.redis.*` function works on them
+unchanged. Returning a lease uses the ordinary driver close
+(`db.postgres.close`, `db.redis.close`), which detects the lease and releases
+it back to the idle queue instead of closing the physical connection.
+`pool.close` is shared across drivers: it releases forgotten leases, shuts
+the pool down, and drops it. Passing a pool of the wrong driver to a
+`with_connection` variant fails with an invalid-handle error.
 
 ```spectra
 from std.api.db.pool import sqlite_open as pool_open, close as pool_close, with_connection

@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 536
+PACKAGE_HOST_CALL_COUNT = 545
 RUNTIME_REQUIRED_HOST_CALL_COUNT = 439
 CLIENT_CALLS = [
     "client_new",

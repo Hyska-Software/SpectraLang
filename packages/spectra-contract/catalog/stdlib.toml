@@ -663,6 +663,62 @@ docs = "docs/api/std-api-db-pool.md"
 fixture = "tests/validation/349_api_db_pool_migrations.spectra"
 
 [[entry]]
+path = "std.api.db.pool.postgres_open"
+kind = "function"
+namespace = "std.api.db.pool"
+signature = "fn(string, int) -> Pool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.pool.postgres_open"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-db-pool.md"
+fixture = "tests/validation/349_api_db_pool_migrations.spectra"
+
+[[entry]]
+path = "std.api.db.pool.redis_open"
+kind = "function"
+namespace = "std.api.db.pool"
+signature = "fn(string, int) -> Pool"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.pool.redis_open"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-db-pool.md"
+fixture = "tests/validation/349_api_db_pool_migrations.spectra"
+
+[[entry]]
+path = "std.api.db.pool.postgres_with_connection"
+kind = "function"
+namespace = "std.api.db.pool"
+signature = "fn(Pool) -> PostgresConnection"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.pool.postgres_with_connection"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-db-pool.md"
+fixture = "tests/validation/349_api_db_pool_migrations.spectra"
+
+[[entry]]
+path = "std.api.db.pool.redis_with_connection"
+kind = "function"
+namespace = "std.api.db.pool"
+signature = "fn(Pool) -> RedisConnection"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.db.pool.redis_with_connection"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-db-pool.md"
+fixture = "tests/validation/349_api_db_pool_migrations.spectra"
+
+[[entry]]
 path = "std.api.db.postgres"
 kind = "module"
 namespace = "std.api.db"
@@ -10670,7 +10726,7 @@ binding = "spectra.std.ml.distributed_train_multithread"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/94_ml_phase17_distributed_training.spectra"
 
 [[entry]]
 path = "std.ml.distributed_train_tcp"
@@ -10684,7 +10740,7 @@ binding = "spectra.std.ml.distributed_train_tcp"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/356_distributed_train_tcp.spectra"
 
 [[entry]]
 path = "std.ml.distributed_worker_step"
@@ -11051,6 +11107,20 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
 
 [[entry]]
+path = "std.ml.logits_sample_seeded"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(int, int, float) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.logits_sample_seeded"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/96_ml_phase18_transformer_primitives.spectra"
+
+[[entry]]
 path = "std.ml.max_pool2d"
 kind = "function"
 namespace = "std.ml"
@@ -11245,6 +11315,20 @@ maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+
+[[entry]]
+path = "std.ml.onnx_export_weights"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(string, string, List_int) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.onnx_export_weights"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/353_onnx_export_weights.spectra"
 
 [[entry]]
 path = "std.ml.onnx_import_summary"
@@ -13092,7 +13176,7 @@ binding = "spectra.std.serve.http_start"
 maturity = "experimental"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/78_serving_foundations.spectra"
+fixture = "tests/validation/355_serving_http_inference.spectra"
 
 [[entry]]
 path = "std.serve.http_stop"
@@ -13106,7 +13190,7 @@ binding = "spectra.std.serve.http_stop"
 maturity = "experimental"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/78_serving_foundations.spectra"
+fixture = "tests/validation/355_serving_http_inference.spectra"
 
 [[entry]]
 path = "std.serve.reset"
@@ -16160,6 +16244,48 @@ docs = 'docs/api/README.md'
 fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
 
 [[entry]]
+path = 'std.api.graphql.schema_set_max_depth'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int, int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.schema_set_max_depth'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.schema_set_max_complexity'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int, int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.schema_set_max_complexity'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.graphql.schema_set_introspection'
+kind = 'function'
+namespace = 'std.api.graphql'
+signature = 'fn(int, int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.graphql.schema_set_introspection'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
 path = 'std.api.graphql.schema_set_workers'
 kind = 'function'
 namespace = 'std.api.graphql'
@@ -16350,6 +16476,20 @@ abi = 'host(ctx: SpectraHostCallContext) -> i32'
 effects = ['host']
 error_model = 'host status + typed return'
 binding = 'spectra.api.grpc.client_connect'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.client_connect_tls'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(string, string, string) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.client_connect_tls'
 maturity = 'stable'
 owner = 'web'
 docs = 'docs/api/README.md'
@@ -16644,6 +16784,20 @@ abi = 'host(ctx: SpectraHostCallContext) -> i32'
 effects = ['host']
 error_model = 'host status + typed return'
 binding = 'spectra.api.grpc.server_bind'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/README.md'
+fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
+
+[[entry]]
+path = 'std.api.grpc.server_bind_tls'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(string, int, int, int, int, string, string) -> Task<int>'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.server_bind_tls'
 maturity = 'stable'
 owner = 'web'
 docs = 'docs/api/README.md'
