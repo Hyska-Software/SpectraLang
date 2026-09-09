@@ -42,13 +42,23 @@ impl ASTLowering {
                 IRIntWidth::I64 | IRIntWidth::Isize | IRIntWidth::Usize => 64,
             };
             let source_is_float = matches!(from_ty, IRType::Float | IRType::ExactFloat { .. });
-            let compatible_source = matches!(from_ty, IRType::Int | IRType::ExactInt { .. } | IRType::Float | IRType::ExactFloat { .. });
+            // Chars widen losslessly to the canonical i64 before the range
+            // check, so `c as u8` validates the codepoint instead of
+            // truncating it to a byte (D7).
+            let compatible_source = matches!(
+                from_ty,
+                IRType::Int
+                    | IRType::Char
+                    | IRType::ExactInt { .. }
+                    | IRType::Float
+                    | IRType::ExactFloat { .. }
+            );
             if compatible_source {
                 let host_operand = if source_is_float {
                     if matches!(from_ty, IRType::ExactFloat { .. }) {
                         self.builder.build_cast(ir_func, operand, from_ty.clone(), IRType::Float)
                     } else { operand }
-                } else if matches!(from_ty, IRType::ExactInt { .. }) {
+                } else if matches!(from_ty, IRType::ExactInt { .. } | IRType::Char) {
                     self.builder.build_cast(ir_func, operand, from_ty.clone(), IRType::Int)
                 } else { operand };
                 let host = if source_is_float {

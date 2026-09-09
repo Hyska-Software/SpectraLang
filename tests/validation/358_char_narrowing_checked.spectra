@@ -1,0 +1,37 @@
+module char_narrowing_checked
+
+// D7: `char as <exact int>` validates the codepoint through the checked
+// numeric hosts instead of truncating it to a byte. Out-of-range values
+// fail loudly at runtime (E2903); every in-range narrowing below must pass.
+
+func narrow_u8(c: char) returns u8 {
+    return c as u8
+}
+
+func narrow_u16(c: char) returns u16 {
+    return c as u16
+}
+
+public func main() returns int {
+    // ASCII const narrows exactly.
+    if narrow_u8('A') as int != 65 {
+        return 1
+    }
+    // u8 upper boundary holds a full byte.
+    if narrow_u8('ÿ') as int != 255 {
+        return 2
+    }
+    // Widening a char to int stays lossless past the byte range.
+    if '€' as int != 8364 {
+        return 3
+    }
+    // Multi-byte codepoints narrow into wider exact ints.
+    if narrow_u16('€') as int != 8364 {
+        return 4
+    }
+    // Constant-folded narrowing agrees with the runtime path.
+    if 'A' as u8 as int != 65 {
+        return 5
+    }
+    return 0
+}

@@ -921,3 +921,69 @@ fn test_cross_function_tail_call_is_not_marked() {
         }
     }
 }
+
+fn named_type(name: &str) -> spectra_compiler::ast::TypeAnnotation {
+    use spectra_compiler::ast::{TypeAnnotation, TypeAnnotationKind};
+    TypeAnnotation {
+        kind: TypeAnnotationKind::Simple {
+            segments: vec![name.to_string()],
+        },
+        span: s(),
+    }
+}
+
+#[test]
+fn test_char_to_u8_cast_uses_checked_host() {
+    // `c as u8` must validate the codepoint through the checked numeric
+    // host instead of truncating it to a byte (D7). A raw Char->i8 cast
+    // must never reach the backend from an `as` cast.
+    use spectra_compiler::ast::CastMode;
+    let cast = Expression {
+        span: s(),
+        kind: ExpressionKind::Cast {
+            expr: Box::new(ident("c")),
+            target_type: named_type("u8"),
+            mode: CastMode::Checked,
+        },
+    };
+    let narrow = make_function_with_params(
+        "narrow",
+        vec![("c", named_type("char"))],
+        vec![return_stmt(cast)],
+        Some(named_type("u8")),
+    );
+    let module = make_module("test", vec![narrow]);
+
+    let mut lowering = ASTLowering::new();
+    let ir_module = lowering
+        .lower_module(&module)
+        .expect("lowering should succeed");
+    let func = &ir_module.functions[0];
+    let mut saw_checked_host = false;
+    for block in &func.blocks {
+        for instruction in &block.instructions {
+            match &instruction.kind {
+                InstructionKind::HostCall { host, .. } => {
+                    if host == "spectra.std.numeric.checked_u8" {
+                        saw_checked_host = true;
+                    }
+                }
+                InstructionKind::Cast {
+                    from_ty, to_ty, ..
+                } => {
+                    let narrows_char = matches!(from_ty, IRType::Char)
+                        && matches!(to_ty, IRType::ExactInt { .. });
+                    assert!(
+                        !narrows_char,
+                        "raw char narrowing must not reach the backend"
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+    assert!(
+        saw_checked_host,
+        "char to u8 must go through the checked host"
+    );
+}
