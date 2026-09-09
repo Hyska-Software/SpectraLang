@@ -60,6 +60,58 @@ impl<'a> crate::lint::LintRunner<'a> {
     // END deprecated-task-spawn rule core (DeprecateSpawn)
 }
 
+impl<'a> crate::lint::LintRunner<'a> {
+    /// BEGIN deprecated-text-embed rule core (ML)
+    ///
+    /// Warns on calls to `ml.text_embed(text, dim)`, which is a documented
+    /// deterministic hashing baseline, not a model-backed embedding. Real
+    /// embeddings belong in `ml.text_embed_model` / `ml.text_embed_model_session`.
+    /// The `fn(string, int) -> int` contract is unchanged; this is a
+    /// steering diagnostic only.
+    pub(crate) fn check_deprecated_text_embed(&mut self, callee: &Expression) {
+        if !self
+            .options
+            .is_enabled(crate::lint::LintRule::DeprecatedTextEmbed)
+        {
+            return;
+        }
+
+        // `ml.text_embed(...)` parses as a MethodCall on the module
+        // identifier; a Call whose callee is the same FieldAccess shape is
+        // accepted too so first-class references stay covered.
+        let is_legacy_embed = match &callee.kind {
+            crate::ast::ExpressionKind::MethodCall {
+                object,
+                method_name,
+                ..
+            } => {
+                matches!(&object.kind, crate::ast::ExpressionKind::Identifier(name) if name == "ml")
+                    && method_name == "text_embed"
+            }
+            crate::ast::ExpressionKind::FieldAccess { object, field } => {
+                matches!(&object.kind, crate::ast::ExpressionKind::Identifier(name) if name == "ml")
+                    && field == "text_embed"
+            }
+            _ => false,
+        };
+        if !is_legacy_embed {
+            return;
+        }
+
+        self.diagnostics.push(crate::lint::LintDiagnostic {
+            rule: crate::lint::LintRule::DeprecatedTextEmbed,
+            message: "call to 'ml.text_embed' uses the deterministic hashing baseline; it is not a model-backed embedding".to_string(),
+            span: callee.span,
+            note: Some(
+                "use 'ml.text_embed_model' / 'ml.text_embed_model_session' for model-backed embeddings"
+                    .to_string(),
+            ),
+            secondary_span: None,
+        });
+    }
+    // END deprecated-text-embed rule core (ML)
+}
+
 #[cfg(test)]
 mod deprecated_task_spawn_tests {
     use crate::lexer::Lexer;
@@ -165,6 +217,82 @@ mod deprecated_task_spawn_tests {
         assert_eq!(
             LintRule::DeprecatedTaskSpawn.stable_error_code(),
             Some("E036")
+        );
+    }
+}
+
+#[cfg(test)]
+mod deprecated_text_embed_tests {
+    use crate::lexer::Lexer;
+    use crate::lint::{lint_module, LintOptions, LintRule};
+    use crate::parser::Parser;
+    use std::collections::HashSet;
+
+    pub(crate) fn parse(source: &str) -> crate::ast::Module {
+        let tokens = Lexer::new(source)
+            .tokenize()
+            .expect("lexer should not fail");
+        Parser::new(tokens, HashSet::new()).parse().expect("parse")
+    }
+
+    fn embed_diagnostics(source: &str) -> Vec<String> {
+        lint_module(&parse(source), &LintOptions::default())
+            .into_iter()
+            .filter(|diagnostic| diagnostic.rule == LintRule::DeprecatedTextEmbed)
+            .map(|diagnostic| diagnostic.message)
+            .collect()
+    }
+
+    #[test]
+    fn warns_on_ml_text_embed_hashing_baseline() {
+        let diagnostics = embed_diagnostics(
+            r#"
+            module demo
+            func main() returns int {
+                let vec = ml.text_embed("rag retrieval", 8)
+                return 0
+            }
+        "#,
+        );
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].contains("hashing baseline"));
+    }
+
+    #[test]
+    fn model_backed_variants_and_other_calls_stay_silent() {
+        assert!(embed_diagnostics(
+            r#"
+            module demo
+            func main() returns int {
+                let session = ml.text_embed_model_session("model.spar")
+                let vec = ml.text_embed_model(session, 1, "hello", 2)
+                return 0
+            }
+        "#,
+        )
+        .is_empty());
+        assert!(embed_diagnostics(
+            r#"
+            module demo
+            func main() returns int {
+                let vec = other.text_embed("x", 8)
+                return 0
+            }
+        "#,
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn rule_metadata_uses_reserved_code_e037() {
+        assert_eq!(LintRule::DeprecatedTextEmbed.code(), "deprecated-text-embed");
+        assert_eq!(
+            LintRule::from_code("deprecated-text-embed"),
+            Some(LintRule::DeprecatedTextEmbed)
+        );
+        assert_eq!(
+            LintRule::DeprecatedTextEmbed.stable_error_code(),
+            Some("E037")
         );
     }
 }

@@ -392,17 +392,34 @@ fn atomic_replace(source: &Path, destination: &Path) -> Result<(), PackageError>
             .encode_wide()
             .chain(std::iter::once(0))
             .collect();
-        let success = unsafe {
-            MoveFileExW(
-                source_wide.as_ptr(),
-                destination_wide.as_ptr(),
-                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-            )
-        };
-        if success == 0 {
+        // MoveFileExW can fail transiently on Windows when an antivirus or
+        // indexer briefly holds the just-written staging file
+        // (ERROR_ACCESS_DENIED / ERROR_SHARING_VIOLATION). Retry a bounded
+        // number of times with backoff; the last OS error is preserved so
+        // genuine failures still surface unchanged.
+        let mut last_error = io::Error::from_raw_os_error(5);
+        let mut succeeded = false;
+        for attempt in 0..5u32 {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(20 * attempt as u64));
+            }
+            let success = unsafe {
+                MoveFileExW(
+                    source_wide.as_ptr(),
+                    destination_wide.as_ptr(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+                )
+            };
+            if success != 0 {
+                succeeded = true;
+                break;
+            }
+            last_error = io::Error::last_os_error();
+        }
+        if !succeeded {
             return Err(PackageError::AtomicWrite {
                 path: destination.to_path_buf(),
-                message: io::Error::last_os_error().to_string(),
+                message: last_error.to_string(),
             });
         }
         Ok(())

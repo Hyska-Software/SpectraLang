@@ -13,6 +13,7 @@ pub enum LintRule {
     Shadowing,
     NarrowingCast,
     DeprecatedTaskSpawn,
+    DeprecatedTextEmbed,
 }
 
 impl LintRule {
@@ -23,6 +24,7 @@ impl LintRule {
             LintRule::Shadowing => "shadowing",
             LintRule::NarrowingCast => "narrowing-cast",
             LintRule::DeprecatedTaskSpawn => "deprecated-task-spawn",
+            LintRule::DeprecatedTextEmbed => "deprecated-text-embed",
         }
     }
 
@@ -33,6 +35,7 @@ impl LintRule {
             LintRule::Shadowing => "shadowed binding",
             LintRule::NarrowingCast => "narrowing numeric cast",
             LintRule::DeprecatedTaskSpawn => "deprecated concurrent.task_spawn call",
+            LintRule::DeprecatedTextEmbed => "deprecated ml.text_embed hashing-baseline call",
         }
     }
 
@@ -43,6 +46,7 @@ impl LintRule {
             LintRule::Shadowing,
             LintRule::NarrowingCast,
             LintRule::DeprecatedTaskSpawn,
+            LintRule::DeprecatedTextEmbed,
         ];
         ALL
     }
@@ -54,6 +58,7 @@ impl LintRule {
             "shadowing" => Some(LintRule::Shadowing),
             "narrowing-cast" | "narrowing_cast" => Some(LintRule::NarrowingCast),
             "deprecated-task-spawn" | "deprecated_task_spawn" => Some(LintRule::DeprecatedTaskSpawn),
+            "deprecated-text-embed" | "deprecated_text_embed" => Some(LintRule::DeprecatedTextEmbed),
             _ => None,
         }
     }
@@ -64,6 +69,7 @@ impl LintRule {
         match self {
             LintRule::NarrowingCast => Some("E035"),
             LintRule::DeprecatedTaskSpawn => Some("E036"),
+            LintRule::DeprecatedTextEmbed => Some("E037"),
             LintRule::UnusedBinding | LintRule::UnreachableCode | LintRule::Shadowing => None,
         }
     }
@@ -433,6 +439,9 @@ impl<'a> LintRunner<'a> {
                 // BEGIN deprecated-task-spawn lint (DeprecateSpawn)
                 self.check_deprecated_task_spawn(callee);
                 // END deprecated-task-spawn lint (DeprecateSpawn)
+                // BEGIN deprecated-text-embed lint (ML)
+                self.check_deprecated_text_embed(callee);
+                // END deprecated-text-embed lint (ML)
                 self.visit_expression(callee);
                 for arg in arguments {
                     self.visit_expression(arg);
@@ -521,6 +530,9 @@ impl<'a> LintRunner<'a> {
                 // BEGIN deprecated-task-spawn lint (DeprecateSpawn)
                 self.check_deprecated_task_spawn(expression);
                 // END deprecated-task-spawn lint (DeprecateSpawn)
+                // BEGIN deprecated-text-embed lint (ML)
+                self.check_deprecated_text_embed(expression);
+                // END deprecated-text-embed lint (ML)
                 self.visit_expression(object);
                 for argument in arguments {
                     self.visit_expression(argument);

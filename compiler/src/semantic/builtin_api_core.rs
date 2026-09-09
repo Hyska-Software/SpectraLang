@@ -914,6 +914,8 @@ fn make_std_api_db_pool(prefix: &str) -> ModuleExports {
     let mut exports = api_module(&format!("{prefix}.db.pool"), None);
     let pool = api_type("Pool");
     let connection = api_type("SqliteConnection");
+    let postgres_connection = api_type("PostgresConnection");
+    let redis_connection = api_type("RedisConnection");
     exports.types.insert("Pool".to_string(), public_type(&[]));
     let functions = [
         (
@@ -921,8 +923,24 @@ fn make_std_api_db_pool(prefix: &str) -> ModuleExports {
             vec![Type::String, Type::Int],
             pool.clone(),
         ),
+        (
+            "postgres_open",
+            vec![Type::String, Type::Int],
+            pool.clone(),
+        ),
+        (
+            "redis_open",
+            vec![Type::String, Type::Int],
+            pool.clone(),
+        ),
         ("close", vec![pool.clone()], Type::Bool),
-        ("with_connection", vec![pool], connection),
+        ("with_connection", vec![pool.clone()], connection),
+        (
+            "postgres_with_connection",
+            vec![pool.clone()],
+            postgres_connection,
+        ),
+        ("redis_with_connection", vec![pool], redis_connection),
     ];
     for (name, params, return_type) in functions {
         exports
@@ -1052,6 +1070,11 @@ fn make_std_api_grpc(prefix: &str) -> ModuleExports {
         ("error_free", vec![Type::Int], Type::Bool),
         ("client_connect", vec![Type::String], api_task(Type::Int)),
         (
+            "client_connect_tls",
+            vec![Type::String, Type::String, Type::String],
+            api_task(Type::Int),
+        ),
+        (
             "client_unary",
             vec![Type::Int, Type::String, Type::Int, Type::Int, Type::Int],
             api_task(Type::Int),
@@ -1081,6 +1104,19 @@ fn make_std_api_grpc(prefix: &str) -> ModuleExports {
             vec![Type::String, Type::Int, Type::Int, Type::Int, Type::Int],
             api_task(Type::Int),
         ),
+        (
+            "server_bind_tls",
+            vec![
+                Type::String,
+                Type::Int,
+                Type::Int,
+                Type::Int,
+                Type::Int,
+                Type::String,
+                Type::String,
+            ],
+            api_task(Type::Int),
+        ),
         ("server_local_port", vec![Type::Int], Type::Int),
         ("server_shutdown", vec![Type::Int], Type::Bool),
         ("server_free", vec![Type::Int], Type::Bool),
@@ -1103,6 +1139,13 @@ fn make_std_api_graphql(prefix: &str) -> ModuleExports {
             vec![Type::Int, Type::Int],
             Type::Bool,
         ),
+        ("schema_set_max_depth", vec![Type::Int, Type::Int], Type::Bool),
+        (
+            "schema_set_max_complexity",
+            vec![Type::Int, Type::Int],
+            Type::Bool,
+        ),
+        ("schema_set_introspection", vec![Type::Int, Type::Int], Type::Bool),
         (
             "schema_field_json",
             vec![Type::Int, Type::Int, Type::String, Type::String, Type::String],

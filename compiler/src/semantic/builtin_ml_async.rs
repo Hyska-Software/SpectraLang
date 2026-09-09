@@ -311,6 +311,18 @@ pub(crate) fn make_std_ml() -> ModuleExports {
             vec![Type::String, Type::String],
             Type::String,
         ),
+        (
+            "onnx_export_weights",
+            vec![
+                Type::String,
+                Type::String,
+                Type::Applied {
+                    name: "List".to_string(),
+                    args: vec![int.clone()],
+                },
+            ],
+            Type::String,
+        ),
         ("onnx_import_summary", vec![Type::String], Type::String),
         ("onnx_validate", vec![Type::String], int.clone()),
         (
@@ -352,6 +364,11 @@ pub(crate) fn make_std_ml() -> ModuleExports {
         (
             "logits_sample",
             vec![int.clone(), float.clone()],
+            int.clone(),
+        ),
+        (
+            "logits_sample_seeded",
+            vec![int.clone(), int.clone(), float.clone()],
             int.clone(),
         ),
         (

@@ -273,6 +273,7 @@ impl SemanticAnalyzer {
                     | "mean_t"
                     | "dot_t"
                     | "matmul"
+                    | "matmul_batched"
                     | "transpose"
                     | "neg"
                     | "relu"
@@ -281,9 +282,14 @@ impl SemanticAnalyzer {
                     | "sqrt_f"
                     | "sigmoid_f"
                     | "tanh_f"
+                    | "concat"
+                    | "stack"
+                    | "slice"
+                    | "permute"
             ] | [
                 "ml",
-                "linear" | "mse_loss" | "bce_loss" | "cross_entropy_loss" | "nll_loss"
+                "linear" | "mse_loss" | "bce_loss" | "cross_entropy_loss" | "nll_loss" | "conv2d"
+                    | "max_pool2d" | "dropout"
             ]
         );
         let is_std = matches!(parts.first(), Some(&"tensor" | &"ml" | &"io" | &"math"));
