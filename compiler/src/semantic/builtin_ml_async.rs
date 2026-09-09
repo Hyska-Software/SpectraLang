@@ -307,6 +307,30 @@ pub(crate) fn make_std_ml() -> ModuleExports {
             int.clone(),
         ),
         (
+            "distributed_train_dataset_multithread",
+            vec![
+                int.clone(),
+                Type::String,
+                int.clone(),
+                int.clone(),
+                float.clone(),
+                int.clone(),
+            ],
+            int.clone(),
+        ),
+        (
+            "distributed_train_dataset_tcp",
+            vec![
+                int.clone(),
+                Type::String,
+                int.clone(),
+                int.clone(),
+                float.clone(),
+                int.clone(),
+            ],
+            int.clone(),
+        ),
+        (
             "onnx_export",
             vec![Type::String, Type::String],
             Type::String,

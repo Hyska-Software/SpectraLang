@@ -10812,6 +10812,34 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/356_distributed_train_tcp.spectra"
 
 [[entry]]
+path = "std.ml.distributed_train_dataset_multithread"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(int, string, int, int, float, int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.distributed_train_dataset_multithread"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/360_distributed_dataset_trains.spectra"
+
+[[entry]]
+path = "std.ml.distributed_train_dataset_tcp"
+kind = "function"
+namespace = "std.ml"
+signature = "fn(int, string, int, int, float, int) -> int"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.ml.distributed_train_dataset_tcp"
+maturity = "beta"
+owner = "ml"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/360_distributed_dataset_trains.spectra"
+
+[[entry]]
 path = "std.ml.distributed_worker_step"
 kind = "function"
 namespace = "std.ml"

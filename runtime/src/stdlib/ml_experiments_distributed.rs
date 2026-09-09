@@ -456,6 +456,69 @@ pub(crate) extern "C" fn std_ml_distributed_train_tcp(ctx: *mut SpectraHostCallC
     ml_distributed_train(ctx, ML_DISTRIBUTED_TOPOLOGY_TCP, |spec| dist_run_tcp(spec))
 }
 
+pub(crate) extern "C" fn std_ml_distributed_train_dataset_multithread(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
+    ml_distributed_train_dataset(ctx, ML_DISTRIBUTED_TOPOLOGY_MULTITHREAD, |spec| {
+        dist_run_multithread(spec)
+    })
+}
+
+pub(crate) extern "C" fn std_ml_distributed_train_dataset_tcp(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
+    ml_distributed_train_dataset(ctx, ML_DISTRIBUTED_TOPOLOGY_TCP, |spec| {
+        dist_run_tcp(spec)
+    })
+}
+
+/// Dataset-backed twin of [`ml_distributed_train`]: identical runners,
+/// session recording, and outcome shape, but shards slice a caller dataset
+/// instead of synthesizing a fixed linear problem. The legacy 8-argument
+/// hosts are untouched.
+pub(crate) fn ml_distributed_train_dataset<F>(
+    ctx: *mut SpectraHostCallContext,
+    topology: &str,
+    run: F,
+) -> i32
+where
+    F: FnOnce(&DistTrainSpec) -> Result<DistRunOutcome, i32>,
+{
+    unsafe {
+        let Ok((ctx_ref, args)) = ml_args(ctx, 6) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        let dataset = args[0];
+        if dataset <= 0 {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let Some(out_dir) = ml_read_path_arg(args[1]) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        let lr = f64::from_bits(args[4] as u64);
+        let spec = match dist_parse_dataset_spec(dataset as usize, args[2], args[3], lr, args[5])
+        {
+            Ok(spec) => spec,
+            Err(code) => return code,
+        };
+        if std::fs::create_dir_all(&out_dir).is_err() {
+            return HOST_STATUS_INTERNAL_ERROR;
+        }
+        match run(&spec) {
+            Ok(outcome) => {
+                let name = format!("distributed-dataset-{dataset}");
+                let session =
+                    dist_outcome_to_session(name, out_dir, &spec, topology, outcome);
+                let handle = with_ml_registry(|registry| {
+                    registry.distributed_sessions.insert(session)
+                });
+                tensor_result(ctx_ref, handle as SpectraHostValue)
+            }
+            Err(code) => code,
+        }
+    }
+}
+
 pub(crate) fn ml_distributed_train<F>(
     ctx: *mut SpectraHostCallContext,
     topology: &str,

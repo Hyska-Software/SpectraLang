@@ -33,6 +33,19 @@ pub(crate) struct DistTrainSpec {
     pub(crate) features: usize,
     pub(crate) total_samples: usize,
     pub(crate) seed: i64,
+    /// Caller-supplied dataset rows. When present, shards slice these rows
+    /// instead of synthesizing SplitMix features; both transports share this
+    /// single choke point, so dataset runs reuse the proven runners untouched.
+    pub(crate) dataset: Option<DistDatasetRows>,
+}
+
+/// Row-major caller dataset: `x` holds `total_rows * features` values,
+/// `y` holds one target per row.
+pub(crate) struct DistDatasetRows {
+    pub(crate) features: usize,
+    pub(crate) total_rows: usize,
+    pub(crate) x: Vec<f64>,
+    pub(crate) y: Vec<f64>,
 }
 
 /// Result of a completed run: real per-worker stats plus the global view.
@@ -333,6 +346,9 @@ pub(crate) struct DistShard {
 }
 
 pub(crate) fn dist_build_shard(spec: &DistTrainSpec, worker_id: usize) -> DistShard {
+    if let Some(dataset) = spec.dataset.as_ref() {
+        return dist_build_dataset_shard(dataset, spec.worker_count, worker_id);
+    }
     let start = spec.total_samples * worker_id / spec.worker_count;
     let end = spec.total_samples * (worker_id + 1) / spec.worker_count;
     let rows = end - start;
@@ -345,6 +361,28 @@ pub(crate) fn dist_build_shard(spec: &DistTrainSpec, worker_id: usize) -> DistSh
             x.push(row[feature]);
         }
         y.push(dist_target_value(spec.features, &row));
+    }
+    DistShard { rows, x, y }
+}
+
+/// Slice a contiguous row range for one worker using the same split formula
+/// as the synthetic path. Lengths are validated at parse time; a mismatch
+/// here can only come from a corrupt registry, so empty shards surface as
+/// invalid arguments from the gradient kernel instead of silent zeros.
+pub(crate) fn dist_build_dataset_shard(
+    dataset: &DistDatasetRows,
+    worker_count: usize,
+    worker_id: usize,
+) -> DistShard {
+    let start = dataset.total_rows * worker_id / worker_count;
+    let end = dataset.total_rows * (worker_id + 1) / worker_count;
+    let rows = end.saturating_sub(start);
+    let mut x = Vec::with_capacity(rows * dataset.features);
+    let mut y = Vec::with_capacity(rows);
+    for sample in start..end {
+        let base = sample * dataset.features;
+        x.extend_from_slice(&dataset.x[base..base + dataset.features]);
+        y.push(dataset.y[sample]);
     }
     DistShard { rows, x, y }
 }
@@ -542,6 +580,27 @@ pub(crate) fn dist_average_gradients(parts: &[Option<DistGradients>]) -> Option<
     Some((w, b))
 }
 
+/// Read a dataset tensor as f64 rows. Float tensors pass through;
+/// integer tensors (e.g. from `tensor.arange`) widen losslessly.
+/// Anything else is not a dataset and fails lookup.
+pub(crate) fn dist_dataset_tensor_f64(handle: usize) -> Option<(Vec<usize>, Vec<f64>)> {
+    if let Some((shape, data, _)) = ml_tensor_float_data(handle) {
+        return Some((shape, data));
+    }
+    with_tensor_registry(|registry| {
+        let tensor = registry.get(handle)?;
+        if tensor.dtype != TensorDType::Int {
+            return None;
+        }
+        let values = tensor
+            .materialize()
+            .into_iter()
+            .map(|value| value as f64)
+            .collect();
+        Some((tensor.shape.clone(), values))
+    })
+}
+
 pub(crate) fn dist_parse_spec(args: &[SpectraHostValue]) -> Result<DistTrainSpec, i32> {
     let worker_count = args[2];
     let steps = args[3];
@@ -561,6 +620,7 @@ pub(crate) fn dist_parse_spec(args: &[SpectraHostValue]) -> Result<DistTrainSpec
         || total_samples < worker_count
         || total_samples > 1 << 20
     {
+
         return Err(HOST_STATUS_INVALID_ARGUMENT);
     }
     Ok(DistTrainSpec {
@@ -570,6 +630,94 @@ pub(crate) fn dist_parse_spec(args: &[SpectraHostValue]) -> Result<DistTrainSpec
         features: features as usize,
         total_samples: total_samples as usize,
         seed,
+        dataset: None,
+    })
+}
+
+/// Build a training spec from a caller dataset handle instead of synthetic
+/// dimensions. Features come from a rank-2 `[rows, features]` (or rank-1
+/// `[rows]` for a single feature) float tensor and targets from a rank-1
+/// `[rows]` (or rank-2 `[rows, 1]`) tensor; both bounds mirror
+/// `dist_parse_spec` so dataset runs inherit the same limits.
+pub(crate) fn dist_parse_dataset_spec(
+    dataset_handle: usize,
+    worker_count: i64,
+    steps: i64,
+    lr: f64,
+    seed: i64,
+) -> Result<DistTrainSpec, i32> {
+    if worker_count <= 0
+        || worker_count > 256
+        || steps <= 0
+        || steps > 100_000
+        || !lr.is_finite()
+        || lr <= 0.0
+        || lr > 10.0
+    {
+        return Err(HOST_STATUS_INVALID_ARGUMENT);
+    }
+    let Some((features_handle, labels_handle, len)) = with_ml_registry(|registry| {
+        registry
+            .datasets
+            .get(&dataset_handle)
+            .map(|dataset| (dataset.features, dataset.labels, dataset.len))
+    }) else {
+        return Err(HOST_STATUS_NOT_FOUND);
+    };
+    let Some((feature_shape, feature_data)) = dist_dataset_tensor_f64(features_handle)
+    else {
+        return Err(HOST_STATUS_NOT_FOUND);
+    };
+    let Some((label_shape, label_data)) = dist_dataset_tensor_f64(labels_handle) else {
+        return Err(HOST_STATUS_NOT_FOUND);
+    };
+    if feature_shape.is_empty() || feature_shape[0] != len {
+        return Err(HOST_STATUS_INVALID_ARGUMENT);
+    }
+    let features = if feature_shape.len() == 1 {
+        1
+    } else if feature_shape.len() == 2 {
+        feature_shape[1]
+    } else {
+        return Err(HOST_STATUS_INVALID_ARGUMENT);
+    };
+    if features == 0 || features > 1024 {
+        return Err(HOST_STATUS_INVALID_ARGUMENT);
+    }
+    if feature_data.len() != len * features {
+        return Err(HOST_STATUS_INVALID_ARGUMENT);
+    }
+    let label_width = if label_shape.len() == 1 && label_shape[0] == len {
+        1
+    } else if label_shape.len() == 2 && label_shape[0] == len && label_shape[1] == 1 {
+        1
+    } else {
+        return Err(HOST_STATUS_INVALID_ARGUMENT);
+    };
+    if label_data.len() != len * label_width {
+        return Err(HOST_STATUS_INVALID_ARGUMENT);
+    }
+    let total_rows = len;
+    if total_rows < worker_count as usize || total_rows > 1 << 20 {
+        return Err(HOST_STATUS_INVALID_ARGUMENT);
+    }
+    let y = label_data
+        .chunks(label_width)
+        .map(|row| row[0])
+        .collect::<Vec<_>>();
+    Ok(DistTrainSpec {
+        worker_count: worker_count as usize,
+        steps: steps as usize,
+        lr,
+        features,
+        total_samples: total_rows,
+        seed,
+        dataset: Some(DistDatasetRows {
+            features,
+            total_rows,
+            x: feature_data,
+            y,
+        }),
     })
 }
 
@@ -1495,6 +1643,7 @@ mod dist_tcp_fault_tests {
             features: 4,
             total_samples: 16,
             seed: 7,
+            dataset: None,
         }
     }
 
@@ -1673,6 +1822,7 @@ mod dist_tcp_fault_tests {
             features: 4,
             total_samples: 24,
             seed: 11,
+            dataset: None,
         }
     }
 
@@ -1970,6 +2120,7 @@ mod dist_tcp_fault_tests {
             features: 4,
             total_samples: 16,
             seed: 42,
+            dataset: None,
         }
     }
 

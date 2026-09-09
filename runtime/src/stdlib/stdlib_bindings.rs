@@ -723,6 +723,8 @@ pub(crate) const ML_TEXT_EMBED_MODEL_SESSION: &str = "spectra.std.ml.text_embed_
 // ── DistTCP ──────────────────────────────────────────────────────────────────
 pub(crate) const ML_DISTRIBUTED_TRAIN_MULTITHREAD: &str = "spectra.std.ml.distributed_train_multithread";
 pub(crate) const ML_DISTRIBUTED_TRAIN_TCP: &str = "spectra.std.ml.distributed_train_tcp";
+pub(crate) const ML_DISTRIBUTED_TRAIN_DATASET_MULTITHREAD: &str = "spectra.std.ml.distributed_train_dataset_multithread";
+pub(crate) const ML_DISTRIBUTED_TRAIN_DATASET_TCP: &str = "spectra.std.ml.distributed_train_dataset_tcp";
 
 // ── ServeReal ────────────────────────────────────────────────────────────────
 pub(crate) const SERVE_SERVER_REGISTER_MODEL_LINEAR: &str =

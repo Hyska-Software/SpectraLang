@@ -288,6 +288,12 @@ pub(crate) fn lookup_std_host_group_tensor_ml(module: &str, function: &str) -> O
             ("ml", "distributed_train_tcp") => {
                 Some(host_int("spectra.std.ml.distributed_train_tcp"))
             }
+            ("ml", "distributed_train_dataset_multithread") => {
+                Some(host_int("spectra.std.ml.distributed_train_dataset_multithread"))
+            }
+            ("ml", "distributed_train_dataset_tcp") => {
+                Some(host_int("spectra.std.ml.distributed_train_dataset_tcp"))
+            }
             ("ml", "onnx_export") => Some(host_string("spectra.std.ml.onnx_export")),
             ("ml", "onnx_export_weights") => {
                 Some(host_string("spectra.std.ml.onnx_export_weights"))

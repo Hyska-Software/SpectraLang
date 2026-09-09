@@ -768,6 +768,14 @@ pub(crate) fn register_ml() {
         std_ml_distributed_train_multithread,
     );
     register_host_function(ML_DISTRIBUTED_TRAIN_TCP, std_ml_distributed_train_tcp);
+    register_host_function(
+        ML_DISTRIBUTED_TRAIN_DATASET_MULTITHREAD,
+        std_ml_distributed_train_dataset_multithread,
+    );
+    register_host_function(
+        ML_DISTRIBUTED_TRAIN_DATASET_TCP,
+        std_ml_distributed_train_dataset_tcp,
+    );
     register_host_function(ML_ONNX_EXPORT, std_ml_onnx_export);
     register_host_function(ML_ONNX_EXPORT_WEIGHTS, std_ml_onnx_export_weights);
     register_host_function(ML_ONNX_IMPORT_SUMMARY, std_ml_onnx_import_summary);
