@@ -303,8 +303,11 @@ fn execute_plan_with_sources(
                             column
                         );
                     } else {
+                        // No compiler-proven entry span (unparseable entry
+                        // sources cannot have executed): report the exit code
+                        // with help text and no fabricated frame.
                         eprintln!(
-                            "error[runtime]: program exited with status {}\n   = stack:\n     0: <entry point unavailable>\n   = help: rerun with '--timings' for pipeline context",
+                            "error[runtime]: program exited with status {}\n   = help: rerun with '--timings' for pipeline context",
                             code
                         );
                     }

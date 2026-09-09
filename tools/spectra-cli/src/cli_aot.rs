@@ -1,9 +1,29 @@
+/// Compiler-proven location of the `func main` entry point: parses the source
+/// and reads the function definition span instead of substring-matching
+/// (`func main` also appears in comments, strings, and longer identifiers).
+/// Returns 1-based (line, column) of the definition start, or `None` when the
+/// source does not parse or declares no top-level `func main`.
+fn find_main_span_in_source(source: &str) -> Option<(usize, usize)> {
+    let tokens = spectra_compiler::Lexer::new(source).tokenize().ok()?;
+    let module = spectra_compiler::Parser::new(tokens, std::collections::HashSet::new())
+        .parse()
+        .ok()?;
+    for item in &module.items {
+        if let spectra_compiler::ast::Item::Function(function) = item {
+            if function.name == "main" {
+                let location = &function.span.start_location;
+                return Some((location.line, location.column));
+            }
+        }
+    }
+    None
+}
+
 fn find_main_location(plan: &ProjectPlan) -> Option<(PathBuf, usize, usize)> {
     for module in plan.modules() {
         let source = fs::read_to_string(&module.path).ok()?;
-        if let Some((line_index, column_index, _line_text)) = find_main_location_in_source(&source)
-        {
-            return Some((module.path.clone(), line_index + 1, column_index + 1));
+        if let Some((line, column)) = find_main_span_in_source(&source) {
+            return Some((module.path.clone(), line, column));
         }
     }
     None
@@ -65,8 +85,9 @@ fn write_aot_debug_map(
     native_debuggers: &'static [&'static str],
     native_debug: bool,
 ) -> CliResult<PathBuf> {
-    let entrypoint =
-        if let Some((line_index, column_index, line_text)) = find_main_location_in_source(source) {
+    let entrypoint = match find_main_span_in_source(source) {
+        Some((line, column)) => {
+            let line_text = source.lines().nth(line.saturating_sub(1)).unwrap_or("");
             Some(AotDebugEntrypoint {
                 function: "main".to_string(),
                 exported_symbol: match artifact_kind {
@@ -74,18 +95,20 @@ fn write_aot_debug_map(
                     AotArtifactKind::Executable => "spectra_user_main",
                 }
                 .to_string(),
-                source_line: line_index + 1,
-                source_column: column_index + 1,
+                source_line: line,
+                source_column: column,
                 source_text: line_text.trim().to_string(),
             })
-        } else {
+        }
+        None => {
             if matches!(artifact_kind, AotArtifactKind::Executable) {
                 return Err(CliError::compilation(
                 "cannot emit executable AOT debug map because no 'func main' entry point was found",
             ));
             }
             None
-        };
+        }
+    };
 
     let debug_map_path = debug_map_path_for_artifact(artifact_path);
     let map = AotDebugMap {
@@ -272,15 +295,6 @@ fn find_tool_on_path(name: &str) -> Option<PathBuf> {
     None
 }
 
-fn find_main_location_in_source(source: &str) -> Option<(usize, usize, &str)> {
-    for (line_index, line) in source.lines().enumerate() {
-        let Some(column_index) = line.find("func main") else {
-            continue;
-        };
-        return Some((line_index, column_index, line));
-    }
-    None
-}
 
 fn display_path(path: &Path) -> String {
     path.canonicalize()
