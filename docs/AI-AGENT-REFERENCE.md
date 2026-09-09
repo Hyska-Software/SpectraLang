@@ -2030,7 +2030,6 @@ let credit = TxKind::Credit(100)
 | `--verbose` / `-v` | Verbose build output |
 | `--summary` | Per-module pipeline summary |
 | `--json` | JSON diagnostic output (`compile`, `check`, `lint`, and `repl --json`) |
-| `--enable-experimental <feature>` | Compatibility no-op; no active experimental syntax gates |
 
 ### Stable Control-Flow Features
 
@@ -2041,7 +2040,7 @@ let credit = TxKind::Credit(100)
 | `do-while` | `do { } while` loop |
 | `loop` | Infinite `loop { }` |
 
-> Note: There are currently no active experimental syntax gates. `--enable-experimental <feature>` is accepted only for compatibility with older scripts.
+> Note: There is no experimental gating mechanism. Stable syntax parses unconditionally.
 
 ### Exit Codes
 

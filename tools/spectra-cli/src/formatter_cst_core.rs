@@ -9,7 +9,7 @@
     };
     use spectra_compiler::token::{Keyword, Token, TokenKind};
     use spectra_compiler::{span::Span, Lexer, Parser};
-    use std::collections::HashSet;
+    
     use std::mem;
     use std::ops::Range;
 
@@ -25,7 +25,7 @@
             }
         })?;
         let parser_tokens = tokens.clone();
-        let module = Parser::new(parser_tokens, HashSet::new())
+        let module = Parser::new(parser_tokens)
             .parse()
             .map_err(|errors| {
                 let first = errors.into_iter().next();

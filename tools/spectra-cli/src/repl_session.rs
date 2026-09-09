@@ -44,13 +44,13 @@ const REPLAYED_INDENT: usize = 4;
 
 /// Keywords that introduce a top-level declaration accepted into the buffer.
 const REPL_DECLARATION_KEYWORDS: &[&str] = &[
-    "func", "fn", "record", "struct", "enum", "impl", "trait", "type", "const", "static",
+    "func", "record", "enum", "impl", "trait", "type", "const", "static",
     "import", "from", "export", "module",
 ];
 
 /// Modifiers that may precede a declaration keyword and must be skipped when
 /// classifying an input line.
-const REPL_DECLARATION_MODIFIERS: &[&str] = &["public", "pub", "internal", "async"];
+const REPL_DECLARATION_MODIFIERS: &[&str] = &["public", "internal", "async"];
 
 #[derive(Debug, Clone)]
 struct ReplBinding {
@@ -827,7 +827,7 @@ mod repl_session_tests {
     fn classification_matches_language_surface() {
         for declaration in [
             "func f() {}",
-            "fn g() {}",
+            "func g() {}",
             "public func visible() returns int { return 1 }",
             "record Point { x: int, y: int }",
             "enum Color { Red, Green }",

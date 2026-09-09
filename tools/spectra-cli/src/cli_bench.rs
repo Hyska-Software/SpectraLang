@@ -1,6 +1,6 @@
 fn execute_async_benchmarks(bench_json: Option<PathBuf>) -> CliResult<()> {
     spectra_runtime::initialize();
-    spectra_runtime::register_standard_library();
+    spectra_runtime::register();
     spectra_api::register();
 
     let mut benchmarks = Vec::new();

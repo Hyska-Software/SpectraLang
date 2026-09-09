@@ -3,11 +3,17 @@ module stdlib_serve_full
 import std.serve as serve
 import std.string as string
 import std.fs as fs
+import std.tensor as tensor
 
 public func main() returns int {
     serve.reset()
 
     let server = serve.server_new(3)
+    let model_weight = tensor.reshape(tensor.full_f(1, 3.0), 1, 1)
+    let model_bias = tensor.full_f(1, 0.0)
+    if serve.server_register_model_linear(server, model_weight, model_bias, 0) != 1 {
+        return 1
+    }
     if serve.server_resident_model(server) != 3 or serve.server_is_warm(server) != false {
         return 1
     }

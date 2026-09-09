@@ -3,9 +3,16 @@ module ai_onnx_transformer_export
 
 import std.ml as ml
 import std.string as str
+import std.tensor as tensor
+import std.collections as collections
 
 public func main() returns int {
-    let model = ml.onnx_export("target/ai-examples/onnx/transformer.onnx", "transformer")
+    let trans_scale = tensor.full_f(8, 1.0)
+    let trans_bias = tensor.full_f(8, 0.0)
+    let trans_weights = collections.list_new()
+    collections.list_push(trans_weights, trans_scale)
+    collections.list_push(trans_weights, trans_bias)
+    let model = ml.onnx_export_weights("target/ai-examples/onnx/transformer.onnx", "transformer", trans_weights)
     if ml.onnx_validate(model) != 1 {
         return 1
     }

@@ -17,16 +17,6 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 
 
-EXPERIMENTAL_FLAGS = [
-    "--enable-experimental",
-    "switch",
-    "--enable-experimental",
-    "if not",
-    "--enable-experimental",
-    "do-while",
-    "--enable-experimental",
-    "loop",
-]
 
 
 @dataclass
@@ -134,7 +124,7 @@ def compile_cases(root: Path) -> list[tuple[str, list[str]]]:
         root / "tests" / "validation" / "77_concurrency_pipeline.spectra",
         root / "tests" / "validation" / "78_serving_foundations.spectra",
     ]
-    return [(path.name, ["compile", str(path), *EXPERIMENTAL_FLAGS]) for path in files]
+    return [(path.name, ["compile", str(path)]) for path in files]
 
 
 def runtime_cases(root: Path) -> list[tuple[str, list[str]]]:
@@ -145,7 +135,7 @@ def runtime_cases(root: Path) -> list[tuple[str, list[str]]]:
         root / "tests" / "validation" / "77_concurrency_pipeline.spectra",
         root / "tests" / "validation" / "78_serving_foundations.spectra",
     ]
-    return [(path.name, ["run", str(path), *EXPERIMENTAL_FLAGS]) for path in files]
+    return [(path.name, ["run", str(path)]) for path in files]
 
 
 def package_cases(root: Path) -> list[tuple[str, list[str]]]:

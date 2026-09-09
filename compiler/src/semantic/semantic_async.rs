@@ -831,11 +831,11 @@ impl SemanticAnalyzer {
         match &callee.kind {
             ExpressionKind::Identifier(name) => matches!(
                 name.as_str(),
-                "spawn" | "spawn_task" | "task_spawn" | "spawn_detached"
+                "spawn" | "spawn_task" | "task_spawn_fn" | "spawn_detached"
             ),
             ExpressionKind::FieldAccess { field, .. } => matches!(
                 field.as_str(),
-                "spawn" | "spawn_task" | "task_spawn" | "spawn_detached"
+                "spawn" | "spawn_task" | "task_spawn_fn" | "spawn_detached"
             ),
             _ => false,
         }
@@ -990,7 +990,7 @@ impl SemanticAnalyzer {
 mod async_lambda_tests {
     use crate::ast::{ExpressionKind, Item, StatementKind};
     use crate::{CompilationOptions, CompilationPipeline, Lexer, Parser};
-    use std::collections::HashSet;
+    
 
     fn compile(source: &str) -> Result<(), Vec<crate::CompilerError>> {
         let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
@@ -1078,7 +1078,7 @@ mod async_lambda_tests {
         let tokens = Lexer::new(source)
             .tokenize()
             .expect("async lambda source should lex");
-        let module = Parser::new(tokens, HashSet::new())
+        let module = Parser::new(tokens)
             .parse()
             .expect("async lambda source should parse");
         let Item::Function(function) = &module.items[0] else {

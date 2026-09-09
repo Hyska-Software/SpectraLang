@@ -11,7 +11,7 @@ use crate::{
     span::{Location, Span},
     token::{Keyword, Token, TokenKind},
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 
 /// Hard cap on parser recursion depth across the main descent points
@@ -51,7 +51,7 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>, _enabled_features: HashSet<String>) -> Self {
+    pub fn new(tokens: Vec<Token>) -> Self {
         let eof_sentinel = Token::new(
             TokenKind::EndOfFile,
             Span::new(0, 0, Location::new(1, 1), Location::new(1, 1)),
@@ -163,8 +163,7 @@ impl Parser {
     }
 
     pub(super) fn check_function_keyword(&self) -> bool {
-        // `fn` is an accepted alias of the canonical `func` keyword.
-        self.check_keyword(Keyword::Func) || self.check_keyword(Keyword::Fn)
+        self.check_keyword(Keyword::Func)
     }
 
     pub(super) fn consume_function_keyword(&mut self, error_message: &str) -> Result<Span, ()> {
@@ -180,8 +179,7 @@ impl Parser {
     }
 
     pub(super) fn consume_record_keyword(&mut self, error_message: &str) -> Result<Span, ()> {
-        // `struct` is an accepted alias of the canonical `record` keyword.
-        if self.check_keyword(Keyword::Record) || self.check_keyword(Keyword::Struct) {
+        if self.check_keyword(Keyword::Record) {
             let span = self.current().span;
             self.advance();
             Ok(span)
@@ -264,7 +262,7 @@ impl Parser {
                     "Remove the semicolon and end the statement with a line break instead."
                         .to_string(),
                 ),
-                Some("legacy semicolon terminator".to_string()),
+                Some("semicolon terminator".to_string()),
             );
             self.advance();
             return Err(());
@@ -438,9 +436,7 @@ impl Parser {
                 | TokenKind::Keyword(Keyword::From)
                 | TokenKind::Keyword(Keyword::Async)
                 | TokenKind::Keyword(Keyword::Func)
-                | TokenKind::Keyword(Keyword::Fn)
                 | TokenKind::Keyword(Keyword::Record)
-                | TokenKind::Keyword(Keyword::Struct)
                 | TokenKind::Keyword(Keyword::Public)
                 | TokenKind::Keyword(Keyword::Class)
                 | TokenKind::Keyword(Keyword::Trait)
@@ -532,11 +528,8 @@ impl Parser {
                     | Keyword::Break
                     | Keyword::Continue
                     | Keyword::Func
-                    | Keyword::Fn
                     | Keyword::Record
-                    | Keyword::Struct
                     | Keyword::Enum
-                    | Keyword::Impl
                     | Keyword::Trait
                     | Keyword::Class
                     | Keyword::Module
@@ -564,11 +557,8 @@ impl Parser {
                 | TokenKind::Keyword(Keyword::From)
                 | TokenKind::Keyword(Keyword::Case)
                 | TokenKind::Keyword(Keyword::Func)
-                | TokenKind::Keyword(Keyword::Fn)
                 | TokenKind::Keyword(Keyword::Record)
-                | TokenKind::Keyword(Keyword::Struct)
                 | TokenKind::Keyword(Keyword::Enum)
-                | TokenKind::Keyword(Keyword::Trait)
                 | TokenKind::Keyword(Keyword::Impl)
                 | TokenKind::Keyword(Keyword::Class)
                 | TokenKind::Keyword(Keyword::Module)
@@ -763,17 +753,11 @@ mod tests {
     use super::*;
     use crate::ast::Module;
     use crate::lexer::Lexer;
-    use std::collections::HashSet;
-
-    fn parse_with_features(source: &str, features: &[&str]) -> Result<Module, Vec<ParseError>> {
+    fn parse_source(source: &str) -> Result<Module, Vec<ParseError>> {
         let tokens = Lexer::new(source)
             .tokenize()
             .expect("lexer should not fail in parser tests");
-        let mut feature_set = HashSet::new();
-        for feature in features {
-            feature_set.insert((*feature).to_string());
-        }
-        Parser::new(tokens, feature_set).parse()
+        Parser::new(tokens).parse()
     }
 
     #[test]
@@ -788,8 +772,7 @@ mod tests {
             }
         "#;
 
-        assert!(parse_with_features(source, &[]).is_ok());
-        assert!(parse_with_features(source, &["loop"]).is_ok());
+        assert!(parse_source(source).is_ok());
     }
 
     #[test]
@@ -802,8 +785,7 @@ mod tests {
             }
         "#;
 
-        assert!(parse_with_features(source, &[]).is_ok());
-        assert!(parse_with_features(source, &["legacy-syntax"]).is_ok());
+        assert!(parse_source(source).is_ok());
     }
 
     #[test]
@@ -817,7 +799,7 @@ mod tests {
             public from std.io import println
         "#;
 
-        let module = parse_with_features(source, &[]).expect("imports should parse");
+        let module = parse_source(source).expect("imports should parse");
         let imports: Vec<_> = module
             .items
             .iter()
@@ -879,7 +861,7 @@ mod tests {
             } from std.math
         "#;
 
-        let module = parse_with_features(source, &[]).expect("brace imports should parse");
+        let module = parse_source(source).expect("brace imports should parse");
         let imports: Vec<_> = module
             .items
             .iter()
@@ -956,7 +938,7 @@ mod tests {
         "#;
 
         let module =
-            parse_with_features(source, &[]).expect("match expressions should parse");
+            parse_source(source).expect("match expressions should parse");
 
         let mut spans = Vec::new();
         for item in &module.items {
@@ -1016,7 +998,7 @@ mod tests {
             }
         "#;
 
-        let module = parse_with_features(source, &[]).expect("async frontend syntax should parse");
+        let module = parse_source(source).expect("async frontend syntax should parse");
         let crate::ast::Item::Function(function) = &module.items[0] else {
             panic!("expected async function item");
         };
@@ -1059,7 +1041,7 @@ mod tests {
             }
         "#;
         let errors =
-            parse_with_features(misplaced_async, &[]).expect_err("misplaced async should fail");
+            parse_source(misplaced_async).expect_err("misplaced async should fail");
         assert!(errors.iter().any(|error| {
             error.code.as_deref() == Some("P005")
                 && error
@@ -1075,7 +1057,7 @@ mod tests {
                 let value = await work()
             }
         "#;
-        let errors = parse_with_features(await_outside_async, &[])
+        let errors = parse_source(await_outside_async)
             .expect_err("await outside async should fail");
         assert!(errors.iter().any(|error| {
             error.code.as_deref() == Some("P006")
@@ -1093,7 +1075,7 @@ mod tests {
             }
         "#;
         let module =
-            parse_with_features(await_inside_async, &[]).expect("await inside async parses");
+            parse_source(await_inside_async).expect("await inside async parses");
         let crate::ast::Item::Function(function) = &module.items[0] else {
             panic!("expected function");
         };
@@ -1112,14 +1094,14 @@ mod tests {
             module demo
             class User { }
         "#;
-        let errors = parse_with_features(source, &[]).expect_err("class must be rejected");
+        let errors = parse_source(source).expect_err("class must be rejected");
         assert!(errors.iter().any(|error| {
             error.code.as_deref() == Some("P007")
                 && error.message.contains("reserved")
                 && error
                     .hint
                     .as_deref()
-                    .is_some_and(|hint| hint.contains("struct"))
+                    .is_some_and(|hint| hint.contains("record"))
         }));
     }
 
@@ -1135,7 +1117,7 @@ mod tests {
                 return 0
             }
         "#;
-        let errors = parse_with_features(source, &[]).expect_err("`for x of` must fail");
+        let errors = parse_source(source).expect_err("`for x of` must fail");
         assert!(errors.iter().any(|error| {
             error.code.as_deref() == Some("P016")
                 && error.hint.as_deref().is_some_and(|hint| hint.contains("for x in"))
@@ -1155,7 +1137,7 @@ mod tests {
             }
         "#;
         let errors =
-            parse_with_features(source, &[]).expect_err("missing `in` must fail");
+            parse_source(source).expect_err("missing `in` must fail");
         assert!(errors
             .iter()
             .any(|error| error.code.as_deref() == Some("P017")));
@@ -1171,7 +1153,7 @@ mod tests {
                 return 0
             }
         "#;
-        let errors = parse_with_features(source, &[])
+        let errors = parse_source(source)
             .expect_err("assignment to a literal expression must fail");
         assert!(errors.iter().any(|error| {
             error.code.as_deref() == Some("P018")
@@ -1200,46 +1182,15 @@ mod tests {
     }
 
     #[test]
-    fn struct_keyword_is_an_alias_of_record() {
-        let record_source = r#"
-            module demo
-
-            record Point {
-                x: int,
-                y: int,
-            }
-
-            func main() returns int {
-                let p = Point { x: 1, y: 2 }
-                return p.x
-            }
-        "#;
-        // `record` and `struct` have the same byte length, so spans match
-        // exactly and the ASTs must be identical.
-        let struct_source = record_source.replace("record Point", "struct Point");
-
-        let from_record = parse_with_features(record_source, &[]).expect("record parses");
-        let from_struct =
-            parse_with_features(struct_source.as_str(), &[]).expect("struct alias parses");
-
-        assert_eq!(format!("{from_record:?}"), format!("{from_struct:?}"));
-    }
-
-    #[test]
-    fn fn_keyword_is_an_alias_of_func() {
-        let source = r#"
-            module demo
-
-            public fn main() returns int {
-                return 0
-            }
-        "#;
-
-        let module = parse_with_features(source, &[]).expect("fn alias parses");
-        let crate::ast::Item::Function(function) = &module.items[0] else {
-            panic!("expected function item from `fn` alias");
-        };
-        assert_eq!(function.name, "main");
+    fn legacy_alias_keywords_are_rejected() {
+        for source in [
+            "module demo\npublic struct Point { x: int }\nfunc main() returns int { return 0 }\n",
+            "module demo\npublic fn main() returns int { return 0 }\n",
+            "module demo\npub func main() returns int { return 0 }\n",
+        ] {
+            let errors = parse_source(source).expect_err("legacy alias must be rejected");
+            assert!(!errors.is_empty(), "expected errors for {source:?}");
+        }
     }
 
     #[test]
@@ -1264,7 +1215,7 @@ mod tests {
             }
         "#;
 
-        let module = parse_with_features(statement_position, &[])
+        let module = parse_source(statement_position)
             .expect("unless parses as a statement");
         let crate::ast::Item::Function(function) = &module.items[0] else {
             panic!("expected function item");
@@ -1275,7 +1226,7 @@ mod tests {
         };
         assert!(matches!(expr.kind, crate::ast::ExpressionKind::Unless { .. }));
 
-        let module = parse_with_features(expression_position, &[])
+        let module = parse_source(expression_position)
             .expect("unless parses in expression position");
         let crate::ast::Item::Function(function) = &module.items[0] else {
             panic!("expected function item");
@@ -1316,7 +1267,7 @@ mod tests {
             }
         "#;
 
-        let errors = parse_with_features(source, &[]).expect_err("unless must reject elif");
+        let errors = parse_source(source).expect_err("unless must reject elif");
         assert!(
             errors
                 .iter()
@@ -1335,7 +1286,7 @@ mod tests {
             }
         "#;
 
-        let module = parse_with_features(source, &[]).expect("range expressions parse");
+        let module = parse_source(source).expect("range expressions parse");
         let crate::ast::Item::Function(function) = &module.items[0] else {
             panic!("expected function item");
         };
@@ -1386,7 +1337,7 @@ mod tests {
         std::thread::Builder::new()
             .stack_size(256 * 1024 * 1024)
             .spawn(move || {
-                let errors = parse_with_features(&source, &[])
+                let errors = parse_source(&source)
                     .expect_err("nesting beyond the limit must fail cleanly");
                 assert!(
                     errors

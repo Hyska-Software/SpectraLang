@@ -294,7 +294,6 @@ pub(crate) fn lookup_std_host_group_tensor_ml(module: &str, function: &str) -> O
             ("ml", "distributed_train_dataset_tcp") => {
                 Some(host_int("spectra.std.ml.distributed_train_dataset_tcp"))
             }
-            ("ml", "onnx_export") => Some(host_string("spectra.std.ml.onnx_export")),
             ("ml", "onnx_export_weights") => {
                 Some(host_string("spectra.std.ml.onnx_export_weights"))
             }
@@ -326,7 +325,6 @@ pub(crate) fn lookup_std_host_group_tensor_ml(module: &str, function: &str) -> O
             ("ml", "train_bpe") => Some(host_int("spectra.std.ml.train_bpe")),
             ("ml", "train_wordpiece") => Some(host_int("spectra.std.ml.train_wordpiece")),
             ("ml", "tokenizer_vocab") => Some(host_string("spectra.std.ml.tokenizer_vocab")),
-            ("ml", "text_embed") => Some(host_int("spectra.std.ml.text_embed")),
             ("ml", "text_embed_model_session") => {
                 Some(host_int("spectra.std.ml.text_embed_model_session"))
             }
@@ -382,7 +380,6 @@ pub(crate) fn lookup_std_host_group_tensor_ml(module: &str, function: &str) -> O
             }),
             ("ml", "artifact_free") => Some(host_void("spectra.std.ml.artifact_free")),
             // ── std.concurrent ───────────────────────────────────────────
-            ("concurrent", "task_spawn") => Some(host_int("spectra.std.concurrent.task_spawn")),
             ("concurrent", "task_join") => Some(host_int("spectra.std.concurrent.task_join")),
             ("concurrent", "task_spawn_fn") => {
                 Some(host_int("spectra.std.concurrent.task_spawn_fn"))

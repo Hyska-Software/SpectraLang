@@ -379,9 +379,9 @@ pub extern "C" fn spectra_rt_host_invoke_batch(
 }
 
 /// Invokes a bounded sequence of cache-aware generic hostcalls in source
-/// order. Unlike the legacy batch entry point, this new path wraps the whole
-/// sequence in one panic boundary. It stops at the first non-success status
-/// or panic and leaves all following descriptors unobserved.
+/// order. This path wraps the whole sequence in one panic boundary. It stops
+/// at the first non-success status or panic and leaves all following
+/// descriptors unobserved.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn spectra_rt_host_invoke_cached_batch(
@@ -528,7 +528,7 @@ pub extern "C" fn spectra_rt_host_clear() {
 #[no_mangle]
 pub extern "C" fn spectra_rt_startup() {
     initialize();
-    crate::register_standard_library();
+    crate::register();
 }
 
 /// Startup for AOT executables with argument forwarding.
@@ -543,7 +543,7 @@ pub extern "C" fn spectra_rt_startup() {
 #[no_mangle]
 pub extern "C" fn spectra_rt_startup_with_args(argc: i32, argv: *const *const u8) {
     initialize();
-    crate::register_standard_library();
+    crate::register();
     if argv.is_null() || argc <= 0 {
         return;
     }

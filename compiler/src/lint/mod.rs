@@ -12,9 +12,6 @@ pub enum LintRule {
     UnreachableCode,
     Shadowing,
     NarrowingCast,
-    DeprecatedTaskSpawn,
-    DeprecatedTextEmbed,
-    DeprecatedOnnxExport,
 }
 
 impl LintRule {
@@ -24,9 +21,6 @@ impl LintRule {
             LintRule::UnreachableCode => "unreachable-code",
             LintRule::Shadowing => "shadowing",
             LintRule::NarrowingCast => "narrowing-cast",
-            LintRule::DeprecatedTaskSpawn => "deprecated-task-spawn",
-            LintRule::DeprecatedTextEmbed => "deprecated-text-embed",
-            LintRule::DeprecatedOnnxExport => "deprecated-onnx-export",
         }
     }
 
@@ -36,9 +30,6 @@ impl LintRule {
             LintRule::UnreachableCode => "unreachable code",
             LintRule::Shadowing => "shadowed binding",
             LintRule::NarrowingCast => "narrowing numeric cast",
-            LintRule::DeprecatedTaskSpawn => "deprecated concurrent.task_spawn call",
-            LintRule::DeprecatedTextEmbed => "deprecated ml.text_embed hashing-baseline call",
-            LintRule::DeprecatedOnnxExport => "deprecated ml.onnx_export fixture-template call",
         }
     }
 
@@ -48,9 +39,6 @@ impl LintRule {
             LintRule::UnreachableCode,
             LintRule::Shadowing,
             LintRule::NarrowingCast,
-            LintRule::DeprecatedTaskSpawn,
-            LintRule::DeprecatedTextEmbed,
-            LintRule::DeprecatedOnnxExport,
         ];
         ALL
     }
@@ -61,9 +49,6 @@ impl LintRule {
             "unreachable-code" | "unreachable_code" => Some(LintRule::UnreachableCode),
             "shadowing" => Some(LintRule::Shadowing),
             "narrowing-cast" | "narrowing_cast" => Some(LintRule::NarrowingCast),
-            "deprecated-task-spawn" | "deprecated_task_spawn" => Some(LintRule::DeprecatedTaskSpawn),
-            "deprecated-text-embed" | "deprecated_text_embed" => Some(LintRule::DeprecatedTextEmbed),
-            "deprecated-onnx-export" | "deprecated_onnx_export" => Some(LintRule::DeprecatedOnnxExport),
             _ => None,
         }
     }
@@ -73,9 +58,6 @@ impl LintRule {
     pub fn stable_error_code(&self) -> Option<&'static str> {
         match self {
             LintRule::NarrowingCast => Some("E035"),
-            LintRule::DeprecatedTaskSpawn => Some("E036"),
-            LintRule::DeprecatedTextEmbed => Some("E037"),
-            LintRule::DeprecatedOnnxExport => Some("E038"),
             LintRule::UnusedBinding | LintRule::UnreachableCode | LintRule::Shadowing => None,
         }
     }
@@ -442,15 +424,6 @@ impl<'a> LintRunner<'a> {
                 self.visit_expression(operand);
             }
             ExpressionKind::Call { callee, arguments } => {
-                // BEGIN deprecated-task-spawn lint (DeprecateSpawn)
-                self.check_deprecated_task_spawn(callee);
-                // END deprecated-task-spawn lint (DeprecateSpawn)
-                // BEGIN deprecated-text-embed lint (ML)
-                self.check_deprecated_text_embed(callee);
-                // END deprecated-text-embed lint (ML)
-                // BEGIN deprecated-onnx-export lint (ML)
-                self.check_deprecated_onnx_export(callee);
-                // END deprecated-onnx-export lint (ML)
                 self.visit_expression(callee);
                 for arg in arguments {
                     self.visit_expression(arg);
@@ -536,15 +509,6 @@ impl<'a> LintRunner<'a> {
             ExpressionKind::MethodCall {
                 object, arguments, ..
             } => {
-                // BEGIN deprecated-task-spawn lint (DeprecateSpawn)
-                self.check_deprecated_task_spawn(expression);
-                // END deprecated-task-spawn lint (DeprecateSpawn)
-                // BEGIN deprecated-text-embed lint (ML)
-                self.check_deprecated_text_embed(expression);
-                // END deprecated-text-embed lint (ML)
-                // BEGIN deprecated-onnx-export lint (ML)
-                self.check_deprecated_onnx_export(expression);
-                // END deprecated-onnx-export lint (ML)
                 self.visit_expression(object);
                 for argument in arguments {
                     self.visit_expression(argument);
@@ -776,8 +740,6 @@ fn stmt_has_break(stmt: &Statement) -> bool {
 #[path = "../semantic/semantic_cast_lint.rs"]
 mod semantic_cast_lint;
 
-#[path = "../semantic/semantic_deprecated_spawn_lint.rs"]
-mod semantic_deprecated_spawn_lint;
 
 use crate::ast::TypeAnnotation;
 use semantic_cast_lint::ExactNum;

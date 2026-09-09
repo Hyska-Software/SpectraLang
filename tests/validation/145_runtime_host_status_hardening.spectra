@@ -1,9 +1,9 @@
 module runtime_host_status_hardening
 
-import std.fs as fs
-import std.error as error
 import std.collections as collections
-import std.compat.collections as compat
+import std.error as error
+import std.fs as fs
+import std.option as option
 
 public func main() returns int {
     let invalid_read = fs.fs_read("")
@@ -23,24 +23,18 @@ public func main() returns int {
         return 2
     }
 
-    let released = collections.list_new()
-    collections.list_free(released)
-    if compat.list_get(released, 0) != -1 {
+    let values = collections.list_new()
+    if option.is_some(collections.list_get(values, -1)) {
         return 3
     }
-    if compat.list_pop(released) != -1 {
+    if option.is_some(collections.list_get(values, 0)) {
         return 4
     }
-    if compat.list_remove_at(released, 0) != -1 {
+    if option.is_some(collections.list_pop(values)) {
         return 5
     }
-
-    let values = collections.list_new()
-    if compat.list_get(values, -1) != -1 {
+    if option.is_some(collections.list_remove_at(values, 0)) {
         return 6
-    }
-    if compat.list_get(values, 0) != -1 {
-        return 7
     }
     collections.list_free(values)
 

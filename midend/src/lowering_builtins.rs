@@ -33,4 +33,3 @@ pub(crate) fn builtin_result_ir_type(ok_type: IRType) -> IRType {
         ],
     }
 }
-

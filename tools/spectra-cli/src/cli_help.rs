@@ -20,7 +20,6 @@ fn print_global_help() {
     println!();
     println!("GLOBAL OPTIONS:");
     println!("    -h, --help             Print this help message");
-    println!("    --list-experimental    Report active experimental language gates");
     println!();
     print_compilation_options(None);
     println!();
@@ -36,11 +35,8 @@ fn print_global_help() {
     println!("    spectralang package build --root .");
     println!("    spectralang package add math --path ../math");
     println!("    spectralang db migrate --database app.sqlite --migrations-dir migrations");
-    println!("    spectralang --list-experimental");
     println!("    spectralang fmt src/");
     println!("    spectralang fmt --stdin < file.spectra");
-    println!();
-    print_experimental_features();
     println!();
     println!("EXIT CODES:");
     println!("    0   Success");
@@ -86,8 +82,6 @@ fn print_build_help(command: BuildCommand) {
             println!("    spectralang bench --async --bench-json target/async-bench.json");
         }
     }
-    println!();
-    println!("Use 'spectralang --list-experimental' to see active experimental language gates.");
 }
 
 fn print_repl_help() {
@@ -107,10 +101,6 @@ fn print_repl_help() {
     println!("    --no-optimize, -O0     Disable all optimizations");
     println!("    -O1/-O2/-O3            Set optimization level");
     println!("    --run, -r              Automatically run modules after compiling");
-    println!("    --enable-experimental <feature>");
-    println!("                           Compatibility no-op for older scripts (no active experimental language gates)");
-    println!();
-    println!("Interactive commands:");
     println!("    <declaration>          Append a func/record/enum/import/... to the session buffer");
     println!("                           (validated by recompiling the whole buffer; rejected");
     println!("                           input never changes the buffer)");
@@ -251,7 +241,7 @@ fn print_format_help() {
     println!("    --stdout             Write the formatted result to stdout instead of files (single input file)");
     println!("    --explain[=json]     Show diffs (text by default, json for machine-readable) and implies --check");
     println!("    --stats              Emit a JSON summary of the formatter run");
-    println!("    --config <path>      Load formatter configuration from an explicit Spectra.toml");
+    println!("    --config <path>      Load formatter configuration from an explicit spectra.toml");
     println!("    -h, --help          Show this help text");
     println!();
     println!("Examples:");
@@ -279,8 +269,6 @@ fn print_lint_help() {
     println!("    --summary           Print pipeline summaries (semantic + lint)");
     println!("    --verbose, -v       Print additional plan diagnostics");
     println!("    --json              Emit diagnostics as JSON");
-    println!("    --enable-experimental <feature>");
-    println!("                        Compatibility no-op for older scripts");
     println!(
         "    -O0/-O1/-O2/-O3     Set optimization level (ignored by lint but accepted for parity)"
     );
@@ -314,8 +302,6 @@ fn print_compilation_options(command: Option<BuildCommand>) {
             println!("    --run, -r              Execute the program with the JIT after compiling");
         }
     }
-    println!("    --enable-experimental <feature>");
-    println!("                           Compatibility no-op for older scripts (no active experimental language gates)");
     if matches!(command, Some(BuildCommand::Lint)) {
         println!("    --lint                 Redundant; 'lint' always enables lint rules");
     } else {
@@ -335,15 +321,6 @@ fn print_compilation_options(command: Option<BuildCommand>) {
     );
 }
 
-fn print_experimental_features() {
-    println!("Experimental language features: none");
-    if !KNOWN_EXPERIMENTAL_FEATURES.is_empty() {
-        println!("Enable with --enable-experimental <feature>:");
-        for feature in KNOWN_EXPERIMENTAL_FEATURES {
-            println!("    - {}", feature);
-        }
-    }
-}
 
 fn usage_error(message: &str) -> CliError {
     let trimmed = message.trim_end();

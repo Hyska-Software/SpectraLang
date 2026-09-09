@@ -15,7 +15,7 @@ fn main() {
         use spectra_runtime::ffi::{
             lookup_host_function, SpectraHostCallContext, HOST_STATUS_SUCCESS,
         };
-        spectra_runtime::register_standard_library();
+        spectra_runtime::register();
         let call = |name: &str, args: &[i64]| -> Option<i64> {
             let func = lookup_host_function(name)?;
             let mut result = [0i64; 1];

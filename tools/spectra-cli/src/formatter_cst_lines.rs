@@ -311,10 +311,8 @@
                     | Keyword::Impl
                     | Keyword::Trait
                     | Keyword::Record
-                    | Keyword::Struct
                     | Keyword::Enum
                     | Keyword::Func
-                    | Keyword::Fn
                     | Keyword::Async
             )
         ) {
@@ -338,7 +336,7 @@
             None
                 | Some(TokenKind::Symbol('=' | ',' | ':' | '(' | '['))
                 | Some(TokenKind::Keyword(Keyword::Return | Keyword::Then))
-                | Some(TokenKind::Keyword(Keyword::Record | Keyword::Struct | Keyword::Enum))
+                | Some(TokenKind::Keyword(Keyword::Record | Keyword::Enum))
         )
     }
 
@@ -414,7 +412,6 @@
         matches!(
             keyword,
             Keyword::Func
-                | Keyword::Fn
                 | Keyword::Let
                 | Keyword::Import
                 | Keyword::From
@@ -432,13 +429,11 @@
                 | Keyword::Return
                 | Keyword::Returns
                 | Keyword::Record
-                | Keyword::Struct
                 | Keyword::Enum
                 | Keyword::Impl
                 | Keyword::Trait
                 | Keyword::Class
                 | Keyword::Public
-                | Keyword::Pub
                 | Keyword::Mut
                 | Keyword::Async
                 | Keyword::AndWord

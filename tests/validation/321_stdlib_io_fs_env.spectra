@@ -1,11 +1,10 @@
 module stdlib_io_fs_env
 
 import std.env as env
-import std.option as option
-import std.compat.env as compat_env
 import std.error as error
 import std.fs as fs
 import std.io as io
+import std.option as option
 
 public func main() returns int {
     io.print("stdlib-io")
@@ -14,7 +13,7 @@ public func main() returns int {
     io.eprintln("-eprintln")
     io.flush()
 
-    let path = "target/stdlib-core-hunt/fs/roundtrip.txt"
+    let path         = "target/stdlib-core-hunt/fs/roundtrip.txt"
     let write_result = fs.fs_write(path, "one")
     if let Result::Ok(wrote) = write_result {
         if wrote != true {
@@ -118,10 +117,12 @@ public func main() returns int {
     if option.is_some(missing_arg) {
         return 17
     }
-    if compat_env.env_get("__SPECTRALANG_STDLIB_CORE_HUNT_MISSING__") != "" {
+    let missing_compat = env.env_get("__SPECTRALANG_STDLIB_CORE_HUNT_MISSING__")
+    if option.is_some(missing_compat) {
         return 18
     }
-    if compat_env.env_arg(999999) != "" {
+    let missing_compat_arg = env.env_arg(999999)
+    if option.is_some(missing_compat_arg) {
         return 19
     }
     return 0

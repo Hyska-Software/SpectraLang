@@ -77,7 +77,7 @@ pub fn analyze_document(
     package_name: Option<String>,
 ) -> DocumentAnalysis {
     let mut loader = ModuleLoader::new();
-    let parse_outcome = loader.parse_module(filename, source, &options.experimental_features);
+    let parse_outcome = loader.parse_module(filename, source);
 
     let mut analysis = DocumentAnalysis::default();
 

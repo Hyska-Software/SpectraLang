@@ -4,9 +4,9 @@ import std.concurrent as concurrent
 
 public func main() returns int {
     concurrent.reset()
-    let first = concurrent.task_spawn(17)
-    let second = concurrent.task_spawn(25)
-    let total = concurrent.task_join(first) + concurrent.task_join(second)
+    let first  = concurrent.task_spawn_fn( | value: int | { value}, 17)
+    let second = concurrent.task_spawn_fn( | value: int | { value}, 25)
+    let total  = concurrent.task_join(first) + concurrent.task_join(second)
 
     if total != 42 {
         return 1

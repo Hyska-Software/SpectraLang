@@ -28,7 +28,7 @@ impl Parser {
             }
             crate::token::TokenKind::Keyword(Keyword::Public) => {
                 self.advance(); // consume the visibility modifier
-                                // `pub import ...` is a re-export: imported symbols are exposed to callers.
+                                // `public import ...` is a re-export: imported symbols are exposed to callers.
                 if matches!(
                     &self.current().kind,
                     crate::token::TokenKind::Keyword(Keyword::Import)
@@ -74,18 +74,13 @@ impl Parser {
                 }
                 self.parse_item_with_visibility(Visibility::Internal, attributes)
             }
-            crate::token::TokenKind::Keyword(Keyword::Func)
-            | crate::token::TokenKind::Keyword(Keyword::Fn) => {
-                // `fn` is a surface alias of the canonical `func`.
+            crate::token::TokenKind::Keyword(Keyword::Func) => {
                 self.parse_item_with_visibility(Visibility::Private, attributes)
             }
             crate::token::TokenKind::Keyword(Keyword::Async) => {
                 self.parse_item_with_visibility(Visibility::Private, attributes)
             }
-            crate::token::TokenKind::Keyword(Keyword::Record)
-            | crate::token::TokenKind::Keyword(Keyword::Struct) => {
-                // `struct` is a surface alias of the canonical `record`;
-                // both produce the identical AST item.
+            crate::token::TokenKind::Keyword(Keyword::Record) => {
                 self.parse_item_with_visibility(Visibility::Private, attributes)
             }
             crate::token::TokenKind::Keyword(Keyword::Enum) => {
@@ -147,14 +142,14 @@ impl Parser {
                     "P007",
                     "Class declarations are reserved and are not supported in the stable language",
                     self.current().span,
-                    Some("Use `struct` with `impl` and `trait`; class layout and inheritance are deferred.".to_string()),
+                    Some("Use `record` with `impl` and `trait`; class layout and inheritance are deferred.".to_string()),
                     Some("`class` is reserved for a future language contract".to_string()),
                 );
                 self.consume_reserved_class_item();
                 Err(())
             }
             _ => {
-                self.error("Expected item declaration (import, fn, etc.)");
+                self.error("Expected item declaration (import, func, etc.)");
                 Err(())
             }
         }
@@ -237,8 +232,7 @@ impl Parser {
         attributes: Vec<Attribute>,
     ) -> Result<Item, ()> {
         match &self.current().kind {
-            crate::token::TokenKind::Keyword(Keyword::Func)
-            | crate::token::TokenKind::Keyword(Keyword::Fn) => {
+            crate::token::TokenKind::Keyword(Keyword::Func) => {
                 let function = self.parse_function(visibility, attributes)?;
                 Ok(Item::Function(function))
             }
@@ -246,8 +240,7 @@ impl Parser {
                 let function = self.parse_function(visibility, attributes)?;
                 Ok(Item::Function(function))
             }
-            crate::token::TokenKind::Keyword(Keyword::Record)
-            | crate::token::TokenKind::Keyword(Keyword::Struct) => {
+            crate::token::TokenKind::Keyword(Keyword::Record) => {
                 let struct_item = self.parse_struct(visibility, attributes)?;
                 Ok(Item::Struct(struct_item))
             }
@@ -311,14 +304,14 @@ impl Parser {
                     "P007",
                     "Class declarations are reserved and are not supported in the stable language",
                     self.current().span,
-                    Some("Use `struct` with `impl` and `trait`; class layout and inheritance are deferred.".to_string()),
+                    Some("Use `record` with `impl` and `trait`; class layout and inheritance are deferred.".to_string()),
                     Some("`class` is reserved for a future language contract".to_string()),
                 );
                 self.consume_reserved_class_item();
                 Err(())
             }
             _ => {
-                self.error("Expected function, struct, enum, or impl declaration");
+                self.error("Expected function, record, enum, or impl declaration");
                 Err(())
             }
         }

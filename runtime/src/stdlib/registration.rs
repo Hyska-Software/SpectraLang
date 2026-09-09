@@ -511,7 +511,6 @@ pub(crate) fn register_collections() {
     register_host_function(LIST_LEN, std_list_len);
     register_host_function(LIST_GET, std_list_get_option);
     register_host_function(LIST_GET_OPTION, std_list_get_option);
-    register_host_function(LIST_GET_COMPAT, std_list_get);
     register_host_function(LIST_SET, std_list_set);
     register_host_function(LIST_CONTAINS, std_list_contains);
     register_host_function(LIST_CLEAR, std_list_clear);
@@ -521,12 +520,9 @@ pub(crate) fn register_collections() {
     register_host_function(LIST_POP_FRONT, std_list_pop_front_option);
     register_host_function(LIST_POP_OPTION, std_list_pop_option);
     register_host_function(LIST_POP_FRONT_OPTION, std_list_pop_front_option);
-    register_host_function(LIST_POP_COMPAT, std_list_pop);
-    register_host_function(LIST_POP_FRONT_COMPAT, std_list_pop_front);
     register_host_function(LIST_INSERT_AT, std_list_insert_at);
     register_host_function(LIST_REMOVE_AT, std_list_remove_at_option);
     register_host_function(LIST_REMOVE_AT_OPTION, std_list_remove_at_option);
-    register_host_function(LIST_REMOVE_AT_COMPAT, std_list_remove_at);
     register_host_function(LIST_INDEX_OF, std_list_index_of);
     register_host_function(LIST_SORT, std_list_sort);
     register_host_function(LIST_MAP, std_list_map);
@@ -776,7 +772,6 @@ pub(crate) fn register_ml() {
         ML_DISTRIBUTED_TRAIN_DATASET_TCP,
         std_ml_distributed_train_dataset_tcp,
     );
-    register_host_function(ML_ONNX_EXPORT, std_ml_onnx_export);
     register_host_function(ML_ONNX_EXPORT_WEIGHTS, std_ml_onnx_export_weights);
     register_host_function(ML_ONNX_IMPORT_SUMMARY, std_ml_onnx_import_summary);
     register_host_function(ML_ONNX_VALIDATE, std_ml_onnx_validate);
@@ -803,7 +798,6 @@ pub(crate) fn register_ml() {
     register_host_function(ML_TOKENIZER_LOAD, std_ml_tokenizer_load);
     register_host_function(ML_TOKENIZER_ENCODE, std_ml_tokenizer_encode);
     register_host_function(ML_TOKENIZER_DECODE, std_ml_tokenizer_decode);
-    register_host_function(ML_TEXT_EMBED, std_ml_text_embed);
     register_host_function(ML_EMBEDDING_LOAD, std_ml_embedding_load);
     register_host_function(ML_VECTOR_INDEX_NEW, std_ml_vector_index_new);
     register_host_function(ML_VECTOR_INDEX_INSERT, std_ml_vector_index_insert);
@@ -841,10 +835,8 @@ pub(crate) fn register_ml() {
 }
 
 pub(crate) fn register_concurrent() {
-    register_host_function(CONCURRENT_TASK_SPAWN, std_concurrent_task_spawn);
     register_host_function(CONCURRENT_TASK_SPAWN_FN, std_concurrent_task_spawn_fn);
     register_host_function(CONCURRENT_TASK_JOIN, std_concurrent_task_join);
-    register_host_function(CONCURRENT_TASK_SPAWN_JOIN, std_concurrent_task_spawn_join);
     register_host_function(CONCURRENT_TASK_SPAWN_BATCH, std_concurrent_task_spawn_batch);
     register_host_function(
         CONCURRENT_TASK_JOIN_BATCH_SUM,
@@ -1020,11 +1012,6 @@ pub(crate) fn register_fs() {
     register_host_function(FS_RENAME, std_fs_rename);
     register_host_function(FS_COPY, std_fs_copy);
     register_host_function(FS_READ_DIR, std_fs_read_dir);
-    register_host_function(FS_READ_COMPAT, std_fs_compat_read);
-    register_host_function(FS_WRITE_COMPAT, std_fs_compat_write);
-    register_host_function(FS_APPEND_COMPAT, std_fs_compat_append);
-    register_host_function(FS_EXISTS_COMPAT, std_fs_compat_exists);
-    register_host_function(FS_REMOVE_COMPAT, std_fs_compat_remove);
 }
 
 pub(crate) fn register_env() {
@@ -1034,8 +1021,6 @@ pub(crate) fn register_env() {
     register_host_function(ENV_ARGS_COUNT, std_env_args_count);
     register_host_function(ENV_ARG, std_env_arg_option);
     register_host_function(ENV_ARG_OPTION, std_env_arg_option);
-    register_host_function(ENV_GET_COMPAT, std_env_get);
-    register_host_function(ENV_ARG_COMPAT, std_env_arg);
 }
 
 // ── StatsEmbed ───────────────────────────────────────────────────────────────

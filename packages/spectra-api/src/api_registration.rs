@@ -1,6 +1,6 @@
 pub fn register() -> usize {
     spectra_runtime::initialize();
-    spectra_runtime::register_standard_library();
+    spectra_runtime::register();
     let mut inserted = 0;
     for spec in HOST_CALLS {
         if register_host_function(spec.name, spec.function) {

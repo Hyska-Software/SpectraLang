@@ -388,17 +388,26 @@ mod tests {
     #[test]
     fn client_reports_connection_failure() {
         let _guard = CLIENT_TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind unused port");
-        let addr = listener.local_addr().expect("local addr");
-        drop(listener);
-        let client = HttpClient::new(ClientConfig {
-            timeout: Duration::from_millis(50),
-            ..local_client_config()
-        });
-        let err = client
-            .get(&format!("http://{addr}/missing"))
-            .expect_err("connection failure");
-        assert_eq!(err.kind, ClientErrorKind::ConnectionFailed);
+        // The dropped listener's port can be grabbed by another test server
+        // between drop and connect; retry with fresh ports so a stolen port
+        // (successful connect) never fails the test.
+        for _ in 0..10 {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind unused port");
+            let addr = listener.local_addr().expect("local addr");
+            drop(listener);
+            let client = HttpClient::new(ClientConfig {
+                timeout: Duration::from_millis(50),
+                ..local_client_config()
+            });
+            match client.get(&format!("http://{addr}/missing")) {
+                Err(err) => {
+                    assert_eq!(err.kind, ClientErrorKind::ConnectionFailed);
+                    return;
+                }
+                Ok(_) => continue,
+            }
+        }
+        panic!("could not observe a refused connection in 10 attempts");
     }
 
     #[test]
@@ -437,7 +446,9 @@ mod tests {
         let worker = thread::spawn(move || {
             client.request_nonblocking(ClientRequest::new("GET", url), worker_token)
         });
-        thread::sleep(Duration::from_millis(10));
+        // Cancel promptly: /slow answers after 120ms, so a flag set here always
+        // lands during the readiness wait. No fixed sleep: under load a sleep
+        // can overshoot the response and let the request complete first.
         token.store(true, Ordering::Release);
         let result = worker.join().expect("nonblocking client worker");
         let error = result.expect_err("cancelled request must not complete");

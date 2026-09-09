@@ -3,8 +3,7 @@
 //! Inserts are incremental: each vector is attached with greedy descent through
 //! the upper layers followed by ef-construction searches, heuristic neighbor
 //! selection, and degree-capped bidirectional links. Artifacts saved as `v2`
-//! reserve `M0` link slots per node at layer 0; loading legacy `v1` payloads
-//! (which reserve `M`) remains supported and upgrades them in memory.
+//! reserve `M0` link slots per node at layer 0; only `v2` payloads load.
 
 use crate::artifact::{ArtifactData, TensorPayload};
 use std::cmp::{Ordering, Reverse};
@@ -566,11 +565,9 @@ impl VectorIndex {
             .get("index_version")
             .map(String::as_str)
             .unwrap_or_default();
-        // Legacy v1 payloads reserve M link slots per node per layer; v2
-        // reserves M0 so layer 0 can hold the wider fan-out used by
-        // incremental inserts. Both remain loadable; v1 upgrades in memory.
-        let legacy_v1 = index_version == "v1";
-        if !legacy_v1 && index_version != INDEX_VERSION {
+        // Only v2 payloads load: v2 reserves M0 link slots at layer 0 for
+        // the wider fan-out used by incremental inserts.
+        if index_version != INDEX_VERSION {
             return Err(invalid("metadata index_version is incompatible"));
         }
         for (key, expected) in [
@@ -587,10 +584,10 @@ impl VectorIndex {
                 return Err(invalid(format!("metadata {key} is incompatible")));
             }
         }
-        if !legacy_v1 && metadata.get("m0") != Some(&M0.to_string()) {
+        if metadata.get("m0") != Some(&M0.to_string()) {
             return Err(invalid("metadata m0 is incompatible"));
         }
-        let link_slots = if legacy_v1 { M } else { M0 };
+        let link_slots = M0;
         let dimension = metadata
             .get("dimension")
             .and_then(|value| value.parse::<usize>().ok())
@@ -683,7 +680,7 @@ impl VectorIndex {
         let mut graph = vec![vec![Vec::new(); max_level + 1]; entry_count];
         for node in 0..entry_count {
             for (layer, neighbors) in graph[node].iter_mut().enumerate().take(max_level + 1) {
-                let capacity = if layer == 0 && !legacy_v1 { M0 } else { M };
+                let capacity = if layer == 0 { M0 } else { M };
                 for _slot in 0..link_slots {
                     let value = links_values
                         .next()
@@ -719,11 +716,7 @@ impl VectorIndex {
                 level: level_values[index] as usize,
             })
             .collect::<Vec<_>>();
-        let mut metadata = metadata.clone();
-        if legacy_v1 {
-            metadata.insert("index_version".to_owned(), INDEX_VERSION.to_owned());
-            metadata.insert("m0".to_owned(), M0.to_string());
-        }
+        let metadata = metadata.clone();
         Ok(Self {
             dimension,
             metadata,
@@ -878,7 +871,7 @@ mod tests {
         }
     }
     #[test]
-    fn legacy_v1_artifacts_load_and_upgrade_to_v2() {
+    fn legacy_v1_artifacts_are_rejected() {
         let dimension = 3;
         let mut index = VectorIndex::new(dimension).unwrap();
         assert!(index.set_metadata("model_version", "legacy"));
@@ -890,45 +883,18 @@ mod tests {
             index.insert(id.to_owned(), &vector).unwrap();
         }
         let v2_artifact = index.artifact_data().unwrap();
-        // Synthesize a legacy v1 payload: drop m0, mark v1, and truncate each
-        // link row from M0 slots back to the M slots v1 reserves.
+        // A v1-marked payload (no m0, M link slots) is rejected instead of
+        // being upgraded in memory.
         let mut metadata = v2_artifact.metadata.clone();
         metadata.insert("index_version".to_owned(), "v1".to_owned());
         metadata.remove("m0");
-        let entry_count = 3;
-        let layers = v2_artifact.tensors[2].shape[1];
-        let row_bytes = M * 8;
-        let stride_bytes = M0 * 8;
-        let truncated_links = v2_artifact.tensors[2]
-            .bytes
-            .chunks_exact(stride_bytes)
-            .flat_map(|row| row[..row_bytes].to_vec())
-            .collect::<Vec<_>>();
         let legacy = ArtifactData {
             name: v2_artifact.name.clone(),
             model_version: v2_artifact.model_version.clone(),
             kind: v2_artifact.kind.clone(),
             metadata,
-            tensors: vec![
-                v2_artifact.tensors[0].clone(),
-                v2_artifact.tensors[1].clone(),
-                TensorPayload {
-                    name: "links".to_owned(),
-                    dtype: "int".to_owned(),
-                    precision: "f64".to_owned(),
-                    shape: vec![entry_count, layers, M],
-                    layout: "contiguous".to_owned(),
-                    bytes: truncated_links,
-                },
-            ],
+            tensors: v2_artifact.tensors.clone(),
         };
-        let mut upgraded = VectorIndex::from_artifact(&legacy).unwrap();
-        assert_eq!(upgraded.metadata.get("index_version").map(String::as_str), Some("v2"));
-        assert_eq!(upgraded.metadata.get("m0").map(String::as_str), Some(M0.to_string().as_str()));
-        let resaved = upgraded.artifact_data().unwrap();
-        assert_eq!(resaved.metadata.get("index_version").map(String::as_str), Some("v2"));
-        assert_eq!(resaved.tensors[2].shape, vec![entry_count, layers, M0]);
-        let found = upgraded.query(&[1.0, 0.0, 0.0], 1).unwrap();
-        assert_eq!(found.results[0].id, "a");
+        assert!(VectorIndex::from_artifact(&legacy).is_err());
     }
 }

@@ -812,21 +812,6 @@ if option.is_some(maybe_value) {
 The names ending in `_option` remain explicit aliases for the same absence-safe
 operations and are useful when migrating code that already used those names.
 
-#### `std.compat.collections` — API legada com sentinelas
-
-Programas antigos podem importar explicitamente `std.compat.collections` para
-preservar os retornos sentinela. `list_get`, `list_pop`, `list_pop_front` e
-`list_remove_at` retornam `-1` quando não há elemento; `map_get` e `map_remove`
-retornam `0` quando a chave não existe. Essa superfície não é a API estável
-recomendada.
-
-```spectra
-import std.compat.collections as legacy
-
-let missing = legacy.list_get(lista, 99)
-// -1: comportamento legado explícito
-```
-
 #### `list_set<T>(list: List<T>, index: int, value: T) -> unit`
 
 ```spectra
@@ -1258,10 +1243,10 @@ import std.ml as ml
 | `experiment_manifest_path`, `experiment_repro_command`, `experiment_compare_manifests` | Manifest path, reproduction command, and manifest comparison |
 | `distributed_session_start`, `distributed_worker_step`, `distributed_global_step` | Single-machine simulated distributed training coordination |
 | `distributed_checkpoint_save`, `distributed_resume`, `distributed_summary`, `distributed_worker_step_count` | Checkpoint/resume and worker progress inspection |
-| `onnx_export`, `onnx_import_summary`, `onnx_validate`, `onnx_roundtrip` | Binary ONNX subset export/import/round-trip for supported AI model blocks (`onnx_export` is a deprecated deterministic fixture template, not a model export — the `deprecated-onnx-export` lint steers to `onnx_export_weights`; `onnx_export_weights(path, kind, weights)` fills the kind's initializers from live float-tensor handles in spec order, e.g. `linear` takes `[weight[2,3], bias[3]]`) |
+| `onnx_export_weights`, `onnx_import_summary`, `onnx_validate`, `onnx_roundtrip` | Binary ONNX subset export/import/round-trip for supported AI model blocks (`onnx_export_weights(path, kind, weights)` fills the kind's initializers from live float-tensor handles in spec order, e.g. `linear` takes `[weight[2,3], bias[3]]`) |
 | `embedding_lookup`, `positional_encoding`, `layer_norm`, `gelu`, `swiglu`, `attention` | Transformer tensor primitives |
 | `kv_cache_new`, `kv_cache_append`, `kv_cache_keys`, `kv_cache_values`, `kv_cache_len`, `logits_sample`, `logits_sample_seeded` | LLM KV-cache and logits sampling helpers (`logits_sample` uses the global RNG; `logits_sample_seeded(seed, logits, temperature)` samples the same full-vocabulary distribution from a per-call splitmix64 stream, so a fixed seed reproduces the token) |
-| `tokenizer_wordpiece`, `tokenizer_encode`, `tokenizer_decode`, `text_embed` | Deterministic tokenization utilities and `text_embed`, a deprecated deterministic hashing baseline (not a model-backed embedding; use `text_embed_model` / `text_embed_model_session`) |
+| `tokenizer_wordpiece`, `tokenizer_encode`, `tokenizer_decode` | Deterministic tokenization utilities |
 | `vector_index_new`, `vector_index_insert`, `vector_index_query`, `vector_index_persist`, `vector_index_load`, `vector_index_set_metadata`, `vector_index_metrics` | Deterministic HNSW vector index APIs backed by the R-3003 Artifact Container v1; legacy JSON is rejected |
 | `rag_chunk_text`, `rag_build_prompt`, `rag_evaluate_answer` | RAG chunking, prompt assembly, and token-overlap evaluation (`rag_evaluate_answer` returns token-overlap F1 scaled to permille `0..1000`, the same `answer_overlap_score` semantics as `ml.metrics_generation`; it is not a model-graded judge) |
 
@@ -1468,21 +1453,6 @@ Além de `code`, o módulo expõe `message`, `operation`, `context`, `origin` e
 `retryable`. A representação é runtime-owned; programas devem transportar o
 valor e tratá-lo como dado de erro, sem depender do layout interno.
 
-#### `std.compat.fs` — adapter legado
-
-Programas antigos podem importar explicitamente `std.compat.fs` para preservar
-as assinaturas históricas: `fs_read` retorna string vazia em falha e as outras
-operações retornam `false`. Esse namespace é somente compatibilidade e não deve
-ser usado como autoridade por código novo.
-
-```spectra
-import std.compat.fs as legacy_fs
-let content = legacy_fs.fs_read("dados.txt")
-let ok = legacy_fs.fs_write("saida.txt", content)
-```
-
----
-
 ## 9. std.env — Ambiente / Environment
 
 ```spectra
@@ -1501,8 +1471,7 @@ let maybe_path = std.env.env_get("PATH")
 ```
 
 The explicit `env_get_option(key: string) -> Option<string>` alias remains
-available. The public `std.env` contract never uses an empty string as an
-absence sentinel; legacy behavior is isolated under `std.compat.env`.
+available.
 
 #### `env_set(key: string, value: string) -> bool`
 
@@ -1541,20 +1510,6 @@ for i in 0..n {
 }
 ```
 
-#### `std.compat.env` — compatibilidade legada / legacy compatibility
-
-```spectra
-import std.compat.env
-
-let legacy_value = std.compat.env.env_get("OPTIONAL_VALUE")
-let legacy_arg = std.compat.env.env_arg(999999)
-```
-
-`std.compat.env.env_get` and `env_arg` return `""` when the value is absent.
-Use this namespace only while migrating older programs; new code should use
-the `Option<string>` functions from `std.env`.
-
----
 
 ## 10. std.option — Operações em Option / Option Operations
 

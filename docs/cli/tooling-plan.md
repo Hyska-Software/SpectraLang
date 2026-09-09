@@ -20,11 +20,11 @@
 
 - ✅ CLI command `spectra fmt` formats files in-place, supports `--check`, `--stdin`, and `--stdout`, and exits with `65` when changes are needed.
 - ✅ Formatter normalizes indentation, operator spacing, grouped `let` alignment (line-length aware), blank-line coalescing, and preserves line endings.
-- ✅ `[formatter]` section in `Spectra.toml` now supports `indent_width` and `max_line_length`; settings are auto-discovered from the nearest manifest.
+- ✅ `[formatter]` section in `spectra.toml` now supports `indent_width` and `max_line_length`; settings are auto-discovered from the nearest manifest.
 - ✅ `spectra fmt --config <path>` allows explicit config selection and reports unknown `[formatter]` keys as structured errors.
-- ✅ Formatter caches `Spectra.toml` lookups per directory to avoid redundant IO across large projects.
+- ✅ Formatter caches `spectra.toml` lookups per directory to avoid redundant IO across large projects.
 - ✅ Added formatter-focused regression tests under `tools/spectra-cli`.
-- ✅ Usage and configuration documented in `docs/cli/formatter-guide.md`, including sample `Spectra.toml` snippets.
+- ✅ Usage and configuration documented in `docs/cli/formatter-guide.md`, including sample `spectra.toml` snippets.
 - ✅ Sample GitHub Actions workflow (`tools/spectra-cli/.github/workflows/spectra-fmt-check.yml`) demonstrates `spectra fmt --check` gating.
 - ✅ Token-aware CST formatting path introduced (with legacy fallback) to preserve trivia-aware spacing and unary operator handling.
 - ✅ `spectra fmt --explain` surfaces line-oriented diffs for files that need formatting and reuses the compiler exit codes for gating.
@@ -52,7 +52,7 @@
 ### Status Overview
 
 - ✅ Rule engine foundation integrated into the semantic pipeline, covering `unused-binding`, `unreachable-code`, and `shadowing` with deny escalation support.
-- ✅ CLI surface in place: `spectra lint` command, `--lint` opt-in for build flows, and per-rule `--allow`/`--deny` switches with `[lint]` configuration in `Spectra.toml`.
+- ✅ CLI surface in place: `spectra lint` command, `--lint` opt-in for build flows, and per-rule `--allow`/`--deny` switches with `[lint]` configuration in `spectra.toml`.
 - ✅ Output conventions aligned with the shared reporter: lint diagnostics now reuse the `warning:`/`error:` prefixes and denied rules exit with code `65`.
 
 ### Next Steps

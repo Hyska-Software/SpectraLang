@@ -352,12 +352,8 @@ fn extract_imports(source: &str) -> Vec<String> {
     for line in source.lines() {
         let trimmed = line.trim();
 
-        // Strip the public visibility prefix used by re-exports. The canonical
-        // form is `public from path import name`; the legacy `pub` spelling is
-        // intentionally still recognized here so project diagnostics can point
-        // at the parser's migration error instead of mis-ordering modules.
+        // The canonical form is `public from path import name`.
         let trimmed = trimmed.strip_prefix("public ").unwrap_or(trimmed);
-        let trimmed = trimmed.strip_prefix("pub ").unwrap_or(trimmed);
 
         if let Some(rest) = trimmed.strip_prefix("from ") {
             // `from path.to.module import name, other as alias`

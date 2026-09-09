@@ -72,20 +72,6 @@ where
                 options.collect_metrics = true;
                 show_pipeline_summary = true;
             }
-            "--enable-experimental" => {
-                if let Some(feature) = args.next() {
-                    options.experimental_features.insert(feature);
-                } else {
-                    return Err(usage_error(
-                        "Missing feature name after '--enable-experimental'.",
-                    ));
-                }
-            }
-            "--list-experimental" => {
-                return Err(usage_error(
-                    "--list-experimental must appear before any command.",
-                ));
-            }
             flag if flag.starts_with("--allow=") => {
                 let value = flag.trim_start_matches("--allow=");
                 let rule = parse_lint_rule_cli(value)?;
@@ -332,7 +318,7 @@ fn locate_manifest(entries: &[PathBuf]) -> CliResult<Option<PathBuf>> {
         };
 
         while let Some(dir) = current {
-            let candidate = dir.join("Spectra.toml");
+            let candidate = dir.join("spectra.toml");
             if candidate.is_file() {
                 let canonical = fs::canonicalize(&candidate).map_err(|error| {
                     CliError::io(format!(
@@ -403,20 +389,6 @@ where
                 json_output = true;
             }
             "--verbose" | "-v" => verbose = true,
-            "--enable-experimental" => {
-                if let Some(feature) = args.next() {
-                    options.experimental_features.insert(feature);
-                } else {
-                    return Err(usage_error(
-                        "Missing feature name after '--enable-experimental'.",
-                    ));
-                }
-            }
-            "--list-experimental" => {
-                return Err(usage_error(
-                    "--list-experimental must appear before any command.",
-                ));
-            }
             flag if flag.starts_with('-') => {
                 return Err(usage_error(&format!("Unknown option: {}", flag)));
             }

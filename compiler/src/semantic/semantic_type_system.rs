@@ -424,10 +424,9 @@ impl SemanticAnalyzer {
         }
     }
 
-    /// Return the compatibility nominal key used by the existing struct/enum
-    /// registries.  The semantic type itself remains structural (`Applied`),
-    /// while lookup tables may still use their specialized mangled key during
-    /// the migration.
+    /// Return the nominal key used by the existing struct/enum registries.
+    /// The semantic type itself remains structural (`Applied`), while lookup
+    /// tables use their specialized mangled key.
     pub(crate) fn nominal_lookup_name(&self, ty: &Type) -> Option<String> {
         match ty {
             Type::Struct { name } | Type::Enum { name } => Some(name.clone()),
@@ -707,7 +706,7 @@ impl SemanticAnalyzer {
         None
     }
 
-    /// Resolve either the legacy mangled nominal form or the structural
+    /// Resolve either the mangled nominal form or the structural
     /// `Enum<T, ...>` form used by the semantic type system.
     pub(crate) fn specialized_enum_context_for_type(
         &self,
@@ -774,7 +773,7 @@ impl SemanticAnalyzer {
             .map(|info| (struct_type_name.to_string(), info, HashMap::new()))
     }
 
-    /// Resolve either the legacy mangled nominal form or the structural
+    /// Resolve either the mangled nominal form or the structural
     /// `Struct<T, ...>` form used by the semantic type system.
     pub(crate) fn specialized_struct_context_for_type(
         &self,

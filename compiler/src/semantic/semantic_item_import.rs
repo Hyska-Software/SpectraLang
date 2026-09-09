@@ -86,7 +86,7 @@ impl SemanticAnalyzer {
             //   importers, and project builds order modules dependency-first
             //   (rejecting missing sources at the plan level), so an
             //   unregistered non-stdlib import can no longer be resolved.
-            if module_path.starts_with("std.") || module_path.starts_with("spectra.std.") {
+            if module_path.starts_with("std.") {
                 let available = self.registered_std_module_list();
                 let hint = match self.closest_registered_std_module(&module_path) {
                     Some(suggestion) => format!("Did you mean '{}'? Available stdlib modules: {}", suggestion, available),
@@ -117,13 +117,7 @@ impl SemanticAnalyzer {
             );
             return aliases;
         };
-
         let stdlib_path_prefix = exports.stdlib_path.clone();
-
-        if let (Some(alias), Some(stdlib_path)) = (&import.alias, &stdlib_path_prefix) {
-            self.stdlib_namespace_aliases
-                .insert(alias.clone(), stdlib_path.join("."));
-        }
 
         // Register all prefix segments of the module path as known namespaces
         // so that qualified calls like `std.string.len(x)` don't trigger

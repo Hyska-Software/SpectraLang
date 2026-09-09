@@ -496,7 +496,7 @@ mod lowering_async;
 #[path = "lowering_std_host_tensor_ml.rs"] mod lowering_std_host_tensor_ml;
 #[path = "lowering_std_host_collections_string.rs"] mod lowering_std_host_collections_string;
 #[path = "lowering_std_host_convert_time.rs"] mod lowering_std_host_convert_time;
-#[path = "lowering_std_host_legacy.rs"] mod lowering_std_host_legacy;
+#[path = "lowering_std_host_fs_env_result.rs"] mod lowering_std_host_fs_env_result;
 #[path = "lowering_std_api.rs"] mod lowering_std_api;
 #[path = "lowering_json_derive.rs"] mod lowering_json_derive;
 #[path = "lowering_handles.rs"] mod lowering_handles;
@@ -544,7 +544,7 @@ use {
     lowering_std_host_tensor_ml::*,
     lowering_std_host_collections_string::*,
     lowering_std_host_convert_time::*,
-    lowering_std_host_legacy::*,
+    lowering_std_host_fs_env_result::*,
     lowering_std_api::*,
     lowering_json_derive::*,
     lowering_handles::*,

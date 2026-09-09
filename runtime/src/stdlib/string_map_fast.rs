@@ -90,22 +90,6 @@ pub fn map_set_fast(handle: usize, key: i64, value: i64) -> i32 {
     }
 }
 
-/// Fast-path helper for `col.map_get(handle, key)`.
-///
-/// Returns the value for the key, or 0 if the key is absent or the handle
-/// is invalid. Note: cannot distinguish "stored value is 0" from "key
-/// absent / invalid handle".
-pub fn map_get_fast(handle: usize, key: i64) -> i64 {
-    let map_arc = with_map_registry(|reg| reg.get(handle));
-    match map_arc {
-        Some(map_arc) => lock_unpoisoned(&map_arc)
-            .data
-            .get(&collection_key(key))
-            .copied()
-            .unwrap_or(0),
-        None => 0,
-    }
-}
 
 /// Fast-path helper for `col.map_contains(handle, key)`.
 ///
@@ -125,20 +109,6 @@ pub fn map_contains_fast(handle: usize, key: i64) -> i64 {
     }
 }
 
-/// Fast-path helper for `col.map_remove(handle, key)`.
-///
-/// Returns the removed value, or 0 if the key was absent or the handle
-/// is invalid. Same caveat as `map_get_fast` regarding stored 0.
-pub fn map_remove_fast(handle: usize, key: i64) -> i64 {
-    let map_arc = with_map_registry(|reg| reg.get(handle));
-    match map_arc {
-        Some(map_arc) => lock_unpoisoned(&map_arc)
-            .data
-            .remove(&collection_key(key))
-            .unwrap_or(0),
-        None => 0,
-    }
-}
 
 /// Fast-path helper for `col.map_len(handle)`.
 ///

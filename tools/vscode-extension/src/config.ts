@@ -61,14 +61,6 @@ export function getServerPath(context: vscode.ExtensionContext): string {
     return workspaceBinary;
   }
 
-  const legacyCandidates = [
-    path.resolve(context.extensionPath, '..', '..', 'target', 'debug', executable),
-    path.resolve(context.extensionPath, '..', '..', 'target', 'release', executable),
-  ];
-  const legacy = existingPath(legacyCandidates);
-  if (legacy) {
-    return legacy;
-  }
 
   return 'spectra-lsp';
 }
@@ -86,15 +78,12 @@ export function getCliPath(): string {
     return configured;
   }
 
-  // The crate ships the binary as `spectralang(.exe)`; `spectra-cli` is kept
-  // only as a legacy fallback for older installs.
+  // The crate ships the binary as `spectralang(.exe)`.
   const executables = [
     getExecutableName('spectralang'),
-    getExecutableName('spectra-cli'),
   ];
 
-  // Search tiers, in priority order. Within a tier the modern `spectralang`
-  // name wins over the legacy `spectra-cli` name.
+  // Search tiers, in priority order.
   const searchDirs: string[] = [];
 
   // Priority 1: bundled inside the extension (server/<platform>-<arch>/)
@@ -102,7 +91,7 @@ export function getCliPath(): string {
     const platformDir = getPlatformDir();
     searchDirs.push(
       path.resolve(_extensionPath, 'server', platformDir), // multi-platform VSIX layout
-      path.resolve(_extensionPath, 'server'),              // legacy / dev layout
+      path.resolve(_extensionPath, 'server'),              // dev layout
       path.resolve(_extensionPath, 'bin'),
     );
   }

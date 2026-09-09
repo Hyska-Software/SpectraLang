@@ -53,7 +53,7 @@ A orquestração completa reside em `tools/spectra-cli/src/compiler_integration.
 
 **Arquivo principal:** `tools/spectra-cli/src/main.rs`
 
-1. **Parse de argumentos (`parse_cli`)**: O binário `spectralang` recebe o comando (`run`, `check`, `compile`, `lint`, etc.) e flags (`-O2`, `--dump-ast`, `--enable-experimental`).
+1. **Parse de argumentos (`parse_cli`)**: O binário `spectralang` recebe o comando (`run`, `check`, `compile`, `lint`, etc.) e flags (`-O2`, `--dump-ast`).
 2. **Descoberta de projeto**: Se o diretório de entrada contiver `spectra.toml`, o CLI carrega a configuração (`config::try_load_config`) e descobre os módulos via `discovery::discover_sources`.
 3. **Sintetização de declaração de módulo**: Em `compile_plan`, se um arquivo não contiver a declaração `module <nome>;` na primeira linha não-comentada, o CLI **prefixa** o código-fonte com uma declaração sintética derivada do nome do arquivo (`source_has_module_decl`).
 4. **Criação do `SpectraCompiler`**: Instancia `CompilationPipeline<FullPipelineBackend>` com as opções coletadas.
@@ -97,7 +97,7 @@ O sistema de spans é **baseado em byte offsets** e **linha/coluna 1-based**:
 **Arquivo:** `compiler/src/parser/workspace.rs`
 
 O `ModuleLoader` implementa cache incremental:
-- Calcula um hash (`DefaultHasher`) sobre o source + feature flags habilitadas.
+- Calcula um hash (`DefaultHasher`) sobre o source.
 - Se o hash coincidir com a entrada em cache, retorna o `Module` clonado (ou erros clonados) sem re-executar lexer/parser.
 - Se o source mudou, re-executa lexer e parser e atualiza o cache.
 
@@ -151,7 +151,7 @@ O parse de expressões usa o algoritmo **Pratt / top-down operator precedence** 
 
 #### 2.3.4 Feature Gating
 
-Certas construções (`loop`, `unless`, `do-while`, `switch`) são protegidas por **feature flags experimentais**. O parser verifica `enabled_features` (um `HashSet<String>` passado do CLI) e rejeita o parse se a feature não estiver habilitada.
+Não há gating experimental. `loop`, `unless`, `do-while` e `switch` são sintaxe estável e o parser as aceita incondicionalmente.
 
 #### 2.3.5 Recuperação de Erros
 

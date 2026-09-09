@@ -456,13 +456,6 @@ spectralang <comando> [flags] <arquivo>...
 | `--deny <rule>` | Eleva uma regra a erro | Escalate a lint rule to error |
 | `--json` | Emite diagnósticos em JSON | Emit diagnostics as JSON |
 
-### Flags Experimentais / Experimental Flags
-
-| Flag | Descrição PT-BR | Description EN-US |
-|------|-----------------|-------------------|
-| `--enable-experimental <feature>` | Compatibilidade com scripts antigos; sem gates ativos | Compatibility no-op; no active gates |
-
-> **Features experimentais disponíveis / Available experimental features:** nenhuma no momento / none currently.
 
 ### Regras de Lint Disponíveis / Available Lint Rules
 

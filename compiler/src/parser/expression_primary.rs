@@ -219,7 +219,7 @@ impl Parser {
     /// then sub-parses inner expressions.
     pub(crate) fn parse_fstring_parts(&mut self, raw: &str, span: crate::span::Span) -> Vec<FStringPart> {
         use crate::lexer::Lexer;
-        use std::collections::HashSet;
+        
 
         let mut parts = Vec::new();
         let chars: Vec<char> = raw.chars().collect();
@@ -247,7 +247,7 @@ impl Parser {
                 let sub_tokens_result = Lexer::new(&expr_src).tokenize();
                 match sub_tokens_result {
                     Ok(sub_tokens) => {
-                        let mut sub_parser = Parser::new(sub_tokens, HashSet::new());
+                        let mut sub_parser = Parser::new(sub_tokens);
                         match sub_parser.parse_expression() {
                             Ok(inner_expr) => {
                                 parts.push(FStringPart::Interpolated(Box::new(inner_expr)));

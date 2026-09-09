@@ -30,5 +30,5 @@ pub(crate) fn lookup_std_host_module_function(module: &str, function: &str) -> O
         .or_else(|| lookup_std_host_group_tensor_ml(module, function))
         .or_else(|| lookup_std_host_group_collections_string(module, function))
         .or_else(|| lookup_std_host_group_convert_time(module, function))
-        .or_else(|| lookup_std_host_group_legacy(module, function))
+        .or_else(|| lookup_std_host_group_fs_env_result(module, function))
 }

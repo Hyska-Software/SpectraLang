@@ -23,27 +23,6 @@ pub(crate) fn write_option_result(
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_list_get(ctx: *mut SpectraHostCallContext) -> i32 {
-    if ctx.is_null() {
-        return HOST_STATUS_INVALID_ARGUMENT;
-    }
-    unsafe {
-        let ctx_ref = &mut *ctx;
-        if ctx_ref.arg_len != 2 || ctx_ref.args.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        if ctx_ref.result_len == 0 || ctx_ref.results.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
-        let handle = args[0] as usize;
-        let index = args[1];
-        let result = with_list_registry(|registry| registry.get(handle, index)).unwrap_or(-1);
-        let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);
-        results[0] = result;
-    }
-    HOST_STATUS_SUCCESS
-}
 
 pub(crate) extern "C" fn std_list_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
@@ -105,47 +84,7 @@ pub(crate) extern "C" fn std_list_contains(ctx: *mut SpectraHostCallContext) -> 
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_list_pop(ctx: *mut SpectraHostCallContext) -> i32 {
-    if ctx.is_null() {
-        return HOST_STATUS_INVALID_ARGUMENT;
-    }
-    unsafe {
-        let ctx_ref = &mut *ctx;
-        if ctx_ref.arg_len != 1 || ctx_ref.args.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        if ctx_ref.result_len == 0 || ctx_ref.results.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
-        let handle = args[0] as usize;
-        let val = with_list_registry(|registry| registry.pop(handle)).unwrap_or(-1);
-        let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);
-        results[0] = val;
-    }
-    HOST_STATUS_SUCCESS
-}
 
-pub(crate) extern "C" fn std_list_pop_front(ctx: *mut SpectraHostCallContext) -> i32 {
-    if ctx.is_null() {
-        return HOST_STATUS_INVALID_ARGUMENT;
-    }
-    unsafe {
-        let ctx_ref = &mut *ctx;
-        if ctx_ref.arg_len != 1 || ctx_ref.args.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        if ctx_ref.result_len == 0 || ctx_ref.results.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
-        let handle = args[0] as usize;
-        let val = with_list_registry(|registry| registry.pop_front(handle)).unwrap_or(-1);
-        let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);
-        results[0] = val;
-    }
-    HOST_STATUS_SUCCESS
-}
 
 pub(crate) extern "C" fn std_list_pop_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
@@ -201,27 +140,6 @@ pub(crate) extern "C" fn std_list_insert_at(ctx: *mut SpectraHostCallContext) ->
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_list_remove_at(ctx: *mut SpectraHostCallContext) -> i32 {
-    if ctx.is_null() {
-        return HOST_STATUS_INVALID_ARGUMENT;
-    }
-    unsafe {
-        let ctx_ref = &mut *ctx;
-        if ctx_ref.arg_len != 2 || ctx_ref.args.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        if ctx_ref.result_len == 0 || ctx_ref.results.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
-        let handle = args[0] as usize;
-        let index = args[1];
-        let val = with_list_registry(|registry| registry.remove_at(handle, index)).unwrap_or(-1);
-        let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);
-        results[0] = val;
-    }
-    HOST_STATUS_SUCCESS
-}
 
 pub(crate) extern "C" fn std_list_remove_at_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {

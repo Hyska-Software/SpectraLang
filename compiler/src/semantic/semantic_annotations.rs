@@ -493,9 +493,9 @@ impl SemanticAnalyzer {
             // Structs com mesmo nome
             (Type::Struct { name: n1 }, Type::Struct { name: n2 }) => n1 == n2,
 
-            // Generic applications use structural arguments while older
-            // method/trait registries still expose the compatibility mangled
-            // nominal form (`Pair<int, string>` ↔ `Pair_int_string`).
+            // Generic applications use structural arguments while the mangled
+            // nominal form (`Pair<int, string>` ↔ `Pair_int_string`) is kept
+            // for registry lookups.
             (Type::Applied { .. }, Type::Struct { name } | Type::Enum { name }) => {
                 self.nominal_lookup_name(actual).as_deref() == Some(name.as_str())
             }

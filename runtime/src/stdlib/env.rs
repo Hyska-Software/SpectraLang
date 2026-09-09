@@ -1,29 +1,6 @@
 use super::*;
 // ── std.env host functions ───────────────────────────────────────────────────
 
-pub(crate) extern "C" fn std_env_get(ctx: *mut SpectraHostCallContext) -> i32 {
-    if ctx.is_null() {
-        return HOST_STATUS_INVALID_ARGUMENT;
-    }
-    unsafe {
-        let ctx_ref = &mut *ctx;
-        if ctx_ref.arg_len != 1 || ctx_ref.args.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        if ctx_ref.result_len == 0 || ctx_ref.results.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
-        let key = match read_spectra_string(args[0]) {
-            Some(k) => k,
-            None => return HOST_STATUS_INVALID_ARGUMENT,
-        };
-        let value = std::env::var(&key).unwrap_or_default();
-        let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);
-        results[0] = alloc_spectra_string(&value);
-    }
-    HOST_STATUS_SUCCESS
-}
 
 pub(crate) extern "C" fn std_env_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
@@ -97,32 +74,6 @@ pub(crate) extern "C" fn std_env_args_count(ctx: *mut SpectraHostCallContext) ->
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_env_arg(ctx: *mut SpectraHostCallContext) -> i32 {
-    if ctx.is_null() {
-        return HOST_STATUS_INVALID_ARGUMENT;
-    }
-    unsafe {
-        let ctx_ref = &mut *ctx;
-        if ctx_ref.arg_len != 1 || ctx_ref.args.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        if ctx_ref.result_len == 0 || ctx_ref.results.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
-        let index = args[0] as usize;
-        // Use explicitly forwarded program args when available; fall back to
-        // std::env::args so the function is still usable without prior setup.
-        let arg = if let Some(prog_args) = crate::ffi::get_program_args() {
-            prog_args.get(index).cloned().unwrap_or_default()
-        } else {
-            std::env::args().nth(index).unwrap_or_default()
-        };
-        let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);
-        results[0] = alloc_spectra_string(&arg);
-    }
-    HOST_STATUS_SUCCESS
-}
 
 pub(crate) extern "C" fn std_env_arg_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {

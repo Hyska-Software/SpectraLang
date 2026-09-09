@@ -160,7 +160,7 @@ fn discover_async_test_cases(entries: &[PathBuf]) -> CliResult<Vec<AsyncTestCase
                     errors
                 ))
             })?;
-        let module: Module = Parser::new(tokens, HashSet::new())
+        let module: Module = Parser::new(tokens)
             .parse()
             .map_err(|mut errors| {
                 for error in &mut errors {

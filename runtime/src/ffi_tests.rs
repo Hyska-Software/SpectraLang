@@ -865,7 +865,7 @@ mod tests {
 //  2. `pub fn keep_fast_symbols` calls each fast function with safe dummy
 //     inputs and discards the results. The call is invoked once at startup
 //     from `crate::stdlib::register`, which itself is called from
-//     `spectra_runtime::register_standard_library` in `spectra-cli`, so
+//     `spectra_runtime::register` in `spectra-cli`, so
 //     every fast-path symbol survives dead-code elimination.
 //
 // To keep them across all targets (including MSVC, where `#[used]` on a
@@ -873,7 +873,7 @@ mod tests {
 // functions they reference), `pub fn keep_fast_symbols` calls each one
 // with safe dummy inputs and discards the results. The call is invoked
 // once at startup from `crate::stdlib::register`, which itself is called
-// from `spectra_runtime::register_standard_library` in `spectra-cli`, so
+// from `spectra_runtime::register` in `spectra-cli`, so
 // every fast-path symbol survives dead-code elimination.
 //
 // The functions are designed to be side-effect-safe when called with valid

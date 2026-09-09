@@ -149,11 +149,6 @@ impl ConcurrentBatch {
 }
 
 pub(crate) enum ConcurrentJob {
-    Single {
-        task: Arc<ConcurrentTask>,
-        value: SpectraHostValue,
-        queued_at: StdInstant,
-    },
     Closure {
         task: Arc<ConcurrentTask>,
         fn_ptr: SpectraHostValue,
@@ -196,32 +191,6 @@ impl ConcurrentExecutor {
                         break;
                     };
                     match job {
-                        ConcurrentJob::Single {
-                            task,
-                            value,
-                            queued_at,
-                        } => {
-                            let execution_started = StdInstant::now();
-                            if let Some(data) = concurrent_diagnostics() {
-                                data.tasks_executed.fetch_add(1, Ordering::Relaxed);
-                            }
-                            if task.complete(value) {
-                                if let Some(data) = concurrent_diagnostics() {
-                                    data.task_wakeups.fetch_add(1, Ordering::Relaxed);
-                                    data.pending_tasks.fetch_sub(1, Ordering::Relaxed);
-                                    data.scheduler_ns.fetch_add(
-                                        queued_at.elapsed().as_nanos().min(u64::MAX as u128) as u64,
-                                        Ordering::Relaxed,
-                                    );
-                                    data.execution_ns.fetch_add(
-                                        execution_started.elapsed().as_nanos().min(u64::MAX as u128)
-                                            as u64,
-                                        Ordering::Relaxed,
-                                    );
-                                }
-                                notify_concurrent_completion();
-                            }
-                        }
                         ConcurrentJob::Closure {
                             task,
                             fn_ptr,
@@ -309,15 +278,6 @@ impl ConcurrentExecutor {
         Self { sender, workers }
     }
 
-    pub(crate) fn submit(&self, task: Arc<ConcurrentTask>, value: SpectraHostValue) -> Result<(), ()> {
-        self.sender
-            .send(ConcurrentJob::Single {
-                task,
-                value,
-                queued_at: StdInstant::now(),
-            })
-            .map_err(|_| ())
-    }
     pub(crate) fn submit_closure(
         &self,
         task: Arc<ConcurrentTask>,
@@ -560,26 +520,6 @@ pub(crate) fn record_concurrent_task_created() {
     }
 }
 
-pub(crate) fn spawn_concurrent_task(value: SpectraHostValue) -> Result<SpectraHostValue, i32> {
-    let (task_id, task) = {
-        let mut registry = lock_concurrent_registry()?;
-        registry.allocate_task()
-    };
-    record_concurrent_task_created();
-    if concurrent_executor()
-        .submit(Arc::clone(&task), value)
-        .is_err()
-    {
-        if task.fail() {
-            if let Some(data) = concurrent_diagnostics() {
-                data.tasks_failed.fetch_add(1, Ordering::Relaxed);
-                data.pending_tasks.fetch_sub(1, Ordering::Relaxed);
-            }
-        }
-        return Err(HOST_STATUS_INTERNAL_ERROR);
-    }
-    Ok(task_id)
-}
 
 /// Invokes a JIT-compiled Spectra closure on a worker thread through the
 /// same boundary the higher-order stdlib functions use

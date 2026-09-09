@@ -27,11 +27,9 @@ use super::*;
 //   Set. Handles of unrelated families (e.g. ml int-handles) are unaffected,
 //   so handles obtained after another variable's free_all stay Alive.
 //
-// Sanctioned exception (compat sentinel reads): a small set of documented
-// compatibility accessors keep the historical integer/sentinel contract on
-// already-released handles (see builtin_std_core.rs "Compatibility reads"):
-// `list_get`, `map_get` and `value_kind`. Reading a freed handle through them
-// is the supported way to observe release state and does NOT emit E034.
+// Sanctioned exception (release-state introspection): `value_kind` deliberately
+// accepts released handles so programs can observe release state; reading a
+// freed handle through it does NOT emit E034.
 
 /// Resource-release functions whose first argument is the released handle.
 const UAF_DIRECT_FREE_FUNCTIONS: &[&str] = &[
@@ -58,8 +56,9 @@ fn uaf_free_all_family(name: &str) -> Option<&'static str> {
     }
 }
 
-/// Compatibility/sentinel readers that deliberately accept released handles.
-const UAF_SENTINEL_READERS: &[&str] = &["list_get", "map_get", "value_kind"];
+/// Release-state introspection readers that deliberately accept released handles.
+const UAF_INTROSPECTION_READERS: &[&str] = &["value_kind"];
+
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UafFrame {
@@ -204,14 +203,12 @@ impl SemanticAnalyzer {
             })
     }
 
-    pub(crate) fn uaf_callee_is_sentinel_reader(&self, callee: &Expression) -> bool {
+    pub(crate) fn uaf_callee_is_introspection_reader(&self, callee: &Expression) -> bool {
         Self::uaf_callee_last_segment(callee)
-            .map(|name| UAF_SENTINEL_READERS.contains(&name.as_str()))
+            .map(|name| UAF_INTROSPECTION_READERS.contains(&name.as_str()))
             .unwrap_or(false)
     }
 
-    /// Called right after a plain call's arguments were analyzed: classifies
-    /// resource-release calls and marks the affected bindings as Freed.
     pub(crate) fn uaf_after_call_analysis(&mut self, callee: &Expression, arguments: &[Expression], span: Span) {
         let Some(name) = Self::uaf_callee_last_segment(callee) else {
             return;
@@ -349,9 +346,9 @@ mod use_after_free_tests {
     }
 
     #[test]
-    fn compat_sentinel_reads_stay_allowed() {
+    fn option_reads_on_live_handles_compile_clean() {
         let source = r#"
-            module use_after_free_sentinel_ok
+            module use_after_free_live_reads
 
             import std.collections as collections
             import std.option as option
@@ -359,15 +356,14 @@ mod use_after_free_tests {
             public func main() returns int {
                 let first = collections.list_new()
                 collections.list_push(first, 10)
-                collections.list_free(first)
-                let released_first = collections.list_get(first, 0)
-                if option.is_none(released_first) {
-                    return 0
+                let maybe_first = collections.list_get(first, 0)
+                if option.is_none(maybe_first) {
+                    return 1
                 }
-                return 1
+                collections.list_free(first)
+                return 0
             }
         "#;
-        compile(source)
-            .expect("sentinel reads on released handles must not emit E034");
+        compile(source).expect("absence-safe reads on live handles must compile");
     }
 }

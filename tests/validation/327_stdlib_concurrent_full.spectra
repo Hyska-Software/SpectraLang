@@ -5,7 +5,7 @@ import std.concurrent as concurrent
 public func main() returns int {
     concurrent.reset()
 
-    let task = concurrent.task_spawn(42)
+    let task             = concurrent.task_spawn_fn( | value: int | { value}, 42)
     let done_before_join = concurrent.task_is_done(task)
     if done_before_join != true and done_before_join != false {
         return 1

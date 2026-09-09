@@ -424,9 +424,9 @@ impl ASTLowering {
 
     /// Built-in `Option`/`Result` constructors may leave a type parameter
     /// unobserved (`Option::None`, `Result::Ok(value)`, or `Result::Err(err)`).
-    /// Preserve the historical deterministic `int` default for that narrow
-    /// compatibility case; every other unresolved generic remains poison and
-    /// is rejected before backend code generation.
+    /// Preserve the deterministic `int` default for that narrow case; every
+    /// other unresolved generic remains poison and is rejected before backend
+    /// code generation.
     pub(crate) fn fill_builtin_enum_defaults(enum_name: &str, args: &mut [TypeAnnotation]) {
         if !matches!(enum_name, "Option" | "Result") {
             return;

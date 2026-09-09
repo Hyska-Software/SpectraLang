@@ -301,7 +301,6 @@ The CLI is invoked as `spectralang <COMMAND> [OPTIONS] <paths>...`. Run `spectra
 | `spectralang new <path>` | Scaffold a new Spectra project with a starter module and manifest. |
 | `spectralang package <action>` | Resolve, lock, build, publish, and consume packages. |
 | `spectralang release-info` | Report CLI and package release channel metadata. |
-| `spectralang --list-experimental` | Report active language gates (currently reports none — core syntax is stable). |
 
 Examples:
 
@@ -334,7 +333,7 @@ Exit codes:
 SpectraLang is **not yet a stable production language**. The current state, honestly:
 
 - The language reference is being built out continuously as the language grows; some constructs still evolve between releases.
-- Core control flow (`switch`, `unless`, `do-while`, `loop`) is stable and parses without any opt-in flags. `spectralang --list-experimental` reports no active syntax gates.
+- Core control flow (`switch`, `unless`, `do-while`, `loop`) is stable and parses unconditionally.
 - The AI/ML core (tensors, autodiff, ML framework, ONNX, NumPy interop, GPU backend baseline) is implemented and exercised by the bundled examples.
 - The API platform (`spectra.api`) is in active development. The HTTP server, routing, and handler surfaces are exercised by `examples/api/00_hello_http.spectra` and `examples/api/01_rest_crud.spectra`, but middleware, TLS, database drivers, and observability are still landing.
 - Cross-file and cross-module linkage has improved substantially (strings, type/method resolution, aggregate codegen), but the boundaries are still being hardened.

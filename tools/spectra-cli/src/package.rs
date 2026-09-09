@@ -14,7 +14,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use toml_edit::{value, DocumentMut, Item, Table};
 
-const MANIFEST_NAMES: &[&str] = &["spectra.toml", "Spectra.toml"];
+const MANIFEST_NAMES: &[&str] = &["spectra.toml"];
 const LOCKFILE_NAME: &str = "spectra.lock";
 
 #[derive(Clone, Debug)]

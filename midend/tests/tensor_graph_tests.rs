@@ -3,7 +3,7 @@ use spectra_midend::{
     ASTLowering, TensorDType, TensorDevice, TensorGraph, TensorGraphErrorKind, TensorGraphFunction,
     TensorGraphNode, TensorGraphOp, TensorGraphSource, TensorMetadata, TensorShape,
 };
-use std::collections::HashSet;
+
 use std::fs;
 use std::path::Path;
 
@@ -23,7 +23,7 @@ fn assert_snapshot(name: &str, actual: &str) {
 
 fn lower_source(source: &str) -> TensorGraph {
     let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
-    let ast = Parser::new(tokens, HashSet::new())
+    let ast = Parser::new(tokens)
         .parse()
         .expect("parsing should pass");
     let ir = ASTLowering::new()

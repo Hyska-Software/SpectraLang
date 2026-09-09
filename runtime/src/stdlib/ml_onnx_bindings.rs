@@ -1,30 +1,4 @@
 use super::*;
-pub(crate) extern "C" fn std_ml_onnx_export(ctx: *mut SpectraHostCallContext) -> i32 {
-    unsafe {
-        let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        };
-        let Some(path) = ml_read_path_arg(args[0]) else {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        };
-        let Some(kind) = ml_read_path_arg(args[1]) else {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        };
-        let Some(model) = ml_onnx_model_spec(&kind) else {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        };
-        if let Some(parent) = std::path::Path::new(&path).parent() {
-            if std::fs::create_dir_all(parent).is_err() {
-                return HOST_STATUS_INTERNAL_ERROR;
-            }
-        }
-        let payload = ml_onnx_model_proto(&model);
-        if std::fs::write(&path, payload).is_err() {
-            return HOST_STATUS_INTERNAL_ERROR;
-        }
-        tensor_result(ctx_ref, alloc_spectra_string(&path))
-    }
-}
 
 /// `spectra.std.ml.onnx_export_weights(path, kind, weights) -> string`
 ///

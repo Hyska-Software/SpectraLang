@@ -32,14 +32,13 @@ use spectra_compiler::{
     analyze_document, collect_let_inlay_hints,
 };
 use spectra_db::{migrations::SqliteMigrator, sqlite::SqliteConnection};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::{env, fs, process};
 
-const KNOWN_EXPERIMENTAL_FEATURES: &[&str] = &[];
 const AOT_DEBUG_MAP_SCHEMA_VERSION: u32 = 1;
 
 #[repr(i32)]
@@ -160,7 +159,6 @@ enum DbCommand {
 #[derive(Debug)]
 enum CliAction {
     Help(HelpTopic),
-    ListExperimental,
     Build {
         kind: BuildCommand,
         invocation: CliInvocation,

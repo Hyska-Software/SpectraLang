@@ -9,18 +9,12 @@ pub fn register_builtin_modules(registry: &mut ModuleRegistry) {
     registry.register_module("std.math".to_string(), make_std_math());
     registry.register_module("std.numeric".to_string(), make_std_numeric());
     registry.register_module("std.collections".to_string(), make_std_collections());
-    registry.register_module(
-        "std.compat.collections".to_string(),
-        make_std_compat_collections(),
-    );
     registry.register_module("std.string".to_string(), make_std_string());
     registry.register_module("std.convert".to_string(), make_std_convert());
     registry.register_module("std.random".to_string(), make_std_random());
     registry.register_module("std.fs".to_string(), make_std_fs());
-    registry.register_module("std.compat.fs".to_string(), make_std_compat_fs());
     registry.register_module("std.error".to_string(), make_std_error());
     registry.register_module("std.env".to_string(), make_std_env());
-    registry.register_module("std.compat.env".to_string(), make_std_compat_env());
     registry.register_module("std.option".to_string(), make_std_option());
     registry.register_module("std.result".to_string(), make_std_result());
     registry.register_module("std.char".to_string(), make_std_char());
@@ -31,42 +25,6 @@ pub fn register_builtin_modules(registry: &mut ModuleRegistry) {
     registry.register_module("std.concurrent".to_string(), make_std_concurrent());
     registry.register_module("std.serve".to_string(), make_std_serve());
     register_std_api_modules(registry, "std.api");
-    // Convenience aliases used in existing examples
-    registry.register_module("spectra.std.io".to_string(), make_std_io());
-    registry.register_module("spectra.std.math".to_string(), make_std_math());
-    registry.register_module("spectra.std.numeric".to_string(), make_std_numeric());
-    registry.register_module(
-        "spectra.std.collections".to_string(),
-        make_std_collections(),
-    );
-    registry.register_module(
-        "spectra.std.compat.collections".to_string(),
-        make_std_compat_collections(),
-    );
-    registry.register_module("spectra.std.string".to_string(), make_std_string());
-    registry.register_module("spectra.std.convert".to_string(), make_std_convert());
-    registry.register_module("spectra.std.random".to_string(), make_std_random());
-    registry.register_module("spectra.std.fs".to_string(), make_std_fs());
-    registry.register_module(
-        "spectra.std.compat.fs".to_string(),
-        make_std_compat_fs(),
-    );
-    registry.register_module("spectra.std.error".to_string(), make_std_error());
-    registry.register_module("spectra.std.env".to_string(), make_std_env());
-    registry.register_module(
-        "spectra.std.compat.env".to_string(),
-        make_std_compat_env(),
-    );
-    registry.register_module("spectra.std.option".to_string(), make_std_option());
-    registry.register_module("spectra.std.result".to_string(), make_std_result());
-    registry.register_module("spectra.std.char".to_string(), make_std_char());
-    registry.register_module("spectra.std.time".to_string(), make_std_time());
-    registry.register_module("spectra.std.range".to_string(), make_std_range());
-    registry.register_module("spectra.std.tensor".to_string(), make_std_tensor());
-    registry.register_module("spectra.std.ml".to_string(), make_std_ml());
-    registry.register_module("spectra.std.concurrent".to_string(), make_std_concurrent());
-    registry.register_module("spectra.std.serve".to_string(), make_std_serve());
-    register_std_api_modules(registry, "spectra.std.api");
 }
 
 pub(crate) fn pub_fn(params: Vec<Type>, return_type: Type) -> ExportedFunction {

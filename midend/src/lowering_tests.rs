@@ -4,11 +4,11 @@ use super::*;
 mod tests {
     use super::*;
     use spectra_compiler::{analyze_modules, Lexer, Parser};
-    use std::collections::HashSet;
+    
 
     fn lower_source(source: &str) -> IRModule {
         let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
-        let mut module = Parser::new(tokens, HashSet::new())
+        let mut module = Parser::new(tokens)
             .parse()
             .expect("parsing should pass");
         analyze_modules(&mut [&mut module]).expect("semantic analysis should pass");
@@ -116,7 +116,7 @@ mod tests {
         )
         .tokenize()
         .expect("lexing should pass");
-        let mut module = Parser::new(tokens, HashSet::new())
+        let mut module = Parser::new(tokens)
             .parse()
             .expect("parsing should pass");
         analyze_modules(&mut [&mut module]).expect("semantic analysis should pass");
@@ -300,7 +300,7 @@ mod tests {
             }
             "#;
         let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
-        let mut module = Parser::new(tokens, HashSet::new())
+        let mut module = Parser::new(tokens)
             .parse()
             .expect("parsing should pass");
         analyze_modules(&mut [&mut module]).expect("semantic analysis should pass");

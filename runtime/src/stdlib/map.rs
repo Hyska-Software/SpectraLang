@@ -5,11 +5,9 @@ pub(crate) const MAP_NEW: &str = "spectra.std.collections.map_new";
 pub(crate) const MAP_SET: &str = "spectra.std.collections.map_set";
 pub(crate) const MAP_GET: &str = spectra_contract::STD_COLLECTIONS_MAP_GET_BINDING;
 pub(crate) const MAP_GET_OPTION: &str = spectra_contract::STD_COLLECTIONS_MAP_GET_OPTION_BINDING;
-pub(crate) const MAP_GET_COMPAT: &str = spectra_contract::STD_COMPAT_COLLECTIONS_MAP_GET_BINDING;
 pub(crate) const MAP_CONTAINS: &str = "spectra.std.collections.map_contains";
 pub(crate) const MAP_REMOVE: &str = spectra_contract::STD_COLLECTIONS_MAP_REMOVE_BINDING;
 pub(crate) const MAP_REMOVE_OPTION: &str = spectra_contract::STD_COLLECTIONS_MAP_REMOVE_OPTION_BINDING;
-pub(crate) const MAP_REMOVE_COMPAT: &str = spectra_contract::STD_COMPAT_COLLECTIONS_MAP_REMOVE_BINDING;
 pub(crate) const MAP_LEN: &str = "spectra.std.collections.map_len";
 pub(crate) const MAP_CLEAR: &str = "spectra.std.collections.map_clear";
 pub(crate) const MAP_FREE: &str = "spectra.std.collections.map_free";
@@ -19,11 +17,9 @@ pub(crate) fn register_map() {
     register_host_function(MAP_SET, std_map_set);
     register_host_function(MAP_GET, std_map_get_option);
     register_host_function(MAP_GET_OPTION, std_map_get_option);
-    register_host_function(MAP_GET_COMPAT, std_map_get);
     register_host_function(MAP_CONTAINS, std_map_contains);
     register_host_function(MAP_REMOVE, std_map_remove_option);
     register_host_function(MAP_REMOVE_OPTION, std_map_remove_option);
-    register_host_function(MAP_REMOVE_COMPAT, std_map_remove);
     register_host_function(MAP_LEN, std_map_len);
     register_host_function(MAP_CLEAR, std_map_clear);
     register_host_function(MAP_FREE, std_map_free);
@@ -159,37 +155,6 @@ pub(crate) extern "C" fn std_map_set(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-/// Returns the value for `key` in the map, or 0 if not found.
-/// Args: [handle, key]. Returns: value.
-pub(crate) extern "C" fn std_map_get(ctx: *mut SpectraHostCallContext) -> i32 {
-    if ctx.is_null() {
-        return HOST_STATUS_INVALID_ARGUMENT;
-    }
-    unsafe {
-        let ctx_ref = &mut *ctx;
-        if ctx_ref.arg_len < 2 || ctx_ref.args.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        if ctx_ref.result_len == 0 || ctx_ref.results.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
-        let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);
-        let handle = args[0] as usize;
-        let key = args[1];
-        let map_arc = with_map_registry(|reg| reg.get(handle));
-        let value = match map_arc {
-            Some(map_arc) => lock_unpoisoned(&map_arc)
-                .data
-                .get(&collection_key(key))
-                .copied()
-                .unwrap_or(0),
-            None => 0,
-        };
-        results[0] = value;
-    }
-    HOST_STATUS_SUCCESS
-}
 
 pub(crate) extern "C" fn std_map_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
@@ -237,35 +202,6 @@ pub(crate) extern "C" fn std_map_contains(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-/// Removes `key` from the map. Returns the removed value, or 0 if not present.
-/// Args: [handle, key]. Returns: removed_value.
-pub(crate) extern "C" fn std_map_remove(ctx: *mut SpectraHostCallContext) -> i32 {
-    if ctx.is_null() {
-        return HOST_STATUS_INVALID_ARGUMENT;
-    }
-    unsafe {
-        let ctx_ref = &mut *ctx;
-        if ctx_ref.arg_len < 2 || ctx_ref.args.is_null() {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
-        let handle = args[0] as usize;
-        let key = args[1];
-        let map_arc = with_map_registry(|reg| reg.get(handle));
-        let removed = match map_arc {
-            Some(map_arc) => lock_unpoisoned(&map_arc)
-                .data
-                .remove(&collection_key(key))
-                .unwrap_or(0),
-            None => 0,
-        };
-        if ctx_ref.result_len > 0 && !ctx_ref.results.is_null() {
-            let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);
-            results[0] = removed;
-        }
-    }
-    HOST_STATUS_SUCCESS
-}
 
 pub(crate) extern "C" fn std_map_remove_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {

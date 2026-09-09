@@ -5,10 +5,7 @@ import std.concurrent as concurrent
 
 public func main() returns int {
     concurrent.reset()
-    let task = concurrent.task_spawn(41)
-    if not concurrent.task_is_done(task) {
-        return 1
-    }
+    let task = concurrent.task_spawn_fn( | value: int | { value}, 41)
     let copy = task
     if concurrent.task_join(copy) != 41 {
         return 2

@@ -1,18 +1,4 @@
 use super::*;
-pub(crate) extern "C" fn std_concurrent_task_spawn(ctx: *mut SpectraHostCallContext) -> i32 {
-    let (args, results) = match host_call_args(ctx, 1) {
-        Ok(parts) => parts,
-        Err(status) => return status,
-    };
-    let value = args[0];
-    match spawn_concurrent_task(value) {
-        Ok(task_id) => {
-            results[0] = task_id;
-            HOST_STATUS_SUCCESS
-        }
-        Err(status) => status,
-    }
-}
 
 pub(crate) extern "C" fn std_concurrent_task_spawn_fn(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
@@ -42,19 +28,6 @@ pub(crate) extern "C" fn std_concurrent_task_join(ctx: *mut SpectraHostCallConte
     }
 }
 
-pub(crate) extern "C" fn std_concurrent_task_spawn_join(ctx: *mut SpectraHostCallContext) -> i32 {
-    let (args, results) = match host_call_args(ctx, 1) {
-        Ok(parts) => parts,
-        Err(status) => return status,
-    };
-    let mut registry = match lock_concurrent_registry() {
-        Ok(registry) => registry,
-        Err(status) => return status,
-    };
-    registry.tasks_spawned += 1;
-    results[0] = args[0];
-    HOST_STATUS_SUCCESS
-}
 
 pub(crate) extern "C" fn std_concurrent_task_spawn_batch(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {

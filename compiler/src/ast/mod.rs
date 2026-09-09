@@ -4,8 +4,7 @@ use crate::span::Span;
 pub enum Type {
     Int,
     Float,
-    /// Explicit signed/unsigned integer width. `Type::Int` remains the
-    /// compatibility i64 spelling used by the legacy stdlib ABI.
+    /// Explicit signed/unsigned integer width. `Type::Int` is the i64 spelling.
     ExactInt {
         signed: bool,
         width: IntWidth,
@@ -36,7 +35,7 @@ pub enum Type {
     /// base name and every resolved argument instead of encoding the
     /// application only in a mangled nominal name.
     ///
-    /// The nominal name remains available to compatibility adapters, while
+    /// The nominal name remains available to adapters, while
     /// semantic/type-checking code can compare `List<int>` and
     /// `List<string>` structurally.
     Applied {

@@ -233,7 +233,6 @@ def main() -> int:
             ["python", "scripts/validate_r2104_reactor.py"],
             420,
         ),
-        ("feature-maturity", ["python", "scripts/validate_feature_maturity.py", "--binary", str(binary)], 120),
         ("stdlib-contract", stdlib_contract_command, 420),
         ("stdlib-bug-hunt", ["python", "scripts/validate_stdlib_core_bug_hunt.py", "--binary", str(binary)], 180),
         ("base-regression", ["python", "scripts/validate_r2003_base_regression_audit.py", "--binary", str(binary)], 180),

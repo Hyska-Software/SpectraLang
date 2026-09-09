@@ -28,11 +28,13 @@ public func main() returns int {
     }
     let doc_a = "RAG retrieval uses indexed chunks to find context."
     let doc_b = "Machine learning models optimize numerical objectives."
-    ml.vector_index_insert(index, "doc-rag", ml.text_embed(doc_a, 16))
-    ml.vector_index_insert(index, "doc-ml", ml.text_embed(doc_b, 16))
+    let doc_a_vec = tensor.full_f(16, 1.0)
+    let doc_b_vec = tensor.concat(tensor.full_f(8, 1.0), tensor.full_f(8, 0.0))
+    ml.vector_index_insert(index, "doc-rag", doc_a_vec)
+    ml.vector_index_insert(index, "doc-ml", doc_b_vec)
 
     let query   = "What does RAG retrieval use?"
-    let results = ml.vector_index_query(index, ml.text_embed("rag retrieval indexed chunks", 16), 1)
+    let results = ml.vector_index_query(index, tensor.full_f(16, 1.0), 1)
     if str.contains(results, "doc-rag") {
         let ok_retrieval = 1
         if ok_retrieval != 1 {
@@ -63,7 +65,7 @@ public func main() returns int {
 
     let persisted      = ml.vector_index_persist(index, "target/ai-examples/rag/vector-index.spar")
     let loaded         = ml.vector_index_load(persisted)
-    let loaded_results = ml.vector_index_query(loaded, ml.text_embed("indexed chunks", 16), 1)
+    let loaded_results = ml.vector_index_query(loaded, tensor.full_f(16, 1.0), 1)
     if str.contains(loaded_results, "doc-rag") {
         fs.fs_write("target/ai-examples/rag/report.txt", "spectralang rag pipeline\nretrieved=doc-rag\nscore=pass\n")
         tensor.free_all()

@@ -318,7 +318,7 @@ impl ASTLowering {
                 // can recover `T`, `K`, and `V` at the call site.  Falling
                 // through to the named-type path here turns `List<string>`
                 // into `Void`, which silently degrades `list_get`/`map_get`
-                // back to the legacy integer ABI.
+                // to untyped integers.
                 if name == "List" {
                     let element_name = type_args
                         .first()

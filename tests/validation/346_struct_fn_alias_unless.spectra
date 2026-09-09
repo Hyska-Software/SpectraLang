@@ -1,7 +1,7 @@
-// Regression 346: surface-language aliases and unless.
+// Regression 346: canonical surface and unless.
 //
-// - `struct` is accepted as an alias of the canonical `record`.
-// - `fn` is accepted as an alias of the canonical `func`.
+// - `record` declares aggregate types.
+// - `func` declares functions.
 // - `unless <cond> { } else { }` parses and executes both branches
 //   (semantics = `if` with the condition negated).
 //
@@ -9,12 +9,12 @@
 // produces a non-zero exit code.
 module alias_regression
 
-struct Point {
+record Point {
     x: int,
     y: int,
 }
 
-fn scale(p: Point, factor: int) returns int {
+func scale(p: Point, factor: int) returns int {
     return p.x * factor
 }
 

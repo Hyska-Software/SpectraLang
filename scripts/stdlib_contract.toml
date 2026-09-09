@@ -438,16 +438,6 @@ classification = "incomplete"
 roadmap = "R-3002"
 reason = "Real per-worker forward/backward plus mean-ALLREDUCE over OS-thread and TCP-loopback transports with multi-process proofs; legacy single-process session hosts remain alongside, and GPU collectives, elastic membership, and rendezvous docs are outstanding."
 
-[[rule]]
-prefix = "std.ml.onnx_export"
-classification = "baseline"
-roadmap = "R-1801"
-reason = "onnx_export emits a deterministic seeded fixture template, not a trained-model export; the deprecated-onnx-export lint steers callers to onnx_export_weights with live tensors."
-[[rule]]
-prefix = "std.ml.text_embed"
-classification = "baseline"
-roadmap = "R-3005"
-reason = "text_embed produces deterministic hash embeddings rather than model-backed embeddings; no host-alias mechanism exists in the runtime registry, so the demoted name is kept behind the deprecated-text-embed lint instead of being renamed to text_embed_hash."
 
 [[rule]]
 prefix = "std.ml.tokenizer_wordpiece"

@@ -8,15 +8,14 @@ const extensionRoot = path.dirname(fileURLToPath(import.meta.url));
 const configSource = fs.readFileSync(path.join(extensionRoot, 'src', 'config.ts'), 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(path.join(extensionRoot, 'package.json'), 'utf8'));
 
-// The CLI crate ships its binary as `spectralang(.exe)`; `spectra-cli` is the
-// legacy name and must only appear as fallback.
+// The CLI crate ships its binary as `spectralang(.exe)`; the legacy
+// `spectra-cli` name is not resolved anymore.
 const modernIndex = configSource.indexOf("getExecutableName('spectralang')");
-const legacyIndex = configSource.indexOf("getExecutableName('spectra-cli')");
 assert.notEqual(modernIndex, -1, "config.ts must search for 'spectralang'");
-assert.notEqual(legacyIndex, -1, "config.ts must keep the legacy 'spectra-cli' fallback");
-assert.ok(
-  modernIndex < legacyIndex,
-  "'spectralang' must be resolved before the legacy 'spectra-cli' name",
+assert.equal(
+  configSource.indexOf("getExecutableName('spectra-cli')"),
+  -1,
+  "config.ts must not resolve the legacy 'spectra-cli' name",
 );
 
 const cliFnStart = configSource.indexOf('export function getCliPath()');
@@ -30,8 +29,8 @@ assert.match(
 );
 assert.doesNotMatch(
   cliFnBody,
-  /return getExecutableName\('spectra-cli'\)/,
-  'fallback must not return the legacy binary name',
+  /spectra-cli/,
+  'fallback must not reference the legacy binary name',
 );
 
 const description =
@@ -39,6 +38,6 @@ const description =
 
 assert.ok(description, 'package.json must document spectra.cliPath');
 assert.match(description, /spectralang/, 'description must mention the spectralang binary');
-assert.match(description, /spectra-cli/, 'description must keep the legacy fallback documented');
+assert.doesNotMatch(description, /spectra-cli/, 'description must not mention the legacy fallback');
 
-console.log('validated Spectra CLI resolution: prefers spectralang(.exe), legacy spectra-cli kept as fallback');
+console.log('validated Spectra CLI resolution: spectralang(.exe) only');

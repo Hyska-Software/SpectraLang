@@ -531,26 +531,6 @@ pub(crate) extern "C" fn std_ml_embedding_load(ctx: *mut SpectraHostCallContext)
     }
 }
 
-pub(crate) extern "C" fn std_ml_text_embed(ctx: *mut SpectraHostCallContext) -> i32 {
-    unsafe {
-        let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        };
-        let Some(text) = ml_read_path_arg(args[0]) else {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        };
-        if args[1] <= 0 {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        }
-        let Some(values) = ml_hash_text_to_embedding(&text, args[1] as usize) else {
-            return HOST_STATUS_INVALID_ARGUMENT;
-        };
-        match ml_alloc_float_tensor(vec![args[1] as usize], values) {
-            Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
-            Err(code) => code,
-        }
-    }
-}
 
 pub(crate) extern "C" fn std_ml_vector_index_new(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {

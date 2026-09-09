@@ -183,13 +183,8 @@ These are usable where covered, but still not treated as fully production-harden
 
 ### Experimental
 
-there are currently no active experimental syntax gates. `spectralang --list-experimental` must report an empty set.
-
-CLI compatibility contract:
-
-- `--enable-experimental <feature>` remains accepted as a no-op for older scripts
-- new experimental syntax must not be added without documenting the exact feature name here and returning it from `spectralang --list-experimental`
-- parser diagnostics for future disabled experimental syntax must emit a feature-gate error with code `P004`
+There is no experimental gating mechanism. New syntax lands directly as stable.
+Experimental flags were removed; `spectralang --enable-experimental` and `spectralang --list-experimental` are not recognized.
 
 ### Deferred
 
@@ -217,5 +212,5 @@ When a feature changes maturity:
 1. update this file
 2. update the user-facing reference docs
 3. update examples if their required invocation changes
-4. update CLI help or `--list-experimental` if the change affects experimental gating
+4. update CLI help if the change affects invocation
 5. add or adjust tests in `tests/validation`, `tests/errors`, `tests/cli`, or `examples`

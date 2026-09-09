@@ -70,11 +70,10 @@ pub(crate) enum ServeModel {
     Onnx(u64),
 }
 
-/// Model id used by the legacy single-model registration/inference hosts
+/// Model id used by the single-model registration/inference hosts
 /// (`server_register_model_linear`, the enqueue/process-batch pipeline and a
 /// `/infer` request without an explicit `"model"` field).
 pub(crate) const SERVE_DEFAULT_MODEL_ID: &str = "default";
-
 /// Monitoring counters tracked separately for every registered `model_id`
 /// (see `serve_monitoring_snapshot_json`'s `"models"` sections).
 #[derive(Clone, Default)]
@@ -88,8 +87,8 @@ pub(crate) struct ServeModelMetrics {
 
 pub(crate) struct ServeServer {
     pub(crate) model: SpectraHostValue,
-    /// Named models registered on this server. The legacy single-model
-    /// hosts register under [`SERVE_DEFAULT_MODEL_ID`].
+    /// Named models registered on this server. The single-model hosts
+    /// register under [`SERVE_DEFAULT_MODEL_ID`].
     pub(crate) models: std::collections::BTreeMap<String, ServeModel>,
     pub(crate) model_version: String,
     pub(crate) warm: bool,
@@ -563,7 +562,7 @@ pub(crate) fn serve_infer_named(
     Ok((output, latency_ms))
 }
 
-/// Legacy scalar entry used by the enqueue/process-batch pipeline: infers
+/// Scalar entry used by the enqueue/process-batch pipeline: infers
 /// through the `"default"` model with a length-1 request vector.
 pub(crate) fn serve_infer(server: &ServeServer, input: SpectraHostValue) -> Result<(Vec<f64>, f64), i32> {
     serve_infer_f64(server, input as f64)

@@ -2,7 +2,7 @@
 
 The Spectra runtime ships a minimal host-driven standard library implemented as registered host
 functions. The functions are grouped by namespace and can be installed by calling
-`spectra_runtime::register_standard_library()` (or invoking `spectra_rt_std_register` once it is
+`spectra_runtime::register()` (or invoking `spectra_rt_std_register` once it is
 gated through the CLI).
 
 The maturity contract is split by surface: scalar core helpers and the
@@ -10,15 +10,11 @@ certified exact-width numeric ABI are stable, while typed collection accessors
 and `Option`/`Result` transformations remain beta until their complete
 cross-target evidence is available. The public collection names that can miss (`list_get`,
 `list_pop`, `list_pop_front`, `list_remove_at`, `map_get`, and `map_remove`)
-return tagged `Option<T>` values. Legacy sentinel-returning calls are retained
-only under the explicit `std.compat.collections` namespace.
+return tagged `Option<T>` values.
 The public `std.env.env_get` and `std.env.env_arg` calls use the same
 absence-safe `Option<string>` contract; empty-string environment values remain
-distinguishable from missing values. Legacy empty-string behavior is retained
-only under `std.compat.env`.
-The public `std.fs` calls now return tagged `Result<T, Error>` values; the
-historical string/boolean sentinel adapter is retained only under
-`std.compat.fs`.
+distinguishable from missing values.
+The public `std.fs` calls return tagged `Result<T, Error>` values.
 
 All host calls use the shared [`SpectraHostCallContext`](host-call-conventions.md) contract and the
 status codes defined in `runtime::ffi` (`HOST_STATUS_*`). Arguments and results are encoded as
@@ -54,9 +50,7 @@ Spectra exposes typed `List<T>` operations at the source boundary. The runtime
 ABI currently transports each list as an opaque generational handle backed by a
 runtime-managed vector. The handle representation is an implementation/ABI
 detail; stale or invalid handles are rejected through the host status channel.
-The legacy rows below therefore describe the host ABI adapter, not the stable
-source-level collection signatures. A process-wide cleanup remains available
-for shutdown and test isolation.
+A process-wide cleanup remains available for shutdown and test isolation.
 
 | Host call | Description | Arguments | Results |
 |-----------|-------------|-----------|---------|
@@ -67,7 +61,6 @@ for shutdown and test isolation.
 | `spectra.std.collections.list_free` | Drops the list allocation associated with the handle. | `handle` | `0` when `results` provided |
 | `spectra.std.collections.list_free_all` | Drops every list managed by the runtime. | *(none)* | number of freed lists |
 | `spectra.std.collections.list_get` / `list_pop` / `list_pop_front` / `list_remove_at` | Absence-safe reads/removals for the public `std.collections` surface. | list handle, optional index | tagged `Option<T>` payload |
-| `spectra.std.compat.collections.list_get` / `list_pop` / `list_pop_front` / `list_remove_at` | Compatibility reads/removals with the historical `-1` sentinel. | list handle, optional index | integer payload |
 | `spectra.std.collections.set_new` / `set_insert` / `set_contains` / `set_remove` | Creates and mutates an insertion-ordered typed set. | handle, optional value | handle or bool |
 | `spectra.std.collections.set_len` / `set_get` / `set_clear` / `set_free` | Reads, clears, and releases a set. | handle, optional index/value | length, tagged `Option<T>`, or `0` |
 | `spectra.std.collections.list_iter` / `set_iter` / `map_iter` | Creates deterministic snapshot iterators for collections. Map iteration yields keys. | collection handle | iterator handle |
@@ -78,9 +71,7 @@ The explicit `_option` names remain aliases for the absence-safe operations:
 `list_get_option`, `list_pop_option`, `list_pop_front_option`,
 `list_remove_at_option`, `map_get_option`, and `map_remove_option`. They allocate
 a small tagged payload and report invalid handles through the host status
-channel. The compatibility namespace also exposes
-`spectra.std.compat.collections.map_get` and `map_remove`, whose missing-value
-sentinels are `0`.
+channel.
 
 ## fs namespace
 
@@ -95,7 +86,6 @@ uses 64-bit slots. `Ok` carries the operation payload and `Err` carries an
 | `spectra.std.fs.fs_append` | Appends file contents and creates missing parents when possible. | path, content | `Result<bool, Error>` |
 | `spectra.std.fs.fs_exists` | Checks metadata existence; a missing path is `Ok(false)`. | path | `Result<bool, Error>` |
 | `spectra.std.fs.fs_remove` | Removes a file. | path | `Result<bool, Error>` |
-| `spectra.std.compat.fs.*` | Legacy sentinel adapters. | same as above | string/bool sentinel values |
 
 Invalid paths and I/O failures are represented by `ErrorCode` values rather
 than an empty string or `false`. The runtime maps `InvalidArgument`, `NotFound`,
@@ -118,7 +108,6 @@ at the ABI boundary and are not converted into a fabricated success payload.
 | `spectra.std.env.env_set` | Set an environment variable. | key, value | bool |
 | `spectra.std.env.env_args_count` | Count forwarded process arguments. | none | integer count |
 | `spectra.std.env.env_arg` / `env_arg_option` | Read a process argument by index. | index | tagged `Option<string>` |
-| `spectra.std.compat.env.env_get` / `env_arg` | Legacy empty-string sentinel adapters. | key or index | string (`""` when absent) |
 
 ## time namespace
 
@@ -129,7 +118,7 @@ ABI; invalid handles return `HOST_STATUS_INVALID_ARGUMENT`.
 | Host call | Description | Arguments | Results |
 |-----------|-------------|-----------|---------|
 | `spectra.std.time.time_now_millis` / `time_now_secs` | Unix wall-clock timestamp from `SystemTime`. | none | milliseconds or seconds since Unix epoch |
-| `spectra.std.time.sleep_ms` | Backwards-compatible blocking sleep in milliseconds. | `ms` | `0` when a result slot is provided |
+| `spectra.std.time.sleep_ms` | Blocking sleep in milliseconds. | `ms` | `0` when a result slot is provided |
 | `spectra.std.time.monotonic_millis` / `monotonic_nanos` | Monotonic elapsed time since runtime start. | none | elapsed milliseconds or nanoseconds |
 | `spectra.std.time.duration_ms` / `duration_secs` | Create a non-negative duration handle. | milliseconds or seconds | duration handle |
 | `spectra.std.time.duration_millis` / `duration_secs_value` | Read a duration handle. | duration handle | milliseconds or whole seconds |

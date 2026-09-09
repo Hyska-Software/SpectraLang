@@ -134,7 +134,6 @@ jobs:
 
       - name: Validate maturity and documentation contracts
         run: |
-          python scripts/validate_feature_maturity.py --binary target/debug/spectralang
           python scripts/validate_language_guide.py --binary target/debug/spectralang
           python scripts/validate_r3007_stdlib_contract.py --binary target/debug/spectralang --timeout-seconds 180 --report target/stability/r3007-ci.json
 

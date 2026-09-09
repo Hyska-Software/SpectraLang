@@ -1,11 +1,11 @@
 use spectra_compiler::{
     analyze_modules, CompilationOptions, CompilationPipeline, CompilerError, Lexer, Parser,
 };
-use std::collections::HashSet;
+
 
 fn parse_module(source: &str) -> spectra_compiler::Module {
     let tokens = Lexer::new(source).tokenize().expect("lexer should succeed");
-    Parser::new(tokens, HashSet::new())
+    Parser::new(tokens)
         .parse()
         .expect("parser should succeed")
 }

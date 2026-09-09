@@ -244,7 +244,7 @@ impl FormatterConfigResolver {
             }
 
             visited.push(dir.clone());
-            let candidate = dir.join("Spectra.toml");
+            let candidate = dir.join("spectra.toml");
             if candidate.is_file() {
                 let canonical = fs::canonicalize(&candidate).map_err(|error| {
                     CliError::io(format!(

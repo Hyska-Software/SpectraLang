@@ -2,8 +2,6 @@
 #[inline(never)]
 pub fn keep_fast_symbols() {
     // Concurrent: spawn a task we never join, then drop the channel we open.
-    let task = spectra_rt_concurrent_spawn_fast(0);
-    let _ = spectra_rt_concurrent_join_fast(task);
     let spawn_fn_task = spectra_rt_concurrent_spawn_fn_fast(0, 0);
     let _ = spectra_rt_concurrent_join_fast(spawn_fn_task);
     let channel = spectra_rt_channel_new_fast();
@@ -15,9 +13,7 @@ pub fn keep_fast_symbols() {
     // Map: create a map, write / read / check, then free.
     let m = spectra_rt_map_new_fast();
     let _ = spectra_rt_map_set_fast(m, 0, 0);
-    let _ = spectra_rt_map_get_fast(m, 0);
     let _ = spectra_rt_map_contains_fast(m, 0);
-    let _ = spectra_rt_map_remove_fast(m, 0);
     let _ = spectra_rt_map_len_fast(m);
     spectra_rt_map_clear_fast(m);
     spectra_rt_map_free_fast(m);
@@ -34,10 +30,8 @@ pub fn keep_fast_symbols() {
     let _ = spectra_rt_string_char_at_fast(0, 0);
 
     // Generic dispatch symbols are also resolved by generated JIT/AOT code;
-    // reference them here so release linkers keep both legacy and cache-aware
+    // reference them here so release linkers keep both cache-aware
     // internal entry points in the executable image.
-    let _ = spectra_rt_host_invoke(ptr::null(), 0, ptr::null(), 0, ptr::null_mut(), 0);
-    let _ = spectra_rt_host_invoke_batch(ptr::null(), 0);
     let _ = spectra_rt_host_invoke_cached(
         ptr::null(),
         ptr::null(),

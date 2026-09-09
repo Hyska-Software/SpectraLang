@@ -171,13 +171,13 @@ mod narrowing_cast_tests {
     use crate::lexer::Lexer;
     use crate::lint::{lint_module, LintOptions, LintRule};
     use crate::parser::Parser;
-    use std::collections::HashSet;
+    
 
     pub(crate) fn parse(source: &str) -> crate::ast::Module {
         let tokens = Lexer::new(source)
             .tokenize()
             .expect("lexer should not fail");
-        Parser::new(tokens, HashSet::new()).parse().expect("parse")
+        Parser::new(tokens).parse().expect("parse")
     }
 
     fn narrowing_diagnostics(source: &str) -> Vec<String> {

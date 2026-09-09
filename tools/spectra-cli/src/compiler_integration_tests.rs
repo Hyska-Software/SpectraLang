@@ -2,7 +2,6 @@
 mod tests {
     use super::*;
     use spectra_compiler::lint::LintOptions;
-    use std::collections::HashSet;
 
     #[test]
     fn test_end_to_end_simple() {
@@ -50,7 +49,6 @@ mod tests {
             dump_ast: false,
             run_jit: false,
             collect_metrics: false,
-            experimental_features: HashSet::new(),
             lint: LintOptions::default(),
         };
 

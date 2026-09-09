@@ -18,7 +18,7 @@ use spectra_midend::{
     ir::{pretty::format_module, Module as IRModule, Type as IRType},
     lowering::ASTLowering,
     passes::{
-        concurrent_spawn_join_fusion::ConcurrentSpawnJoinFusion, constant_folding::ConstantFolding,
+        constant_folding::ConstantFolding,
         dead_code_elimination::DeadCodeElimination, function_inlining::FunctionInlining,
         validation::LoopStructureValidation, verification::verify_module, Pass,
     },
@@ -414,14 +414,6 @@ impl BackendDriver for FullPipelineBackend {
         }
 
         if options.optimize {
-            let mut fusion = ConcurrentSpawnJoinFusion::new();
-            let pass_start = Instant::now();
-            let modified = fusion.run(&mut ir_module);
-            pass_reports.push(PassReport {
-                name: "Concurrent Spawn/Join Fusion",
-                duration: pass_start.elapsed(),
-                modified,
-            });
 
             if options.opt_level >= 1 {
                 let mut cf = ConstantFolding::new();
@@ -553,7 +545,7 @@ impl BackendDriver for FullPipelineBackend {
 
         let _runtime_state = spectra_runtime::initialize();
         // Ensure package host calls are registered before bridging into JITed code.
-        spectra_runtime::register_standard_library();
+        spectra_runtime::register();
         spectra_api::register();
         let execution_start = Instant::now();
 

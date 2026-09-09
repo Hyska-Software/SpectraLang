@@ -503,29 +503,6 @@ pub(crate) fn ml_wordpiece_decode(tokenizer: &MlWordpieceTokenizer, ids: &[i64])
     Some(words.join(" "))
 }
 
-pub(crate) fn ml_hash_text_to_embedding(text: &str, dim: usize) -> Option<Vec<f64>> {
-    if dim == 0 {
-        return None;
-    }
-    let mut values = vec![0.0f64; dim];
-    for token in text.split_whitespace() {
-        let mut hash = 0xcbf29ce484222325u64;
-        for byte in token.to_ascii_lowercase().as_bytes() {
-            hash ^= *byte as u64;
-            hash = hash.wrapping_mul(0x100000001b3);
-        }
-        let idx = (hash as usize) % dim;
-        let sign = if (hash >> 63) == 0 { 1.0 } else { -1.0 };
-        values[idx] += sign;
-    }
-    let norm = values.iter().map(|value| value * value).sum::<f64>().sqrt();
-    if norm > 0.0 {
-        for value in &mut values {
-            *value /= norm;
-        }
-    }
-    Some(values)
-}
 
 pub(crate) fn ml_token_set(text: &str) -> HashSet<String> {
     text.split_whitespace()

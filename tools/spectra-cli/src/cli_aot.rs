@@ -5,9 +5,7 @@
 /// source does not parse or declares no top-level `func main`.
 fn find_main_span_in_source(source: &str) -> Option<(usize, usize)> {
     let tokens = spectra_compiler::Lexer::new(source).tokenize().ok()?;
-    let module = spectra_compiler::Parser::new(tokens, std::collections::HashSet::new())
-        .parse()
-        .ok()?;
+    let module = spectra_compiler::Parser::new(tokens).parse().ok()?;
     for item in &module.items {
         if let spectra_compiler::ast::Item::Function(function) = item {
             if function.name == "main" {
@@ -342,21 +340,6 @@ fn print_verbose_configuration(kind: BuildCommand, options: &CompilationOptions)
             denied.join(", ")
         };
         println!("  - Linting: enabled (denied rules: {})", denied_display);
-    }
-
-    let mut features: Vec<_> = options.experimental_features.iter().collect();
-    features.sort();
-    if features.is_empty() {
-        println!("  - Experimental features: (none)");
-    } else {
-        println!(
-            "  - Experimental features: {}",
-            features
-                .into_iter()
-                .map(|feature| feature.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
     }
 }
 

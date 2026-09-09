@@ -81,45 +81,7 @@ impl CodeGenerator {
                     return Ok(());
                 }
 
-                if matches!(
-                    fast_hostcall,
-                    HostCallClass::Fast(FastHostCall::ConcurrentSpawnJoin)
-                ) && args.len() == 1
-                {
-                    let value = get_value(&args[0])?;
-                    let func_ref = module.declare_func_in_func(
-                        hostcall.fast_func(FastHostCall::ConcurrentSpawnJoin),
-                        builder.func,
-                    );
-                    let call = builder.ins().call(func_ref, &[value]);
-                    let results = builder.inst_results(call);
-                    if let Some(result_value) = result {
-                        if let Some(ret) = results.first() {
-                            value_map.insert(result_value.id, *ret);
-                        }
-                    }
-                    return Ok(());
-                }
 
-                if matches!(
-                    fast_hostcall,
-                    HostCallClass::Fast(FastHostCall::ConcurrentSpawn)
-                ) && args.len() == 1
-                {
-                    let value = get_value(&args[0])?;
-                    let func_ref = module.declare_func_in_func(
-                        hostcall.fast_func(FastHostCall::ConcurrentSpawn),
-                        builder.func,
-                    );
-                    let call = builder.ins().call(func_ref, &[value]);
-                    let results = builder.inst_results(call);
-                    if let Some(result_value) = result {
-                        if let Some(ret) = results.first() {
-                            value_map.insert(result_value.id, *ret);
-                        }
-                    }
-                    return Ok(());
-                }
 
                 if matches!(
                     fast_hostcall,
@@ -303,24 +265,6 @@ impl CodeGenerator {
                     return Ok(());
                 }
 
-                if matches!(fast_hostcall, HostCallClass::Fast(FastHostCall::MapGet))
-                    && args.len() == 2
-                {
-                    let handle = get_value(&args[0])?;
-                    let key = get_value(&args[1])?;
-                    let func_ref = module.declare_func_in_func(
-                        hostcall.fast_func(FastHostCall::MapGet),
-                        builder.func,
-                    );
-                    let call = builder.ins().call(func_ref, &[handle, key]);
-                    let results = builder.inst_results(call);
-                    if let Some(result_value) = result {
-                        if let Some(ret) = results.first() {
-                            value_map.insert(result_value.id, *ret);
-                        }
-                    }
-                    return Ok(());
-                }
 
                 if matches!(
                     fast_hostcall,
@@ -364,24 +308,6 @@ impl CodeGenerator {
                     return Ok(());
                 }
 
-                if matches!(fast_hostcall, HostCallClass::Fast(FastHostCall::MapRemove))
-                    && args.len() == 2
-                {
-                    let handle = get_value(&args[0])?;
-                    let key = get_value(&args[1])?;
-                    let func_ref = module.declare_func_in_func(
-                        hostcall.fast_func(FastHostCall::MapRemove),
-                        builder.func,
-                    );
-                    let call = builder.ins().call(func_ref, &[handle, key]);
-                    let results = builder.inst_results(call);
-                    if let Some(result_value) = result {
-                        if let Some(ret) = results.first() {
-                            value_map.insert(result_value.id, *ret);
-                        }
-                    }
-                    return Ok(());
-                }
 
                 if matches!(fast_hostcall, HostCallClass::Fast(FastHostCall::MapLen))
                     && args.len() == 1

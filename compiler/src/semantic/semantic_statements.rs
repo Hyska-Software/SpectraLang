@@ -599,18 +599,6 @@ impl SemanticAnalyzer {
         })
     }
 
-    fn is_compat_collections_path(&self, qualified_name: &str) -> bool {
-        if qualified_name.contains(".compat.collections.") {
-            return true;
-        }
-
-        let Some((namespace, _)) = qualified_name.split_once('.') else {
-            return false;
-        };
-        self.stdlib_namespace_aliases
-            .get(namespace)
-            .is_some_and(|path| path.ends_with(".compat.collections"))
-    }
 
     pub(crate) fn specialize_std_collection_signature(
         &mut self,
@@ -650,8 +638,8 @@ impl SemanticAnalyzer {
             &substitutions,
         );
 
-        // Constructors have no value from which to infer T/K/V.  Use the
-        // expected binding type when present and keep the legacy int ABI as
+        // Constructors have no value from which to infer T/K/V. Use the
+        // expected binding type when present and the int default as
         // the deterministic default for unannotated source.
         if matches!(operation, "list_new" | "map_new" | "set_new") {
             if let Some(expected) = self.current_expected_type.clone() {
@@ -728,24 +716,14 @@ impl SemanticAnalyzer {
             | "iterator_next" => {
                 if let Some((_, values)) = first_collection.as_ref() {
                     if let Some(element) = values.first() {
-                        let compatibility = self.is_compat_collections_path(qualified_name);
-                        specialized.return_type = if compatibility {
-                            element.clone()
-                        } else {
-                            option_type(self, element.clone())
-                        };
+                        specialized.return_type = option_type(self, element.clone());
                     }
                 }
             }
             "map_get" | "map_remove" => {
                 if let Some(("Map", values)) = first_collection.as_ref() {
                     if let Some(value) = values.get(1) {
-                        let compatibility = self.is_compat_collections_path(qualified_name);
-                        specialized.return_type = if compatibility {
-                            value.clone()
-                        } else {
-                            option_type(self, value.clone())
-                        };
+                        specialized.return_type = option_type(self, value.clone());
                     }
                 }
             }

@@ -19,10 +19,6 @@ fn execute_action(action: CliAction) -> CliResult<()> {
             }
             Ok(())
         }
-        CliAction::ListExperimental => {
-            print_experimental_features();
-            Ok(())
-        }
         CliAction::Build { kind, invocation } => execute_build_command(kind, invocation),
         CliAction::Repl(options) => execute_repl(options),
         CliAction::NewProject(options) => execute_new_project(options),
@@ -68,13 +64,6 @@ fn parse_cli() -> CliResult<CliAction> {
             } else {
                 return Ok(CliAction::Help(HelpTopic::Global));
             }
-        }
-        Some("--list-experimental") => {
-            args.next();
-            if args.peek().is_some() {
-                return Err(usage_error("--list-experimental must be used on its own."));
-            }
-            return Ok(CliAction::ListExperimental);
         }
         Some("repl") => {
             args.next();

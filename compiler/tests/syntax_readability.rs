@@ -1,9 +1,9 @@
 use spectra_compiler::{CompilationOptions, CompilationPipeline, Lexer, Parser};
-use std::collections::HashSet;
+
 
 fn parse(source: &str) -> spectra_compiler::Module {
     let tokens = Lexer::new(source).tokenize().expect("lexer should succeed");
-    Parser::new(tokens, HashSet::new())
+    Parser::new(tokens)
         .parse()
         .expect("canonical source should parse")
 }
@@ -78,7 +78,7 @@ fn doubled_comma_in_array_literal_remains_a_parse_error() {
     "#;
 
     let tokens = Lexer::new(source).tokenize().expect("lexer should succeed");
-    let errors = Parser::new(tokens, HashSet::new())
+    let errors = Parser::new(tokens)
         .parse()
         .expect_err("a doubled comma inside an array must remain rejected");
 
@@ -105,7 +105,7 @@ fn legacy_surface_is_rejected_with_migration_diagnostics() {
     // Semicolons remain rejected by the parser (P012).
     let source = "module legacy\nfn main() returns int { return 0; }\n";
     let tokens = Lexer::new(source).tokenize().expect("lexer should succeed");
-    let errors = Parser::new(tokens, HashSet::new())
+    let errors = Parser::new(tokens)
         .parse()
         .expect_err("legacy syntax must not remain accepted");
 

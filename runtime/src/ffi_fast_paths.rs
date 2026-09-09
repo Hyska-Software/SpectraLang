@@ -167,19 +167,6 @@ pub extern "C" fn spectra_rt_string_char_at(
 }
 
 
-/// Fast ABI entry for `concurrent.task_spawn(value)`.
-///
-/// Skips the generic host-call dispatch (no `manual_alloc`/`free` for the
-/// args/result buffer pair, no host name lookup, no `catch_unwind`). Called
-/// directly from JIT code when the backend inlines the `task_spawn` call.
-///
-/// Returns the new task_id (>0 on success) or 0 on internal error
-/// (poisoned registry mutex). Task 0 is reserved as the invalid sentinel.
-#[no_mangle]
-#[inline(never)]
-pub extern "C" fn spectra_rt_concurrent_spawn_fast(value: SpectraHostValue) -> SpectraHostValue {
-    crate::stdlib::concurrent_spawn_fast(value)
-}
 
 /// Fast ABI entry for `concurrent.task_spawn_fn(closure, arg)`.
 ///
@@ -227,14 +214,6 @@ pub extern "C" fn spectra_rt_concurrent_join_batch_sum_fast(
     crate::stdlib::concurrent_join_batch_sum_fast(batch_id)
 }
 
-/// Fast ABI entry for an immediately paired concurrent spawn and join.
-#[no_mangle]
-#[inline(never)]
-pub extern "C" fn spectra_rt_concurrent_spawn_join_fast(
-    value: SpectraHostValue,
-) -> SpectraHostValue {
-    crate::stdlib::concurrent_spawn_join_fast(value)
-}
 
 /// Fast ABI entry for `concurrent.reset()`.
 #[no_mangle]
@@ -311,19 +290,6 @@ pub extern "C" fn spectra_rt_map_set_fast(
     crate::stdlib::map_set_fast(handle as usize, key, value)
 }
 
-/// Fast ABI entry for `col.map_get(handle, key)`.
-///
-/// Skips the generic host-call dispatch. Returns the value for the key,
-/// or 0 if the key is absent or the handle is invalid. Cannot distinguish
-/// "stored value is 0" from "key absent / invalid handle".
-#[no_mangle]
-#[inline(never)]
-pub extern "C" fn spectra_rt_map_get_fast(
-    handle: SpectraHostValue,
-    key: SpectraHostValue,
-) -> SpectraHostValue {
-    crate::stdlib::map_get_fast(handle as usize, key)
-}
 
 /// Fast ABI entry for `col.map_contains(handle, key)`.
 ///
@@ -348,19 +314,6 @@ pub extern "C" fn spectra_rt_map_new_fast() -> SpectraHostValue {
     crate::stdlib::map_new_fast()
 }
 
-/// Fast ABI entry for `col.map_remove(handle, key)`.
-///
-/// Skips the generic host-call dispatch. Returns the removed value, or
-/// 0 if the key was absent / handle is invalid. Same caveat as
-/// `map_get_fast` regarding stored 0.
-#[no_mangle]
-#[inline(never)]
-pub extern "C" fn spectra_rt_map_remove_fast(
-    handle: SpectraHostValue,
-    key: SpectraHostValue,
-) -> SpectraHostValue {
-    crate::stdlib::map_remove_fast(handle as usize, key)
-}
 
 /// Fast ABI entry for `col.map_len(handle)`.
 ///

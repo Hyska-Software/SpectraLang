@@ -381,7 +381,7 @@ fn source_defines_main(source: &str) -> bool {
     let Ok(tokens) = Lexer::new(source).tokenize() else {
         return false;
     };
-    let Ok(module) = Parser::new(tokens, HashSet::new()).parse() else {
+    let Ok(module) = Parser::new(tokens).parse() else {
         return false;
     };
     module.items.iter().any(|item| {

@@ -260,8 +260,11 @@ pub(crate) fn make_std_random() -> ModuleExports {
 }
 
 pub(crate) fn make_std_fs() -> ModuleExports {
-    let mut exports = make_std_fs_legacy();
-    exports.stdlib_path = Some(vec!["std".to_string(), "fs".to_string()]);
+    let mut exports = ModuleExports {
+        stdlib_path: Some(vec!["std".to_string(), "fs".to_string()]),
+        package_name: Some("std".to_string()),
+        ..Default::default()
+    };
 
     let result_string_error = Type::Enum {
         name: "Result_string_Error".to_string(),
@@ -330,56 +333,7 @@ pub(crate) fn make_std_fs() -> ModuleExports {
     exports
 }
 
-/// Compatibility-only filesystem surface retaining the historic string and
-/// boolean return values.  New code must import `std.fs` and handle
-/// `Result<_, Error>` explicitly.
-pub(crate) fn make_std_compat_fs() -> ModuleExports {
-    let mut exports = make_std_fs_legacy();
-    exports.stdlib_path = Some(vec![
-        "std".to_string(),
-        "compat".to_string(),
-        "fs".to_string(),
-    ]);
-    exports
-}
 
-fn make_std_fs_legacy() -> ModuleExports {
-    let mut exports = ModuleExports {
-        stdlib_path: Some(vec!["std".to_string(), "fs".to_string()]),
-        package_name: Some("std".to_string()),
-        ..Default::default()
-    };
-
-    // fs_read(path: string) returns string  (reads entire file; returns "" on error)
-    exports.functions.insert(
-        "fs_read".to_string(),
-        pub_fn(vec![Type::String], Type::String),
-    );
-    // fs_write(path: string, content: string) -> bool
-    // Creates missing parent directories when possible; returns false on controlled filesystem failures.
-    exports.functions.insert(
-        "fs_write".to_string(),
-        pub_fn(vec![Type::String, Type::String], Type::Bool),
-    );
-    // fs_append(path: string, content: string) -> bool
-    // Creates missing parent directories when possible; returns false on controlled filesystem failures.
-    exports.functions.insert(
-        "fs_append".to_string(),
-        pub_fn(vec![Type::String, Type::String], Type::Bool),
-    );
-    // fs_exists(path: string) -> bool
-    exports.functions.insert(
-        "fs_exists".to_string(),
-        pub_fn(vec![Type::String], Type::Bool),
-    );
-    // fs_remove(path: string) -> bool
-    exports.functions.insert(
-        "fs_remove".to_string(),
-        pub_fn(vec![Type::String], Type::Bool),
-    );
-
-    exports
-}
 
 /// Structured runtime failure values shared by the stable I/O surface.
 ///
@@ -483,11 +437,13 @@ pub(crate) fn make_std_error() -> ModuleExports {
 }
 
 /// Public environment surface. Missing variables and out-of-range arguments
-/// are represented by `Option<string>`; sentinel strings remain available only
-/// through the explicit `std.compat.env` namespace.
+/// are represented by `Option<string>`.
 pub(crate) fn make_std_env() -> ModuleExports {
-    let mut exports = make_std_env_legacy();
-    exports.stdlib_path = Some(vec!["std".to_string(), "env".to_string()]);
+    let mut exports = ModuleExports {
+        stdlib_path: Some(vec!["std".to_string(), "env".to_string()]),
+        package_name: Some("std".to_string()),
+        ..Default::default()
+    };
 
     let option_string = Type::Enum {
         name: "Option_string".to_string(),
@@ -499,6 +455,15 @@ pub(crate) fn make_std_env() -> ModuleExports {
         "env_get_option".to_string(),
         pub_fn(vec![Type::String], option_string.clone()),
     );
+    // env_set(key: string, value: string) -> bool
+    exports.functions.insert(
+        "env_set".to_string(),
+        pub_fn(vec![Type::String, Type::String], Type::Bool),
+    );
+    // env_args_count() -> int
+    exports
+        .functions
+        .insert("env_args_count".to_string(), pub_fn(vec![], Type::Int));
     exports
         .functions
         .insert("env_arg".to_string(), pub_fn(vec![Type::Int], option_string.clone()));
@@ -510,65 +475,4 @@ pub(crate) fn make_std_env() -> ModuleExports {
     exports
 }
 
-/// Compatibility-only environment surface retaining the historic empty-string
-/// sentinel behavior for callers that have not migrated yet.
-pub(crate) fn make_std_compat_env() -> ModuleExports {
-    let mut exports = make_std_env_legacy();
-    exports
-        .functions
-        .retain(|name, _| matches!(name.as_str(), "env_get" | "env_arg"));
-    exports.stdlib_path = Some(vec![
-        "std".to_string(),
-        "compat".to_string(),
-        "env".to_string(),
-    ]);
-    exports
-}
-
-fn make_std_env_legacy() -> ModuleExports {
-    let mut exports = ModuleExports {
-        stdlib_path: Some(vec!["std".to_string(), "env".to_string()]),
-        package_name: Some("std".to_string()),
-        ..Default::default()
-    };
-
-    // env_get(key: string) returns string  (returns "" if not set)
-    exports.functions.insert(
-        "env_get".to_string(),
-        pub_fn(vec![Type::String], Type::String),
-    );
-    exports.functions.insert(
-        "env_get_option".to_string(),
-        pub_fn(
-            vec![Type::String],
-            Type::Enum {
-                name: "Option".to_string(),
-            },
-        ),
-    );
-    // env_set(key: string, value: string) -> bool
-    exports.functions.insert(
-        "env_set".to_string(),
-        pub_fn(vec![Type::String, Type::String], Type::Bool),
-    );
-    // env_args_count() -> int
-    exports
-        .functions
-        .insert("env_args_count".to_string(), pub_fn(vec![], Type::Int));
-    // env_arg(index: int) returns string  (returns "" if out of bounds)
-    exports
-        .functions
-        .insert("env_arg".to_string(), pub_fn(vec![Type::Int], Type::String));
-    exports.functions.insert(
-        "env_arg_option".to_string(),
-        pub_fn(
-            vec![Type::Int],
-            Type::Enum {
-                name: "Option".to_string(),
-            },
-        ),
-    );
-
-    exports
-}
 

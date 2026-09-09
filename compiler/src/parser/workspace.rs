@@ -1,4 +1,4 @@
-use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
+use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,7 +14,6 @@ use super::Parser;
 #[derive(Debug)]
 struct CachedModule {
     hash: u64,
-    feature_key: Vec<String>,
     outcome: CachedOutcome,
 }
 
@@ -69,13 +68,11 @@ impl ModuleLoader {
         &mut self,
         module_id: &str,
         source: &str,
-        features: &HashSet<String>,
     ) -> Result<ModuleParseSuccess, ModuleParseError> {
-        let feature_key = Self::feature_key(features);
-        let hash = Self::compute_hash(source, &feature_key);
+        let hash = Self::compute_hash(source);
 
         if let Some(entry) = self.cache.get(module_id) {
-            if entry.hash == hash && entry.feature_key == feature_key {
+            if entry.hash == hash {
                 return match &entry.outcome {
                     CachedOutcome::Success(arc) => Ok(ModuleParseSuccess {
                         // Arc::clone is O(1); callers that need ownership get a
@@ -102,7 +99,6 @@ impl ModuleLoader {
                     module_id.to_string(),
                     CachedModule {
                         hash,
-                        feature_key,
                         outcome: CachedOutcome::Lexical(cloned),
                     },
                 );
@@ -112,7 +108,7 @@ impl ModuleLoader {
         let lex_duration = lex_start.elapsed();
 
         let parse_start = Instant::now();
-        let result = Parser::new(tokens, features.clone()).parse();
+        let result = Parser::new(tokens).parse();
         let parse_duration = parse_start.elapsed();
 
         match result {
@@ -124,7 +120,6 @@ impl ModuleLoader {
                     module_id.to_string(),
                     CachedModule {
                         hash,
-                        feature_key,
                         outcome: CachedOutcome::Success(Arc::clone(&arc)),
                     },
                 );
@@ -142,7 +137,6 @@ impl ModuleLoader {
                     module_id.to_string(),
                     CachedModule {
                         hash,
-                        feature_key,
                         outcome: CachedOutcome::Parse(cloned),
                     },
                 );
@@ -151,42 +145,29 @@ impl ModuleLoader {
         }
     }
 
-    fn compute_hash(source: &str, features: &[String]) -> u64 {
+    fn compute_hash(source: &str) -> u64 {
         let mut hasher = DefaultHasher::new();
         source.hash(&mut hasher);
-        for feature in features {
-            feature.hash(&mut hasher);
-        }
         hasher.finish()
-    }
-
-    fn feature_key(features: &HashSet<String>) -> Vec<String> {
-        // Collect into a sorted Vec so the key is order-independent and can be
-        // compared cheaply against the cached entry.
-        let mut list: Vec<_> = features.iter().cloned().collect();
-        list.sort_unstable(); // unstable sort is faster and sufficient here
-        list
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
     #[test]
     fn caches_successful_parse() {
         let mut loader = ModuleLoader::new();
-        let features = HashSet::new();
         let source = "\n            module demo\n            func main() {}\n        ";
 
         let first = loader
-            .parse_module("demo", source, &features)
+            .parse_module("demo", source)
             .expect("first parse should succeed");
         assert!(!first.reused);
 
         let second = loader
-            .parse_module("demo", source, &features)
+            .parse_module("demo", source)
             .expect("second parse should reuse cache");
         assert!(second.reused);
     }
@@ -194,41 +175,19 @@ mod tests {
     #[test]
     fn reparses_when_source_changes() {
         let mut loader = ModuleLoader::new();
-        let features = HashSet::new();
 
         let original = "\n            module demo\n            func main() {}\n        ";
 
         loader
-            .parse_module("demo", original, &features)
+            .parse_module("demo", original)
             .expect("initial parse should succeed");
 
         let modified = "\n            module demo\n            func main() { let x = 1 }\n        ";
 
         let result = loader
-            .parse_module("demo", modified, &features)
+            .parse_module("demo", modified)
             .expect("modified source should reparse successfully");
         assert!(!result.reused, "modified source must trigger reparse");
     }
 
-    #[test]
-    fn feature_set_changes_trigger_reparse_without_gating_stable_syntax() {
-        let mut loader = ModuleLoader::new();
-        let mut features = HashSet::new();
-        features.insert("legacy-syntax".to_string());
-
-        let source = "\n            module demo\n            func main() { let value = if not false { 1 } }\n        ";
-
-        loader
-            .parse_module("demo", source, &features)
-            .expect("feature-enabled parse should succeed");
-
-        let disabled_features = HashSet::new();
-        let result = loader
-            .parse_module("demo", source, &disabled_features)
-            .expect("promoted syntax should parse even when compatibility feature set is empty");
-        assert!(
-            !result.reused,
-            "feature-set changes still invalidate the cache"
-        );
-    }
 }

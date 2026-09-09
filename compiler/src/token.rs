@@ -10,12 +10,10 @@ pub enum Keyword {
 
     // Declarations
     Func,
-    Fn,
     Returns,
     Async,
     Await,
     Record,
-    Struct,
     Enum,
     Impl,
     Class,
@@ -24,7 +22,6 @@ pub enum Keyword {
 
     // Visibility
     Public,
-    Pub,
     Internal,
     Mut,
 
@@ -83,12 +80,10 @@ impl Keyword {
 
             // Declarations
             "func" => Some(Self::Func),
-            "fn" => Some(Self::Fn),
             "returns" => Some(Self::Returns),
             "async" => Some(Self::Async),
             "await" => Some(Self::Await),
             "record" => Some(Self::Record),
-            "struct" => Some(Self::Struct),
             "enum" => Some(Self::Enum),
             "impl" => Some(Self::Impl),
             "class" => Some(Self::Class),
@@ -97,7 +92,6 @@ impl Keyword {
 
             // Visibility
             "public" => Some(Self::Public),
-            "pub" => Some(Self::Pub),
             "internal" => Some(Self::Internal),
             "mut" => Some(Self::Mut),
 
@@ -159,12 +153,10 @@ impl fmt::Display for Keyword {
 
             // Declarations
             Keyword::Func => "func",
-            Keyword::Fn => "fn",
             Keyword::Returns => "returns",
             Keyword::Async => "async",
             Keyword::Await => "await",
             Keyword::Record => "record",
-            Keyword::Struct => "struct",
             Keyword::Enum => "enum",
             Keyword::Impl => "impl",
             Keyword::Class => "class",
@@ -173,7 +165,6 @@ impl fmt::Display for Keyword {
 
             // Visibility
             Keyword::Public => "public",
-            Keyword::Pub => "pub",
             Keyword::Internal => "internal",
             Keyword::Mut => "mut",
 

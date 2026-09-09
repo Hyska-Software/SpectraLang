@@ -1,15 +1,4 @@
 use super::*;
-/// Fast-path helper for `concurrent.task_spawn(value)` called from JIT code
-/// via the `spectra_rt_concurrent_spawn_fast` fast ABI entry. Bypasses the
-/// generic host-call dispatcher (no manual_alloc/free, no name lookup, no
-/// catch_unwind, no host_registry lock). Returns the task_id, or 0 on
-/// internal error (poisoned mutex).
-pub fn concurrent_spawn_fast(value: SpectraHostValue) -> SpectraHostValue {
-    if let Some(data) = concurrent_diagnostics() {
-        data.spawn_fast_abi_calls.fetch_add(1, Ordering::Relaxed);
-    }
-    spawn_concurrent_task(value).unwrap_or(0)
-}
 
 /// Fast-path helper for `concurrent.task_spawn_fn(closure, arg)`. Dispatches
 /// a real JIT closure onto the persistent executor worker pool. Returns the
@@ -53,19 +42,6 @@ pub fn concurrent_join_batch_sum_fast(batch_id: SpectraHostValue) -> SpectraHost
     join_concurrent_batch_sum(batch_id).unwrap_or(0)
 }
 
-/// Fast-path helper for an immediately paired spawn and join.
-pub fn concurrent_spawn_join_fast(value: SpectraHostValue) -> SpectraHostValue {
-    if let Some(data) = concurrent_diagnostics() {
-        data.fused_fast_abi_calls.fetch_add(1, Ordering::Relaxed);
-        data.tasks_counted.fetch_add(1, Ordering::Relaxed);
-    }
-    let mut registry = match lock_concurrent_registry() {
-        Ok(r) => r,
-        Err(_) => return 0,
-    };
-    registry.tasks_spawned += 1;
-    value
-}
 
 /// Fast-path helper for `concurrent.reset()`.
 pub fn concurrent_reset_fast() -> SpectraHostValue {

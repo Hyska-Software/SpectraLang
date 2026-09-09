@@ -8,7 +8,6 @@ use crate::parser::workspace::{ModuleLoader, ModuleParseError};
 use crate::semantic::{
     builtin_modules::register_builtin_modules, module_registry::ModuleRegistry, SemanticAnalyzer,
 };
-use std::collections::HashSet;
 use std::fmt::Debug;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -41,8 +40,6 @@ pub struct CompilationOptions {
     pub run_jit: bool,
     /// Collect timing metrics for each compilation stage
     pub collect_metrics: bool,
-    /// Enabled experimental language features
-    pub experimental_features: HashSet<String>,
     /// Lint configuration for the semantic pipeline
     pub lint: LintOptions,
 }
@@ -57,7 +54,6 @@ impl Default for CompilationOptions {
             dump_ast: false,
             run_jit: false,
             collect_metrics: false,
-            experimental_features: HashSet::new(),
             lint: LintOptions::disabled(),
         }
     }
@@ -181,9 +177,7 @@ where
         let mut metrics = collect_metrics.then_some(CompilationMetrics::default());
 
         // Phases 1 & 2: Lexical Analysis + Parsing (with incremental cache)
-        let parse_outcome =
-            self.module_loader
-                .parse_module(filename, source, &self.options.experimental_features);
+        let parse_outcome = self.module_loader.parse_module(filename, source);
 
         let parse_outcome = parse_outcome.map_err(|error| match error {
             ModuleParseError::Lexical(errors) => errors

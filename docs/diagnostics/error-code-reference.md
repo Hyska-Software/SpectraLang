@@ -34,7 +34,6 @@ The following set is the current stable Phase 1 table for high-frequency diagnos
 | `P001` | parser | expected keyword | insert the missing keyword or fix item order |
 | `P002` | parser | expected or synthesized symbol | insert the required delimiter such as `)`, `}`, or `:` |
 | `P003` | parser | expected identifier | provide a valid identifier in the current grammar slot |
-| `P004` | parser | future experimental feature disabled | rerun with the documented feature gate once an active experimental feature exists |
 | `P005` | parser | misplaced or incomplete `async` syntax | use `async func` in declaration position, `async { ... }`, or `async |...| ...` |
 | `P006` | parser | `await` outside async context | move the expression into `async func`, `async { ... }`, or an async closure |
 | `P011` | parser | statement not terminated by a line break | end the statement with a line break or close the surrounding block |

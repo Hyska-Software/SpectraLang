@@ -331,11 +331,6 @@ pub(crate) fn make_std_ml() -> ModuleExports {
             int.clone(),
         ),
         (
-            "onnx_export",
-            vec![Type::String, Type::String],
-            Type::String,
-        ),
-        (
             "onnx_export_weights",
             vec![
                 Type::String,
@@ -423,7 +418,6 @@ pub(crate) fn make_std_ml() -> ModuleExports {
         ("train_bpe", vec![Type::String, int.clone()], int.clone()),
         ("train_wordpiece", vec![Type::String, int.clone()], int.clone()),
         ("tokenizer_vocab", vec![int.clone()], Type::String),
-        ("text_embed", vec![Type::String, int.clone()], int.clone()),
         ("text_embed_model_session", vec![Type::String], int.clone()),
         (
             "text_embed_model",
@@ -568,7 +562,6 @@ pub(crate) fn make_std_concurrent() -> ModuleExports {
     };
 
     let functions = [
-        ("task_spawn", vec![int.clone()], int.clone()),
         ("task_join", vec![int.clone()], int.clone()),
         (
             "task_spawn_fn",

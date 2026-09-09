@@ -24,7 +24,7 @@ import std.serve as serve
 ```spectra
 concurrent.reset() returns unit
 
-concurrent.task_spawn(value: int) returns int
+concurrent.task_spawn_fn(closure: fn(int) -> int, value: int) returns int
 concurrent.task_join(task: int) returns int
 concurrent.task_is_done(task: int) returns bool
 concurrent.task_spawn_batch(first_value: int, count: int) returns int
@@ -49,9 +49,8 @@ concurrent.stats_channels() returns int
 ### Contract
 
 - Handles are positive integers managed by the runtime.
-- `task_spawn(value)` preserves the immediate-value compatibility API while a
-  runtime worker owns completion of the task slot.
-- `task_join(task)` deterministically waits for the task and returns its value.
+- `task_spawn_fn(closure, value)` schedules the closure on a runtime worker and
+  returns the task handle; `task_join(task)` deterministically waits and returns the closure result.
 - `task_spawn_batch(first_value, count)` registers all executable task units
   before any join. `task_join_batch_sum(batch)` performs fan-in and returns the
   deterministic sum.
@@ -76,7 +75,7 @@ import std.concurrent as concurrent
 public func main() returns int {
     concurrent.reset()
 
-    let task = concurrent.task_spawn(42)
+    let task = concurrent.task_spawn_fn(| value: int | { value }, 42)
     if concurrent.task_join(task) != 42 {
         return 1
     }

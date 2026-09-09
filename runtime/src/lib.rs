@@ -3,7 +3,6 @@ use std::thread::ThreadId;
 use std::time::{Duration, Instant, SystemTime};
 
 pub mod abi;
-pub mod api;
 pub(crate) mod artifact;
 pub mod ffi;
 pub mod panic;
@@ -23,7 +22,7 @@ pub(crate) mod vector_index;
 
 pub use memory::{ManualMemory, ManualStats, MemoryConfig, MemoryStats};
 pub use stdlib::concurrent_diagnostics_report_json;
-pub use stdlib::register as register_standard_library;
+pub use stdlib::register;
 
 /// Sets the program arguments visible to Spectra code via `std.env.env_args_count`
 /// and `std.env.env_arg`. Must be called before any Spectra code executes.

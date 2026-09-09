@@ -474,8 +474,7 @@ pub(crate) extern "C" fn std_ml_distributed_train_dataset_tcp(
 
 /// Dataset-backed twin of [`ml_distributed_train`]: identical runners,
 /// session recording, and outcome shape, but shards slice a caller dataset
-/// instead of synthesizing a fixed linear problem. The legacy 8-argument
-/// hosts are untouched.
+/// instead of synthesizing a fixed linear problem.
 pub(crate) fn ml_distributed_train_dataset<F>(
     ctx: *mut SpectraHostCallContext,
     topology: &str,

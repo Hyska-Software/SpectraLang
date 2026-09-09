@@ -386,8 +386,7 @@ fn expression_path(expr: &spectra_compiler::ast::Expression) -> Option<String> {
 /// `InsertTextFormat::SNIPPET` (2); plain keyword/std-api/symbol completions
 /// stay plaintext.
 ///
-/// Documented list (bodies use the canonical surface — no semicolons, no
-/// legacy `fn`/`->`):
+/// Documented list (bodies use the canonical surface):
 /// - `func`        declaration template with `$1`/`$2` params and returns
 /// - `record`      record declaration with name/field placeholders
 /// - `enum`        enum declaration with variant placeholder

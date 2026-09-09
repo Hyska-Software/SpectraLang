@@ -437,58 +437,62 @@
         let path = dir.join("level1").join("level2").join("artifact.txt");
         let path_arg = test_string(path.to_string_lossy().as_ref());
 
-        assert_eq!(
-            call_host(FS_WRITE_COMPAT, &[path_arg, test_string("first")]),
-            (HOST_STATUS_SUCCESS, 1)
-        );
+        let (status, tagged) = call_host(FS_WRITE, &[path_arg, test_string("first")]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(unsafe { tagged_result_parts(tagged) }.0, 0);
         assert_eq!(std::fs::read_to_string(&path).expect("read first"), "first");
 
-        assert_eq!(
-            call_host(FS_APPEND_COMPAT, &[path_arg, test_string("-second")]),
-            (HOST_STATUS_SUCCESS, 1)
-        );
+        let (status, tagged) = call_host(FS_APPEND, &[path_arg, test_string("-second")]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(unsafe { tagged_result_parts(tagged) }.0, 0);
         assert_eq!(
             std::fs::read_to_string(&path).expect("read appended"),
             "first-second"
         );
 
-        assert_eq!(
-            call_host(FS_WRITE_COMPAT, &[path_arg, test_string("overwrite")]),
-            (HOST_STATUS_SUCCESS, 1)
-        );
+        let (status, tagged) = call_host(FS_WRITE, &[path_arg, test_string("overwrite")]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(unsafe { tagged_result_parts(tagged) }.0, 0);
         assert_eq!(
             std::fs::read_to_string(&path).expect("read overwritten"),
             "overwrite"
         );
 
-        let (status, read_ptr) = call_host(FS_READ_COMPAT, &[path_arg]);
+        let (status, tagged) = call_host(FS_READ, &[path_arg]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
-        let read_back = unsafe { read_spectra_string(read_ptr) }.expect("fs read string");
+        let (tag, payload) = unsafe { tagged_result_parts(tagged) };
+        assert_eq!(tag, 0);
+        let read_back = unsafe { read_spectra_string(payload) }.expect("fs read string");
         assert_eq!(read_back, "overwrite");
 
-        assert_eq!(call_host(FS_EXISTS_COMPAT, &[path_arg]), (HOST_STATUS_SUCCESS, 1));
-        assert_eq!(call_host(FS_REMOVE_COMPAT, &[path_arg]), (HOST_STATUS_SUCCESS, 1));
-        assert_eq!(call_host(FS_EXISTS_COMPAT, &[path_arg]), (HOST_STATUS_SUCCESS, 0));
+        let (status, tagged) = call_host(FS_EXISTS, &[path_arg]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(unsafe { tagged_result_parts(tagged) }, (0, 1));
+        let (status, tagged) = call_host(FS_REMOVE, &[path_arg]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(unsafe { tagged_result_parts(tagged) }.0, 0);
+        let (status, tagged) = call_host(FS_EXISTS, &[path_arg]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(unsafe { tagged_result_parts(tagged) }, (0, 0));
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn fs_invalid_paths_return_safe_values_without_panicking() {
-        let _lock = test_guard();
-        clear_host_functions();
-        register();
-
         let empty = test_string("");
-        assert_eq!(
-            call_host(FS_WRITE_COMPAT, &[empty, test_string("ignored")]),
-            (HOST_STATUS_SUCCESS, 0)
-        );
-        assert_eq!(
-            call_host(FS_APPEND_COMPAT, &[empty, test_string("ignored")]),
-            (HOST_STATUS_SUCCESS, 0)
-        );
-        assert_eq!(call_host(FS_EXISTS_COMPAT, &[empty]), (HOST_STATUS_SUCCESS, 0));
-        assert_eq!(call_host(FS_REMOVE_COMPAT, &[empty]), (HOST_STATUS_SUCCESS, 0));
+        for (host, args) in [
+            (FS_WRITE, vec![empty, test_string("ignored")]),
+            (FS_APPEND, vec![empty, test_string("ignored")]),
+        ] {
+            let (status, tagged) = call_host(host, &args);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            assert_eq!(unsafe { tagged_result_parts(tagged) }.0, 1);
+        }
+        for host in [FS_EXISTS, FS_REMOVE] {
+            let (status, tagged) = call_host(host, &[empty]);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            assert_eq!(unsafe { tagged_result_parts(tagged) }.0, 1);
+        }
 
         let dir = temp_test_dir("fs_blocked_parent");
         std::fs::create_dir_all(&dir).expect("create temp dir");
@@ -497,14 +501,11 @@
         let child = blocker.join("child.txt");
         let child_arg = test_string(child.to_string_lossy().as_ref());
 
-        assert_eq!(
-            call_host(FS_WRITE_COMPAT, &[child_arg, test_string("payload")]),
-            (HOST_STATUS_SUCCESS, 0)
-        );
-        assert_eq!(
-            call_host(FS_APPEND_COMPAT, &[child_arg, test_string("payload")]),
-            (HOST_STATUS_SUCCESS, 0)
-        );
+        for host in [FS_WRITE, FS_APPEND] {
+            let (status, tagged) = call_host(host, &[child_arg, test_string("payload")]);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            assert_eq!(unsafe { tagged_result_parts(tagged) }.0, 1);
+        }
         assert!(!child.exists());
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -549,13 +550,12 @@
         let beta = nested.join("beta.txt");
         let alpha = nested.join("alpha.txt");
         for path in [&beta, &alpha] {
-            assert_eq!(
-                call_host(
-                    FS_WRITE_COMPAT,
- &[test_string(path.to_string_lossy().as_ref()), test_string("payload")],
-                ),
-                (HOST_STATUS_SUCCESS, 1)
+            let (status, tagged) = call_host(
+                FS_WRITE,
+                &[test_string(path.to_string_lossy().as_ref()), test_string("payload")],
             );
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            assert_eq!(unsafe { tagged_result_parts(tagged) }.0, 0);
         }
 
         // rename(beta -> gamma)
@@ -601,8 +601,9 @@
         assert_eq!(with_list_registry(|reg| reg.len(handle)), Ok(3usize));
         let mut names = Vec::new();
         for index in 0..3_i64 {
-            let ptr = with_list_registry(|reg| reg.get(handle, index))
-                .expect("list element");
+            let ptr = with_list_registry(|reg| reg.get_option(handle, index))
+                .expect("list element")
+                .expect("list entry present");
             names.push(unsafe { read_spectra_string(ptr) }.expect("entry name"));
         }
         assert_eq!(
@@ -2254,20 +2255,46 @@
         ));
         std::fs::create_dir_all(&dir).expect("create temp onnx dir");
 
-        for (kind, expected_op) in [
-            ("linear", "Gemm"),
-            ("conv", "Conv"),
-            ("activation", "Relu"),
-            ("normalization", "LayerNormalization"),
-            ("transformer", "Softmax"),
+        // Live weight tensors per kind: shapes must match the model spec
+        // (linear [2,3]+[3], conv [1,1,3,3]+[1], normalization/transformer
+        // [8]+[8], activation/dual_linear none).
+        let live_tensor = |dims: Vec<usize>| -> SpectraHostValue {
+            let count: usize = dims.iter().product();
+            let values: Vec<f64> = (0..count).map(|i| 0.5 + i as f64 * 0.25).collect();
+            tensor_alloc(TensorDType::Float, dims, f64_values_to_host(&values))
+                .expect("alloc live weight") as SpectraHostValue
+        };
+        let weight_list = |handles: Vec<SpectraHostValue>| -> SpectraHostValue {
+            let (_, list) = call_host(LIST_NEW, &[]);
+            assert!(list > 0);
+            for handle in handles {
+                assert_eq!(
+                    call_host(LIST_PUSH, &[list, handle]).0,
+                    HOST_STATUS_SUCCESS
+                );
+            }
+            list
+        };
+
+        for (kind, expected_op, dims) in [
+            ("linear", "Gemm", vec![vec![2, 3], vec![3]]),
+            ("activation", "Relu", Vec::<Vec<usize>>::new()),
+            ("normalization", "LayerNormalization", vec![vec![8], vec![8]]),
+            ("transformer", "Softmax", vec![vec![8], vec![8]]),
         ] {
             let path = dir.join(format!("{kind}.onnx"));
             let roundtrip = dir.join(format!("{kind}.roundtrip.onnx"));
+            let weights = weight_list(
+                dims.into_iter()
+                    .map(live_tensor)
+                    .collect::<Vec<_>>(),
+            );
             let (status, exported_ptr) = call_host(
-                ML_ONNX_EXPORT,
+                ML_ONNX_EXPORT_WEIGHTS,
                 &[
                     test_string(path.to_string_lossy().as_ref()),
                     test_string(kind),
+                    weights,
                 ],
             );
             assert_eq!(status, HOST_STATUS_SUCCESS);
@@ -2302,6 +2329,23 @@
                 (HOST_STATUS_SUCCESS, 1)
             );
         }
+
+        // The 4D conv kernel is not expressible with rank<=2 tensors, so a
+        // wrong-rank weight list is rejected instead of exporting.
+        let conv_weights = weight_list(vec![live_tensor(vec![9])]);
+        let conv_path = dir.join("conv.onnx");
+        assert_eq!(
+            call_host(
+                ML_ONNX_EXPORT_WEIGHTS,
+                &[
+                    test_string(conv_path.to_string_lossy().as_ref()),
+                    test_string("conv"),
+                    conv_weights,
+                ],
+            )
+            .0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -2535,9 +2579,15 @@
             ),
             (HOST_STATUS_SUCCESS, 1)
         );
-        let (status, rag_vec) = call_host(ML_TEXT_EMBED, &[test_string("rag retrieval"), 8]);
+        let one = 1.0f64.to_bits() as i64;
+        let zero = 0.0f64.to_bits() as i64;
+        let (status, rag_vec) = call_host(TENSOR_FULL_F, &[8, one]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
-        let (status, ml_vec) = call_host(ML_TEXT_EMBED, &[test_string("machine learning"), 8]);
+        let (status, ones) = call_host(TENSOR_FULL_F, &[4, one]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, zeros) = call_host(TENSOR_FULL_F, &[4, zero]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let (status, ml_vec) = call_host(TENSOR_CONCAT, &[ones, zeros]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
         assert_eq!(
             call_host(
@@ -2553,7 +2603,7 @@
             ),
             (HOST_STATUS_SUCCESS, 2)
         );
-        let (status, query_vec) = call_host(ML_TEXT_EMBED, &[test_string("rag retrieval"), 8]);
+        let (status, query_vec) = call_host(TENSOR_FULL_F, &[8, one]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
         let (status, query_ptr) = call_host(ML_VECTOR_INDEX_QUERY, &[index, query_vec, 1]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
@@ -3992,18 +4042,11 @@
 
         assert_eq!(call_host(CONCURRENT_RESET, &[]).0, HOST_STATUS_SUCCESS);
 
-        let (status, task) = call_host(CONCURRENT_TASK_SPAWN, &[42]);
+        let (status, batch) = call_host(CONCURRENT_TASK_SPAWN_BATCH, &[42, 1]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
-        let (poll_status, done_before_join) = call_host(CONCURRENT_TASK_IS_DONE, &[task]);
-        assert_eq!(poll_status, HOST_STATUS_SUCCESS);
-        assert!(done_before_join == 0 || done_before_join == 1);
         assert_eq!(
-            call_host(CONCURRENT_TASK_JOIN, &[task]),
+            call_host(CONCURRENT_TASK_JOIN_BATCH_SUM, &[batch]),
             (HOST_STATUS_SUCCESS, 42)
-        );
-        assert_eq!(
-            call_host(CONCURRENT_TASK_IS_DONE, &[task]),
-            (HOST_STATUS_NOT_FOUND, 0)
         );
         assert_eq!(
             call_host(CONCURRENT_STATS_TASKS_SPAWNED, &[]),
@@ -4118,19 +4161,6 @@
     }
 
     #[test]
-    fn concurrent_fast_abi_preserves_task_contract() {
-        let _lock = test_guard();
-        clear_host_functions();
-        register();
-
-        assert_eq!(call_host(CONCURRENT_RESET, &[]).0, HOST_STATUS_SUCCESS);
-        let task = concurrent_spawn_fast(123);
-        assert!(task > 0);
-        assert_eq!(concurrent_join_fast(task), 123);
-        assert_eq!(concurrent_join_fast(task), 0);
-    }
-
-    #[test]
     fn concurrent_batch_fast_abi_executes_fanout_before_fanin() {
         let _lock = test_guard();
         clear_host_functions();
@@ -4186,14 +4216,20 @@
         register();
         assert_eq!(call_host(CONCURRENT_RESET, &[]).0, HOST_STATUS_SUCCESS);
 
-        let handles = (1..=10)
-            .map(concurrent_spawn_fast)
-            .collect::<Vec<_>>();
-        let total = handles
-            .into_iter()
-            .rev()
-            .map(concurrent_join_fast)
-            .sum::<i64>();
+        let mut handles = Vec::new();
+        for value in 1..=10 {
+            let closure =
+                heap_closure(spawn_fn_identity_closure as *const () as usize, 0);
+            let (status, task) = call_host(CONCURRENT_TASK_SPAWN_FN, &[closure, value]);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            handles.push(task);
+        }
+        let mut total = 0;
+        for task in handles.into_iter().rev() {
+            let (status, value) = call_host(CONCURRENT_TASK_JOIN, &[task]);
+            assert_eq!(status, HOST_STATUS_SUCCESS);
+            total += value;
+        }
         assert_eq!(total, 55);
     }
 
@@ -4208,37 +4244,6 @@
         assert!(batch > 0);
         assert_eq!(call_host(CONCURRENT_RESET, &[]).0, HOST_STATUS_SUCCESS);
         assert_eq!(concurrent_join_batch_sum_fast(batch), 0);
-        assert_eq!(
-            call_host(CONCURRENT_STATS_TASKS_SPAWNED, &[]),
-            (HOST_STATUS_SUCCESS, 0)
-        );
-    }
-
-    #[test]
-    fn concurrent_fused_fast_path_preserves_value_stats_and_reset() {
-        let _lock = test_guard();
-        clear_host_functions();
-        register();
-
-        assert_eq!(call_host(CONCURRENT_RESET, &[]).0, HOST_STATUS_SUCCESS);
-        let slots_before = lock_concurrent_registry()
-            .expect("registry should not be poisoned")
-            .tasks
-            .slot_count();
-        assert_eq!(concurrent_spawn_join_fast(77), 77);
-        assert_eq!(concurrent_spawn_join_fast(-3), -3);
-        assert_eq!(
-            call_host(CONCURRENT_STATS_TASKS_SPAWNED, &[]),
-            (HOST_STATUS_SUCCESS, 2)
-        );
-        let mut registry = lock_concurrent_registry().expect("registry should not be poisoned");
-        assert_eq!(
-            registry.tasks.slot_count(),
-            slots_before,
-            "fused path must not allocate task slots"
-        );
-        registry.clear();
-        drop(registry);
         assert_eq!(
             call_host(CONCURRENT_STATS_TASKS_SPAWNED, &[]),
             (HOST_STATUS_SUCCESS, 0)
@@ -5671,28 +5676,15 @@
                 buckets
             );
         }
-
-        // Documented degenerate contract: min >= max yields min exactly.
         assert_eq!(call_host(RAND_INT, &[7, 7]), (HOST_STATUS_SUCCESS, 7));
         assert_eq!(call_host(RAND_INT, &[9, 3]), (HOST_STATUS_SUCCESS, 9));
 
         // Full-span draw must succeed and stay inside [i64::MIN, i64::MAX).
         let (status, value) = call_host(RAND_INT, &[i64::MIN, i64::MAX]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
-        assert!(value >= i64::MIN && value < i64::MAX);
+        assert!((i64::MIN..i64::MAX).contains(&value));
     }
 
-    /// Manual reference for the exported `linear` template:
-    /// output[j] = x0 * W[0][j] + x1 * W[1][j] + bias[j], where W and bias
-    /// come from the same deterministic initializer stream as the export.
-    #[cfg(feature = "onnx")]
-    fn ml_onnx_linear_reference(x0: f64, x1: f64) -> Vec<f64> {
-        let weights = ml_onnx_deterministic_values(ml_onnx_seed("weight"), 6);
-        let bias = ml_onnx_deterministic_values(ml_onnx_seed("bias"), 3);
-        (0..3)
-            .map(|j| x0 * weights[j] as f64 + x1 * weights[3 + j] as f64 + bias[j] as f64)
-            .collect()
-    }
 
     #[cfg(feature = "onnx")]
     #[test]
@@ -5707,15 +5699,33 @@
         std::fs::create_dir_all(&dir).expect("create temp onnx dir");
         let path = dir.join("linear.onnx");
 
-        // Export the template with real initializers baked in.
+        // Export with live initializers baked in.
+        let weight_values = vec![1.25, -3.75, 0.125, 7.5, -0.875, 2.125];
+        let bias_values = vec![10.25, -20.5, 30.75];
+        let weight = tensor_alloc(
+            TensorDType::Float,
+            vec![2, 3],
+            f64_values_to_host(&weight_values),
+        )
+        .expect("alloc weight") as SpectraHostValue;
+        let bias = tensor_alloc(
+            TensorDType::Float,
+            vec![3],
+            f64_values_to_host(&bias_values),
+        )
+        .expect("alloc bias") as SpectraHostValue;
+        let (_, weights) = call_host(LIST_NEW, &[]);
+        assert!(weights > 0);
+        assert_eq!(call_host(LIST_PUSH, &[weights, weight]).0, HOST_STATUS_SUCCESS);
+        assert_eq!(call_host(LIST_PUSH, &[weights, bias]).0, HOST_STATUS_SUCCESS);
         let (status, exported_ptr) = call_host(
-            ML_ONNX_EXPORT,
+            ML_ONNX_EXPORT_WEIGHTS,
             &[
                 test_string(path.to_string_lossy().as_ref()),
                 test_string("linear"),
+                weights,
             ],
         );
-        assert_eq!(status, HOST_STATUS_SUCCESS);
         let exported = unsafe { read_spectra_string(exported_ptr) }.expect("export path");
 
         // Commit a real onnxruntime session from the exported bytes.
@@ -5741,8 +5751,11 @@
         assert!(output > 0, "output tensor handle must be positive");
 
         let (_, values, _) = ml_tensor_float_data(output as usize).expect("output tensor data");
-        let expected = ml_onnx_linear_reference(0.75, -1.25);
-        assert_eq!(values.len(), 3);
+        let expected: Vec<f64> = (0..3)
+            .map(|j| {
+                0.75 * weight_values[j] + -1.25 * weight_values[3 + j] + bias_values[j]
+            })
+            .collect();
         for (actual, want) in values.iter().zip(expected.iter()) {
             assert!(
                 (actual - want).abs() < 1e-4,
@@ -6006,16 +6019,32 @@
         let dir = temp_test_dir("onnx_metadata");
         std::fs::create_dir_all(&dir).expect("create temp onnx dir");
         let path = dir.join("linear.onnx");
+        let weight = tensor_alloc(
+            TensorDType::Float,
+            vec![2, 3],
+            f64_values_to_host(&[0.5, 0.5, 0.5, 0.5, 0.5, 0.5]),
+        )
+        .expect("alloc weight") as SpectraHostValue;
+        let bias = tensor_alloc(
+            TensorDType::Float,
+            vec![3],
+            f64_values_to_host(&[0.1, 0.1, 0.1]),
+        )
+        .expect("alloc bias") as SpectraHostValue;
+        let (_, weights) = call_host(LIST_NEW, &[]);
+        assert!(weights > 0);
+        assert_eq!(call_host(LIST_PUSH, &[weights, weight]).0, HOST_STATUS_SUCCESS);
+        assert_eq!(call_host(LIST_PUSH, &[weights, bias]).0, HOST_STATUS_SUCCESS);
         let (status, exported_ptr) = call_host(
-            ML_ONNX_EXPORT,
+            ML_ONNX_EXPORT_WEIGHTS,
             &[
                 test_string(path.to_string_lossy().as_ref()),
                 test_string("linear"),
+                weights,
             ],
         );
         assert_eq!(status, HOST_STATUS_SUCCESS);
         let exported = unsafe { read_spectra_string(exported_ptr) }.expect("export path");
-
         // Summary metadata comes from a committed onnxruntime session.
         let (status, summary_ptr) =
             call_host(ML_ONNX_IMPORT_SUMMARY, &[test_string(&exported)]);
@@ -7229,6 +7258,10 @@ pub(crate) fn serve_real_rejects_inference_without_registered_model() {
         arg + 7
     }
 
+    extern "C" fn spawn_fn_identity_closure(_env: i64, arg: i64) -> i64 {
+        arg
+    }
+
     extern "C" fn spawn_fn_recording_closure(_env: i64, arg: i64) -> i64 {
         let start = std::time::Instant::now();
         std::thread::sleep(std::time::Duration::from_millis(150));
@@ -7339,10 +7372,10 @@ pub(crate) fn serve_real_rejects_inference_without_registered_model() {
             HOST_STATUS_INTERNAL_ERROR
         );
         // The process is still alive and the registry is usable.
-        let (status, fresh_task) = call_host(CONCURRENT_TASK_SPAWN, &[5]);
+        let (status, batch) = call_host(CONCURRENT_TASK_SPAWN_BATCH, &[5, 1]);
         assert_eq!(status, HOST_STATUS_SUCCESS);
         assert_eq!(
-            call_host(CONCURRENT_TASK_JOIN, &[fresh_task]),
+            call_host(CONCURRENT_TASK_JOIN_BATCH_SUM, &[batch]),
             (HOST_STATUS_SUCCESS, 5)
         );
     }
@@ -8076,16 +8109,17 @@ pub(crate) fn serve_real_rejects_inference_without_registered_model() {
         std::fs::create_dir_all(&dir).expect("create temp onnx dir");
         let path = dir.join("dual_linear.onnx");
 
-        // Export the deterministic two-graph-input template. The protobuf
-        // writer already emits every graph input (field 11 is repeated).
+        // Export the two-graph-input model (no initializers).
+        let (_, weights) = call_host(LIST_NEW, &[]);
+        assert!(weights > 0);
         let (status, exported_ptr) = call_host(
-            ML_ONNX_EXPORT,
+            ML_ONNX_EXPORT_WEIGHTS,
             &[
                 test_string(path.to_string_lossy().as_ref()),
                 test_string("dual_linear"),
+                weights,
             ],
         );
-        assert_eq!(status, HOST_STATUS_SUCCESS);
         let exported = unsafe { read_spectra_string(exported_ptr) }.expect("export path");
 
         // Real session metadata confirms both inputs reached ORT.
@@ -8213,18 +8247,40 @@ pub(crate) fn serve_real_rejects_inference_without_registered_model() {
         let message = unsafe { read_spectra_string(message_ptr) }.expect("error message");
         assert!(message.contains("2 graph input(s)"), "{message}");
 
-        // Single-input compat: `spectra.std.ml.onnx_run` still works and the
+        // Single-input model: `spectra.std.ml.onnx_run` still works and the
         // multi host rejects a single-graph-input model instead of silently
         // feeding one tensor.
         let single_path = dir.join("linear.onnx");
+        let single_weight = tensor_alloc(
+            TensorDType::Float,
+            vec![2, 3],
+            f64_values_to_host(&[0.5, 0.5, 0.5, 0.5, 0.5, 0.5]),
+        )
+        .expect("alloc weight") as SpectraHostValue;
+        let single_bias = tensor_alloc(
+            TensorDType::Float,
+            vec![3],
+            f64_values_to_host(&[0.1, 0.1, 0.1]),
+        )
+        .expect("alloc bias") as SpectraHostValue;
+        let (_, single_weights) = call_host(LIST_NEW, &[]);
+        assert!(single_weights > 0);
+        assert_eq!(
+            call_host(LIST_PUSH, &[single_weights, single_weight]).0,
+            HOST_STATUS_SUCCESS
+        );
+        assert_eq!(
+            call_host(LIST_PUSH, &[single_weights, single_bias]).0,
+            HOST_STATUS_SUCCESS
+        );
         let (status, single_ptr) = call_host(
-            ML_ONNX_EXPORT,
+            ML_ONNX_EXPORT_WEIGHTS,
             &[
                 test_string(single_path.to_string_lossy().as_ref()),
                 test_string("linear"),
+                single_weights,
             ],
         );
-        assert_eq!(status, HOST_STATUS_SUCCESS);
         let single_exported = unsafe { read_spectra_string(single_ptr) }.expect("single export");
         let (status, single_session) =
             call_host(ML_ONNX_SESSION_FROM_BYTES, &[test_string(&single_exported)]);

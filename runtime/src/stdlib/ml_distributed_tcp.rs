@@ -61,8 +61,6 @@ pub(crate) struct DistRunOutcome {
 // HELLO payload    := version u32 LE worker_id u32 LE ++ [token_len u32 LE ++ token bytes]
 // ASSIGN payload   := x_tensor ++ y_tensor
 // GRADIENTS        := local_loss f64 LE ++ w_grad_tensor ++ b_grad_tensor ++ step i64 LE
-//                     (the trailing step is a backward-compatible v1 suffix;
-//                      payloads without it decode as step 1)
 // ACK payload      := avg_w_grad_tensor ++ avg_b_grad_tensor
 // DONE payload     := global_step i64 LE ++ mean_loss f64 LE
 // HEARTBEAT        := empty payload; worker liveness proof while idle
@@ -240,7 +238,7 @@ pub(crate) fn dist_encode_done(global_step: i64, mean_loss: f64) -> Vec<u8> {
 pub(crate) struct DistHello {
     pub(crate) version: u32,
     pub(crate) worker_id: usize,
-    /// Trailing shared-secret suffix; `None` for legacy v1 tokenless HELLOs.
+    /// Trailing shared-secret suffix; `None` for tokenless HELLOs.
     pub(crate) token: Option<String>,
 }
 
@@ -289,11 +287,10 @@ pub(crate) fn dist_decode_gradients(payload: &[u8]) -> Option<DistGradients> {
         return None;
     }
     let remaining = payload.len() - cursor;
-    let step = match remaining {
-        0 => 1, // legacy v1 layout without the step suffix
-        8 => i64::from_le_bytes(payload[cursor..cursor + 8].try_into().ok()?),
-        _ => return None,
-    };
+    if remaining != 8 {
+        return None;
+    }
+    let step = i64::from_le_bytes(payload[cursor..cursor + 8].try_into().ok()?);
     Some(DistGradients { loss, step, w_grad, b_grad })
 }
 

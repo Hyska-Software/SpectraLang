@@ -926,9 +926,9 @@ pub(crate) extern "C" fn std_serve_server_result_vector(ctx: *mut SpectraHostCal
 ///     server, "model_id", w1, b1, act1, ...) -> int`
 ///
 /// Registers a REAL dense-chain model under an explicit `model_id`, allowing
-/// MULTIPLE models per server. Unlike the legacy host the first layer may
-/// have any input dimension N >= 1: request vectors of length N are accepted
-/// and every following layer must chain on the previous output width.
+/// MULTIPLE models per server. The first layer may have any input dimension
+/// N >= 1: request vectors of length N are accepted and every following
+/// layer must chain on the previous output width.
 pub(crate) extern "C" fn std_serve_server_register_named_model_linear(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
@@ -989,7 +989,7 @@ pub(crate) extern "C" fn std_serve_server_register_named_model_linear(ctx: *mut 
 ///     server, "model_id", session_handle) -> int`
 ///
 /// Registers a committed onnxruntime session under an explicit `model_id`.
-/// Inference delegates to `ml_onnx_run_inner` exactly like the legacy host.
+/// Inference delegates to `ml_onnx_run_inner` with the named model's session.
 /// Without the runtime `onnx` feature no real session can exist and this
 /// host rejects instead of simulating.
 pub(crate) extern "C" fn std_serve_server_register_named_model_onnx(ctx: *mut SpectraHostCallContext) -> i32 {

@@ -31,14 +31,6 @@ impl ListRegistry {
             .len())
     }
 
-    pub(crate) fn get(&self, handle: usize, index: i64) -> Result<SpectraHostValue, i32> {
-        let id = Self::id(handle)?;
-        let list = self.lists.get(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
-        if index < 0 || (index as usize) >= list.data.len() {
-            return Err(HOST_STATUS_NOT_FOUND);
-        }
-        Ok(list.data[index as usize])
-    }
 
     pub(crate) fn get_option(&self, handle: usize, index: i64) -> Result<Option<SpectraHostValue>, i32> {
         let id = Self::id(handle)?;
@@ -93,24 +85,7 @@ impl ListRegistry {
         self.lists.clear()
     }
 
-    pub(crate) fn pop(&mut self, handle: usize) -> Result<SpectraHostValue, i32> {
-        let id = Self::id(handle)?;
-        self.lists
-            .get_mut(id)
-            .map_err(|_| HOST_STATUS_NOT_FOUND)?
-            .data
-            .pop()
-            .ok_or(HOST_STATUS_NOT_FOUND)
-    }
 
-    pub(crate) fn pop_front(&mut self, handle: usize) -> Result<SpectraHostValue, i32> {
-        let id = Self::id(handle)?;
-        let list = self.lists.get_mut(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
-        if list.data.is_empty() {
-            return Err(HOST_STATUS_NOT_FOUND);
-        }
-        Ok(list.data.remove(0))
-    }
 
     pub(crate) fn pop_option(&mut self, handle: usize) -> Result<Option<SpectraHostValue>, i32> {
         let id = Self::id(handle)?;
@@ -135,14 +110,6 @@ impl ListRegistry {
         Ok(())
     }
 
-    pub(crate) fn remove_at(&mut self, handle: usize, index: i64) -> Result<SpectraHostValue, i32> {
-        let id = Self::id(handle)?;
-        let list = self.lists.get_mut(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
-        if index < 0 || (index as usize) >= list.data.len() {
-            return Err(HOST_STATUS_NOT_FOUND);
-        }
-        Ok(list.data.remove(index as usize))
-    }
 
     pub(crate) fn remove_at_option(
         &mut self,

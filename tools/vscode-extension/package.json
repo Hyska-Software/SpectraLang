@@ -158,7 +158,7 @@
         "spectra.cliPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the Spectra CLI executable. When empty, resolves the bundled spectralang binary (server/<platform>/spectralang.exe), then workspace builds, then PATH; the legacy spectra-cli name is kept as fallback."
+          "description": "Path to the Spectra CLI executable. When empty, resolves the bundled spectralang binary (server/<platform>/spectralang.exe), then workspace builds, then PATH."
         },
         "spectra.lintOnSave": {
           "type": "boolean",

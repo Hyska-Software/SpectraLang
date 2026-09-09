@@ -3,13 +3,13 @@ use spectra_compiler::ast::{
     TypeAnnotationKind,
 };
 use spectra_compiler::{CompilationOptions, CompilationPipeline, CompilerError, Lexer, Parser};
-use std::collections::HashSet;
+
 use std::fs;
 use std::path::Path;
 
 fn parse(source: &str) -> Module {
     let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
-    Parser::new(tokens, HashSet::new())
+    Parser::new(tokens)
         .parse()
         .expect("parsing should pass")
 }

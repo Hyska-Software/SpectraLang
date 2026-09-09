@@ -571,10 +571,6 @@ pub struct SemanticAnalyzer {
     // Module namespace prefixes registered via imports (e.g. "std", "std.string")
     // so that qualified stdlib calls like `std.string.len(x)` are accepted.
     module_namespaces: HashSet<String>,
-    // Maps an imported module alias (for example `compat`) to its canonical
-    // stdlib path so contract-sensitive specialization does not lose the
-    // namespace provenance behind a qualified call.
-    stdlib_namespace_aliases: HashMap<String, String>,
     // Functions discovered via qualified paths (module::fn) during expression analysis.
     // Flushed to module.imported_function_return_types at the end of analyze_module.
     qualified_fn_types: Vec<(String, crate::ast::Type)>,
@@ -582,11 +578,10 @@ pub struct SemanticAnalyzer {
     // Flow-sensitive use-after-free tracking (E034), active only inside a
     // function body. See semantic_use_after_free.rs for the documented design.
     uaf_frame: Option<UafFrame>,
-    // Suspension counter for compatibility/sentinel reads (list_get, map_get,
-    // value_kind): argument subtrees of these calls are not use-checked.
+    // Suspension counter for release-state introspection reads (`value_kind`):
+    // argument subtrees of these calls are not use-checked.
     uaf_suspend_use_checks: usize,
 }
-
 impl SemanticAnalyzer {
     /// Record the name of the module about to be analyzed so import
     /// resolution can classify self-imports as circular imports (E028)

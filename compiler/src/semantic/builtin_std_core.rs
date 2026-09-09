@@ -195,85 +195,9 @@ pub(crate) fn make_std_numeric() -> ModuleExports {
     exports
 }
 
-/// Public collection surface.  Potentially empty reads are represented by
-/// `Option<T>`; the sentinel ABI remains available only through the explicit
-/// `std.compat.collections` namespace.
+/// Public collection surface. Potentially empty reads are represented by
+/// `Option<T>`.
 pub(crate) fn make_std_collections() -> ModuleExports {
-    let mut exports = make_std_collections_legacy();
-    exports.stdlib_path = Some(vec!["std".to_string(), "collections".to_string()]);
-
-    let option = Type::Enum {
-        name: "Option".to_string(),
-    };
-    let list = Type::Struct {
-        name: "List".to_string(),
-    };
-    let map = Type::Struct {
-        name: "Map".to_string(),
-    };
-    let set = Type::Struct {
-        name: "Set".to_string(),
-    };
-    let iterator = Type::Struct {
-        name: "Iterator".to_string(),
-    };
-    for name in ["list_get", "list_pop", "list_pop_front", "list_remove_at"] {
-        let params = if name == "list_get" || name == "list_remove_at" {
-            vec![list.clone(), Type::Int]
-        } else {
-            vec![list.clone()]
-        };
-        exports
-            .functions
-            .insert(name.to_string(), pub_fn(params, option.clone()));
-    }
-    for name in ["map_get", "map_remove"] {
-        exports.functions.insert(
-            name.to_string(),
-            pub_fn(
-                vec![map.clone(), Type::TypeParameter { name: "K".to_string() }],
-                option.clone(),
-            ),
-        );
-    }
-    exports.functions.insert(
-        "set_get".to_string(),
-        pub_fn(vec![set, Type::Int], option),
-    );
-    exports.functions.insert(
-        "iterator_next".to_string(),
-        pub_fn(vec![iterator], Type::Enum {
-            name: "Option".to_string(),
-        }),
-    );
-
-    exports
-}
-
-/// Compatibility-only collection surface retaining the historic sentinel
-/// return values for callers that have not migrated yet.
-pub(crate) fn make_std_compat_collections() -> ModuleExports {
-    let mut exports = make_std_collections_legacy();
-    exports.functions.retain(|name, _| {
-        matches!(
-            name.as_str(),
-            "list_get"
-                | "list_pop"
-                | "list_pop_front"
-                | "list_remove_at"
-                | "map_get"
-                | "map_remove"
-        )
-    });
-    exports.stdlib_path = Some(vec![
-        "std".to_string(),
-        "compat".to_string(),
-        "collections".to_string(),
-    ]);
-    exports
-}
-
-fn make_std_collections_legacy() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "collections".to_string()]),
         package_name: Some("std".to_string()),
@@ -317,10 +241,8 @@ fn make_std_collections_legacy() -> ModuleExports {
         .insert("list_len".to_string(), pub_fn(vec![list.clone()], Type::Int));
     exports.functions.insert(
         "list_get".to_string(),
-        pub_fn(vec![list.clone(), Type::Int], Type::Int),
+        pub_fn(vec![list.clone(), Type::Int], option.clone()),
     );
-    // Typed accessors are the non-sentinel contract. The legacy accessors
-    // above remain available only for compatibility while callers migrate.
     exports.functions.insert(
         "list_get_option".to_string(),
         pub_fn(vec![list.clone(), Type::Int], option.clone()),
@@ -344,13 +266,12 @@ fn make_std_collections_legacy() -> ModuleExports {
     exports
         .functions
         .insert("list_free_all".to_string(), pub_fn(vec![], Type::Int));
-    // Compatibility reads keep the historical integer/sentinel contract.
     exports
         .functions
-        .insert("list_pop".to_string(), pub_fn(vec![list.clone()], Type::Int));
+        .insert("list_pop".to_string(), pub_fn(vec![list.clone()], option.clone()));
     exports.functions.insert(
         "list_pop_front".to_string(),
-        pub_fn(vec![list.clone()], Type::Int),
+        pub_fn(vec![list.clone()], option.clone()),
     );
     exports.functions.insert(
         "list_pop_option".to_string(),
@@ -366,7 +287,7 @@ fn make_std_collections_legacy() -> ModuleExports {
     );
     exports.functions.insert(
         "list_remove_at".to_string(),
-        pub_fn(vec![list.clone(), Type::Int], Type::Int),
+        pub_fn(vec![list.clone(), Type::Int], option.clone()),
     );
     exports.functions.insert(
         "list_remove_at_option".to_string(),
@@ -421,7 +342,7 @@ fn make_std_collections_legacy() -> ModuleExports {
     );
     exports.functions.insert(
         "map_get".to_string(),
-        pub_fn(vec![map.clone(), key.clone()], Type::Int),
+        pub_fn(vec![map.clone(), key.clone()], option.clone()),
     );
     exports.functions.insert(
         "map_get_option".to_string(),
@@ -433,7 +354,7 @@ fn make_std_collections_legacy() -> ModuleExports {
     );
     exports.functions.insert(
         "map_remove".to_string(),
-        pub_fn(vec![map.clone(), key.clone()], Type::Int),
+        pub_fn(vec![map.clone(), key.clone()], option.clone()),
     );
     exports.functions.insert(
         "map_remove_option".to_string(),

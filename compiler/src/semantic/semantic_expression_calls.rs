@@ -187,10 +187,10 @@ impl SemanticAnalyzer {
                     self.analyze_expression(callee);
                 }
 
-                // Analyze arguments; compatibility sentinel readers
-                // (list_get/map_get/value_kind) deliberately accept released
-                // handles, so their argument subtrees are not use-checked.
-                let suspend_use_checks = self.uaf_callee_is_sentinel_reader(callee);
+                // Analyze arguments; release-state introspection readers
+                // (`value_kind`) deliberately accept released handles, so
+                // their argument subtrees are not use-checked.
+                let suspend_use_checks = self.uaf_callee_is_introspection_reader(callee);
                 if suspend_use_checks {
                     self.uaf_suspend_use_checks += 1;
                 }

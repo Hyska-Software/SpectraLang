@@ -23,12 +23,6 @@ $timeoutSeconds = 10
 $runtimeErrorTimeoutSeconds = 30
 $hostCommandTimeoutSeconds = 300
 $env:PATH = "C:\Users\estev\.cargo\bin;" + $env:PATH
-$experimentalFlags = @(
-    "--enable-experimental", "switch",
-    "--enable-experimental", "if not",
-    "--enable-experimental", "do-while",
-    "--enable-experimental", "loop"
-)
 
 if (-not (Test-Path $binary)) {
     Write-Host "Binario nao encontrado. Compilando..." -ForegroundColor Yellow
@@ -434,11 +428,11 @@ Add-Content -LiteralPath "TEST_RESULTS.txt" -Value ("phase27-opentelemetry-traci
 # Funcao auxiliar: compila um arquivo .spectra com timeout e retorna o resultado
 # ---------------------------------------------------------------------------
 function Invoke-SpectraFile([string]$filePath) {
-    return Invoke-SpectraCommand -commandArgs @("compile", $filePath) -workingDir (Get-Location).Path -includeExperimental $true
+    return Invoke-SpectraCommand -commandArgs @("compile", $filePath) -workingDir (Get-Location).Path
 }
 
-function Invoke-SpectraCommand([string[]]$commandArgs, [string]$workingDir, [bool]$includeExperimental = $false, [string]$stdinText = $null, [int]$timeoutSecondsOverride = $timeoutSeconds) {
-    $fullArgs = if ($includeExperimental) { $commandArgs + $experimentalFlags } else { $commandArgs }
+function Invoke-SpectraCommand([string[]]$commandArgs, [string]$workingDir, [string]$stdinText = $null, [int]$timeoutSecondsOverride = $timeoutSeconds) {
+    $fullArgs = $commandArgs
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $binary
@@ -546,7 +540,7 @@ if (Test-Path $projectDir) {
 
     foreach ($project in $projects) {
         Write-Host "  $($project.Name)" -NoNewline
-        $r = Invoke-SpectraCommand -commandArgs @("compile", $project.FullName) -workingDir (Get-Location).Path -includeExperimental $true
+        $r = Invoke-SpectraCommand -commandArgs @("compile", $project.FullName) -workingDir (Get-Location).Path
 
         if ($r.TimedOut) {
             Write-Host " TIMEOUT" -ForegroundColor Red
@@ -586,7 +580,7 @@ if (Test-Path $errorDir) {
         Write-Host "  $($file.Name)" -NoNewline
         $expectsRuntimeFailure = $runtimeErrorFixtures -contains $file.Name
         $r = if ($expectsRuntimeFailure) {
-            Invoke-SpectraCommand -commandArgs @("run", $file.FullName) -workingDir (Get-Location).Path -includeExperimental $true -timeoutSecondsOverride $runtimeErrorTimeoutSeconds
+            Invoke-SpectraCommand -commandArgs @("run", $file.FullName) -workingDir (Get-Location).Path -timeoutSecondsOverride $runtimeErrorTimeoutSeconds
         } else {
             Invoke-SpectraFile $file.FullName
         }
@@ -649,13 +643,6 @@ $cliTests = @(
         Args = @("--help")
         ExpectExit = 0
         Contains = "USAGE:"
-        UseStdin = $false
-    }
-    [PSCustomObject]@{
-        Nome = "list_experimental"
-        Args = @("--list-experimental")
-        ExpectExit = 0
-        Contains = "none"
         UseStdin = $false
     }
     [PSCustomObject]@{
@@ -744,36 +731,6 @@ $cliTests = @(
         UseStdin = $false
     }
     # END narrowing-cast lint rows (CastLint)
-    # BEGIN deprecated-task-spawn lint rows (DeprecateSpawn)
-    [PSCustomObject]@{
-        Nome = "lint_warn_deprecated_task_spawn"
-        Args = @("lint", "tests\cli\lint_warning_deprecated_task_spawn.spectra")
-        ExpectExit = 0
-        Contains = "deprecated-task-spawn"
-        UseStdin = $false
-    }
-    [PSCustomObject]@{
-        Nome = "compile_warn_deprecated_task_spawn_does_not_block"
-        Args = @("compile", "tests\cli\lint_warning_deprecated_task_spawn.spectra")
-        ExpectExit = 0
-        Contains = ""
-        UseStdin = $false
-    }
-    [PSCustomObject]@{
-        Nome = "lint_deny_deprecated_task_spawn"
-        Args = @("lint", "--deny", "deprecated-task-spawn", "tests\cli\lint_warning_deprecated_task_spawn.spectra")
-        ExpectExit = 65
-        Contains = "deprecated-task-spawn"
-        UseStdin = $false
-    }
-    [PSCustomObject]@{
-        Nome = "compile_deny_deprecated_task_spawn_escalates_e036"
-        Args = @("compile", "--deny", "deprecated-task-spawn", "--json", "tests\cli\lint_warning_deprecated_task_spawn.spectra")
-        ExpectExit = 65
-        Contains = '"code":"E036"'
-        UseStdin = $false
-    }
-    # END deprecated-task-spawn lint rows (DeprecateSpawn)
     [PSCustomObject]@{
         Nome = "fmt_check_formatted"
         Args = @("fmt", "--check", "tests\cli\fmt_formatted.spectra")
@@ -865,8 +822,7 @@ foreach ($cliTest in $cliTests) {
         $stdinText = Get-Content -LiteralPath $stdinPath -Raw
         $r = Invoke-SpectraCommand -commandArgs @("fmt", "--stdin") -workingDir (Get-Location).Path -stdinText $stdinText
     } else {
-        $needsExperimental = ($cliTest.Args.Count -gt 0 -and @("compile", "check", "lint", "run") -contains $cliTest.Args[0])
-        $r = Invoke-SpectraCommand -commandArgs $cliTest.Args -workingDir (Get-Location).Path -includeExperimental $needsExperimental
+        $r = Invoke-SpectraCommand -commandArgs $cliTest.Args -workingDir (Get-Location).Path
     }
 
     $exitMatches = $false
@@ -1290,8 +1246,8 @@ New-Item -ItemType Directory -Force -Path $diagnosticsTemp | Out-Null
 $jsonReport = Join-Path $diagnosticsTemp "diagnostics.json"
 $sarifReport = Join-Path $diagnosticsTemp "diagnostics.sarif"
 
-$jsonDiag = Invoke-SpectraCommand -commandArgs @("check", "--json", "tests\errors\type_mismatch.spectra") -workingDir (Get-Location).Path -includeExperimental $true
-$sarifDiag = Invoke-SpectraCommand -commandArgs @("check", "--sarif", "tests\errors\type_mismatch.spectra") -workingDir (Get-Location).Path -includeExperimental $true
+$jsonDiag = Invoke-SpectraCommand -commandArgs @("check", "--json", "tests\errors\type_mismatch.spectra") -workingDir (Get-Location).Path
+$sarifDiag = Invoke-SpectraCommand -commandArgs @("check", "--sarif", "tests\errors\type_mismatch.spectra") -workingDir (Get-Location).Path
 Set-Content -LiteralPath $jsonReport -Value $jsonDiag.Output -Encoding UTF8
 Set-Content -LiteralPath $sarifReport -Value $sarifDiag.Output -Encoding UTF8
 
@@ -1372,20 +1328,6 @@ if ($runtimeFloatCasts.Status -eq "PASSOU") {
 }
 $results += [PSCustomObject]@{ Diretorio = "phase1-backend"; Teste = "validate_r112_runtime_float_cast_codegen"; Status = $runtimeFloatCasts.Status; Detalhe = $runtimeFloatCasts.Detail }
 
-# ---------------------------------------------------------------------------
-# Grupo 8.6: R-106 feature maturity policy
-# ---------------------------------------------------------------------------
-Write-Host ""
-Write-Host "--- R-106 feature maturity policy ---" -ForegroundColor Yellow
-$featureMaturity = Invoke-HostCommand -name "validate_feature_maturity" -fileName "python" -arguments @("scripts\validate_feature_maturity.py", "--binary", $binary) -workingDir (Get-Location).Path
-if ($featureMaturity.Status -eq "PASSOU") {
-    $totalPassed++
-} else {
-    $totalFailed++
-}
-$results += [PSCustomObject]@{ Diretorio = "phase1-features"; Teste = "validate_feature_maturity"; Status = $featureMaturity.Status; Detalhe = $featureMaturity.Detail }
-
-# ---------------------------------------------------------------------------
 # Grupo 8.7: R-203 pattern ergonomics
 # ---------------------------------------------------------------------------
 Write-Host ""
@@ -2854,7 +2796,7 @@ if (Test-Path $aiExamplesDir) {
 
     foreach ($file in $files) {
         Write-Host "  $($file.Name)" -NoNewline
-        $r = Invoke-SpectraCommand -commandArgs @("run", $file.FullName) -workingDir (Get-Location).Path -includeExperimental $true
+        $r = Invoke-SpectraCommand -commandArgs @("run", $file.FullName) -workingDir (Get-Location).Path
 
         if ($r.TimedOut) {
             Write-Host " TIMEOUT" -ForegroundColor Red

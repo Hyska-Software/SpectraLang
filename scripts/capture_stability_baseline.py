@@ -71,7 +71,6 @@ def main() -> int:
         ["cargo", "test", "--workspace", "--all-targets", "--no-fail-fast"],
         ["cargo", "fmt", "--all", "--", "--check"],
         ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"],
-        ["python", "scripts/validate_feature_maturity.py", "--binary", binary],
         ["python", "scripts/validate_r3007_stdlib_contract.py", "--binary", binary, "--report", "target/stability/baseline-r3007.json"],
         ["python", "scripts/validate_stdlib_core_bug_hunt.py", "--binary", binary],
         ["python", "scripts/validate_r2003_base_regression_audit.py", "--binary", binary],

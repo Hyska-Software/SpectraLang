@@ -302,12 +302,6 @@ impl ASTLowering {
             .rsplit('.')
             .next()
             .unwrap_or_default();
-        let compatibility_collection_read = descriptor
-            .runtime_name
-            .starts_with("spectra.std.compat.collections.");
-        let compatibility_env_read = descriptor
-            .runtime_name
-            .starts_with("spectra.std.compat.env.");
 
         if operation == "list_new" {
             if let Some(annotation) = self.current_expected_annotation.as_ref() {
@@ -381,11 +375,7 @@ impl ASTLowering {
         ) {
             if let Some(first_type) = first_type.as_ref() {
                 if let Some(element_type) = collection_element_for_type(first_type, "List") {
-                    descriptor.return_type = if compatibility_collection_read {
-                        element_type
-                    } else {
-                        option_type(element_type)
-                    };
+                    descriptor.return_type = option_type(element_type);
                 }
             }
         } else if matches!(
@@ -410,11 +400,7 @@ impl ASTLowering {
         } else if matches!(operation, "map_get" | "map_remove") {
             if let Some(first_type) = first_type.as_ref() {
                 if let Some((_, value_type)) = map_types_for_type(first_type) {
-                    descriptor.return_type = if compatibility_collection_read {
-                        value_type
-                    } else {
-                        option_type(value_type)
-                    };
+                    descriptor.return_type = option_type(value_type);
                 }
             }
         } else if matches!(operation, "map_get_option" | "map_remove_option") {
@@ -423,7 +409,7 @@ impl ASTLowering {
                     descriptor.return_type = option_type(value_type);
                 }
             }
-        } else if matches!(operation, "env_get" | "env_arg") && !compatibility_env_read {
+        } else if matches!(operation, "env_get" | "env_arg") {
             descriptor.return_type = option_type(IRType::String);
         }
         descriptor

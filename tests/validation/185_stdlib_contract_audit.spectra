@@ -1,16 +1,16 @@
 module stdlib_contract_audit
 
-import std.math as math
-import std.string as string
+from std.api.http import method_get, status_ok
+import std.concurrent as concurrent
 import std.error as error
 import std.fs as fs
-import std.time as time
-import std.range
-import std.tensor as tensor
+import std.math as math
 import std.ml as ml
+import std.range
 import std.serve as serve
-import std.concurrent as concurrent
-from std.api.http import method_get, status_ok
+import std.string as string
+import std.tensor as tensor
+import std.time as time
 
 public func main() returns int {
     if math.abs(-7) != 7 {
@@ -19,7 +19,7 @@ public func main() returns int {
     if string.eq(string.concat("spectra", "lang"), "spectralang") != true {
         return 2
     }
-    let path = "target/r3007-stdlib-contract/probe.txt"
+    let path         = "target/r3007-stdlib-contract/probe.txt"
     let write_result = fs.fs_write(path, "stdlib-contract")
     if let Result::Ok(wrote) = write_result {
         if wrote != true {
@@ -93,7 +93,7 @@ public func main() returns int {
     }
 
     concurrent.reset()
-    let task = concurrent.task_spawn(42)
+    let task = concurrent.task_spawn_fn( | value: int | { value}, 42)
     if concurrent.task_join(task) != 42 {
         return 14
     }

@@ -32,6 +32,8 @@ pub(crate) struct MlOnnxInitializer {
 }
 
 /// FNV-1a seed so every initializer name maps to a stable value stream.
+/// Test-fixture utility, live under the `onnx` feature.
+#[allow(dead_code)]
 pub(crate) fn ml_onnx_seed(name: &str) -> u64 {
     name.bytes().fold(0xCBF2_9CE4_8422_2325, |hash, byte| {
         (hash ^ byte as u64).wrapping_mul(0x100_0000_01B3)
@@ -40,7 +42,9 @@ pub(crate) fn ml_onnx_seed(name: &str) -> u64 {
 
 /// Deterministic xorshift64 stream quantized to multiples of 0.25 in
 /// [-2.0, 2.0]. Exact reproducibility matters: the inference tests recompute
-/// expected outputs from this same stream.
+/// expected outputs from this same stream. Test-fixture utility, live under
+/// the `onnx` feature.
+#[allow(dead_code)]
 pub(crate) fn ml_onnx_deterministic_values(seed: u64, len: usize) -> Vec<f32> {
     let mut state = seed | 1;
     let mut out = Vec::with_capacity(len);
@@ -54,12 +58,6 @@ pub(crate) fn ml_onnx_deterministic_values(seed: u64, len: usize) -> Vec<f32> {
     out
 }
 
-impl MlOnnxInitializer {
-    pub(crate) fn values(&self) -> Vec<f32> {
-        let len = self.shape.iter().product::<i64>() as usize;
-        ml_onnx_deterministic_values(ml_onnx_seed(self.name), len)
-    }
-}
 pub(crate) fn pb_varint(mut value: u64, out: &mut Vec<u8>) {
     while value >= 0x80 {
         out.push((value as u8) | 0x80);
@@ -397,10 +395,6 @@ pub(crate) fn ml_onnx_model_proto_with_values(model: &MlOnnxModel, values: &[Vec
     out
 }
 
-pub(crate) fn ml_onnx_model_proto(model: &MlOnnxModel) -> Vec<u8> {
-    let seeded: Vec<Vec<f32>> = model.initializers.iter().map(|init| init.values()).collect();
-    ml_onnx_model_proto_with_values(model, &seeded)
-}
 
 pub(crate) fn pb_read_varint(bytes: &[u8], index: &mut usize) -> Option<u64> {
     let mut shift = 0u32;
