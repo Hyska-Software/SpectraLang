@@ -13,14 +13,31 @@
     use std::mem;
     use std::ops::Range;
 
-    pub(super) fn format_with_cst(input: &str, config: &FormatterConfig) -> Result<String, ()> {
-        let tokens = Lexer::new(input).tokenize().map_err(|_| ())?;
+    pub(super) fn format_with_cst(
+        input: &str,
+        config: &FormatterConfig,
+    ) -> Result<String, super::FormatError> {
+        let tokens = Lexer::new(input).tokenize().map_err(|errors| {
+            let first = errors.into_iter().next();
+            match first {
+                Some(error) => super::FormatError::parse(error.message, error.span),
+                None => super::FormatError::internal("lexer failed without diagnostics"),
+            }
+        })?;
         let parser_tokens = tokens.clone();
         let module = Parser::new(parser_tokens, HashSet::new())
             .parse()
-            .map_err(|_| ())?;
+            .map_err(|errors| {
+                let first = errors.into_iter().next();
+                match first {
+                    Some(error) => super::FormatError::parse(error.message, error.span),
+                    None => super::FormatError::internal("parser failed without diagnostics"),
+                }
+            })?;
 
-        let lines = build_lines(input, &tokens)?;
+        let lines = build_lines(input, &tokens).map_err(|()| {
+            super::FormatError::internal("formatter line splitter rejected valid tokens")
+        })?;
 
         let mut formatted = Vec::new();
         let mut indent_level = 0usize;

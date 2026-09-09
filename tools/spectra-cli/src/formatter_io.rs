@@ -79,20 +79,23 @@ fn parse_positive_usize(
     }
 }
 
-fn format_preserving_endings(original: &str, config: &FormatterConfig) -> String {
+fn format_preserving_endings(
+    original: &str,
+    config: &FormatterConfig,
+) -> Result<String, FormatError> {
     let normalized_input = if original.contains("\r\n") {
         original.replace("\r\n", "\n")
     } else {
         original.to_string()
     };
 
-    let formatted = format_source(&normalized_input, config);
+    let formatted = format_source(&normalized_input, config)?;
 
-    if original.contains("\r\n") {
+    Ok(if original.contains("\r\n") {
         formatted.replace('\n', "\r\n")
     } else {
         formatted
-    }
+    })
 }
 
 fn discover_sources(entries: &[PathBuf]) -> CliResult<Vec<PathBuf>> {

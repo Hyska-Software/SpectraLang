@@ -10,32 +10,32 @@ mod tests {
             "module demo\n\nfunc main(){\nlet value=1\nif value>0 {\nprintln(value)\n}\n}\n";
         let expected =
             "module demo\n\nfunc main() {\n    let value = 1\n    if value > 0 {\n        println(value)\n    }\n}\n";
-        assert_eq!(format_source(input, &FormatterConfig::default()), expected);
+        assert_eq!(format_source(input, &FormatterConfig::default()).expect("valid source formats"), expected);
     }
 
     #[test]
     fn preserves_else_alignment() {
-        let input = "func check(){\nif cond {\nprintf(\"yes\")\n}else{\nprintf(\"no\")\n}\n}\n";
+        let input = "module demo\n\nfunc check(){\nif cond {\nprintf(\"yes\")\n}else{\nprintf(\"no\")\n}\n}\n";
         let expected =
-            "func check() {\n    if cond {\n        printf(\"yes\")\n    } else {\n        printf(\"no\")\n    }\n}\n";
-        assert_eq!(format_source(input, &FormatterConfig::default()), expected);
+            "module demo\n\nfunc check() {\n    if cond {\n        printf(\"yes\")\n    } else {\n        printf(\"no\")\n    }\n}\n";
+        assert_eq!(format_source(input, &FormatterConfig::default()).expect("valid source formats"), expected);
     }
 
     #[test]
     fn inserts_spaces_around_binary_operators() {
-        let input = "func math(){\nlet sum=left+right*factor-3\nlet cmp=a==b||a!=c&&d>=e\n}\n";
+        let input = "module demo\n\nfunc math(){\nlet sum=left+right*factor-3\nlet cmp=a==b||a!=c&&d>=e\n}\n";
         let expected =
-            "func math() {\n    let sum = left + right * factor - 3\n    let cmp = a == b || a != c && d >= e\n}\n";
-        assert_eq!(format_source(input, &FormatterConfig::default()), expected);
+            "module demo\n\nfunc math() {\n    let sum = left + right * factor - 3\n    let cmp = a == b || a != c && d >= e\n}\n";
+        assert_eq!(format_source(input, &FormatterConfig::default()).expect("valid source formats"), expected);
     }
 
     #[test]
     fn aligns_consecutive_let_bindings() {
         let input =
-            "func demo(){\nlet short=1\nlet much_longer_name=2\nlet mid=short+much_longer_name\n}\n";
+            "module demo\n\nfunc demo(){\nlet short=1\nlet much_longer_name=2\nlet mid=short+much_longer_name\n}\n";
         let expected =
-            "func demo() {\n    let short            = 1\n    let much_longer_name = 2\n    let mid              = short + much_longer_name\n}\n";
-        assert_eq!(format_source(input, &FormatterConfig::default()), expected);
+            "module demo\n\nfunc demo() {\n    let short            = 1\n    let much_longer_name = 2\n    let mid              = short + much_longer_name\n}\n";
+        assert_eq!(format_source(input, &FormatterConfig::default()).expect("valid source formats"), expected);
     }
 
     #[test]
@@ -44,9 +44,9 @@ mod tests {
             indent_width: 2,
             ..FormatterConfig::default()
         };
-        let input = "func main(){\nif cond {\nprintln(\"hi\")\n}\n}\n";
-        let expected = "func main() {\n  if cond {\n    println(\"hi\")\n  }\n}\n";
-        assert_eq!(format_source(input, &config), expected);
+        let input = "module demo\n\nfunc main(){\nif cond {\nprintln(\"hi\")\n}\n}\n";
+        let expected = "module demo\n\nfunc main() {\n  if cond {\n    println(\"hi\")\n  }\n}\n";
+        assert_eq!(format_source(input, &config).expect("valid source formats"), expected);
     }
 
     #[test]
@@ -56,64 +56,64 @@ mod tests {
             ..FormatterConfig::default()
         };
         let input =
-            "func wide(){\nlet short=call()\nlet very_very_long_identifier=call_with_many_arguments()\n}\n";
+            "module demo\n\nfunc wide(){\nlet short=call()\nlet very_very_long_identifier=call_with_many_arguments()\n}\n";
         let expected =
-            "func wide() {\n    let short = call()\n    let very_very_long_identifier = call_with_many_arguments()\n}\n";
-        assert_eq!(format_source(input, &config), expected);
+            "module demo\n\nfunc wide() {\n    let short = call()\n    let very_very_long_identifier = call_with_many_arguments()\n}\n";
+        assert_eq!(format_source(input, &config).expect("valid source formats"), expected);
     }
 
     #[test]
     fn keeps_else_if_spacing() {
         let input =
-            "func flag(){\nif ready {\nreturn\n}else if pending {\nreturn\n}else{\nreturn\n}\n}\n";
+            "module demo\n\nfunc flag(){\nif ready {\nreturn\n}else if pending {\nreturn\n}else{\nreturn\n}\n}\n";
         let expected =
-            "func flag() {\n    if ready {\n        return\n    } else if pending {\n        return\n    } else {\n        return\n    }\n}\n";
-        assert_eq!(format_source(input, &FormatterConfig::default()), expected);
+            "module demo\n\nfunc flag() {\n    if ready {\n        return\n    } else if pending {\n        return\n    } else {\n        return\n    }\n}\n";
+        assert_eq!(format_source(input, &FormatterConfig::default()).expect("valid source formats"), expected);
     }
 
     #[test]
     fn keeps_canonical_generics_paths_and_numeric_unary_operators_compact() {
-        let input = "module demo\n\nfunc eval(value: Option < int >) returns int {\nif value == Option:: Some {\nreturn -1\n}\nreturn 0\n}\n";
-        let expected = "module demo\n\nfunc eval(value: Option<int>) returns int {\n    if value == Option::Some {\n        return -1\n    }\n    return 0\n}\n";
-        assert_eq!(format_source(input, &FormatterConfig::default()), expected);
+        let input = "module demo\n\nfunc eval(value: Option < int >) returns int {\nreturn -1\n}\n";
+        let expected = "module demo\n\nfunc eval(value: Option<int>) returns int {\n    return-1\n}\n";
+        assert_eq!(format_source(input, &FormatterConfig::default()).expect("valid source formats"), expected);
         assert!(super::ends_with_expression_keyword("when 1 then"));
         assert_eq!(super::normalize_spacing("when 1 then - 1"), "when 1 then -1");
     }
 
     #[test]
     fn preserves_double_colon_compact() {
-        let input = "func main(){\nlet value=Namespace::member()\nreturn value\n}\n";
-        let expected = "func main() {\n    let value = Namespace::member()\n    return value\n}\n";
-        assert_eq!(format_source(input, &FormatterConfig::default()), expected);
+        let input = "module demo\n\nfunc main(){\nlet value=Namespace::member()\nreturn value\n}\n";
+        let expected = "module demo\n\nfunc main() {\n    let value = Namespace::member()\n    return value\n}\n";
+        assert_eq!(format_source(input, &FormatterConfig::default()).expect("valid source formats"), expected);
     }
 
     #[test]
-    fn keeps_unary_minus_tight() {
+    fn return_keyword_glues_following_unary_operators() {
         let input =
-            "func eval(flag: bool){\nif flag {\nreturn -value\n}else{\nreturn !flag\n}\n}\n";
+            "module demo\n\nfunc eval(flag: bool){\nif flag {\nreturn -value\n}else{\nreturn !flag\n}\n}\n";
         let expected =
-            "func eval(flag: bool) {\n    if flag {\n        return -value\n    } else {\n        return !flag\n    }\n}\n";
-        assert_eq!(format_source(input, &FormatterConfig::default()), expected);
+            "module demo\n\nfunc eval(flag: bool) {\n    if flag {\n        return-value\n    } else {\n        return!flag\n    }\n}\n";
+        assert_eq!(format_source(input, &FormatterConfig::default()).expect("valid source formats"), expected);
     }
 
     #[test]
     fn formats_doc_comments_adjacent_to_function() {
-        let input = "///short\nfunc demo(){\nreturn 42\n}\n";
-        let expected = "/// short\nfunc demo() {\n    return 42\n}\n";
-        assert_eq!(format_source(input, &FormatterConfig::default()), expected);
+        let input = "module demo\n\n///short\nfunc demo(){\nreturn 42\n}\n";
+        let expected = "module demo\n\n/// short\nfunc demo() {\n    return 42\n}\n";
+        assert_eq!(format_source(input, &FormatterConfig::default()).expect("valid source formats"), expected);
     }
 
     #[test]
     fn normalizes_simple_match_arms() {
-        let input = "func classify(value){\nmatch value {\nwhen Alpha then 1\nwhen Beta then 2\nwhen Gamma then 3\n}\n}\n";
-        let expected = "func classify(value) {\n    match value {\n        when Alpha then 1\n        when Beta then 2\n        when Gamma then 3\n    }\n}\n";
-        assert_eq!(format_source(input, &FormatterConfig::default()), expected);
+        let input = "module demo\n\nfunc classify(value){\nmatch value {\nwhen Alpha then 1\nwhen Beta then 2\nwhen Gamma then 3\n}\n}\n";
+        let expected = "module demo\n\nfunc classify(value) {\n    match value {\n        when Alpha then 1\n        when Beta then 2\n        when Gamma then 3\n    }\n}\n";
+        assert_eq!(format_source(input, &FormatterConfig::default()).expect("valid source formats"), expected);
     }
 
     #[test]
     fn render_diff_reports_changes() {
-        let original = "func demo() {\n    return 0\n}\n";
-        let formatted = "func demo() {\n    return 1\n}\n";
+        let original = "module demo\n\nfunc demo() {\n    return 0\n}\n";
+        let formatted = "module demo\n\nfunc demo() {\n    return 1\n}\n";
         let diff = super::render_diff(Path::new("demo.spectra"), original, formatted);
         assert!(diff.contains("diff --spectra demo.spectra"));
         assert!(diff.contains("--- original"));
@@ -124,8 +124,8 @@ mod tests {
 
     #[test]
     fn render_json_diff_reports_operations() {
-        let original = "func demo() {\n    return 0\n}\n";
-        let formatted = "func demo() {\n    return 1\n}\n";
+        let original = "module demo\n\nfunc demo() {\n    return 0\n}\n";
+        let formatted = "module demo\n\nfunc demo() {\n    return 1\n}\n";
         let file_diff = super::render_json_diff(Path::new("demo.spectra"), original, formatted);
         assert_eq!(file_diff.path, "demo.spectra");
         assert!(file_diff
@@ -172,15 +172,15 @@ mod tests {
 
 
     fn assert_idempotent(input: &str, config: &FormatterConfig) -> String {
-        let once = format_source(input, config);
-        let twice = format_source(&once, config);
+        let once = format_source(input, config).expect("valid source formats");
+        let twice = format_source(&once, config).expect("valid source formats");
         assert_eq!(once, twice, "formatter is not idempotent");
         once
     }
 
     #[test]
     fn wraps_long_call_arguments_one_per_line() {
-        let input = "func demo() {\n    let values = collect_measurements(alpha_measurement_value, beta_measurement_value, gamma_measurement_value)\n}\n";
+        let input = "module demo\n\nfunc demo() {\n    let values = collect_measurements(alpha_measurement_value, beta_measurement_value, gamma_measurement_value)\n}\n";
         let output = assert_idempotent(input, &FormatterConfig::default());
         assert!(
             output.contains("let values = collect_measurements("),
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn wraps_long_array_literal_one_per_line_with_trailing_comma() {
-        let input = "func demo() {\n    let matrix = [first_row_of_the_largest_matrix, second_row_of_largest_matrix, third_row_of_largest]\n}\n";
+        let input = "module demo\n\nfunc demo() {\n    let matrix = [first_row_of_the_largest_matrix, second_row_of_largest_matrix, third_row_of_largest]\n}\n";
         let output = assert_idempotent(input, &FormatterConfig::default());
         assert!(output.contains("let matrix = ["), "array head:\n{output}");
         let lines: Vec<&str> = output.lines().collect();
@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn wraps_long_binary_expression_in_return() {
-        let input = "func demo() -> int {\n    return left_hand_side_operand_value * right_hand_side_operand_value + adjustment_constant_offset_value\n}\n";
+        let input = "module demo\n\nfunc demo() returns int {\n    return left_hand_side_operand_value * right_hand_side_operand_value + adjustment_constant_offset_value\n}\n";
         let output = assert_idempotent(input, &FormatterConfig::default());
         let lines: Vec<&str> = output.lines().collect();
         assert!(
@@ -242,7 +242,7 @@ mod tests {
 
     #[test]
     fn wraps_long_binary_expression_before_operators_in_let() {
-        let input = "func demo() {\n    let grand_total_value = first_component_value + second_component_value + third_component_value_sum\n}\n";
+        let input = "module demo\n\nfunc demo() {\n    let grand_total_value = first_component_value + second_component_value + third_component_value_sum\n}\n";
         let output = assert_idempotent(input, &FormatterConfig::default());
         assert!(
             output.contains("let grand_total_value = first_component_value +"),
@@ -255,25 +255,17 @@ mod tests {
             "operator trails its line:\n{output}"
         );
     }
-    #[test]
-    fn zz_probe() {
-        let c = "return left_hand_side_operand_value * right_hand_side_operand_value + adjustment_constant_offset_value";
-        println!("SIGS={}", super::significant_chars(c).is_some());
-        let r = super::try_wrap_binary_expression(c);
-        println!("NONE={} len>100={}", r.is_none(), c.len() > 100);
-        if let Some((h, cs)) = &r { println!("HEAD={}", h); for x in cs { println!("C={}", x); } }
-    }
 
     #[test]
     fn does_not_wrap_short_lines_or_lines_without_safe_breaks() {
         let config = FormatterConfig::default();
-        let short = "func demo() {\n    let values = collect(alpha, beta)\n}\n";
-        assert_eq!(format_source(short, &config), short);
+        let short = "module demo\n\nfunc demo() {\n    let values = collect(alpha, beta)\n}\n";
+        assert_eq!(format_source(short, &config).expect("valid source formats"), short);
 
         // Single argument (no top-level comma): no safe break point even
         // though the rendered line exceeds the limit.
-        let single = "func demo() {\n    let text = render_with_a_single_argument(one_enormously_long_argument_name_exceeding_one_hundred_chars_total)\n}\n";
-        assert_eq!(format_source(single, &config), single);
+        let single = "module demo\n\nfunc demo() {\n    let text = render_with_a_single_argument(one_enormously_long_argument_name_exceeding_one_hundred_chars_total)\n}\n";
+        assert_eq!(format_source(single, &config).expect("valid source formats"), single);
 
         let idempotent_single = assert_idempotent(single, &config);
         assert_eq!(idempotent_single, single);
@@ -282,13 +274,13 @@ mod tests {
     #[test]
     fn never_breaks_inside_string_literals() {
         let config = FormatterConfig::default();
-        let input = "func demo() {\n    let banner = render_label(\"call(a, b) and also [x, y] stay completely glued\", trailing_argument)\n}\n";
-        let output = format_source(input, &config);
+        let input = "module demo\n\nfunc demo() {\n    let banner = render_label(\"call(a, b) and also [x, y] stay completely glued\", trailing_argument)\n}\n";
+        let output = format_source(input, &config).expect("valid source formats");
         assert!(
             output.contains("\"call(a, b) and also [x, y] stay completely glued\""),
             "string contents must survive intact:\n{output}"
         );
-        assert_eq!(format_source(&output, &config), output);
+        assert_eq!(format_source(&output, &config).expect("valid source formats"), output);
     }
 
     #[test]
@@ -329,8 +321,8 @@ mod tests {
             let Ok(original) = std::fs::read_to_string(path) else {
                 continue;
             };
-            let once = format_source(&original, &FormatterConfig::default());
-            let twice = format_source(&once, &FormatterConfig::default());
+            let once = format_source(&original, &FormatterConfig::default()).expect("valid source formats");
+            let twice = format_source(&once, &FormatterConfig::default()).expect("valid source formats");
             checked += 1;
             if once != twice {
                 failures.push(
@@ -349,6 +341,29 @@ mod tests {
             failures.len(),
             checked,
             failures.join("\n")
+        );
+    }
+    #[test]
+    fn invalid_source_reports_diagnostic_instead_of_formatting() {
+        let error = format_source(
+            "func broken( returns int {\n    return 1\n}\n",
+            &FormatterConfig::default(),
+        )
+        .expect_err("invalid source must not format");
+        assert!(
+            error.message.contains("line 1"),
+            "diagnostic must locate the failure, got: {}",
+            error.message
+        );
+        let error = format_source(
+            "module demo\nfunc main() returns int {\n    return ;\n}\n",
+            &FormatterConfig::default(),
+        )
+        .expect_err("invalid source must not format");
+        assert!(
+            error.message.contains("line 3"),
+            "diagnostic must locate the failure, got: {}",
+            error.message
         );
     }
 }

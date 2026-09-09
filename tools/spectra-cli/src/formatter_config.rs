@@ -290,7 +290,9 @@ pub(crate) fn run(options: FormatOptions) -> CliResult<()> {
             .read_to_string(&mut input)
             .map_err(|error| CliError::io(format!("Failed to read standard input: {}", error)))?;
 
-        let output = format_preserving_endings(&input, &config);
+        let output = format_preserving_endings(&input, &config).map_err(|error| {
+            CliError::compilation(format!("Failed to format standard input: {}", error.message))
+        })?;
         let changed = output != input;
         let run_stats = {
             let config_stats = config_resolver.stats();
@@ -344,7 +346,13 @@ pub(crate) fn run(options: FormatOptions) -> CliResult<()> {
             ))
         })?;
 
-        let output = format_preserving_endings(&original, &config);
+        let output = format_preserving_endings(&original, &config).map_err(|error| {
+            CliError::compilation(format!(
+                "Failed to format '{}': {}",
+                path.display(),
+                error.message
+            ))
+        })?;
         let changed = output != original;
         let run_stats = {
             let config_stats = config_resolver.stats();
@@ -393,7 +401,13 @@ pub(crate) fn run(options: FormatOptions) -> CliResult<()> {
             ))
         })?;
 
-        let output = format_preserving_endings(&original, &config);
+        let output = format_preserving_endings(&original, &config).map_err(|error| {
+            CliError::compilation(format!(
+                "Failed to format '{}': {}",
+                path.display(),
+                error.message
+            ))
+        })?;
 
         if output != original {
             changed.push(path.clone());

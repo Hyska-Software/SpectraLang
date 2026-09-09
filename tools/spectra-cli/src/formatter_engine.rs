@@ -1,8 +1,31 @@
-fn format_source(input: &str, config: &FormatterConfig) -> String {
-    match cst::format_with_cst(input, config) {
-        Ok(formatted) => formatted,
-        Err(_) => legacy_format_source(input, config),
+/// Parse or lexical failure of the input. Formatting invalid code as if it
+/// were fine is never an option; callers surface this with a nonzero result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FormatError {
+    message: String,
+}
+
+impl FormatError {
+    fn parse(message: impl Into<String>, span: spectra_compiler::span::Span) -> Self {
+        Self {
+            message: format!(
+                "{} (line {}, column {})",
+                message.into(),
+                span.start_location.line,
+                span.start_location.column
+            ),
+        }
     }
+
+    fn internal(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+fn format_source(input: &str, config: &FormatterConfig) -> Result<String, FormatError> {
+    cst::format_with_cst(input, config)
 }
 
 #[derive(Debug, Clone)]
@@ -30,58 +53,6 @@ impl FormattedLine {
     }
 }
 
-fn legacy_format_source(input: &str, config: &FormatterConfig) -> String {
-    let mut indent_level: usize = 0;
-    let mut anchor_indent: usize = 0;
-    let mut pending_open: i32 = 0;
-    // Same signal as the CST loop: when the previously emitted line ended
-    // with a binary operator, this line continues that expression.
-    let mut prev_ends_open = false;
-    let mut lines = Vec::new();
-
-    for line in input.split('\n') {
-        let trimmed_trailing =
-            line.trim_end_matches([' ', '\t', '\r']);
-        let trimmed_leading = trimmed_trailing.trim_start();
-
-        if trimmed_leading.is_empty() {
-            lines.push(FormattedLine::blank());
-            continue;
-        }
-
-        let mut dedent = count_leading_closing_braces(trimmed_leading);
-        if dedent > indent_level {
-            dedent = indent_level;
-        }
-
-        let normalized = normalize_spacing(trimmed_leading);
-        let delta = net_round_bracket_delta(&normalized);
-        let ends_open = ends_with_binary_operator(&normalized);
-        let starts_open =
-            pending_open <= 0 && is_wrapped_continuation_line(&normalized);
-        let _ = starts_open;
-        let continuation = prev_ends_open;
-        let indent_for_line = if continuation {
-            anchor_indent + 1
-        } else {
-            indent_level.saturating_sub(dedent)
-        };
-        lines.push(FormattedLine::new(indent_for_line, normalized));
-
-        pending_open = (pending_open + delta).max(0);
-
-        let (opens, closes) = count_brace_transitions(trimmed_leading, dedent);
-        let level_base = if continuation { anchor_indent } else { indent_for_line };
-        indent_level = level_base + opens;
-        indent_level = indent_level.saturating_sub(closes);
-        if !continuation {
-            anchor_indent = indent_for_line;
-        }
-        prev_ends_open = ends_open;
-    }
-
-    finalize_output(lines, config)
-}
 
 fn finalize_output(mut lines: Vec<FormattedLine>, config: &FormatterConfig) -> String {
     align_let_bindings(&mut lines, config);
@@ -297,6 +268,13 @@ fn normalize_spacing(content: &str) -> String {
                 generic_depth = generic_depth.saturating_sub(1);
             }
             _ => {
+                // Scientific-notation exponent signs (`2.5E-3`) are part of
+                // the number literal, not binary operators: spacing them
+                // corrupts the literal into unlexable code.
+                if (ch == '+' || ch == '-') && is_exponent_sign(&result) {
+                    result.push(ch);
+                    continue;
+                }
                 if let Some(op) = read_operator(ch, &mut chars) {
                     let prev = previous_non_space(&result);
                     let after_unary_context = matches!(
@@ -460,6 +438,7 @@ fn read_operator(
             }
             _ => Some(op),
         },
+
         '+' | '*' | '/' | '%' => Some(op),
         '-' => match chars.peek() {
             Some('>') => {
@@ -475,6 +454,21 @@ fn read_operator(
             _ => Some(op),
         },
         _ => None,
+    }
+}
+/// True when the emitted text ends with a scientific-notation mantissa
+/// (`2.5E`, `7e`): a directly following `+`/`-` is the exponent sign, not a
+/// binary operator. An identifier ending in `e` (`x2e`) can false-positive
+/// here, but gluing its `-`/`+` changes only spacing, never the parse.
+fn is_exponent_sign(result: &str) -> bool {
+    let mut chars = result.chars().rev().filter(|ch| !ch.is_whitespace());
+    match (chars.next(), chars.next()) {
+        (Some(marker), Some(prev))
+            if (marker == 'e' || marker == 'E') && (prev.is_ascii_digit() || prev == '.') =>
+        {
+            true
+        }
+        _ => false,
     }
 }
 
