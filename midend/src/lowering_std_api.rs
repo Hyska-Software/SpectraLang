@@ -714,6 +714,11 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("grpc", "server_local_port") => Some(host_int("spectra.api.grpc.server_local_port")),
         ("grpc", "server_shutdown") => Some(host_bool("spectra.api.grpc.server_shutdown")),
         ("grpc", "server_free") => Some(host_bool("spectra.api.grpc.server_free")),
+        ("grpc", "service_create") => Some(host_int("spectra.api.grpc.service_create")),
+        ("grpc", "service_handle_method") => {
+            Some(host_bool("spectra.api.grpc.service_handle_method"))
+        }
+        ("grpc", "service_free") => Some(host_bool("spectra.api.grpc.service_free")),
         ("graphql", "schema_new") => Some(host_int("spectra.api.graphql.schema_new")),
         ("graphql", "schema_set_workers") => Some(host_bool("spectra.api.graphql.schema_set_workers")),
         ("graphql", "schema_set_subscription_capacity") => Some(host_bool("spectra.api.graphql.schema_set_subscription_capacity")),

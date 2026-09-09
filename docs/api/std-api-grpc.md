@@ -43,6 +43,28 @@ and `server_free`. Request and response streams are bounded
 (`stream_capacity`, default 16); a full channel surfaces `CapacityClosed`
 instead of blocking forever.
 
+## Language-backed services
+
+`spectra.api.grpc.service_create` mints an empty service;
+`spectra.api.grpc.service_handle_method(service, path, handler)` attaches a
+Spectra handler to one method path; `spectra.api.grpc.service_free` releases
+it. Bound with `server_bind`/`server_bind_tls` like any registered
+implementation (unknown paths answer UNIMPLEMENTED).
+
+Handlers are sync `func(string) returns string` over one JSON document pair
+(an async closure's task handle is settled first):
+
+- input: `{"path": str, "messages": [base64], "metadata": {name: base64}}`
+- output: `{"messages": [base64], "status": {"code": int, "message": str},
+  "metadata": {name: base64}}` (absent fields default to no messages, ok
+  status, and empty metadata; malformed output fails with an Internal error,
+  never a synthesized response)
+
+The full inbound stream is collected before the single invocation and the
+returned messages stream out, so unary, client-streaming, and
+server-streaming all work; bidirectional streams are buffered rather than
+interleaved.
+
 ## TLS option
 
 Cleartext is the default contract: `GrpcServer::bind` and `client_connect`
@@ -106,9 +128,7 @@ What this page does not promise: `.proto` file compilation, generated stubs,
 JSON transcoding, reflection, health checking, load balancing, retries, or
 compression negotiation. Those stay out of scope until R-2419 says otherwise.
 
-## Host surface
-
-All `spectra.api.grpc.*` hosts (`host_calls.rs`, 40 total):
+All `spectra.api.grpc.*` hosts (`host_calls.rs`, 43 total):
 `spectra.api.grpc.message_from_base64`,
 `spectra.api.grpc.message_to_base64`, `spectra.api.grpc.message_len`,
 `spectra.api.grpc.message_free`, `spectra.api.grpc.metadata_new`,
@@ -130,4 +150,5 @@ All `spectra.api.grpc.*` hosts (`host_calls.rs`, 40 total):
 `spectra.api.grpc.stream_cancel`, `spectra.api.grpc.stream_free`,
 `spectra.api.grpc.server_bind`, `spectra.api.grpc.server_bind_tls`,
 `spectra.api.grpc.server_local_port`, `spectra.api.grpc.server_shutdown`,
-`spectra.api.grpc.server_free`.
+`spectra.api.grpc.server_free`, `spectra.api.grpc.service_create`,
+`spectra.api.grpc.service_handle_method`, `spectra.api.grpc.service_free`.

@@ -17097,6 +17097,48 @@ docs = 'docs/api/README.md'
 fixture = 'tests/validation/185_stdlib_contract_audit.spectra'
 
 [[entry]]
+path = 'std.api.grpc.service_create'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn() -> int'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.service_create'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/std-api-grpc.md'
+fixture = 'tests/validation/361_grpc_service_roundtrip.spectra'
+
+[[entry]]
+path = 'std.api.grpc.service_handle_method'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int, string, int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.service_handle_method'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/std-api-grpc.md'
+fixture = 'tests/validation/361_grpc_service_roundtrip.spectra'
+
+[[entry]]
+path = 'std.api.grpc.service_free'
+kind = 'function'
+namespace = 'std.api.grpc'
+signature = 'fn(int) -> bool'
+abi = 'host(ctx: SpectraHostCallContext) -> i32'
+effects = ['host']
+error_model = 'host status + typed return'
+binding = 'spectra.api.grpc.service_free'
+maturity = 'stable'
+owner = 'web'
+docs = 'docs/api/std-api-grpc.md'
+fixture = 'tests/validation/361_grpc_service_roundtrip.spectra'
+
+[[entry]]
 path = 'std.api.http3'
 kind = 'module'
 namespace = 'std.api'

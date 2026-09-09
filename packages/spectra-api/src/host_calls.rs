@@ -1726,6 +1726,9 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
     HostCallSpec { name: "spectra.api.grpc.server_local_port", function: grpc_host::grpc_server_local_port },
     HostCallSpec { name: "spectra.api.grpc.server_shutdown", function: grpc_host::grpc_server_shutdown },
     HostCallSpec { name: "spectra.api.grpc.server_free", function: grpc_host::grpc_server_free },
+    HostCallSpec { name: "spectra.api.grpc.service_create", function: grpc_host::grpc_service_create },
+    HostCallSpec { name: "spectra.api.grpc.service_handle_method", function: grpc_host::grpc_service_handle_method },
+    HostCallSpec { name: "spectra.api.grpc.service_free", function: grpc_host::grpc_service_free },
     // ── GraphQL ─────────────────────────────────────────────────────────
     HostCallSpec { name: "spectra.api.graphql.schema_new", function: graphql_host::schema_new },
     HostCallSpec { name: "spectra.api.graphql.schema_set_workers", function: graphql_host::schema_set_workers },

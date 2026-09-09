@@ -1,0 +1,47 @@
+module grpc_service_roundtrip
+
+import std.convert as convert
+
+from std.api.grpc import message_from_base64, message_to_base64, metadata_new, service_create, service_handle_method, service_free, server_bind, server_local_port, server_shutdown, server_free, client_connect, client_unary, response_message, response_free
+from std.api.json import parse, value_get, value_at, value_text
+
+func echo_handler(input: string) returns string {
+    let root = parse(input)
+    let messages = value_get(root, "messages")
+    let first = value_at(messages, 0)
+    let body = value_text(first)
+    return "{\"messages\":[\"" + body + "\"],\"status\":{\"code\":0,\"message\":\"\"},\"metadata\":{}}"
+}
+
+public func main() returns int {
+    let service = service_create()
+    if service_handle_method(service, "/echo.Echo/Run", echo_handler) != true {
+        return 1
+    }
+    let server = block_on(server_bind("127.0.0.1:0", service, 1048576, 16, 100))
+    let port = server_local_port(server)
+    if port <= 0 {
+        return 2
+    }
+    let client = block_on(client_connect("127.0.0.1:" + convert.int_to_string(port)))
+    let metadata = metadata_new()
+    let message = message_from_base64("aGVsbG8=")
+    let response = block_on(client_unary(client, "/echo.Echo/Run", message, metadata, 5000))
+    let echo = response_message(response)
+    if message_to_base64(echo) != "aGVsbG8=" {
+        return 3
+    }
+    if response_free(response) != true {
+        return 4
+    }
+    if server_shutdown(server) != true {
+        return 5
+    }
+    if server_free(server) != true {
+        return 6
+    }
+    if service_free(service) != true {
+        return 7
+    }
+    return 0
+}

@@ -178,6 +178,11 @@ path = "tests/validation/350_api_protocol_bindings.spectra"
 covers = ["std.api.grpc.*", "std.api.graphql.*"]
 
 [[probe]]
+id = "api-grpc-service"
+path = "tests/validation/361_grpc_service_roundtrip.spectra"
+covers = ["std.api.grpc.service_create", "std.api.grpc.service_handle_method", "std.api.grpc.service_free"]
+
+[[probe]]
 id = "api-http3-bindings"
 path = "tests/validation/352_api_http3_bindings.spectra"
 covers = ["std.api.http3.*"]

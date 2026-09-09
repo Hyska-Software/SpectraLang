@@ -1120,6 +1120,20 @@ fn make_std_api_grpc(prefix: &str) -> ModuleExports {
         ("server_local_port", vec![Type::Int], Type::Int),
         ("server_shutdown", vec![Type::Int], Type::Bool),
         ("server_free", vec![Type::Int], Type::Bool),
+        ("service_create", vec![], Type::Int),
+        (
+            "service_handle_method",
+            vec![
+                Type::Int,
+                Type::String,
+                Type::Fn {
+                    params: vec![Type::String],
+                    return_type: Box::new(Type::String),
+                },
+            ],
+            Type::Bool,
+        ),
+        ("service_free", vec![Type::Int], Type::Bool),
     ];
     for (name, params, return_type) in functions {
         exports

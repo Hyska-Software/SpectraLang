@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 550
+PACKAGE_HOST_CALL_COUNT = 553
 RUNTIME_REQUIRED_HOST_CALL_COUNT = 439
 
 

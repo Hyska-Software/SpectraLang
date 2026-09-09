@@ -6,8 +6,9 @@
 // the runtime's cancellable Task implementation and a per-client Tokio runtime.
 
 use crate::grpc::{
-    GrpcClient, GrpcClientStream, GrpcCode, GrpcError, GrpcMessage, GrpcMetadata, GrpcReceiver,
-    GrpcServer, GrpcServerConfig, GrpcService, GrpcStatus, GrpcTrailers, GrpcTlsIdentity,
+    GrpcBoxFuture, GrpcClient, GrpcClientStream, GrpcCode, GrpcError, GrpcMessage, GrpcMetadata,
+    GrpcReceiver, GrpcRequest, GrpcResponse, GrpcServer, GrpcServerConfig, GrpcService,
+    GrpcStatus, GrpcTrailers, GrpcTlsIdentity,
 };
 use crate::handles::ApiHandleTable;
 use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
@@ -47,6 +48,11 @@ struct ClientEntry {
 
 struct ServerEntry {
     server: GrpcServer,
+    // The accept loop spawns on this runtime; dropping it would kill a bound
+    // server as soon as the bind task completes (the client entries retain
+    // theirs for the same reason).
+    #[allow(dead_code)]
+    runtime: Arc<Runtime>,
 }
 
 enum HostStreamInner {
@@ -69,6 +75,7 @@ struct GrpcHostStore {
     errors: ApiHandleTable<GrpcHostError>,
     servers: ApiHandleTable<ServerEntry>,
     services: ApiHandleTable<Arc<dyn GrpcService>>,
+    callback_services: ApiHandleTable<Arc<CallbackGrpcService>>,
 }
 
 impl GrpcHostStore {
@@ -83,13 +90,197 @@ impl GrpcHostStore {
             errors: ApiHandleTable::new(HandleKind::ApiGrpcError),
             servers: ApiHandleTable::new(HandleKind::ApiGrpcServer),
             services: ApiHandleTable::new(HandleKind::ApiGrpcService),
+            callback_services: ApiHandleTable::new(HandleKind::ApiGrpcService),
         }
     }
 }
 
 fn store() -> &'static Mutex<GrpcHostStore> {
     static STORE: OnceLock<Mutex<GrpcHostStore>> = OnceLock::new();
+
     STORE.get_or_init(|| Mutex::new(GrpcHostStore::new()))
+}
+
+/// Language-backed gRPC service: each method path dispatches to a Spectra
+/// closure through the handler callback bridge (the same bridge GraphQL
+/// resolvers use). The closure receives one JSON document and returns one:
+///
+/// input:  `{"path": str, "messages": [base64], "metadata": {name: base64}}`
+/// output: `{"messages": [base64], "status": {"code": int, "message": str}, "metadata": {name: base64}}`
+///
+/// The full inbound stream is collected before the single invocation and the
+/// returned messages stream out, so unary, client-streaming, and
+/// server-streaming all work; bidirectional streams are buffered rather than
+/// interleaved. A sync closure returns the JSON string directly; an async
+/// closure's task handle is resolved first. Anything else (unknown path
+/// aside, which yields UNIMPLEMENTED) fails with an Internal error instead
+/// of inventing a response.
+struct CallbackGrpcService {
+    methods: Mutex<std::collections::HashMap<String, crate::handler::CallbackEntry>>,
+}
+
+impl CallbackGrpcService {
+    fn new() -> Self {
+        Self {
+            methods: Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+}
+
+fn grpc_code_from_u64(code: u64) -> GrpcCode {
+    match code {
+        0 => GrpcCode::Ok,
+        1 => GrpcCode::Cancelled,
+        2 => GrpcCode::Unknown,
+        3 => GrpcCode::InvalidArgument,
+        4 => GrpcCode::DeadlineExceeded,
+        5 => GrpcCode::NotFound,
+        6 => GrpcCode::AlreadyExists,
+        7 => GrpcCode::PermissionDenied,
+        8 => GrpcCode::ResourceExhausted,
+        9 => GrpcCode::FailedPrecondition,
+        10 => GrpcCode::Aborted,
+        11 => GrpcCode::OutOfRange,
+        12 => GrpcCode::Unimplemented,
+        13 => GrpcCode::Internal,
+        14 => GrpcCode::Unavailable,
+        15 => GrpcCode::DataLoss,
+        16 => GrpcCode::Unauthenticated,
+        _ => GrpcCode::Unknown,
+    }
+}
+
+fn grpc_handler_input_json(
+    path: &str,
+    metadata: &GrpcMetadata,
+    messages: &[GrpcMessage],
+) -> String {
+    let metadata_json = metadata
+        .iter()
+        .map(|entry| {
+            format!(
+                "{}:{}",
+                json_escape(&entry.key),
+                json_escape(&encode_base64(&entry.value))
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let messages_json = messages
+        .iter()
+        .map(|message| format!("\"{}\"", encode_base64(message.as_bytes())))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"path\":{},\"messages\":[{}],\"metadata\":{{{}}}}}",
+        json_escape(path),
+        messages_json,
+        metadata_json
+    )
+}
+
+fn json_escape(text: &str) -> String {
+    serde_json::to_string(text).unwrap_or_default()
+}
+
+fn grpc_handler_output(
+    text: &str,
+) -> Result<(Vec<GrpcMessage>, GrpcStatus, GrpcMetadata), GrpcError> {
+    let value: serde_json::Value =
+        serde_json::from_str(text).map_err(|error| GrpcError::Protocol(error.to_string()))?;
+    let mut messages = Vec::new();
+    if let Some(items) = value.get("messages").and_then(|items| items.as_array()) {
+        for item in items {
+            let encoded = item.as_str().ok_or_else(|| {
+                GrpcError::Protocol("gRPC handler messages must be base64 strings".to_string())
+            })?;
+            let bytes =
+                decode_base64(encoded).map_err(|()| GrpcError::Protocol("gRPC handler message is not valid base64".to_string()))?;
+            messages.push(GrpcMessage::from_bytes(bytes));
+        }
+    }
+    let status = match value.get("status") {
+        None => GrpcStatus::ok(),
+        Some(status) => {
+            let code = status
+                .get("code")
+                .and_then(|code| code.as_u64())
+                .map(grpc_code_from_u64)
+                .unwrap_or(GrpcCode::Unknown);
+            let message = status
+                .get("message")
+                .and_then(|message| message.as_str())
+                .unwrap_or_default()
+                .to_string();
+            GrpcStatus::new(code, message)
+        }
+    };
+    let mut metadata = GrpcMetadata::new();
+    if let Some(entries) = value.get("metadata").and_then(|entries| entries.as_object()) {
+        for (key, encoded) in entries {
+            let value_str = encoded.as_str().ok_or_else(|| {
+                GrpcError::Protocol("gRPC handler metadata values must be base64 strings".to_string())
+            })?;
+            let bytes =
+                decode_base64(value_str).map_err(|()| GrpcError::Protocol("gRPC handler metadata value is not valid base64".to_string()))?;
+            metadata
+                .append(key.clone(), bytes)
+                .map_err(|error| GrpcError::Protocol(error.to_string()))?;
+        }
+    }
+    Ok((messages, status, metadata))
+}
+
+fn grpc_callback_result_text(entry: crate::handler::CallbackEntry, arg: SpectraHostValue) -> Option<String> {
+    let result =
+        crate::handler::invoke_callback(entry, arg).ok()?;
+    if let Some(text) = read_spectra_string(result) {
+        return Some(text);
+    }
+    // Async closures resolve to a task handle; settle it before reading.
+    let settled = spectra_runtime::stdlib::block_on_task_value(result).ok()?;
+    read_spectra_string(settled)
+}
+
+impl GrpcService for CallbackGrpcService {
+    fn call(&self, request: GrpcRequest) -> GrpcBoxFuture {
+        let entry = self
+            .methods
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&request.path)
+            .cloned();
+        Box::pin(async move {
+            let Some(entry) = entry else {
+                let (sender, response) = GrpcResponse::streaming(1);
+                drop(sender);
+                return Ok(response.with_status(GrpcStatus::new(
+                    GrpcCode::Unimplemented,
+                    format!("no handler registered for '{}'", request.path),
+                )));
+            };
+            let mut messages = Vec::new();
+            let mut inbound = request.inbound;
+            while let Some(item) = inbound.recv().await {
+                let message = item.map_err(|error| {
+                    GrpcError::Protocol(format!("gRPC handler inbound failed: {error}"))
+                })?;
+                messages.push(message);
+            }
+            let payload = grpc_handler_input_json(&request.path, &request.metadata, &messages);
+            let arg = alloc_spectra_string(&payload);
+            let text = grpc_callback_result_text(entry, arg).ok_or_else(|| {
+                GrpcError::Protocol("gRPC handler callback failed".to_string())
+            })?;
+            let (outbound, status, metadata) = grpc_handler_output(&text)?;
+            let (sender, response) = GrpcResponse::streaming(outbound.len().max(1));
+            let response = response.with_status(status).with_metadata(metadata);
+            for message in outbound {
+                let _ = sender.send(message).await;
+            }
+            Ok(response)
+        })
+    }
 }
 
 fn runtime() -> Result<Arc<Runtime>, i32> {
@@ -767,7 +958,20 @@ pub extern "C" fn grpc_server_bind(ctx: *mut SpectraHostCallContext) -> i32 {
     let Some(address) = read_spectra_string(args[0]).and_then(|value| value.parse::<SocketAddr>().ok()) else { return HOST_STATUS_INVALID_ARGUMENT; };
     let (service, runtime) = {
         let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(service) = state.services.get(&args[1]).cloned() else { return HOST_STATUS_NOT_FOUND; };
+        let Some(service) = state
+            .services
+            .get(&args[1])
+            .cloned()
+            .or_else(|| {
+                state
+                    .callback_services
+                    .get(&args[1])
+                    .cloned()
+                    .map(|service| service as Arc<dyn GrpcService>)
+            })
+        else {
+            return HOST_STATUS_NOT_FOUND;
+        };
         let Ok(runtime) = runtime() else { return HOST_STATUS_INTERNAL_ERROR; };
         (service, runtime)
     };
@@ -780,7 +984,10 @@ pub extern "C" fn grpc_server_bind(ctx: *mut SpectraHostCallContext) -> i32 {
         let result = runtime.block_on(with_cancellation(GrpcServer::bind(address, service, config), token));
         match result {
             Ok(server) => {
-                let entry = ServerEntry { server };
+                let entry = ServerEntry {
+                    server,
+                    runtime: Arc::clone(&runtime),
+                };
                 let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                 Ok(state.servers.insert(entry))
             }
@@ -799,7 +1006,20 @@ pub extern "C" fn grpc_server_bind_tls(ctx: *mut SpectraHostCallContext) -> i32 
     let Some(address) = read_spectra_string(args[0]).and_then(|value| value.parse::<SocketAddr>().ok()) else { return HOST_STATUS_INVALID_ARGUMENT; };
     let (service, runtime) = {
         let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(service) = state.services.get(&args[1]).cloned() else { return HOST_STATUS_NOT_FOUND; };
+        let Some(service) = state
+            .services
+            .get(&args[1])
+            .cloned()
+            .or_else(|| {
+                state
+                    .callback_services
+                    .get(&args[1])
+                    .cloned()
+                    .map(|service| service as Arc<dyn GrpcService>)
+            })
+        else {
+            return HOST_STATUS_NOT_FOUND;
+        };
         let Ok(runtime) = runtime() else { return HOST_STATUS_INTERNAL_ERROR; };
         (service, runtime)
     };
@@ -819,7 +1039,10 @@ pub extern "C" fn grpc_server_bind_tls(ctx: *mut SpectraHostCallContext) -> i32 
         let result = runtime.block_on(with_cancellation(GrpcServer::bind(address, service, config), token));
         match result {
             Ok(server) => {
-                let entry = ServerEntry { server };
+                let entry = ServerEntry {
+                    server,
+                    runtime: Arc::clone(&runtime),
+                };
                 let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                 Ok(state.servers.insert(entry))
             }
@@ -851,13 +1074,55 @@ pub extern "C" fn grpc_server_free(ctx: *mut SpectraHostCallContext) -> i32 {
     write_result(ctx, 1)
 }
 
+/// Mints an empty language-backed service. Methods attach with
+/// `grpc_service_handle_method`; the service resolves in `grpc_server_bind`
+/// like any registered implementation.
+pub extern "C" fn grpc_service_create(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(_args) = read_args(ctx, 0) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    write_result(ctx, state.callback_services.insert(Arc::new(CallbackGrpcService::new())))
+}
+
+/// Attaches one Spectra handler to a service path. The handler is a sync
+/// `func(string) returns string` over the service JSON protocol (an async
+/// closure's task handle is settled first); anything else fails loudly at
+/// call time. Streams are buffered: the full inbound stream feeds a single
+/// invocation whose messages stream out.
+pub extern "C" fn grpc_service_handle_method(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 3) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let (Some(path), closure) = (read_spectra_string(args[1]), args[2]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    if path.is_empty() || closure == 0 {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    let Some(invoke) = (unsafe { ctx.as_ref() }).and_then(|ctx| ctx.invoke_fn) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(service) = state.callback_services.get(&args[0]).cloned() else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    service
+        .methods
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(path, crate::handler::CallbackEntry { closure, invoke });
+    write_result(ctx, 1)
+}
+
+pub extern "C" fn grpc_service_free(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    write_result(ctx, i64::from(state.callback_services.remove(&args[0]).is_some()))
+}
+
 /// Registers a real service implementation for `grpc_server_bind`.
 ///
-/// Rust-side entry point used by `service_registry_tests`: a raw Spectra callback
-/// cannot safely satisfy `GrpcService: Send + Sync + 'static` without a callback
-/// lifetime protocol, so no host call mints service handles today and these helpers
-/// exist only for tests. `grpc_server_bind`/`grpc_server_bind_tls` resolve handles
-/// through the services table. No in-process fake transport is involved.
+/// Rust-side entry point used by `service_registry_tests`. Language callers
+/// mint services with `grpc_service_create` instead; `grpc_server_bind` and
+/// `grpc_server_bind_tls` resolve handles through both the services table
+/// and the language-service table. No in-process fake transport is involved.
 #[cfg(test)]
 pub fn grpc_server_register_service(service: Arc<dyn GrpcService>) -> SpectraHostValue {
     let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -893,5 +1158,47 @@ mod service_registry_tests {
             !grpc_server_unregister_service(handle),
             "double unregister must report missing"
         );
+    }
+}
+
+#[cfg(test)]
+mod transport_isolation_tests {
+    use super::*;
+    use crate::grpc::{GrpcError, GrpcRequest};
+
+    #[test]
+    fn rust_level_unary_roundtrip() {
+        let runtime = runtime().expect("runtime");
+        let service: Arc<dyn GrpcService> =
+            Arc::new(|request: GrpcRequest| async move {
+                let mut messages = Vec::new();
+                let mut inbound = request.inbound;
+                while let Some(item) = inbound.recv().await {
+                    messages.push(item.map_err(|e| GrpcError::Protocol(e.to_string()))?);
+                }
+                assert_eq!(messages.len(), 1);
+                Ok(GrpcResponse::unary(messages.into_iter().next().unwrap()))
+            });
+        let server = runtime
+            .block_on(GrpcServer::bind(
+                "127.0.0.1:0".parse().unwrap(),
+                service,
+                GrpcServerConfig::default(),
+            ))
+            .expect("bind");
+        let address = server.local_addr();
+        let mut client = runtime
+            .block_on(crate::grpc::GrpcClient::connect(address))
+            .expect("connect");
+        let (message, trailers) = runtime
+            .block_on(client.unary(
+                "/echo.Echo/Run",
+                GrpcMessage::from_bytes(b"hello".to_vec()),
+                GrpcMetadata::new(),
+                Some(Duration::from_secs(5)),
+            ))
+            .expect("unary");
+        assert_eq!(message.as_bytes(), b"hello");
+        assert_eq!(trailers.status.code, GrpcCode::Ok);
     }
 }

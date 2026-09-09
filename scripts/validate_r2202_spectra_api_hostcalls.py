@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 550
+PACKAGE_HOST_CALL_COUNT = 553
 RUNTIME_REQUIRED_HOST_CALL_COUNT = 439
 LEGACY_REQUIRED_HOST_CALLS = [
     "spectra.api.version.major",
