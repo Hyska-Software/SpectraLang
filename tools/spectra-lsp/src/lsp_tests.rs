@@ -71,10 +71,17 @@ mod tests {
     #[test]
     fn keyword_completion_items_cover_current_language_surface() {
         for keyword in [
-            "async", "await", "export", "from", "public", "record", "when", "then",
-            "otherwise", "and", "or", "not", "yield", "goto",
+            "async", "await", "from", "public", "record", "when", "then",
+            "otherwise", "and", "or", "not", "switch",
         ] {
             assert!(KEYWORDS.contains(&keyword), "missing keyword {keyword}");
+        }
+        // Reserved, unparseable, or nonexistent keywords must never complete.
+        for keyword in ["yield", "goto", "cond", "self", "class", "export"] {
+            assert!(
+                !KEYWORDS.contains(&keyword),
+                "stale keyword {keyword} must not complete"
+            );
         }
     }
 
