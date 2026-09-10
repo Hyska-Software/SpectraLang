@@ -183,10 +183,10 @@ impl DeadCodeElimination {
                     used.insert(value.id);
                 }
             }
-            InstructionKind::AsyncReady { value, .. } => {
-                if let Some(value) = value {
-                    used.insert(value.id);
-                }
+            InstructionKind::AsyncReady {
+                value: Some(value), ..
+            } => {
+                used.insert(value.id);
             }
             // Restantes no catch-all não têm operandos `Value`:
             // Alloca, GlobalAddr, ManualAlloc, FuncAddr,

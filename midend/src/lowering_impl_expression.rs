@@ -1,8 +1,13 @@
 use super::*;
 
 impl ASTLowering {
-    pub(crate) fn lower_expression(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
-        self.builder.set_source_span(Some(self.source_span(expr.span)));
+    pub(crate) fn lower_expression(
+        &mut self,
+        expr: &Expression,
+        ir_func: &mut IRFunction,
+    ) -> Value {
+        self.builder
+            .set_source_span(Some(self.source_span(expr.span)));
         match &expr.kind {
             ExpressionKind::NumberLiteral(_)
             | ExpressionKind::StringLiteral(_)
@@ -18,9 +23,7 @@ impl ASTLowering {
             | ExpressionKind::ArrayLiteral { .. }
             | ExpressionKind::IndexAccess { .. }
             | ExpressionKind::TupleLiteral { .. }
-            | ExpressionKind::TupleAccess { .. } => {
-                self.lower_expression_aggregates(expr, ir_func)
-            }
+            | ExpressionKind::TupleAccess { .. } => self.lower_expression_aggregates(expr, ir_func),
             ExpressionKind::StructLiteral { .. } => self.lower_expression_struct(expr, ir_func),
             ExpressionKind::FieldAccess { .. } => self.lower_expression_field(expr, ir_func),
             ExpressionKind::EnumVariant { .. } => self.lower_expression_enum(expr, ir_func),

@@ -823,20 +823,20 @@
         // lines of that slot's old span are cleared so no fragment survives.
         for (slot, (_, text)) in sorted.iter().enumerate() {
             let (start, end) = spans[slot];
-            for line_index in start..=end {
+            for (line_index, line) in lines.iter_mut().enumerate().take(end + 1).skip(start) {
                 if line_index == start {
-                    lines[line_index].content = text.clone();
+                    line.content = text.clone();
                 } else {
-                    lines[line_index].content.clear();
-                    lines[line_index].is_blank = true;
+                    line.content.clear();
+                    line.is_blank = true;
                 }
             }
         }
         // Slots left over after deduping are cleared across their full range.
         for (_, (start, end)) in spans.iter().enumerate().skip(sorted.len()) {
-            for line_index in *start..=*end {
-                lines[line_index].content.clear();
-                lines[line_index].is_blank = true;
+            for line in lines.iter_mut().take(*end + 1).skip(*start) {
+                line.content.clear();
+                line.is_blank = true;
             }
         }
     }

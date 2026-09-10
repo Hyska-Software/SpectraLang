@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 fn main() {
-    let iters: usize = 1000;
+    let iters: usize = 10000;
     let mut total: i64 = 0;
     for _ in 0..iters {
         let local = Arc::new(Mutex::new(0_i64));
@@ -22,7 +22,7 @@ fn main() {
         let g = local.lock().unwrap();
         total += *g;
     }
-    if total != 55_000 {
+    if total != 550_000 {
         eprintln!("unexpected: {}", total);
         std::process::exit(1);
     }

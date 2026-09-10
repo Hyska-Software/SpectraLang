@@ -185,7 +185,6 @@ pub(crate) fn serve_audit_json(server: &ServeServer) -> String {
     )
 }
 
-
 pub(crate) fn serve_record_block(
     server: &mut ServeServer,
     model_id: &str,
@@ -194,7 +193,10 @@ pub(crate) fn serve_record_block(
     server.blocked_requests = server.blocked_requests.saturating_add(1);
     server.error_count = server.error_count.saturating_add(1);
     server.observed_outputs.push(output as f64);
-    let metrics = server.model_metrics.entry(model_id.to_string()).or_default();
+    let metrics = server
+        .model_metrics
+        .entry(model_id.to_string())
+        .or_default();
     metrics.requests = metrics.requests.saturating_add(1);
     metrics.blocked_requests = metrics.blocked_requests.saturating_add(1);
     metrics.error_count = metrics.error_count.saturating_add(1);
@@ -213,7 +215,10 @@ pub(crate) fn serve_record_complete(
     server.completed_requests = server.completed_requests.saturating_add(1);
     server.observed_outputs.push(output_first);
     server.latency_samples_ms.push(latency_ms);
-    let metrics = server.model_metrics.entry(model_id.to_string()).or_default();
+    let metrics = server
+        .model_metrics
+        .entry(model_id.to_string())
+        .or_default();
     metrics.requests = metrics.requests.saturating_add(1);
     metrics.completed_requests = metrics.completed_requests.saturating_add(1);
     metrics.latency_samples_ms.push(latency_ms);
@@ -259,7 +264,6 @@ pub(crate) fn serve_json_samples_array(source: &str, section_marker: &str) -> Op
     }
     Some(out)
 }
-
 
 pub(crate) fn serve_json_f64_array(values: &[f64]) -> String {
     let items = values
@@ -385,17 +389,15 @@ pub(crate) fn serve_psi(reference: &[f64], live: &[f64]) -> Option<f64> {
         .chain(live.iter())
         .cloned()
         .fold(f64::NEG_INFINITY, f64::max);
-    if !(hi > lo) {
+    if !matches!(hi.partial_cmp(&lo), Some(std::cmp::Ordering::Greater)) {
         // Constant joint range: both histograms are a single spike in the
         // same bin, so there is nothing to compare.
         return Some(0.0);
     }
     let width = (hi - lo) / BINS as f64;
-    let mut ref_counts = vec![0.0f64; BINS];
-    let mut live_counts = vec![0.0f64; BINS];
-    let bin_of = |value: f64| -> usize {
-        (((value - lo) / width) as usize).min(BINS - 1)
-    };
+    let mut ref_counts = [0.0f64; BINS];
+    let mut live_counts = [0.0f64; BINS];
+    let bin_of = |value: f64| -> usize { (((value - lo) / width) as usize).min(BINS - 1) };
     for value in reference {
         ref_counts[bin_of(*value)] += 1.0;
     }
@@ -424,8 +426,7 @@ pub(crate) fn serve_drift_json(
     // the lookup cannot land on the inputs histogram.
     let ref_outputs_offset = reference.find("\"outputs\"")?;
     let live_outputs_offset = live.find("\"outputs\"")?;
-    let ref_outputs =
-        serve_json_samples_array(&reference[ref_outputs_offset..], "\"outputs\"")?;
+    let ref_outputs = serve_json_samples_array(&reference[ref_outputs_offset..], "\"outputs\"")?;
     let live_outputs = serve_json_samples_array(&live[live_outputs_offset..], "\"outputs\"")?;
     let input_psi = serve_psi(&ref_inputs, &live_inputs)?;
     let output_psi = serve_psi(&ref_outputs, &live_outputs)?;
@@ -445,18 +446,26 @@ pub(crate) fn serve_drift_json(
     ))
 }
 
-pub(crate) fn serve_apply_activation(activation: ServeActivation, values: &[f64]) -> Option<Vec<f64>> {
+pub(crate) fn serve_apply_activation(
+    activation: ServeActivation,
+    values: &[f64],
+) -> Option<Vec<f64>> {
     match activation {
         ServeActivation::Relu => Some(values.iter().map(|value| value.max(0.0)).collect()),
         ServeActivation::Tanh => Some(values.iter().map(|value| value.tanh()).collect()),
-        ServeActivation::Gelu => Some(values.iter().map(|value| {
-            // Tanh approximation of GELU.
-            0.5 * value
-                * (1.0
-                    + (std::f64::consts::FRAC_2_SQRT_PI
-                        * (value + 0.044715 * value * value * value))
-                    .tanh())
-        }).collect()),
+        ServeActivation::Gelu => Some(
+            values
+                .iter()
+                .map(|value| {
+                    // Tanh approximation of GELU.
+                    0.5 * value
+                        * (1.0
+                            + (std::f64::consts::FRAC_2_SQRT_PI
+                                * (value + 0.044715 * value * value * value))
+                                .tanh())
+                })
+                .collect(),
+        ),
         ServeActivation::Softmax => ml_softmax_row(values),
     }
 }
@@ -492,8 +501,8 @@ pub(crate) fn serve_forward_linear_f64(
         for (bias, value) in layer.biases.iter().zip(next.iter_mut()) {
             *value += bias;
         }
-        current = serve_apply_activation(layer.activation, &next)
-            .ok_or(HOST_STATUS_INVALID_ARGUMENT)?;
+        current =
+            serve_apply_activation(layer.activation, &next).ok_or(HOST_STATUS_INVALID_ARGUMENT)?;
     }
     Ok(current)
 }
@@ -518,8 +527,7 @@ pub(crate) fn serve_forward_onnx_f64(session_id: u64, input: &[f64]) -> Result<V
     let mut output_handle: Option<usize> = None;
     let result = match ml_onnx_run_inner(session_id, input_handle, &output_name) {
         Ok(handle) => {
-            let (_, values, _) =
-                ml_tensor_float_data(handle).ok_or(HOST_STATUS_INTERNAL_ERROR)?;
+            let (_, values, _) = ml_tensor_float_data(handle).ok_or(HOST_STATUS_INTERNAL_ERROR)?;
             output_handle = Some(handle);
             Ok(values)
         }
@@ -535,7 +543,6 @@ pub(crate) fn serve_forward_onnx_f64(session_id: u64, input: &[f64]) -> Result<V
     });
     result
 }
-
 
 /// Without the `onnx` feature no real session can exist, so serving an ONNX
 /// model is rejected instead of being simulated.
@@ -564,7 +571,10 @@ pub(crate) fn serve_infer_named(
 
 /// Scalar entry used by the enqueue/process-batch pipeline: infers
 /// through the `"default"` model with a length-1 request vector.
-pub(crate) fn serve_infer(server: &ServeServer, input: SpectraHostValue) -> Result<(Vec<f64>, f64), i32> {
+pub(crate) fn serve_infer(
+    server: &ServeServer,
+    input: SpectraHostValue,
+) -> Result<(Vec<f64>, f64), i32> {
     serve_infer_f64(server, input as f64)
 }
 
@@ -577,5 +587,8 @@ pub(crate) fn serve_infer_f64(server: &ServeServer, input: f64) -> Result<(Vec<f
 /// Scalar projection of an output vector for the integer result ABI:
 /// first component rounded to nearest i64 (saturating).
 pub(crate) fn serve_scalar_result(output: &[f64]) -> SpectraHostValue {
-    output.first().map(|value| value.round() as i64).unwrap_or(0)
+    output
+        .first()
+        .map(|value| value.round() as i64)
+        .unwrap_or(0)
 }

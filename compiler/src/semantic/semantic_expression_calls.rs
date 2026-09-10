@@ -84,8 +84,8 @@ impl SemanticAnalyzer {
                                     // Instantiate the parameterized expectation with
                                     // the arguments inferred so far: two occurrences of
                                     // the same type parameter must agree concretely.
-                                    let specialized =
-                                        self.substitute_type_parameters(expected_type, &substitutions);
+                                    let specialized = self
+                                        .substitute_type_parameters(expected_type, &substitutions);
                                     let compatible = self.types_match(&arg_type, &specialized)
                                         || (Self::type_contains_parameter(&specialized)
                                             && self.generic_argument_types_match(
@@ -153,7 +153,8 @@ impl SemanticAnalyzer {
                                             "Add an explicit type annotation to resolve the argument type.",
                                         );
                                     } else if *expected_type != Type::Unknown
-                                    && !self.generic_argument_types_match(&arg_type, expected_type)
+                                        && !self
+                                            .generic_argument_types_match(&arg_type, expected_type)
                                     {
                                         self.error(
                                             format!(

@@ -79,27 +79,27 @@ pub(crate) fn ml_text_embed_model_inner(
     };
     let output_name = session.outputs()[0].name().to_owned();
 
-    let ids_value =
-        Tensor::from_array((vec![seq_len], input_ids.to_vec())).map_err(|_| HOST_STATUS_INVALID_ARGUMENT)?;
-    let mask_value =
-        Tensor::from_array((vec![seq_len], attention_mask.to_vec())).map_err(|_| HOST_STATUS_INVALID_ARGUMENT)?;
+    let ids_value = Tensor::from_array((vec![seq_len], input_ids.to_vec()))
+        .map_err(|_| HOST_STATUS_INVALID_ARGUMENT)?;
+    let mask_value = Tensor::from_array((vec![seq_len], attention_mask.to_vec()))
+        .map_err(|_| HOST_STATUS_INVALID_ARGUMENT)?;
     let outputs = session
         .run(ort::inputs![
             ids_name.as_str() => ids_value,
             mask_name.as_str() => mask_value
         ])
         .map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
-    let output = outputs.get(output_name.as_str()).ok_or(HOST_STATUS_NOT_FOUND)?;
+    let output = outputs
+        .get(output_name.as_str())
+        .ok_or(HOST_STATUS_NOT_FOUND)?;
     let (out_shape, flat) = output
         .try_extract_tensor::<f32>()
         .map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
     if out_shape.len() != 2 {
         return Err(HOST_STATUS_INTERNAL_ERROR);
     }
-    let rows =
-        usize::try_from(out_shape[0]).map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
-    let hidden =
-        usize::try_from(out_shape[1]).map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
+    let rows = usize::try_from(out_shape[0]).map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
+    let hidden = usize::try_from(out_shape[1]).map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
     if rows != input_ids.len() || hidden == 0 || flat.len() != rows * hidden {
         return Err(HOST_STATUS_INTERNAL_ERROR);
     }
@@ -159,7 +159,7 @@ pub(crate) extern "C" fn std_ml_text_embed_model_session(ctx: *mut SpectraHostCa
         #[cfg(not(feature = "onnx"))]
         {
             let _ = bytes;
-            return ml_onnx_unavailable_result(ctx_ref, ML_TEXT_EMBED_MODEL_SESSION);
+            ml_onnx_unavailable_result(ctx_ref, ML_TEXT_EMBED_MODEL_SESSION)
         }
     }
 }
@@ -219,7 +219,7 @@ pub(crate) extern "C" fn std_ml_text_embed_model(ctx: *mut SpectraHostCallContex
         #[cfg(not(feature = "onnx"))]
         {
             let _ = attention_mask;
-            return ml_onnx_unavailable_result(ctx_ref, ML_TEXT_EMBED_MODEL);
+            ml_onnx_unavailable_result(ctx_ref, ML_TEXT_EMBED_MODEL)
         }
     }
 }
@@ -315,25 +315,21 @@ pub(crate) fn ml_text_embed_fixture_proto() -> Vec<u8> {
     // int64 TensorProto elem type = 7 (see ml_onnx_type).
     pb_message(
         11,
-        ml_embed_value_info(
-            "input_ids",
-            7,
-            &[ml_embed_dim_param("seq")],
-        ),
+        ml_embed_value_info("input_ids", 7, &[ml_embed_dim_param("seq")]),
         &mut graph,
     );
     pb_message(
         11,
-        ml_embed_value_info(
-            "attention_mask",
-            7,
-            &[ml_embed_dim_param("seq")],
-        ),
+        ml_embed_value_info("attention_mask", 7, &[ml_embed_dim_param("seq")]),
         &mut graph,
     );
     pb_message(
         12,
-        ml_embed_value_info("hidden", 1, &[ml_embed_dim_param("seq"), ml_embed_dim_value(hidden)]),
+        ml_embed_value_info(
+            "hidden",
+            1,
+            &[ml_embed_dim_param("seq"), ml_embed_dim_value(hidden)],
+        ),
         &mut graph,
     );
 

@@ -8,7 +8,7 @@ use crate::http::{
     HttpVersion, Method, ParseErrorKind, Status,
 };
 use crate::json::{
-    encode_json, json_kind_of, parse_json, JsonObject, JsonNumber, JsonValue, JSON_KIND_ARRAY,
+    encode_json, json_kind_of, parse_json, JsonNumber, JsonObject, JsonValue, JSON_KIND_ARRAY,
     JSON_KIND_BOOL, JSON_KIND_NULL, JSON_KIND_NUMBER, JSON_KIND_OBJECT, JSON_KIND_STRING,
 };
 use crate::routing::{RouteMethod, Router};

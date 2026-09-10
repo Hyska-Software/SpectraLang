@@ -94,7 +94,7 @@ pub(crate) fn read_spectra_string(ptr_value: SpectraHostValue) -> Option<String>
 
 pub(crate) fn alloc_spectra_string(value: &str) -> SpectraHostValue {
     let total = value.len() + 1; // payload + single NUL terminator byte
-    let ptr = spectra_runtime::ffi::spectra_rt_manual_alloc(total) as *mut u8;
+    let ptr = spectra_runtime::ffi::spectra_rt_manual_alloc(total);
     if ptr.is_null() {
         return 0;
     }

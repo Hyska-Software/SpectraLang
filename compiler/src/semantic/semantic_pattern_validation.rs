@@ -135,8 +135,8 @@ impl SemanticAnalyzer {
                         continue;
                     };
 
-                    let field_ty = self
-                        .type_annotation_to_type_with_substitutions(&field.ty, &substitutions);
+                    let field_ty =
+                        self.type_annotation_to_type_with_substitutions(&field.ty, &substitutions);
                     self.validate_pattern_against_type(sub_pattern, &field_ty, match_span);
                 }
             }
@@ -294,14 +294,14 @@ impl SemanticAnalyzer {
                         Type::Enum { name } | Type::Applied { name, .. } => name,
                         _ => &resolved_enum_name,
                     };
-                        self.error(
-                            format!(
-                                "Pattern '{}::{}' cannot match enum value of type '{}'",
-                                enum_name, variant_name, name
-                            ),
-                            match_span,
-                        );
-                        return;
+                    self.error(
+                        format!(
+                            "Pattern '{}::{}' cannot match enum value of type '{}'",
+                            enum_name, variant_name, name
+                        ),
+                        match_span,
+                    );
+                    return;
                 }
 
                 if !type_args.is_empty() {
@@ -509,5 +509,4 @@ impl SemanticAnalyzer {
             }
         }
     }
-
 }

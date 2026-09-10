@@ -177,7 +177,10 @@ pub(crate) fn tensor_result(ctx_ref: &mut SpectraHostCallContext, value: Spectra
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) fn tensor_optional_result(ctx_ref: &mut SpectraHostCallContext, value: SpectraHostValue) -> i32 {
+pub(crate) fn tensor_optional_result(
+    ctx_ref: &mut SpectraHostCallContext,
+    value: SpectraHostValue,
+) -> i32 {
     if ctx_ref.result_len == 0 || ctx_ref.results.is_null() {
         return HOST_STATUS_SUCCESS;
     }
@@ -903,8 +906,8 @@ pub(crate) extern "C" fn std_tensor_slice(ctx: *mut SpectraHostCallContext) -> i
             )?;
             result.device = tensor.device;
             result.precision = tensor.precision;
-            let requires_grad = tensor.dtype == TensorDType::Float
-                && tensor_requires_autograd(registry, &[handle]);
+            let requires_grad =
+                tensor.dtype == TensorDType::Float && tensor_requires_autograd(registry, &[handle]);
             if requires_grad {
                 result.requires_grad = true;
                 result.creator = Some(AutogradNode {
@@ -967,10 +970,7 @@ pub(crate) extern "C" fn std_tensor_concat(ctx: *mut SpectraHostCallContext) -> 
             data.extend(right_data);
             registry.note_kernel(data.len());
             let requires_grad = dtype == TensorDType::Float
-                && tensor_requires_autograd(
-                    registry,
-                    &[args[0] as usize, args[1] as usize],
-                );
+                && tensor_requires_autograd(registry, &[args[0] as usize, args[1] as usize]);
             let creator = requires_grad.then(|| AutogradNode {
                 op: AutogradOp::Concat,
                 parents: vec![args[0] as usize, args[1] as usize],
@@ -1024,10 +1024,7 @@ pub(crate) extern "C" fn std_tensor_stack(ctx: *mut SpectraHostCallContext) -> i
             data.extend(right_data);
             registry.note_kernel(data.len());
             let requires_grad = dtype == TensorDType::Float
-                && tensor_requires_autograd(
-                    registry,
-                    &[args[0] as usize, args[1] as usize],
-                );
+                && tensor_requires_autograd(registry, &[args[0] as usize, args[1] as usize]);
             let creator = requires_grad.then(|| AutogradNode {
                 op: AutogradOp::Stack,
                 parents: vec![args[0] as usize, args[1] as usize],

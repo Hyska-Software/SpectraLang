@@ -20,10 +20,7 @@ impl SemanticAnalyzer {
                 if matches!(&left_type, Type::Struct { .. } | Type::Applied { .. }) {
                     if let Some((trait_name, _method_name)) = operator_trait_and_method(*operator) {
                         if let Some(sn) = self.nominal_lookup_name(&left_type) {
-                            if self
-                                .trait_impls
-                                .contains_key(&(trait_name.to_string(), sn))
-                            {
+                            if self.trait_impls.contains_key(&(trait_name.to_string(), sn)) {
                                 // Overloaded — no further checks needed.
                                 // (The method signature is validated when analyze_impl_block runs.)
                                 return; // from analyze_expression
@@ -61,13 +58,17 @@ impl SemanticAnalyzer {
                             }
                         } else {
                             // Numeric addition
-                            if !Self::is_numeric_type(&left_type) && !matches!(left_type, Type::Unknown) {
+                            if !Self::is_numeric_type(&left_type)
+                                && !matches!(left_type, Type::Unknown)
+                            {
                                 self.error(
                                     format!("Left operand of arithmetic operation must be numeric, found {}", type_name(&left_type)),
                                     left.span,
                                 );
                             }
-                            if !Self::is_numeric_type(&right_type) && !matches!(right_type, Type::Unknown) {
+                            if !Self::is_numeric_type(&right_type)
+                                && !matches!(right_type, Type::Unknown)
+                            {
                                 self.error(
                                     format!("Right operand of arithmetic operation must be numeric, found {}", type_name(&right_type)),
                                     right.span,
@@ -80,13 +81,16 @@ impl SemanticAnalyzer {
                     | BinaryOperator::Divide
                     | BinaryOperator::Modulo => {
                         // Arithmetic operations require numeric types
-                        if !Self::is_numeric_type(&left_type) && !matches!(left_type, Type::Unknown) {
+                        if !Self::is_numeric_type(&left_type) && !matches!(left_type, Type::Unknown)
+                        {
                             self.error(
                                 format!("Left operand of arithmetic operation must be numeric, found {}", type_name(&left_type)),
                                 left.span,
                             );
                         }
-                        if !Self::is_numeric_type(&right_type) && !matches!(right_type, Type::Unknown) {
+                        if !Self::is_numeric_type(&right_type)
+                            && !matches!(right_type, Type::Unknown)
+                        {
                             self.error(
                                 format!("Right operand of arithmetic operation must be numeric, found {}", type_name(&right_type)),
                                 right.span,
@@ -125,7 +129,8 @@ impl SemanticAnalyzer {
                     | BinaryOperator::LessEqual
                     | BinaryOperator::GreaterEqual => {
                         // Comparison requires numeric types
-                        if !Self::is_numeric_type(&left_type) && !matches!(left_type, Type::Unknown) {
+                        if !Self::is_numeric_type(&left_type) && !matches!(left_type, Type::Unknown)
+                        {
                             self.error(
                                 format!(
                                     "Left operand of comparison must be numeric, found {}",
@@ -134,7 +139,9 @@ impl SemanticAnalyzer {
                                 left.span,
                             );
                         }
-                        if !Self::is_numeric_type(&right_type) && !matches!(right_type, Type::Unknown) {
+                        if !Self::is_numeric_type(&right_type)
+                            && !matches!(right_type, Type::Unknown)
+                        {
                             self.error(
                                 format!(
                                     "Right operand of comparison must be numeric, found {}",

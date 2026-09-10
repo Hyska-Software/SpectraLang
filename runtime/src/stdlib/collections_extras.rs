@@ -23,7 +23,6 @@ pub(crate) fn write_option_result(
     HOST_STATUS_SUCCESS
 }
 
-
 pub(crate) extern "C" fn std_list_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
@@ -77,14 +76,13 @@ pub(crate) extern "C" fn std_list_contains(ctx: *mut SpectraHostCallContext) -> 
         let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
         let handle = args[0] as usize;
         let value = args[1];
-        let found = with_list_registry(|registry| registry.contains(handle, value)).unwrap_or(false);
+        let found =
+            with_list_registry(|registry| registry.contains(handle, value)).unwrap_or(false);
         let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);
         results[0] = found as SpectraHostValue;
     }
     HOST_STATUS_SUCCESS
 }
-
-
 
 pub(crate) extern "C" fn std_list_pop_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
@@ -96,8 +94,8 @@ pub(crate) extern "C" fn std_list_pop_option(ctx: *mut SpectraHostCallContext) -
             return HOST_STATUS_INVALID_ARGUMENT;
         }
         let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
-        let value = with_list_registry(|registry| registry.pop_option(args[0] as usize))
-            .unwrap_or(None);
+        let value =
+            with_list_registry(|registry| registry.pop_option(args[0] as usize)).unwrap_or(None);
         write_option_result(ctx_ref, value)
     }
 }
@@ -140,7 +138,6 @@ pub(crate) extern "C" fn std_list_insert_at(ctx: *mut SpectraHostCallContext) ->
     HOST_STATUS_SUCCESS
 }
 
-
 pub(crate) extern "C" fn std_list_remove_at_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
@@ -151,10 +148,9 @@ pub(crate) extern "C" fn std_list_remove_at_option(ctx: *mut SpectraHostCallCont
             return HOST_STATUS_INVALID_ARGUMENT;
         }
         let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
-        let value = with_list_registry(|registry| {
-            registry.remove_at_option(args[0] as usize, args[1])
-        })
-        .unwrap_or(None);
+        let value =
+            with_list_registry(|registry| registry.remove_at_option(args[0] as usize, args[1]))
+                .unwrap_or(None);
         write_option_result(ctx_ref, value)
     }
 }
@@ -200,4 +196,3 @@ pub(crate) extern "C" fn std_list_sort(ctx: *mut SpectraHostCallContext) -> i32 
     }
     HOST_STATUS_SUCCESS
 }
-

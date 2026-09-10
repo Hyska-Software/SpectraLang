@@ -58,7 +58,11 @@ impl ASTLowering {
 
         for (local_name, global_key, ty) in &ast_module.imported_static_globals {
             let ir_ty = self.lower_type(ty);
-            if !ir_module.globals.iter().any(|global| global.name == *global_key) {
+            if !ir_module
+                .globals
+                .iter()
+                .any(|global| global.name == *global_key)
+            {
                 let id = ir_module.globals.len();
                 ir_module.globals.push(Global {
                     id,
@@ -187,10 +191,7 @@ impl ASTLowering {
         for (name, params, return_type) in &ast_module.imported_function_signatures {
             let external = ExternalFunction {
                 name: name.clone(),
-                params: params
-                    .iter()
-                    .map(|param| self.lower_type(param))
-                    .collect(),
+                params: params.iter().map(|param| self.lower_type(param)).collect(),
                 return_type: self.lower_type(return_type),
             };
             if !ir_module
@@ -200,10 +201,7 @@ impl ASTLowering {
             {
                 ir_module.external_functions.push(external);
             }
-            let parameter_types = params
-                .iter()
-                .map(|param| self.lower_type(param))
-                .collect();
+            let parameter_types = params.iter().map(|param| self.lower_type(param)).collect();
             self.function_parameter_types
                 .entry(name.clone())
                 .or_insert(parameter_types);
@@ -398,8 +396,7 @@ impl ASTLowering {
                     (name, (params, return_type))
                 })
                 .collect::<HashMap<_, _>>();
-            self.trait_method_signatures
-                .insert(trait_name, signatures);
+            self.trait_method_signatures.insert(trait_name, signatures);
         }
 
         // Second pass: pre-register return types for regular functions and impl methods
@@ -507,7 +504,8 @@ impl ASTLowering {
                         let ir_func = self.lower_method(method, &impl_block.type_name);
                         ir_module.add_function(ir_func);
                     }
-                } else if let Some(struct_def) = self.generic_structs.get(&impl_block.type_name).cloned()
+                } else if let Some(struct_def) =
+                    self.generic_structs.get(&impl_block.type_name).cloned()
                 {
                     // Template impl on a generic struct: register each method for
                     // per-instantiation specialization (R-211).
@@ -517,7 +515,8 @@ impl ASTLowering {
                         self.generic_impl_methods
                             .insert(key, (method.clone(), type_params.clone()));
                     }
-                } else if let Some(enum_def) = self.generic_enums.get(&impl_block.type_name).cloned()
+                } else if let Some(enum_def) =
+                    self.generic_enums.get(&impl_block.type_name).cloned()
                 {
                     let type_params = enum_def.type_params.clone();
                     for method in &impl_block.methods {
@@ -583,5 +582,4 @@ impl ASTLowering {
             Err(std::mem::take(&mut self.errors))
         }
     }
-
 }

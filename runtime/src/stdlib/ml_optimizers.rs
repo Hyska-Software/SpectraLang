@@ -75,7 +75,10 @@ pub(crate) extern "C" fn std_ml_nll_loss(ctx: *mut SpectraHostCallContext) -> i3
     ml_classification_loss(ctx, AutogradOp::MlNll, false)
 }
 
-pub(crate) fn ml_optimizer_update(param_handle: usize, update: impl Fn(f64, f64, usize) -> f64) -> bool {
+pub(crate) fn ml_optimizer_update(
+    param_handle: usize,
+    update: impl Fn(f64, f64, usize) -> f64,
+) -> bool {
     with_tensor_registry(|registry| {
         let Some(param) = registry.get_mut(param_handle) else {
             return false;
@@ -383,4 +386,3 @@ pub(crate) extern "C" fn std_ml_unscale_grad(ctx: *mut SpectraHostCallContext) -
         tensor_optional_result(ctx_ref, 0)
     }
 }
-

@@ -2,8 +2,8 @@ use spectra_db::migrations::{discover, SqliteMigrator};
 use spectra_db::sqlite::{SqliteConnection, SqliteStatement, SqliteValue, StepResult};
 use std::fs;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Process-wide fixture sequence. Wall-clock nanos alone can repeat within a
 /// single coarse timer tick when tests run on parallel threads, handing two

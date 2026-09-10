@@ -475,7 +475,5 @@ impl TensorGraphFunction {
             }
             _ => {}
         }
-
     }
 }
-

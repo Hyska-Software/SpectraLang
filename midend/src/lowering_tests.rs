@@ -4,13 +4,10 @@ use super::*;
 mod tests {
     use super::*;
     use spectra_compiler::{analyze_modules, Lexer, Parser};
-    
 
     fn lower_source(source: &str) -> IRModule {
         let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
-        let mut module = Parser::new(tokens)
-            .parse()
-            .expect("parsing should pass");
+        let mut module = Parser::new(tokens).parse().expect("parsing should pass");
         analyze_modules(&mut [&mut module]).expect("semantic analysis should pass");
         ASTLowering::new()
             .lower_module(&module)
@@ -64,9 +61,11 @@ mod tests {
         let pretty = crate::ir::pretty::format_module(&ir);
         assert!(pretty.contains("fn choose(bool flag) -> Task<int>"));
         assert!(pretty.contains("fn choose__poll("));
-        assert!(pretty.matches("coroutine.complete").count() >= 2, "{pretty}");
+        assert!(
+            pretty.matches("coroutine.complete").count() >= 2,
+            "{pretty}"
+        );
     }
-
 
     #[test]
     fn array_for_loop_lowers_to_direct_index_loop_without_host_calls() {
@@ -116,9 +115,7 @@ mod tests {
         )
         .tokenize()
         .expect("lexing should pass");
-        let mut module = Parser::new(tokens)
-            .parse()
-            .expect("parsing should pass");
+        let mut module = Parser::new(tokens).parse().expect("parsing should pass");
         analyze_modules(&mut [&mut module]).expect("semantic analysis should pass");
         let errors = ASTLowering::new()
             .lower_module(&module)
@@ -195,7 +192,8 @@ mod tests {
         assert!(pretty.contains("call_indirect"), "{pretty}");
         assert!(pretty.contains("vtable_slot"), "{pretty}");
 
-        let mut producers: std::collections::HashMap<usize, &'static str> = std::collections::HashMap::new();
+        let mut producers: std::collections::HashMap<usize, &'static str> =
+            std::collections::HashMap::new();
         for function in &ir.functions {
             for block in &function.blocks {
                 for instruction in &block.instructions {
@@ -235,7 +233,8 @@ mod tests {
                             );
                         }
                         crate::ir::InstructionKind::CallIndirect { fn_ptr, .. } => {
-                            let producer = producers.get(&fn_ptr.id).copied().unwrap_or("undefined");
+                            let producer =
+                                producers.get(&fn_ptr.id).copied().unwrap_or("undefined");
                             assert!(
                                 producer == "vtable_slot" || producer == "func_addr",
                                 "indirect callee %v{} comes from {producer}, not a vtable slot, in {}",
@@ -300,9 +299,7 @@ mod tests {
             }
             "#;
         let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
-        let mut module = Parser::new(tokens)
-            .parse()
-            .expect("parsing should pass");
+        let mut module = Parser::new(tokens).parse().expect("parsing should pass");
         analyze_modules(&mut [&mut module]).expect("semantic analysis should pass");
         let mut lowering = ASTLowering::new();
         lowering
@@ -321,9 +318,10 @@ mod tests {
             }
         }
         for (trait_name, signatures) in &lowering.trait_method_signatures {
-            let order = lowering.trait_method_order.get(trait_name).unwrap_or_else(|| {
-                panic!("trait '{trait_name}' has signatures but no order")
-            });
+            let order = lowering
+                .trait_method_order
+                .get(trait_name)
+                .unwrap_or_else(|| panic!("trait '{trait_name}' has signatures but no order"));
             for method in signatures.keys() {
                 assert!(
                     order.iter().any(|ordered| ordered == method),

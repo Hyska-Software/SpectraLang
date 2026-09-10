@@ -1,7 +1,11 @@
 use super::*;
 
 impl ASTLowering {
-    pub(crate) fn lower_expression_enum(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_enum(
+        &mut self,
+        expr: &Expression,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         match &expr.kind {
             ExpressionKind::EnumVariant {
                 module_path: _,
@@ -121,7 +125,8 @@ impl ASTLowering {
                         }
                     }
                     return self.require_value(
-                        self.builder.build_call(ir_func, function_name, call_args, true),
+                        self.builder
+                            .build_call(ir_func, function_name, call_args, true),
                         "associated function call did not produce its declared result",
                     );
                 }
@@ -163,7 +168,8 @@ impl ASTLowering {
                             callee
                         };
                         return self.require_value(
-                            self.builder.build_call(ir_func, final_name, call_args, true),
+                            self.builder
+                                .build_call(ir_func, final_name, call_args, true),
                             "qualified function call did not produce its declared result",
                         );
                     }

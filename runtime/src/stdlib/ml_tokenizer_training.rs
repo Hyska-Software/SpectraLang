@@ -251,24 +251,6 @@ pub(crate) fn ml_training_vocab_spec(vocab: &[String]) -> String {
         .collect()
 }
 
-/// Serialize a vocabulary into the artifact `vocab_json` metadata payload
-/// consumed by `ml_parse_artifact_tokenizer`.
-#[cfg(test)]
-pub(crate) fn ml_training_vocab_json(vocab: &[String]) -> String {
-    let tokens: Vec<serde_json::Value> = vocab
-        .iter()
-        .enumerate()
-        .map(|(id, token)| serde_json::json!({ "id": id, "token": token }))
-        .collect();
-    serde_json::json!({
-        "tokens": tokens,
-        "special_tokens": { "unk": 0 },
-        "lowercase": true,
-        "continuation_prefix": ML_TOKENIZER_TRAIN_CONTINUATION,
-    })
-    .to_string()
-}
-
 pub(crate) extern "C" fn std_ml_train_bpe(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
@@ -321,13 +303,16 @@ pub(crate) extern "C" fn std_ml_tokenizer_vocab(ctx: *mut SpectraHostCallContext
             return HOST_STATUS_INVALID_ARGUMENT;
         };
         let Some(spec) = with_ml_registry(|registry| {
-            registry.tokenizers.get(&(args[0] as usize)).map(|tokenizer| -> String {
-                let mut ids: Vec<i64> = tokenizer.id_to_token.keys().copied().collect();
-                ids.sort_unstable();
-                ids.iter()
-                    .map(|id| format!("{}:{}\n", tokenizer.id_to_token[id], id))
-                    .collect()
-            })
+            registry
+                .tokenizers
+                .get(&(args[0] as usize))
+                .map(|tokenizer| -> String {
+                    let mut ids: Vec<i64> = tokenizer.id_to_token.keys().copied().collect();
+                    ids.sort_unstable();
+                    ids.iter()
+                        .map(|id| format!("{}:{}\n", tokenizer.id_to_token[id], id))
+                        .collect()
+                })
         }) else {
             return HOST_STATUS_NOT_FOUND;
         };

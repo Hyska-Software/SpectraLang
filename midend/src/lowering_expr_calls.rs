@@ -1,7 +1,11 @@
 use super::*;
 
 impl ASTLowering {
-    pub(crate) fn lower_expression_call(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_call(
+        &mut self,
+        expr: &Expression,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         match &expr.kind {
             ExpressionKind::Call { callee, arguments } => {
                 let arg_values: Vec<Value> = arguments
@@ -18,7 +22,10 @@ impl ASTLowering {
                         let output_type = match arguments.first() {
                             Some(arg) => match self.infer_expr_ir_type(arg) {
                                 IRType::Task { output }
-                                    if !Self::ir_type_contains_unknown(&output) => *output,
+                                    if !Self::ir_type_contains_unknown(&output) =>
+                                {
+                                    *output
+                                }
                                 IRType::Task { .. } => {
                                     return self.invalid_value(
                                         "block_on cannot lower a Task with an unresolved output type",
@@ -32,9 +39,8 @@ impl ASTLowering {
                                 }
                             },
                             None => {
-                                return self.invalid_value(
-                                    "block_on requires one Task<T> argument",
-                                );
+                                return self
+                                    .invalid_value("block_on requires one Task<T> argument");
                             }
                         };
                         let block_on_result = self.builder.build_typed_host_call(
@@ -67,15 +73,15 @@ impl ASTLowering {
                     }
                 }
 
-                if let Some(descriptor) = self.host_function_descriptor_for_call(callee, arguments) {
+                if let Some(descriptor) = self.host_function_descriptor_for_call(callee, arguments)
+                {
                     if descriptor.runtime_name == "spectra.std.concurrent.task_spawn_fn" {
                         if let Some(closure) = arg_values.first().copied() {
                             // A worker thread retains and invokes this closure
                             // after the current function returns, so move its
                             // manual allocation to the base frame before the
                             // host call stores the handle.
-                            self.builder
-                                .build_escape_manual_alloc(ir_func, closure);
+                            self.builder.build_escape_manual_alloc(ir_func, closure);
                         }
                     } else if matches!(
                         descriptor.runtime_name,
@@ -86,8 +92,7 @@ impl ASTLowering {
                             // The server retains this closure after the current
                             // function returns, so move its manual allocation
                             // to the base frame before the host call stores it.
-                            self.builder
-                                .build_escape_manual_alloc(ir_func, callback);
+                            self.builder.build_escape_manual_alloc(ir_func, callback);
                         }
                     }
 

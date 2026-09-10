@@ -256,47 +256,43 @@ impl SemanticAnalyzer {
                 let iterator_type = match iterable_type {
                     Type::Array { element_type, .. } => *element_type,
                     Type::Range => Type::Int,
-                    Type::Applied { name, args } if name == "List" => args
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| {
+                    Type::Applied { name, args } if name == "List" => {
+                        args.first().cloned().unwrap_or_else(|| {
                             self.error(
                                 "List<T> for-loop iterable is missing its element type".to_string(),
                                 for_loop.span,
                             );
                             Type::Unknown
-                        }),
-                    Type::Applied { name, args } if name == "Set" => args
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| {
+                        })
+                    }
+                    Type::Applied { name, args } if name == "Set" => {
+                        args.first().cloned().unwrap_or_else(|| {
                             self.error(
                                 "Set<T> for-loop iterable is missing its element type".to_string(),
                                 for_loop.span,
                             );
                             Type::Unknown
-                        }),
-                    Type::Applied { name, args } if name == "Iterator" => args
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| {
+                        })
+                    }
+                    Type::Applied { name, args } if name == "Iterator" => {
+                        args.first().cloned().unwrap_or_else(|| {
                             self.error(
                                 "Iterator<T> for-loop iterable is missing its element type"
                                     .to_string(),
                                 for_loop.span,
                             );
                             Type::Unknown
-                        }),
-                    Type::Applied { name, args } if name == "Map" => args
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| {
+                        })
+                    }
+                    Type::Applied { name, args } if name == "Map" => {
+                        args.first().cloned().unwrap_or_else(|| {
                             self.error(
                                 "Map<K, V> for-loop iterable is missing its key type".to_string(),
                                 for_loop.span,
                             );
                             Type::Unknown
-                        }),
+                        })
+                    }
                     Type::Struct { name } if name == "List" => Type::TypeParameter {
                         name: "T".to_string(),
                     },
@@ -492,33 +488,59 @@ impl SemanticAnalyzer {
             .first()
             .map(|argument| self.infer_expression_type(argument));
         let resolved_payload = |payload: Option<Type>| {
-            payload.filter(|ty| {
-                !matches!(ty, Type::Unknown | Type::TypeParameter { .. })
-            })
+            payload.filter(|ty| !matches!(ty, Type::Unknown | Type::TypeParameter { .. }))
         };
         match operation {
-            "option_unwrap" => resolved_payload(
-                self.generic_enum_payload_type(first_type.as_ref()?, "Some"),
-            )
-                .or_else(|| Some(Type::TypeParameter { name: "T".to_string() })),
-            "option_unwrap_or" => resolved_payload(
-                self.generic_enum_payload_type(first_type.as_ref()?, "Some"),
-            )
-                .or_else(|| arguments.get(1).map(|argument| self.infer_expression_type(argument)))
-                .or_else(|| Some(Type::TypeParameter { name: "T".to_string() })),
-            "result_unwrap" => resolved_payload(
-                self.generic_enum_payload_type(first_type.as_ref()?, "Ok"),
-            )
-                .or_else(|| Some(Type::TypeParameter { name: "T".to_string() })),
-            "result_unwrap_or" => resolved_payload(
-                self.generic_enum_payload_type(first_type.as_ref()?, "Ok"),
-            )
-                .or_else(|| arguments.get(1).map(|argument| self.infer_expression_type(argument)))
-                .or_else(|| Some(Type::TypeParameter { name: "T".to_string() })),
-            "result_unwrap_err" => resolved_payload(
-                self.generic_enum_payload_type(first_type.as_ref()?, "Err"),
-            )
-                .or_else(|| Some(Type::TypeParameter { name: "E".to_string() })),
+            "option_unwrap" => {
+                resolved_payload(self.generic_enum_payload_type(first_type.as_ref()?, "Some"))
+                    .or_else(|| {
+                        Some(Type::TypeParameter {
+                            name: "T".to_string(),
+                        })
+                    })
+            }
+            "option_unwrap_or" => {
+                resolved_payload(self.generic_enum_payload_type(first_type.as_ref()?, "Some"))
+                    .or_else(|| {
+                        arguments
+                            .get(1)
+                            .map(|argument| self.infer_expression_type(argument))
+                    })
+                    .or_else(|| {
+                        Some(Type::TypeParameter {
+                            name: "T".to_string(),
+                        })
+                    })
+            }
+            "result_unwrap" => {
+                resolved_payload(self.generic_enum_payload_type(first_type.as_ref()?, "Ok"))
+                    .or_else(|| {
+                        Some(Type::TypeParameter {
+                            name: "T".to_string(),
+                        })
+                    })
+            }
+            "result_unwrap_or" => {
+                resolved_payload(self.generic_enum_payload_type(first_type.as_ref()?, "Ok"))
+                    .or_else(|| {
+                        arguments
+                            .get(1)
+                            .map(|argument| self.infer_expression_type(argument))
+                    })
+                    .or_else(|| {
+                        Some(Type::TypeParameter {
+                            name: "T".to_string(),
+                        })
+                    })
+            }
+            "result_unwrap_err" => {
+                resolved_payload(self.generic_enum_payload_type(first_type.as_ref()?, "Err"))
+                    .or_else(|| {
+                        Some(Type::TypeParameter {
+                            name: "E".to_string(),
+                        })
+                    })
+            }
             _ => None,
         }
     }
@@ -576,29 +598,32 @@ impl SemanticAnalyzer {
         if name == "Map" {
             return Some(("Map", vec![Type::Int, Type::Int]));
         }
-        name.strip_prefix("Map_").and_then(|suffix| {
-            let (key, value) = suffix.split_once('_')?;
-            Some((
-                "Map",
-                vec![self.type_from_mangle_part(key), self.type_from_mangle_part(value)],
-            ))
-        })
-        .or_else(|| {
-            if name == "Set" {
-                return Some(("Set", vec![Type::Int]));
-            }
-            name.strip_prefix("Set_")
-                .map(|suffix| ("Set", vec![self.type_from_mangle_part(suffix)]))
-        })
-        .or_else(|| {
-            if name == "Iterator" {
-                return Some(("Iterator", vec![Type::Int]));
-            }
-            name.strip_prefix("Iterator_")
-                .map(|suffix| ("Iterator", vec![self.type_from_mangle_part(suffix)]))
-        })
+        name.strip_prefix("Map_")
+            .and_then(|suffix| {
+                let (key, value) = suffix.split_once('_')?;
+                Some((
+                    "Map",
+                    vec![
+                        self.type_from_mangle_part(key),
+                        self.type_from_mangle_part(value),
+                    ],
+                ))
+            })
+            .or_else(|| {
+                if name == "Set" {
+                    return Some(("Set", vec![Type::Int]));
+                }
+                name.strip_prefix("Set_")
+                    .map(|suffix| ("Set", vec![self.type_from_mangle_part(suffix)]))
+            })
+            .or_else(|| {
+                if name == "Iterator" {
+                    return Some(("Iterator", vec![Type::Int]));
+                }
+                name.strip_prefix("Iterator_")
+                    .map(|suffix| ("Iterator", vec![self.type_from_mangle_part(suffix)]))
+            })
     }
-
 
     pub(crate) fn specialize_std_collection_signature(
         &mut self,
@@ -618,9 +643,7 @@ impl SemanticAnalyzer {
                     substitutions.insert("K".to_string(), values[0].clone());
                     substitutions.insert("V".to_string(), values[1].clone());
                 }
-                Some(("Set", values)) | Some(("Iterator", values))
-                    if values.len() == 1 =>
-                {
+                Some(("Set", values)) | Some(("Iterator", values)) if values.len() == 1 => {
                     substitutions.insert("T".to_string(), values[0].clone());
                 }
                 _ => {}
@@ -633,10 +656,8 @@ impl SemanticAnalyzer {
             .iter()
             .map(|ty| self.substitute_type_parameters(ty, &substitutions))
             .collect();
-        specialized.return_type = self.substitute_type_parameters(
-            &signature.return_type,
-            &substitutions,
-        );
+        specialized.return_type =
+            self.substitute_type_parameters(&signature.return_type, &substitutions);
 
         // Constructors have no value from which to infer T/K/V. Use the
         // expected binding type when present and the int default as
@@ -673,12 +694,12 @@ impl SemanticAnalyzer {
             self.collection_type_arguments(&first_type)
         });
         let closure_return_type = |semantic: &mut Self| {
-            arguments.get(1).and_then(|argument| {
-                match semantic.infer_expression_type(argument) {
+            arguments
+                .get(1)
+                .and_then(|argument| match semantic.infer_expression_type(argument) {
                     Type::Fn { return_type, .. } => Some(*return_type),
                     _ => None,
-                }
-            })
+                })
         };
 
         match operation {
@@ -708,11 +729,7 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            "list_get"
-            | "list_pop"
-            | "list_pop_front"
-            | "list_remove_at"
-            | "set_get"
+            "list_get" | "list_pop" | "list_pop_front" | "list_remove_at" | "set_get"
             | "iterator_next" => {
                 if let Some((_, values)) = first_collection.as_ref() {
                     if let Some(element) = values.first() {
@@ -728,15 +745,13 @@ impl SemanticAnalyzer {
                 }
             }
             "option_map" => {
-                let first_type = arguments.first().map(|argument| {
-                    self.infer_expression_type(argument)
-                });
+                let first_type = arguments
+                    .first()
+                    .map(|argument| self.infer_expression_type(argument));
                 if let (Some(input), Some(mapped)) =
                     (first_type.as_ref(), closure_return_type(self))
                 {
-                    if self
-                        .generic_enum_payload_type(input, "Some")
-                        .is_some()
+                    if self.generic_enum_payload_type(input, "Some").is_some()
                         && !matches!(mapped, Type::Unknown | Type::TypeParameter { .. })
                     {
                         specialized.return_type = Type::Applied {
@@ -747,9 +762,9 @@ impl SemanticAnalyzer {
                 }
             }
             "result_map" => {
-                let first_type = arguments.first().map(|argument| {
-                    self.infer_expression_type(argument)
-                });
+                let first_type = arguments
+                    .first()
+                    .map(|argument| self.infer_expression_type(argument));
                 if let (Some(input), Some(mapped)) =
                     (first_type.as_ref(), closure_return_type(self))
                 {
@@ -765,9 +780,9 @@ impl SemanticAnalyzer {
                 }
             }
             "result_map_err" => {
-                let first_type = arguments.first().map(|argument| {
-                    self.infer_expression_type(argument)
-                });
+                let first_type = arguments
+                    .first()
+                    .map(|argument| self.infer_expression_type(argument));
                 if let (Some(input), Some(mapped)) =
                     (first_type.as_ref(), closure_return_type(self))
                 {
@@ -806,7 +821,9 @@ impl SemanticAnalyzer {
 
     fn constant_integer_expression(expr: &Expression) -> Option<i128> {
         match &expr.kind {
-            ExpressionKind::NumberLiteral(value) => crate::numeric::parse_number_literal_as_i128(value),
+            ExpressionKind::NumberLiteral(value) => {
+                crate::numeric::parse_number_literal_as_i128(value)
+            }
             ExpressionKind::Unary {
                 operator: crate::ast::UnaryOperator::Negate,
                 operand,
@@ -819,8 +836,7 @@ impl SemanticAnalyzer {
     pub(crate) fn validate_static_array_index(&mut self, array: &Expression, index: &Expression) {
         let array_type = self.infer_expression_type(array);
         let Type::Array {
-            size: Some(length),
-            ..
+            size: Some(length), ..
         } = array_type
         else {
             return;
@@ -844,5 +860,4 @@ impl SemanticAnalyzer {
             );
         }
     }
-
 }

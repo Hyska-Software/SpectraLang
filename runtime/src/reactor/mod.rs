@@ -389,11 +389,7 @@ impl Reactor {
     /// serves every pending deadline for this reactor; it exits on its own
     /// once the reactor is dropped.
     fn ensure_timer_driver(&self) {
-        if self
-            .core
-            .timer_driver_started
-            .swap(true, Ordering::AcqRel)
-        {
+        if self.core.timer_driver_started.swap(true, Ordering::AcqRel) {
             return;
         }
         TIMER_DRIVER_THREADS.fetch_add(1, Ordering::AcqRel);
@@ -403,7 +399,9 @@ impl Reactor {
             .spawn(move || run_timer_driver(core_ref))
             .is_ok();
         if !spawned {
-            self.core.timer_driver_started.store(false, Ordering::Release);
+            self.core
+                .timer_driver_started
+                .store(false, Ordering::Release);
             TIMER_DRIVER_THREADS.fetch_sub(1, Ordering::AcqRel);
         }
     }
@@ -789,9 +787,9 @@ mod tests {
             reactor.register_timer(token, Duration::from_millis(50));
         }
         assert!(
-        // Range comparison: unrelated timer tests exiting on this machine can
-        // transiently add a unit; what must never happen is one thread per
-        // timer.
+            // Range comparison: unrelated timer tests exiting on this machine can
+            // transiently add a unit; what must never happen is one thread per
+            // timer.
             timer_driver_threads() <= baseline_drivers + 3,
             "registering timers must not explode thread count"
         );

@@ -678,7 +678,9 @@ pub(crate) extern "C" fn std_async_reactor_stats_queued(ctx: *mut SpectraHostCal
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_async_reactor_stats_task_wakeups(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_stats_task_wakeups(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -687,7 +689,9 @@ pub(crate) extern "C" fn std_async_reactor_stats_task_wakeups(ctx: *mut SpectraH
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_async_reactor_stats_timer_events(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_stats_timer_events(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -696,7 +700,9 @@ pub(crate) extern "C" fn std_async_reactor_stats_timer_events(ctx: *mut SpectraH
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_async_reactor_stats_io_events(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_stats_io_events(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -705,7 +711,9 @@ pub(crate) extern "C" fn std_async_reactor_stats_io_events(ctx: *mut SpectraHost
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_async_reactor_stats_io_registrations(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_async_reactor_stats_io_registrations(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,

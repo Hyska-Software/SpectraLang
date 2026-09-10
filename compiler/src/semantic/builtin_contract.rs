@@ -5,8 +5,8 @@ use super::*;
 // without requiring physical `.spectra` files.  The actual implementation of
 // each function lives in the runtime FFI layer (runtime/src/stdlib/mod.rs).
 
-use crate::semantic::module_registry::{ExportedType, ModuleRegistry};
 use crate::ast::{FloatWidth, IntWidth, Type, TypeAnnotation, TypeAnnotationKind};
+use crate::semantic::module_registry::{ExportedType, ModuleRegistry};
 
 /// Compiler-owned snapshot of one public builtin contract symbol.
 ///
@@ -52,18 +52,32 @@ fn contract_type(ty: &Type) -> String {
         },
         Type::Tuple { elements } => format!(
             "({})",
-            elements.iter().map(contract_type).collect::<Vec<_>>().join(", ")
+            elements
+                .iter()
+                .map(contract_type)
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         Type::Struct { name } | Type::Enum { name } | Type::TypeParameter { name } => name.clone(),
         Type::Applied { name, args } => format!(
             "{}<{}>",
             name,
-            args.iter().map(contract_type).collect::<Vec<_>>().join(", ")
+            args.iter()
+                .map(contract_type)
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         Type::SelfType => "Self".to_string(),
-        Type::Fn { params, return_type } => format!(
+        Type::Fn {
+            params,
+            return_type,
+        } => format!(
             "fn({}) -> {}",
-            params.iter().map(contract_type).collect::<Vec<_>>().join(", "),
+            params
+                .iter()
+                .map(contract_type)
+                .collect::<Vec<_>>()
+                .join(", "),
             contract_type(return_type)
         ),
         Type::Task { output } => format!("Task<{}>", contract_type(output)),
@@ -337,19 +351,40 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.http3.server_config_new",
         "func(string, string, string) returns int",
     ),
-    ("std.api.http3.client_config_new", "func(string) returns int"),
-    ("std.api.http3.handler_text", "func(int, string) returns int"),
+    (
+        "std.api.http3.client_config_new",
+        "func(string) returns int",
+    ),
+    (
+        "std.api.http3.handler_text",
+        "func(int, string) returns int",
+    ),
     ("std.api.http3.server_start", "func(int, int) returns int"),
     ("std.api.http3.server_local_port", "func(int) returns int"),
-    ("std.api.http3.server_shutdown", "func(int) returns Task<int>"),
-    ("std.api.http3.client_connect", "func(int, string) returns Task<int>"),
-    ("std.api.http3.client_shutdown", "func(int) returns Task<int>"),
-    ("std.api.http3.client_request_new", "func(int, string, string) returns int"),
+    (
+        "std.api.http3.server_shutdown",
+        "func(int) returns Task<int>",
+    ),
+    (
+        "std.api.http3.client_connect",
+        "func(int, string) returns Task<int>",
+    ),
+    (
+        "std.api.http3.client_shutdown",
+        "func(int) returns Task<int>",
+    ),
+    (
+        "std.api.http3.client_request_new",
+        "func(int, string, string) returns int",
+    ),
     (
         "std.api.http3.client_request_header",
         "func(int, string, string) returns bool",
     ),
-    ("std.api.http3.client_request_open", "func(int) returns Task<int>"),
+    (
+        "std.api.http3.client_request_open",
+        "func(int) returns Task<int>",
+    ),
     (
         "std.api.http3.client_request_send_body",
         "func(int, string) returns Task<int>",
@@ -358,23 +393,41 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.http3.client_request_send_trailers",
         "func(int, string, string) returns Task<int>",
     ),
-    ("std.api.http3.client_request_finish", "func(int) returns Task<int>"),
+    (
+        "std.api.http3.client_request_finish",
+        "func(int) returns Task<int>",
+    ),
     (
         "std.api.http3.client_request_receive_response",
         "func(int) returns Task<int>",
     ),
-    ("std.api.http3.client_request_cancel", "func(int) returns bool"),
+    (
+        "std.api.http3.client_request_cancel",
+        "func(int) returns bool",
+    ),
     ("std.api.http3.response_status", "func(int) returns int"),
-    ("std.api.http3.response_header", "func(int, string) returns string"),
-    ("std.api.http3.response_trailer", "func(int, string) returns string"),
-    ("std.api.http3.response_body_base64", "func(int) returns string"),
+    (
+        "std.api.http3.response_header",
+        "func(int, string) returns string",
+    ),
+    (
+        "std.api.http3.response_trailer",
+        "func(int, string) returns string",
+    ),
+    (
+        "std.api.http3.response_body_base64",
+        "func(int) returns string",
+    ),
     ("std.api.http3.response_body_len", "func(int) returns int"),
     ("std.api.http3.task_result", "func(int) returns int"),
     ("std.api.http3.task_cancel", "func(int) returns bool"),
     ("std.api.http3.result_ok", "func(int) returns bool"),
     ("std.api.http3.result_value", "func(int) returns int"),
     ("std.api.http3.result_error_code", "func(int) returns int"),
-    ("std.api.http3.result_error_message", "func(int) returns string"),
+    (
+        "std.api.http3.result_error_message",
+        "func(int) returns string",
+    ),
     ("std.api.http3.handle_drop", "func(int) returns bool"),
     (
         "std.api.grpc.message_from_base64",
@@ -392,13 +445,19 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.grpc.metadata_append",
         "func(int, string, string) returns bool",
     ),
-    ("std.api.grpc.metadata_get", "func(int, string) returns string"),
+    (
+        "std.api.grpc.metadata_get",
+        "func(int, string) returns string",
+    ),
     ("std.api.grpc.metadata_len", "func(int) returns int"),
     ("std.api.grpc.metadata_free", "func(int) returns bool"),
     ("std.api.grpc.status_new", "func(int, string) returns int"),
     ("std.api.grpc.status_code", "func(int) returns int"),
     ("std.api.grpc.status_message", "func(int) returns string"),
-    ("std.api.grpc.status_details_base64", "func(int) returns string"),
+    (
+        "std.api.grpc.status_details_base64",
+        "func(int) returns string",
+    ),
     (
         "std.api.grpc.status_set_details_base64",
         "func(int, string) returns bool",
@@ -410,9 +469,15 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
     ("std.api.grpc.response_free", "func(int) returns bool"),
     ("std.api.grpc.error_code", "func(int) returns int"),
     ("std.api.grpc.error_message", "func(int) returns string"),
-    ("std.api.grpc.error_details_base64", "func(int) returns string"),
+    (
+        "std.api.grpc.error_details_base64",
+        "func(int) returns string",
+    ),
     ("std.api.grpc.error_free", "func(int) returns bool"),
-    ("std.api.grpc.client_connect", "func(string) returns Task<int>"),
+    (
+        "std.api.grpc.client_connect",
+        "func(string) returns Task<int>",
+    ),
     (
         "std.api.grpc.client_unary",
         "func(int, string, int, int, int) returns Task<int>",
@@ -429,7 +494,10 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.grpc.client_bidi_streaming",
         "func(int, string, int, int, int) returns Task<int>",
     ),
-    ("std.api.grpc.stream_send", "func(int, int) returns Task<int>"),
+    (
+        "std.api.grpc.stream_send",
+        "func(int, int) returns Task<int>",
+    ),
     ("std.api.grpc.stream_recv", "func(int) returns Task<int>"),
     ("std.api.grpc.stream_finish", "func(int) returns Task<int>"),
     ("std.api.grpc.stream_cancel", "func(int) returns Task<int>"),
@@ -469,7 +537,10 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
     ("std.api.graphql.schema_finish", "func(int) returns int"),
     ("std.api.graphql.schema_drop", "func(int) returns bool"),
     ("std.api.graphql.schema_sdl", "func(int) returns string"),
-    ("std.api.graphql.execute", "func(int, string, string) returns int"),
+    (
+        "std.api.graphql.execute",
+        "func(int, string, string) returns int",
+    ),
     (
         "std.api.graphql.execute_named",
         "func(int, string, string, string) returns int",
@@ -481,16 +552,40 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
     ("std.api.graphql.response_json", "func(int) returns string"),
     ("std.api.graphql.response_status", "func(int) returns int"),
     ("std.api.graphql.response_is_ok", "func(int) returns bool"),
-    ("std.api.graphql.response_errors_json", "func(int) returns string"),
-    ("std.api.graphql.response_data_json", "func(int) returns string"),
+    (
+        "std.api.graphql.response_errors_json",
+        "func(int) returns string",
+    ),
+    (
+        "std.api.graphql.response_data_json",
+        "func(int) returns string",
+    ),
     ("std.api.graphql.response_drop", "func(int) returns bool"),
-    ("std.api.graphql.subscribe", "func(int, string, string) returns int"),
+    (
+        "std.api.graphql.subscribe",
+        "func(int, string, string) returns int",
+    ),
     ("std.api.graphql.subscription_next", "func(int) returns int"),
-    ("std.api.graphql.subscription_pending", "func(int) returns int"),
-    ("std.api.graphql.subscription_capacity", "func(int) returns int"),
-    ("std.api.graphql.subscription_is_cancelled", "func(int) returns bool"),
-    ("std.api.graphql.subscription_cancel", "func(int) returns bool"),
-    ("std.api.graphql.subscription_drop", "func(int) returns bool"),
+    (
+        "std.api.graphql.subscription_pending",
+        "func(int) returns int",
+    ),
+    (
+        "std.api.graphql.subscription_capacity",
+        "func(int) returns int",
+    ),
+    (
+        "std.api.graphql.subscription_is_cancelled",
+        "func(int) returns bool",
+    ),
+    (
+        "std.api.graphql.subscription_cancel",
+        "func(int) returns bool",
+    ),
+    (
+        "std.api.graphql.subscription_drop",
+        "func(int) returns bool",
+    ),
     ("std.api.http.method_name", "func(int) returns string"),
     ("std.api.http.method_allows_body", "func(int) returns bool"),
     ("std.api.http.method_is_safe", "func(int) returns bool"),
@@ -505,29 +600,59 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
     ("std.api.http.status_class", "func(int) returns int"),
     ("std.api.http.status_is_success", "func(int) returns bool"),
     ("std.api.http.status_continue", "func() returns int"),
-    ("std.api.http.status_switching_protocols", "func() returns int"),
+    (
+        "std.api.http.status_switching_protocols",
+        "func() returns int",
+    ),
     ("std.api.http.status_ok", "func() returns int"),
     ("std.api.http.status_created", "func() returns int"),
     ("std.api.http.status_accepted", "func() returns int"),
     ("std.api.http.status_no_content", "func() returns int"),
-    ("std.api.http.status_moved_permanently", "func() returns int"),
+    (
+        "std.api.http.status_moved_permanently",
+        "func() returns int",
+    ),
     ("std.api.http.status_found", "func() returns int"),
     ("std.api.http.status_not_modified", "func() returns int"),
     ("std.api.http.status_bad_request", "func() returns int"),
     ("std.api.http.status_unauthorized", "func() returns int"),
     ("std.api.http.status_forbidden", "func() returns int"),
     ("std.api.http.status_not_found", "func() returns int"),
-    ("std.api.http.status_method_not_allowed", "func() returns int"),
+    (
+        "std.api.http.status_method_not_allowed",
+        "func() returns int",
+    ),
     ("std.api.http.status_conflict", "func() returns int"),
-    ("std.api.http.status_unsupported_media_type", "func() returns int"),
-    ("std.api.http.status_unprocessable_content", "func() returns int"),
-    ("std.api.http.status_too_many_requests", "func() returns int"),
-    ("std.api.http.status_internal_server_error", "func() returns int"),
+    (
+        "std.api.http.status_unsupported_media_type",
+        "func() returns int",
+    ),
+    (
+        "std.api.http.status_unprocessable_content",
+        "func() returns int",
+    ),
+    (
+        "std.api.http.status_too_many_requests",
+        "func() returns int",
+    ),
+    (
+        "std.api.http.status_internal_server_error",
+        "func() returns int",
+    ),
     ("std.api.http.status_bad_gateway", "func() returns int"),
-    ("std.api.http.status_service_unavailable", "func() returns int"),
+    (
+        "std.api.http.status_service_unavailable",
+        "func() returns int",
+    ),
     ("std.api.http.status_gateway_timeout", "func() returns int"),
-    ("std.api.http.header_name_is_valid", "func(string) returns bool"),
-    ("std.api.http.header_value_is_valid", "func(string) returns bool"),
+    (
+        "std.api.http.header_name_is_valid",
+        "func(string) returns bool",
+    ),
+    (
+        "std.api.http.header_value_is_valid",
+        "func(string) returns bool",
+    ),
     ("std.api.http.request", "func(int, string) returns Request"),
     ("std.api.http.request_new", "func(int) returns Request"),
     ("std.api.http.request_method", "func(Request) returns int"),
@@ -556,7 +681,10 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.http.response_header",
         "func(Response, string) returns string",
     ),
-    ("std.api.http.response_body_len", "func(Response) returns int"),
+    (
+        "std.api.http.response_body_len",
+        "func(Response) returns int",
+    ),
     ("std.api.http.header", "func(string, string) returns Header"),
     ("std.api.http.header_name", "func(Header) returns string"),
     ("std.api.http.header_value", "func(Header) returns string"),
@@ -586,13 +714,19 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.http.cookie_verify",
         "func(Cookie, string) returns bool",
     ),
-    ("std.api.http.cookie_is_expired", "func(Cookie) returns bool"),
+    (
+        "std.api.http.cookie_is_expired",
+        "func(Cookie) returns bool",
+    ),
     ("std.api.http.cookie_error_code", "func() returns int"),
     ("std.api.http.cookie_error_message", "func() returns string"),
     ("std.api.http.status", "func(int) returns Status"),
     ("std.api.server.new", "func() returns Server"),
     ("std.api.server.listen", "func(Server, int) returns bool"),
-    ("std.api.server.serve", "func(Server, Router) returns task<int>"),
+    (
+        "std.api.server.serve",
+        "func(Server, Router) returns task<int>",
+    ),
     ("std.api.server.state", "func(Server) returns int"),
     ("std.api.server.shutdown", "func(Server) returns bool"),
     ("std.api.server.local_port", "func(Server) returns int"),
@@ -704,7 +838,10 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.routing.route_match",
         "func(Router, int, string) returns RouteMatch",
     ),
-    ("std.api.routing.match_route_id", "func(RouteMatch) returns int"),
+    (
+        "std.api.routing.match_route_id",
+        "func(RouteMatch) returns int",
+    ),
     (
         "std.api.routing.match_param",
         "func(RouteMatch, string) returns string",
@@ -717,8 +854,14 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
     ("std.api.routing.get", "func(Router, string) returns Route"),
     ("std.api.routing.post", "func(Router, string) returns Route"),
     ("std.api.routing.put", "func(Router, string) returns Route"),
-    ("std.api.routing.patch", "func(Router, string) returns Route"),
-    ("std.api.routing.delete", "func(Router, string) returns Route"),
+    (
+        "std.api.routing.patch",
+        "func(Router, string) returns Route",
+    ),
+    (
+        "std.api.routing.delete",
+        "func(Router, string) returns Route",
+    ),
     (
         "std.api.routing.routes_export_openapi",
         "func(Router, string, string) returns string",
@@ -735,9 +878,15 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
     ("std.api.query.has", "func(Query, string) returns bool"),
     ("std.api.query.count", "func(Query, string) returns int"),
     ("std.api.query.first", "func(Query, string) returns string"),
-    ("std.api.query.value", "func(Query, string, int) returns string"),
+    (
+        "std.api.query.value",
+        "func(Query, string, int) returns string",
+    ),
     ("std.api.query.int", "func(Query, string, int) returns int"),
-    ("std.api.query.bool", "func(Query, string, int) returns bool"),
+    (
+        "std.api.query.bool",
+        "func(Query, string, int) returns bool",
+    ),
     ("std.api.query.schema", "func() returns QuerySchema"),
     (
         "std.api.query.schema_field",
@@ -747,8 +896,14 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.query.bind",
         "func(Query, QuerySchema) returns QueryBinding",
     ),
-    ("std.api.query.binding_ok", "func(QueryBinding) returns bool"),
-    ("std.api.query.binding_error", "func(QueryBinding) returns string"),
+    (
+        "std.api.query.binding_ok",
+        "func(QueryBinding) returns bool",
+    ),
+    (
+        "std.api.query.binding_error",
+        "func(QueryBinding) returns string",
+    ),
     (
         "std.api.query.binding_count",
         "func(QueryBinding, string) returns int",
@@ -775,7 +930,10 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
     ("std.api.form.has", "func(Form, string) returns bool"),
     ("std.api.form.count", "func(Form, string) returns int"),
     ("std.api.form.first", "func(Form, string) returns string"),
-    ("std.api.form.value", "func(Form, string, int) returns string"),
+    (
+        "std.api.form.value",
+        "func(Form, string, int) returns string",
+    ),
     ("std.api.form.int", "func(Form, string, int) returns int"),
     ("std.api.form.bool", "func(Form, string, int) returns bool"),
     ("std.api.form.schema", "func() returns FormSchema"),
@@ -783,9 +941,15 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.form.schema_field",
         "func(FormSchema, string, int, bool, bool) returns FormSchema",
     ),
-    ("std.api.form.bind", "func(Form, FormSchema) returns FormBinding"),
+    (
+        "std.api.form.bind",
+        "func(Form, FormSchema) returns FormBinding",
+    ),
     ("std.api.form.binding_ok", "func(FormBinding) returns bool"),
-    ("std.api.form.binding_error", "func(FormBinding) returns string"),
+    (
+        "std.api.form.binding_error",
+        "func(FormBinding) returns string",
+    ),
     (
         "std.api.form.binding_count",
         "func(FormBinding, string) returns int",
@@ -808,9 +972,18 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.multipart.parse",
         "func(string, string, int, int, int) returns Multipart",
     ),
-    ("std.api.multipart.part_count", "func(Multipart) returns int"),
-    ("std.api.multipart.field_count", "func(Multipart) returns int"),
-    ("std.api.multipart.file_count", "func(Multipart) returns int"),
+    (
+        "std.api.multipart.part_count",
+        "func(Multipart) returns int",
+    ),
+    (
+        "std.api.multipart.field_count",
+        "func(Multipart) returns int",
+    ),
+    (
+        "std.api.multipart.file_count",
+        "func(Multipart) returns int",
+    ),
     (
         "std.api.multipart.text",
         "func(Multipart, string, int) returns string",
@@ -819,7 +992,10 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.multipart.part",
         "func(Multipart, int) returns MultipartPart",
     ),
-    ("std.api.multipart.part_name", "func(MultipartPart) returns string"),
+    (
+        "std.api.multipart.part_name",
+        "func(MultipartPart) returns string",
+    ),
     (
         "std.api.multipart.part_filename",
         "func(MultipartPart) returns string",
@@ -828,12 +1004,18 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.multipart.part_content_type",
         "func(MultipartPart) returns string",
     ),
-    ("std.api.multipart.part_size", "func(MultipartPart) returns int"),
+    (
+        "std.api.multipart.part_size",
+        "func(MultipartPart) returns int",
+    ),
     (
         "std.api.multipart.part_is_file",
         "func(MultipartPart) returns bool",
     ),
-    ("std.api.multipart.file_path", "func(MultipartPart) returns string"),
+    (
+        "std.api.multipart.file_path",
+        "func(MultipartPart) returns string",
+    ),
     (
         "std.api.multipart.file_read",
         "func(MultipartPart, int, int) returns string",
@@ -852,7 +1034,10 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.handler.with_header",
         "func(Response, string, string) returns Response",
     ),
-    ("std.api.handler.into_response", "func(Response) returns Response"),
+    (
+        "std.api.handler.into_response",
+        "func(Response) returns Response",
+    ),
     (
         "std.api.handler.into_text_response",
         "func(string) returns Response",
@@ -861,17 +1046,26 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.handler.into_status_response",
         "func(int) returns Response",
     ),
-    ("std.api.handler.error", "func(int, string) returns HandlerError"),
+    (
+        "std.api.handler.error",
+        "func(int, string) returns HandlerError",
+    ),
     (
         "std.api.handler.error_response",
         "func(HandlerError) returns Response",
     ),
-    ("std.api.handler.error_code", "func(HandlerError) returns int"),
+    (
+        "std.api.handler.error_code",
+        "func(HandlerError) returns int",
+    ),
     (
         "std.api.handler.error_message",
         "func(HandlerError) returns string",
     ),
-    ("std.api.handler.last_error_message", "func() returns string"),
+    (
+        "std.api.handler.last_error_message",
+        "func() returns string",
+    ),
     (
         "std.api.handler.register_sync",
         "func(int, Response) returns HandlerHandle",
@@ -918,7 +1112,10 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.cors.allow_credentials",
         "func(CorsPolicy, bool) returns CorsPolicy",
     ),
-    ("std.api.cors.max_age", "func(CorsPolicy, int) returns CorsPolicy"),
+    (
+        "std.api.cors.max_age",
+        "func(CorsPolicy, int) returns CorsPolicy",
+    ),
     (
         "std.api.cors.middleware",
         "func(CorsPolicy) returns MiddlewareHandle",
@@ -937,8 +1134,14 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "func(CorsPolicy, string) returns string",
     ),
     ("std.api.middleware.chain", "func() returns MiddlewareChain"),
-    ("std.api.middleware.chain_new", "func() returns MiddlewareChain"),
-    ("std.api.middleware.chain_len", "func(MiddlewareChain) returns int"),
+    (
+        "std.api.middleware.chain_new",
+        "func() returns MiddlewareChain",
+    ),
+    (
+        "std.api.middleware.chain_len",
+        "func(MiddlewareChain) returns int",
+    ),
     (
         "std.api.middleware.register_sync",
         "func(string, string) returns MiddlewareHandle",
@@ -1023,8 +1226,14 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.middleware.execute_async",
         "func(MiddlewareChain, Request, Response) returns Response",
     ),
-    ("std.api.middleware.last_trace", "func() returns MiddlewareTrace"),
-    ("std.api.middleware.trace_len", "func(MiddlewareTrace) returns int"),
+    (
+        "std.api.middleware.last_trace",
+        "func() returns MiddlewareTrace",
+    ),
+    (
+        "std.api.middleware.trace_len",
+        "func(MiddlewareTrace) returns int",
+    ),
     (
         "std.api.middleware.trace_event",
         "func(MiddlewareTrace, int) returns string",
@@ -1113,10 +1322,7 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
     ),
     ("std.api.errors.last_code", "func() returns int"),
     ("std.api.errors.last_message", "func() returns string"),
-    (
-        "std.api.security.csrf_policy",
-        "func() returns CsrfPolicy",
-    ),
+    ("std.api.security.csrf_policy", "func() returns CsrfPolicy"),
     (
         "std.api.security.csrf_allow_origin",
         "func(CsrfPolicy, string) returns CsrfPolicy",
@@ -1129,10 +1335,7 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.security.csrf_middleware",
         "func(CsrfPolicy) returns MiddlewareHandle",
     ),
-    (
-        "std.api.security.ssrf_policy",
-        "func() returns SsrfPolicy",
-    ),
+    ("std.api.security.ssrf_policy", "func() returns SsrfPolicy"),
     (
         "std.api.security.ssrf_allow_private_networks",
         "func(SsrfPolicy, bool) returns SsrfPolicy",
@@ -1163,24 +1366,15 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
     ),
     ("std.api.session.id", "func(Session) returns string"),
     ("std.api.session.value", "func(Session) returns string"),
-    (
-        "std.api.session.created_at_ms",
-        "func(Session) returns int",
-    ),
-    (
-        "std.api.session.expires_at_ms",
-        "func(Session) returns int",
-    ),
+    ("std.api.session.created_at_ms", "func(Session) returns int"),
+    ("std.api.session.expires_at_ms", "func(Session) returns int"),
     ("std.api.session.is_valid", "func(Session) returns bool"),
     (
         "std.api.session.revoke",
         "func(SessionStore, string) returns bool",
     ),
     ("std.api.session.error_code", "func() returns int"),
-    (
-        "std.api.session.error_message",
-        "func() returns string",
-    ),
+    ("std.api.session.error_message", "func() returns string"),
     (
         "std.api.websocket.client_new",
         "func() returns WebSocketClient",
@@ -1282,8 +1476,14 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.sse.server_response",
         "func(SseServer) returns Response",
     ),
-    ("std.api.sse.server_listen", "func(SseServer, int) returns bool"),
-    ("std.api.sse.server_local_port", "func(SseServer) returns int"),
+    (
+        "std.api.sse.server_listen",
+        "func(SseServer, int) returns bool",
+    ),
+    (
+        "std.api.sse.server_local_port",
+        "func(SseServer) returns int",
+    ),
     (
         "std.api.sse.server_set_heartbeat_interval",
         "func(SseServer, int) returns bool",
@@ -1361,7 +1561,10 @@ pub const STD_TIME_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
     ),
     ("std.time.instant_now", "func() returns Instant"),
     ("std.time.instant_elapsed_ms", "func(Instant) returns int"),
-    ("std.time.instant_add", "func(Instant, Duration) returns Instant"),
+    (
+        "std.time.instant_add",
+        "func(Instant, Duration) returns Instant",
+    ),
     ("std.time.instant_has_elapsed", "func(Instant) returns bool"),
     ("std.time.sleep", "func(Duration) returns unit"),
     ("std.time.unix_to_utc", "func(int) returns UtcDateTime"),

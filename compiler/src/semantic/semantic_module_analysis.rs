@@ -20,11 +20,8 @@ impl SemanticAnalyzer {
 
         let mut new_aliases: Vec<(String, Vec<String>)> = Vec::new();
         let mut new_user_fn_types: Vec<(String, crate::ast::Type)> = Vec::new();
-        let mut new_user_fn_signatures: Vec<(
-            String,
-            Vec<crate::ast::Type>,
-            crate::ast::Type,
-        )> = Vec::new();
+        let mut new_user_fn_signatures: Vec<(String, Vec<crate::ast::Type>, crate::ast::Type)> =
+            Vec::new();
         let mut new_static_globals: Vec<(String, String, crate::ast::Type)> = Vec::new();
         let mut new_enum_defs: Vec<crate::ast::Enum> = Vec::new();
         let mut new_struct_defs: Vec<crate::ast::Struct> = Vec::new();
@@ -370,10 +367,10 @@ impl SemanticAnalyzer {
         // Flush qualified-path function discoveries so the midend knows
         // about cross-module calls that weren't brought in via `import`.
         module
-            .imported_function_return_types.append(&mut self.qualified_fn_types);
+            .imported_function_return_types
+            .append(&mut self.qualified_fn_types);
 
         // Return collected errors
         std::mem::take(&mut self.errors)
     }
-
 }

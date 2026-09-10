@@ -1,6 +1,9 @@
 use super::*;
 
-pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Option<HostFunctionDescriptor> {
+pub(crate) fn lookup_std_api_host_function(
+    module: &str,
+    function: &str,
+) -> Option<HostFunctionDescriptor> {
     match (module, function) {
         ("http", "method_name") => Some(host_string("spectra.api.http.method_name")),
         ("http", "method_allows_body") => Some(host_int("spectra.api.http.method_allows_body")),
@@ -79,9 +82,7 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("http", "cookie") => Some(host_int("spectra.api.http.cookie")),
         ("http", "cookie_name") => Some(host_string("spectra.api.http.cookie_name")),
         ("http", "cookie_value") => Some(host_string("spectra.api.http.cookie_value")),
-        ("http", "cookie_with_options") => {
-            Some(host_int("spectra.api.http.cookie_with_options"))
-        }
+        ("http", "cookie_with_options") => Some(host_int("spectra.api.http.cookie_with_options")),
         ("http", "cookie_path") => Some(host_string("spectra.api.http.cookie_path")),
         ("http", "cookie_domain") => Some(host_string("spectra.api.http.cookie_domain")),
         ("http", "cookie_max_age") => Some(host_int("spectra.api.http.cookie_max_age")),
@@ -89,9 +90,7 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("http", "cookie_http_only") => Some(host_bool("spectra.api.http.cookie_http_only")),
         ("http", "cookie_same_site") => Some(host_int("spectra.api.http.cookie_same_site")),
         ("http", "cookie_header") => Some(host_string("spectra.api.http.cookie_header")),
-        ("http", "response_with_cookie") => {
-            Some(host_int("spectra.api.http.response_with_cookie"))
-        }
+        ("http", "response_with_cookie") => Some(host_int("spectra.api.http.response_with_cookie")),
         ("http", "cookie_sign") => Some(host_int("spectra.api.http.cookie_sign")),
         ("http", "cookie_verify") => Some(host_bool("spectra.api.http.cookie_verify")),
         ("http", "cookie_is_expired") => Some(host_bool("spectra.api.http.cookie_is_expired")),
@@ -129,9 +128,7 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
             Some(host_string("spectra.api.oauth.token_refresh_token"))
         }
         ("oauth", "token_type") => Some(host_string("spectra.api.oauth.token_type")),
-        ("oauth", "token_expires_at_ms") => {
-            Some(host_int("spectra.api.oauth.token_expires_at_ms"))
-        }
+        ("oauth", "token_expires_at_ms") => Some(host_int("spectra.api.oauth.token_expires_at_ms")),
         ("oauth", "token_scope") => Some(host_string("spectra.api.oauth.token_scope")),
         ("tls", "config_new") => Some(host_int("spectra.api.tls.config_new")),
         ("tls", "config_mode") => Some(host_int("spectra.api.tls.config_mode")),
@@ -155,9 +152,7 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("security", "csrf_origin_count") => {
             Some(host_int("spectra.api.security.csrf_origin_count"))
         }
-        ("security", "csrf_middleware") => {
-            Some(host_int("spectra.api.security.csrf_middleware"))
-        }
+        ("security", "csrf_middleware") => Some(host_int("spectra.api.security.csrf_middleware")),
         ("security", "ssrf_policy") => Some(host_int("spectra.api.security.ssrf_policy")),
         ("security", "ssrf_allow_private_networks") => {
             Some(host_int("spectra.api.security.ssrf_allow_private_networks"))
@@ -170,18 +165,12 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("session", "lookup") => Some(host_int("spectra.api.session.lookup")),
         ("session", "id") => Some(host_string("spectra.api.session.id")),
         ("session", "value") => Some(host_string("spectra.api.session.value")),
-        ("session", "created_at_ms") => {
-            Some(host_int("spectra.api.session.created_at_ms"))
-        }
-        ("session", "expires_at_ms") => {
-            Some(host_int("spectra.api.session.expires_at_ms"))
-        }
+        ("session", "created_at_ms") => Some(host_int("spectra.api.session.created_at_ms")),
+        ("session", "expires_at_ms") => Some(host_int("spectra.api.session.expires_at_ms")),
         ("session", "is_valid") => Some(host_bool("spectra.api.session.is_valid")),
         ("session", "revoke") => Some(host_bool("spectra.api.session.revoke")),
         ("session", "error_code") => Some(host_int("spectra.api.session.error_code")),
-        ("session", "error_message") => {
-            Some(host_string("spectra.api.session.error_message"))
-        }
+        ("session", "error_message") => Some(host_string("spectra.api.session.error_message")),
         ("websocket", "client_new") => Some(host_int("spectra.api.websocket.client_new")),
         ("websocket", "client_set_per_message_deflate") => Some(host_bool(
             "spectra.api.websocket.client_set_per_message_deflate",
@@ -199,12 +188,8 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
             Some(host_task_int("spectra.api.websocket.client_connect"))
         }
         ("websocket", "server_new") => Some(host_int("spectra.api.websocket.server_new")),
-        ("websocket", "server_route") => {
-            Some(host_bool("spectra.api.websocket.server_route"))
-        }
-        ("websocket", "server_listen") => {
-            Some(host_bool("spectra.api.websocket.server_listen"))
-        }
+        ("websocket", "server_route") => Some(host_bool("spectra.api.websocket.server_route")),
+        ("websocket", "server_listen") => Some(host_bool("spectra.api.websocket.server_listen")),
         ("websocket", "server_local_port") => {
             Some(host_int("spectra.api.websocket.server_local_port"))
         }
@@ -220,12 +205,12 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("websocket", "connection_peer_port") => {
             Some(host_int("spectra.api.websocket.connection_peer_port"))
         }
-        ("websocket", "connection_receive") => Some(host_task_int(
-            "spectra.api.websocket.connection_receive",
-        )),
-        ("websocket", "connection_send_text") => Some(host_task_int(
-            "spectra.api.websocket.connection_send_text",
-        )),
+        ("websocket", "connection_receive") => {
+            Some(host_task_int("spectra.api.websocket.connection_receive"))
+        }
+        ("websocket", "connection_send_text") => {
+            Some(host_task_int("spectra.api.websocket.connection_send_text"))
+        }
         ("websocket", "connection_send_binary_base64") => Some(host_task_int(
             "spectra.api.websocket.connection_send_binary_base64",
         )),
@@ -235,13 +220,9 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("websocket", "connection_close") => {
             Some(host_task_int("spectra.api.websocket.connection_close"))
         }
-        ("websocket", "message_kind") => {
-            Some(host_int("spectra.api.websocket.message_kind"))
-        }
+        ("websocket", "message_kind") => Some(host_int("spectra.api.websocket.message_kind")),
         ("websocket", "message_len") => Some(host_int("spectra.api.websocket.message_len")),
-        ("websocket", "message_text") => {
-            Some(host_string("spectra.api.websocket.message_text"))
-        }
+        ("websocket", "message_text") => Some(host_string("spectra.api.websocket.message_text")),
         ("websocket", "message_base64") => {
             Some(host_string("spectra.api.websocket.message_base64"))
         }
@@ -251,45 +232,33 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("sse", "server_new") => Some(host_int("spectra.api.sse.server_new")),
         ("sse", "server_response") => Some(host_int("spectra.api.sse.server_response")),
         ("sse", "server_listen") => Some(host_bool("spectra.api.sse.server_listen")),
-        ("sse", "server_local_port") => {
-            Some(host_int("spectra.api.sse.server_local_port"))
+        ("sse", "server_local_port") => Some(host_int("spectra.api.sse.server_local_port")),
+        ("sse", "server_set_heartbeat_interval") => {
+            Some(host_bool("spectra.api.sse.server_set_heartbeat_interval"))
         }
-        ("sse", "server_set_heartbeat_interval") => Some(host_bool(
-            "spectra.api.sse.server_set_heartbeat_interval",
-        )),
-        ("sse", "server_set_replay_capacity") => Some(host_bool(
-            "spectra.api.sse.server_set_replay_capacity",
-        )),
-        ("sse", "server_set_max_event_bytes") => Some(host_bool(
-            "spectra.api.sse.server_set_max_event_bytes",
-        )),
-        ("sse", "server_accept") => {
-            Some(host_task_int("spectra.api.sse.server_accept"))
+        ("sse", "server_set_replay_capacity") => {
+            Some(host_bool("spectra.api.sse.server_set_replay_capacity"))
         }
-        ("sse", "server_publish") => {
-            Some(host_task_int("spectra.api.sse.server_publish"))
+        ("sse", "server_set_max_event_bytes") => {
+            Some(host_bool("spectra.api.sse.server_set_max_event_bytes"))
         }
+        ("sse", "server_accept") => Some(host_task_int("spectra.api.sse.server_accept")),
+        ("sse", "server_publish") => Some(host_task_int("spectra.api.sse.server_publish")),
         ("sse", "event_new") => Some(host_int("spectra.api.sse.event_new")),
         ("sse", "event_id") => Some(host_string("spectra.api.sse.event_id")),
         ("sse", "event_type") => Some(host_string("spectra.api.sse.event_type")),
         ("sse", "event_data") => Some(host_string("spectra.api.sse.event_data")),
         ("sse", "event_retry_ms") => Some(host_int("spectra.api.sse.event_retry_ms")),
         ("sse", "event_release") => Some(host_bool("spectra.api.sse.event_release")),
-        ("sse", "connection_peer_port") => {
-            Some(host_int("spectra.api.sse.connection_peer_port"))
+        ("sse", "connection_peer_port") => Some(host_int("spectra.api.sse.connection_peer_port")),
+        ("sse", "connection_last_event_id") => {
+            Some(host_string("spectra.api.sse.connection_last_event_id"))
         }
-        ("sse", "connection_last_event_id") => Some(host_string(
-            "spectra.api.sse.connection_last_event_id",
-        )),
-        ("sse", "connection_send") => {
-            Some(host_task_int("spectra.api.sse.connection_send"))
+        ("sse", "connection_send") => Some(host_task_int("spectra.api.sse.connection_send")),
+        ("sse", "connection_heartbeat") => {
+            Some(host_task_int("spectra.api.sse.connection_heartbeat"))
         }
-        ("sse", "connection_heartbeat") => Some(host_task_int(
-            "spectra.api.sse.connection_heartbeat",
-        )),
-        ("sse", "connection_close") => {
-            Some(host_task_int("spectra.api.sse.connection_close"))
-        }
+        ("sse", "connection_close") => Some(host_task_int("spectra.api.sse.connection_close")),
         ("server", "new") => Some(host_int("spectra.api.server.new")),
         ("server", "listen") => Some(host_bool("spectra.api.server.listen")),
         ("server", "serve") => Some(host_task_int("spectra.api.server.serve")),
@@ -301,24 +270,16 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("server", "set_max_body_bytes") => {
             Some(host_bool("spectra.api.server.set_max_body_bytes"))
         }
-        ("server", "set_read_timeout") => {
-            Some(host_bool("spectra.api.server.set_read_timeout"))
-        }
-        ("server", "set_idle_timeout") => {
-            Some(host_bool("spectra.api.server.set_idle_timeout"))
-        }
+        ("server", "set_read_timeout") => Some(host_bool("spectra.api.server.set_read_timeout")),
+        ("server", "set_idle_timeout") => Some(host_bool("spectra.api.server.set_idle_timeout")),
         ("server", "set_tls_certificate") => {
             Some(host_bool("spectra.api.server.set_tls_certificate"))
         }
-        ("server", "tls_local_port") => {
-            Some(host_int("spectra.api.server.tls_local_port"))
-        }
+        ("server", "tls_local_port") => Some(host_int("spectra.api.server.tls_local_port")),
         ("client", "new") => Some(host_int("spectra.api.client.new")),
         ("client", "request") => Some(host_task_int("spectra.api.client.request")),
         ("client", "timeout_ms") => Some(host_int("spectra.api.client.timeout_ms")),
-        ("client", "set_ssrf_policy") => {
-            Some(host_bool("spectra.api.client.set_ssrf_policy"))
-        }
+        ("client", "set_ssrf_policy") => Some(host_bool("spectra.api.client.set_ssrf_policy")),
         ("client", "set_tls_config") => Some(host_bool("spectra.api.client.set_tls_config")),
         ("routing", "router") => Some(host_int("spectra.api.routing.router_new")),
         ("routing", "router_new") => Some(host_int("spectra.api.routing.router_new")),
@@ -446,12 +407,8 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("middleware", "register_logging") => {
             Some(host_int("spectra.api.middleware.register_logging"))
         }
-        ("middleware", "logging_len") => {
-            Some(host_int("spectra.api.middleware.logging_len"))
-        }
-        ("middleware", "logging_line") => {
-            Some(host_string("spectra.api.middleware.logging_line"))
-        }
+        ("middleware", "logging_len") => Some(host_int("spectra.api.middleware.logging_len")),
+        ("middleware", "logging_line") => Some(host_string("spectra.api.middleware.logging_line")),
         ("middleware", "logging_request_id") => {
             Some(host_string("spectra.api.middleware.logging_request_id"))
         }
@@ -464,24 +421,22 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("middleware", "register_api_key") => {
             Some(host_int("spectra.api.middleware.register_api_key"))
         }
-        ("middleware", "api_key_add") => {
-            Some(host_bool("spectra.api.middleware.api_key_add"))
-        }
+        ("middleware", "api_key_add") => Some(host_bool("spectra.api.middleware.api_key_add")),
         ("middleware", "api_key_revoke") => {
             Some(host_bool("spectra.api.middleware.api_key_revoke"))
         }
-        ("middleware", "register_security_headers") => Some(host_int(
-            "spectra.api.middleware.register_security_headers",
-        )),
+        ("middleware", "register_security_headers") => {
+            Some(host_int("spectra.api.middleware.register_security_headers"))
+        }
         ("middleware", "register_compression") => {
             Some(host_int("spectra.api.middleware.register_compression"))
         }
         ("middleware", "security_headers_configure") => Some(host_bool(
             "spectra.api.middleware.security_headers_configure",
         )),
-        ("middleware", "security_headers_route") => Some(host_bool(
-            "spectra.api.middleware.security_headers_route",
-        )),
+        ("middleware", "security_headers_route") => {
+            Some(host_bool("spectra.api.middleware.security_headers_route"))
+        }
         ("middleware", "use_sync") => Some(host_int("spectra.api.middleware.use_sync")),
         ("middleware", "use_async") => Some(host_int("spectra.api.middleware.use_async")),
         ("middleware", "execute_sync") => Some(host_int("spectra.api.middleware.execute_sync")),
@@ -498,19 +453,11 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("validation", "max_length") => Some(host_int("spectra.api.validation.max_length")),
         ("validation", "range") => Some(host_int("spectra.api.validation.range")),
         ("validation", "regex") => Some(host_int("spectra.api.validation.regex")),
-        ("validation", "validate_json") => {
-            Some(host_int("spectra.api.validation.validate_json"))
-        }
-        ("validation", "validate_form") => {
-            Some(host_int("spectra.api.validation.validate_form"))
-        }
+        ("validation", "validate_json") => Some(host_int("spectra.api.validation.validate_json")),
+        ("validation", "validate_form") => Some(host_int("spectra.api.validation.validate_form")),
         ("validation", "result_ok") => Some(host_bool("spectra.api.validation.result_ok")),
-        ("validation", "result_count") => {
-            Some(host_int("spectra.api.validation.result_count"))
-        }
-        ("validation", "result_field") => {
-            Some(host_string("spectra.api.validation.result_field"))
-        }
+        ("validation", "result_count") => Some(host_int("spectra.api.validation.result_count")),
+        ("validation", "result_field") => Some(host_string("spectra.api.validation.result_field")),
         ("validation", "result_code") => Some(host_string("spectra.api.validation.result_code")),
         ("validation", "result_message") => {
             Some(host_string("spectra.api.validation.result_message"))
@@ -526,14 +473,22 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
             Some(host_string("spectra.api.validation.error_message"))
         }
         ("trace", "config_new") => Some(host_int("spectra.api.trace.config_new")),
-        ("trace", "config_set_sample_rate") => Some(host_bool("spectra.api.trace.config_set_sample_rate")),
-        ("trace", "config_set_batch_size") => Some(host_bool("spectra.api.trace.config_set_batch_size")),
+        ("trace", "config_set_sample_rate") => {
+            Some(host_bool("spectra.api.trace.config_set_sample_rate"))
+        }
+        ("trace", "config_set_batch_size") => {
+            Some(host_bool("spectra.api.trace.config_set_batch_size"))
+        }
         ("trace", "config_start") => Some(host_bool("spectra.api.trace.config_start")),
         ("trace", "config_shutdown") => Some(host_bool("spectra.api.trace.config_shutdown")),
         ("trace", "span_start") => Some(host_int("spectra.api.trace.span_start")),
         ("trace", "span_set_attribute") => Some(host_bool("spectra.api.trace.span_set_attribute")),
-        ("trace", "span_set_attribute_int") => Some(host_bool("spectra.api.trace.span_set_attribute_int")),
-        ("trace", "span_set_attribute_bool") => Some(host_bool("spectra.api.trace.span_set_attribute_bool")),
+        ("trace", "span_set_attribute_int") => {
+            Some(host_bool("spectra.api.trace.span_set_attribute_int"))
+        }
+        ("trace", "span_set_attribute_bool") => {
+            Some(host_bool("spectra.api.trace.span_set_attribute_bool"))
+        }
         ("trace", "span_set_status") => Some(host_bool("spectra.api.trace.span_set_status")),
         ("trace", "span_end") => Some(host_bool("spectra.api.trace.span_end")),
         ("trace", "current") => Some(host_int("spectra.api.trace.current")),
@@ -547,7 +502,9 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("db.sqlite", "open") => Some(host_int("spectra.api.db.sqlite.open")),
         ("db.sqlite", "close") => Some(host_bool("spectra.api.db.sqlite.close")),
         ("db.sqlite", "prepare") => Some(host_int("spectra.api.db.sqlite.prepare")),
-        ("db.sqlite", "execute_async") => Some(host_task_int("spectra.api.db.sqlite.execute_async")),
+        ("db.sqlite", "execute_async") => {
+            Some(host_task_int("spectra.api.db.sqlite.execute_async"))
+        }
         ("db.sqlite", "bind_null") => Some(host_bool("spectra.api.db.sqlite.bind_null")),
         ("db.sqlite", "bind_int") => Some(host_bool("spectra.api.db.sqlite.bind_int")),
         ("db.sqlite", "bind_float") => Some(host_bool("spectra.api.db.sqlite.bind_float")),
@@ -564,8 +521,12 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("db.sqlite", "begin") => Some(host_bool("spectra.api.db.sqlite.begin")),
         ("db.sqlite", "commit") => Some(host_bool("spectra.api.db.sqlite.commit")),
         ("db.sqlite", "rollback") => Some(host_bool("spectra.api.db.sqlite.rollback")),
-        ("db.sqlite", "last_error_code") => Some(host_string("spectra.api.db.sqlite.last_error_code")),
-        ("db.sqlite", "last_error_message") => Some(host_string("spectra.api.db.sqlite.last_error_message")),
+        ("db.sqlite", "last_error_code") => {
+            Some(host_string("spectra.api.db.sqlite.last_error_code"))
+        }
+        ("db.sqlite", "last_error_message") => {
+            Some(host_string("spectra.api.db.sqlite.last_error_message"))
+        }
         ("db.postgres", "open") => Some(host_int("spectra.api.db.postgres.open")),
         ("db.postgres", "close") => Some(host_bool("spectra.api.db.postgres.close")),
         ("db.postgres", "prepare") => Some(host_int("spectra.api.db.postgres.prepare")),
@@ -583,23 +544,49 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("db.postgres", "begin") => Some(host_bool("spectra.api.db.postgres.begin")),
         ("db.postgres", "commit") => Some(host_bool("spectra.api.db.postgres.commit")),
         ("db.postgres", "rollback") => Some(host_bool("spectra.api.db.postgres.rollback")),
-        ("db.postgres", "execute_async") => Some(host_task_int("spectra.api.db.postgres.execute_async")),
+        ("db.postgres", "execute_async") => {
+            Some(host_task_int("spectra.api.db.postgres.execute_async"))
+        }
         ("db.postgres", "step_async") => Some(host_task_int("spectra.api.db.postgres.step_async")),
         ("db.postgres", "savepoint") => Some(host_bool("spectra.api.db.postgres.savepoint")),
         ("db.postgres", "rollback_to") => Some(host_bool("spectra.api.db.postgres.rollback_to")),
-        ("db.postgres", "release_savepoint") => Some(host_bool("spectra.api.db.postgres.release_savepoint")),
-        ("db.postgres", "copy_in_text_async") => Some(host_task_int("spectra.api.db.postgres.copy_in_text_async")),
-        ("db.postgres", "copy_out_text_async") => Some(host_task_string("spectra.api.db.postgres.copy_out_text_async")),
+        ("db.postgres", "release_savepoint") => {
+            Some(host_bool("spectra.api.db.postgres.release_savepoint"))
+        }
+        ("db.postgres", "copy_in_text_async") => {
+            Some(host_task_int("spectra.api.db.postgres.copy_in_text_async"))
+        }
+        ("db.postgres", "copy_out_text_async") => Some(host_task_string(
+            "spectra.api.db.postgres.copy_out_text_async",
+        )),
         ("db.postgres", "listen") => Some(host_int("spectra.api.db.postgres.listen")),
-        ("db.postgres", "notify_async") => Some(host_task_bool("spectra.api.db.postgres.notify_async")),
-        ("db.postgres", "notification_next_async") => Some(host_task_int("spectra.api.db.postgres.notification_next_async")),
-        ("db.postgres", "notification_channel") => Some(host_string("spectra.api.db.postgres.notification_channel")),
-        ("db.postgres", "notification_payload") => Some(host_string("spectra.api.db.postgres.notification_payload")),
-        ("db.postgres", "notification_process_id") => Some(host_int("spectra.api.db.postgres.notification_process_id")),
-        ("db.postgres", "notification_free") => Some(host_bool("spectra.api.db.postgres.notification_free")),
-        ("db.postgres", "notification_close") => Some(host_bool("spectra.api.db.postgres.notification_close")),
-        ("db.postgres", "last_error_code") => Some(host_string("spectra.api.db.postgres.last_error_code")),
-        ("db.postgres", "last_error_message") => Some(host_string("spectra.api.db.postgres.last_error_message")),
+        ("db.postgres", "notify_async") => {
+            Some(host_task_bool("spectra.api.db.postgres.notify_async"))
+        }
+        ("db.postgres", "notification_next_async") => Some(host_task_int(
+            "spectra.api.db.postgres.notification_next_async",
+        )),
+        ("db.postgres", "notification_channel") => {
+            Some(host_string("spectra.api.db.postgres.notification_channel"))
+        }
+        ("db.postgres", "notification_payload") => {
+            Some(host_string("spectra.api.db.postgres.notification_payload"))
+        }
+        ("db.postgres", "notification_process_id") => {
+            Some(host_int("spectra.api.db.postgres.notification_process_id"))
+        }
+        ("db.postgres", "notification_free") => {
+            Some(host_bool("spectra.api.db.postgres.notification_free"))
+        }
+        ("db.postgres", "notification_close") => {
+            Some(host_bool("spectra.api.db.postgres.notification_close"))
+        }
+        ("db.postgres", "last_error_code") => {
+            Some(host_string("spectra.api.db.postgres.last_error_code"))
+        }
+        ("db.postgres", "last_error_message") => {
+            Some(host_string("spectra.api.db.postgres.last_error_message"))
+        }
         ("db.redis", "open") => Some(host_int("spectra.api.db.redis.open")),
         ("db.redis", "open_async") => Some(host_task_int("spectra.api.db.redis.open_async")),
         ("db.redis", "close") => Some(host_bool("spectra.api.db.redis.close")),
@@ -616,15 +603,17 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("db.redis", "incr_async") => Some(host_task_int("spectra.api.db.redis.incr_async")),
         ("db.redis", "expire") => Some(host_bool("spectra.api.db.redis.expire")),
         ("db.redis", "expire_async") => Some(host_task_bool("spectra.api.db.redis.expire_async")),
-        ("db.redis", "last_error_code") => Some(host_string("spectra.api.db.redis.last_error_code")),
-        ("db.redis", "last_error_message") => Some(host_string("spectra.api.db.redis.last_error_message")),
+        ("db.redis", "last_error_code") => {
+            Some(host_string("spectra.api.db.redis.last_error_code"))
+        }
+        ("db.redis", "last_error_message") => {
+            Some(host_string("spectra.api.db.redis.last_error_message"))
+        }
         ("db.pool", "sqlite_open") => Some(host_int("spectra.api.db.pool.sqlite_open")),
         ("db.pool", "postgres_open") => Some(host_int("spectra.api.db.pool.postgres_open")),
         ("db.pool", "redis_open") => Some(host_int("spectra.api.db.pool.redis_open")),
         ("db.pool", "close") => Some(host_bool("spectra.api.db.pool.close")),
-        ("db.pool", "with_connection") => {
-            Some(host_int("spectra.api.db.pool.with_connection"))
-        }
+        ("db.pool", "with_connection") => Some(host_int("spectra.api.db.pool.with_connection")),
         ("db.pool", "postgres_with_connection") => {
             Some(host_int("spectra.api.db.pool.postgres_with_connection"))
         }
@@ -657,24 +646,42 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("http3", "client_connect") => Some(host_task_int("spectra.api.http3.client_connect")),
         ("http3", "client_shutdown") => Some(host_task_int("spectra.api.http3.client_shutdown")),
         ("http3", "client_request_new") => Some(host_int("spectra.api.http3.client_request_new")),
-        ("http3", "client_request_header") => Some(host_bool("spectra.api.http3.client_request_header")),
-        ("http3", "client_request_open") => Some(host_task_int("spectra.api.http3.client_request_open")),
-        ("http3", "client_request_send_body") => Some(host_task_int("spectra.api.http3.client_request_send_body")),
-        ("http3", "client_request_send_trailers") => Some(host_task_int("spectra.api.http3.client_request_send_trailers")),
-        ("http3", "client_request_finish") => Some(host_task_int("spectra.api.http3.client_request_finish")),
-        ("http3", "client_request_receive_response") => Some(host_task_int("spectra.api.http3.client_request_receive_response")),
-        ("http3", "client_request_cancel") => Some(host_bool("spectra.api.http3.client_request_cancel")),
+        ("http3", "client_request_header") => {
+            Some(host_bool("spectra.api.http3.client_request_header"))
+        }
+        ("http3", "client_request_open") => {
+            Some(host_task_int("spectra.api.http3.client_request_open"))
+        }
+        ("http3", "client_request_send_body") => {
+            Some(host_task_int("spectra.api.http3.client_request_send_body"))
+        }
+        ("http3", "client_request_send_trailers") => Some(host_task_int(
+            "spectra.api.http3.client_request_send_trailers",
+        )),
+        ("http3", "client_request_finish") => {
+            Some(host_task_int("spectra.api.http3.client_request_finish"))
+        }
+        ("http3", "client_request_receive_response") => Some(host_task_int(
+            "spectra.api.http3.client_request_receive_response",
+        )),
+        ("http3", "client_request_cancel") => {
+            Some(host_bool("spectra.api.http3.client_request_cancel"))
+        }
         ("http3", "response_status") => Some(host_int("spectra.api.http3.response_status")),
         ("http3", "response_header") => Some(host_string("spectra.api.http3.response_header")),
         ("http3", "response_trailer") => Some(host_string("spectra.api.http3.response_trailer")),
-        ("http3", "response_body_base64") => Some(host_string("spectra.api.http3.response_body_base64")),
+        ("http3", "response_body_base64") => {
+            Some(host_string("spectra.api.http3.response_body_base64"))
+        }
         ("http3", "response_body_len") => Some(host_int("spectra.api.http3.response_body_len")),
         ("http3", "task_result") => Some(host_int("spectra.api.http3.task_result")),
         ("http3", "task_cancel") => Some(host_bool("spectra.api.http3.task_cancel")),
         ("http3", "result_ok") => Some(host_bool("spectra.api.http3.result_ok")),
         ("http3", "result_value") => Some(host_int("spectra.api.http3.result_value")),
         ("http3", "result_error_code") => Some(host_int("spectra.api.http3.result_error_code")),
-        ("http3", "result_error_message") => Some(host_string("spectra.api.http3.result_error_message")),
+        ("http3", "result_error_message") => {
+            Some(host_string("spectra.api.http3.result_error_message"))
+        }
         ("http3", "handle_drop") => Some(host_bool("spectra.api.http3.handle_drop")),
         ("grpc", "message_from_base64") => Some(host_int("spectra.api.grpc.message_from_base64")),
         ("grpc", "message_to_base64") => Some(host_string("spectra.api.grpc.message_to_base64")),
@@ -689,8 +696,12 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("grpc", "status_new") => Some(host_int("spectra.api.grpc.status_new")),
         ("grpc", "status_code") => Some(host_int("spectra.api.grpc.status_code")),
         ("grpc", "status_message") => Some(host_string("spectra.api.grpc.status_message")),
-        ("grpc", "status_details_base64") => Some(host_string("spectra.api.grpc.status_details_base64")),
-        ("grpc", "status_set_details_base64") => Some(host_bool("spectra.api.grpc.status_set_details_base64")),
+        ("grpc", "status_details_base64") => {
+            Some(host_string("spectra.api.grpc.status_details_base64"))
+        }
+        ("grpc", "status_set_details_base64") => {
+            Some(host_bool("spectra.api.grpc.status_set_details_base64"))
+        }
         ("grpc", "status_free") => Some(host_bool("spectra.api.grpc.status_free")),
         ("grpc", "response_message") => Some(host_int("spectra.api.grpc.response_message")),
         ("grpc", "response_status") => Some(host_int("spectra.api.grpc.response_status")),
@@ -698,14 +709,24 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("grpc", "response_free") => Some(host_bool("spectra.api.grpc.response_free")),
         ("grpc", "error_code") => Some(host_int("spectra.api.grpc.error_code")),
         ("grpc", "error_message") => Some(host_string("spectra.api.grpc.error_message")),
-        ("grpc", "error_details_base64") => Some(host_string("spectra.api.grpc.error_details_base64")),
+        ("grpc", "error_details_base64") => {
+            Some(host_string("spectra.api.grpc.error_details_base64"))
+        }
         ("grpc", "error_free") => Some(host_bool("spectra.api.grpc.error_free")),
         ("grpc", "client_connect") => Some(host_task_int("spectra.api.grpc.client_connect")),
-        ("grpc", "client_connect_tls") => Some(host_task_int("spectra.api.grpc.client_connect_tls")),
+        ("grpc", "client_connect_tls") => {
+            Some(host_task_int("spectra.api.grpc.client_connect_tls"))
+        }
         ("grpc", "client_unary") => Some(host_task_int("spectra.api.grpc.client_unary")),
-        ("grpc", "client_client_streaming") => Some(host_task_int("spectra.api.grpc.client_client_streaming")),
-        ("grpc", "client_server_streaming") => Some(host_task_int("spectra.api.grpc.client_server_streaming")),
-        ("grpc", "client_bidi_streaming") => Some(host_task_int("spectra.api.grpc.client_bidi_streaming")),
+        ("grpc", "client_client_streaming") => {
+            Some(host_task_int("spectra.api.grpc.client_client_streaming"))
+        }
+        ("grpc", "client_server_streaming") => {
+            Some(host_task_int("spectra.api.grpc.client_server_streaming"))
+        }
+        ("grpc", "client_bidi_streaming") => {
+            Some(host_task_int("spectra.api.grpc.client_bidi_streaming"))
+        }
         ("grpc", "stream_send") => Some(host_task_int("spectra.api.grpc.stream_send")),
         ("grpc", "stream_recv") => Some(host_task_int("spectra.api.grpc.stream_recv")),
         ("grpc", "stream_finish") => Some(host_task_int("spectra.api.grpc.stream_finish")),
@@ -722,15 +743,33 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         }
         ("grpc", "service_free") => Some(host_bool("spectra.api.grpc.service_free")),
         ("graphql", "schema_new") => Some(host_int("spectra.api.graphql.schema_new")),
-        ("graphql", "schema_set_workers") => Some(host_bool("spectra.api.graphql.schema_set_workers")),
-        ("graphql", "schema_set_subscription_capacity") => Some(host_bool("spectra.api.graphql.schema_set_subscription_capacity")),
-        ("graphql", "schema_set_max_depth") => Some(host_bool("spectra.api.graphql.schema_set_max_depth")),
-        ("graphql", "schema_set_max_complexity") => Some(host_bool("spectra.api.graphql.schema_set_max_complexity")),
-        ("graphql", "schema_set_introspection") => Some(host_bool("spectra.api.graphql.schema_set_introspection")),
-        ("graphql", "schema_field_json") => Some(host_bool("spectra.api.graphql.schema_field_json")),
-        ("graphql", "schema_field_callback") => Some(host_bool("spectra.api.graphql.schema_field_callback")),
-        ("graphql", "schema_subscription_json") => Some(host_bool("spectra.api.graphql.schema_subscription_json")),
-        ("graphql", "schema_subscription_callback") => Some(host_bool("spectra.api.graphql.schema_subscription_callback")),
+        ("graphql", "schema_set_workers") => {
+            Some(host_bool("spectra.api.graphql.schema_set_workers"))
+        }
+        ("graphql", "schema_set_subscription_capacity") => Some(host_bool(
+            "spectra.api.graphql.schema_set_subscription_capacity",
+        )),
+        ("graphql", "schema_set_max_depth") => {
+            Some(host_bool("spectra.api.graphql.schema_set_max_depth"))
+        }
+        ("graphql", "schema_set_max_complexity") => {
+            Some(host_bool("spectra.api.graphql.schema_set_max_complexity"))
+        }
+        ("graphql", "schema_set_introspection") => {
+            Some(host_bool("spectra.api.graphql.schema_set_introspection"))
+        }
+        ("graphql", "schema_field_json") => {
+            Some(host_bool("spectra.api.graphql.schema_field_json"))
+        }
+        ("graphql", "schema_field_callback") => {
+            Some(host_bool("spectra.api.graphql.schema_field_callback"))
+        }
+        ("graphql", "schema_subscription_json") => {
+            Some(host_bool("spectra.api.graphql.schema_subscription_json"))
+        }
+        ("graphql", "schema_subscription_callback") => Some(host_bool(
+            "spectra.api.graphql.schema_subscription_callback",
+        )),
         ("graphql", "schema_finish") => Some(host_int("spectra.api.graphql.schema_finish")),
         ("graphql", "schema_drop") => Some(host_bool("spectra.api.graphql.schema_drop")),
         ("graphql", "schema_sdl") => Some(host_string("spectra.api.graphql.schema_sdl")),
@@ -740,16 +779,30 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
         ("graphql", "response_json") => Some(host_string("spectra.api.graphql.response_json")),
         ("graphql", "response_status") => Some(host_int("spectra.api.graphql.response_status")),
         ("graphql", "response_is_ok") => Some(host_bool("spectra.api.graphql.response_is_ok")),
-        ("graphql", "response_errors_json") => Some(host_string("spectra.api.graphql.response_errors_json")),
-        ("graphql", "response_data_json") => Some(host_string("spectra.api.graphql.response_data_json")),
+        ("graphql", "response_errors_json") => {
+            Some(host_string("spectra.api.graphql.response_errors_json"))
+        }
+        ("graphql", "response_data_json") => {
+            Some(host_string("spectra.api.graphql.response_data_json"))
+        }
         ("graphql", "response_drop") => Some(host_bool("spectra.api.graphql.response_drop")),
         ("graphql", "subscribe") => Some(host_int("spectra.api.graphql.subscribe")),
         ("graphql", "subscription_next") => Some(host_int("spectra.api.graphql.subscription_next")),
-        ("graphql", "subscription_pending") => Some(host_int("spectra.api.graphql.subscription_pending")),
-        ("graphql", "subscription_capacity") => Some(host_int("spectra.api.graphql.subscription_capacity")),
-        ("graphql", "subscription_is_cancelled") => Some(host_bool("spectra.api.graphql.subscription_is_cancelled")),
-        ("graphql", "subscription_cancel") => Some(host_bool("spectra.api.graphql.subscription_cancel")),
-        ("graphql", "subscription_drop") => Some(host_bool("spectra.api.graphql.subscription_drop")),
+        ("graphql", "subscription_pending") => {
+            Some(host_int("spectra.api.graphql.subscription_pending"))
+        }
+        ("graphql", "subscription_capacity") => {
+            Some(host_int("spectra.api.graphql.subscription_capacity"))
+        }
+        ("graphql", "subscription_is_cancelled") => {
+            Some(host_bool("spectra.api.graphql.subscription_is_cancelled"))
+        }
+        ("graphql", "subscription_cancel") => {
+            Some(host_bool("spectra.api.graphql.subscription_cancel"))
+        }
+        ("graphql", "subscription_drop") => {
+            Some(host_bool("spectra.api.graphql.subscription_drop"))
+        }
         _ => None,
     }
 }
@@ -760,4 +813,3 @@ pub(crate) fn lookup_std_api_host_function(module: &str, function: &str) -> Opti
 pub fn std_api_host_call_target(module: &str, function: &str) -> Option<&'static str> {
     lookup_std_api_host_function(module, function).map(|d| d.runtime_name)
 }
-

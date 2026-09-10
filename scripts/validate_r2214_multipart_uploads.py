@@ -78,7 +78,7 @@ def validate_implementation() -> None:
     )
 
     lib = read("packages/spectra-api/src/lib.rs")
-    runtime = read("runtime/src/api/mod.rs")
+    runtime = read("packages/spectra-api/src/host_calls.rs")
     midend = read("midend/src/lowering.rs")
     builtins = read("compiler/src/semantic/builtin_modules.rs")
     semantic = read("compiler/src/semantic/mod.rs")

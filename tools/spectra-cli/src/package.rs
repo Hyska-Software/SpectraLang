@@ -457,11 +457,7 @@ enum DependencySpec {
         tag: Option<String>,
         rev: Option<String>,
         branch: Option<String>,
-        #[serde(
-            rename = "allow-floating-git",
-            alias = "allow_floating_git",
-            default
-        )]
+        #[serde(rename = "allow-floating-git", alias = "allow_floating_git", default)]
         allow_floating_git: Option<bool>,
         checksum: Option<String>,
     },

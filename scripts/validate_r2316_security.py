@@ -9,7 +9,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_HOST_CALL_COUNT = 555
-RUNTIME_REQUIRED_HOST_CALL_COUNT = 439
 
 
 def cargo_command() -> str:
@@ -95,7 +94,7 @@ def validate_implementation() -> None:
     require("ApiSsrfPolicy = 78" in handles, "SSRF handle kind is missing")
 
     host_calls = read("packages/spectra-api/src/host_calls.rs")
-    runtime_api = read("runtime/src/api/mod.rs")
+    runtime_api = read("packages/spectra-api/src/host_calls.rs")
     names = [
         "spectra.api.server.set_max_body_bytes",
         "spectra.api.server.set_read_timeout",

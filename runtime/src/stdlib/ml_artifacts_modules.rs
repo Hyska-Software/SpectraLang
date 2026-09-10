@@ -14,7 +14,10 @@ pub(crate) extern "C" fn std_ml_module_new(ctx: *mut SpectraHostCallContext) -> 
     }
 }
 
-pub(crate) fn artifact_tensor_payload(handle: usize, name: &str) -> Option<crate::artifact::TensorPayload> {
+pub(crate) fn artifact_tensor_payload(
+    handle: usize,
+    name: &str,
+) -> Option<crate::artifact::TensorPayload> {
     with_tensor_registry(|registry| {
         let tensor = registry.get(handle)?;
         if tensor.device != TensorDevice::Cpu || tensor.shape.is_empty() {
@@ -43,7 +46,9 @@ pub(crate) fn artifact_tensor_payload(handle: usize, name: &str) -> Option<crate
     })
 }
 
-pub(crate) fn artifact_tensor_from_payload(payload: &crate::artifact::TensorPayload) -> Result<usize, i32> {
+pub(crate) fn artifact_tensor_from_payload(
+    payload: &crate::artifact::TensorPayload,
+) -> Result<usize, i32> {
     let values = payload
         .bytes
         .chunks_exact(8)
@@ -64,7 +69,9 @@ pub(crate) fn artifact_tensor_from_payload(payload: &crate::artifact::TensorPayl
     tensor_alloc(dtype, payload.shape.clone(), values)
 }
 
-pub(crate) fn artifact_data_for_save(artifact: &MlArtifact) -> Option<crate::artifact::ArtifactData> {
+pub(crate) fn artifact_data_for_save(
+    artifact: &MlArtifact,
+) -> Option<crate::artifact::ArtifactData> {
     let tensors = artifact
         .tensors
         .iter()
@@ -292,4 +299,3 @@ pub(crate) extern "C" fn std_ml_artifact_free(ctx: *mut SpectraHostCallContext) 
         tensor_optional_result(ctx_ref, 0)
     }
 }
-

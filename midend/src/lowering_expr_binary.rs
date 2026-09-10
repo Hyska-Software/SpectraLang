@@ -1,7 +1,11 @@
 use super::*;
 
 impl ASTLowering {
-    pub(crate) fn lower_expression_binary(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_binary(
+        &mut self,
+        expr: &Expression,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         match &expr.kind {
             ExpressionKind::Binary {
                 left,
@@ -19,7 +23,8 @@ impl ASTLowering {
                         let rhs = self.lower_expression(right, ir_func);
                         let fn_name = format!("{}_{}", sn, method_name);
                         return self.require_value(
-                            self.builder.build_call(ir_func, fn_name, vec![lhs, rhs], true),
+                            self.builder
+                                .build_call(ir_func, fn_name, vec![lhs, rhs], true),
                             "operator overload did not produce its declared result",
                         );
                     }
@@ -63,10 +68,30 @@ impl ASTLowering {
                                 IRIntWidth::I32 => 32,
                                 IRIntWidth::I64 | IRIntWidth::Isize | IRIntWidth::Usize => 64,
                             };
-                            let lhs_slot = self.builder.build_cast(ir_func, lhs, left_ir_type.clone(), IRType::Int);
-                            let rhs_slot = self.builder.build_cast(ir_func, rhs, right_ir_type.clone(), IRType::Int);
-                            let host = format!("spectra.std.numeric.checked_{op_name}_{}{}", if *signed { "i" } else { "u" }, bits);
-                            if let Some(value) = self.builder.build_typed_host_call(ir_func, host, vec![lhs_slot, rhs_slot], left_ir_type.clone(), true) {
+                            let lhs_slot = self.builder.build_cast(
+                                ir_func,
+                                lhs,
+                                left_ir_type.clone(),
+                                IRType::Int,
+                            );
+                            let rhs_slot = self.builder.build_cast(
+                                ir_func,
+                                rhs,
+                                right_ir_type.clone(),
+                                IRType::Int,
+                            );
+                            let host = format!(
+                                "spectra.std.numeric.checked_{op_name}_{}{}",
+                                if *signed { "i" } else { "u" },
+                                bits
+                            );
+                            if let Some(value) = self.builder.build_typed_host_call(
+                                ir_func,
+                                host,
+                                vec![lhs_slot, rhs_slot],
+                                left_ir_type.clone(),
+                                true,
+                            ) {
                                 return value;
                             }
                         }

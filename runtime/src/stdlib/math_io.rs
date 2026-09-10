@@ -414,10 +414,9 @@ pub(crate) extern "C" fn std_io_print(ctx: *mut SpectraHostCallContext) -> i32 {
         let values_count = args_len / 2;
 
         for i in 0..values_count {
-            if i > 0
-                && write!(stdout, " ").is_err() {
-                    return HOST_STATUS_INTERNAL_ERROR;
-                }
+            if i > 0 && write!(stdout, " ").is_err() {
+                return HOST_STATUS_INTERNAL_ERROR;
+            }
             let tag = args[i * 2];
             let value = args[i * 2 + 1];
             let ok = match tag {
@@ -501,10 +500,9 @@ pub(crate) extern "C" fn std_io_eprint(ctx: *mut SpectraHostCallContext) -> i32 
         let values_count = args_len / 2;
 
         for i in 0..values_count {
-            if i > 0
-                && write!(stderr, " ").is_err() {
-                    return HOST_STATUS_INTERNAL_ERROR;
-                }
+            if i > 0 && write!(stderr, " ").is_err() {
+                return HOST_STATUS_INTERNAL_ERROR;
+            }
             let tag = args[i * 2];
             let value = args[i * 2 + 1];
             let ok = match tag {
@@ -617,4 +615,3 @@ pub(crate) extern "C" fn std_io_flush(ctx: *mut SpectraHostCallContext) -> i32 {
 
     HOST_STATUS_SUCCESS
 }
-

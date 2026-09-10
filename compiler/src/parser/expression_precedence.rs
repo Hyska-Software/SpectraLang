@@ -596,7 +596,8 @@ impl Parser {
         ) {
             let _as_span = self.current().span;
             self.advance(); // consume 'as'
-            let mode = if matches!(&self.current().kind, crate::token::TokenKind::Identifier(name) if name == "wrapping") {
+            let mode = if matches!(&self.current().kind, crate::token::TokenKind::Identifier(name) if name == "wrapping")
+            {
                 self.advance();
                 crate::ast::CastMode::Wrapping
             } else {
@@ -970,5 +971,4 @@ impl Parser {
             }
         }
     }
-
 }

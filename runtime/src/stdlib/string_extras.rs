@@ -24,14 +24,13 @@ pub(crate) extern "C" fn std_string_substring(ctx: *mut SpectraHostCallContext) 
                 let len = s.len() as i64;
                 let s_start = start.clamp(0, len) as usize;
                 let s_end = end.clamp(0, len) as usize;
-                let slice = if s_start <= s_end
-                    && s.is_char_boundary(s_start)
-                    && s.is_char_boundary(s_end)
-                {
-                    &s[s_start..s_end]
-                } else {
-                    ""
-                };
+                let slice =
+                    if s_start <= s_end && s.is_char_boundary(s_start) && s.is_char_boundary(s_end)
+                    {
+                        &s[s_start..s_end]
+                    } else {
+                        ""
+                    };
                 alloc_spectra_string(slice)
             }
             None => alloc_spectra_string(""),
@@ -200,4 +199,3 @@ pub(crate) extern "C" fn std_string_count_occurrences(ctx: *mut SpectraHostCallC
     }
     HOST_STATUS_SUCCESS
 }
-

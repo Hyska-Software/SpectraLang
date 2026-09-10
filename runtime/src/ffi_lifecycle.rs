@@ -497,7 +497,7 @@ pub unsafe extern "C" fn spectra_rt_invoke_closure(
                 let a1 = if args.is_null() { 0 } else { *args.add(1) };
                 Ok(f(fn_ptr, a0, a1))
             }
-            _ => return Err(HOST_STATUS_INTERNAL_ERROR),
+            _ => Err(HOST_STATUS_INTERNAL_ERROR),
         }
     }));
     // Boundary catch_unwind: a panicking JIT closure (e.g. one dispatched on

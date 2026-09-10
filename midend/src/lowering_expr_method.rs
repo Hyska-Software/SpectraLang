@@ -1,7 +1,11 @@
 use super::*;
 
 impl ASTLowering {
-    pub(crate) fn lower_expression_method(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_method(
+        &mut self,
+        expr: &Expression,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         match &expr.kind {
             ExpressionKind::MethodCall {
                 object,
@@ -127,7 +131,8 @@ impl ASTLowering {
 
                 // 5. Fazer a chamada de função
                 self.require_value(
-                    self.builder.build_call(ir_func, function_name, call_args, true),
+                    self.builder
+                        .build_call(ir_func, function_name, call_args, true),
                     "method call did not produce its declared result",
                 )
             }

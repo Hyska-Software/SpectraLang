@@ -84,7 +84,7 @@ impl<'a> crate::lint::LintRunner<'a> {
     /// - int → int where the destination is strictly narrower than the source;
     /// - float → float where the destination is strictly narrower;
     /// - any float → any int (fractional truncation and range loss).
-    /// An explicit `as wrapping` cast records intent and suppresses the warning.
+    ///   An explicit `as wrapping` cast records intent and suppresses the warning.
     pub(crate) fn check_narrowing_cast(
         &mut self,
         expression: &Expression,
@@ -92,7 +92,10 @@ impl<'a> crate::lint::LintRunner<'a> {
         target_type: &TypeAnnotation,
         mode: CastMode,
     ) {
-        if !self.options.is_enabled(crate::lint::LintRule::NarrowingCast) {
+        if !self
+            .options
+            .is_enabled(crate::lint::LintRule::NarrowingCast)
+        {
             return;
         }
         // Explicit wrapping casts are intentional truncations.
@@ -113,13 +116,14 @@ impl<'a> crate::lint::LintRunner<'a> {
             // Any float → int loses the fractional part and may overflow.
             (ExactNum::Float { .. }, ExactNum::Int { .. }) => true,
             (
-                ExactNum::Int { bits: from_bits, .. },
+                ExactNum::Int {
+                    bits: from_bits, ..
+                },
                 ExactNum::Int { bits: to_bits, .. },
             ) => to_bits < from_bits,
-            (
-                ExactNum::Float { bits: from_bits },
-                ExactNum::Float { bits: to_bits },
-            ) => to_bits < from_bits,
+            (ExactNum::Float { bits: from_bits }, ExactNum::Float { bits: to_bits }) => {
+                to_bits < from_bits
+            }
             // Int → float never narrows under this policy.
             (ExactNum::Int { .. }, ExactNum::Float { .. }) => false,
         };
@@ -171,7 +175,6 @@ mod narrowing_cast_tests {
     use crate::lexer::Lexer;
     use crate::lint::{lint_module, LintOptions, LintRule};
     use crate::parser::Parser;
-    
 
     pub(crate) fn parse(source: &str) -> crate::ast::Module {
         let tokens = Lexer::new(source)
@@ -299,10 +302,7 @@ mod narrowing_cast_tests {
             "narrowing-cast".parse::<LintRule>(),
             Ok(LintRule::NarrowingCast)
         );
-        assert_eq!(
-            LintRule::NarrowingCast.stable_error_code(),
-            Some("E035")
-        );
+        assert_eq!(LintRule::NarrowingCast.stable_error_code(), Some("E035"));
     }
 
     #[test]

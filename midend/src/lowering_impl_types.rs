@@ -54,10 +54,8 @@ impl ASTLowering {
             .iter()
             .map(|ann| self.lower_type_annotation(ann))
             .collect();
-        self.instantiated_structs.insert(
-            mangled.clone(),
-            (base_name.to_string(), concrete_ir_types),
-        );
+        self.instantiated_structs
+            .insert(mangled.clone(), (base_name.to_string(), concrete_ir_types));
 
         let fields = self
             .struct_definitions
@@ -88,18 +86,20 @@ impl ASTLowering {
         let struct_ptr = self.builder.build_alloca(ir_func, struct_type);
         let layout = layout::layout_of(field_defs.iter().map(|(_, ty)| ty));
         for (field_idx, (_, field_type)) in field_defs.iter().enumerate() {
-            let field_ptr = self.builder.build_field_ptr(
-                ir_func,
-                struct_ptr,
-                layout.offsets[field_idx] as i64,
-            );
+            let field_ptr =
+                self.builder
+                    .build_field_ptr(ir_func, struct_ptr, layout.offsets[field_idx] as i64);
             let value = self.lower_default_value_for_type(field_type, ir_func);
             self.builder.build_store(ir_func, field_ptr, value);
         }
         struct_ptr
     }
 
-    pub(crate) fn lower_default_value_for_type(&mut self, ty: &IRType, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_default_value_for_type(
+        &mut self,
+        ty: &IRType,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         match ty {
             IRType::Float => self.builder.build_const_float(ir_func, 0.0),
             IRType::Bool => self.builder.build_const_bool(ir_func, false),
@@ -107,17 +107,13 @@ impl ASTLowering {
                 self.builder
                     .build_const_float_typed(ir_func, 0.0, ty.clone())
             }
-            IRType::ExactInt { .. } => {
-                self.builder.build_const_int_typed(ir_func, 0, ty.clone())
-            }
-            IRType::Char => self
-                .builder
-                .build_const_int_typed(ir_func, 0, IRType::Char),
+            IRType::ExactInt { .. } => self.builder.build_const_int_typed(ir_func, 0, ty.clone()),
+            IRType::Char => self.builder.build_const_int_typed(ir_func, 0, IRType::Char),
             IRType::String => self.lower_string_literal("", ir_func),
             IRType::Struct { name, .. } => self.lower_default_struct_value(name, &[], ir_func),
-            IRType::Unknown => self.invalid_value(
-                "cannot synthesize a default value for an unresolved IR type",
-            ),
+            IRType::Unknown => {
+                self.invalid_value("cannot synthesize a default value for an unresolved IR type")
+            }
             IRType::Int => self.builder.build_const_int(ir_func, 0),
             unsupported => self.invalid_value(format!(
                 "cannot synthesize a default value for IR type {:?}",
@@ -189,7 +185,11 @@ impl ASTLowering {
         (mangled, variants)
     }
 
-    pub(crate) fn resolve_struct_type(&self, base_name: &str, type_args: &[TypeAnnotation]) -> Option<IRType> {
+    pub(crate) fn resolve_struct_type(
+        &self,
+        base_name: &str,
+        type_args: &[TypeAnnotation],
+    ) -> Option<IRType> {
         if type_args.is_empty() {
             return self
                 .struct_definitions
@@ -257,7 +257,11 @@ impl ASTLowering {
         None
     }
 
-    pub(crate) fn resolve_enum_type(&self, base_name: &str, type_args: &[TypeAnnotation]) -> Option<IRType> {
+    pub(crate) fn resolve_enum_type(
+        &self,
+        base_name: &str,
+        type_args: &[TypeAnnotation],
+    ) -> Option<IRType> {
         let mut enum_name = base_name.to_string();
         let variants_data = if type_args.is_empty() {
             self.enum_definitions.get(base_name).cloned()
@@ -296,13 +300,17 @@ impl ASTLowering {
                                         })
                                         .collect::<Vec<_>>(),
                                 )
-                            } else { variant.struct_data.as_ref().map(|fields| fields
+                            } else {
+                                variant.struct_data.as_ref().map(|fields| {
+                                    fields
                                         .iter()
                                         .map(|(_, ty)| {
                                             let substituted = self.substitute_type(ty, &type_map);
                                             self.lower_type_annotation(&substituted)
                                         })
-                                        .collect::<Vec<_>>()) };
+                                        .collect::<Vec<_>>()
+                                })
+                            };
                             (variant.name.clone(), tag, data_types)
                         })
                         .collect();
@@ -362,9 +370,7 @@ impl ASTLowering {
                         .value
                         .as_ref()
                         .map(|expr| self.infer_expr_ir_type(expr));
-                    if let (Some(name), Some(ty)) =
-                        (name, declared.or_else(|| inferred.clone()))
-                    {
+                    if let (Some(name), Some(ty)) = (name, declared.or_else(|| inferred.clone())) {
                         self.variable_types.insert(name, ty);
                     }
                 }
@@ -483,5 +489,4 @@ impl ASTLowering {
             _ => Self::unknown_type_annotation(),
         }
     }
-
 }

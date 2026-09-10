@@ -400,7 +400,11 @@ impl<'source> Lexer<'source> {
                                     if end_index < length
                                         && matches!(characters[end_index].1, '+' | '-')
                                     {
-                                        bump_position(characters[end_index].1, &mut line, &mut column);
+                                        bump_position(
+                                            characters[end_index].1,
+                                            &mut line,
+                                            &mut column,
+                                        );
                                         end_index += 1;
                                     }
                                 } else {
@@ -829,7 +833,9 @@ mod tests {
                 .tokenize()
                 .expect_err("bad separator placement should fail");
             assert!(
-                errors.iter().any(|error| error.code.as_deref() == Some("L007")),
+                errors
+                    .iter()
+                    .any(|error| error.code.as_deref() == Some("L007")),
                 "expected L007 for `{}`, got {:?}",
                 source,
                 errors.iter().map(|e| &e.message).collect::<Vec<_>>(),
@@ -870,11 +876,13 @@ mod tests {
             .expect_err("unknown escape should fail");
         assert!(
             errors.iter().any(|error| {
-                error.code.as_deref() == Some("L008")
-                    && error.message.contains("\\q")
+                error.code.as_deref() == Some("L008") && error.message.contains("\\q")
             }),
             "expected L008 naming \\q, got {:?}",
-            errors.iter().map(|e| (&e.code, &e.message)).collect::<Vec<_>>(),
+            errors
+                .iter()
+                .map(|e| (&e.code, &e.message))
+                .collect::<Vec<_>>(),
         );
     }
 
@@ -884,7 +892,9 @@ mod tests {
             .tokenize()
             .expect_err("unknown f-string escape should fail");
         assert!(
-            errors.iter().any(|error| error.code.as_deref() == Some("L008")),
+            errors
+                .iter()
+                .any(|error| error.code.as_deref() == Some("L008")),
             "expected L008, got {:?}",
             errors
         );

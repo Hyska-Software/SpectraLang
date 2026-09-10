@@ -131,7 +131,10 @@ impl SemanticAnalyzer {
 
                 // For dyn Trait casts, verify that the concrete type actually implements the trait.
                 if let (
-                    Type::Struct { name: struct_name } | Type::Applied { name: struct_name, .. },
+                    Type::Struct { name: struct_name }
+                    | Type::Applied {
+                        name: struct_name, ..
+                    },
                     Type::DynTrait {
                         trait_name,
                         auto_traits,

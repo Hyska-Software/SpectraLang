@@ -32,7 +32,7 @@ pub(crate) fn fs_error_code(error: &std::io::Error) -> SpectraHostValue {
         std::io::ErrorKind::InvalidInput
         | std::io::ErrorKind::InvalidData
         | std::io::ErrorKind::UnexpectedEof => 0, // ErrorCode::InvalidArgument
-        _ => 3,                                   // ErrorCode::Io
+        _ => 3,                                    // ErrorCode::Io
     }
 }
 
@@ -46,7 +46,11 @@ pub(crate) fn fs_error_retryable(error: &std::io::Error) -> bool {
     )
 }
 
-pub(crate) fn fs_io_failure(operation: &'static str, path: &Path, error: std::io::Error) -> FsFailure {
+pub(crate) fn fs_io_failure(
+    operation: &'static str,
+    path: &Path,
+    error: std::io::Error,
+) -> FsFailure {
     fs_failure(
         fs_error_code(&error),
         error.to_string(),
@@ -107,7 +111,10 @@ pub(crate) fn write_fs_result(
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) unsafe fn required_fs_path(arg: SpectraHostValue, operation: &'static str) -> Result<PathBuf, FsFailure> {
+pub(crate) unsafe fn required_fs_path(
+    arg: SpectraHostValue,
+    operation: &'static str,
+) -> Result<PathBuf, FsFailure> {
     match read_fs_path_arg(arg) {
         Ok(Some(path)) => Ok(path),
         Ok(None) => Err(fs_failure(
@@ -207,7 +214,7 @@ pub(crate) fn std_fs_write_common(ctx: *mut SpectraHostCallContext, append: bool
                         "content",
                         false,
                     )),
-                )
+                );
             }
         };
         let result = fs_write_text_result(&path, &content, append)
@@ -479,4 +486,3 @@ pub(crate) extern "C" fn std_fs_read_dir(ctx: *mut SpectraHostCallContext) -> i3
         write_fs_result(ctx_ref, Ok(handle as SpectraHostValue))
     }
 }
-

@@ -4,8 +4,9 @@ use std::time::{Duration, Instant, SystemTime};
 
 pub mod abi;
 pub(crate) mod artifact;
+pub(crate) mod async_abi;
+pub(crate) mod async_frame;
 pub mod ffi;
-pub mod panic;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 pub mod handles;
@@ -13,9 +14,8 @@ pub mod health;
 pub mod memory;
 pub mod metrics;
 pub mod numeric;
+pub mod panic;
 pub mod reactor;
-pub(crate) mod async_frame;
-pub(crate) mod async_abi;
 pub mod stdlib;
 pub mod tracing;
 pub(crate) mod vector_index;

@@ -1,7 +1,6 @@
 use super::*;
 // ── std.env host functions ───────────────────────────────────────────────────
 
-
 pub(crate) extern "C" fn std_env_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
@@ -74,7 +73,6 @@ pub(crate) extern "C" fn std_env_args_count(ctx: *mut SpectraHostCallContext) ->
     HOST_STATUS_SUCCESS
 }
 
-
 pub(crate) extern "C" fn std_env_arg_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
@@ -101,4 +99,3 @@ pub(crate) extern "C" fn std_env_arg_option(ctx: *mut SpectraHostCallContext) ->
         write_option_result(ctx_ref, value)
     }
 }
-

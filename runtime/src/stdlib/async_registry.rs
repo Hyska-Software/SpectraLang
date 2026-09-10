@@ -167,7 +167,6 @@ impl AsyncTaskRegistry {
             if let Some(scope) = self.scopes.get_mut(scope_id) {
                 scope.children.push(task_id);
             }
-
         }
         if wake {
             reactor::global().wake_task(task_id);
@@ -181,17 +180,8 @@ impl AsyncTaskRegistry {
         &mut self,
         parent_scope: Option<SpectraHostValue>,
     ) -> SpectraHostValue {
-        self.allocate_task_with_completion_impl(
-            0,
-            parent_scope,
-            None,
-            None,
-            false,
-            false,
-            false,
-        )
+        self.allocate_task_with_completion_impl(0, parent_scope, None, None, false, false, false)
     }
-
 
     pub(crate) fn attach_coroutine_frame_boxed(
         &mut self,
@@ -200,7 +190,9 @@ impl AsyncTaskRegistry {
         affinity: AsyncAffinity,
     ) -> bool {
         self.tasks.get(task_id).is_some()
-            && self.coroutine_frames.attach_boxed_frame(task_id, frame, affinity)
+            && self
+                .coroutine_frames
+                .attach_boxed_frame(task_id, frame, affinity)
     }
 
     pub(crate) fn is_coroutine_task(&self, task_id: SpectraHostValue) -> bool {
@@ -266,7 +258,9 @@ impl AsyncTaskRegistry {
                     task.completed = true;
                     task.failed = false;
                     task.cancelled = false;
-                    if let Some(value) = value { task.value = value; }
+                    if let Some(value) = value {
+                        task.value = value;
+                    }
                 }
                 AsyncPollOutcome::Failed => {
                     task.completed = true;
@@ -290,8 +284,11 @@ impl AsyncTaskRegistry {
         self.coroutine_frames.take_result(task_id)
     }
 
-
-    pub(crate) fn complete_task(&mut self, task_id: SpectraHostValue, value: SpectraHostValue) -> Option<()> {
+    pub(crate) fn complete_task(
+        &mut self,
+        task_id: SpectraHostValue,
+        value: SpectraHostValue,
+    ) -> Option<()> {
         {
             let task = self.tasks.get_mut(task_id)?;
             if !task.cancelled {
@@ -332,7 +329,10 @@ impl AsyncTaskRegistry {
             .unwrap_or(true)
     }
 
-    pub(crate) fn create_scope(&mut self, parent: Option<SpectraHostValue>) -> Option<SpectraHostValue> {
+    pub(crate) fn create_scope(
+        &mut self,
+        parent: Option<SpectraHostValue>,
+    ) -> Option<SpectraHostValue> {
         if let Some(parent_id) = parent {
             self.scopes.get(parent_id)?;
         }
@@ -486,8 +486,11 @@ impl AsyncTaskRegistry {
         }
     }
 
-    pub(crate) fn create_stream(&mut self, kind: AsyncStreamKind, capacity: usize) -> SpectraHostValue {
-        
+    pub(crate) fn create_stream(
+        &mut self,
+        kind: AsyncStreamKind,
+        capacity: usize,
+    ) -> SpectraHostValue {
         self.streams.insert(AsyncStream {
             kind,
             buffer: VecDeque::new(),
@@ -562,9 +565,9 @@ impl AsyncTaskRegistry {
     pub(crate) fn drive_stream_pending(&mut self, stream_id: SpectraHostValue) -> bool {
         let mut progressed = false;
         while let Some(task_id) = self
-                .streams
-                .get(stream_id)
-                .and_then(|stream| stream.pending_next.front().copied())
+            .streams
+            .get(stream_id)
+            .and_then(|stream| stream.pending_next.front().copied())
         {
             match self.pull_stream_value(stream_id) {
                 Some(AsyncStreamPull::Item(value)) => {
@@ -608,7 +611,10 @@ impl AsyncTaskRegistry {
         progressed
     }
 
-    pub(crate) fn pull_stream_value(&mut self, stream_id: SpectraHostValue) -> Option<AsyncStreamPull> {
+    pub(crate) fn pull_stream_value(
+        &mut self,
+        stream_id: SpectraHostValue,
+    ) -> Option<AsyncStreamPull> {
         let kind = {
             let stream = self.streams.get_mut(stream_id)?;
             if stream.cancelled {
@@ -823,7 +829,10 @@ impl AsyncTaskRegistry {
         Some(stream_id)
     }
 
-    pub(crate) fn insert_udp_socket(&mut self, socket: mio::net::UdpSocket) -> Option<SpectraHostValue> {
+    pub(crate) fn insert_udp_socket(
+        &mut self,
+        socket: mio::net::UdpSocket,
+    ) -> Option<SpectraHostValue> {
         let socket_id = self.udp_sockets.insert(AsyncUdpSocketState {
             socket,
             pending_recvs: VecDeque::new(),
@@ -833,11 +842,7 @@ impl AsyncTaskRegistry {
             .udp_sockets
             .get_mut(socket_id)
             .map(|state| {
-                reactor::global().register_source(
-                    &mut state.socket,
-                    socket_id,
-                    Interest::READABLE,
-                )
+                reactor::global().register_source(&mut state.socket, socket_id, Interest::READABLE)
             })
             .unwrap_or(false);
         if !registered {

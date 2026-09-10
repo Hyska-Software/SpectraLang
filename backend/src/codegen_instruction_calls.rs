@@ -1,8 +1,13 @@
+/// Function metadata maps shared by call lowering.
+struct CallFunctionTables<'a> {
+    ids: &'a HashMap<String, FuncId>,
+    params: &'a HashMap<String, Vec<IRType>>,
+}
+
 impl CodeGenerator {
     fn generate_call_instruction<M: Module>(
         module: &mut M,
-        function_map: &HashMap<String, FuncId>,
-        function_params: &HashMap<String, Vec<IRType>>,
+        tables: &CallFunctionTables<'_>,
         hostcall: &mut HostCallLoweringContext<'_>,
         builder: &mut FunctionBuilder,
         kind: &InstructionKind,
@@ -23,13 +28,13 @@ impl CodeGenerator {
                 args,
                 is_tail,
             } => {
-                let func_id = *function_map
+                let func_id = *tables.ids
                     .get(function)
                     .ok_or_else(|| BackendCodegenError::missing_function(function))?;
 
                 let func_ref = module.declare_func_in_func(func_id, builder.func);
 
-                let param_types = function_params.get(function.as_str());
+                let param_types = tables.params.get(function.as_str());
                 let arg_values: Result<Vec<_>, _> = args
                     .iter()
                     .enumerate()

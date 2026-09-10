@@ -1,7 +1,11 @@
 use super::*;
 
 impl ASTLowering {
-    pub(crate) fn lower_expression_field(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_field(
+        &mut self,
+        expr: &Expression,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         match &expr.kind {
             ExpressionKind::FieldAccess { object, field } => {
                 // Se o objeto é um identificador, buscar no struct_var_map
@@ -18,21 +22,20 @@ impl ASTLowering {
                                 // Padded layout offsets are total over the field
                                 // list; a miss here would silently compute a
                                 // wrong pointer, so fail loudly instead.
-                                let Some(byte_offset) = layout::layout_of(
-                                    field_defs.iter().map(|(_, ty)| ty),
-                                )
-                                .offsets
-                                .get(field_idx)
-                                .copied()
+                                let Some(byte_offset) =
+                                    layout::layout_of(field_defs.iter().map(|(_, ty)| ty))
+                                        .offsets
+                                        .get(field_idx)
+                                        .copied()
                                 else {
                                     return self.invalid_value(format!(
                                         "field layout for '{struct_name}.{field}' has no offset for field type {field_type:?}"
                                     ));
                                 };
                                 let byte_offset = byte_offset as i64;
-                                let field_ptr = self
-                                    .builder
-                                    .build_field_ptr(ir_func, struct_ptr, byte_offset);
+                                let field_ptr =
+                                    self.builder
+                                        .build_field_ptr(ir_func, struct_ptr, byte_offset);
 
                                 // Load do campo
                                 return self.builder.build_load_typed(
@@ -58,12 +61,11 @@ impl ASTLowering {
                         .find(|(_, (fname, _))| fname == field)
                         .map(|(idx, (_, ty))| (idx, ty.clone()))
                     {
-                        let Some(byte_offset) = layout::layout_of(
-                            field_defs.iter().map(|(_, ty)| ty),
-                        )
-                        .offsets
-                        .get(field_idx)
-                        .copied()
+                        let Some(byte_offset) =
+                            layout::layout_of(field_defs.iter().map(|(_, ty)| ty))
+                                .offsets
+                                .get(field_idx)
+                                .copied()
                         else {
                             return self.invalid_value(format!(
                                 "field layout for '{struct_name}.{field}' has no offset for field type {field_ty:?}"
@@ -79,10 +81,7 @@ impl ASTLowering {
                     }
                 }
 
-                self.invalid_value(format!(
-                    "unresolved field '{}' during lowering",
-                    field
-                ))
+                self.invalid_value(format!("unresolved field '{}' during lowering", field))
             }
             _ => unreachable!("lowering expression category mismatch"),
         }

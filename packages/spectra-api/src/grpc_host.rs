@@ -7,8 +7,8 @@
 
 use crate::grpc::{
     GrpcBoxFuture, GrpcClient, GrpcClientStream, GrpcCode, GrpcError, GrpcMessage, GrpcMetadata,
-    GrpcReceiver, GrpcRequest, GrpcResponse, GrpcServer, GrpcServerConfig, GrpcService,
-    GrpcStatus, GrpcTrailers, GrpcTlsIdentity,
+    GrpcReceiver, GrpcRequest, GrpcResponse, GrpcServer, GrpcServerConfig, GrpcService, GrpcStatus,
+    GrpcTlsIdentity, GrpcTrailers,
 };
 use crate::handles::ApiHandleTable;
 use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
@@ -23,7 +23,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 const MAX_HOST_BYTES: usize = 16 * 1024 * 1024;
-
 
 type Runtime = tokio::runtime::Runtime;
 type CancellationToken = spectra_runtime::stdlib::CancellationToken;
@@ -194,8 +193,9 @@ fn grpc_handler_output(
             let encoded = item.as_str().ok_or_else(|| {
                 GrpcError::Protocol("gRPC handler messages must be base64 strings".to_string())
             })?;
-            let bytes =
-                decode_base64(encoded).map_err(|()| GrpcError::Protocol("gRPC handler message is not valid base64".to_string()))?;
+            let bytes = decode_base64(encoded).map_err(|()| {
+                GrpcError::Protocol("gRPC handler message is not valid base64".to_string())
+            })?;
             messages.push(GrpcMessage::from_bytes(bytes));
         }
     }
@@ -216,13 +216,19 @@ fn grpc_handler_output(
         }
     };
     let mut metadata = GrpcMetadata::new();
-    if let Some(entries) = value.get("metadata").and_then(|entries| entries.as_object()) {
+    if let Some(entries) = value
+        .get("metadata")
+        .and_then(|entries| entries.as_object())
+    {
         for (key, encoded) in entries {
             let value_str = encoded.as_str().ok_or_else(|| {
-                GrpcError::Protocol("gRPC handler metadata values must be base64 strings".to_string())
+                GrpcError::Protocol(
+                    "gRPC handler metadata values must be base64 strings".to_string(),
+                )
             })?;
-            let bytes =
-                decode_base64(value_str).map_err(|()| GrpcError::Protocol("gRPC handler metadata value is not valid base64".to_string()))?;
+            let bytes = decode_base64(value_str).map_err(|()| {
+                GrpcError::Protocol("gRPC handler metadata value is not valid base64".to_string())
+            })?;
             metadata
                 .append(key.clone(), bytes)
                 .map_err(|error| GrpcError::Protocol(error.to_string()))?;
@@ -231,9 +237,11 @@ fn grpc_handler_output(
     Ok((messages, status, metadata))
 }
 
-fn grpc_callback_result_text(entry: crate::handler::CallbackEntry, arg: SpectraHostValue) -> Option<String> {
-    let result =
-        crate::handler::invoke_callback(entry, arg).ok()?;
+fn grpc_callback_result_text(
+    entry: crate::handler::CallbackEntry,
+    arg: SpectraHostValue,
+) -> Option<String> {
+    let result = crate::handler::invoke_callback(entry, arg).ok()?;
     if let Some(text) = read_spectra_string(result) {
         return Some(text);
     }
@@ -269,9 +277,8 @@ impl GrpcService for CallbackGrpcService {
             }
             let payload = grpc_handler_input_json(&request.path, &request.metadata, &messages);
             let arg = alloc_spectra_string(&payload);
-            let text = grpc_callback_result_text(entry, arg).ok_or_else(|| {
-                GrpcError::Protocol("gRPC handler callback failed".to_string())
-            })?;
+            let text = grpc_callback_result_text(entry, arg)
+                .ok_or_else(|| GrpcError::Protocol("gRPC handler callback failed".to_string()))?;
             let (outbound, status, metadata) = grpc_handler_output(&text)?;
             let (sender, response) = GrpcResponse::streaming(outbound.len().max(1));
             let response = response.with_status(status).with_metadata(metadata);
@@ -294,7 +301,7 @@ fn runtime() -> Result<Arc<Runtime>, i32> {
 
 pub(crate) fn decode_base64(value: &str) -> Result<Vec<u8>, ()> {
     let bytes = value.as_bytes();
-    if bytes.len() % 4 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return Err(());
     }
     let mut output = Vec::with_capacity(bytes.len() / 4 * 3);
@@ -347,8 +354,7 @@ pub(crate) fn decode_base64(value: &str) -> Result<Vec<u8>, ()> {
 }
 
 pub(crate) fn encode_base64(value: &[u8]) -> String {
-    const TABLE: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut output = String::with_capacity(value.len().div_ceil(3) * 4);
     for chunk in value.chunks(3) {
         let first = u32::from(chunk[0]);
@@ -416,7 +422,9 @@ fn error_handle(error: GrpcError) -> SpectraHostValue {
         message: error.to_string(),
         details: None,
     };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     state.errors.insert(record)
 }
 
@@ -424,7 +432,9 @@ fn metadata_handle(raw: SpectraHostValue) -> Option<GrpcMetadata> {
     if raw == 0 {
         return Some(GrpcMetadata::new());
     }
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     state.metadata.get(&raw).cloned()
 }
 
@@ -452,7 +462,11 @@ where
     }
 }
 
-fn spawn_grpc_task<F, T, Convert>(runtime: Arc<Runtime>, future: F, convert: Convert) -> Result<SpectraHostValue, i32>
+fn spawn_grpc_task<F, T, Convert>(
+    runtime: Arc<Runtime>,
+    future: F,
+    convert: Convert,
+) -> Result<SpectraHostValue, i32>
 where
     F: Future<Output = Result<T, GrpcError>> + Send + 'static,
     T: Send + 'static,
@@ -468,202 +482,395 @@ where
     })
 }
 
-
 pub extern "C" fn grpc_message_from_base64(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Some(encoded) = read_spectra_string(args[0]) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Ok(bytes) = decode_base64(&encoded) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(encoded) = read_spectra_string(args[0]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Ok(bytes) = decode_base64(&encoded) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     write_result(ctx, state.messages.insert(GrpcMessage::from_bytes(bytes)))
 }
 
 pub extern "C" fn grpc_message_to_base64(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(message) = state.messages.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
-    write_result(ctx, alloc_spectra_string(&encode_base64(message.as_bytes())))
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(message) = state.messages.get(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    write_result(
+        ctx,
+        alloc_spectra_string(&encode_base64(message.as_bytes())),
+    )
 }
 
 pub extern "C" fn grpc_message_len(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(message) = state.messages.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(message) = state.messages.get(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
     write_result(ctx, message.len() as SpectraHostValue)
 }
 
 pub extern "C" fn grpc_message_free(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if state.messages.remove(&args[0]).is_none() { return HOST_STATUS_NOT_FOUND; }
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if state.messages.remove(&args[0]).is_none() {
+        return HOST_STATUS_NOT_FOUND;
+    }
     write_result(ctx, 1)
 }
 
 pub extern "C" fn grpc_metadata_new(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(_args) = read_args(ctx, 0) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Ok(_args) = read_args(ctx, 0) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     write_result(ctx, state.metadata.insert(GrpcMetadata::new()))
 }
 
 pub extern "C" fn grpc_metadata_insert(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 3) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Some(key) = read_spectra_string(args[1]) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Some(encoded) = read_spectra_string(args[2]) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Ok(value) = decode_base64(&encoded) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(metadata) = state.metadata.get_mut(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
-    if metadata.insert(key, value).is_err() { return HOST_STATUS_INVALID_ARGUMENT; }
+    let Ok(args) = read_args(ctx, 3) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(key) = read_spectra_string(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(encoded) = read_spectra_string(args[2]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Ok(value) = decode_base64(&encoded) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(metadata) = state.metadata.get_mut(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    if metadata.insert(key, value).is_err() {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
     write_result(ctx, 1)
 }
 
 pub extern "C" fn grpc_metadata_append(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 3) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Some(key) = read_spectra_string(args[1]) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Some(encoded) = read_spectra_string(args[2]) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Ok(value) = decode_base64(&encoded) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(metadata) = state.metadata.get_mut(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
-    if metadata.append(key, value).is_err() { return HOST_STATUS_INVALID_ARGUMENT; }
+    let Ok(args) = read_args(ctx, 3) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(key) = read_spectra_string(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(encoded) = read_spectra_string(args[2]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Ok(value) = decode_base64(&encoded) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(metadata) = state.metadata.get_mut(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    if metadata.append(key, value).is_err() {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
     write_result(ctx, 1)
 }
 
 pub extern "C" fn grpc_metadata_get(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 2) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Some(key) = read_spectra_string(args[1]) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(metadata) = state.metadata.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
-    write_result(ctx, alloc_spectra_string(&encode_base64(metadata.get(&key).unwrap_or(&[]))))
+    let Ok(args) = read_args(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(key) = read_spectra_string(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(metadata) = state.metadata.get(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    write_result(
+        ctx,
+        alloc_spectra_string(&encode_base64(metadata.get(&key).unwrap_or(&[]))),
+    )
 }
 
 pub extern "C" fn grpc_metadata_len(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(metadata) = state.metadata.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(metadata) = state.metadata.get(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
     write_result(ctx, metadata.iter().count() as SpectraHostValue)
 }
 
 pub extern "C" fn grpc_metadata_free(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if state.metadata.remove(&args[0]).is_none() { return HOST_STATUS_NOT_FOUND; }
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if state.metadata.remove(&args[0]).is_none() {
+        return HOST_STATUS_NOT_FOUND;
+    }
     write_result(ctx, 1)
 }
 
 pub extern "C" fn grpc_status_new(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 2) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Some(code) = grpc_code(args[0]) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Some(message) = read_spectra_string(args[1]) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Ok(args) = read_args(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(code) = grpc_code(args[0]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(message) = read_spectra_string(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     write_result(ctx, state.statuses.insert(GrpcStatus::new(code, message)))
 }
 
 pub extern "C" fn grpc_status_code(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(status) = state.statuses.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(status) = state.statuses.get(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
     write_result(ctx, grpc_code_value(status.code))
 }
 
 pub extern "C" fn grpc_status_message(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(status) = state.statuses.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(status) = state.statuses.get(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
     write_result(ctx, alloc_spectra_string(&status.message))
 }
 
 pub extern "C" fn grpc_status_set_details_base64(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 2) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Some(encoded) = read_spectra_string(args[1]) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Ok(details) = decode_base64(&encoded) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(status) = state.statuses.get_mut(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+    let Ok(args) = read_args(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(encoded) = read_spectra_string(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Ok(details) = decode_base64(&encoded) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(status) = state.statuses.get_mut(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
     status.details_bin = Some(details);
     write_result(ctx, 1)
 }
 
 pub extern "C" fn grpc_status_details_base64(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(status) = state.statuses.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
-    write_result(ctx, alloc_spectra_string(&encode_base64(status.details_bin.as_deref().unwrap_or(&[]))))
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(status) = state.statuses.get(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    write_result(
+        ctx,
+        alloc_spectra_string(&encode_base64(status.details_bin.as_deref().unwrap_or(&[]))),
+    )
 }
 
 pub extern "C" fn grpc_status_free(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if state.statuses.remove(&args[0]).is_none() { return HOST_STATUS_NOT_FOUND; }
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if state.statuses.remove(&args[0]).is_none() {
+        return HOST_STATUS_NOT_FOUND;
+    }
     write_result(ctx, 1)
 }
 
 pub extern "C" fn grpc_response_message(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(response) = state.responses.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
-    let Some(message) = state.messages.get(&response.message).cloned() else { return HOST_STATUS_NOT_FOUND; };
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(response) = state.responses.get(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    let Some(message) = state.messages.get(&response.message).cloned() else {
+        return HOST_STATUS_NOT_FOUND;
+    };
     drop(state);
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     write_result(ctx, state.messages.insert(message))
 }
 
 pub extern "C" fn grpc_response_status(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(status) = state.responses.get(&args[0]).map(|response| response.trailers.status.clone()) else {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(status) = state
+        .responses
+        .get(&args[0])
+        .map(|response| response.trailers.status.clone())
+    else {
         return HOST_STATUS_NOT_FOUND;
     };
     write_result(ctx, state.statuses.insert(status))
 }
 
 pub extern "C" fn grpc_response_metadata(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(metadata) = state.responses.get(&args[0]).map(|response| response.trailers.metadata.clone()) else {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(metadata) = state
+        .responses
+        .get(&args[0])
+        .map(|response| response.trailers.metadata.clone())
+    else {
         return HOST_STATUS_NOT_FOUND;
     };
     write_result(ctx, state.metadata.insert(metadata))
 }
 
 pub extern "C" fn grpc_response_free(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(response) = state.responses.remove(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(response) = state.responses.remove(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
     let _ = state.messages.remove(&response.message);
     write_result(ctx, 1)
 }
 
 pub extern "C" fn grpc_error_code(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(error) = state.errors.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(error) = state.errors.get(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
     write_result(ctx, error.code)
 }
 
 pub extern "C" fn grpc_error_message(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(error) = state.errors.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(error) = state.errors.get(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
     write_result(ctx, alloc_spectra_string(&error.message))
 }
 
 pub extern "C" fn grpc_error_details_base64(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(error) = state.errors.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
-    write_result(ctx, alloc_spectra_string(&encode_base64(error.details.as_deref().unwrap_or(&[]))))
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(error) = state.errors.get(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    write_result(
+        ctx,
+        alloc_spectra_string(&encode_base64(error.details.as_deref().unwrap_or(&[]))),
+    )
 }
 
 pub extern "C" fn grpc_error_free(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if state.errors.remove(&args[0]).is_none() { return HOST_STATUS_NOT_FOUND; }
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if state.errors.remove(&args[0]).is_none() {
+        return HOST_STATUS_NOT_FOUND;
+    }
     write_result(ctx, 1)
 }
 
 pub extern "C" fn grpc_client_connect(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Some(address) = read_spectra_string(args[0]).and_then(|value| value.parse::<SocketAddr>().ok()) else {
+    let Ok(args) = read_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
-    let Ok(runtime) = runtime() else { return HOST_STATUS_INTERNAL_ERROR; };
+    let Some(address) =
+        read_spectra_string(args[0]).and_then(|value| value.parse::<SocketAddr>().ok())
+    else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Ok(runtime) = runtime() else {
+        return HOST_STATUS_INTERNAL_ERROR;
+    };
     let task = spectra_runtime::stdlib::spawn_cancellable_io_task_with_token(move |token| {
         let result = runtime.block_on(with_cancellation(GrpcClient::connect(address), token));
         match result {
@@ -672,13 +879,18 @@ pub extern "C" fn grpc_client_connect(ctx: *mut SpectraHostCallContext) -> i32 {
                     runtime: Arc::clone(&runtime),
                     client: Arc::new(tokio::sync::Mutex::new(client)),
                 };
-                let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                let mut state = store()
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 Ok(state.clients.insert(entry))
             }
             Err(error) => Ok(error_handle(error)),
         }
     });
-    match task { Ok(task) => write_result(ctx, task), Err(status) => status }
+    match task {
+        Ok(task) => write_result(ctx, task),
+        Err(status) => status,
+    }
 }
 
 /// TLS variant of `grpc_client_connect`: `roots_base64` carries one DER root
@@ -687,8 +899,12 @@ pub extern "C" fn grpc_client_connect(ctx: *mut SpectraHostCallContext) -> i32 {
 /// ALPN offers `h2`; the server side must terminate TLS with the same
 /// protocol or the h2 handshake fails loudly instead of degrading.
 pub extern "C" fn grpc_client_connect_tls(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 3) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Some(address) = read_spectra_string(args[0]).and_then(|value| value.parse::<SocketAddr>().ok()) else {
+    let Ok(args) = read_args(ctx, 3) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(address) =
+        read_spectra_string(args[0]).and_then(|value| value.parse::<SocketAddr>().ok())
+    else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
     let Some(roots_encoded) = read_spectra_string(args[1]) else {
@@ -708,26 +924,38 @@ pub extern "C" fn grpc_client_connect_tls(ctx: *mut SpectraHostCallContext) -> i
     if rustls::pki_types::ServerName::try_from(server_name.clone()).is_err() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
-    let Ok(runtime) = runtime() else { return HOST_STATUS_INTERNAL_ERROR; };
+    let Ok(runtime) = runtime() else {
+        return HOST_STATUS_INTERNAL_ERROR;
+    };
     let task = spectra_runtime::stdlib::spawn_cancellable_io_task_with_token(move |token| {
-        let result = runtime.block_on(with_cancellation(GrpcClient::connect_tls(address, roots, &server_name), token));
+        let result = runtime.block_on(with_cancellation(
+            GrpcClient::connect_tls(address, roots, &server_name),
+            token,
+        ));
         match result {
             Ok(client) => {
                 let entry = ClientEntry {
                     runtime: Arc::clone(&runtime),
                     client: Arc::new(tokio::sync::Mutex::new(client)),
                 };
-                let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                let mut state = store()
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 Ok(state.clients.insert(entry))
             }
             Err(error) => Ok(error_handle(error)),
         }
     });
-    match task { Ok(task) => write_result(ctx, task), Err(status) => status }
+    match task {
+        Ok(task) => write_result(ctx, task),
+        Err(status) => status,
+    }
 }
 
 pub extern "C" fn grpc_client_unary(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 5) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Ok(args) = read_args(ctx, 5) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
     let (client, runtime, message, metadata, path, timeout) = {
         let Some(path) = read_spectra_string(args[1]) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -735,9 +963,15 @@ pub extern "C" fn grpc_client_unary(ctx: *mut SpectraHostCallContext) -> i32 {
         let Some(metadata) = metadata_handle(args[3]) else {
             return HOST_STATUS_NOT_FOUND;
         };
-        let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(entry) = state.clients.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
-        let Some(message) = state.messages.get(&args[2]).cloned() else { return HOST_STATUS_NOT_FOUND; };
+        let state = store()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(entry) = state.clients.get(&args[0]) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
+        let Some(message) = state.messages.get(&args[2]).cloned() else {
+            return HOST_STATUS_NOT_FOUND;
+        };
         (
             Arc::clone(&entry.client),
             Arc::clone(&entry.runtime),
@@ -752,9 +986,14 @@ pub extern "C" fn grpc_client_unary(ctx: *mut SpectraHostCallContext) -> i32 {
         client.unary(&path, message, metadata, timeout).await
     };
     let convert = move |(message, trailers): (GrpcMessage, GrpcTrailers)| {
-        let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut state = store()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let message_handle = state.messages.insert(message);
-        Ok(state.responses.insert(GrpcHostResponse { message: message_handle, trailers }))
+        Ok(state.responses.insert(GrpcHostResponse {
+            message: message_handle,
+            trailers,
+        }))
     };
     match spawn_grpc_task(runtime, future, convert) {
         Ok(task) => write_result(ctx, task),
@@ -771,7 +1010,9 @@ pub extern "C" fn grpc_client_bidi_streaming(ctx: *mut SpectraHostCallContext) -
 }
 
 pub extern "C" fn grpc_client_server_streaming(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 5) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Ok(args) = read_args(ctx, 5) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
     let (client, runtime, message, metadata, path, timeout) = {
         let Some(path) = read_spectra_string(args[1]) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -779,9 +1020,15 @@ pub extern "C" fn grpc_client_server_streaming(ctx: *mut SpectraHostCallContext)
         let Some(metadata) = metadata_handle(args[3]) else {
             return HOST_STATUS_NOT_FOUND;
         };
-        let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(entry) = state.clients.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
-        let Some(message) = state.messages.get(&args[2]).cloned() else { return HOST_STATUS_NOT_FOUND; };
+        let state = store()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(entry) = state.clients.get(&args[0]) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
+        let Some(message) = state.messages.get(&args[2]).cloned() else {
+            return HOST_STATUS_NOT_FOUND;
+        };
         (
             Arc::clone(&entry.client),
             Arc::clone(&entry.runtime),
@@ -793,7 +1040,9 @@ pub extern "C" fn grpc_client_server_streaming(ctx: *mut SpectraHostCallContext)
     };
     let future = async move {
         let mut client = client.lock().await;
-        client.server_streaming(&path, message, metadata, timeout).await
+        client
+            .server_streaming(&path, message, metadata, timeout)
+            .await
     };
     let stream_runtime = Arc::clone(&runtime);
     let convert = move |receiver: GrpcReceiver| {
@@ -801,7 +1050,9 @@ pub extern "C" fn grpc_client_server_streaming(ctx: *mut SpectraHostCallContext)
             runtime: stream_runtime,
             inner: Arc::new(tokio::sync::Mutex::new(HostStreamInner::Server(receiver))),
         };
-        let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut state = store()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         Ok(state.streams.insert(stream))
     };
     match spawn_grpc_task(runtime, future, convert) {
@@ -811,7 +1062,9 @@ pub extern "C" fn grpc_client_server_streaming(ctx: *mut SpectraHostCallContext)
 }
 
 fn grpc_client_open_stream(ctx: *mut SpectraHostCallContext, bidi: u8) -> i32 {
-    let Ok(args) = read_args(ctx, 5) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Ok(args) = read_args(ctx, 5) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
     let (client, runtime, path, metadata, timeout) = {
         let Some(path) = read_spectra_string(args[1]) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -819,8 +1072,12 @@ fn grpc_client_open_stream(ctx: *mut SpectraHostCallContext, bidi: u8) -> i32 {
         let Some(metadata) = metadata_handle(args[3]) else {
             return HOST_STATUS_NOT_FOUND;
         };
-        let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(entry) = state.clients.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+        let state = store()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(entry) = state.clients.get(&args[0]) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
         (
             Arc::clone(&entry.client),
             Arc::clone(&entry.runtime),
@@ -843,7 +1100,9 @@ fn grpc_client_open_stream(ctx: *mut SpectraHostCallContext, bidi: u8) -> i32 {
             runtime: stream_runtime,
             inner: Arc::new(tokio::sync::Mutex::new(HostStreamInner::Client(stream))),
         };
-        let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut state = store()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         Ok(state.streams.insert(entry))
     };
     match spawn_grpc_task(runtime, future, convert) {
@@ -853,19 +1112,33 @@ fn grpc_client_open_stream(ctx: *mut SpectraHostCallContext, bidi: u8) -> i32 {
 }
 
 pub extern "C" fn grpc_stream_send(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 2) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Ok(args) = read_args(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
     let (stream, runtime, message) = {
-        let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(entry) = state.streams.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
-        let Some(message) = state.messages.get(&args[1]).cloned() else { return HOST_STATUS_NOT_FOUND; };
-        (Arc::clone(&entry.inner), Arc::clone(&entry.runtime), message)
+        let state = store()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(entry) = state.streams.get(&args[0]) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
+        let Some(message) = state.messages.get(&args[1]).cloned() else {
+            return HOST_STATUS_NOT_FOUND;
+        };
+        (
+            Arc::clone(&entry.inner),
+            Arc::clone(&entry.runtime),
+            message,
+        )
     };
     let future = async move {
         let guard = stream.lock().await;
         let sender = match &*guard {
             HostStreamInner::Client(stream) => stream.sender.clone(),
             HostStreamInner::Server(_) => {
-                return Err(GrpcError::InvalidPath("server stream is receive-only".to_string()));
+                return Err(GrpcError::InvalidPath(
+                    "server stream is receive-only".to_string(),
+                ));
             }
         };
         drop(guard);
@@ -878,10 +1151,16 @@ pub extern "C" fn grpc_stream_send(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 pub extern "C" fn grpc_stream_recv(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
     let (stream, runtime) = {
-        let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(entry) = state.streams.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+        let state = store()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(entry) = state.streams.get(&args[0]) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
         (Arc::clone(&entry.inner), Arc::clone(&entry.runtime))
     };
     let future = async move {
@@ -897,8 +1176,12 @@ pub extern "C" fn grpc_stream_recv(ctx: *mut SpectraHostCallContext) -> i32 {
         }
     };
     let convert = |message: Option<GrpcMessage>| {
-        let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        Ok(message.map(|value| state.messages.insert(value)).unwrap_or(0))
+        let mut state = store()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Ok(message
+            .map(|value| state.messages.insert(value))
+            .unwrap_or(0))
     };
     match spawn_grpc_task(runtime, future, convert) {
         Ok(task) => write_result(ctx, task),
@@ -907,17 +1190,28 @@ pub extern "C" fn grpc_stream_recv(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 pub extern "C" fn grpc_stream_finish(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
     let (stream, runtime) = {
-        let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(entry) = state.streams.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+        let state = store()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(entry) = state.streams.get(&args[0]) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
         (Arc::clone(&entry.inner), Arc::clone(&entry.runtime))
     };
     let future = async move {
         let guard = stream.lock().await;
         match &*guard {
-            HostStreamInner::Client(stream) => { stream.finish(); Ok(()) }
-            HostStreamInner::Server(_) => Err(GrpcError::InvalidPath("server stream is receive-only".to_string())),
+            HostStreamInner::Client(stream) => {
+                stream.finish();
+                Ok(())
+            }
+            HostStreamInner::Server(_) => Err(GrpcError::InvalidPath(
+                "server stream is receive-only".to_string(),
+            )),
         }
     };
     match spawn_grpc_task(runtime, future, |()| Ok(1)) {
@@ -927,17 +1221,29 @@ pub extern "C" fn grpc_stream_finish(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 pub extern "C" fn grpc_stream_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
     let (stream, runtime) = {
-        let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(entry) = state.streams.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+        let state = store()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(entry) = state.streams.get(&args[0]) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
         (Arc::clone(&entry.inner), Arc::clone(&entry.runtime))
     };
     let future = async move {
         let guard = stream.lock().await;
         match &*guard {
-            HostStreamInner::Client(stream) => { stream.cancel(); Ok(()) }
-            HostStreamInner::Server(receiver) => { receiver.cancel(); Ok(()) }
+            HostStreamInner::Client(stream) => {
+                stream.cancel();
+                Ok(())
+            }
+            HostStreamInner::Server(receiver) => {
+                receiver.cancel();
+                Ok(())
+            }
         }
     };
     match spawn_grpc_task(runtime, future, |()| Ok(1)) {
@@ -947,54 +1253,89 @@ pub extern "C" fn grpc_stream_cancel(ctx: *mut SpectraHostCallContext) -> i32 {
 }
 
 pub extern "C" fn grpc_stream_free(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if state.streams.remove(&args[0]).is_none() { return HOST_STATUS_NOT_FOUND; }
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if state.streams.remove(&args[0]).is_none() {
+        return HOST_STATUS_NOT_FOUND;
+    }
     write_result(ctx, 1)
 }
 
 pub extern "C" fn grpc_server_bind(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 5) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Some(address) = read_spectra_string(args[0]).and_then(|value| value.parse::<SocketAddr>().ok()) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Ok(args) = read_args(ctx, 5) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(address) =
+        read_spectra_string(args[0]).and_then(|value| value.parse::<SocketAddr>().ok())
+    else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
     let (service, runtime) = {
-        let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(service) = state
-            .services
-            .get(&args[1])
-            .cloned()
-            .or_else(|| {
-                state
-                    .callback_services
-                    .get(&args[1])
-                    .cloned()
-                    .map(|service| service as Arc<dyn GrpcService>)
-            })
-        else {
+        let state = store()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(service) = state.services.get(&args[1]).cloned().or_else(|| {
+            state
+                .callback_services
+                .get(&args[1])
+                .cloned()
+                .map(|service| service as Arc<dyn GrpcService>)
+        }) else {
             return HOST_STATUS_NOT_FOUND;
         };
-        let Ok(runtime) = runtime() else { return HOST_STATUS_INTERNAL_ERROR; };
+        let Ok(runtime) = runtime() else {
+            return HOST_STATUS_INTERNAL_ERROR;
+        };
         (service, runtime)
     };
-    let max_message_size = usize::try_from(args[2]).ok().filter(|value| *value > 0 && *value <= MAX_HOST_BYTES).unwrap_or(0);
-    let stream_capacity = usize::try_from(args[3]).ok().filter(|value| *value > 0 && *value <= 4096).unwrap_or(0);
-    let max_concurrent_streams = u32::try_from(args[4]).ok().filter(|value| *value > 0).unwrap_or(0);
-    if max_message_size == 0 || stream_capacity == 0 || max_concurrent_streams == 0 { return HOST_STATUS_INVALID_ARGUMENT; }
-    let config = GrpcServerConfig { max_message_size, stream_capacity, max_concurrent_streams, tls: None };
+    let max_message_size = usize::try_from(args[2])
+        .ok()
+        .filter(|value| *value > 0 && *value <= MAX_HOST_BYTES)
+        .unwrap_or(0);
+    let stream_capacity = usize::try_from(args[3])
+        .ok()
+        .filter(|value| *value > 0 && *value <= 4096)
+        .unwrap_or(0);
+    let max_concurrent_streams = u32::try_from(args[4])
+        .ok()
+        .filter(|value| *value > 0)
+        .unwrap_or(0);
+    if max_message_size == 0 || stream_capacity == 0 || max_concurrent_streams == 0 {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    let config = GrpcServerConfig {
+        max_message_size,
+        stream_capacity,
+        max_concurrent_streams,
+        tls: None,
+    };
     let task = spectra_runtime::stdlib::spawn_cancellable_io_task_with_token(move |token| {
-        let result = runtime.block_on(with_cancellation(GrpcServer::bind(address, service, config), token));
+        let result = runtime.block_on(with_cancellation(
+            GrpcServer::bind(address, service, config),
+            token,
+        ));
         match result {
             Ok(server) => {
                 let entry = ServerEntry {
                     server,
                     runtime: Arc::clone(&runtime),
                 };
-                let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                let mut state = store()
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 Ok(state.servers.insert(entry))
             }
             Err(error) => Ok(error_handle(error)),
         }
     });
-    match task { Ok(task) => write_result(ctx, task), Err(status) => status }
+    match task {
+        Ok(task) => write_result(ctx, task),
+        Err(status) => status,
+    }
 }
 
 /// TLS variant of `grpc_server_bind`: `cert_base64`/`key_base64` carry the
@@ -1002,75 +1343,129 @@ pub extern "C" fn grpc_server_bind(ctx: *mut SpectraHostCallContext) -> i32 {
 /// identity is validated with the shared rustls builder (ALPN `h2`) before
 /// any socket binds, so bad material fails fast with INVALID_ARGUMENT.
 pub extern "C" fn grpc_server_bind_tls(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 7) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let Some(address) = read_spectra_string(args[0]).and_then(|value| value.parse::<SocketAddr>().ok()) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Ok(args) = read_args(ctx, 7) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(address) =
+        read_spectra_string(args[0]).and_then(|value| value.parse::<SocketAddr>().ok())
+    else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
     let (service, runtime) = {
-        let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(service) = state
-            .services
-            .get(&args[1])
-            .cloned()
-            .or_else(|| {
-                state
-                    .callback_services
-                    .get(&args[1])
-                    .cloned()
-                    .map(|service| service as Arc<dyn GrpcService>)
-            })
-        else {
+        let state = store()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(service) = state.services.get(&args[1]).cloned().or_else(|| {
+            state
+                .callback_services
+                .get(&args[1])
+                .cloned()
+                .map(|service| service as Arc<dyn GrpcService>)
+        }) else {
             return HOST_STATUS_NOT_FOUND;
         };
-        let Ok(runtime) = runtime() else { return HOST_STATUS_INTERNAL_ERROR; };
+        let Ok(runtime) = runtime() else {
+            return HOST_STATUS_INTERNAL_ERROR;
+        };
         (service, runtime)
     };
-    let max_message_size = usize::try_from(args[2]).ok().filter(|value| *value > 0 && *value <= MAX_HOST_BYTES).unwrap_or(0);
-    let stream_capacity = usize::try_from(args[3]).ok().filter(|value| *value > 0 && *value <= 4096).unwrap_or(0);
-    let max_concurrent_streams = u32::try_from(args[4]).ok().filter(|value| *value > 0).unwrap_or(0);
-    if max_message_size == 0 || stream_capacity == 0 || max_concurrent_streams == 0 { return HOST_STATUS_INVALID_ARGUMENT; }
+    let max_message_size = usize::try_from(args[2])
+        .ok()
+        .filter(|value| *value > 0 && *value <= MAX_HOST_BYTES)
+        .unwrap_or(0);
+    let stream_capacity = usize::try_from(args[3])
+        .ok()
+        .filter(|value| *value > 0 && *value <= 4096)
+        .unwrap_or(0);
+    let max_concurrent_streams = u32::try_from(args[4])
+        .ok()
+        .filter(|value| *value > 0)
+        .unwrap_or(0);
+    if max_message_size == 0 || stream_capacity == 0 || max_concurrent_streams == 0 {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
     let (Some(cert), Some(key)) = (
         read_spectra_string(args[5]).and_then(|value| decode_base64(&value).ok()),
         read_spectra_string(args[6]).and_then(|value| decode_base64(&value).ok()),
-    ) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    if crate::tls::server_config_from_der(vec![cert.clone()], key.clone(), vec![b"h2".to_vec()]).is_err() {
+    ) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    if crate::tls::server_config_from_der(vec![cert.clone()], key.clone(), vec![b"h2".to_vec()])
+        .is_err()
+    {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
-    let config = GrpcServerConfig { max_message_size, stream_capacity, max_concurrent_streams, tls: Some(GrpcTlsIdentity { cert_chain_der: vec![cert], private_key_der: key }) };
+    let config = GrpcServerConfig {
+        max_message_size,
+        stream_capacity,
+        max_concurrent_streams,
+        tls: Some(GrpcTlsIdentity {
+            cert_chain_der: vec![cert],
+            private_key_der: key,
+        }),
+    };
     let task = spectra_runtime::stdlib::spawn_cancellable_io_task_with_token(move |token| {
-        let result = runtime.block_on(with_cancellation(GrpcServer::bind(address, service, config), token));
+        let result = runtime.block_on(with_cancellation(
+            GrpcServer::bind(address, service, config),
+            token,
+        ));
         match result {
             Ok(server) => {
                 let entry = ServerEntry {
                     server,
                     runtime: Arc::clone(&runtime),
                 };
-                let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                let mut state = store()
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 Ok(state.servers.insert(entry))
             }
             Err(error) => Ok(error_handle(error)),
         }
     });
-    match task { Ok(task) => write_result(ctx, task), Err(status) => status }
+    match task {
+        Ok(task) => write_result(ctx, task),
+        Err(status) => status,
+    }
 }
 
 pub extern "C" fn grpc_server_local_port(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(entry) = state.servers.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(entry) = state.servers.get(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
     write_result(ctx, entry.server.local_addr().port() as SpectraHostValue)
 }
 
 pub extern "C" fn grpc_server_shutdown(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(entry) = state.servers.get(&args[0]) else { return HOST_STATUS_NOT_FOUND; };
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(entry) = state.servers.get(&args[0]) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
     entry.server.shutdown();
     write_result(ctx, 1)
 }
 
 pub extern "C" fn grpc_server_free(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if state.servers.remove(&args[0]).is_none() { return HOST_STATUS_NOT_FOUND; }
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if state.servers.remove(&args[0]).is_none() {
+        return HOST_STATUS_NOT_FOUND;
+    }
     write_result(ctx, 1)
 }
 
@@ -1078,9 +1473,18 @@ pub extern "C" fn grpc_server_free(ctx: *mut SpectraHostCallContext) -> i32 {
 /// `grpc_service_handle_method`; the service resolves in `grpc_server_bind`
 /// like any registered implementation.
 pub extern "C" fn grpc_service_create(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(_args) = read_args(ctx, 0) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    write_result(ctx, state.callback_services.insert(Arc::new(CallbackGrpcService::new())))
+    let Ok(_args) = read_args(ctx, 0) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    write_result(
+        ctx,
+        state
+            .callback_services
+            .insert(Arc::new(CallbackGrpcService::new())),
+    )
 }
 
 /// Attaches one Spectra handler to a service path. The handler is a sync
@@ -1089,7 +1493,9 @@ pub extern "C" fn grpc_service_create(ctx: *mut SpectraHostCallContext) -> i32 {
 /// call time. Streams are buffered: the full inbound stream feeds a single
 /// invocation whose messages stream out.
 pub extern "C" fn grpc_service_handle_method(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 3) else { return HOST_STATUS_INVALID_ARGUMENT; };
+    let Ok(args) = read_args(ctx, 3) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
     let (Some(path), closure) = (read_spectra_string(args[1]), args[2]) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -1099,7 +1505,9 @@ pub extern "C" fn grpc_service_handle_method(ctx: *mut SpectraHostCallContext) -
     let Some(invoke) = (unsafe { ctx.as_ref() }).and_then(|ctx| ctx.invoke_fn) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
-    let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let Some(service) = state.callback_services.get(&args[0]).cloned() else {
         return HOST_STATUS_NOT_FOUND;
     };
@@ -1112,9 +1520,16 @@ pub extern "C" fn grpc_service_handle_method(ctx: *mut SpectraHostCallContext) -
 }
 
 pub extern "C" fn grpc_service_free(ctx: *mut SpectraHostCallContext) -> i32 {
-    let Ok(args) = read_args(ctx, 1) else { return HOST_STATUS_INVALID_ARGUMENT; };
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    write_result(ctx, i64::from(state.callback_services.remove(&args[0]).is_some()))
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    write_result(
+        ctx,
+        i64::from(state.callback_services.remove(&args[0]).is_some()),
+    )
 }
 
 /// Registers a real service implementation for `grpc_server_bind`.
@@ -1125,13 +1540,17 @@ pub extern "C" fn grpc_service_free(ctx: *mut SpectraHostCallContext) -> i32 {
 /// and the language-service table. No in-process fake transport is involved.
 #[cfg(test)]
 pub fn grpc_server_register_service(service: Arc<dyn GrpcService>) -> SpectraHostValue {
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     state.services.insert(service)
 }
 
 #[cfg(test)]
 pub fn grpc_server_unregister_service(handle: SpectraHostValue) -> bool {
-    let mut state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut state = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     state.services.remove(&handle).is_some()
 }
 
@@ -1147,7 +1566,9 @@ mod service_registry_tests {
         let handle = grpc_server_register_service(service);
         assert!(handle > 0, "registration must mint a live handle");
         {
-            let state = store().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let state = store()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             assert!(
                 state.services.get(&handle).is_some(),
                 "bind resolves the registered handle through the services table"
@@ -1169,16 +1590,15 @@ mod transport_isolation_tests {
     #[test]
     fn rust_level_unary_roundtrip() {
         let runtime = runtime().expect("runtime");
-        let service: Arc<dyn GrpcService> =
-            Arc::new(|request: GrpcRequest| async move {
-                let mut messages = Vec::new();
-                let mut inbound = request.inbound;
-                while let Some(item) = inbound.recv().await {
-                    messages.push(item.map_err(|e| GrpcError::Protocol(e.to_string()))?);
-                }
-                assert_eq!(messages.len(), 1);
-                Ok(GrpcResponse::unary(messages.into_iter().next().unwrap()))
-            });
+        let service: Arc<dyn GrpcService> = Arc::new(|request: GrpcRequest| async move {
+            let mut messages = Vec::new();
+            let mut inbound = request.inbound;
+            while let Some(item) = inbound.recv().await {
+                messages.push(item.map_err(|e| GrpcError::Protocol(e.to_string()))?);
+            }
+            assert_eq!(messages.len(), 1);
+            Ok(GrpcResponse::unary(messages.into_iter().next().unwrap()))
+        });
         let server = runtime
             .block_on(GrpcServer::bind(
                 "127.0.0.1:0".parse().unwrap(),

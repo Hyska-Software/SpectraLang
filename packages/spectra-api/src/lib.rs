@@ -15,25 +15,25 @@ use spectra_runtime::ffi::{
     HOST_STATUS_INVALID_ARGUMENT, HOST_STATUS_SUCCESS,
 };
 
-#[cfg(feature = "http3")]
-pub mod http3;
-#[cfg(feature = "http3")]
-mod http3_host;
-mod grpc_host;
-mod graphql_host;
 pub mod client;
 pub mod conformance;
 pub mod cors;
 pub mod db;
 pub mod errors;
 pub mod form;
+pub mod graphql;
+mod graphql_host;
+pub mod grpc;
+mod grpc_host;
 pub mod handler;
 mod handles;
 pub mod health;
-pub mod grpc;
-pub mod graphql;
 pub mod http;
 pub mod http2;
+#[cfg(feature = "http3")]
+pub mod http3;
+#[cfg(feature = "http3")]
+mod http3_host;
 pub mod json;
 pub mod jwt;
 pub mod middleware;
@@ -55,12 +55,6 @@ pub const VERSION_MAJOR: SpectraHostValue = 0;
 pub const VERSION_MINOR: SpectraHostValue = 1;
 pub const VERSION_PATCH: SpectraHostValue = 0;
 
-include!("host_calls.rs");
-
-include!("api_registration.rs");
-
-include!("api_tests.rs");
-
 /// Process-wide serialiser for tests that mutate the global host-function
 /// registry (`api_tests` and `db::tests`). The two suites historically used
 /// separate locks, which raced `clear_host_functions`/`register` pairs and
@@ -68,3 +62,9 @@ include!("api_tests.rs");
 #[cfg(test)]
 pub(crate) static SHARED_REGISTRY_TEST_LOCK: std::sync::LazyLock<std::sync::Mutex<()>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
+
+include!("host_calls.rs");
+
+include!("api_registration.rs");
+
+include!("api_tests.rs");

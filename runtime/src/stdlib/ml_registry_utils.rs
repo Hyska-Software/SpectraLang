@@ -503,7 +503,6 @@ pub(crate) fn ml_wordpiece_decode(tokenizer: &MlWordpieceTokenizer, ids: &[i64])
     Some(words.join(" "))
 }
 
-
 pub(crate) fn ml_token_set(text: &str) -> HashSet<String> {
     text.split_whitespace()
         .map(|token| {
@@ -577,4 +576,3 @@ pub(crate) fn ml_loss_tensor(
         Err(code) => code,
     }
 }
-

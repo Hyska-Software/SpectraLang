@@ -145,4 +145,3 @@ pub(crate) extern "C" fn std_convert_float_to_int(ctx: *mut SpectraHostCallConte
     }
     HOST_STATUS_SUCCESS
 }
-

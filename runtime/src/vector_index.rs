@@ -141,7 +141,11 @@ fn score(left: &[f64], right: &[f64]) -> f64 {
 /// Maximum degree per layer: `M0` at layer 0 (wider fan-out where recall
 /// matters most), `M` above — the standard HNSW split.
 fn neighbor_cap(layer: usize) -> usize {
-    if layer == 0 { M0 } else { M }
+    if layer == 0 {
+        M0
+    } else {
+        M
+    }
 }
 
 impl VectorIndex {
@@ -241,9 +245,7 @@ impl VectorIndex {
             let candidates = self
                 .search_layer(&query, entry, EF_CONSTRUCTION, layer)
                 .into_iter()
-                .filter(|candidate| {
-                    *candidate != index && self.entries[*candidate].level >= layer
-                })
+                .filter(|candidate| *candidate != index && self.entries[*candidate].level >= layer)
                 .collect::<Vec<_>>();
             if candidates.is_empty() {
                 continue;
@@ -277,7 +279,11 @@ impl VectorIndex {
                 .flatten()
                 .copied()
                 .find(|candidate| *candidate != position)
-                .unwrap_or((0..self.entries.len()).find(|other| *other != position).unwrap_or(0));
+                .unwrap_or(
+                    (0..self.entries.len())
+                        .find(|other| *other != position)
+                        .unwrap_or(0),
+                );
         }
         self.attach(position, self.entry_point, self.max_level);
         for (layer, neighbors) in stale.into_iter().enumerate() {
@@ -328,7 +334,11 @@ impl VectorIndex {
         })]);
         while let Some(candidate) = frontier.pop() {
             if results.len() >= ef
-                && candidate.score < results.peek().map(|worst| worst.0.score).unwrap_or(candidate.score)
+                && candidate.score
+                    < results
+                        .peek()
+                        .map(|worst| worst.0.score)
+                        .unwrap_or(candidate.score)
             {
                 break;
             }
@@ -355,7 +365,10 @@ impl VectorIndex {
                 }
             }
         }
-        let mut found = results.into_iter().map(|wrapped| wrapped.0.node).collect::<Vec<_>>();
+        let mut found = results
+            .into_iter()
+            .map(|wrapped| wrapped.0.node)
+            .collect::<Vec<_>>();
         found.sort_by(|left, right| {
             score(query, &self.entries[*right].vector)
                 .total_cmp(&score(query, &self.entries[*left].vector))
@@ -837,7 +850,10 @@ mod tests {
         println!(
             "recall@10 over {count} vectors, M={M}, M0={M0}, ef_construction={EF_CONSTRUCTION}, ef_search={EF_SEARCH}: {average_recall:.4}"
         );
-        assert!(average_recall >= 0.9, "recall@10 {average_recall} below 0.9");
+        assert!(
+            average_recall >= 0.9,
+            "recall@10 {average_recall} below 0.9"
+        );
     }
 
     #[test]
@@ -850,7 +866,10 @@ mod tests {
             index.insert(format!("v{ordinal:05}"), vector).unwrap();
         }
         let artifact = index.artifact_data().unwrap();
-        assert_eq!(artifact.metadata.get("index_version").map(String::as_str), Some("v2"));
+        assert_eq!(
+            artifact.metadata.get("index_version").map(String::as_str),
+            Some("v2")
+        );
         let mut rebuilt = VectorIndex::from_artifact(&artifact).unwrap();
         assert_eq!(rebuilt.entry_point, index.entry_point);
         assert_eq!(rebuilt.max_level, index.max_level);
@@ -866,7 +885,10 @@ mod tests {
             assert_eq!(live.results.len(), loaded.results.len());
             for (left, right) in live.results.iter().zip(&loaded.results) {
                 assert_eq!(left.id, right.id);
-                assert_eq!(left.score.total_cmp(&right.score), std::cmp::Ordering::Equal);
+                assert_eq!(
+                    left.score.total_cmp(&right.score),
+                    std::cmp::Ordering::Equal
+                );
             }
         }
     }

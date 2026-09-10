@@ -1,6 +1,9 @@
 use super::*;
 impl AsyncTaskRegistry {
-    pub(crate) fn take_stream_chunk_sum(&mut self, stream_id: SpectraHostValue) -> Option<SpectraHostValue> {
+    pub(crate) fn take_stream_chunk_sum(
+        &mut self,
+        stream_id: SpectraHostValue,
+    ) -> Option<SpectraHostValue> {
         let stream = self.streams.get_mut(stream_id)?;
         let value = stream.chunk_items.iter().copied().sum();
         stream.chunk_items.clear();

@@ -37,4 +37,3 @@ pub(crate) extern "C" fn std_io_input(ctx: *mut SpectraHostCallContext) -> i32 {
     }
     HOST_STATUS_SUCCESS
 }
-

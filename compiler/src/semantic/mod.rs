@@ -145,25 +145,23 @@ pub fn analyze_modules(modules: &mut [&mut Module]) -> Result<(), Vec<SemanticEr
     while !pending.is_empty() {
         let pending_names: HashSet<String> =
             pending.iter().map(|module| module.name.clone()).collect();
-        let next_index = pending
-            .iter()
-            .position(|module| {
-                module
-                    .items
-                    .iter()
-                    .filter_map(|item| match item {
-                        Item::Import(import) => Some(import.path.join(".")),
-                        _ => None,
-                    })
-                    .all(|path| {
-                        let registered = registry
-                            .read()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner())
-                            .get_module(&path)
-                            .is_some();
-                        registered || !pending_names.contains(&path)
-                    })
-            });
+        let next_index = pending.iter().position(|module| {
+            module
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    Item::Import(import) => Some(import.path.join(".")),
+                    _ => None,
+                })
+                .all(|path| {
+                    let registered = registry
+                        .read()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .get_module(&path)
+                        .is_some();
+                    registered || !pending_names.contains(&path)
+                })
+        });
         let Some(next_index) = next_index else {
             // No pending module is ready, so every remaining module waits on
             // another pending module: the residual import graph must contain
@@ -232,11 +230,11 @@ fn report_import_cycles(modules: &[&Module]) -> Vec<SemanticError> {
                         // Canonical rotation so a cycle reached from any of
                         // its members is reported only once.
                         let mut key = cycle.clone();
-                        if let Some(min_pos) =
-                            key.iter()
-                                .enumerate()
-                                .min_by_key(|(_, &member)| member)
-                                .map(|(position, _)| position)
+                        if let Some(min_pos) = key
+                            .iter()
+                            .enumerate()
+                            .min_by_key(|(_, &member)| member)
+                            .map(|(position, _)| position)
                         {
                             key.rotate_left(min_pos);
                         }
@@ -753,67 +751,67 @@ fn namespace_path(expr: &Expression) -> Option<String> {
 
 use semantic_use_after_free::UafFrame;
 
-#[path = "semantic_init.rs"]
-mod semantic_init;
-#[path = "semantic_exports_types.rs"]
-mod semantic_exports_types;
-#[path = "semantic_type_system.rs"]
-mod semantic_type_system;
 #[path = "semantic_annotations.rs"]
 mod semantic_annotations;
-#[path = "semantic_tensor_validation.rs"]
-mod semantic_tensor_validation;
-#[path = "semantic_tensor_const.rs"]
-mod semantic_tensor_const;
-#[path = "semantic_json.rs"]
-mod semantic_json;
-#[path = "semantic_module_analysis.rs"]
-mod semantic_module_analysis;
-#[path = "semantic_item_import.rs"]
-mod semantic_item_import;
-#[path = "semantic_traits.rs"]
-mod semantic_traits;
 #[path = "semantic_async.rs"]
 mod semantic_async;
-#[path = "semantic_statements.rs"]
-mod semantic_statements;
-#[path = "semantic_expression_inference.rs"]
-mod semantic_expression_inference;
 #[path = "semantic_capture_helpers.rs"]
 mod semantic_capture_helpers;
+#[path = "semantic_exhaustiveness.rs"]
+mod semantic_exhaustiveness;
+#[path = "semantic_exports_types.rs"]
+mod semantic_exports_types;
+#[path = "semantic_expression_aggregates.rs"]
+mod semantic_expression_aggregates;
 #[path = "semantic_expression_analysis.rs"]
 mod semantic_expression_analysis;
-#[path = "semantic_expression_literals.rs"]
-mod semantic_expression_literals;
 #[path = "semantic_expression_binary.rs"]
 mod semantic_expression_binary;
 #[path = "semantic_expression_calls.rs"]
 mod semantic_expression_calls;
-#[path = "semantic_expression_aggregates.rs"]
-mod semantic_expression_aggregates;
-#[path = "semantic_expression_struct.rs"]
-mod semantic_expression_struct;
-#[path = "semantic_expression_fields.rs"]
-mod semantic_expression_fields;
 #[path = "semantic_expression_enums.rs"]
 mod semantic_expression_enums;
+#[path = "semantic_expression_fields.rs"]
+mod semantic_expression_fields;
+#[path = "semantic_expression_inference.rs"]
+mod semantic_expression_inference;
+#[path = "semantic_expression_literals.rs"]
+mod semantic_expression_literals;
 #[path = "semantic_expression_matches.rs"]
 mod semantic_expression_matches;
 #[path = "semantic_expression_methods.rs"]
 mod semantic_expression_methods;
+#[path = "semantic_expression_struct.rs"]
+mod semantic_expression_struct;
 #[path = "semantic_expression_tail.rs"]
 mod semantic_expression_tail;
-#[path = "semantic_patterns.rs"]
-mod semantic_patterns;
-#[path = "semantic_pattern_validation.rs"]
-mod semantic_pattern_validation;
-#[path = "semantic_pattern_inference.rs"]
-mod semantic_pattern_inference;
-#[path = "semantic_returns.rs"]
-mod semantic_returns;
-#[path = "semantic_exhaustiveness.rs"]
-mod semantic_exhaustiveness;
+#[path = "semantic_init.rs"]
+mod semantic_init;
+#[path = "semantic_item_import.rs"]
+mod semantic_item_import;
+#[path = "semantic_json.rs"]
+mod semantic_json;
 #[path = "semantic_method_fill.rs"]
 mod semantic_method_fill;
+#[path = "semantic_module_analysis.rs"]
+mod semantic_module_analysis;
+#[path = "semantic_pattern_inference.rs"]
+mod semantic_pattern_inference;
+#[path = "semantic_pattern_validation.rs"]
+mod semantic_pattern_validation;
+#[path = "semantic_patterns.rs"]
+mod semantic_patterns;
+#[path = "semantic_returns.rs"]
+mod semantic_returns;
+#[path = "semantic_statements.rs"]
+mod semantic_statements;
+#[path = "semantic_tensor_const.rs"]
+mod semantic_tensor_const;
+#[path = "semantic_tensor_validation.rs"]
+mod semantic_tensor_validation;
+#[path = "semantic_traits.rs"]
+mod semantic_traits;
+#[path = "semantic_type_system.rs"]
+mod semantic_type_system;
 #[path = "semantic_use_after_free.rs"]
 mod semantic_use_after_free;

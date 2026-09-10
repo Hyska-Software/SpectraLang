@@ -347,7 +347,10 @@ pub(crate) fn ml_onnx_model_spec(kind: &str) -> Option<MlOnnxModel> {
     }
 }
 
-pub(crate) fn ml_onnx_initializer_proto_with_values(init: &MlOnnxInitializer, values: &[f32]) -> Vec<u8> {
+pub(crate) fn ml_onnx_initializer_proto_with_values(
+    init: &MlOnnxInitializer,
+    values: &[f32],
+) -> Vec<u8> {
     let mut out = Vec::new();
     for dim in init.shape {
         pb_i64(1, *dim, &mut out);
@@ -363,7 +366,6 @@ pub(crate) fn ml_onnx_initializer_proto_with_values(init: &MlOnnxInitializer, va
     out
 }
 
-
 pub(crate) fn ml_onnx_model_proto_with_values(model: &MlOnnxModel, values: &[Vec<f32>]) -> Vec<u8> {
     let mut graph = Vec::new();
     for node in &model.nodes {
@@ -371,7 +373,11 @@ pub(crate) fn ml_onnx_model_proto_with_values(model: &MlOnnxModel, values: &[Vec
     }
     pb_string(2, &format!("spectra_{}_graph", model.kind), &mut graph);
     for (initializer, live) in model.initializers.iter().zip(values.iter()) {
-        pb_message(5, ml_onnx_initializer_proto_with_values(initializer, live), &mut graph);
+        pb_message(
+            5,
+            ml_onnx_initializer_proto_with_values(initializer, live),
+            &mut graph,
+        );
     }
     for input in &model.inputs {
         pb_message(11, ml_onnx_value_info(input), &mut graph);
@@ -394,7 +400,6 @@ pub(crate) fn ml_onnx_model_proto_with_values(model: &MlOnnxModel, values: &[Vec
     pb_message(8, opset, &mut out);
     out
 }
-
 
 pub(crate) fn pb_read_varint(bytes: &[u8], index: &mut usize) -> Option<u64> {
     let mut shift = 0u32;
@@ -581,9 +586,7 @@ pub(crate) fn ml_onnx_sessions_lock() -> std::sync::MutexGuard<'static, MlOnnxSe
 /// while multi-graph-input models go through `spectra.std.ml.onnx_run_multi`,
 /// which validates names, order and f32 shapes against the real ORT session.
 #[cfg(feature = "onnx")]
-pub(crate) fn ml_onnx_commit_session(
-    bytes: &[u8],
-) -> Result<u64, i32> {
+pub(crate) fn ml_onnx_commit_session(bytes: &[u8]) -> Result<u64, i32> {
     use ort::session::{builder::GraphOptimizationLevel, Session};
     let builder = Session::builder().map_err(|_| HOST_STATUS_INVALID_ARGUMENT)?;
     let session = builder
@@ -645,10 +648,7 @@ pub(crate) fn ml_onnx_real_summary_from_bytes(bytes: &[u8]) -> Option<String> {
     }
     use ort::session::Session;
     use ort::value::TensorElementType;
-    let session = Session::builder()
-        .ok()?
-        .commit_from_memory(bytes)
-        .ok()?;
+    let session = Session::builder().ok()?.commit_from_memory(bytes).ok()?;
     let inputs = describe_outlets(session.inputs());
     let outputs = describe_outlets(session.outputs());
     let ops = ml_onnx_proto_op_types(bytes)?;
@@ -695,8 +695,7 @@ pub(crate) fn ml_onnx_run_inner(
     // with the `&mut session` that inference takes.
     let input_name = session.inputs()[0].name().to_owned();
 
-    let input_value =
-        Tensor::from_array((dims, data)).map_err(|_| HOST_STATUS_INVALID_ARGUMENT)?;
+    let input_value = Tensor::from_array((dims, data)).map_err(|_| HOST_STATUS_INVALID_ARGUMENT)?;
     let outputs = session
         .run(ort::inputs![input_name.as_str() => input_value])
         .map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
@@ -751,11 +750,13 @@ pub(crate) fn ml_onnx_shape_compatible(model_shape: &str, provided_dims: &[i64])
     model_dims
         .iter()
         .zip(provided_dims.iter())
-        .all(|(model_dim, provided)| match model_dim.trim().parse::<i64>() {
-            // Negative dims also mean "dynamic" in several exporters.
-            Ok(fixed) if fixed > 0 => fixed == *provided,
-            _ => true,
-        })
+        .all(
+            |(model_dim, provided)| match model_dim.trim().parse::<i64>() {
+                // Negative dims also mean "dynamic" in several exporters.
+                Ok(fixed) if fixed > 0 => fixed == *provided,
+                _ => true,
+            },
+        )
 }
 
 /// Multi-graph-input inference against a committed onnxruntime session:
@@ -807,15 +808,12 @@ pub(crate) fn ml_onnx_run_multi_inner(
     }
 
     let mut sessions = ml_onnx_sessions_lock();
-    let session =
-        sessions
-            .get_mut(&session_id)
-            .ok_or_else(|| {
-                ml_onnx_multi_error(
-                    HOST_STATUS_NOT_FOUND,
-                    format!("session handle {session_id} does not exist"),
-                )
-            })?;
+    let session = sessions.get_mut(&session_id).ok_or_else(|| {
+        ml_onnx_multi_error(
+            HOST_STATUS_NOT_FOUND,
+            format!("session handle {session_id} does not exist"),
+        )
+    })?;
     if prepared.len() != session.inputs().len() {
         let expected = session
             .inputs()
@@ -877,7 +875,9 @@ pub(crate) fn ml_onnx_run_multi_inner(
         if !*is_f32 {
             return Err(ml_onnx_multi_error(
                 HOST_STATUS_INVALID_ARGUMENT,
-                format!("graph input '{name}' expects float32 but the model declares another dtype"),
+                format!(
+                    "graph input '{name}' expects float32 but the model declares another dtype"
+                ),
             ));
         }
         let provided = dims
@@ -911,13 +911,15 @@ pub(crate) fn ml_onnx_run_multi_inner(
     for (position, slot) in feed.iter().enumerate() {
         let index = slot.expect("coverage checked above");
         let (_, dims, data) = &prepared[index];
-        let tensor = Tensor::from_array((dims.clone(), data.clone()))
-            .map_err(|_| {
-                ml_onnx_multi_error(
-                    HOST_STATUS_INVALID_ARGUMENT,
-                    format!("cannot build ORT tensor for input '{}'", model_inputs[position].0),
-                )
-            })?;
+        let tensor = Tensor::from_array((dims.clone(), data.clone())).map_err(|_| {
+            ml_onnx_multi_error(
+                HOST_STATUS_INVALID_ARGUMENT,
+                format!(
+                    "cannot build ORT tensor for input '{}'",
+                    model_inputs[position].0
+                ),
+            )
+        })?;
         inputs.push((model_inputs[position].0.clone(), tensor));
     }
 
@@ -982,7 +984,11 @@ pub(crate) fn ml_onnx_symbolic_identity_proto() -> Vec<u8> {
         ml_embed_value_info("x", 1, &[batch_dim.clone(), seq_dim.clone()]),
         &mut graph,
     );
-    pb_message(12, ml_embed_value_info("y", 1, &[batch_dim, seq_dim]), &mut graph);
+    pb_message(
+        12,
+        ml_embed_value_info("y", 1, &[batch_dim, seq_dim]),
+        &mut graph,
+    );
 
     let mut opset = Vec::new();
     pb_string(1, "", &mut opset);

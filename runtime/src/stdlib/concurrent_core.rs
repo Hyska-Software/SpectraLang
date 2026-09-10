@@ -454,7 +454,10 @@ impl ConcurrentRegistry {
         Ok(())
     }
 
-    pub(crate) fn allocate_batch(&mut self, count: usize) -> (SpectraHostValue, Arc<ConcurrentBatch>) {
+    pub(crate) fn allocate_batch(
+        &mut self,
+        count: usize,
+    ) -> (SpectraHostValue, Arc<ConcurrentBatch>) {
         self.tasks_spawned = self.tasks_spawned.saturating_add(count as SpectraHostValue);
         let batch = Arc::new(ConcurrentBatch::new(count));
         let batch_id = self.batches.insert(Arc::clone(&batch));
@@ -488,7 +491,8 @@ pub(crate) fn concurrent_registry() -> &'static Mutex<ConcurrentRegistry> {
     REGISTRY.get_or_init(|| Mutex::new(ConcurrentRegistry::new()))
 }
 
-pub(crate) fn lock_concurrent_registry() -> Result<std::sync::MutexGuard<'static, ConcurrentRegistry>, i32> {
+pub(crate) fn lock_concurrent_registry(
+) -> Result<std::sync::MutexGuard<'static, ConcurrentRegistry>, i32> {
     let result = concurrent_registry()
         .lock()
         .map_err(|_| HOST_STATUS_INTERNAL_ERROR);
@@ -520,7 +524,6 @@ pub(crate) fn record_concurrent_task_created() {
     }
 }
 
-
 /// Invokes a JIT-compiled Spectra closure on a worker thread through the
 /// same boundary the higher-order stdlib functions use
 /// (`spectra_rt_invoke_closure`, which carries its own catch_unwind).
@@ -540,9 +543,8 @@ pub(crate) fn invoke_concurrent_closure(
     let mut out: SpectraHostValue = 0;
     // SAFETY: fn_ptr is the closure handle produced by the backend (slot 0 =
     // code pointer) and `args` lives for the duration of the call.
-    let status = unsafe {
-        crate::ffi::spectra_rt_invoke_closure(fn_ptr, args.as_ptr(), 1, &mut out)
-    };
+    let status =
+        unsafe { crate::ffi::spectra_rt_invoke_closure(fn_ptr, args.as_ptr(), 1, &mut out) };
     if status == HOST_STATUS_SUCCESS {
         Ok(out)
     } else {
@@ -634,7 +636,9 @@ pub(crate) fn spawn_concurrent_batch(
     Ok(batch_id)
 }
 
-pub(crate) fn join_concurrent_batch_sum(batch_id: SpectraHostValue) -> Result<SpectraHostValue, i32> {
+pub(crate) fn join_concurrent_batch_sum(
+    batch_id: SpectraHostValue,
+) -> Result<SpectraHostValue, i32> {
     let batch = {
         let registry = lock_concurrent_registry()?;
         registry.batch(batch_id)?
@@ -648,4 +652,3 @@ pub(crate) fn join_concurrent_batch_sum(batch_id: SpectraHostValue) -> Result<Sp
     registry.release_batch(batch_id)?;
     Ok(total)
 }
-

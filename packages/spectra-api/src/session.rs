@@ -762,7 +762,7 @@ mod tests {
             Some(record.clone())
         );
         assert_eq!(backend.lookup(&record.id, 1_100, true).unwrap(), None);
-        assert_eq!(backend.revoke(&record.id).unwrap(), false);
+        assert!(!backend.revoke(&record.id).unwrap());
     }
 
     #[test]

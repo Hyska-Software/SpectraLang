@@ -217,9 +217,12 @@ impl Parser {
 
     /// Splits f-string raw template into literal and interpolated parts,
     /// then sub-parses inner expressions.
-    pub(crate) fn parse_fstring_parts(&mut self, raw: &str, span: crate::span::Span) -> Vec<FStringPart> {
+    pub(crate) fn parse_fstring_parts(
+        &mut self,
+        raw: &str,
+        span: crate::span::Span,
+    ) -> Vec<FStringPart> {
         use crate::lexer::Lexer;
-        
 
         let mut parts = Vec::new();
         let chars: Vec<char> = raw.chars().collect();
@@ -351,5 +354,4 @@ impl Parser {
             kind: ExpressionKind::Match { scrutinee, arms },
         })
     }
-
 }

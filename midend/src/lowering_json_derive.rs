@@ -17,6 +17,15 @@ pub(crate) struct JsonFieldSchema {
     pub field_type: IRType,
 }
 
+/// Inputs for decoding one JSON object field in `ASTLowering::lower_json_decode_field`.
+struct JsonDecodeField<'a> {
+    field: &'a JsonFieldSchema,
+    field_type: &'a IRType,
+    child: Value,
+    path: &'a str,
+    field_ptr: Value,
+}
+
 fn has_derive_flag(attributes: &[Attribute], flag: &str) -> bool {
     attributes.iter().any(|attr| {
         attr.name == "derive"
@@ -212,9 +221,7 @@ impl ASTLowering {
             IRType::Struct { name, .. } => {
                 // Struct-typed fields store an 8-byte pointer (see
                 // `stored_size`); the field slot is not the struct base.
-                let Some(nested_defs) = self.struct_definitions.get(&name).cloned() else {
-                    return None;
-                };
+                let nested_defs = self.struct_definitions.get(&name).cloned()?;
                 let nested_ty = IRType::Struct {
                     name: name.clone(),
                     fields: nested_defs,
@@ -370,10 +377,16 @@ impl ASTLowering {
                 "did not look up a JSON field",
             );
             let decoded = self.lower_json_decode_field(
-                field, field_type, child, &path, field_ptr, ir_func, stack,
+                JsonDecodeField {
+                    field,
+                    field_type,
+                    child,
+                    path: &path,
+                    field_ptr,
+                },
+                ir_func,
+                stack,
             );
-            // On failure the typed error is already recorded and `lower_module`
-            // rejects the module; stop emitting into this function rather than
             // stacking a secondary error.
             if decoded.is_none() {
                 stack.pop();
@@ -388,14 +401,17 @@ impl ASTLowering {
     /// after recording a typed error for unsupported shapes.
     fn lower_json_decode_field(
         &mut self,
-        field: &JsonFieldSchema,
-        field_type: &IRType,
-        child: Value,
-        path: &str,
-        field_ptr: Value,
+        decode: JsonDecodeField<'_>,
         ir_func: &mut IRFunction,
         stack: &mut Vec<String>,
     ) -> Option<()> {
+        let JsonDecodeField {
+            field,
+            field_type,
+            child,
+            path,
+            field_ptr,
+        } = decode;
         if field.optional && !is_json_scalar(field_type) {
             self.error(format!(
                 "JSON from_json on '{}.{}': optional is supported only for int, float, bool, string, and char fields",
@@ -551,7 +567,7 @@ impl ASTLowering {
             IRType::Char => Some("char".to_string()),
             IRType::Struct { name, .. } => {
                 let inner = self.derive_schema_string(&name, stack).ok()?;
-                Some(inner.replacen(&format!("{name}"), "", 1))
+                Some(inner.replacen(&name.to_string(), "", 1))
             }
             IRType::Array { element_type, .. } => {
                 let element_rep = self.ir_type_representation(element_type.as_ref()).clone();
@@ -563,7 +579,7 @@ impl ASTLowering {
                     IRType::Char => "char".to_string(),
                     IRType::Struct { name, .. } => {
                         let inner = self.derive_schema_string(&name, stack).ok()?;
-                        inner.replacen(&format!("{name}"), "", 1)
+                        inner.replacen(&name.to_string(), "", 1)
                     }
                     _ => return None,
                 };

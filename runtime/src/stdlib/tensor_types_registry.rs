@@ -259,17 +259,23 @@ pub(crate) struct StdTensor {
     /// pool's device tag. Populated by `to_device` after R-3021 lands.
     /// Not yet read by the GPU op sites — that is R-3052 full.
     #[cfg(feature = "gpu")]
-    pub(crate) device_storage: std::collections::HashMap<crate::gpu::PoolDevice, crate::gpu::DeviceBuffer>,
+    pub(crate) device_storage:
+        std::collections::HashMap<crate::gpu::PoolDevice, crate::gpu::DeviceBuffer>,
     /// R-3052 full: optional device-resident gradient buffer, keyed by
     /// the pool's device tag. Populated by the GPU backward path when
     /// the parent is device-resident; consumed by the residency-aware
     /// `sgd_step`. Mirrors `device_storage` for the grad slot.
     #[cfg(feature = "gpu")]
-    pub(crate) device_grad: std::collections::HashMap<crate::gpu::PoolDevice, crate::gpu::DeviceBuffer>,
+    pub(crate) device_grad:
+        std::collections::HashMap<crate::gpu::PoolDevice, crate::gpu::DeviceBuffer>,
 }
 
 impl StdTensor {
-    pub(crate) fn new(dtype: TensorDType, shape: Vec<usize>, data: Vec<SpectraHostValue>) -> Option<Self> {
+    pub(crate) fn new(
+        dtype: TensorDType,
+        shape: Vec<usize>,
+        data: Vec<SpectraHostValue>,
+    ) -> Option<Self> {
         let expected_len = shape
             .iter()
             .try_fold(1usize, |acc, dim| acc.checked_mul(*dim))?;
@@ -861,4 +867,3 @@ pub(crate) fn note_gpu_backward_op() {
 pub(crate) fn _ensure_note_gpu_backward_op_linked() {
     note_gpu_backward_op();
 }
-

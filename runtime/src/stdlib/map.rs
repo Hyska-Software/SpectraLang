@@ -7,7 +7,8 @@ pub(crate) const MAP_GET: &str = spectra_contract::STD_COLLECTIONS_MAP_GET_BINDI
 pub(crate) const MAP_GET_OPTION: &str = spectra_contract::STD_COLLECTIONS_MAP_GET_OPTION_BINDING;
 pub(crate) const MAP_CONTAINS: &str = "spectra.std.collections.map_contains";
 pub(crate) const MAP_REMOVE: &str = spectra_contract::STD_COLLECTIONS_MAP_REMOVE_BINDING;
-pub(crate) const MAP_REMOVE_OPTION: &str = spectra_contract::STD_COLLECTIONS_MAP_REMOVE_OPTION_BINDING;
+pub(crate) const MAP_REMOVE_OPTION: &str =
+    spectra_contract::STD_COLLECTIONS_MAP_REMOVE_OPTION_BINDING;
 pub(crate) const MAP_LEN: &str = "spectra.std.collections.map_len";
 pub(crate) const MAP_CLEAR: &str = "spectra.std.collections.map_clear";
 pub(crate) const MAP_FREE: &str = "spectra.std.collections.map_free";
@@ -61,10 +62,7 @@ impl MapRegistry {
     ) -> Result<Option<SpectraHostValue>, i32> {
         let id = Self::id(handle)?;
         let map = self.maps.get(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
-        Ok(lock_unpoisoned(map)
-            .data
-            .get(&collection_key(key))
-            .copied())
+        Ok(lock_unpoisoned(map).data.get(&collection_key(key)).copied())
     }
 
     pub(crate) fn keys_snapshot(&self, handle: usize) -> Result<Vec<SpectraHostValue>, i32> {
@@ -155,7 +153,6 @@ pub(crate) extern "C" fn std_map_set(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
-
 pub(crate) extern "C" fn std_map_get_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
@@ -202,7 +199,6 @@ pub(crate) extern "C" fn std_map_contains(ctx: *mut SpectraHostCallContext) -> i
     HOST_STATUS_SUCCESS
 }
 
-
 pub(crate) extern "C" fn std_map_remove_option(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
@@ -213,10 +209,8 @@ pub(crate) extern "C" fn std_map_remove_option(ctx: *mut SpectraHostCallContext)
             return HOST_STATUS_INVALID_ARGUMENT;
         }
         let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
-        let value = with_map_registry(|registry| {
-            registry.remove_value(args[0] as usize, args[1])
-        })
-        .unwrap_or(None);
+        let value = with_map_registry(|registry| registry.remove_value(args[0] as usize, args[1]))
+            .unwrap_or(None);
         write_option_result(ctx_ref, value)
     }
 }
@@ -292,4 +286,3 @@ pub(crate) extern "C" fn std_map_free(ctx: *mut SpectraHostCallContext) -> i32 {
         }
     }
 }
-

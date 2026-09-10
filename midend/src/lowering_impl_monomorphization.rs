@@ -135,15 +135,19 @@ impl ASTLowering {
             return;
         }
 
-        let (base_name, _concrete_ir_types) = match self.instantiated_structs.get(&request.instantiated_struct) {
-            Some(entry) => entry.clone(),
-            None => {
-                // The instantiation may not have been registered yet (e.g. the
-                // base struct was used without specialization); fall back to the
-                // instantiated name itself with the request's concrete types.
-                (request.instantiated_struct.clone(), request.concrete_types.clone())
-            }
-        };
+        let (base_name, _concrete_ir_types) =
+            match self.instantiated_structs.get(&request.instantiated_struct) {
+                Some(entry) => entry.clone(),
+                None => {
+                    // The instantiation may not have been registered yet (e.g. the
+                    // base struct was used without specialization); fall back to the
+                    // instantiated name itself with the request's concrete types.
+                    (
+                        request.instantiated_struct.clone(),
+                        request.concrete_types.clone(),
+                    )
+                }
+            };
 
         let key = format!("{}_{}", base_name, request.method_name);
         let Some((method, type_params)) = self.generic_impl_methods.get(&key).cloned() else {
@@ -192,27 +196,24 @@ impl ASTLowering {
         }
 
         // Ensure the instantiated struct definition exists so `self` fields resolve.
-        let base_name = match self
-            .instantiated_structs
-            .get(instantiated_struct)
-            .cloned()
-        {
+        let base_name = match self.instantiated_structs.get(instantiated_struct).cloned() {
             Some((base, _)) => base,
             None => instantiated_struct.to_string(),
         };
         if !self.struct_definitions.contains_key(instantiated_struct)
-            && self.generic_structs.contains_key(&base_name) {
-                let unknown_args: Vec<TypeAnnotation> = concrete_types
-                    .iter()
-                    .map(|ty| TypeAnnotation {
-                        kind: TypeAnnotationKind::Simple {
-                            segments: vec![self.ir_type_to_ast_name(ty)],
-                        },
-                        span: Span::dummy(),
-                    })
-                    .collect();
-                self.ensure_struct_definition(&base_name, &unknown_args);
-            }
+            && self.generic_structs.contains_key(&base_name)
+        {
+            let unknown_args: Vec<TypeAnnotation> = concrete_types
+                .iter()
+                .map(|ty| TypeAnnotation {
+                    kind: TypeAnnotationKind::Simple {
+                        segments: vec![self.ir_type_to_ast_name(ty)],
+                    },
+                    span: Span::dummy(),
+                })
+                .collect();
+            self.ensure_struct_definition(&base_name, &unknown_args);
+        }
 
         self.type_substitution_map = type_map;
         let result = self.lower_method(&specialized, instantiated_struct);
@@ -293,9 +294,9 @@ impl ASTLowering {
                 .iter()
                 .any(|(_, field)| Self::ir_type_contains_unknown(field)),
             IRType::Enum { variants, .. } => variants.iter().any(|(_, payload)| {
-                payload.as_ref().is_some_and(|types| {
-                    types.iter().any(Self::ir_type_contains_unknown)
-                })
+                payload
+                    .as_ref()
+                    .is_some_and(|types| types.iter().any(Self::ir_type_contains_unknown))
             }),
             IRType::Generic {
                 args,
@@ -341,7 +342,11 @@ impl ASTLowering {
             .unwrap_or(false)
     }
 
-    pub(crate) fn ir_type_satisfies_auto_trait(&self, concrete_type: &IRType, trait_name: &str) -> bool {
+    pub(crate) fn ir_type_satisfies_auto_trait(
+        &self,
+        concrete_type: &IRType,
+        trait_name: &str,
+    ) -> bool {
         match concrete_type {
             IRType::Unknown => false,
             IRType::Void
@@ -433,7 +438,11 @@ impl ASTLowering {
         }
     }
 
-    pub(crate) fn merge_array_element_types(&self, left: &IRType, right: &IRType) -> Option<IRType> {
+    pub(crate) fn merge_array_element_types(
+        &self,
+        left: &IRType,
+        right: &IRType,
+    ) -> Option<IRType> {
         if left == right {
             return Some(left.clone());
         }
@@ -534,7 +543,6 @@ impl ASTLowering {
 
         element_type
     }
-
 }
 
 #[cfg(test)]
@@ -567,13 +575,15 @@ mod tests {
             },
         );
         for i in 0..513 {
-            lowering.pending_specializations.push(MonomorphizationRequest {
-                generic_name: "synth_id".to_string(),
-                concrete_types: vec![IRType::Struct {
-                    name: format!("OverflowProbe{i}"),
-                    fields: Vec::new(),
-                }],
-            });
+            lowering
+                .pending_specializations
+                .push(MonomorphizationRequest {
+                    generic_name: "synth_id".to_string(),
+                    concrete_types: vec![IRType::Struct {
+                        name: format!("OverflowProbe{i}"),
+                        fields: Vec::new(),
+                    }],
+                });
         }
         let mut module = IRModule::new("overflow_probe");
         lowering.process_monomorphization_requests(&mut module);
@@ -589,7 +599,11 @@ mod tests {
         assert!(
             coded,
             "expected E3011 overflow error naming synth_id and 512, got: {:?}",
-            lowering.errors.iter().map(|error| &error.message).collect::<Vec<_>>()
+            lowering
+                .errors
+                .iter()
+                .map(|error| &error.message)
+                .collect::<Vec<_>>()
         );
     }
 }

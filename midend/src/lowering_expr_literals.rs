@@ -1,7 +1,11 @@
 use super::*;
 
 impl ASTLowering {
-    pub(crate) fn lower_expression_literals(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_literals(
+        &mut self,
+        expr: &Expression,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         match &expr.kind {
             ExpressionKind::NumberLiteral(n) => {
                 // The token carries raw text; the shared parser understands
@@ -72,10 +76,7 @@ impl ASTLowering {
                 {
                     self.lower_named_function_value(name, ir_func)
                 } else {
-                    self.invalid_value(format!(
-                        "unresolved identifier '{}' during lowering",
-                        name
-                    ))
+                    self.invalid_value(format!("unresolved identifier '{}' during lowering", name))
                 }
             }
             _ => unreachable!("lowering expression category mismatch"),

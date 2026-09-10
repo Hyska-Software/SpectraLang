@@ -1,7 +1,11 @@
 use super::*;
 
 impl ASTLowering {
-    pub(crate) fn lower_expression_struct(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_struct(
+        &mut self,
+        expr: &Expression,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         match &expr.kind {
             ExpressionKind::StructLiteral {
                 name,
@@ -39,11 +43,7 @@ impl ASTLowering {
                     let field_value =
                         self.lower_expression_as_type(field_expr, &field_type, ir_func);
 
-                    let Some(byte_offset) = struct_layout
-                        .offsets
-                        .get(field_idx)
-                        .copied()
-                    else {
+                    let Some(byte_offset) = struct_layout.offsets.get(field_idx).copied() else {
                         return self.invalid_value(format!(
                             "field layout for '{actual_name}.{field_name}' has no offset for field type {field_type:?}"
                         ));

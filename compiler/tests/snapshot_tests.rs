@@ -9,9 +9,7 @@ use std::path::Path;
 
 fn parse(source: &str) -> Module {
     let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
-    Parser::new(tokens)
-        .parse()
-        .expect("parsing should pass")
+    Parser::new(tokens).parse().expect("parsing should pass")
 }
 
 fn assert_snapshot(name: &str, actual: &str) {

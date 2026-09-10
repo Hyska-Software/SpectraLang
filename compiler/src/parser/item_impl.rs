@@ -152,8 +152,9 @@ impl Parser {
                 (Some(body), end)
             } else {
                 // Just signature, no body
-                let end = self
-                    .consume_statement_terminator("Expected a line break after trait method signature")?;
+                let end = self.consume_statement_terminator(
+                    "Expected a line break after trait method signature",
+                )?;
                 (None, end)
             };
 
@@ -197,5 +198,4 @@ impl Parser {
 
         Ok(trait_decl)
     }
-
 }

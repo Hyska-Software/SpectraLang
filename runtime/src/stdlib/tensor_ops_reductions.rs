@@ -335,12 +335,11 @@ pub(crate) extern "C" fn std_tensor_mean_f(ctx: *mut SpectraHostCallContext) -> 
         let Some(value) = with_tensor_registry(|registry| {
             let tensor = registry.get(args[0] as usize)?.clone();
             #[cfg(feature = "gpu")]
-            if let Some(mean_bits) = tensor_residency_scalar(
-                registry,
-                &tensor,
-                crate::gpu::GpuReduceOp::Mean,
-                |value| f64::from(value).to_bits() as i64,
-            ) {
+            if let Some(mean_bits) =
+                tensor_residency_scalar(registry, &tensor, crate::gpu::GpuReduceOp::Mean, |value| {
+                    f64::from(value).to_bits() as i64
+                })
+            {
                 return Some(mean_bits);
             }
             let data = tensor.materialize();
@@ -398,9 +397,7 @@ pub(crate) fn tensor_reduction_tensor(
                         AutogradOp::MeanTensor => crate::gpu::GpuReduceOp::Mean,
                         _ => crate::gpu::GpuReduceOp::Sum,
                     };
-                    if let Some(reduced) =
-                        tensor_residency_reduce(registry, &tensor, gpu_op)
-                    {
+                    if let Some(reduced) = tensor_residency_reduce(registry, &tensor, gpu_op) {
                         registry.note_kernel(tensor.len());
                         return Some((f64::from(reduced), false, None));
                     }
@@ -453,12 +450,11 @@ pub(crate) extern "C" fn std_tensor_max(ctx: *mut SpectraHostCallContext) -> i32
         let Some(value) = with_tensor_registry(|registry| {
             let tensor = registry.get(args[0] as usize)?.clone();
             #[cfg(feature = "gpu")]
-            if let Some(max_bits) = tensor_residency_scalar(
-                registry,
-                &tensor,
-                crate::gpu::GpuReduceOp::Max,
-                |value| f64::from(value).to_bits() as i64,
-            ) {
+            if let Some(max_bits) =
+                tensor_residency_scalar(registry, &tensor, crate::gpu::GpuReduceOp::Max, |value| {
+                    f64::from(value).to_bits() as i64
+                })
+            {
                 return Some(max_bits);
             }
             let data = tensor.materialize();
@@ -488,12 +484,11 @@ pub(crate) extern "C" fn std_tensor_min(ctx: *mut SpectraHostCallContext) -> i32
         let Some(value) = with_tensor_registry(|registry| {
             let tensor = registry.get(args[0] as usize)?.clone();
             #[cfg(feature = "gpu")]
-            if let Some(min_bits) = tensor_residency_scalar(
-                registry,
-                &tensor,
-                crate::gpu::GpuReduceOp::Min,
-                |value| f64::from(value).to_bits() as i64,
-            ) {
+            if let Some(min_bits) =
+                tensor_residency_scalar(registry, &tensor, crate::gpu::GpuReduceOp::Min, |value| {
+                    f64::from(value).to_bits() as i64
+                })
+            {
                 return Some(min_bits);
             }
             let data = tensor.materialize();
@@ -562,7 +557,6 @@ pub(crate) extern "C" fn std_tensor_argmax(ctx: *mut SpectraHostCallContext) -> 
         tensor_result(ctx_ref, value)
     }
 }
-
 
 pub(crate) extern "C" fn std_tensor_transpose(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
@@ -888,4 +882,3 @@ pub(crate) fn tensor_unary(
         }
     }
 }
-

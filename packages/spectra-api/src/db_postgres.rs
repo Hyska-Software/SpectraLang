@@ -186,9 +186,8 @@ fn with_statement<T>(
         .value
         .lock()
         .map_err(|_| spectra_db::sqlite::SqliteError::new("DB2504_LOCK", "SQLite statement lock poisoned"))?;
-    operation(&mut statement).map_err(|error| {
-        cell.last_error.record(&error);
-        error
+    operation(&mut statement).inspect_err(|error| {
+        cell.last_error.record(error);
     })
 }
 
@@ -252,9 +251,8 @@ fn with_postgres_connection<T>(
         .value
         .lock()
         .map_err(|_| spectra_db::postgres::PostgresError::new("DB2505_LOCK", "PostgreSQL connection lock poisoned"))?;
-    operation(&guard).map_err(|error| {
-        cell.last_error.record(&error);
-        error
+    operation(&guard).inspect_err(|error| {
+        cell.last_error.record(error);
     })
 }
 
@@ -319,9 +317,8 @@ fn with_postgres_statement<T>(
         .value
         .lock()
         .map_err(|_| spectra_db::postgres::PostgresError::new("DB2505_LOCK", "PostgreSQL statement lock poisoned"))?;
-    operation(&mut statement).map_err(|error| {
-        cell.last_error.record(&error);
-        error
+    operation(&mut statement).inspect_err(|error| {
+        cell.last_error.record(error);
     })
 }
 
@@ -858,9 +855,8 @@ fn with_redis_connection<T>(
         .value
         .lock()
         .map_err(|_| RedisError::new("DB2507_LOCK", "Redis handle lock poisoned"))?;
-    operation(&guard).map_err(|error| {
-        cell.last_error.record(&error);
-        error
+    operation(&guard).inspect_err(|error| {
+        cell.last_error.record(error);
     })
 }
 pub extern "C" fn redis_get(ctx: *mut SpectraHostCallContext) -> i32 { redis_key_op(ctx, "db.redis.get", |c, key| c.get_blocking(key).map(|value| value.and_then(|v| v.into_bytes().ok()))) }

@@ -12,11 +12,10 @@
 //!
 //! Any copy drifting from the code-registered reality must fail here.
 
-use spectra_compiler::semantic::builtin_modules::{
-    builtin_contract_symbols, STD_API_MODULE_PATHS, STD_API_PUBLIC_FUNCTIONS,
-    STD_API_PUBLIC_TYPES,
-};
 use spectra_api::HOST_CALLS;
+use spectra_compiler::semantic::builtin_modules::{
+    builtin_contract_symbols, STD_API_MODULE_PATHS, STD_API_PUBLIC_FUNCTIONS, STD_API_PUBLIC_TYPES,
+};
 use spectra_contract::catalog;
 
 /// Every host call implemented by the API package must be catalogued with a
@@ -97,10 +96,8 @@ fn every_lowering_target_exists_in_host_calls() {
 
     let mut dangling: Vec<String> = Vec::new();
     for (module, function) in candidates {
-        if let Some(target) = spectra_midend::lowering::std_api_host_call_target(
-            &module,
-            &function,
-        ) {
+        if let Some(target) = spectra_midend::lowering::std_api_host_call_target(&module, &function)
+        {
             if !host_names.contains(&target) {
                 dangling.push(format!("{module}.{function} -> {target}"));
             }
@@ -117,8 +114,10 @@ fn every_lowering_target_exists_in_host_calls() {
 #[test]
 fn manual_public_tables_are_subset_of_registry_symbols() {
     let derived_symbols = builtin_contract_symbols();
-    let derived: std::collections::HashSet<&str> =
-        derived_symbols.iter().map(|symbol| symbol.path.as_str()).collect();
+    let derived: std::collections::HashSet<&str> = derived_symbols
+        .iter()
+        .map(|symbol| symbol.path.as_str())
+        .collect();
 
     let stale_types: Vec<&str> = STD_API_PUBLIC_TYPES
         .iter()
@@ -145,8 +144,7 @@ fn manual_public_tables_are_subset_of_registry_symbols() {
 /// `std.api` (including dotted submodules such as `db.sqlite`).
 #[test]
 fn module_paths_cover_registered_builtin_modules() {
-    let declared: std::collections::HashSet<&str> =
-        STD_API_MODULE_PATHS.iter().copied().collect();
+    let declared: std::collections::HashSet<&str> = STD_API_MODULE_PATHS.iter().copied().collect();
 
     let registered_modules = builtin_contract_symbols();
     let unlisted: Vec<&str> = registered_modules

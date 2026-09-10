@@ -94,7 +94,12 @@ impl SemanticAnalyzer {
         }
     }
 
-    pub(crate) fn validate_function_block_return(&mut self, body: &Block, expected: &Type, span: Span) {
+    pub(crate) fn validate_function_block_return(
+        &mut self,
+        body: &Block,
+        expected: &Type,
+        span: Span,
+    ) {
         match expected {
             Type::Unknown => (),
             Type::Unit => {
@@ -145,5 +150,4 @@ impl SemanticAnalyzer {
             }
         }
     }
-
 }

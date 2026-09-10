@@ -395,11 +395,7 @@ impl MessageAssembler {
                         "continuation frame must not set RSV1",
                     ));
                 }
-                append_with_limit(
-                    &mut state.payload,
-                    &frame.payload,
-                    config.max_message_bytes,
-                )?;
+                append_with_limit(&mut state.payload, &frame.payload, config.max_message_bytes)?;
                 if frame.fin {
                     return finish_fragment(state, config, per_message_deflate);
                 }
@@ -600,7 +596,6 @@ impl WebSocketConnection {
             }
         }
     }
-
 
     fn handle_peer_close(&mut self, payload: &[u8]) -> Result<(), WebSocketError> {
         validate_close_payload(payload)?;
@@ -938,9 +933,13 @@ pub(crate) async fn serve_tls_upgrade_pump<I>(
         return;
     }
     loop {
-        let Some(frame) =
-            tls_read_frame(&mut io, &mut buffered, &config, negotiation.per_message_deflate)
-                .await
+        let Some(frame) = tls_read_frame(
+            &mut io,
+            &mut buffered,
+            &config,
+            negotiation.per_message_deflate,
+        )
+        .await
         else {
             return;
         };
@@ -975,11 +974,7 @@ pub(crate) async fn serve_tls_upgrade_pump<I>(
             }
             0xA => {}
             _ => {
-                let assembled = assembler.assemble(
-                    frame,
-                    &config,
-                    negotiation.per_message_deflate,
-                );
+                let assembled = assembler.assemble(frame, &config, negotiation.per_message_deflate);
                 match assembled {
                     Ok(Some(message)) => {
                         let (opcode, payload) = match &message {
@@ -1100,7 +1095,6 @@ where
         payload,
     })
 }
-
 
 async fn tls_write_frame<I>(io: &mut I, frame: WebSocketFrame) -> Result<(), ()>
 where
@@ -1502,7 +1496,6 @@ pub(crate) fn is_upgrade_request(request: &ParsedRequest) -> bool {
         && header_contains_token(&request.headers, "Upgrade", "websocket")
         && header_contains_token(&request.headers, "Connection", "upgrade")
 }
-
 
 fn client_handshake(
     mut stream: WebSocketTransport,
@@ -2515,8 +2508,10 @@ mod tests {
 
     #[test]
     fn per_message_deflate_is_negotiated_and_round_trips() {
-        let mut config = WebSocketConfig::default();
-        config.per_message_deflate = true;
+        let config = WebSocketConfig {
+            per_message_deflate: true,
+            ..Default::default()
+        };
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind compression listener");
         let address = listener.local_addr().expect("compression address");
         let server = std::thread::spawn(move || {

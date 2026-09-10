@@ -256,4 +256,3 @@ pub(crate) extern "C" fn std_random_bool(ctx: *mut SpectraHostCallContext) -> i3
     }
     HOST_STATUS_SUCCESS
 }
-

@@ -13,7 +13,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_HOST_CALL_COUNT = 555
-RUNTIME_REQUIRED_HOST_CALL_COUNT = 439
 
 
 def fail(message: str) -> None:
@@ -59,7 +58,8 @@ def run_command(args: list[str], timeout: int = 120) -> str:
 
 def validate_body_surface() -> None:
     host_calls = read("packages/spectra-api/src/host_calls.rs")
-    runtime_api = read("runtime/src/api/mod.rs")
+    runtime_api = read("packages/spectra-api/src/host_calls.rs")
+    api_tests = read("packages/spectra-api/src/api_tests.rs")
     http_host = read("packages/spectra-api/src/http_host.rs")
     for name in [
         "spectra.api.http.request_body",
@@ -75,9 +75,9 @@ def validate_body_surface() -> None:
         "package host-call count is not synchronized",
     )
     require(
-        f"assert_eq!(required_host_call_count(), {RUNTIME_REQUIRED_HOST_CALL_COUNT})"
-        in runtime_api,
-        "runtime required host-call count is not synchronized",
+        f"assert_eq!(HOST_CALLS.len(), {PACKAGE_HOST_CALL_COUNT})"
+        in api_tests,
+        "package host-call count is not synchronized",
     )
 
 

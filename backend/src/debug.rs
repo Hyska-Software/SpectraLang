@@ -106,7 +106,11 @@ pub type LineRow = (u32, u32);
 /// source lines. Compiler-generated instructions, optimized-out values
 /// without a live range, and IR from passes that do not propagate spans
 /// therefore contribute silence, not guesses.
-pub fn line_table_rows(function_size: u32, _source_line_count: u32, real_rows: &[LineRow]) -> Vec<LineRow> {
+pub fn line_table_rows(
+    function_size: u32,
+    _source_line_count: u32,
+    real_rows: &[LineRow],
+) -> Vec<LineRow> {
     let function_size = function_size.max(1);
     let mut rows: Vec<LineRow> = real_rows
         .iter()
@@ -182,7 +186,7 @@ pub fn codeview_primitive_index(ty: &IRType) -> Option<u32> {
 pub fn aggregate_udt_name(ty: &IRType) -> String {
     match ty {
         IRType::Struct { name, .. } | IRType::Enum { name, .. } => name.clone(),
-        IRType::Generic { name, .. } => format!("{name}"),
+        IRType::Generic { name, .. } => name.to_string(),
         IRType::String => "spectra_string".to_string(),
         IRType::Tuple { elements } => format!("spectra_tuple{}", elements.len()),
         IRType::DynTrait { trait_name, .. } => format!("dyn_{trait_name}"),
@@ -366,7 +370,6 @@ impl CodeViewTypeTable {
     }
 }
 
-
 /// Environment variable that requests the JIT debug sidecar on `run`.
 pub const JIT_DEBUG_ENV: &str = "SPECTRA_JIT_DEBUG";
 
@@ -481,7 +484,10 @@ pub fn write_jit_debug_sidecar(
     }
     let path = jit_debug_sidecar_path(source_file);
     std::fs::write(&path, jit_debug_sidecar_json(functions)).map_err(|error| {
-        format!("failed to write JIT debug sidecar {}: {error}", path.display())
+        format!(
+            "failed to write JIT debug sidecar {}: {error}",
+            path.display()
+        )
     })?;
     Ok(Some(path))
 }
@@ -523,9 +529,9 @@ fn push_u32(out: &mut Vec<u8>, value: u32) {
 /// is over the exact source text that was compiled.
 fn md5(input: &[u8]) -> [u8; 16] {
     const S: [usize; 64] = [
-        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20,
-        5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
-        6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5,
+        9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10,
+        15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
     ];
     const K: [u32; 64] = [
         0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613,
@@ -569,10 +575,7 @@ fn md5(input: &[u8]) -> [u8; 16] {
             let temp = d;
             d = c;
             c = b;
-            let sum = a
-                .wrapping_add(f)
-                .wrapping_add(K[index])
-                .wrapping_add(m[g]);
+            let sum = a.wrapping_add(f).wrapping_add(K[index]).wrapping_add(m[g]);
             b = b.wrapping_add(sum.rotate_left(S[index] as u32));
             a = temp;
         }
@@ -739,7 +742,6 @@ pub fn codeview_section(source_file: &str, functions: &[String], source: &str) -
     codeview_section_with_ranges(source_file, &ranges, source)
 }
 
-
 /// Full native CodeView emission for one object.
 ///
 /// Returns the C13 `.debug$S` stream and — when any function carries real
@@ -761,7 +763,10 @@ pub fn codeview_sections(
             type_table.index_for(local_type);
         }
     }
-    let mut sections = vec![(".debug$S", codeview_debug_s(source_file, functions, source, &mut type_table))];
+    let mut sections = vec![(
+        ".debug$S",
+        codeview_debug_s(source_file, functions, source, &mut type_table),
+    )];
     if type_table.has_user_types() {
         sections.push((".debug$T", type_table.finish()));
     }
@@ -812,7 +817,11 @@ fn codeview_debug_s(
                     .unwrap_or(T_UNKNOWN)
             })
             .collect::<Vec<_>>();
-        symbols.extend_from_slice(&function_symbols(function, proc_type_index, &local_type_indices));
+        symbols.extend_from_slice(&function_symbols(
+            function,
+            proc_type_index,
+            &local_type_indices,
+        ));
         subsection(&mut result, DEBUG_S_SYMBOLS, &symbols);
     }
     for function in functions {
@@ -1083,14 +1092,13 @@ pub fn append_coff_section(
     Ok(rewritten)
 }
 
-
 #[cfg(test)]
 mod tests {
+    use super::codeview_section;
     use super::{
         codeview_primitive_index, codeview_sections, CodeViewFunction, CodeViewTypeTable,
         DEBUG_S_SYMBOLS,
     };
-    use super::codeview_section;
     use spectra_midend::ir::{FloatWidth, IntWidth, Type};
 
     fn function_with_types() -> CodeViewFunction {
@@ -1099,14 +1107,23 @@ mod tests {
             offset: 0,
             size: 32,
             section: 1,
-            locals: vec!["ratio".to_string(), "label".to_string(), "count".to_string()],
+            locals: vec![
+                "ratio".to_string(),
+                "label".to_string(),
+                "count".to_string(),
+            ],
             local_offsets: vec![Some(-8), Some(-16), None],
             local_locations: vec![Vec::new(); 3],
             frame_size: 24,
             local_types: vec![
-                Type::ExactFloat { width: FloatWidth::F64 },
+                Type::ExactFloat {
+                    width: FloatWidth::F64,
+                },
                 Type::String,
-                Type::ExactInt { signed: true, width: IntWidth::I32 },
+                Type::ExactInt {
+                    signed: true,
+                    width: IntWidth::I32,
+                },
             ],
             return_type: Some(Type::Int),
             line_rows: Vec::new(),
@@ -1138,8 +1155,8 @@ mod tests {
                 if kind == DEBUG_S_SYMBOLS {
                     let mut inner = 0usize;
                     while inner + 4 <= payload.len() {
-                        let record_len = u16::from_le_bytes([payload[inner], payload[inner + 1]])
-                            as usize;
+                        let record_len =
+                            u16::from_le_bytes([payload[inner], payload[inner + 1]]) as usize;
                         // The recorded length excludes the 2-byte length
                         // field itself.
                         let total = record_len + 2;
@@ -1164,8 +1181,7 @@ mod tests {
         let mut records = Vec::new();
         let mut cursor = 4usize; // version signature
         while cursor + 4 <= bytes.len() {
-            let length =
-                u16::from_le_bytes([bytes[cursor], bytes[cursor + 1]]) as usize;
+            let length = u16::from_le_bytes([bytes[cursor], bytes[cursor + 1]]) as usize;
             if length < 2 || cursor + 2 + length > bytes.len() {
                 break;
             }
@@ -1214,12 +1230,13 @@ mod tests {
         // real field-list back-reference, padded size 8+8+4 -> 24.
         let point_structure = records
             .iter()
-            .find(|(leaf, payload)| {
-                *leaf == super::LF_STRUCTURE && payload.ends_with(b"Point\0")
-            })
+            .find(|(leaf, payload)| *leaf == super::LF_STRUCTURE && payload.ends_with(b"Point\0"))
             .map(|(_, payload)| payload)
             .expect("defining LF_STRUCTURE for Point must be present");
-        assert_eq!(u16::from_le_bytes([point_structure[0], point_structure[1]]), 3);
+        assert_eq!(
+            u16::from_le_bytes([point_structure[0], point_structure[1]]),
+            3
+        );
         assert_eq!(point_structure[2] & super::CV_IS_FWDREF, 0);
         let fieldlist_index = u32::from_le_bytes([
             point_structure[4],
@@ -1246,8 +1263,7 @@ mod tests {
         let mut members = Vec::new();
         let mut cursor = 0usize;
         while cursor + 4 <= fieldlist.len() {
-            let length =
-                u16::from_le_bytes([fieldlist[cursor], fieldlist[cursor + 1]]) as usize;
+            let length = u16::from_le_bytes([fieldlist[cursor], fieldlist[cursor + 1]]) as usize;
             if length < 2 || cursor + 2 + length > fieldlist.len() {
                 break;
             }
@@ -1277,7 +1293,7 @@ mod tests {
         // The `.debug$S` S_LOCAL for `origin` references the pointer record
         // that points at the defining structure.
         let symbol_records = c13_symbol_records(
-            &sections
+            sections
                 .iter()
                 .find(|(name, _)| *name == ".debug$S")
                 .map(|(_, bytes)| bytes)
@@ -1328,7 +1344,8 @@ mod tests {
 
     #[test]
     fn typed_locals_emit_distinct_codeview_type_indices() {
-        let sections = codeview_sections("fixture.spectra", &[function_with_types()], "fn typed() {}");
+        let sections =
+            codeview_sections("fixture.spectra", &[function_with_types()], "fn typed() {}");
         assert!(
             sections.iter().any(|(name, _)| *name == ".debug$S"),
             "C13 symbols stream must always be present"
@@ -1341,7 +1358,7 @@ mod tests {
         assert!(type_stream.windows(15).any(|w| w == b"spectra_string\0"));
 
         let records = c13_symbol_records(
-            &sections
+            sections
                 .iter()
                 .find(|(name, _)| *name == ".debug$S")
                 .map(|(_, bytes)| bytes)
@@ -1368,34 +1385,45 @@ mod tests {
         assert_eq!(locals[1], ("label".to_string(), 0x1001));
         assert!(locals[1].1 >= 0x1000);
         assert_eq!(locals[2], ("ratio".to_string(), super::T_REAL64));
-        let distinct = locals.iter().map(|(_, ti)| *ti).collect::<std::collections::HashSet<_>>();
+        let distinct = locals
+            .iter()
+            .map(|(_, ti)| *ti)
+            .collect::<std::collections::HashSet<_>>();
         assert!(distinct.len() >= 3);
     }
 
     #[test]
     fn frame_size_is_emitted_in_s_frameproc() {
-        let sections = codeview_sections("fixture.spectra", &[function_with_types()], "fn typed() {}");
+        let sections =
+            codeview_sections("fixture.spectra", &[function_with_types()], "fn typed() {}");
         let records = c13_symbol_records(&sections[0].1);
         const S_FRAMEPROC: u16 = 0x1012;
         let frame = records
             .iter()
             .find(|(kind, _)| *kind == S_FRAMEPROC)
             .expect("procedure must carry an S_FRAMEPROC record");
-        let cb_frame =
-            u32::from_le_bytes([frame.1[0], frame.1[1], frame.1[2], frame.1[3]]);
+        let cb_frame = u32::from_le_bytes([frame.1[0], frame.1[1], frame.1[2], frame.1[3]]);
         assert_eq!(cb_frame, 24);
     }
 
     #[test]
     fn primitive_ir_types_map_to_fixed_codeview_indices() {
         assert_eq!(codeview_primitive_index(&Type::Int), Some(super::T_INT8));
-        assert_eq!(codeview_primitive_index(&Type::Float), Some(super::T_REAL64));
         assert_eq!(
-            codeview_primitive_index(&Type::ExactFloat { width: FloatWidth::F32 }),
+            codeview_primitive_index(&Type::Float),
+            Some(super::T_REAL64)
+        );
+        assert_eq!(
+            codeview_primitive_index(&Type::ExactFloat {
+                width: FloatWidth::F32
+            }),
             Some(super::T_REAL32)
         );
         assert_eq!(
-            codeview_primitive_index(&Type::ExactInt { signed: false, width: IntWidth::Usize }),
+            codeview_primitive_index(&Type::ExactInt {
+                signed: false,
+                width: IntWidth::Usize
+            }),
             Some(super::T_UINT8)
         );
         assert_eq!(codeview_primitive_index(&Type::Bool), Some(super::T_BOOL08));
@@ -1459,14 +1487,8 @@ mod tests {
 
     #[test]
     fn md5_matches_reference_digests() {
-        assert_eq!(
-            hex(&super::md5(b"")),
-            "d41d8cd98f00b204e9800998ecf8427e"
-        );
-        assert_eq!(
-            hex(&super::md5(b"abc")),
-            "900150983cd24fb0d6963f7d28e17f72"
-        );
+        assert_eq!(hex(&super::md5(b"")), "d41d8cd98f00b204e9800998ecf8427e");
+        assert_eq!(hex(&super::md5(b"abc")), "900150983cd24fb0d6963f7d28e17f72");
     }
 
     fn hex(bytes: &[u8]) -> String {

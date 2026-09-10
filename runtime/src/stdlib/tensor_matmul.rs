@@ -14,32 +14,31 @@ pub(crate) fn tensor_float_unary(
                 let element_count = tensor.len();
                 let source = tensor.materialize();
                 #[cfg(feature = "gpu")]
-                let gpu_data = if tensor.device == TensorDevice::Wgpu
-                    && tensor.dtype == TensorDType::Float
-                {
-                    let gpu_op = match autograd_op {
-                        AutogradOp::Exp => Some(crate::gpu::GpuUnaryOp::Exp),
-                        AutogradOp::Log => Some(crate::gpu::GpuUnaryOp::Log),
-                        AutogradOp::Sqrt => Some(crate::gpu::GpuUnaryOp::Sqrt),
-                        AutogradOp::Sigmoid => Some(crate::gpu::GpuUnaryOp::Sigmoid),
-                        AutogradOp::Tanh => Some(crate::gpu::GpuUnaryOp::Tanh),
-                        _ => None,
+                let gpu_data =
+                    if tensor.device == TensorDevice::Wgpu && tensor.dtype == TensorDType::Float {
+                        let gpu_op = match autograd_op {
+                            AutogradOp::Exp => Some(crate::gpu::GpuUnaryOp::Exp),
+                            AutogradOp::Log => Some(crate::gpu::GpuUnaryOp::Log),
+                            AutogradOp::Sqrt => Some(crate::gpu::GpuUnaryOp::Sqrt),
+                            AutogradOp::Sigmoid => Some(crate::gpu::GpuUnaryOp::Sigmoid),
+                            AutogradOp::Tanh => Some(crate::gpu::GpuUnaryOp::Tanh),
+                            _ => None,
+                        };
+                        match gpu_op.map(|gpu_op| gpu_unary_float(&tensor, gpu_op)) {
+                            Some(Ok(Some(data))) => {
+                                registry.note_gpu_kernel();
+                                Some(data)
+                            }
+                            Some(Ok(None)) | None => None,
+                            Some(Err(err)) => {
+                                registry.note_gpu_error(err.kind);
+                                registry.note_cpu_fallback();
+                                None
+                            }
+                        }
+                    } else {
+                        None
                     };
-                    match gpu_op.map(|gpu_op| gpu_unary_float(&tensor, gpu_op)) {
-                        Some(Ok(Some(data))) => {
-                            registry.note_gpu_kernel();
-                            Some(data)
-                        }
-                        Some(Ok(None)) | None => None,
-                        Some(Err(err)) => {
-                            registry.note_gpu_error(err.kind);
-                            registry.note_cpu_fallback();
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
                 let data: Vec<SpectraHostValue> = match tensor.dtype {
                     #[cfg(feature = "gpu")]
                     TensorDType::Float if gpu_data.is_some() => gpu_data.unwrap(),
@@ -340,10 +339,7 @@ pub(crate) extern "C" fn std_tensor_matmul_batched(ctx: *mut SpectraHostCallCont
             registry.note_scratch_reuse();
             registry.note_kernel(batch.saturating_mul(m).saturating_mul(n).saturating_mul(k));
             let requires_grad = dtype == TensorDType::Float
-                && tensor_requires_autograd(
-                    registry,
-                    &[args[0] as usize, args[1] as usize],
-                );
+                && tensor_requires_autograd(registry, &[args[0] as usize, args[1] as usize]);
             let creator = requires_grad.then(|| AutogradNode {
                 op: AutogradOp::BatchedMatmul,
                 parents: vec![args[0] as usize, args[1] as usize],
@@ -415,4 +411,3 @@ pub(crate) fn accumulate_tensor_grad(tensor: &mut StdTensor, grad: &[f64]) -> bo
     }
     true
 }
-

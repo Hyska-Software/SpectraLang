@@ -189,4 +189,3 @@ pub(crate) extern "C" fn std_char_is_alphanumeric(ctx: *mut SpectraHostCallConte
     }
     HOST_STATUS_SUCCESS
 }
-

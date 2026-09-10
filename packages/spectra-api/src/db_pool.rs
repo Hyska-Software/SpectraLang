@@ -52,8 +52,10 @@ pub extern "C" fn pool_sqlite_open(ctx: *mut SpectraHostCallContext) -> i32 {
                 ),
             );
         }
-        let mut config = PoolConfig::default();
-        config.max_size = a[1] as usize;
+        let config = PoolConfig {
+            max_size: a[1] as usize,
+            ..Default::default()
+        };
         let span = operation_span("db.pool.open");
         match ConnectionPool::new(SqliteFactory::new(&path), config) {
             Ok(pool) => {
@@ -248,8 +250,10 @@ pub extern "C" fn pool_postgres_open(ctx: *mut SpectraHostCallContext) -> i32 {
             Ok(config) => config,
             Err(error) => return fail_postgres(r, error),
         };
-        let mut pool_config = PoolConfig::default();
-        pool_config.max_size = a[1] as usize;
+        let pool_config = PoolConfig {
+            max_size: a[1] as usize,
+            ..Default::default()
+        };
         let span = operation_span("db.pool.open");
         match ConnectionPool::new(PostgresFactory::new(config), pool_config) {
             Ok(pool) => {
@@ -289,8 +293,10 @@ pub extern "C" fn pool_redis_open(ctx: *mut SpectraHostCallContext) -> i32 {
             Ok(config) => config,
             Err(error) => return fail_redis(r, error),
         };
-        let mut pool_config = PoolConfig::default();
-        pool_config.max_size = a[1] as usize;
+        let pool_config = PoolConfig {
+            max_size: a[1] as usize,
+            ..Default::default()
+        };
         let span = operation_span("db.pool.open");
         match ConnectionPool::new(RedisFactory { config }, pool_config) {
             Ok(pool) => {

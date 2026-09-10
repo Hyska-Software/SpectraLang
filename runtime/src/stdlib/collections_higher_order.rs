@@ -224,4 +224,3 @@ pub(crate) extern "C" fn std_list_sort_by(ctx: *mut SpectraHostCallContext) -> i
     }
     HOST_STATUS_SUCCESS
 }
-

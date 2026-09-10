@@ -1,7 +1,11 @@
 use super::*;
 
 impl ASTLowering {
-    pub(crate) fn lower_expression_aggregates(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_aggregates(
+        &mut self,
+        expr: &Expression,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         match &expr.kind {
             ExpressionKind::If {
                 condition,
@@ -350,10 +354,8 @@ impl ASTLowering {
                         (elements[*index].clone(), offset)
                     }
                     IRType::Tuple { .. } => {
-                        return self.invalid_value(format!(
-                            "tuple index {} is out of bounds",
-                            index
-                        ));
+                        return self
+                            .invalid_value(format!("tuple index {} is out of bounds", index));
                     }
                     other => {
                         return self.invalid_value(format!(
@@ -362,7 +364,9 @@ impl ASTLowering {
                         ));
                     }
                 };
-                let elem_ptr = self.builder.build_field_ptr(ir_func, tuple_ptr, offset as i64);
+                let elem_ptr = self
+                    .builder
+                    .build_field_ptr(ir_func, tuple_ptr, offset as i64);
 
                 // Carregar o valor do elemento
                 self.builder.build_load_typed(ir_func, elem_ptr, elem_type)

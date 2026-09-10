@@ -4511,9 +4511,7 @@ that `std.api.*` will dispatch into.
 - Host calls are registered in the existing runtime host-call registry through
   `spectra_api::register()`, and the crate exports
   `spectra_api_register_host_calls` for native integration.
-- Added `runtime/src/api/mod.rs` as the runtime-side namespace contract for the
-  required 439-name `spectra.api.*` namespace; the package registry may expose
-  additional public calls beyond that runtime-required subset.
+- The required 555-name `spectra.api.*` namespace lives in the canonical `packages/spectra-api/src/host_calls.rs` registry (`runtime/src/api/mod.rs` was removed as a stale duplicate).
 - Added stable `request_body` and `request_with_body` bridges so handlers and
   clients can read and construct UTF-8 request payloads through `std.api.http`.
 - Added `std.api.session` with a shared backend contract, cryptographically

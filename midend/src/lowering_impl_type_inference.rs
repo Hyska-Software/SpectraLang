@@ -138,7 +138,10 @@ impl ASTLowering {
         self.specialized_generic_annotation(type_name)
     }
 
-    pub(crate) fn default_type_args_for_enum(&self, enum_name: &str) -> Option<Vec<TypeAnnotation>> {
+    pub(crate) fn default_type_args_for_enum(
+        &self,
+        enum_name: &str,
+    ) -> Option<Vec<TypeAnnotation>> {
         self.generic_enums.get(enum_name).map(|generic_enum| {
             generic_enum
                 .type_params
@@ -192,7 +195,9 @@ impl ASTLowering {
                     || self.struct_definitions.contains_key(name)
                 {
                     false
-                } else { self.generic_enums.contains_key(name) }
+                } else {
+                    self.generic_enums.contains_key(name)
+                }
             }
             _ => false,
         }
@@ -256,17 +261,18 @@ impl ASTLowering {
         Some(inferred)
     }
 
-    pub(crate) fn infer_expr_type_annotation(&mut self, expr: &Expression) -> Option<TypeAnnotation> {
+    pub(crate) fn infer_expr_type_annotation(
+        &mut self,
+        expr: &Expression,
+    ) -> Option<TypeAnnotation> {
         match &expr.kind {
-            ExpressionKind::NumberLiteral(num) => {
-                Some(Self::simple_type_annotation(if
-                    spectra_compiler::numeric::number_literal_is_float(num)
-                {
+            ExpressionKind::NumberLiteral(num) => Some(Self::simple_type_annotation(
+                if spectra_compiler::numeric::number_literal_is_float(num) {
                     "float"
                 } else {
                     "int"
-                }))
-            }
+                },
+            )),
             ExpressionKind::StringLiteral(_) => Some(Self::simple_type_annotation("string")),
             ExpressionKind::BoolLiteral(_) => Some(Self::simple_type_annotation("bool")),
             ExpressionKind::StructLiteral {
@@ -433,8 +439,8 @@ impl ASTLowering {
         &self,
         scrutinee_type: Option<&IRType>,
     ) -> Option<Vec<EnumVariantDefinition>> {
-        if let Some(IRType::Enum { variants, .. }) = scrutinee_type
-            .map(Self::ir_type_representation_static)
+        if let Some(IRType::Enum { variants, .. }) =
+            scrutinee_type.map(Self::ir_type_representation_static)
         {
             return Some(
                 variants
@@ -474,5 +480,4 @@ impl ASTLowering {
 
         result
     }
-
 }

@@ -297,7 +297,12 @@ pub(crate) extern "C" fn std_ml_dataloader_batch_count(ctx: *mut SpectraHostCall
     }
 }
 
-pub(crate) fn ml_batch_indices(len: usize, batch_size: usize, batch_index: usize, seed: u64) -> Vec<usize> {
+pub(crate) fn ml_batch_indices(
+    len: usize,
+    batch_size: usize,
+    batch_index: usize,
+    seed: u64,
+) -> Vec<usize> {
     let start = batch_index.saturating_mul(batch_size);
     let end = (start + batch_size).min(len);
     let mut indices = (start..end).collect::<Vec<_>>();
@@ -452,4 +457,3 @@ pub(crate) extern "C" fn std_ml_dataframe_column(ctx: *mut SpectraHostCallContex
         }
     }
 }
-

@@ -138,10 +138,7 @@ impl ASTLowering {
             .insert("Handler".to_string(), vec!["call".to_string()]);
         self.trait_method_signatures.insert(
             "Handler".to_string(),
-            HashMap::from([(
-                "call".to_string(),
-                (vec![api_handle.clone()], IRType::Int),
-            )]),
+            HashMap::from([("call".to_string(), (vec![api_handle.clone()], IRType::Int))]),
         );
 
         self.trait_method_order
@@ -196,7 +193,11 @@ impl ASTLowering {
             .insert(trait_decl.name.clone(), trait_decl.clone());
         self.trait_method_order.insert(
             trait_decl.name.clone(),
-            trait_decl.methods.iter().map(|method| method.name.clone()).collect(),
+            trait_decl
+                .methods
+                .iter()
+                .map(|method| method.name.clone())
+                .collect(),
         );
         let signatures = trait_decl
             .methods
@@ -347,7 +348,11 @@ impl ASTLowering {
         Value { id: usize::MAX }
     }
 
-    pub(crate) fn require_value(&mut self, value: Option<Value>, message: impl Into<String>) -> Value {
+    pub(crate) fn require_value(
+        &mut self,
+        value: Option<Value>,
+        message: impl Into<String>,
+    ) -> Value {
         match value {
             Some(value) => value,
             None => self.invalid_value(message),
@@ -490,7 +495,11 @@ impl ASTLowering {
         }
     }
 
-    pub(crate) fn const_values_equal(&self, left: &LoweredConstValue, right: &LoweredConstValue) -> bool {
+    pub(crate) fn const_values_equal(
+        &self,
+        left: &LoweredConstValue,
+        right: &LoweredConstValue,
+    ) -> bool {
         match (left, right) {
             (LoweredConstValue::Int(a), LoweredConstValue::Int(b)) => a == b,
             (LoweredConstValue::Float(a), LoweredConstValue::Float(b)) => a == b,
@@ -513,7 +522,9 @@ impl ASTLowering {
             (LoweredConstValue::Int(v), IRType::Float) => Some(LoweredConstValue::Float(v as f64)),
             (LoweredConstValue::Int(v), IRType::ExactInt { signed, width }) => {
                 let (min, max) = Self::exact_int_bounds(*signed, *width);
-                (min..=max).contains(&v).then_some(LoweredConstValue::Int(v))
+                (min..=max)
+                    .contains(&v)
+                    .then_some(LoweredConstValue::Int(v))
             }
             (LoweredConstValue::Int(v), IRType::ExactFloat { .. }) => {
                 Some(LoweredConstValue::Float(v as f64))
@@ -540,7 +551,9 @@ impl ASTLowering {
             (LoweredConstValue::Char(v), IRType::ExactInt { signed, width }) => {
                 let value = v as i64;
                 let (min, max) = Self::exact_int_bounds(*signed, *width);
-                (min..=max).contains(&value).then_some(LoweredConstValue::Int(value))
+                (min..=max)
+                    .contains(&value)
+                    .then_some(LoweredConstValue::Int(value))
             }
             (LoweredConstValue::Bool(v), IRType::Bool) => Some(LoweredConstValue::Bool(v)),
             (LoweredConstValue::String(v), IRType::String) => Some(LoweredConstValue::String(v)),
@@ -561,7 +574,11 @@ impl ASTLowering {
         }
     }
 
-    pub(crate) fn emit_const_value(&mut self, value: &LoweredConstValue, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn emit_const_value(
+        &mut self,
+        value: &LoweredConstValue,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         match value {
             LoweredConstValue::Int(v) => self.builder.build_const_int(ir_func, *v),
             LoweredConstValue::Float(v) => self.builder.build_const_float(ir_func, *v),
@@ -580,5 +597,4 @@ impl ASTLowering {
             LoweredConstValue::Char(v) => Constant::Char(*v),
         }
     }
-
 }

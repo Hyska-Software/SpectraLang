@@ -380,7 +380,10 @@ pub(crate) extern "C" fn std_time_unix_to_utc(ctx: *mut SpectraHostCallContext) 
     write_host_result(ctx, store_utc(utc_from_unix_seconds(args[0])))
 }
 
-pub(crate) fn std_time_utc_field(ctx: *mut SpectraHostCallContext, field: fn(UtcDateTime) -> i64) -> i32 {
+pub(crate) fn std_time_utc_field(
+    ctx: *mut SpectraHostCallContext,
+    field: fn(UtcDateTime) -> i64,
+) -> i32 {
     let Ok(args) = host_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
@@ -413,4 +416,3 @@ pub(crate) extern "C" fn std_time_utc_minute(ctx: *mut SpectraHostCallContext) -
 pub(crate) extern "C" fn std_time_utc_second(ctx: *mut SpectraHostCallContext) -> i32 {
     std_time_utc_field(ctx, |dt| dt.second)
 }
-

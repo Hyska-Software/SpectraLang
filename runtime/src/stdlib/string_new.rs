@@ -154,4 +154,3 @@ pub(crate) extern "C" fn std_string_reverse(ctx: *mut SpectraHostCallContext) ->
     }
     HOST_STATUS_SUCCESS
 }
-

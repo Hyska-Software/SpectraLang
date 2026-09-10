@@ -1,6 +1,6 @@
 use super::*;
+use crate::ast::Type;
 use crate::semantic::module_registry::{ExportVisibility, ExportedType, ModuleExports};
-use crate::ast::{Type};
 
 pub(crate) fn make_std_ml() -> ModuleExports {
     let mut exports = ModuleExports {
@@ -416,7 +416,11 @@ pub(crate) fn make_std_ml() -> ModuleExports {
             Type::String,
         ),
         ("train_bpe", vec![Type::String, int.clone()], int.clone()),
-        ("train_wordpiece", vec![Type::String, int.clone()], int.clone()),
+        (
+            "train_wordpiece",
+            vec![Type::String, int.clone()],
+            int.clone(),
+        ),
         ("tokenizer_vocab", vec![int.clone()], Type::String),
         ("text_embed_model_session", vec![Type::String], int.clone()),
         (
@@ -424,7 +428,11 @@ pub(crate) fn make_std_ml() -> ModuleExports {
             vec![int.clone(), int.clone(), Type::String],
             int.clone(),
         ),
-        ("embedding_load", vec![Type::String, Type::String], int.clone()),
+        (
+            "embedding_load",
+            vec![Type::String, Type::String],
+            int.clone(),
+        ),
         ("vector_index_new", vec![int.clone()], int.clone()),
         (
             "vector_index_insert",
@@ -516,10 +524,22 @@ pub(crate) fn make_std_ml() -> ModuleExports {
             vec![int.clone(), Type::String, int.clone()],
             bool_ty.clone(),
         ),
-        ("artifact_save", vec![int.clone(), Type::String], bool_ty.clone()),
+        (
+            "artifact_save",
+            vec![int.clone(), Type::String],
+            bool_ty.clone(),
+        ),
         ("artifact_load", vec![Type::String], int.clone()),
-        ("artifact_tensor", vec![int.clone(), Type::String], int.clone()),
-        ("artifact_metadata", vec![int.clone(), Type::String], Type::String),
+        (
+            "artifact_tensor",
+            vec![int.clone(), Type::String],
+            int.clone(),
+        ),
+        (
+            "artifact_metadata",
+            vec![int.clone(), Type::String],
+            Type::String,
+        ),
         ("artifact_validate", vec![Type::String], bool_ty.clone()),
         ("artifact_free", vec![int.clone()], unit.clone()),
     ];
@@ -750,4 +770,3 @@ pub(crate) fn make_std_serve() -> ModuleExports {
 
     exports
 }
-

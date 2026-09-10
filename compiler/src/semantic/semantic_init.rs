@@ -417,7 +417,6 @@ impl SemanticAnalyzer {
             }
         }
     }
-
 }
 
 impl Default for SemanticAnalyzer {

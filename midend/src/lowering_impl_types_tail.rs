@@ -28,9 +28,7 @@ impl ASTLowering {
     /// representation.
     pub(crate) fn ir_type_representation<'a>(&self, ty: &'a IRType) -> &'a IRType {
         match ty {
-            IRType::Generic { representation, .. } => {
-                self.ir_type_representation(representation)
-            }
+            IRType::Generic { representation, .. } => self.ir_type_representation(representation),
             other => other,
         }
     }
@@ -47,9 +45,7 @@ impl ASTLowering {
     pub(crate) fn ir_generic_args_static<'a>(ty: &'a IRType, name: &str) -> Option<&'a [IRType]> {
         match ty {
             IRType::Generic {
-                name: actual,
-                args,
-                ..
+                name: actual, args, ..
             } if actual == name => Some(args.as_slice()),
             _ => None,
         }
@@ -62,7 +58,6 @@ impl ASTLowering {
             _ => None,
         }
     }
-
 
     pub(crate) fn lower_type(&self, ast_type: &ASTType) -> IRType {
         match ast_type {
@@ -157,9 +152,7 @@ impl ASTLowering {
                     } else {
                         let simplified = variants
                             .iter()
-                            .map(|(variant_name, _, data)| {
-                                (variant_name.clone(), data.clone())
-                            })
+                            .map(|(variant_name, _, data)| (variant_name.clone(), data.clone()))
                             .collect();
                         IRType::Enum {
                             name: name.clone(),
@@ -360,5 +353,4 @@ impl ASTLowering {
 
         // specialized enum
     }
-
 }

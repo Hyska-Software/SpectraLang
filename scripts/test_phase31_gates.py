@@ -39,12 +39,12 @@ def report(*, profile: str = "debug", stddev_ns: int = 5, ns_per_iter: int = 100
                 "paired_gap_stddev_pct": 0.0,
                 "reference_performance_passed": True,
                 "tasks_per_iteration": 10,
-                "benchmark_iterations": 1000,
-                "expected_result": 55_000,
+                "benchmark_iterations": 10000,
+                "expected_result": 550_000,
                 "concurrency_metrics": {
                     "max_pending_tasks": 10,
-                    "tasks_executed": 10_000,
-                    "task_joins": 10_000,
+                    "tasks_executed": 100_000,
+                    "task_joins": 100_000,
                     "tasks_failed": 0,
                 },
             })

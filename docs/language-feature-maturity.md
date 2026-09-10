@@ -183,8 +183,7 @@ These are usable where covered, but still not treated as fully production-harden
 
 ### Experimental
 
-There is no experimental gating mechanism. New syntax lands directly as stable.
-Experimental flags were removed; `spectralang --enable-experimental` and `spectralang --list-experimental` are not recognized.
+There are currently no active experimental syntax gates. `spectralang --list-experimental` reports an empty set, and `--enable-experimental <feature>` is accepted only as a compatibility no-op for older scripts.
 
 ### Deferred
 

@@ -31,8 +31,11 @@ impl ListRegistry {
             .len())
     }
 
-
-    pub(crate) fn get_option(&self, handle: usize, index: i64) -> Result<Option<SpectraHostValue>, i32> {
+    pub(crate) fn get_option(
+        &self,
+        handle: usize,
+        index: i64,
+    ) -> Result<Option<SpectraHostValue>, i32> {
         let id = Self::id(handle)?;
         let list = self.lists.get(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
         if index < 0 || (index as usize) >= list.data.len() {
@@ -41,7 +44,12 @@ impl ListRegistry {
         Ok(Some(list.data[index as usize]))
     }
 
-    pub(crate) fn set(&mut self, handle: usize, index: i64, value: SpectraHostValue) -> Result<(), i32> {
+    pub(crate) fn set(
+        &mut self,
+        handle: usize,
+        index: i64,
+        value: SpectraHostValue,
+    ) -> Result<(), i32> {
         let id = Self::id(handle)?;
         let list = self.lists.get_mut(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
         if index < 0 || (index as usize) >= list.data.len() {
@@ -85,15 +93,16 @@ impl ListRegistry {
         self.lists.clear()
     }
 
-
-
     pub(crate) fn pop_option(&mut self, handle: usize) -> Result<Option<SpectraHostValue>, i32> {
         let id = Self::id(handle)?;
         let list = self.lists.get_mut(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
         Ok(list.data.pop())
     }
 
-    pub(crate) fn pop_front_option(&mut self, handle: usize) -> Result<Option<SpectraHostValue>, i32> {
+    pub(crate) fn pop_front_option(
+        &mut self,
+        handle: usize,
+    ) -> Result<Option<SpectraHostValue>, i32> {
         let id = Self::id(handle)?;
         let list = self.lists.get_mut(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
         if list.data.is_empty() {
@@ -102,14 +111,18 @@ impl ListRegistry {
         Ok(Some(list.data.remove(0)))
     }
 
-    pub(crate) fn insert_at(&mut self, handle: usize, index: i64, value: SpectraHostValue) -> Result<(), i32> {
+    pub(crate) fn insert_at(
+        &mut self,
+        handle: usize,
+        index: i64,
+        value: SpectraHostValue,
+    ) -> Result<(), i32> {
         let id = Self::id(handle)?;
         let list = self.lists.get_mut(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
         let idx = index.clamp(0, list.data.len() as i64) as usize;
         list.data.insert(idx, value);
         Ok(())
     }
-
 
     pub(crate) fn remove_at_option(
         &mut self,
@@ -124,7 +137,11 @@ impl ListRegistry {
         Ok(Some(list.data.remove(index as usize)))
     }
 
-    pub(crate) fn index_of(&self, handle: usize, value: SpectraHostValue) -> Result<SpectraHostValue, i32> {
+    pub(crate) fn index_of(
+        &self,
+        handle: usize,
+        value: SpectraHostValue,
+    ) -> Result<SpectraHostValue, i32> {
         let id = Self::id(handle)?;
         self.lists
             .get(id)
@@ -158,7 +175,11 @@ impl ListRegistry {
     }
 
     /// Replaces a list's data with `data` (used after an out-of-lock sort/transform).
-    pub(crate) fn restore(&mut self, handle: usize, data: Vec<SpectraHostValue>) -> Result<(), i32> {
+    pub(crate) fn restore(
+        &mut self,
+        handle: usize,
+        data: Vec<SpectraHostValue>,
+    ) -> Result<(), i32> {
         let id = Self::id(handle)?;
         self.lists
             .get_mut(id)
@@ -167,4 +188,3 @@ impl ListRegistry {
         Ok(())
     }
 }
-

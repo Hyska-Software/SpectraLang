@@ -16,7 +16,8 @@ pub(crate) fn notify_async_task_completion() {
     ready.notify_all();
 }
 
-pub(crate) fn lock_async_task_registry() -> Result<std::sync::MutexGuard<'static, AsyncTaskRegistry>, i32> {
+pub(crate) fn lock_async_task_registry(
+) -> Result<std::sync::MutexGuard<'static, AsyncTaskRegistry>, i32> {
     async_task_registry()
         .lock()
         .map_err(|_| HOST_STATUS_INTERNAL_ERROR)
@@ -56,7 +57,9 @@ pub(crate) fn create_coroutine_task_boxed(
 pub(crate) fn poll_coroutine_task(task_id: SpectraHostValue) -> Result<AsyncPollOutcome, i32> {
     let (frames, invocation) = {
         let registry = lock_async_task_registry()?;
-        if !registry.is_coroutine_task(task_id) { return Err(HOST_STATUS_NOT_FOUND); }
+        if !registry.is_coroutine_task(task_id) {
+            return Err(HOST_STATUS_NOT_FOUND);
+        }
         let frames = registry.coroutine_frames.clone();
         let invocation = match frames.begin_poll(task_id) {
             Ok(invocation) => invocation,
@@ -65,7 +68,9 @@ pub(crate) fn poll_coroutine_task(task_id: SpectraHostValue) -> Result<AsyncPoll
             Err(AsyncPollOutcome::Cancelled) => return Ok(AsyncPollOutcome::Cancelled),
             Err(AsyncPollOutcome::AlreadyPolling) => return Ok(AsyncPollOutcome::AlreadyPolling),
             Err(AsyncPollOutcome::Stale) => return Err(HOST_STATUS_NOT_FOUND),
-            Err(AsyncPollOutcome::AffinityRejected | AsyncPollOutcome::Pending) => return Err(HOST_STATUS_INVALID_ARGUMENT),
+            Err(AsyncPollOutcome::AffinityRejected | AsyncPollOutcome::Pending) => {
+                return Err(HOST_STATUS_INVALID_ARGUMENT)
+            }
         };
         (frames, invocation)
     };
@@ -77,8 +82,15 @@ pub(crate) fn poll_coroutine_task(task_id: SpectraHostValue) -> Result<AsyncPoll
     };
     let (outcome, drop_action) = {
         let mut registry = lock_async_task_registry()?;
-        let result = frames.finish_poll(task_id, status, context)
-            .map_err(|outcome| if matches!(outcome, AsyncPollOutcome::Stale) { HOST_STATUS_NOT_FOUND } else { HOST_STATUS_INTERNAL_ERROR })?;
+        let result = frames
+            .finish_poll(task_id, status, context)
+            .map_err(|outcome| {
+                if matches!(outcome, AsyncPollOutcome::Stale) {
+                    HOST_STATUS_NOT_FOUND
+                } else {
+                    HOST_STATUS_INTERNAL_ERROR
+                }
+            })?;
         registry.apply_coroutine_outcome(task_id, result.0);
         result
     };
@@ -86,7 +98,9 @@ pub(crate) fn poll_coroutine_task(task_id: SpectraHostValue) -> Result<AsyncPoll
         unsafe { invoke_frame_drop(action) };
         frames.complete_drop(task_id);
     }
-    for wake in frames.take_wakes() { reactor::global().wake_task(wake); }
+    for wake in frames.take_wakes() {
+        reactor::global().wake_task(wake);
+    }
     notify_async_task_completion();
     Ok(outcome)
 }
@@ -94,20 +108,26 @@ pub(crate) fn poll_coroutine_task(task_id: SpectraHostValue) -> Result<AsyncPoll
 pub(crate) fn cancel_coroutine_task(task_id: SpectraHostValue) -> Result<bool, i32> {
     {
         let mut registry = lock_async_task_registry()?;
-        if !registry.is_coroutine_task(task_id) { return Ok(false); }
+        if !registry.is_coroutine_task(task_id) {
+            return Ok(false);
+        }
         registry.cancel_task(task_id).ok_or(HOST_STATUS_NOT_FOUND)?;
     }
     let (frames, drop_action) = {
         let registry = lock_async_task_registry()?;
         let frames = registry.coroutine_frames.clone();
-        let action = frames.take_cancel_drop(task_id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
+        let action = frames
+            .take_cancel_drop(task_id)
+            .map_err(|_| HOST_STATUS_NOT_FOUND)?;
         (frames, action)
     };
     if let Some(action) = drop_action {
         unsafe { invoke_frame_drop(action) };
         frames.complete_drop(task_id);
     }
-    for wake in frames.take_wakes() { reactor::global().wake_task(wake); }
+    for wake in frames.take_wakes() {
+        reactor::global().wake_task(wake);
+    }
     Ok(true)
 }
 
@@ -117,8 +137,12 @@ pub(crate) fn take_coroutine_result(
     task_id: SpectraHostValue,
 ) -> Result<Result<AsyncResultStorage, AsyncResultStorage>, i32> {
     let registry = lock_async_task_registry()?;
-    if !registry.is_coroutine_task(task_id) { return Err(HOST_STATUS_NOT_FOUND); }
-    registry.take_coroutine_result(task_id).ok_or(HOST_STATUS_INVALID_ARGUMENT)
+    if !registry.is_coroutine_task(task_id) {
+        return Err(HOST_STATUS_NOT_FOUND);
+    }
+    registry
+        .take_coroutine_result(task_id)
+        .ok_or(HOST_STATUS_INVALID_ARGUMENT)
 }
 
 /// Test-only explicit drop, used by `coroutine_tests` and the `async_abi` tests.
@@ -126,11 +150,25 @@ pub(crate) fn take_coroutine_result(
 pub(crate) fn drop_coroutine_task(task_id: SpectraHostValue) -> Result<bool, i32> {
     let action = {
         let mut registry = lock_async_task_registry()?;
-        if !registry.is_coroutine_task(task_id) { return Ok(false); }
-        let action = registry.coroutine_frames.take_drop_task(task_id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
-        if action.is_none() { return Ok(false); }
-        let cancel_handle = registry.tasks.get(task_id).map(|task| task.cancel_handle).unwrap_or(0);
-        registry.tasks.remove(task_id).ok_or(HOST_STATUS_NOT_FOUND)?;
+        if !registry.is_coroutine_task(task_id) {
+            return Ok(false);
+        }
+        let action = registry
+            .coroutine_frames
+            .take_drop_task(task_id)
+            .map_err(|_| HOST_STATUS_NOT_FOUND)?;
+        if action.is_none() {
+            return Ok(false);
+        }
+        let cancel_handle = registry
+            .tasks
+            .get(task_id)
+            .map(|task| task.cancel_handle)
+            .unwrap_or(0);
+        registry
+            .tasks
+            .remove(task_id)
+            .ok_or(HOST_STATUS_NOT_FOUND)?;
         registry.cancel_handles.remove(cancel_handle);
         action
     };
@@ -146,12 +184,16 @@ pub(crate) fn subscribe_coroutine_child(
 ) -> Result<bool, i32> {
     let (frames, subscribed) = {
         let registry = lock_async_task_registry()?;
-        if !registry.is_coroutine_task(parent) || !registry.is_coroutine_task(child) { return Ok(false); }
+        if !registry.is_coroutine_task(parent) || !registry.is_coroutine_task(child) {
+            return Ok(false);
+        }
         let frames = registry.coroutine_frames.clone();
         let subscribed = frames.subscribe_child(parent, child);
         (frames, subscribed)
     };
-    for wake in frames.take_wakes() { reactor::global().wake_task(wake); }
+    for wake in frames.take_wakes() {
+        reactor::global().wake_task(wake);
+    }
     Ok(subscribed)
 }
 
@@ -177,23 +219,37 @@ pub(crate) fn subscribe_task_child(
 
 pub(crate) fn wake_coroutine_task(task_id: SpectraHostValue) -> Result<bool, i32> {
     let registry = lock_async_task_registry()?;
-    if !registry.is_coroutine_task(task_id) { return Ok(false); }
+    if !registry.is_coroutine_task(task_id) {
+        return Ok(false);
+    }
     let frames = registry.coroutine_frames.clone();
     drop(registry);
     let woke = frames.wake(task_id);
-    for wake in frames.take_wakes() { reactor::global().wake_task(wake); }
+    for wake in frames.take_wakes() {
+        reactor::global().wake_task(wake);
+    }
     Ok(woke)
 }
 
-pub(crate) fn set_coroutine_result(task_id: SpectraHostValue, value: AsyncResultStorage) -> Result<bool, i32> {
+pub(crate) fn set_coroutine_result(
+    task_id: SpectraHostValue,
+    value: AsyncResultStorage,
+) -> Result<bool, i32> {
     let registry = lock_async_task_registry()?;
-    if !registry.is_coroutine_task(task_id) { return Ok(false); }
+    if !registry.is_coroutine_task(task_id) {
+        return Ok(false);
+    }
     Ok(registry.coroutine_frames.set_result(task_id, value))
 }
 
-pub(crate) fn set_coroutine_error(task_id: SpectraHostValue, value: AsyncResultStorage) -> Result<bool, i32> {
+pub(crate) fn set_coroutine_error(
+    task_id: SpectraHostValue,
+    value: AsyncResultStorage,
+) -> Result<bool, i32> {
     let registry = lock_async_task_registry()?;
-    if !registry.is_coroutine_task(task_id) { return Ok(false); }
+    if !registry.is_coroutine_task(task_id) {
+        return Ok(false);
+    }
     Ok(registry.coroutine_frames.set_error(task_id, value))
 }
 /// Cooperative cancellation state shared by an external I/O task and its
@@ -212,10 +268,7 @@ where
 
 /// Runs blocking work on the bounded background executor and wires a
 /// non-blocking cancellation hook into the normal `Task<T>` protocol.
-pub fn spawn_cancellable_background_task<F, C>(
-    work: F,
-    cancel: C,
-) -> Result<SpectraHostValue, i32>
+pub fn spawn_cancellable_background_task<F, C>(work: F, cancel: C) -> Result<SpectraHostValue, i32>
 where
     F: FnOnce() -> Result<SpectraHostValue, ()> + Send + 'static,
     C: Fn() + Send + Sync + 'static,
@@ -225,26 +278,17 @@ where
 
 /// Runs a cancellable long-lived I/O wait without consuming the general
 /// blocking-work executor used by database queries and file operations.
-pub fn spawn_cancellable_io_task<F, C>(
-    work: F,
-    cancel: C,
-) -> Result<SpectraHostValue, i32>
+pub fn spawn_cancellable_io_task<F, C>(work: F, cancel: C) -> Result<SpectraHostValue, i32>
 where
     F: FnOnce() -> Result<SpectraHostValue, ()> + Send + 'static,
     C: Fn() + Send + Sync + 'static,
 {
-    spawn_background_task_internal(
-        work,
-        Some(Arc::new(cancel)),
-        background_io_worker_queue(),
-    )
+    spawn_background_task_internal(work, Some(Arc::new(cancel)), background_io_worker_queue())
 }
 
 /// Schedules a cancellable I/O task and gives the worker a token that is set
 /// immediately when the corresponding Spectra task is cancelled.
-pub fn spawn_cancellable_io_task_with_token<F>(
-    work: F,
-) -> Result<SpectraHostValue, i32>
+pub fn spawn_cancellable_io_task_with_token<F>(work: F) -> Result<SpectraHostValue, i32>
 where
     F: FnOnce(CancellationToken) -> Result<SpectraHostValue, ()> + Send + 'static,
 {
@@ -269,8 +313,7 @@ where
     let task_id = {
         let _lifecycle = lock_unpoisoned(background_task_lifecycle());
         let mut registry = lock_async_task_registry()?;
-        let task_id =
-            registry.allocate_task_with_completion(0, None, None, None, false, false);
+        let task_id = registry.allocate_task_with_completion(0, None, None, None, false, false);
         if let Some(cancel) = cancel {
             lock_unpoisoned(background_cancel_hooks()).insert(task_id, cancel);
         }
@@ -438,7 +481,10 @@ pub fn poll_task_once(task_id: SpectraHostValue) -> Result<bool, i32> {
         registry.is_coroutine_task(task_id)
     };
     if is_coroutine {
-        return Ok(matches!(poll_coroutine_task(task_id)?, AsyncPollOutcome::Ready));
+        return Ok(matches!(
+            poll_coroutine_task(task_id)?,
+            AsyncPollOutcome::Ready
+        ));
     }
     let mut registry = lock_async_task_registry()?;
     registry.process_due_timeouts();
@@ -518,9 +564,8 @@ pub fn wait_task_terminal_status(task_id: SpectraHostValue) -> Result<SpectraHos
             let Some(task) = registry.tasks.get(task_id) else {
                 return Err(HOST_STATUS_NOT_FOUND);
             };
-            match async_task_join_status(task) {
-                status @ (0 | 1 | 2) => return Ok(status),
-                _ => {}
+            if let status @ (0..=2) = async_task_join_status(task) {
+                return Ok(status);
             }
         }
         if let Some(event) = reactor::global().poll(Some(TASK_WAIT_PARK)) {
@@ -544,7 +589,10 @@ pub(crate) extern "C" fn std_async_task_result(ctx: *mut SpectraHostCallContext)
         Err(status) => return status,
     };
     match task_result_value(args[0]) {
-        Ok(value) => { results[0] = value; HOST_STATUS_SUCCESS }
+        Ok(value) => {
+            results[0] = value;
+            HOST_STATUS_SUCCESS
+        }
         Err(status) => status,
     }
 }
@@ -634,7 +682,9 @@ pub(crate) extern "C" fn std_async_task_join(ctx: *mut SpectraHostCallContext) -
             AsyncPollOutcome::Cancelled => -1,
             AsyncPollOutcome::Failed => -2,
             AsyncPollOutcome::Pending | AsyncPollOutcome::AlreadyPolling => -3,
-            AsyncPollOutcome::Stale | AsyncPollOutcome::AffinityRejected => return HOST_STATUS_NOT_FOUND,
+            AsyncPollOutcome::Stale | AsyncPollOutcome::AffinityRejected => {
+                return HOST_STATUS_NOT_FOUND
+            }
         };
         return HOST_STATUS_SUCCESS;
     }
@@ -701,7 +751,10 @@ pub(crate) extern "C" fn std_async_task_cancel(ctx: *mut SpectraHostCallContext)
     };
     if is_coroutine {
         return match cancel_coroutine_task(args[0]) {
-            Ok(true) => { results[0] = 1; HOST_STATUS_SUCCESS }
+            Ok(true) => {
+                results[0] = 1;
+                HOST_STATUS_SUCCESS
+            }
             Ok(false) => HOST_STATUS_NOT_FOUND,
             Err(status) => status,
         };
@@ -1340,13 +1393,13 @@ pub(crate) extern "C" fn std_async_stream_fuse(ctx: *mut SpectraHostCallContext)
 
 #[cfg(test)]
 mod coroutine_tests {
-    use crate::async_frame::{
-        AsyncAffinity, AsyncFrame, AsyncOwnedValue, AsyncPollContext, AsyncPollOutcome,
-        AsyncResultStorage, AsyncTaskState,
-    };
     use super::{
         async_task_registry, cancel_coroutine_task, create_coroutine_task, drop_coroutine_task,
         lock_async_task_registry, poll_coroutine_task, take_coroutine_result, task_result_value,
+    };
+    use crate::async_frame::{
+        AsyncAffinity, AsyncFrame, AsyncOwnedValue, AsyncPollContext, AsyncPollOutcome,
+        AsyncResultStorage, AsyncTaskState,
     };
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -1354,11 +1407,7 @@ mod coroutine_tests {
     static POLLS: AtomicUsize = AtomicUsize::new(0);
     static DROPS: AtomicUsize = AtomicUsize::new(0);
 
-    unsafe extern "C" fn reenter_poll(
-        _: i64,
-        task: i64,
-        context: i64,
-    ) -> i64 {
+    unsafe extern "C" fn reenter_poll(_: i64, task: i64, context: i64) -> i64 {
         REENTERED.store(
             async_task_registry()
                 .try_lock()
@@ -1370,33 +1419,23 @@ mod coroutine_tests {
             (*(context as *mut AsyncPollContext)).wake_parent();
             0
         } else {
-            (*(context as *mut AsyncPollContext)).set_result(AsyncResultStorage::scalar(task.saturating_add(1)));
+            (*(context as *mut AsyncPollContext))
+                .set_result(AsyncResultStorage::scalar(task.saturating_add(1)));
             1
         }
     }
 
-    unsafe extern "C" fn string_poll(
-        _: i64,
-        _: i64,
-        context: i64,
-    ) -> i64 {
+    unsafe extern "C" fn string_poll(_: i64, _: i64, context: i64) -> i64 {
         (*(context as *mut AsyncPollContext)).set_result(AsyncResultStorage::string("owned"));
         1
     }
-    unsafe extern "C" fn aggregate_poll(
-        _: i64,
-        _: i64,
-        context: i64,
-    ) -> i64 {
-        (*(context as *mut AsyncPollContext)).set_result(AsyncResultStorage::aggregate(vec![11, 22]));
+    unsafe extern "C" fn aggregate_poll(_: i64, _: i64, context: i64) -> i64 {
+        (*(context as *mut AsyncPollContext))
+            .set_result(AsyncResultStorage::aggregate(vec![11, 22]));
         1
     }
 
-    unsafe extern "C" fn cancel_during_poll(
-        _: i64,
-        task: i64,
-        _: i64,
-    ) -> i64 {
+    unsafe extern "C" fn cancel_during_poll(_: i64, task: i64, _: i64) -> i64 {
         let _ = cancel_coroutine_task(task);
         1
     }
@@ -1421,7 +1460,8 @@ mod coroutine_tests {
             AsyncFrame::new(Vec::new(), reenter_poll, count_drop),
             None,
             AsyncAffinity::Any,
-        ).expect("task");
+        )
+        .expect("task");
         assert_eq!(poll_coroutine_task(task), Ok(AsyncPollOutcome::Pending));
         assert!(REENTERED.load(Ordering::SeqCst));
         assert_eq!(poll_coroutine_task(task), Ok(AsyncPollOutcome::Ready));
@@ -1438,7 +1478,8 @@ mod coroutine_tests {
             AsyncFrame::new(Vec::new(), cancel_during_poll, count_drop),
             None,
             AsyncAffinity::Any,
-        ).expect("task");
+        )
+        .expect("task");
         assert_eq!(poll_coroutine_task(task), Ok(AsyncPollOutcome::Cancelled));
         assert_eq!(DROPS.load(Ordering::SeqCst), 1);
     }
@@ -1451,7 +1492,8 @@ mod coroutine_tests {
             AsyncFrame::new(Vec::new(), string_poll, count_drop),
             None,
             AsyncAffinity::Any,
-        ).expect("task");
+        )
+        .expect("task");
         assert_eq!(poll_coroutine_task(task), Ok(AsyncPollOutcome::Ready));
         let result = take_coroutine_result(task).expect("result").expect("ready");
         assert!(matches!(result.as_value(), AsyncOwnedValue::String(value) if value == "owned"));
@@ -1461,10 +1503,18 @@ mod coroutine_tests {
             AsyncFrame::new(Vec::new(), aggregate_poll, count_drop),
             None,
             AsyncAffinity::Any,
-        ).expect("aggregate task");
-        assert_eq!(poll_coroutine_task(aggregate_task), Ok(AsyncPollOutcome::Ready));
-        let result = take_coroutine_result(aggregate_task).expect("result").expect("ready");
-        assert!(matches!(result.as_value(), AsyncOwnedValue::Aggregate(value) if value == &vec![11, 22]));
+        )
+        .expect("aggregate task");
+        assert_eq!(
+            poll_coroutine_task(aggregate_task),
+            Ok(AsyncPollOutcome::Ready)
+        );
+        let result = take_coroutine_result(aggregate_task)
+            .expect("result")
+            .expect("ready");
+        assert!(
+            matches!(result.as_value(), AsyncOwnedValue::Aggregate(value) if value == &vec![11, 22])
+        );
         assert!(drop_coroutine_task(aggregate_task).expect("drop"));
     }
 }

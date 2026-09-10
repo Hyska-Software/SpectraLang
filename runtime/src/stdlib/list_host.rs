@@ -166,4 +166,3 @@ pub(crate) extern "C" fn std_list_free_all(ctx: *mut SpectraHostCallContext) -> 
 
     HOST_STATUS_SUCCESS
 }
-

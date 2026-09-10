@@ -9,7 +9,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_HOST_CALL_COUNT = 555
-RUNTIME_REQUIRED_HOST_CALL_COUNT = 439
 
 
 def cargo_command() -> str:
@@ -98,7 +97,8 @@ def validate_implementation() -> None:
         require(term in middleware, f"middleware integration missing {term}")
 
     lib = read("packages/spectra-api/src/lib.rs")
-    runtime = read("runtime/src/api/mod.rs")
+    runtime = read("packages/spectra-api/src/host_calls.rs")
+    api_tests = read("packages/spectra-api/src/api_tests.rs")
     for name in [
         "spectra.api.http.request_with_header",
         "spectra.api.cors.policy",
@@ -122,8 +122,8 @@ def validate_implementation() -> None:
         f"package host-call count must be {PACKAGE_HOST_CALL_COUNT}",
     )
     require(
-        f"assert_eq!(required_host_call_count(), {RUNTIME_REQUIRED_HOST_CALL_COUNT})" in runtime,
-        f"runtime required host-call count must be {RUNTIME_REQUIRED_HOST_CALL_COUNT}",
+        f"assert_eq!(HOST_CALLS.len(), {PACKAGE_HOST_CALL_COUNT})" in api_tests,
+        f"package host-call count must be {PACKAGE_HOST_CALL_COUNT}",
     )
 
 

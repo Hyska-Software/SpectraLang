@@ -31,9 +31,7 @@ fn ir_snapshot_covers_lowering_stage() {
     "#;
 
     let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
-    let ast = Parser::new(tokens)
-        .parse()
-        .expect("parsing should pass");
+    let ast = Parser::new(tokens).parse().expect("parsing should pass");
     let ir = ASTLowering::new()
         .lower_module(&ast)
         .expect("lowering should pass");
@@ -59,9 +57,7 @@ fn type_alias_lowers_to_the_target_aggregate_layout() {
     "#;
 
     let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
-    let ast = Parser::new(tokens)
-        .parse()
-        .expect("parsing should pass");
+    let ast = Parser::new(tokens).parse().expect("parsing should pass");
     let ir = ASTLowering::new()
         .lower_module(&ast)
         .expect("lowering should pass");
@@ -94,9 +90,7 @@ fn json_derived_static_error_field_lowers_as_string_comparison() {
     "#;
 
     let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
-    let ast = Parser::new(tokens)
-        .parse()
-        .expect("parsing should pass");
+    let ast = Parser::new(tokens).parse().expect("parsing should pass");
     let ir = ASTLowering::new()
         .lower_module(&ast)
         .expect("lowering should pass");

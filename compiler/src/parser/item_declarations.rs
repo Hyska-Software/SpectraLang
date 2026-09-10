@@ -23,7 +23,10 @@ impl Parser {
             self.consume_function_keyword("Expected 'func' keyword after 'async'")?;
             (async_span, true)
         } else {
-            (self.consume_function_keyword("Expected 'func' keyword")?, false)
+            (
+                self.consume_function_keyword("Expected 'func' keyword")?,
+                false,
+            )
         };
 
         let (name, _name_span) = self.consume_identifier("Expected function name")?;
@@ -332,7 +335,8 @@ impl Parser {
             self.advance();
             let mut segments = vec![first_name.clone()];
             loop {
-                let (seg, _) = self.consume_identifier("Expected name after '::' in impl target")?;
+                let (seg, _) =
+                    self.consume_identifier("Expected name after '::' in impl target")?;
                 segments.push(seg);
                 if self.check_symbol(':')
                     && self.position + 1 < self.tokens.len()
@@ -542,5 +546,4 @@ impl Parser {
             type_params: impl_type_params,
         }))
     }
-
 }

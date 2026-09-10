@@ -105,7 +105,12 @@ impl TensorGraphExtractor {
         self.value_to_node.insert(value.id, id);
     }
 
-    pub(crate) fn node_for_input(&mut self, value: Value, block: usize, instruction: usize) -> usize {
+    pub(crate) fn node_for_input(
+        &mut self,
+        value: Value,
+        block: usize,
+        instruction: usize,
+    ) -> usize {
         if let Some(node_id) = self.value_to_node.get(&value.id) {
             return *node_id;
         }

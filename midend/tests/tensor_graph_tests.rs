@@ -23,9 +23,7 @@ fn assert_snapshot(name: &str, actual: &str) {
 
 fn lower_source(source: &str) -> TensorGraph {
     let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
-    let ast = Parser::new(tokens)
-        .parse()
-        .expect("parsing should pass");
+    let ast = Parser::new(tokens).parse().expect("parsing should pass");
     let ir = ASTLowering::new()
         .lower_module(&ast)
         .expect("lowering should pass");

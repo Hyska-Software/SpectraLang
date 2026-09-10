@@ -1,6 +1,6 @@
 use super::*;
-use crate::semantic::module_registry::{ModuleExports};
-use crate::ast::{Type};
+use crate::ast::Type;
+use crate::semantic::module_registry::ModuleExports;
 
 pub(crate) fn make_std_option() -> ModuleExports {
     let mut exports = ModuleExports {
@@ -82,9 +82,10 @@ pub(crate) fn make_std_result() -> ModuleExports {
         name: "E".to_string(),
     };
 
-    exports
-        .functions
-        .insert("is_ok".to_string(), pub_fn(vec![result.clone()], Type::Bool));
+    exports.functions.insert(
+        "is_ok".to_string(),
+        pub_fn(vec![result.clone()], Type::Bool),
+    );
     exports.functions.insert(
         "is_err".to_string(),
         pub_fn(vec![result.clone()], Type::Bool),
@@ -97,10 +98,9 @@ pub(crate) fn make_std_result() -> ModuleExports {
         "result_unwrap_or".to_string(),
         pub_fn(vec![result.clone(), value.clone()], value),
     );
-    exports.functions.insert(
-        "result_unwrap_err".to_string(),
-        pub_fn(vec![result], error),
-    );
+    exports
+        .functions
+        .insert("result_unwrap_err".to_string(), pub_fn(vec![result], error));
     let mapped = Type::TypeParameter {
         name: "U".to_string(),
     };

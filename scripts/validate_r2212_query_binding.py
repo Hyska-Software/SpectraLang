@@ -74,7 +74,7 @@ def validate_implementation() -> None:
     require("b'+'" not in query, "query parser must not translate plus to space")
 
     lib = read("packages/spectra-api/src/lib.rs")
-    runtime = read("runtime/src/api/mod.rs")
+    runtime = read("packages/spectra-api/src/host_calls.rs")
     midend = read("midend/src/lowering.rs")
     builtins = read("compiler/src/semantic/builtin_modules.rs")
     for name in [

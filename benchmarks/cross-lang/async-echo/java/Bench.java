@@ -4,7 +4,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class Bench {
     public static void main(String[] args) throws Exception {
-        final int iters = 1000;
+        final int iters = 10000;
         long total = 0L;
         for (int i = 0; i < iters; i++) {
             AtomicLong local = new AtomicLong(0L);
@@ -19,7 +19,7 @@ public class Bench {
             }
             total += local.get();
         }
-        if (total != 55_000L) {
+        if (total != 550_000L) {
             System.err.println("unexpected: " + total);
             System.exit(1);
         }

@@ -100,7 +100,8 @@ impl ASTLowering {
                         if let IRType::Struct { name, .. } = self.infer_expr_ir_type(receiver_expr)
                         {
                             let function_name = format!("{}_{}", name, variant_name);
-                            if let Some(return_type) = self.function_return_types.get(&function_name)
+                            if let Some(return_type) =
+                                self.function_return_types.get(&function_name)
                             {
                                 return return_type.clone();
                             }
@@ -275,7 +276,8 @@ impl ASTLowering {
                     }
                 }
 
-                if let Some(descriptor) = self.host_function_descriptor_for_call(callee, arguments) {
+                if let Some(descriptor) = self.host_function_descriptor_for_call(callee, arguments)
+                {
                     return descriptor.return_type.clone();
                 }
 
@@ -303,10 +305,8 @@ impl ASTLowering {
 
                         if let Some(generic_func) = self.generic_functions.get(name) {
                             let mut type_map: HashMap<String, IRType> = HashMap::new();
-                            for (param, concrete) in generic_func
-                                .type_params
-                                .iter()
-                                .zip(concrete_types)
+                            for (param, concrete) in
+                                generic_func.type_params.iter().zip(concrete_types)
                             {
                                 type_map.insert(param.name.clone(), concrete);
                             }
@@ -328,13 +328,11 @@ impl ASTLowering {
                 arguments,
                 type_name,
             } => {
-                if let Some(descriptor) =
-                    self.std_method_host_function_descriptor_for_call(
-                        object,
-                        method_name,
-                        arguments,
-                    )
-                {
+                if let Some(descriptor) = self.std_method_host_function_descriptor_for_call(
+                    object,
+                    method_name,
+                    arguments,
+                ) {
                     return descriptor.return_type.clone();
                 }
 
@@ -458,7 +456,9 @@ impl ASTLowering {
                 let scrutinee_type = self.infer_expr_ir_type(scrutinee);
                 let scrutinee_enum_name = match &scrutinee_type {
                     IRType::Enum { name, .. } => Some(name.clone()),
-                    IRType::Generic { .. } => self.ir_nominal_name(&scrutinee_type).map(str::to_string),
+                    IRType::Generic { .. } => {
+                        self.ir_nominal_name(&scrutinee_type).map(str::to_string)
+                    }
                     _ => None,
                 };
                 let arm_types: Vec<IRType> = arms
@@ -532,25 +532,39 @@ impl ASTLowering {
             }
             ExpressionKind::CharLiteral(_) => IRType::Char,
             ExpressionKind::FString(_) => IRType::String,
-            ExpressionKind::Lambda { is_async, params, body } => {
+            ExpressionKind::Lambda {
+                is_async,
+                params,
+                body,
+            } => {
                 // Async closures retain the normal function parameter shape,
                 // but their public result is a lazy Task<T>.
                 let param_types: Vec<IRType> = params
                     .iter()
-                    .map(|p| p.ty.as_ref().map(|t| self.lower_type_annotation(t)).unwrap_or(IRType::Unknown))
+                    .map(|p| {
+                        p.ty.as_ref()
+                            .map(|t| self.lower_type_annotation(t))
+                            .unwrap_or(IRType::Unknown)
+                    })
                     .collect();
                 self.variable_types.push_scope();
                 for (param, param_type) in params.iter().zip(param_types.iter()) {
-                    self.variable_types.insert(param.name.clone(), param_type.clone());
+                    self.variable_types
+                        .insert(param.name.clone(), param_type.clone());
                 }
                 let ret = self.infer_expr_ir_type(body);
                 self.variable_types.pop_scope();
                 let return_type = if *is_async {
-                    IRType::Task { output: Box::new(ret) }
+                    IRType::Task {
+                        output: Box::new(ret),
+                    }
                 } else {
                     ret
                 };
-                IRType::Function { params: param_types, return_type: Box::new(return_type) }
+                IRType::Function {
+                    params: param_types,
+                    return_type: Box::new(return_type),
+                }
             }
             ExpressionKind::Try(inner) => {
                 // `?` unwraps the Ok payload; infer from the inner type's first data field.
@@ -572,12 +586,12 @@ impl ASTLowering {
                 }
             }
             ExpressionKind::Range { .. } => IRType::Range,
-            ExpressionKind::Block(block) => self
-                .infer_block_result_type(block)
-                .unwrap_or(IRType::Void),
-            ExpressionKind::DifferentiableBlock(block) => self
-                .infer_block_result_type(block)
-                .unwrap_or(IRType::Void),
+            ExpressionKind::Block(block) => {
+                self.infer_block_result_type(block).unwrap_or(IRType::Void)
+            }
+            ExpressionKind::DifferentiableBlock(block) => {
+                self.infer_block_result_type(block).unwrap_or(IRType::Void)
+            }
             ExpressionKind::Await(inner) => match self.infer_expr_ir_type(inner) {
                 IRType::Task { output } => *output,
                 _ => IRType::Unknown,
@@ -664,8 +678,8 @@ impl ASTLowering {
                 let mut variants = scrutinee_enum
                     .and_then(|name| self.enum_definitions.get(name).cloned())
                     .or_else(|| {
-                        if let Some(IRType::Enum { name, .. }) = scrutinee_type
-                            .map(Self::ir_type_representation_static)
+                        if let Some(IRType::Enum { name, .. }) =
+                            scrutinee_type.map(Self::ir_type_representation_static)
                         {
                             self.enum_definitions.get(name).cloned()
                         } else {
@@ -701,7 +715,8 @@ impl ASTLowering {
                     {
                         for (idx, sub_pattern) in ordered_patterns.iter().enumerate() {
                             if let Some(sub_type) = types.get(idx) {
-                                let next_enum = match Self::ir_type_representation_static(sub_type) {
+                                let next_enum = match Self::ir_type_representation_static(sub_type)
+                                {
                                     IRType::Enum { name, .. } => Some(name.as_str()),
                                     _ => None,
                                 };
@@ -746,5 +761,4 @@ impl ASTLowering {
         self.variable_types.pop_scope();
         result
     }
-
 }

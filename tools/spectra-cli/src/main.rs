@@ -14,7 +14,7 @@ mod release_channel;
 mod runtime_lib;
 
 use compiler_integration::{
-    forward_program_args, take_last_exec_exit, shift_span_lines, ModulePipelineSummary,
+    forward_program_args, shift_span_lines, take_last_exec_exit, ModulePipelineSummary,
     NativeDebugMetadata, SpectraCompiler,
 };
 use formatter::{run as run_formatter, ExplainMode, FormatOptions};
@@ -24,12 +24,13 @@ use release_channel::{cli_channel, cli_compatibility_level};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use spectra_compiler::{
+    analyze_document,
     ast::{Item, Module, TypeAnnotationKind},
+    collect_let_inlay_hints,
     error::CompilerError,
     lint::LintDiagnostic,
     span::Span,
     CompilationOptions, DebugInfoMode, Lexer, LintOptions, LintRule, Parser,
-    analyze_document, collect_let_inlay_hints,
 };
 use spectra_db::{migrations::SqliteMigrator, sqlite::SqliteConnection};
 use std::collections::BTreeMap;
@@ -39,6 +40,7 @@ use std::str::FromStr;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::{env, fs, process};
 
+const KNOWN_EXPERIMENTAL_FEATURES: &[&str] = &[];
 const AOT_DEBUG_MAP_SCHEMA_VERSION: u32 = 1;
 
 #[repr(i32)]
@@ -159,6 +161,7 @@ enum DbCommand {
 #[derive(Debug)]
 enum CliAction {
     Help(HelpTopic),
+    ListExperimental,
     Build {
         kind: BuildCommand,
         invocation: CliInvocation,

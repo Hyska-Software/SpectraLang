@@ -238,13 +238,11 @@ impl SemanticAnalyzer {
 
                 if let Some(fields) = struct_data {
                     if type_args.is_empty() {
-                        if let Some(inferred_args) = self
-                            .infer_enum_type_args_from_named_fields(
-                                enum_name,
-                                variant_name,
-                                fields.as_slice(),
-                            )
-                        {
+                        if let Some(inferred_args) = self.infer_enum_type_args_from_named_fields(
+                            enum_name,
+                            variant_name,
+                            fields.as_slice(),
+                        ) {
                             *type_args = inferred_args;
                         }
                     }
@@ -393,9 +391,9 @@ impl SemanticAnalyzer {
                 // This avoids sending an unresolved type parameter into the
                 // executable IR while explicit annotations still select the
                 // requested type.
-                _ if matches!(enum_name, "Option" | "Result") => result.push(
-                    self.type_to_annotation(&Type::Int),
-                ),
+                _ if matches!(enum_name, "Option" | "Result") => {
+                    result.push(self.type_to_annotation(&Type::Int))
+                }
                 _ => result.push(self.type_to_annotation(&Type::TypeParameter {
                     name: param.name.clone(),
                 })),
@@ -417,9 +415,7 @@ impl SemanticAnalyzer {
         // Concrete applications must be compared structurally below.  Treating
         // every `Option<T>`/`Result<T, E>` pair as the same here would accept
         // `Option<int>` where `Option<string>` was declared.
-        if matches!(pattern, Type::Applied { .. })
-            && matches!(concrete, Type::Applied { .. })
-        {
+        if matches!(pattern, Type::Applied { .. }) && matches!(concrete, Type::Applied { .. }) {
             return false;
         }
         matches!(pattern_name, "Option" | "Result")
@@ -529,10 +525,23 @@ impl SemanticAnalyzer {
                 segments: vec!["float".to_string()],
             },
             Type::ExactInt { signed, width } => TypeAnnotationKind::Simple {
-                segments: vec![format!("{}{}", if *signed { "i" } else { "u" }, match width { IntWidth::I8 => "8", IntWidth::I16 => "16", IntWidth::I32 => "32", IntWidth::I64 => "64", IntWidth::Isize | IntWidth::Usize => "size" })],
+                segments: vec![format!(
+                    "{}{}",
+                    if *signed { "i" } else { "u" },
+                    match width {
+                        IntWidth::I8 => "8",
+                        IntWidth::I16 => "16",
+                        IntWidth::I32 => "32",
+                        IntWidth::I64 => "64",
+                        IntWidth::Isize | IntWidth::Usize => "size",
+                    }
+                )],
             },
             Type::ExactFloat { width } => TypeAnnotationKind::Simple {
-                segments: vec![match width { FloatWidth::F32 => "f32".to_string(), FloatWidth::F64 => "f64".to_string() }],
+                segments: vec![match width {
+                    FloatWidth::F32 => "f32".to_string(),
+                    FloatWidth::F64 => "f64".to_string(),
+                }],
             },
             Type::Bool => TypeAnnotationKind::Simple {
                 segments: vec!["bool".to_string()],
@@ -554,7 +563,10 @@ impl SemanticAnalyzer {
             },
             Type::Applied { name, args } => TypeAnnotationKind::Generic {
                 name: name.clone(),
-                type_args: args.iter().map(|arg| self.type_to_annotation(arg)).collect(),
+                type_args: args
+                    .iter()
+                    .map(|arg| self.type_to_annotation(arg))
+                    .collect(),
             },
             Type::Tuple { elements } => {
                 let element_anns = elements

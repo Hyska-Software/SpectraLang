@@ -101,9 +101,9 @@ pub(crate) fn ml_kv_cache_binding(
             Some(s) if !s.is_empty() => s,
             _ => continue,
         };
-        let mut matches = output_names.iter().filter(|output| {
-            matches!(output.strip_prefix(ML_KV_PRESENT_PREFIX), Some(s) if s == suffix)
-        });
+        let mut matches = output_names.iter().filter(
+            |output| matches!(output.strip_prefix(ML_KV_PRESENT_PREFIX), Some(s) if s == suffix),
+        );
         // Unpaired past input → not a usable cache interface.
         let output = matches.next()?;
         if matches.next().is_some() {
@@ -116,20 +116,14 @@ pub(crate) fn ml_kv_cache_binding(
     }
     let rest_inputs: Vec<&String> = input_names
         .iter()
-        .filter(|name| match name.strip_prefix(ML_KV_PAST_PREFIX) {
-            Some(s) if !s.is_empty() => false,
-            _ => true,
-        })
+        .filter(|name| !matches!(name.strip_prefix(ML_KV_PAST_PREFIX), Some(s) if !s.is_empty()))
         .collect();
     if rest_inputs.len() != 1 {
         return None;
     }
     let rest_outputs: Vec<&String> = output_names
         .iter()
-        .filter(|name| match name.strip_prefix(ML_KV_PRESENT_PREFIX) {
-            Some(s) if !s.is_empty() => false,
-            _ => true,
-        })
+        .filter(|name| !matches!(name.strip_prefix(ML_KV_PRESENT_PREFIX), Some(s) if !s.is_empty()))
         .collect();
     if rest_outputs.is_empty() {
         return None;
@@ -211,16 +205,13 @@ mod kv_binding_tests {
 
     #[test]
     fn unpaired_past_or_present_rejects_interface() {
-        assert!(ml_kv_cache_binding(
-            &names(&["input_ids", "past_k"]),
-            &names(&["logits"]),
-        )
-        .is_none());
-        assert!(ml_kv_cache_binding(
-            &names(&["input_ids"]),
-            &names(&["logits", "present_k"]),
-        )
-        .is_none());
+        assert!(
+            ml_kv_cache_binding(&names(&["input_ids", "past_k"]), &names(&["logits"]),).is_none()
+        );
+        assert!(
+            ml_kv_cache_binding(&names(&["input_ids"]), &names(&["logits", "present_k"]),)
+                .is_none()
+        );
     }
 
     #[test]
@@ -235,11 +226,7 @@ mod kv_binding_tests {
     #[test]
     fn no_past_inputs_or_extra_id_inputs_fall_back_to_refeed() {
         // No past at all: plain re-feed model.
-        assert!(ml_kv_cache_binding(
-            &names(&["input_ids"]),
-            &names(&["logits"]),
-        )
-        .is_none());
+        assert!(ml_kv_cache_binding(&names(&["input_ids"]), &names(&["logits"]),).is_none());
         // Two non-cache inlets: generation cannot know which one takes ids.
         assert!(ml_kv_cache_binding(
             &names(&["input_ids", "position_ids", "past_k"]),
@@ -247,11 +234,10 @@ mod kv_binding_tests {
         )
         .is_none());
         // Every outlet is a cache outlet: no logits to decode with.
-        assert!(ml_kv_cache_binding(
-            &names(&["input_ids", "past_k"]),
-            &names(&["present_k"]),
-        )
-        .is_none());
+        assert!(
+            ml_kv_cache_binding(&names(&["input_ids", "past_k"]), &names(&["present_k"]),)
+                .is_none()
+        );
     }
 
     #[test]
@@ -265,10 +251,8 @@ mod kv_binding_tests {
 
     #[test]
     fn empty_past_shapes_zero_the_penultimate_axis() {
-        use std::string::ToString as _;
-        let dims = |items: &[i64]| -> Vec<String> {
-            items.iter().map(ToString::to_string).collect()
-        };
+        let dims =
+            |items: &[i64]| -> Vec<String> { items.iter().map(ToString::to_string).collect() };
         // Symbolic [batch, past_len, vocab] → [1, 0, 1].
         assert_eq!(
             ml_kv_empty_past_shape(&names(&["batch", "past_seq", "vocab"])),
@@ -276,13 +260,13 @@ mod kv_binding_tests {
         );
         // GPT-2 export style: only the cache length is dynamic.
         assert_eq!(
-            ml_kv_empty_past_shape(&dims(&[1, -1, 64]).as_slice()),
+            ml_kv_empty_past_shape(dims(&[1, -1, 64]).as_slice()),
             Some(vec![1, 0, 64])
         );
         // Fixed positive cache length cannot be emptied.
-        assert_eq!(ml_kv_empty_past_shape(&dims(&[1, 8, 64]).as_slice()), None);
+        assert_eq!(ml_kv_empty_past_shape(dims(&[1, 8, 64]).as_slice()), None);
         // Rank < 2 is not a cache tensor.
-        assert_eq!(ml_kv_empty_past_shape(&dims(&[16]).as_slice()), None);
+        assert_eq!(ml_kv_empty_past_shape(dims(&[16]).as_slice()), None);
     }
 }
 
@@ -341,12 +325,17 @@ pub(crate) fn ml_generate_sample_top_k(
     } else {
         1.0
     };
-    let scaled: Vec<f64> = candidates.iter().map(|(_, logit)| *logit as f64 / temperature).collect();
+    let scaled: Vec<f64> = candidates
+        .iter()
+        .map(|(_, logit)| *logit as f64 / temperature)
+        .collect();
     let max_scaled = scaled.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let weights: Vec<f64> = scaled.iter().map(|value| (value - max_scaled).exp()).collect();
+    let weights: Vec<f64> = scaled
+        .iter()
+        .map(|value| (value - max_scaled).exp())
+        .collect();
     let total: f64 = weights.iter().sum();
-    let draw =
-        MlGenerateSampling::next_random(state) as f64 / (1u64 << 53) as f64 * total;
+    let draw = MlGenerateSampling::next_random(state) as f64 / (1u64 << 53) as f64 * total;
 
     let mut cumulative = 0.0;
     for (index, weight) in weights.iter().enumerate() {
@@ -357,7 +346,6 @@ pub(crate) fn ml_generate_sample_top_k(
     }
     candidates[candidates.len() - 1].0
 }
-
 
 /// Next-token decision shared by BOTH execution modes: sampling when the
 /// options select it, otherwise the deterministic greedy argmax. Sharing
@@ -448,8 +436,7 @@ fn ml_generate_kv(
         ));
         if first_step {
             for (name, dims) in &past_dims {
-                let shape =
-                    ml_kv_empty_past_shape(dims).ok_or(HOST_STATUS_INVALID_ARGUMENT)?;
+                let shape = ml_kv_empty_past_shape(dims).ok_or(HOST_STATUS_INVALID_ARGUMENT)?;
                 feed.push((
                     name.as_str(),
                     Tensor::<f32>::from_array((shape, Vec::<f32>::new()))
@@ -462,7 +449,9 @@ fn ml_generate_kv(
             if carried.len() != binding.pairs.len() {
                 return Err(HOST_STATUS_INTERNAL_ERROR);
             }
-            for ((expected_name, _), (name, tensor)) in binding.pairs.iter().zip(carried.into_iter()) {
+            for ((expected_name, _), (name, tensor)) in
+                binding.pairs.iter().zip(carried.into_iter())
+            {
                 if expected_name != &name {
                     return Err(HOST_STATUS_INTERNAL_ERROR);
                 }
@@ -647,13 +636,7 @@ pub(crate) extern "C" fn std_ml_generate(ctx: *mut SpectraHostCallContext) -> i3
             if input_ids.is_empty() {
                 return HOST_STATUS_INVALID_ARGUMENT;
             }
-            match ml_generate_inner(
-                args[0] as u64,
-                &input_ids,
-                args[2] as usize,
-                args[3],
-                None,
-            ) {
+            match ml_generate_inner(args[0] as u64, &input_ids, args[2] as usize, args[3], None) {
                 Ok(ids) => match tensor_alloc(TensorDType::Int, vec![ids.len()], ids) {
                     Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
                     Err(_) => HOST_STATUS_INTERNAL_ERROR,
@@ -732,7 +715,6 @@ pub(crate) extern "C" fn std_ml_generate_ex(ctx: *mut SpectraHostCallContext) ->
     }
 }
 
-
 // ── RagGenerate: deterministic test fixture ──
 //
 // Toy causal-LM written with the crate's own protobuf helpers. Weights are
@@ -753,7 +735,11 @@ pub(crate) fn ml_generation_fixture_next(id: usize) -> i64 {
 
 /// Manual reference for the whole greedy loop over the fixture model.
 #[cfg(all(test, feature = "onnx"))]
-pub(crate) fn ml_generation_expected(start: &[i64], max_new_tokens: usize, eos_id: i64) -> Vec<i64> {
+pub(crate) fn ml_generation_expected(
+    start: &[i64],
+    max_new_tokens: usize,
+    eos_id: i64,
+) -> Vec<i64> {
     let mut ids = start.to_vec();
     for _ in 0..max_new_tokens {
         let next = ml_generation_fixture_next(*ids.last().expect("non-empty prompt") as usize);
@@ -950,12 +936,20 @@ pub(crate) fn ml_generation_fixture_kv_proto() -> Vec<u8> {
     );
     pb_message(
         11,
-        ml_embed_value_info("past_kv", 1, &[batch_dim.clone(), past_dim, vocab_dim.clone()]),
+        ml_embed_value_info(
+            "past_kv",
+            1,
+            &[batch_dim.clone(), past_dim, vocab_dim.clone()],
+        ),
         &mut graph,
     );
     pb_message(
         12,
-        ml_embed_value_info("logits", 1, &[batch_dim.clone(), total_dim.clone(), vocab_dim.clone()]),
+        ml_embed_value_info(
+            "logits",
+            1,
+            &[batch_dim.clone(), total_dim.clone(), vocab_dim.clone()],
+        ),
         &mut graph,
     );
     pb_message(

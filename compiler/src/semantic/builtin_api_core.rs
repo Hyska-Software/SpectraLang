@@ -1,6 +1,9 @@
 use super::*;
-use crate::semantic::module_registry::{ExportVisibility, ExportedFunction, ExportedSelfParamKind, ExportedTraitMethod, ExportedType, ModuleExports, ModuleRegistry};
 use crate::ast::{Type, TypeAnnotation, TypeAnnotationKind};
+use crate::semantic::module_registry::{
+    ExportVisibility, ExportedFunction, ExportedSelfParamKind, ExportedTraitMethod, ExportedType,
+    ModuleExports, ModuleRegistry,
+};
 use crate::span::Span;
 
 /// Register all built-in standard library modules in the given registry.
@@ -113,10 +116,7 @@ fn register_std_api_modules(registry: &mut ModuleRegistry, prefix: &str) {
         make_std_api_validation(prefix),
     );
     registry.register_module(format!("{prefix}.errors"), make_std_api_errors(prefix));
-    registry.register_module(
-        format!("{prefix}.security"),
-        make_std_api_security(prefix),
-    );
+    registry.register_module(format!("{prefix}.security"), make_std_api_security(prefix));
     registry.register_module(format!("{prefix}.session"), make_std_api_session(prefix));
     registry.register_module(
         format!("{prefix}.websocket"),
@@ -125,8 +125,14 @@ fn register_std_api_modules(registry: &mut ModuleRegistry, prefix: &str) {
     registry.register_module(format!("{prefix}.sse"), make_std_api_sse(prefix));
     registry.register_module(format!("{prefix}.trace"), make_std_api_trace(prefix));
     registry.register_module(format!("{prefix}.health"), make_std_api_health(prefix));
-    registry.register_module(format!("{prefix}.db.sqlite"), make_std_api_db_sqlite(prefix));
-    registry.register_module(format!("{prefix}.db.postgres"), make_std_api_db_postgres(prefix));
+    registry.register_module(
+        format!("{prefix}.db.sqlite"),
+        make_std_api_db_sqlite(prefix),
+    );
+    registry.register_module(
+        format!("{prefix}.db.postgres"),
+        make_std_api_db_postgres(prefix),
+    );
     registry.register_module(format!("{prefix}.db.redis"), make_std_api_db_redis(prefix));
     registry.register_module(format!("{prefix}.db.pool"), make_std_api_db_pool(prefix));
     registry.register_module(
@@ -518,9 +524,10 @@ fn make_std_api_oauth(prefix: &str) -> ModuleExports {
     exports
         .types
         .insert("OAuthClient".to_string(), public_type(&["client_id"]));
-    exports
-        .types
-        .insert("OAuthToken".to_string(), public_type(&["access_token", "token_type"]));
+    exports.types.insert(
+        "OAuthToken".to_string(),
+        public_type(&["access_token", "token_type"]),
+    );
     let client = api_type("OAuthClient");
     let token = api_type("OAuthToken");
     let functions = [
@@ -551,18 +558,14 @@ fn make_std_api_oauth(prefix: &str) -> ModuleExports {
             vec![client.clone(), Type::String, Type::String],
             token.clone(),
         ),
-        ("refresh", vec![client.clone(), token.clone()], token.clone()),
+        (
+            "refresh",
+            vec![client.clone(), token.clone()],
+            token.clone(),
+        ),
         ("revoke", vec![client.clone(), token.clone()], Type::Bool),
-        (
-            "token_access_token",
-            vec![token.clone()],
-            Type::String,
-        ),
-        (
-            "token_refresh_token",
-            vec![token.clone()],
-            Type::String,
-        ),
+        ("token_access_token", vec![token.clone()], Type::String),
+        ("token_refresh_token", vec![token.clone()], Type::String),
         ("token_type", vec![token.clone()], Type::String),
         ("token_expires_at_ms", vec![token.clone()], Type::Int),
         ("token_scope", vec![token], Type::String),
@@ -886,21 +889,9 @@ fn make_std_api_db_pool(prefix: &str) -> ModuleExports {
     let redis_connection = api_type("RedisConnection");
     exports.types.insert("Pool".to_string(), public_type(&[]));
     let functions = [
-        (
-            "sqlite_open",
-            vec![Type::String, Type::Int],
-            pool.clone(),
-        ),
-        (
-            "postgres_open",
-            vec![Type::String, Type::Int],
-            pool.clone(),
-        ),
-        (
-            "redis_open",
-            vec![Type::String, Type::Int],
-            pool.clone(),
-        ),
+        ("sqlite_open", vec![Type::String, Type::Int], pool.clone()),
+        ("postgres_open", vec![Type::String, Type::Int], pool.clone()),
+        ("redis_open", vec![Type::String, Type::Int], pool.clone()),
         ("close", vec![pool.clone()], Type::Bool),
         ("with_connection", vec![pool.clone()], connection),
         (
@@ -922,7 +913,11 @@ fn make_std_api_db_migrate(prefix: &str) -> ModuleExports {
     let mut exports = api_module(&format!("{prefix}.db.migrate"), None);
     let connection = api_type("SqliteConnection");
     let functions = [
-        ("apply_sqlite", vec![connection.clone(), Type::String], Type::Int),
+        (
+            "apply_sqlite",
+            vec![connection.clone(), Type::String],
+            Type::Int,
+        ),
         (
             "status_sqlite",
             vec![connection, Type::String],
@@ -940,13 +935,21 @@ fn make_std_api_db_migrate(prefix: &str) -> ModuleExports {
 fn make_std_api_http3(prefix: &str) -> ModuleExports {
     let mut exports = api_module(prefix, Some("http3"));
     let functions = [
-        ("server_config_new", vec![Type::String, Type::String, Type::String], Type::Int),
+        (
+            "server_config_new",
+            vec![Type::String, Type::String, Type::String],
+            Type::Int,
+        ),
         ("client_config_new", vec![Type::String], Type::Int),
         ("handler_text", vec![Type::Int, Type::String], Type::Int),
         ("server_start", vec![Type::Int, Type::Int], Type::Int),
         ("server_local_port", vec![Type::Int], Type::Int),
         ("server_shutdown", vec![Type::Int], api_task(Type::Int)),
-        ("client_connect", vec![Type::Int, Type::String], api_task(Type::Int)),
+        (
+            "client_connect",
+            vec![Type::Int, Type::String],
+            api_task(Type::Int),
+        ),
         ("client_shutdown", vec![Type::Int], api_task(Type::Int)),
         (
             "client_request_new",
@@ -969,7 +972,11 @@ fn make_std_api_http3(prefix: &str) -> ModuleExports {
             vec![Type::Int, Type::String, Type::String],
             api_task(Type::Int),
         ),
-        ("client_request_finish", vec![Type::Int], api_task(Type::Int)),
+        (
+            "client_request_finish",
+            vec![Type::Int],
+            api_task(Type::Int),
+        ),
         (
             "client_request_receive_response",
             vec![Type::Int],
@@ -977,8 +984,16 @@ fn make_std_api_http3(prefix: &str) -> ModuleExports {
         ),
         ("client_request_cancel", vec![Type::Int], Type::Bool),
         ("response_status", vec![Type::Int], Type::Int),
-        ("response_header", vec![Type::Int, Type::String], Type::String),
-        ("response_trailer", vec![Type::Int, Type::String], Type::String),
+        (
+            "response_header",
+            vec![Type::Int, Type::String],
+            Type::String,
+        ),
+        (
+            "response_trailer",
+            vec![Type::Int, Type::String],
+            Type::String,
+        ),
         ("response_body_base64", vec![Type::Int], Type::String),
         ("response_body_len", vec![Type::Int], Type::Int),
         ("task_result", vec![Type::Int], Type::Int),
@@ -1062,7 +1077,11 @@ fn make_std_api_grpc(prefix: &str) -> ModuleExports {
             vec![Type::Int, Type::String, Type::Int, Type::Int, Type::Int],
             api_task(Type::Int),
         ),
-        ("stream_send", vec![Type::Int, Type::Int], api_task(Type::Int)),
+        (
+            "stream_send",
+            vec![Type::Int, Type::Int],
+            api_task(Type::Int),
+        ),
         ("stream_recv", vec![Type::Int], api_task(Type::Int)),
         ("stream_finish", vec![Type::Int], api_task(Type::Int)),
         ("stream_cancel", vec![Type::Int], api_task(Type::Int)),
@@ -1121,16 +1140,30 @@ fn make_std_api_graphql(prefix: &str) -> ModuleExports {
             vec![Type::Int, Type::Int],
             Type::Bool,
         ),
-        ("schema_set_max_depth", vec![Type::Int, Type::Int], Type::Bool),
+        (
+            "schema_set_max_depth",
+            vec![Type::Int, Type::Int],
+            Type::Bool,
+        ),
         (
             "schema_set_max_complexity",
             vec![Type::Int, Type::Int],
             Type::Bool,
         ),
-        ("schema_set_introspection", vec![Type::Int, Type::Int], Type::Bool),
+        (
+            "schema_set_introspection",
+            vec![Type::Int, Type::Int],
+            Type::Bool,
+        ),
         (
             "schema_field_json",
-            vec![Type::Int, Type::Int, Type::String, Type::String, Type::String],
+            vec![
+                Type::Int,
+                Type::Int,
+                Type::String,
+                Type::String,
+                Type::String,
+            ],
             Type::Bool,
         ),
         (
@@ -1151,7 +1184,11 @@ fn make_std_api_graphql(prefix: &str) -> ModuleExports {
         ("schema_finish", vec![Type::Int], Type::Int),
         ("schema_drop", vec![Type::Int], Type::Bool),
         ("schema_sdl", vec![Type::Int], Type::String),
-        ("execute", vec![Type::Int, Type::String, Type::String], Type::Int),
+        (
+            "execute",
+            vec![Type::Int, Type::String, Type::String],
+            Type::Int,
+        ),
         (
             "execute_named",
             vec![Type::Int, Type::String, Type::String, Type::String],
@@ -1159,7 +1196,13 @@ fn make_std_api_graphql(prefix: &str) -> ModuleExports {
         ),
         (
             "execute_http",
-            vec![Type::Int, Type::Int, Type::String, Type::String, Type::String],
+            vec![
+                Type::Int,
+                Type::Int,
+                Type::String,
+                Type::String,
+                Type::String,
+            ],
             Type::Int,
         ),
         ("response_json", vec![Type::Int], Type::String),
@@ -1168,7 +1211,11 @@ fn make_std_api_graphql(prefix: &str) -> ModuleExports {
         ("response_errors_json", vec![Type::Int], Type::String),
         ("response_data_json", vec![Type::Int], Type::String),
         ("response_drop", vec![Type::Int], Type::Bool),
-        ("subscribe", vec![Type::Int, Type::String, Type::String], Type::Int),
+        (
+            "subscribe",
+            vec![Type::Int, Type::String, Type::String],
+            Type::Int,
+        ),
         ("subscription_next", vec![Type::Int], Type::Int),
         ("subscription_pending", vec![Type::Int], Type::Int),
         ("subscription_capacity", vec![Type::Int], Type::Int),

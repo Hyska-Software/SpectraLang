@@ -42,10 +42,7 @@ impl SemanticAnalyzer {
                         } else if let Some(sn) = self.nominal_lookup_name(&left_type) {
                             // Operator overloading: preserve the applied receiver type while
                             // using the compatibility key used by the trait registry.
-                            if self
-                                .trait_impls
-                                .contains_key(&("Add".to_string(), sn))
-                            {
+                            if self.trait_impls.contains_key(&("Add".to_string(), sn)) {
                                 left_type
                             } else {
                                 self.numeric_result_type(&left_type, &right_type)
@@ -65,10 +62,7 @@ impl SemanticAnalyzer {
                                 BinaryOperator::Divide => "Div",
                                 _ => "Rem",
                             };
-                            if self
-                                .trait_impls
-                                .contains_key(&(trait_name.to_string(), sn))
-                            {
+                            if self.trait_impls.contains_key(&(trait_name.to_string(), sn)) {
                                 return left_type;
                             }
                         }
@@ -244,9 +238,7 @@ impl SemanticAnalyzer {
                             }
                         }
                     } else {
-                        Type::Struct {
-                            name: name.clone(),
-                        }
+                        Type::Struct { name: name.clone() }
                     }
                 } else {
                     Type::Unknown
@@ -320,12 +312,11 @@ impl SemanticAnalyzer {
                     }
 
                     if let Some(fields) = struct_data {
-                        let inferred_args = self
-                            .infer_enum_type_args_from_named_fields(
-                                enum_name,
-                                variant_name,
-                                fields,
-                            );
+                        let inferred_args = self.infer_enum_type_args_from_named_fields(
+                            enum_name,
+                            variant_name,
+                            fields,
+                        );
                         if let Some(inferred_args) = inferred_args {
                             return Type::Applied {
                                 name: enum_name.clone(),
@@ -624,10 +615,7 @@ impl SemanticAnalyzer {
                                 .as_ref()
                                 .map(|value| self.infer_expression_type(value));
                             let binding_type = declared.or(inferred).unwrap_or(Type::Unknown);
-                            self.register_typed_pattern_bindings(
-                                &let_stmt.pattern,
-                                &binding_type,
-                            );
+                            self.register_typed_pattern_bindings(&let_stmt.pattern, &binding_type);
                         }
                         crate::ast::StatementKind::Expression(expr) => {
                             result = self.infer_expression_type(expr);
@@ -653,10 +641,8 @@ impl SemanticAnalyzer {
                 }
             }
             ExpressionKind::AsyncBlock(block) => {
-                if let Some(Type::Task { output }) = self
-                    .symbol_resolutions
-                    .get(&expr.span)
-                    .map(|info| &info.ty)
+                if let Some(Type::Task { output }) =
+                    self.symbol_resolutions.get(&expr.span).map(|info| &info.ty)
                 {
                     return Type::Task {
                         output: output.clone(),
@@ -956,5 +942,4 @@ impl SemanticAnalyzer {
             }
         }
     }
-
 }

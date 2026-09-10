@@ -827,14 +827,13 @@ mod tests {
     #[test]
     fn token_exchange_over_https_with_custom_roots() {
         use rcgen::generate_simple_self_signed;
+        use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
         use rustls::ServerConfig;
-        use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
         let cert = generate_simple_self_signed(vec!["127.0.0.1".into(), "localhost".into()])
             .expect("certificate");
         let der = cert.cert.der().clone();
-        let key =
-            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der()));
+        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der()));
         let server_config = ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(vec![der.clone()], key)
@@ -856,8 +855,7 @@ mod tests {
                     break;
                 }
                 bytes.extend_from_slice(&buffer[..count]);
-                let Some(header_end) =
-                    bytes.windows(4).position(|window| window == b"\r\n\r\n")
+                let Some(header_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n")
                 else {
                     continue;
                 };
@@ -885,8 +883,7 @@ mod tests {
             )
             .expect("write mock response");
         });
-        let roots =
-            crate::tls::TlsClientConfig::with_roots(vec![CertificateDer::from(der).to_vec()]);
+        let roots = crate::tls::TlsClientConfig::with_roots(vec![der.to_vec()]);
         let token = request_token(
             &format!("https://127.0.0.1:{}/token", address.port()),
             vec![

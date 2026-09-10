@@ -76,7 +76,7 @@ impl ReplBuffer {
         let mut source = repl_module_header();
         for declaration in &self.declarations {
             ensure_trailing_newline(&mut source);
-            source.push_str("\n");
+            source.push('\n');
             source.push_str(declaration.trim_end());
             source.push('\n');
         }

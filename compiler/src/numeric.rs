@@ -92,15 +92,15 @@ mod tests {
         // The lexer never produces a leading sign, but Rust's parser accepts
         // one; keep it valid input rather than asserting rejection.
         assert_eq!(parse_number_literal("-7"), Some(ParsedNumber::Int(-7)));
-        assert_eq!(
-            parse_number_literal("2.5"),
-            Some(ParsedNumber::Float(2.5))
-        );
+        assert_eq!(parse_number_literal("2.5"), Some(ParsedNumber::Float(2.5)));
     }
 
     #[test]
     fn parses_scientific_notation_as_float() {
-        assert_eq!(parse_number_literal("1e5"), Some(ParsedNumber::Float(100000.0)));
+        assert_eq!(
+            parse_number_literal("1e5"),
+            Some(ParsedNumber::Float(100000.0))
+        );
         assert_eq!(
             parse_number_literal("2.5E-3"),
             Some(ParsedNumber::Float(0.0025))
@@ -113,22 +113,13 @@ mod tests {
 
     #[test]
     fn parses_radix_integers() {
-        assert_eq!(
-            parse_number_literal("0xFF"),
-            Some(ParsedNumber::Int(255))
-        );
+        assert_eq!(parse_number_literal("0xFF"), Some(ParsedNumber::Int(255)));
         assert_eq!(
             parse_number_literal("0xDE_AD"),
             Some(ParsedNumber::Int(57005))
         );
-        assert_eq!(
-            parse_number_literal("0o17"),
-            Some(ParsedNumber::Int(15))
-        );
-        assert_eq!(
-            parse_number_literal("0b1011"),
-            Some(ParsedNumber::Int(11))
-        );
+        assert_eq!(parse_number_literal("0o17"), Some(ParsedNumber::Int(15)));
+        assert_eq!(parse_number_literal("0b1011"), Some(ParsedNumber::Int(11)));
         assert_eq!(
             parse_number_literal("0b1010_0001"),
             Some(ParsedNumber::Int(161))

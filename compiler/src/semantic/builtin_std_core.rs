@@ -1,6 +1,6 @@
 use super::*;
-use crate::semantic::module_registry::{ExportVisibility, ExportedType, ModuleExports};
 use crate::ast::{FloatWidth, IntWidth, Type};
+use crate::semantic::module_registry::{ExportVisibility, ExportedType, ModuleExports};
 
 pub(crate) fn make_std_io() -> ModuleExports {
     let mut exports = ModuleExports {
@@ -11,20 +11,22 @@ pub(crate) fn make_std_io() -> ModuleExports {
 
     // print(value: any) -> unit
     // The runtime FFI accepts a single value and prints it.
-    exports
-        .functions
-        .insert(
-            "print".to_string(),
-            pub_fn(
-                vec![Type::TypeParameter { name: "T".to_string() }],
-                Type::Unit,
-            ),
-        );
+    exports.functions.insert(
+        "print".to_string(),
+        pub_fn(
+            vec![Type::TypeParameter {
+                name: "T".to_string(),
+            }],
+            Type::Unit,
+        ),
+    );
     // println(value: any) -> unit  (print + newline)
     exports.functions.insert(
         "println".to_string(),
         pub_fn(
-            vec![Type::TypeParameter { name: "T".to_string() }],
+            vec![Type::TypeParameter {
+                name: "T".to_string(),
+            }],
             Type::Unit,
         ),
     );
@@ -32,7 +34,9 @@ pub(crate) fn make_std_io() -> ModuleExports {
     exports.functions.insert(
         "eprint".to_string(),
         pub_fn(
-            vec![Type::TypeParameter { name: "T".to_string() }],
+            vec![Type::TypeParameter {
+                name: "T".to_string(),
+            }],
             Type::Unit,
         ),
     );
@@ -40,7 +44,9 @@ pub(crate) fn make_std_io() -> ModuleExports {
     exports.functions.insert(
         "eprintln".to_string(),
         pub_fn(
-            vec![Type::TypeParameter { name: "T".to_string() }],
+            vec![Type::TypeParameter {
+                name: "T".to_string(),
+            }],
             Type::Unit,
         ),
     );
@@ -169,14 +175,62 @@ pub(crate) fn make_std_numeric() -> ModuleExports {
         ..Default::default()
     };
     for (name, ty) in [
-        ("i8", Type::ExactInt { signed: true, width: IntWidth::I8 }),
-        ("i16", Type::ExactInt { signed: true, width: IntWidth::I16 }),
-        ("i32", Type::ExactInt { signed: true, width: IntWidth::I32 }),
-        ("i64", Type::ExactInt { signed: true, width: IntWidth::I64 }),
-        ("u8", Type::ExactInt { signed: false, width: IntWidth::I8 }),
-        ("u16", Type::ExactInt { signed: false, width: IntWidth::I16 }),
-        ("u32", Type::ExactInt { signed: false, width: IntWidth::I32 }),
-        ("u64", Type::ExactInt { signed: false, width: IntWidth::I64 }),
+        (
+            "i8",
+            Type::ExactInt {
+                signed: true,
+                width: IntWidth::I8,
+            },
+        ),
+        (
+            "i16",
+            Type::ExactInt {
+                signed: true,
+                width: IntWidth::I16,
+            },
+        ),
+        (
+            "i32",
+            Type::ExactInt {
+                signed: true,
+                width: IntWidth::I32,
+            },
+        ),
+        (
+            "i64",
+            Type::ExactInt {
+                signed: true,
+                width: IntWidth::I64,
+            },
+        ),
+        (
+            "u8",
+            Type::ExactInt {
+                signed: false,
+                width: IntWidth::I8,
+            },
+        ),
+        (
+            "u16",
+            Type::ExactInt {
+                signed: false,
+                width: IntWidth::I16,
+            },
+        ),
+        (
+            "u32",
+            Type::ExactInt {
+                signed: false,
+                width: IntWidth::I32,
+            },
+        ),
+        (
+            "u64",
+            Type::ExactInt {
+                signed: false,
+                width: IntWidth::I64,
+            },
+        ),
     ] {
         for op in ["add", "sub", "mul"] {
             exports.functions.insert(
@@ -188,8 +242,12 @@ pub(crate) fn make_std_numeric() -> ModuleExports {
     exports.functions.insert(
         "checked_f32".to_string(),
         pub_fn(
-            vec![Type::ExactFloat { width: FloatWidth::F64 }],
-            Type::ExactFloat { width: FloatWidth::F32 },
+            vec![Type::ExactFloat {
+                width: FloatWidth::F64,
+            }],
+            Type::ExactFloat {
+                width: FloatWidth::F32,
+            },
         ),
     );
     exports
@@ -236,9 +294,10 @@ pub(crate) fn make_std_collections() -> ModuleExports {
         "list_push".to_string(),
         pub_fn(vec![list.clone(), element.clone()], Type::Unit),
     );
-    exports
-        .functions
-        .insert("list_len".to_string(), pub_fn(vec![list.clone()], Type::Int));
+    exports.functions.insert(
+        "list_len".to_string(),
+        pub_fn(vec![list.clone()], Type::Int),
+    );
     exports.functions.insert(
         "list_get".to_string(),
         pub_fn(vec![list.clone(), Type::Int], option.clone()),
@@ -259,16 +318,18 @@ pub(crate) fn make_std_collections() -> ModuleExports {
         "list_clear".to_string(),
         pub_fn(vec![list.clone()], Type::Unit),
     );
-    exports
-        .functions
-        .insert("list_free".to_string(), pub_fn(vec![list.clone()], Type::Unit));
+    exports.functions.insert(
+        "list_free".to_string(),
+        pub_fn(vec![list.clone()], Type::Unit),
+    );
     // list_free_all() -> int
     exports
         .functions
         .insert("list_free_all".to_string(), pub_fn(vec![], Type::Int));
-    exports
-        .functions
-        .insert("list_pop".to_string(), pub_fn(vec![list.clone()], option.clone()));
+    exports.functions.insert(
+        "list_pop".to_string(),
+        pub_fn(vec![list.clone()], option.clone()),
+    );
     exports.functions.insert(
         "list_pop_front".to_string(),
         pub_fn(vec![list.clone()], option.clone()),
@@ -297,9 +358,10 @@ pub(crate) fn make_std_collections() -> ModuleExports {
         "list_index_of".to_string(),
         pub_fn(vec![list.clone(), element.clone()], Type::Int),
     );
-    exports
-        .functions
-        .insert("list_sort".to_string(), pub_fn(vec![list.clone()], Type::Unit));
+    exports.functions.insert(
+        "list_sort".to_string(),
+        pub_fn(vec![list.clone()], Type::Unit),
+    );
     let fn_int_to_int = Type::Fn {
         params: vec![Type::Int],
         return_type: Box::new(Type::Int),
@@ -363,9 +425,10 @@ pub(crate) fn make_std_collections() -> ModuleExports {
     exports
         .functions
         .insert("map_len".to_string(), pub_fn(vec![map.clone()], Type::Int));
-    exports
-        .functions
-        .insert("map_clear".to_string(), pub_fn(vec![map.clone()], Type::Unit));
+    exports.functions.insert(
+        "map_clear".to_string(),
+        pub_fn(vec![map.clone()], Type::Unit),
+    );
     exports
         .functions
         .insert("map_free".to_string(), pub_fn(vec![map], Type::Unit));
@@ -398,9 +461,10 @@ pub(crate) fn make_std_collections() -> ModuleExports {
             },
         ),
     );
-    exports
-        .functions
-        .insert("set_clear".to_string(), pub_fn(vec![set.clone()], Type::Unit));
+    exports.functions.insert(
+        "set_clear".to_string(),
+        pub_fn(vec![set.clone()], Type::Unit),
+    );
     exports
         .functions
         .insert("set_free".to_string(), pub_fn(vec![set], Type::Unit));
@@ -441,9 +505,10 @@ pub(crate) fn make_std_collections() -> ModuleExports {
         "iterator_remaining".to_string(),
         pub_fn(vec![iterator.clone()], Type::Int),
     );
-    exports
-        .functions
-        .insert("iterator_free".to_string(), pub_fn(vec![iterator], Type::Unit));
+    exports.functions.insert(
+        "iterator_free".to_string(),
+        pub_fn(vec![iterator], Type::Unit),
+    );
 
     // type aliases
     exports.types.insert(
@@ -773,4 +838,3 @@ pub(crate) fn make_std_tensor() -> ModuleExports {
 
     exports
 }
-

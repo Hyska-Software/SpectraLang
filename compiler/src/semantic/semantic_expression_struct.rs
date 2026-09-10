@@ -55,7 +55,10 @@ impl SemanticAnalyzer {
                     .iter()
                     .zip(type_args.iter())
                     .map(|(param, arg)| {
-                        (param.clone(), self.type_annotation_to_type(&Some(arg.clone())))
+                        (
+                            param.clone(),
+                            self.type_annotation_to_type(&Some(arg.clone())),
+                        )
                     })
                     .collect::<HashMap<_, _>>();
 
@@ -67,16 +70,13 @@ impl SemanticAnalyzer {
                 // otherwise a valid field is compared with `Unknown` and the
                 // binding keeps the unspecialized aggregate type.
                 if type_args.is_empty() && !struct_info.type_params.is_empty() {
-                    if let Some((type_params, field_defs)) =
-                        self.generic_structs.get(name).cloned()
+                    if let Some((type_params, field_defs)) = self.generic_structs.get(name).cloned()
                     {
                         let inferred_args =
                             self.infer_struct_type_args(&type_params, &field_defs, fields);
                         for (param, arg) in struct_info.type_params.iter().zip(inferred_args) {
-                            substitutions.insert(
-                                param.clone(),
-                                self.type_annotation_to_type(&Some(arg)),
-                            );
+                            substitutions
+                                .insert(param.clone(), self.type_annotation_to_type(&Some(arg)));
                         }
                     }
                 }

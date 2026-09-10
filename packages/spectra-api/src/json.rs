@@ -2,12 +2,11 @@ use crate::handles::ApiHandleTable;
 use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use serde_json::{Map, Number, Value};
 use spectra_runtime::ffi::{
-    SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
-    HOST_STATUS_SUCCESS,
+    SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT, HOST_STATUS_SUCCESS,
 };
-use std::sync::{LazyLock, Mutex};
 use std::fmt;
 use std::str::FromStr;
+use std::sync::{LazyLock, Mutex};
 
 pub const JSON_KIND_INVALID: SpectraHostValue = 0;
 pub const JSON_KIND_NULL: SpectraHostValue = 1;
@@ -53,7 +52,11 @@ impl JsonObject {
     /// Inserts a key/value pair. Inserting a key that already exists replaces
     /// its value in place and never moves the entry's position.
     pub fn insert(&mut self, key: String, value: JsonValue) -> Option<JsonValue> {
-        if let Some(slot) = self.entries.iter_mut().find(|(existing, _)| *existing == key) {
+        if let Some(slot) = self
+            .entries
+            .iter_mut()
+            .find(|(existing, _)| *existing == key)
+        {
             return Some(std::mem::replace(&mut slot.1, value));
         }
         self.entries.push((key, value));
@@ -465,9 +468,8 @@ pub extern "C" fn json_value_get(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = read_args(ctx, 2) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
-    let child = read_spectra_string(args[1]).and_then(|key| {
-        stored_json_value(args[0]).and_then(|value| value.get(key).cloned())
-    });
+    let child = read_spectra_string(args[1])
+        .and_then(|key| stored_json_value(args[0]).and_then(|value| value.get(key).cloned()));
     write_result(ctx, child.map(insert_json_value).unwrap_or(0))
 }
 
@@ -1123,7 +1125,6 @@ mod tests {
         assert_eq!(reparsed, value);
     }
 
-
     #[test]
     fn parse_preserves_object_key_insertion_order() {
         let decoded = parse_json(r#"{"b":1,"a":2}"#).expect("parse");
@@ -1147,18 +1148,9 @@ mod tests {
     #[test]
     fn updating_existing_object_key_preserves_position() {
         let mut map = JsonObject::new();
-        map.insert(
-            "b".to_string(),
-            JsonValue::Number(JsonNumber::from_i64(1)),
-        );
-        map.insert(
-            "a".to_string(),
-            JsonValue::Number(JsonNumber::from_i64(2)),
-        );
-        map.insert(
-            "b".to_string(),
-            JsonValue::Number(JsonNumber::from_i64(9)),
-        );
+        map.insert("b".to_string(), JsonValue::Number(JsonNumber::from_i64(1)));
+        map.insert("a".to_string(), JsonValue::Number(JsonNumber::from_i64(2)));
+        map.insert("b".to_string(), JsonValue::Number(JsonNumber::from_i64(9)));
 
         let encoded = encode_json(&JsonValue::Object(map)).expect("encode");
         assert_eq!(
@@ -1173,7 +1165,6 @@ mod tests {
         assert_eq!(json_kind_of(r#""hello""#), JSON_KIND_STRING);
         assert_eq!(json_kind_of("-3.5e+7"), JSON_KIND_NUMBER);
     }
-
 
     fn call_json_host(
         function: extern "C" fn(*mut SpectraHostCallContext) -> i32,
@@ -1238,10 +1229,7 @@ mod tests {
         let (_, len) = call_json_host(json_value_len, &[root]);
         assert_eq!(len, 7);
 
-        let (_, tags) = call_json_host(
-            json_value_get,
-            &[root, alloc_spectra_string("tags")],
-        );
+        let (_, tags) = call_json_host(json_value_get, &[root, alloc_spectra_string("tags")]);
         assert!(tags != 0);
         let (_, tags_kind) = call_json_host(json_value_kind, &[tags]);
         assert_eq!(tags_kind, JSON_KIND_ARRAY);
@@ -1269,10 +1257,7 @@ mod tests {
             0
         );
 
-        let (_, name) = call_json_host(
-            json_value_get,
-            &[root, alloc_spectra_string("name")],
-        );
+        let (_, name) = call_json_host(json_value_get, &[root, alloc_spectra_string("name")]);
         let (_, name_ptr) = call_json_host(json_value_text, &[name]);
         assert_eq!(read_spectra_string(name_ptr).as_deref(), Some("Ada"));
     }
@@ -1348,6 +1333,9 @@ mod tests {
             "freed handles must classify as invalid"
         );
         // Freeing an unknown handle is a no-op that still succeeds.
-        assert_eq!(call_json_host_no_result(json_value_free, &[0]), HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call_json_host_no_result(json_value_free, &[0]),
+            HOST_STATUS_SUCCESS
+        );
     }
 }

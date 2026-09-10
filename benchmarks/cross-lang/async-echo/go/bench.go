@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	const iters = 1000
+	const iters = 10000
 	total := 0
 	for i := 0; i < iters; i++ {
 		var wg sync.WaitGroup
@@ -28,7 +28,7 @@ func main() {
 		wg.Wait()
 		total += int(local)
 	}
-	if total != 55000 {
+	if total != 550000 {
 		fmt.Fprintf(os.Stderr, "unexpected: %d\n", total)
 		os.Exit(1)
 	}

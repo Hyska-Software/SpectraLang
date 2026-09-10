@@ -352,7 +352,6 @@ pub(crate) extern "C" fn std_ml_evaluation_report(ctx: *mut SpectraHostCallConte
     }
 }
 
-
 // ── StatsEmbed ──
 /// Real perplexity from per-token log-probs: exp(-mean(logp)).
 /// Returns (token_count, mean_logprob, perplexity); None when the slice is

@@ -156,8 +156,7 @@ impl SemanticAnalyzer {
                         },
                     );
                 }
-                Item::Trait(trait_decl) =>
-                {
+                Item::Trait(trait_decl) => {
                     let methods = trait_decl
                         .methods
                         .iter()
@@ -179,7 +178,9 @@ impl SemanticAnalyzer {
                                         param
                                             .type_annotation
                                             .as_ref()
-                                            .map(|ann| self.type_annotation_to_type(&Some(ann.clone())))
+                                            .map(|ann| {
+                                                self.type_annotation_to_type(&Some(ann.clone()))
+                                            })
                                             .unwrap_or(Type::Unknown),
                                     );
                                 }
@@ -430,7 +431,10 @@ impl SemanticAnalyzer {
                     if function.visibility == ExportVisibility::Public {
                         let mut reexported = function.clone();
                         reexported.visibility = ExportVisibility::Public;
-                        exports.functions.entry(public_name.clone()).or_insert(reexported);
+                        exports
+                            .functions
+                            .entry(public_name.clone())
+                            .or_insert(reexported);
                     }
                 }
 
@@ -438,7 +442,10 @@ impl SemanticAnalyzer {
                     if static_export.visibility == ExportVisibility::Public {
                         let mut reexported = static_export.clone();
                         reexported.visibility = ExportVisibility::Public;
-                        exports.statics.entry(public_name.clone()).or_insert(reexported);
+                        exports
+                            .statics
+                            .entry(public_name.clone())
+                            .or_insert(reexported);
                     }
                 }
 
@@ -446,14 +453,15 @@ impl SemanticAnalyzer {
                     if ty.visibility == ExportVisibility::Public {
                         let mut reexported = ty.clone();
                         reexported.visibility = ExportVisibility::Public;
-                        exports.types.entry(public_name.clone()).or_insert(reexported);
+                        exports
+                            .types
+                            .entry(public_name.clone())
+                            .or_insert(reexported);
 
                         if let Some(methods) = source.methods.get(&source_name) {
                             let public_methods = methods
                                 .iter()
-                                .filter(|(_, method)| {
-                                    method.visibility == ExportVisibility::Public
-                                })
+                                .filter(|(_, method)| method.visibility == ExportVisibility::Public)
                                 .map(|(name, method)| (name.clone(), method.clone()));
                             exports
                                 .methods
@@ -589,7 +597,12 @@ impl SemanticAnalyzer {
         );
     }
 
-    pub(crate) fn error_with_hint(&mut self, message: impl Into<String>, span: Span, hint: impl Into<String>) {
+    pub(crate) fn error_with_hint(
+        &mut self,
+        message: impl Into<String>,
+        span: Span,
+        hint: impl Into<String>,
+    ) {
         self.push_semantic_error(message, span, None, Some(hint.into()));
     }
 
@@ -764,7 +777,11 @@ impl SemanticAnalyzer {
         }
     }
 
-    pub(crate) fn type_satisfies_trait_bound(&self, concrete_type: &Type, trait_name: &str) -> bool {
+    pub(crate) fn type_satisfies_trait_bound(
+        &self,
+        concrete_type: &Type,
+        trait_name: &str,
+    ) -> bool {
         if trait_name == "Send" {
             return self.type_is_send(concrete_type);
         }
@@ -842,5 +859,4 @@ impl SemanticAnalyzer {
             }
         }
     }
-
 }

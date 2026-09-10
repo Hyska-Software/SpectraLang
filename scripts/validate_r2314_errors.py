@@ -9,7 +9,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_HOST_CALL_COUNT = 555
-RUNTIME_REQUIRED_HOST_CALL_COUNT = 439
 
 
 def cargo_command() -> str:
@@ -78,7 +77,8 @@ def validate_implementation() -> None:
     require("ApiError = 76" in handles, "ApiError handle kind is missing")
 
     host_calls = read("packages/spectra-api/src/host_calls.rs")
-    runtime_api = read("runtime/src/api/mod.rs")
+    runtime_api = read("packages/spectra-api/src/host_calls.rs")
+    api_tests = read("packages/spectra-api/src/api_tests.rs")
     names = [
         "spectra.api.errors.new",
         "spectra.api.errors.internal_error",
@@ -97,9 +97,9 @@ def validate_implementation() -> None:
         "package host-call count is not synchronized",
     )
     require(
-        f"assert_eq!(required_host_call_count(), {RUNTIME_REQUIRED_HOST_CALL_COUNT})"
-        in runtime_api,
-        "runtime required host-call count is not synchronized",
+        f"assert_eq!(HOST_CALLS.len(), {PACKAGE_HOST_CALL_COUNT})"
+        in api_tests,
+        "package host-call count is not synchronized",
     )
 
 

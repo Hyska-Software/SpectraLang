@@ -106,7 +106,11 @@ impl SemanticAnalyzer {
         );
     }
 
-    pub(crate) fn substitute_type_parameters(&self, ty: &Type, substitutions: &HashMap<String, Type>) -> Type {
+    pub(crate) fn substitute_type_parameters(
+        &self,
+        ty: &Type,
+        substitutions: &HashMap<String, Type>,
+    ) -> Type {
         match ty {
             Type::TypeParameter { name } => substitutions
                 .get(name)
@@ -224,7 +228,10 @@ impl SemanticAnalyzer {
         }
     }
 
-    pub(crate) fn type_annotation_to_type(&self, type_ann: &Option<crate::ast::TypeAnnotation>) -> Type {
+    pub(crate) fn type_annotation_to_type(
+        &self,
+        type_ann: &Option<crate::ast::TypeAnnotation>,
+    ) -> Type {
         use crate::ast::TypeAnnotationKind;
 
         match type_ann {
@@ -460,8 +467,7 @@ impl SemanticAnalyzer {
             .generic_structs
             .keys()
             .find(|base| {
-                type_name.len() > base.len() + 1
-                    && type_name.starts_with(&format!("{}_", base))
+                type_name.len() > base.len() + 1 && type_name.starts_with(&format!("{}_", base))
             })?
             .clone();
         let args_part = &type_name[base_name.len() + 1..];
@@ -469,17 +475,9 @@ impl SemanticAnalyzer {
             .split('_')
             .map(|part| self.type_from_mangle_part(part))
             .collect();
-        let type_params = self
-            .generic_structs
-            .get(&base_name)?
-            .0
-            .clone();
+        let type_params = self.generic_structs.get(&base_name)?.0.clone();
 
-        let signature = self
-            .methods
-            .get(&base_name)?
-            .get(method_name)?
-            .clone();
+        let signature = self.methods.get(&base_name)?.get(method_name)?.clone();
 
         let mut params = signature.params.clone();
         if signature.self_kind.is_some() && !params.is_empty() {
@@ -487,7 +485,8 @@ impl SemanticAnalyzer {
                 name: type_name.to_string(),
             };
         }
-        let return_type = self.substitute_generic_types(&signature.return_type, &type_params, &concrete_types);
+        let return_type =
+            self.substitute_generic_types(&signature.return_type, &type_params, &concrete_types);
         for param in params.iter_mut().skip(1) {
             *param = self.substitute_generic_types(param, &type_params, &concrete_types);
         }
@@ -516,7 +515,10 @@ impl SemanticAnalyzer {
                 .unwrap_or_else(|| ty.clone()),
             Type::Struct { name } => {
                 if let Some(idx) = type_params.iter().position(|p| &p.name == name) {
-                    return concrete_types.get(idx).cloned().unwrap_or_else(|| ty.clone());
+                    return concrete_types
+                        .get(idx)
+                        .cloned()
+                        .unwrap_or_else(|| ty.clone());
                 }
                 self.substitute_mangled_generic_name(name, type_params, concrete_types)
                     .map(|name| Type::Struct { name })
@@ -555,9 +557,7 @@ impl SemanticAnalyzer {
             } => Type::Fn {
                 params: params
                     .iter()
-                    .map(|param| {
-                        self.substitute_generic_types(param, type_params, concrete_types)
-                    })
+                    .map(|param| self.substitute_generic_types(param, type_params, concrete_types))
                     .collect(),
                 return_type: Box::new(self.substitute_generic_types(
                     return_type,
@@ -628,21 +628,56 @@ impl SemanticAnalyzer {
         None
     }
 
-    pub(crate) fn type_from_mangle_part(&self, part: &str) -> Type {        match part {
+    pub(crate) fn type_from_mangle_part(&self, part: &str) -> Type {
+        match part {
             "int" => Type::Int,
             "float" => Type::Float,
-            "i8" => Type::ExactInt { signed: true, width: IntWidth::I8 },
-            "i16" => Type::ExactInt { signed: true, width: IntWidth::I16 },
-            "i32" => Type::ExactInt { signed: true, width: IntWidth::I32 },
-            "i64" => Type::ExactInt { signed: true, width: IntWidth::I64 },
-            "isize" => Type::ExactInt { signed: true, width: IntWidth::Isize },
-            "u8" => Type::ExactInt { signed: false, width: IntWidth::I8 },
-            "u16" => Type::ExactInt { signed: false, width: IntWidth::I16 },
-            "u32" => Type::ExactInt { signed: false, width: IntWidth::I32 },
-            "u64" => Type::ExactInt { signed: false, width: IntWidth::I64 },
-            "usize" => Type::ExactInt { signed: false, width: IntWidth::Usize },
-            "f32" => Type::ExactFloat { width: FloatWidth::F32 },
-            "f64" => Type::ExactFloat { width: FloatWidth::F64 },
+            "i8" => Type::ExactInt {
+                signed: true,
+                width: IntWidth::I8,
+            },
+            "i16" => Type::ExactInt {
+                signed: true,
+                width: IntWidth::I16,
+            },
+            "i32" => Type::ExactInt {
+                signed: true,
+                width: IntWidth::I32,
+            },
+            "i64" => Type::ExactInt {
+                signed: true,
+                width: IntWidth::I64,
+            },
+            "isize" => Type::ExactInt {
+                signed: true,
+                width: IntWidth::Isize,
+            },
+            "u8" => Type::ExactInt {
+                signed: false,
+                width: IntWidth::I8,
+            },
+            "u16" => Type::ExactInt {
+                signed: false,
+                width: IntWidth::I16,
+            },
+            "u32" => Type::ExactInt {
+                signed: false,
+                width: IntWidth::I32,
+            },
+            "u64" => Type::ExactInt {
+                signed: false,
+                width: IntWidth::I64,
+            },
+            "usize" => Type::ExactInt {
+                signed: false,
+                width: IntWidth::Usize,
+            },
+            "f32" => Type::ExactFloat {
+                width: FloatWidth::F32,
+            },
+            "f64" => Type::ExactFloat {
+                width: FloatWidth::F64,
+            },
             "bool" => Type::Bool,
             "string" => Type::String,
             "char" => Type::Char,
@@ -872,9 +907,7 @@ impl SemanticAnalyzer {
             {
                 let concrete_types = type_args
                     .iter()
-                    .map(|arg| {
-                        self.type_annotation_to_type_with_substitutions(arg, substitutions)
-                    })
+                    .map(|arg| self.type_annotation_to_type_with_substitutions(arg, substitutions))
                     .collect::<Vec<_>>();
                 Type::Applied {
                     name: name.clone(),
@@ -886,9 +919,7 @@ impl SemanticAnalyzer {
             {
                 let concrete_types = type_args
                     .iter()
-                    .map(|arg| {
-                        self.type_annotation_to_type_with_substitutions(arg, substitutions)
-                    })
+                    .map(|arg| self.type_annotation_to_type_with_substitutions(arg, substitutions))
                     .collect::<Vec<_>>();
                 Type::Applied {
                     name: name.clone(),
@@ -928,9 +959,10 @@ impl SemanticAnalyzer {
                     self.type_annotation_to_type_checked(&Some((**return_type).clone()));
                 }
                 TypeAnnotationKind::Generic { name, type_args } => {
-                    let known_generic = matches!(name.as_str(), "Tensor" | "array" | "Task" | "Box")
-                        || self.generic_enums.contains_key(name)
-                        || self.generic_structs.contains_key(name);
+                    let known_generic =
+                        matches!(name.as_str(), "Tensor" | "array" | "Task" | "Box")
+                            || self.generic_enums.contains_key(name)
+                            || self.generic_structs.contains_key(name);
                     if !known_generic {
                         self.error_coded_with_hint(
                             "E010",
@@ -987,5 +1019,4 @@ impl SemanticAnalyzer {
 
         resolved
     }
-
 }

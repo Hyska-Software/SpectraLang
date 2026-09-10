@@ -455,7 +455,11 @@ pub(crate) fn tensor_requires_autograd(registry: &TensorRegistry, parents: &[usi
     })
 }
 
-pub(crate) fn max_tensor_offset(shape: &[usize], strides: &[usize], base_offset: usize) -> Option<usize> {
+pub(crate) fn max_tensor_offset(
+    shape: &[usize],
+    strides: &[usize],
+    base_offset: usize,
+) -> Option<usize> {
     let mut max_offset = base_offset;
     for (dim, stride) in shape.iter().zip(strides.iter()) {
         max_offset = max_offset.checked_add(dim.saturating_sub(1).checked_mul(*stride)?)?;
@@ -532,7 +536,10 @@ impl TensorKernelStrategy {
     }
 }
 
-pub(crate) fn kernel_dot_i64(left: &[SpectraHostValue], right: &[SpectraHostValue]) -> SpectraHostValue {
+pub(crate) fn kernel_dot_i64(
+    left: &[SpectraHostValue],
+    right: &[SpectraHostValue],
+) -> SpectraHostValue {
     debug_assert_eq!(left.len(), right.len());
     let len = left.len();
     let mut acc0 = 0i64;
@@ -720,8 +727,8 @@ macro_rules! simd_lane_kernels {
 
 #[cfg(target_arch = "x86_64")]
 mod simd_avx2 {
-    use core::arch::x86_64::*;
     use super::ElementwiseOp;
+    use core::arch::x86_64::*;
 
     simd_lane_kernels!(
         #[target_feature(enable = "avx2")]
@@ -743,8 +750,8 @@ mod simd_avx2 {
 }
 
 mod simd_sse {
-    use core::arch::x86_64::*;
     use super::ElementwiseOp;
+    use core::arch::x86_64::*;
 
     simd_lane_kernels!(
         #[target_feature(enable = "sse4.2")]
@@ -766,8 +773,8 @@ mod simd_sse {
 
 #[cfg(target_arch = "aarch64")]
 mod simd_neon {
-    use core::arch::aarch64::*;
     use super::ElementwiseOp;
+    use core::arch::aarch64::*;
 
     simd_lane_kernels!(
         f64, float64x2_t, vdupq_n_f64(0.0),
@@ -788,8 +795,7 @@ mod simd_neon {
 /// IEEE-754 bit patterns in i64 slots, so reinterpretation is lossless.
 fn widen_float_slices(values: &[SpectraHostValue]) -> &[f64] {
     const _: () = assert!(std::mem::size_of::<SpectraHostValue>() == std::mem::size_of::<f64>());
-    const _: () =
-        assert!(std::mem::align_of::<SpectraHostValue>() == std::mem::align_of::<f64>());
+    const _: () = assert!(std::mem::align_of::<SpectraHostValue>() == std::mem::align_of::<f64>());
     // SAFETY: identical size and alignment asserted above; the returned
     // view borrows the same bytes for the lifetime of `values`.
     unsafe { std::slice::from_raw_parts(values.as_ptr().cast::<f64>(), values.len()) }
@@ -798,12 +804,7 @@ fn widen_float_slices(values: &[SpectraHostValue]) -> &[f64] {
 /// Runtime-dispatching elementwise kernel for f64 lanes. Falls back to the
 /// strict sequential loop on ISAs without a compiled SIMD path; otherwise
 /// takes the widest vector route this build supports on this machine.
-pub(crate) fn elementwise_f64(
-    left: &[f64],
-    right: &[f64],
-    out: &mut [f64],
-    op: ElementwiseOp,
-) {
+pub(crate) fn elementwise_f64(left: &[f64], right: &[f64], out: &mut [f64], op: ElementwiseOp) {
     debug_assert_eq!(left.len(), right.len());
     #[cfg(target_arch = "x86_64")]
     {
@@ -832,12 +833,7 @@ pub(crate) fn elementwise_f64(
 
 /// Runtime-dispatching elementwise kernel for f32 lanes.
 #[cfg(test)]
-pub(crate) fn elementwise_f32(
-    left: &[f32],
-    right: &[f32],
-    out: &mut [f32],
-    op: ElementwiseOp,
-) {
+pub(crate) fn elementwise_f32(left: &[f32], right: &[f32], out: &mut [f32], op: ElementwiseOp) {
     debug_assert_eq!(left.len(), right.len());
     #[cfg(target_arch = "x86_64")]
     {
@@ -925,7 +921,12 @@ pub(crate) fn kernel_elementwise_f64_bits(
 ) -> Vec<SpectraHostValue> {
     debug_assert_eq!(left.len(), right.len());
     let mut out = vec![0.0f64; left.len()];
-    elementwise_f64(widen_float_slices(left), widen_float_slices(right), &mut out, op);
+    elementwise_f64(
+        widen_float_slices(left),
+        widen_float_slices(right),
+        &mut out,
+        op,
+    );
     out.iter()
         .map(|value| value.to_bits() as SpectraHostValue)
         .collect()
@@ -944,8 +945,8 @@ pub(crate) fn kernel_elementwise_f64_bits_scalar(
     left.iter()
         .zip(right.iter())
         .map(|(a, b)| {
-            op.apply(f64::from_bits(*a as u64), f64::from_bits(*b as u64)).to_bits()
-                as SpectraHostValue
+            op.apply(f64::from_bits(*a as u64), f64::from_bits(*b as u64))
+                .to_bits() as SpectraHostValue
         })
         .collect()
 }
@@ -974,17 +975,19 @@ pub(crate) fn tensor_binary_float_kernel(
     op: ElementwiseOp,
 ) -> Vec<SpectraHostValue> {
     debug_assert_eq!(left.len(), right.len());
-    if op == ElementwiseOp::Div
-        && widen_float_slices(right).iter().any(|value| *value == 0.0)
-    {
+    if op == ElementwiseOp::Div && widen_float_slices(right).contains(&0.0) {
         return left
             .iter()
             .zip(right.iter())
             .map(|(a, b)| {
                 let dividend = f64::from_bits(*a as u64);
                 let divisor = f64::from_bits(*b as u64);
-                (if divisor == 0.0 { f64::NAN } else { dividend / divisor })
-                    .to_bits() as SpectraHostValue
+                (if divisor == 0.0 {
+                    f64::NAN
+                } else {
+                    dividend / divisor
+                })
+                .to_bits() as SpectraHostValue
             })
             .collect();
     }
@@ -1005,22 +1008,6 @@ pub(crate) fn kernel_dot_f64(left: &[f64], right: &[f64]) -> f64 {
 #[cfg(test)]
 pub(crate) fn kernel_dot_f32(left: &[f32], right: &[f32]) -> f32 {
     dot_f32(left, right)
-}
-
-/// Strictly sequential bit-exact dot product kept for exactness checks and
-/// tolerance baselines; deliberately not used by the hot paths, which take
-/// the lane-accumulated SIMD route above.
-#[cfg(test)]
-pub(crate) fn kernel_dot_f64_bits_scalar_exact(
-    left: &[SpectraHostValue],
-    right: &[SpectraHostValue],
-) -> SpectraHostValue {
-    debug_assert_eq!(left.len(), right.len());
-    let mut acc = 0.0f64;
-    for idx in 0..left.len() {
-        acc += f64::from_bits(left[idx] as u64) * f64::from_bits(right[idx] as u64);
-    }
-    acc.to_bits() as SpectraHostValue
 }
 
 pub(crate) fn kernel_transpose_i64(
@@ -1109,11 +1096,17 @@ mod simd_kernel_tests {
     }
 
     fn host_from(values: &[f64]) -> Vec<SpectraHostValue> {
-        values.iter().map(|v| v.to_bits() as SpectraHostValue).collect()
+        values
+            .iter()
+            .map(|v| v.to_bits() as SpectraHostValue)
+            .collect()
     }
 
     fn sequential_dot(left: &[f64], right: &[f64]) -> f64 {
-        left.iter().zip(right.iter()).map(|(a, b)| a * b).sum::<f64>()
+        left.iter()
+            .zip(right.iter())
+            .map(|(a, b)| a * b)
+            .sum::<f64>()
     }
 
     /// Sizes straddle every lane-count boundary: below width, past SSE
@@ -1198,10 +1191,14 @@ mod simd_kernel_tests {
     #[test]
     fn simd_kernel_dot_f32_matches_sequential_within_tolerance() {
         for size in SIZES {
-            let left: Vec<f32> =
-                noise(0xF300 + size as u64).take(size).map(|v| v as f32).collect();
-            let right: Vec<f32> =
-                noise(0x40C0 + size as u64).take(size).map(|v| v as f32).collect();
+            let left: Vec<f32> = noise(0xF300 + size as u64)
+                .take(size)
+                .map(|v| v as f32)
+                .collect();
+            let right: Vec<f32> = noise(0x40C0 + size as u64)
+                .take(size)
+                .map(|v| v as f32)
+                .collect();
             let got = kernel_dot_f32(&left, &right);
             let want: f32 = left.iter().zip(right.iter()).map(|(a, b)| a * b).sum();
             assert!(
@@ -1240,10 +1237,16 @@ mod simd_kernel_tests {
 
     #[test]
     fn simd_kernel_div_by_zero_keeps_nan_rule() {
-        let left: [SpectraHostValue; 3] =
-            [1.0f64.to_bits() as i64, (-1.0f64).to_bits() as i64, 0.0f64.to_bits() as i64];
-        let right: [SpectraHostValue; 3] =
-            [2.0f64.to_bits() as i64, 0.0f64.to_bits() as i64, 0.0f64.to_bits() as i64];
+        let left: [SpectraHostValue; 3] = [
+            1.0f64.to_bits() as i64,
+            (-1.0f64).to_bits() as i64,
+            0.0f64.to_bits() as i64,
+        ];
+        let right: [SpectraHostValue; 3] = [
+            2.0f64.to_bits() as i64,
+            0.0f64.to_bits() as i64,
+            0.0f64.to_bits() as i64,
+        ];
         let out = tensor_binary_float_kernel(&left, &right, ElementwiseOp::Div);
         // Legacy language rule: any zero divisor yields NaN for that lane;
         // nonzero divisors compute normally (1/2 stays 0.5).
@@ -1257,8 +1260,10 @@ mod simd_kernel_tests {
         // Every variant must be constructible without dead_code shims.
         for strategy in TensorKernelStrategy::ALL {
             match strategy {
-                TensorKernelStrategy::Scalar | TensorKernelStrategy::Avx2
-                | TensorKernelStrategy::Neon | TensorKernelStrategy::Gpu => {}
+                TensorKernelStrategy::Scalar
+                | TensorKernelStrategy::Avx2
+                | TensorKernelStrategy::Neon
+                | TensorKernelStrategy::Gpu => {}
             }
         }
         // Strategy codes stay stable even though the fake Blas tier was
@@ -1283,7 +1288,8 @@ mod simd_kernel_tests {
         {
             let avx2 = std::arch::is_x86_feature_detected!("avx2");
             assert_eq!(
-                cpu == TensorKernelStrategy::Avx2, avx2,
+                cpu == TensorKernelStrategy::Avx2,
+                avx2,
                 "cpu() must mirror avx2 runtime detection"
             );
         }

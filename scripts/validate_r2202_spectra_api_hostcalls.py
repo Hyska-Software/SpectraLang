@@ -8,7 +8,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_HOST_CALL_COUNT = 555
-RUNTIME_REQUIRED_HOST_CALL_COUNT = 439
 LEGACY_REQUIRED_HOST_CALLS = [
     "spectra.api.version.major",
     "spectra.api.version.minor",
@@ -268,7 +267,7 @@ def validate_files() -> None:
         "packages/spectra-api/src/handler.rs",
         "packages/spectra-api/src/cors.rs",
         "packages/spectra-api/src/errors.rs",
-        "runtime/src/api/mod.rs",
+        "packages/spectra-api/src/host_calls.rs",
         "packages/spectra-api/src/bindings/mod.spectra",
     ]
     for path in required:
@@ -288,7 +287,6 @@ def validate_host_calls() -> None:
     # focused modules; inspect that authoritative registry directly rather
     # than expecting the include body to be duplicated in lib.rs.
     host_registry = read("packages/spectra-api/src/host_calls.rs")
-    runtime_api = read("runtime/src/api/mod.rs")
     names = re.findall(r'name:\s*"([^"]+)"', host_registry)
     require(
         len(names) == PACKAGE_HOST_CALL_COUNT,
@@ -302,15 +300,13 @@ def validate_host_calls() -> None:
         "client request host call must point to its real implementation",
     )
 
-    contract_start = runtime_api.split(
-        "pub const REQUIRED_HOST_CALLS: &[&str] = &[", 1
-    )[1]
-    contract_block = contract_start.split("];", 1)[0]
-    runtime_names = re.findall(r'"(spectra\.api\.[^"]+)"', contract_block)
+    # The runtime required host-call namespace is the canonical HOST_CALLS
+    # registry itself (runtime/src/api/mod.rs was removed as a stale duplicate).
+    runtime_names = re.findall(r'name:\s*"([^"]+)"', host_registry)
     require(
-        len(runtime_names) == RUNTIME_REQUIRED_HOST_CALL_COUNT,
+        len(runtime_names) == PACKAGE_HOST_CALL_COUNT,
         "runtime required host-call namespace count drifted: "
-        f"expected {RUNTIME_REQUIRED_HOST_CALL_COUNT}, found {len(runtime_names)}",
+        f"expected {PACKAGE_HOST_CALL_COUNT}, found {len(runtime_names)}",
     )
     require(
         len(set(runtime_names)) == len(runtime_names),
@@ -333,10 +329,7 @@ def validate_host_calls() -> None:
         f"assert_eq!(HOST_CALLS.len(), {PACKAGE_HOST_CALL_COUNT})" in lib,
         "unit tests must assert host-call count",
     )
-    require(
-        f"assert_eq!(required_host_call_count(), {RUNTIME_REQUIRED_HOST_CALL_COUNT})" in runtime_api,
-        "runtime API contract test must assert host-call count",
-    )
+    # Covered by the HOST_CALLS.len() assert above; the runtime duplicate is gone.
 
 
 def validate_cli_integration() -> None:
@@ -376,7 +369,7 @@ def validate_planning() -> None:
         "cargo test -p spectra-api",
         "scripts/validate_r2202_spectra_api_hostcalls.py",
         str(PACKAGE_HOST_CALL_COUNT),
-        str(RUNTIME_REQUIRED_HOST_CALL_COUNT),
+        "host_calls.rs",
     ]:
         require(term in acceptance, f"R-2202 acceptance must mention {term}")
 
@@ -387,7 +380,7 @@ def validate_planning() -> None:
         "Status: `complete`",
         "packages/spectra-api",
         str(PACKAGE_HOST_CALL_COUNT),
-        str(RUNTIME_REQUIRED_HOST_CALL_COUNT),
+        "host_calls.rs",
         "spectra_api::register()",
         "validate_r2202_spectra_api_hostcalls.py",
     ]:

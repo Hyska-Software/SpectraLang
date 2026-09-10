@@ -55,14 +55,10 @@ pub fn sections_for_functions(
         // Real, span-derived rows when codegen captured them; otherwise the
         // sequence stays empty (see `debug::line_table_rows`): no line
         // information instead of invented rows.
-        for (relative, line) in crate::debug::line_table_rows(
-            function.size,
-            source_line_count,
-            &function.line_rows,
-        ) {
-            line_program.set_address(Address::Constant(
-                function.offset as u64 + relative as u64,
-            ));
+        for (relative, line) in
+            crate::debug::line_table_rows(function.size, source_line_count, &function.line_rows)
+        {
+            line_program.set_address(Address::Constant(function.offset as u64 + relative as u64));
             line_program.row().file = file;
             line_program.row().line = line as u64;
             line_program.generate_row();
@@ -143,8 +139,12 @@ pub fn sections_for_functions(
         );
         if let Some(return_type) = &function.return_type {
             if !matches!(return_type, IRType::Void | IRType::Unknown) {
-                let type_die =
-                    intern_type_die(&mut dwarf.unit, return_type, &mut type_cache, &mut in_progress);
+                let type_die = intern_type_die(
+                    &mut dwarf.unit,
+                    return_type,
+                    &mut type_cache,
+                    &mut in_progress,
+                );
                 dwarf
                     .unit
                     .get_mut(subprogram)
@@ -172,8 +172,12 @@ pub fn sections_for_functions(
                 .set(constants::DW_AT_decl_line, AttributeValue::Udata(1));
             if let Some(local_type) = function.local_types.get(local_index) {
                 if !matches!(local_type, IRType::Void | IRType::Unknown) {
-                    let type_die =
-                        intern_type_die(&mut dwarf.unit, local_type, &mut type_cache, &mut in_progress);
+                    let type_die = intern_type_die(
+                        &mut dwarf.unit,
+                        local_type,
+                        &mut type_cache,
+                        &mut in_progress,
+                    );
                     dwarf
                         .unit
                         .get_mut(local)
@@ -250,7 +254,6 @@ fn _register_expression(hw_enc: u8) -> Option<Expression> {
     Some(expression)
 }
 
-
 /// Create (or reuse) the DIE describing one IR type.
 ///
 /// Primitive types become `DW_TAG_base_type` entries. A `Struct` whose fields
@@ -280,8 +283,7 @@ fn intern_type_die(
         IRType::Pointer(inner) => {
             let pointee = intern_type_die(unit, inner, cache, in_progress);
             let pointer = unit.add(unit.root(), constants::DW_TAG_pointer_type);
-            unit
-                .get_mut(pointer)
+            unit.get_mut(pointer)
                 .set(constants::DW_AT_type, AttributeValue::UnitRef(pointee));
             pointer
         }
@@ -289,8 +291,7 @@ fn intern_type_die(
             // Arrays lower to raw element pointers on this target.
             let element = intern_type_die(unit, element_type, cache, in_progress);
             let pointer = unit.add(unit.root(), constants::DW_TAG_pointer_type);
-            unit
-                .get_mut(pointer)
+            unit.get_mut(pointer)
                 .set(constants::DW_AT_type, AttributeValue::UnitRef(element));
             pointer
         }
@@ -304,20 +305,17 @@ fn intern_type_die(
             let Some((name, byte_size, encoding)) = primitive_base_type(primitive) else {
                 unreachable!("primitive match arm guarantees a base-type mapping");
             };
-            unit
-                .get_mut(entry)
+            unit.get_mut(entry)
                 .set(constants::DW_AT_name, AttributeValue::String(name));
-            unit
-                .get_mut(entry)
+            unit.get_mut(entry)
                 .set(constants::DW_AT_byte_size, AttributeValue::Udata(byte_size));
-            unit
-                .get_mut(entry)
-                .set(constants::DW_AT_encoding, AttributeValue::Encoding(encoding));
+            unit.get_mut(entry).set(
+                constants::DW_AT_encoding,
+                AttributeValue::Encoding(encoding),
+            );
             entry
         }
-        IRType::Struct { name, fields }
-            if !fields.is_empty() && !in_progress.contains(&key) =>
-        {
+        IRType::Struct { name, fields } if !fields.is_empty() && !in_progress.contains(&key) => {
             in_progress.insert(key.clone());
             let layout = spectra_midend::layout::layout_of(fields.iter().map(|(_, ty)| ty));
             let structure = unit.add(unit.root(), constants::DW_TAG_structure_type);
@@ -336,10 +334,8 @@ fn intern_type_die(
                     constants::DW_AT_name,
                     AttributeValue::String(field_name.clone().into_bytes()),
                 );
-                unit.get_mut(member).set(
-                    constants::DW_AT_type,
-                    AttributeValue::UnitRef(member_type),
-                );
+                unit.get_mut(member)
+                    .set(constants::DW_AT_type, AttributeValue::UnitRef(member_type));
                 unit.get_mut(member).set(
                     constants::DW_AT_data_member_location,
                     AttributeValue::Udata(offset as u64),
@@ -348,8 +344,7 @@ fn intern_type_die(
             in_progress.remove(&key);
             // Locals of aggregate types hold pointers at the ABI level.
             let pointer = unit.add(unit.root(), constants::DW_TAG_pointer_type);
-            unit
-                .get_mut(pointer)
+            unit.get_mut(pointer)
                 .set(constants::DW_AT_type, AttributeValue::UnitRef(structure));
             pointer
         }
@@ -361,12 +356,10 @@ fn intern_type_die(
                 constants::DW_AT_name,
                 AttributeValue::String(name.into_bytes()),
             );
-            unit
-                .get_mut(structure)
+            unit.get_mut(structure)
                 .set(constants::DW_AT_declaration, AttributeValue::Flag(true));
             let pointer = unit.add(unit.root(), constants::DW_TAG_pointer_type);
-            unit
-                .get_mut(pointer)
+            unit.get_mut(pointer)
                 .set(constants::DW_AT_type, AttributeValue::UnitRef(structure));
             pointer
         }
@@ -375,11 +368,8 @@ fn intern_type_die(
     id
 }
 
-
-
 /// Fixed DWARF base-type description for primitive IR types, or `None` for
 /// types that need a structured DIE (aggregates, pointers).
-
 pub(crate) fn primitive_base_type(ty: &IRType) -> Option<(Vec<u8>, u64, constants::DwAte)> {
     match ty {
         IRType::Int => Some((b"int".to_vec(), 8, constants::DW_ATE_signed)),
@@ -469,7 +459,9 @@ mod tests {
             local_locations: vec![Vec::new(); 2],
             frame_size: 16,
             local_types: vec![
-                Type::ExactFloat { width: FloatWidth::F64 },
+                Type::ExactFloat {
+                    width: FloatWidth::F64,
+                },
                 Type::String,
             ],
             return_type: None,
@@ -497,7 +489,13 @@ mod tests {
             fields: vec![
                 ("x".to_string(), Type::Int),
                 ("y".to_string(), Type::Float),
-                ("z".to_string(), Type::ExactInt { signed: true, width: spectra_midend::ir::IntWidth::I32 }),
+                (
+                    "z".to_string(),
+                    Type::ExactInt {
+                        signed: true,
+                        width: spectra_midend::ir::IntWidth::I32,
+                    },
+                ),
             ],
         };
         let functions = vec![CodeViewFunction {
@@ -556,8 +554,7 @@ mod tests {
                 break;
             }
         }
-        let structure_offset =
-            structure_offset.expect("defining DW_TAG_structure_type for Point");
+        let structure_offset = structure_offset.expect("defining DW_TAG_structure_type for Point");
         let mut tree = unit
             .entries_tree(&abbrevs, Some(structure_offset))
             .expect("structure DIE tree");

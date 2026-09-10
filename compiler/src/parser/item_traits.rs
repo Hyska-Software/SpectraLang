@@ -209,5 +209,4 @@ impl Parser {
 
         Ok(type_params)
     }
-
 }

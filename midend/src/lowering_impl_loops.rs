@@ -160,8 +160,6 @@ impl ASTLowering {
     /// Unlike the iterator path this issues zero host calls per iteration and
     /// never materializes the elements up front. `continue` targets the latch
     /// block so the index still advances before the next condition check.
-    #[allow(clippy::too_many_statements)]
-
     pub(crate) fn lower_array_index_for_loop(
         &mut self,
         for_stmt: &spectra_compiler::ast::ForLoop,
@@ -200,16 +198,14 @@ impl ASTLowering {
         self.range_map.push_scope();
         self.struct_var_map.push_scope();
 
-        let element_ptr = self.builder.build_getelementptr(
-            ir_func,
-            array_ptr,
-            index_value,
-            element_type.clone(),
-        );
+        let element_ptr =
+            self.builder
+                .build_getelementptr(ir_func, array_ptr, index_value, element_type.clone());
         let element_value =
             self.builder
                 .build_load_typed(ir_func, element_ptr, element_type.clone());
-        self.value_map.insert(for_stmt.iterator.clone(), element_value);
+        self.value_map
+            .insert(for_stmt.iterator.clone(), element_value);
         self.variable_types
             .insert(for_stmt.iterator.clone(), element_type.clone());
         if let Some(name) = self.ir_nominal_name(&element_type) {
@@ -326,9 +322,8 @@ impl ASTLowering {
         };
 
         let (iterator_value, element_type, owns_iterator) = match iterable_type {
-            IRType::Range => {
-                (
-                    self.require_value(
+            IRType::Range => (
+                self.require_value(
                     self.builder.build_typed_host_call(
                         ir_func,
                         "spectra.std.range.iter".to_string(),
@@ -337,11 +332,10 @@ impl ASTLowering {
                         true,
                     ),
                     "range.iter host call did not produce its declared iterator",
-                    ),
-                    IRType::Int,
-                    true,
-                )
-            }
+                ),
+                IRType::Int,
+                true,
+            ),
             IRType::Array { element_type, size } => {
                 let element_type = *element_type;
                 if size == 0 {
@@ -359,7 +353,13 @@ impl ASTLowering {
                 // Direct index loop instead of materializing every element up
                 // front through `iterator_from_values`: no host calls are issued
                 // per iteration, and the element is loaded once per trip.
-                self.lower_array_index_for_loop(for_stmt, iterable_value, element_type, size, ir_func);
+                self.lower_array_index_for_loop(
+                    for_stmt,
+                    iterable_value,
+                    element_type,
+                    size,
+                    ir_func,
+                );
                 return;
             }
             IRType::Generic { name, args, .. } if name == "List" => {
@@ -434,17 +434,17 @@ impl ASTLowering {
                 let element_type = mangle_type(suffix);
                 (
                     self.require_value(
-                    self.builder.build_typed_host_call(
-                        ir_func,
-                        "spectra.std.collections.list_iter".to_string(),
-                        vec![iterable_value],
-                        IRType::Struct {
-                            name: format!("Iterator_{suffix}"),
-                            fields: Vec::new(),
-                        },
-                        true,
-                    ),
-                    "list.iter host call did not produce its declared iterator",
+                        self.builder.build_typed_host_call(
+                            ir_func,
+                            "spectra.std.collections.list_iter".to_string(),
+                            vec![iterable_value],
+                            IRType::Struct {
+                                name: format!("Iterator_{suffix}"),
+                                fields: Vec::new(),
+                            },
+                            true,
+                        ),
+                        "list.iter host call did not produce its declared iterator",
                     ),
                     element_type,
                     true,
@@ -455,17 +455,17 @@ impl ASTLowering {
                 let element_type = mangle_type(suffix);
                 (
                     self.require_value(
-                    self.builder.build_typed_host_call(
-                        ir_func,
-                        "spectra.std.collections.set_iter".to_string(),
-                        vec![iterable_value],
-                        IRType::Struct {
-                            name: format!("Iterator_{suffix}"),
-                            fields: Vec::new(),
-                        },
-                        true,
-                    ),
-                    "set.iter host call did not produce its declared iterator",
+                        self.builder.build_typed_host_call(
+                            ir_func,
+                            "spectra.std.collections.set_iter".to_string(),
+                            vec![iterable_value],
+                            IRType::Struct {
+                                name: format!("Iterator_{suffix}"),
+                                fields: Vec::new(),
+                            },
+                            true,
+                        ),
+                        "set.iter host call did not produce its declared iterator",
                     ),
                     element_type,
                     true,
@@ -480,17 +480,17 @@ impl ASTLowering {
                 let element_type = mangle_type(key);
                 (
                     self.require_value(
-                    self.builder.build_typed_host_call(
-                        ir_func,
-                        "spectra.std.collections.map_iter".to_string(),
-                        vec![iterable_value],
-                        IRType::Struct {
-                            name: format!("Iterator_{key}"),
-                            fields: Vec::new(),
-                        },
-                        true,
-                    ),
-                    "map.iter host call did not produce its declared iterator",
+                        self.builder.build_typed_host_call(
+                            ir_func,
+                            "spectra.std.collections.map_iter".to_string(),
+                            vec![iterable_value],
+                            IRType::Struct {
+                                name: format!("Iterator_{key}"),
+                                fields: Vec::new(),
+                            },
+                            true,
+                        ),
+                        "map.iter host call did not produce its declared iterator",
                     ),
                     element_type,
                     true,
@@ -517,5 +517,4 @@ impl ASTLowering {
             ir_func,
         );
     }
-
 }

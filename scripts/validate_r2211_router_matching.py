@@ -53,7 +53,7 @@ def parse_toml(path: str):
 def validate_router_implementation() -> None:
     routing = read("packages/spectra-api/src/routing.rs")
     lib = read("packages/spectra-api/src/lib.rs")
-    runtime_api = read("runtime/src/api/mod.rs")
+    runtime_api = read("packages/spectra-api/src/host_calls.rs")
     midend = read("midend/src/lowering.rs")
     builtins = read("compiler/src/semantic/builtin_modules.rs")
 

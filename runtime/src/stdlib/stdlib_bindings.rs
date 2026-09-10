@@ -13,7 +13,6 @@ pub(crate) fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|err| err.into_inner())
 }
 
-
 #[derive(Clone, Debug)]
 pub(crate) enum CollectionKey {
     Scalar(SpectraHostValue),
@@ -63,7 +62,10 @@ impl CollectionKey {
 
 pub(crate) fn collection_key(value: SpectraHostValue) -> CollectionKey {
     match unsafe { try_read_packed_string(value) } {
-        Some(text) => CollectionKey::String { value: text, raw: value },
+        Some(text) => CollectionKey::String {
+            value: text,
+            raw: value,
+        },
         None => CollectionKey::Scalar(value),
     }
 }
@@ -157,7 +159,8 @@ pub(crate) const LIST_POP_OPTION: &str = "spectra.std.collections.list_pop_optio
 pub(crate) const LIST_POP_FRONT_OPTION: &str = "spectra.std.collections.list_pop_front_option";
 pub(crate) const LIST_INSERT_AT: &str = "spectra.std.collections.list_insert_at";
 pub(crate) const LIST_REMOVE_AT: &str = spectra_contract::STD_COLLECTIONS_LIST_REMOVE_AT_BINDING;
-pub(crate) const LIST_REMOVE_AT_OPTION: &str = spectra_contract::STD_COLLECTIONS_LIST_REMOVE_AT_OPTION_BINDING;
+pub(crate) const LIST_REMOVE_AT_OPTION: &str =
+    spectra_contract::STD_COLLECTIONS_LIST_REMOVE_AT_OPTION_BINDING;
 pub(crate) const LIST_INDEX_OF: &str = "spectra.std.collections.list_index_of";
 pub(crate) const LIST_SORT: &str = "spectra.std.collections.list_sort";
 
@@ -338,7 +341,8 @@ pub(crate) const TENSOR_STATS_GPU_KERNEL_OPS: &str = "spectra.std.tensor.stats_g
 #[cfg(feature = "gpu")]
 pub(crate) const TENSOR_STATS_DEVICE_POOL_HITS: &str = "spectra.std.tensor.stats_device_pool_hits";
 #[cfg(feature = "gpu")]
-pub(crate) const TENSOR_STATS_DEVICE_POOL_MISSES: &str = "spectra.std.tensor.stats_device_pool_misses";
+pub(crate) const TENSOR_STATS_DEVICE_POOL_MISSES: &str =
+    "spectra.std.tensor.stats_device_pool_misses";
 #[cfg(feature = "gpu")]
 pub(crate) const TENSOR_STATS_DEVICE_POOL_BYTES_RESIDENT: &str =
     "spectra.std.tensor.stats_device_pool_bytes_resident";
@@ -346,13 +350,16 @@ pub(crate) const TENSOR_STATS_DEVICE_POOL_BYTES_RESIDENT: &str =
 pub(crate) const TENSOR_STORAGE_DEVICE: &str = "spectra.std.tensor.storage_device";
 pub(crate) const TENSOR_STATS_CPU_FALLBACKS: &str = "spectra.std.tensor.stats_cpu_fallbacks";
 pub(crate) const TENSOR_STATS_GPU_ERRORS: &str = "spectra.std.tensor.stats_gpu_errors";
-pub(crate) const TENSOR_STATS_DEVICE_RESIDENT: &str = "spectra.std.tensor.stats_device_resident_tensors";
+pub(crate) const TENSOR_STATS_DEVICE_RESIDENT: &str =
+    "spectra.std.tensor.stats_device_resident_tensors";
 pub(crate) const TENSOR_STATS_GPU_BACKWARD_OPS: &str = "spectra.std.tensor.stats_gpu_backward_ops";
 pub(crate) const TENSOR_STATS_GRAPH_NODES: &str = "spectra.std.tensor.stats_graph_nodes";
 pub(crate) const TENSOR_STATS_LIFETIME_RECORDS: &str = "spectra.std.tensor.stats_lifetime_records";
-pub(crate) const TENSOR_STATS_RELEASED_LIFETIMES: &str = "spectra.std.tensor.stats_released_lifetimes";
+pub(crate) const TENSOR_STATS_RELEASED_LIFETIMES: &str =
+    "spectra.std.tensor.stats_released_lifetimes";
 pub(crate) const TENSOR_STATS_ALLOCATION_SITES: &str = "spectra.std.tensor.stats_allocation_sites";
-pub(crate) const TENSOR_STATS_REUSE_RATE_PER_MILLE: &str = "spectra.std.tensor.stats_reuse_rate_per_mille";
+pub(crate) const TENSOR_STATS_REUSE_RATE_PER_MILLE: &str =
+    "spectra.std.tensor.stats_reuse_rate_per_mille";
 pub(crate) const TENSOR_MEMORY_REPORT: &str = "spectra.std.tensor.memory_report";
 pub(crate) const TENSOR_RESET_STATS: &str = "spectra.std.tensor.reset_stats";
 pub(crate) const TENSOR_REQUIRES_GRAD: &str = "spectra.std.tensor.requires_grad";
@@ -409,15 +416,19 @@ pub(crate) const ML_EXPERIMENT_SET_CONFIG: &str = "spectra.std.ml.experiment_set
 pub(crate) const ML_EXPERIMENT_LOG_METRIC: &str = "spectra.std.ml.experiment_log_metric";
 pub(crate) const ML_EXPERIMENT_LOG_ARTIFACT: &str = "spectra.std.ml.experiment_log_artifact";
 pub(crate) const ML_EXPERIMENT_SET_LOCKFILE: &str = "spectra.std.ml.experiment_set_lockfile";
-pub(crate) const ML_EXPERIMENT_SET_MODEL_OUTPUT: &str = "spectra.std.ml.experiment_set_model_output";
+pub(crate) const ML_EXPERIMENT_SET_MODEL_OUTPUT: &str =
+    "spectra.std.ml.experiment_set_model_output";
 pub(crate) const ML_EXPERIMENT_FINISH: &str = "spectra.std.ml.experiment_finish";
 pub(crate) const ML_EXPERIMENT_MANIFEST_PATH: &str = "spectra.std.ml.experiment_manifest_path";
 pub(crate) const ML_EXPERIMENT_REPRO_COMMAND: &str = "spectra.std.ml.experiment_repro_command";
-pub(crate) const ML_EXPERIMENT_COMPARE_MANIFESTS: &str = "spectra.std.ml.experiment_compare_manifests";
+pub(crate) const ML_EXPERIMENT_COMPARE_MANIFESTS: &str =
+    "spectra.std.ml.experiment_compare_manifests";
 pub(crate) const ML_DISTRIBUTED_SESSION_START: &str = "spectra.std.ml.distributed_session_start";
 pub(crate) const ML_DISTRIBUTED_GLOBAL_STEP: &str = "spectra.std.ml.distributed_global_step";
-pub(crate) const ML_DISTRIBUTED_WORKER_STEP_COUNT: &str = "spectra.std.ml.distributed_worker_step_count";
-pub(crate) const ML_DISTRIBUTED_CHECKPOINT_SAVE: &str = "spectra.std.ml.distributed_checkpoint_save";
+pub(crate) const ML_DISTRIBUTED_WORKER_STEP_COUNT: &str =
+    "spectra.std.ml.distributed_worker_step_count";
+pub(crate) const ML_DISTRIBUTED_CHECKPOINT_SAVE: &str =
+    "spectra.std.ml.distributed_checkpoint_save";
 pub(crate) const ML_DISTRIBUTED_RESUME: &str = "spectra.std.ml.distributed_resume";
 pub(crate) const ML_DISTRIBUTED_SUMMARY: &str = "spectra.std.ml.distributed_summary";
 pub(crate) const ML_ONNX_EXPORT_WEIGHTS: &str = "spectra.std.ml.onnx_export_weights";
@@ -476,7 +487,8 @@ pub(crate) const ML_ARTIFACT_FREE: &str = "spectra.std.ml.artifact_free";
 pub(crate) const CONCURRENT_TASK_SPAWN_FN: &str = "spectra.std.concurrent.task_spawn_fn";
 pub(crate) const CONCURRENT_TASK_JOIN: &str = "spectra.std.concurrent.task_join";
 pub(crate) const CONCURRENT_TASK_SPAWN_BATCH: &str = "spectra.std.concurrent.task_spawn_batch";
-pub(crate) const CONCURRENT_TASK_JOIN_BATCH_SUM: &str = "spectra.std.concurrent.task_join_batch_sum";
+pub(crate) const CONCURRENT_TASK_JOIN_BATCH_SUM: &str =
+    "spectra.std.concurrent.task_join_batch_sum";
 pub(crate) const CONCURRENT_TASK_IS_DONE: &str = "spectra.std.concurrent.task_is_done";
 pub(crate) const CONCURRENT_CHANNEL_NEW: &str = "spectra.std.concurrent.channel_new";
 pub(crate) const CONCURRENT_CHANNEL_SEND: &str = "spectra.std.concurrent.channel_send";
@@ -487,7 +499,8 @@ pub(crate) const CONCURRENT_COUNTER_NEW: &str = "spectra.std.concurrent.counter_
 pub(crate) const CONCURRENT_COUNTER_ADD: &str = "spectra.std.concurrent.counter_add";
 pub(crate) const CONCURRENT_COUNTER_GET: &str = "spectra.std.concurrent.counter_get";
 pub(crate) const CONCURRENT_PIPELINE_SUM: &str = "spectra.std.concurrent.pipeline_sum";
-pub(crate) const CONCURRENT_STATS_TASKS_SPAWNED: &str = "spectra.std.concurrent.stats_tasks_spawned";
+pub(crate) const CONCURRENT_STATS_TASKS_SPAWNED: &str =
+    "spectra.std.concurrent.stats_tasks_spawned";
 pub(crate) const CONCURRENT_STATS_CHANNELS: &str = "spectra.std.concurrent.stats_channels";
 pub(crate) const CONCURRENT_RESET: &str = "spectra.std.concurrent.reset";
 
@@ -662,10 +675,13 @@ pub(crate) const ASYNC_REACTOR_POLL: &str = "spectra.async.reactor.poll";
 pub(crate) const ASYNC_REACTOR_LAST_KIND: &str = "spectra.async.reactor.last_kind";
 pub(crate) const ASYNC_REACTOR_LAST_READINESS: &str = "spectra.async.reactor.last_readiness";
 pub(crate) const ASYNC_REACTOR_STATS_QUEUED: &str = "spectra.async.reactor.stats_queued";
-pub(crate) const ASYNC_REACTOR_STATS_TASK_WAKEUPS: &str = "spectra.async.reactor.stats_task_wakeups";
-pub(crate) const ASYNC_REACTOR_STATS_TIMER_EVENTS: &str = "spectra.async.reactor.stats_timer_events";
+pub(crate) const ASYNC_REACTOR_STATS_TASK_WAKEUPS: &str =
+    "spectra.async.reactor.stats_task_wakeups";
+pub(crate) const ASYNC_REACTOR_STATS_TIMER_EVENTS: &str =
+    "spectra.async.reactor.stats_timer_events";
 pub(crate) const ASYNC_REACTOR_STATS_IO_EVENTS: &str = "spectra.async.reactor.stats_io_events";
-pub(crate) const ASYNC_REACTOR_STATS_IO_REGISTRATIONS: &str = "spectra.async.reactor.stats_io_registrations";
+pub(crate) const ASYNC_REACTOR_STATS_IO_REGISTRATIONS: &str =
+    "spectra.async.reactor.stats_io_registrations";
 pub(crate) const ASYNC_REACTOR_RESET: &str = "spectra.async.reactor.reset";
 
 pub(crate) const SERVE_SERVER_NEW: &str = "spectra.std.serve.server_new";
@@ -680,14 +696,18 @@ pub(crate) const SERVE_SERVER_SET_TIMEOUT: &str = "spectra.std.serve.server_set_
 pub(crate) const SERVE_SERVER_RESIDENT_MODEL: &str = "spectra.std.serve.server_resident_model";
 pub(crate) const SERVE_SERVER_BENCHMARK: &str = "spectra.std.serve.server_benchmark";
 pub(crate) const SERVE_SERVER_SET_INPUT_POLICY: &str = "spectra.std.serve.server_set_input_policy";
-pub(crate) const SERVE_SERVER_SET_OUTPUT_POLICY: &str = "spectra.std.serve.server_set_output_policy";
+pub(crate) const SERVE_SERVER_SET_OUTPUT_POLICY: &str =
+    "spectra.std.serve.server_set_output_policy";
 pub(crate) const SERVE_SERVER_SET_RATE_LIMIT: &str = "spectra.std.serve.server_set_rate_limit";
 pub(crate) const SERVE_SERVER_SET_FALLBACK: &str = "spectra.std.serve.server_set_fallback";
 pub(crate) const SERVE_SERVER_LAST_DIAGNOSTIC: &str = "spectra.std.serve.server_last_diagnostic";
 pub(crate) const SERVE_SERVER_AUDIT_LOG: &str = "spectra.std.serve.server_audit_log";
-pub(crate) const SERVE_SERVER_SET_MODEL_VERSION: &str = "spectra.std.serve.server_set_model_version";
-pub(crate) const SERVE_SERVER_MONITORING_SNAPSHOT: &str = "spectra.std.serve.server_monitoring_snapshot";
-pub(crate) const SERVE_SERVER_DISTRIBUTION_SUMMARY: &str = "spectra.std.serve.server_distribution_summary";
+pub(crate) const SERVE_SERVER_SET_MODEL_VERSION: &str =
+    "spectra.std.serve.server_set_model_version";
+pub(crate) const SERVE_SERVER_MONITORING_SNAPSHOT: &str =
+    "spectra.std.serve.server_monitoring_snapshot";
+pub(crate) const SERVE_SERVER_DISTRIBUTION_SUMMARY: &str =
+    "spectra.std.serve.server_distribution_summary";
 pub(crate) const SERVE_DRIFT_CHECK: &str = "spectra.std.serve.drift_check";
 pub(crate) const SERVE_EXPORT_MONITORING: &str = "spectra.std.serve.export_monitoring";
 pub(crate) const SERVE_RESET: &str = "spectra.std.serve.reset";
@@ -706,10 +726,13 @@ pub(crate) const ML_TEXT_EMBED_MODEL: &str = "spectra.std.ml.text_embed_model";
 pub(crate) const ML_TEXT_EMBED_MODEL_SESSION: &str = "spectra.std.ml.text_embed_model_session";
 
 // ── DistTCP ──────────────────────────────────────────────────────────────────
-pub(crate) const ML_DISTRIBUTED_TRAIN_MULTITHREAD: &str = "spectra.std.ml.distributed_train_multithread";
+pub(crate) const ML_DISTRIBUTED_TRAIN_MULTITHREAD: &str =
+    "spectra.std.ml.distributed_train_multithread";
 pub(crate) const ML_DISTRIBUTED_TRAIN_TCP: &str = "spectra.std.ml.distributed_train_tcp";
-pub(crate) const ML_DISTRIBUTED_TRAIN_DATASET_MULTITHREAD: &str = "spectra.std.ml.distributed_train_dataset_multithread";
-pub(crate) const ML_DISTRIBUTED_TRAIN_DATASET_TCP: &str = "spectra.std.ml.distributed_train_dataset_tcp";
+pub(crate) const ML_DISTRIBUTED_TRAIN_DATASET_MULTITHREAD: &str =
+    "spectra.std.ml.distributed_train_dataset_multithread";
+pub(crate) const ML_DISTRIBUTED_TRAIN_DATASET_TCP: &str =
+    "spectra.std.ml.distributed_train_dataset_tcp";
 
 // ── ServeReal ────────────────────────────────────────────────────────────────
 pub(crate) const SERVE_SERVER_REGISTER_MODEL_LINEAR: &str =

@@ -143,7 +143,8 @@ impl SemanticAnalyzer {
                 }
             }
             Pattern::Struct { name, fields } => {
-                if let Type::Struct { name: struct_name } | Type::Applied {
+                if let Type::Struct { name: struct_name }
+                | Type::Applied {
                     name: struct_name, ..
                 } = &effective_type
                 {
@@ -163,11 +164,10 @@ impl SemanticAnalyzer {
                 {
                     for (field_name, sub_pattern) in fields {
                         if let Some(field) = struct_info.fields.get(field_name) {
-                            let field_type = self
-                                .type_annotation_to_type_with_substitutions(
-                                    &field.ty,
-                                    &substitutions,
-                                );
+                            let field_type = self.type_annotation_to_type_with_substitutions(
+                                &field.ty,
+                                &substitutions,
+                            );
                             self.register_typed_pattern_bindings(sub_pattern, &field_type);
                         }
                     }
@@ -192,8 +192,7 @@ impl SemanticAnalyzer {
                             .as_ref()
                             .and_then(|ty| self.specialized_enum_context_for_type(ty))
                     });
-                let Some((base_enum_name, enum_info, substitutions)) = enum_context
-                else {
+                let Some((base_enum_name, enum_info, substitutions)) = enum_context else {
                     return;
                 };
                 if base_enum_name != *enum_name {
@@ -253,5 +252,4 @@ impl SemanticAnalyzer {
             }
         }
     }
-
 }

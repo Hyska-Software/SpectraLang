@@ -14,7 +14,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_HOST_CALL_COUNT = 555
-RUNTIME_REQUIRED_HOST_CALL_COUNT = 439
 SSE_CALLS = [
     "server_new",
     "server_response",
@@ -110,12 +109,6 @@ def validate_native_surface() -> None:
     for name in SSE_CALLS:
         require(f'"spectra.api.sse.{name}"' in host_registry, f"missing SSE host call {name}")
 
-    runtime_api = read("runtime/src/api/mod.rs")
-    required_block = runtime_api.split("pub const REQUIRED_HOST_CALLS: &[&str] = &[", 1)[1].split("];", 1)[0]
-    runtime_names = re.findall(r'"(spectra\.api\.[^"]+)"', required_block)
-    require(len(runtime_names) == RUNTIME_REQUIRED_HOST_CALL_COUNT, "runtime host-call count drifted")
-    for name in SSE_CALLS:
-        require(f'"spectra.api.sse.{name}"' in runtime_api, f"runtime contract misses SSE host call {name}")
 
 
 def validate_language_surface() -> None:

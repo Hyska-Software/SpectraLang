@@ -96,21 +96,27 @@ pub fn materialize_autodiff_steps(module: &mut Module) -> Result<usize, String> 
                     function,
                     loss,
                     None,
-                    &definitions,
-                    &phis,
-                    &loads,
-                    &copies,
+                    MaterializeTables {
+                        definitions: &definitions,
+                        phis: &phis,
+                        loads: &loads,
+                        copies: &copies,
+                    },
                     instruction.source_span.clone(),
-                    &mut visiting,
-                    &mut steps,
+                    &mut MaterializeState {
+                        visiting: &mut visiting,
+                        steps: &mut steps,
+                        deferred: &mut deferred,
+                    },
                     false,
-                    &mut deferred,
                 )?;
                 materialized += steps.len();
                 replacement.extend(steps);
                 // Commit first: the join gradient appended below must land
                 // after the use's own step.
-                function.blocks[insertion].instructions.append(&mut replacement);
+                function.blocks[insertion]
+                    .instructions
+                    .append(&mut replacement);
                 for pending in deferred {
                     let (placed, next) = splice_branch_adjoint(
                         function,
@@ -127,7 +133,9 @@ pub fn materialize_autodiff_steps(module: &mut Module) -> Result<usize, String> 
                 }
                 replacement = Vec::new();
             }
-            function.blocks[insertion].instructions.append(&mut replacement);
+            function.blocks[insertion]
+                .instructions
+                .append(&mut replacement);
             block_index += 1;
         }
         for block in &mut function.blocks {
@@ -142,6 +150,13 @@ pub fn materialize_autodiff_steps(module: &mut Module) -> Result<usize, String> 
 type HostDefinition = (String, Vec<Value>, Option<SourceSpan>);
 type PhiIncoming = Vec<(Value, usize)>;
 
+type FunctionValueDefinitions = (
+    HashMap<usize, HostDefinition>,
+    HashMap<usize, PhiIncoming>,
+    HashSet<usize>,
+    HashMap<usize, Value>,
+);
+
 /// Join descriptor deferred until its upstream gradient is known. The join's
 /// own upstream is resolved at splice time from the use site, so only the
 /// phi, its incoming arms, and the source span are stored.
@@ -151,14 +166,23 @@ struct DeferredPhi {
     source: Option<SourceSpan>,
 }
 
-fn function_value_definitions(
-    function: &Function,
-) -> (
-    HashMap<usize, HostDefinition>,
-    HashMap<usize, PhiIncoming>,
-    HashSet<usize>,
-    HashMap<usize, Value>,
-) {
+// Shared autodiff lookup tables threaded through materialize_node.
+#[derive(Clone, Copy)]
+struct MaterializeTables<'a> {
+    definitions: &'a HashMap<usize, HostDefinition>,
+    phis: &'a HashMap<usize, PhiIncoming>,
+    loads: &'a HashSet<usize>,
+    copies: &'a HashMap<usize, Value>,
+}
+
+// Mutable gradient-construction state threaded through materialize_node.
+struct MaterializeState<'a> {
+    visiting: &'a mut HashSet<usize>,
+    steps: &'a mut Vec<Instruction>,
+    deferred: &'a mut Vec<DeferredPhi>,
+}
+
+fn function_value_definitions(function: &Function) -> FunctionValueDefinitions {
     let mut definitions = HashMap::new();
     let mut phis = HashMap::new();
     let mut loads = HashSet::new();
@@ -198,20 +222,15 @@ fn materialize_node(
     function: &mut Function,
     output: Value,
     upstream: Option<Value>,
-    definitions: &HashMap<usize, HostDefinition>,
-    phis: &HashMap<usize, PhiIncoming>,
-    loads: &HashSet<usize>,
-    copies: &HashMap<usize, Value>,
+    tables: MaterializeTables<'_>,
     source: Option<SourceSpan>,
-    visiting: &mut HashSet<usize>,
-    steps: &mut Vec<Instruction>,
+    state: &mut MaterializeState<'_>,
     in_arm: bool,
-    deferred: &mut Vec<DeferredPhi>,
 ) -> Result<(), String> {
     // Transparent aliases resolve to their source before anything else.
     let mut resolved = output;
-    while let Some(source_value) = copies.get(&resolved.id) {
-        if !visiting.insert(resolved.id) {
+    while let Some(source_value) = tables.copies.get(&resolved.id) {
+        if !state.visiting.insert(resolved.id) {
             return Err(format!(
                 "E3004: cyclic autodiff dependency at value %{}",
                 output.id
@@ -219,38 +238,38 @@ fn materialize_node(
         }
         resolved = *source_value;
     }
-    if !visiting.insert(resolved.id) {
+    if !state.visiting.insert(resolved.id) {
         return Err(format!(
             "E3004: cyclic autodiff dependency at value %{}",
             output.id
         ));
     }
     let output = resolved;
-    let Some((host, args, node_source)) = definitions.get(&output.id) else {
-        if let Some(incoming) = phis.get(&output.id) {
+    let Some((host, args, node_source)) = tables.definitions.get(&output.id) else {
+        if let Some(incoming) = tables.phis.get(&output.id) {
             if in_arm {
-                visiting.remove(&output.id);
+                state.visiting.remove(&output.id);
                 return Err(format!(
                     "E3004: nested branch joins are not supported inside compiler-native diff (value %{})",
                     output.id
                 ));
             }
-            deferred.push(DeferredPhi {
+            state.deferred.push(DeferredPhi {
                 phi: output,
                 incoming: incoming.clone(),
                 source: source.clone(),
             });
-            visiting.remove(&output.id);
+            state.visiting.remove(&output.id);
             return Ok(());
         }
-        if loads.contains(&output.id) {
-            visiting.remove(&output.id);
+        if tables.loads.contains(&output.id) {
+            state.visiting.remove(&output.id);
             return Err(format!(
                 "E3004: loop-carried tensor value has no static adjoint inside compiler-native diff (value %{}); move the loop outside `diff` and use runtime tensor.backward, or restructure with straight-line bindings",
                 output.id
             ));
         }
-        visiting.remove(&output.id);
+        state.visiting.remove(&output.id);
         return Ok(());
     };
     let Some(operation) = autodiff_operation(host) else {
@@ -271,7 +290,7 @@ fn materialize_node(
                 ));
             }
         }
-        visiting.remove(&output.id);
+        state.visiting.remove(&output.id);
         return Ok(());
     };
     let tensor_args = tensor_arguments(host, args);
@@ -280,14 +299,14 @@ fn materialize_node(
         // construction (`tensor_arguments` covers positions 0-2 of each
         // rule); reaching here means the call was malformed upstream.
         // Failing loudly beats silently dropping the gradient.
-        visiting.remove(&output.id);
+        state.visiting.remove(&output.id);
         return Err(format!(
             "E3004: operation '{host}' reached compiler-native diff without tensor inputs"
         ));
     }
     let step_source = node_source.clone().or_else(|| source.clone());
     let effective_upstream = if upstream.is_some() { upstream } else { None };
-    steps.push(Instruction {
+    state.steps.push(Instruction {
         id: 0,
         kind: InstructionKind::AutodiffStep {
             result: None,
@@ -302,18 +321,18 @@ fn materialize_node(
 
     for input in tensor_args {
         let mut resolved = input;
-        while let Some(source_value) = copies.get(&resolved.id) {
+        while let Some(source_value) = tables.copies.get(&resolved.id) {
             resolved = *source_value;
         }
-        if loads.contains(&resolved.id) {
+        if tables.loads.contains(&resolved.id) {
             return Err(format!(
                 "E3004: loop-carried tensor value has no static adjoint inside compiler-native diff (value %{}); move the loop outside `diff` and use runtime tensor.backward, or restructure with straight-line bindings",
                 resolved.id
             ));
         }
-        if phis.contains_key(&input.id) {
+        if tables.phis.contains_key(&input.id) {
             let grad_handle = function.next_value();
-            steps.push(Instruction {
+            state.steps.push(Instruction {
                 id: 0,
                 kind: InstructionKind::AutodiffStep {
                     result: Some(grad_handle),
@@ -329,23 +348,18 @@ fn materialize_node(
                 function,
                 input,
                 Some(grad_handle),
-                definitions,
-                phis,
-                loads,
-                copies,
+                tables,
                 step_source.clone(),
-                visiting,
-                steps,
+                &mut *state,
                 in_arm,
-                deferred,
             )?;
             continue;
         }
-        if is_autodiff_leaf_or_auxiliary(definitions.get(&input.id).map(|d| d.0.as_str())) {
+        if is_autodiff_leaf_or_auxiliary(tables.definitions.get(&input.id).map(|d| d.0.as_str())) {
             continue;
         }
         let grad_handle = function.next_value();
-        steps.push(Instruction {
+        state.steps.push(Instruction {
             id: 0,
             kind: InstructionKind::AutodiffStep {
                 result: Some(grad_handle),
@@ -361,21 +375,15 @@ fn materialize_node(
             function,
             input,
             Some(grad_handle),
-            definitions,
-            phis,
-            loads,
-            copies,
+            tables,
             step_source.clone(),
-            visiting,
-            steps,
+            &mut *state,
             in_arm,
-            deferred,
         )?;
     }
-    visiting.remove(&output.id);
+    state.visiting.remove(&output.id);
     Ok(())
 }
-
 
 /// Splice one guarded backward chain per arm of a deferred `if`/`else` join
 /// into the flow right after `insertion`, returning the placed count and the
@@ -448,8 +456,11 @@ fn splice_branch_adjoint(
     pred_blocks.sort_unstable();
     let mut branch = None;
     for block in &function.blocks {
-        if let Some(Terminator::CondBranch { condition: cond, true_block, false_block }) =
-            &block.terminator
+        if let Some(Terminator::CondBranch {
+            condition: cond,
+            true_block,
+            false_block,
+        }) = &block.terminator
         {
             let mut targets = vec![*true_block, *false_block];
             targets.sort_unstable();
@@ -502,8 +513,12 @@ fn splice_branch_adjoint(
             let mut found = None;
             for block in &function.blocks {
                 for instruction in &block.instructions {
-                    if let InstructionKind::HostCall { result: Some(result), host, args, result_type } =
-                        &instruction.kind
+                    if let InstructionKind::HostCall {
+                        result: Some(result),
+                        host,
+                        args,
+                        result_type,
+                    } = &instruction.kind
                     {
                         if result.id == value.id {
                             found = Some((host.clone(), args.clone(), result_type.clone()));
@@ -620,15 +635,19 @@ fn splice_branch_adjoint(
                 function,
                 *input,
                 Some(input_handle),
-                definitions,
-                phis,
-                loads,
-                copies,
+                MaterializeTables {
+                    definitions,
+                    phis,
+                    loads,
+                    copies,
+                },
                 step_source.clone(),
-                &mut visiting,
-                &mut arm_steps,
+                &mut MaterializeState {
+                    visiting: &mut visiting,
+                    steps: &mut arm_steps,
+                    deferred: &mut Vec::new(),
+                },
                 true,
-                &mut Vec::new(),
             )?;
             placed += arm_steps.len() - before;
         }
@@ -638,14 +657,14 @@ fn splice_branch_adjoint(
         back.instructions.extend(arm_steps);
         back.set_terminator(Terminator::Branch { target: join_back });
     }
-    let original = std::mem::replace(
-        &mut function
-            .get_block_mut(insertion)
-            .ok_or_else(|| "E3004: insertion block vanished during lowering".to_string())?
-            .terminator,
-        Some(Terminator::Unreachable),
-    )
-    .ok_or_else(|| "E3004: insertion block has no terminator for branch lowering".to_string())?;
+    let original = function
+        .get_block_mut(insertion)
+        .ok_or_else(|| "E3004: insertion block vanished during lowering".to_string())?
+        .terminator
+        .replace(Terminator::Unreachable)
+        .ok_or_else(|| {
+            "E3004: insertion block has no terminator for branch lowering".to_string()
+        })?;
     function
         .get_block_mut(join_back)
         .ok_or_else(|| "E3004: adjoint join vanished during lowering".to_string())?
@@ -678,8 +697,9 @@ fn autodiff_operation(host: &str) -> Option<&str> {
         .or_else(|| host.strip_prefix("spectra.std.ml."))?;
     match name {
         "add" | "sub" | "mul" | "div" | "neg" | "relu" | "sum_t" | "mean_t" | "dot_t"
-        | "matmul" | "matmul_batched" | "transpose" | "reshape" | "linear" | "mse_loss" | "bce_loss" | "conv2d"
-        | "max_pool2d" | "dropout" | "concat" | "stack" | "slice" | "permute" => Some(name),
+        | "matmul" | "matmul_batched" | "transpose" | "reshape" | "linear" | "mse_loss"
+        | "bce_loss" | "conv2d" | "max_pool2d" | "dropout" | "concat" | "stack" | "slice"
+        | "permute" => Some(name),
         "exp_f" => Some("exp"),
         "log_f" => Some("log"),
         "sqrt_f" => Some("sqrt"),
@@ -697,7 +717,8 @@ fn tensor_arguments(host: &str, args: &[Value]) -> Vec<Value> {
     let positions: &[usize] = match name {
         "reshape" | "transpose" | "sum_t" | "neg" | "exp_f" | "log_f" | "relu" | "sigmoid_f"
         | "sqrt_f" | "tanh_f" => &[0],
-        "add" | "sub" | "mul" | "div" | "matmul" | "matmul_batched" | "dot_t" | "mse_loss" | "bce_loss" => &[0, 1],
+        "add" | "sub" | "mul" | "div" | "matmul" | "matmul_batched" | "dot_t" | "mse_loss"
+        | "bce_loss" => &[0, 1],
         "linear" | "conv2d" => &[0, 1, 2],
         "max_pool2d" | "dropout" => &[0],
         "concat" | "stack" => &[0, 1],
@@ -938,7 +959,9 @@ fn gradient_rule(op: &TensorGraphOp) -> Option<String> {
             _ => None,
         },
         TensorGraphOp::Matmul => Some("(g@transpose(b),transpose(a)@g)".to_string()),
-        TensorGraphOp::BatchedMatmul => Some("(g@transpose(b),transpose(a)@g) per batch".to_string()),
+        TensorGraphOp::BatchedMatmul => {
+            Some("(g@transpose(b),transpose(a)@g) per batch".to_string())
+        }
         TensorGraphOp::UnknownHost { host } if host.ends_with(".concat") => {
             Some("split(g,left_len)".to_string())
         }
@@ -957,9 +980,7 @@ fn gradient_rule(op: &TensorGraphOp) -> Option<String> {
             Some("identity_with_device_transfer(g)".to_string())
         }
         TensorGraphOp::Linear => Some("linear_backward(input,weight,bias,g)".to_string()),
-        TensorGraphOp::Conv2d => {
-            Some("conv2d_backward(input,kernel,bias,g)".to_string())
-        }
+        TensorGraphOp::Conv2d => Some("conv2d_backward(input,kernel,bias,g)".to_string()),
         TensorGraphOp::MaxPool2d => Some("maxpool2d_backward(input,g)".to_string()),
         TensorGraphOp::Dropout => Some("dropout_backward(mask,g)".to_string()),
         TensorGraphOp::Loss { name } if name == "mse_loss" => {
@@ -982,7 +1003,6 @@ fn is_autodiff_auxiliary(op: &TensorGraphOp) -> bool {
 
 fn node_name(kind: &AutodiffNodeKind) -> String {
     match kind {
-
         AutodiffNodeKind::Forward { op } => format!("forward.{op}"),
         AutodiffNodeKind::SaveForBackward { forward_node } => format!("save(%{forward_node})"),
         AutodiffNodeKind::BackwardSeed { loss_node } => format!("seed(%{loss_node})"),
@@ -1111,7 +1131,11 @@ mod tests {
 
     #[test]
     fn tanh_and_sqrt_chain_registers_gradient_rules() {
-        let source = TensorGraphSource { block: 0, instruction: 0, host: None };
+        let source = TensorGraphSource {
+            block: 0,
+            instruction: 0,
+            host: None,
+        };
         let float_vector = || {
             TensorMetadata::new(
                 TensorDType::Float,
@@ -1135,7 +1159,9 @@ mod tests {
                     TensorGraphNode {
                         id: 1,
                         value: Some(1),
-                        op: TensorGraphOp::Elementwise { name: "tanh_f".into() },
+                        op: TensorGraphOp::Elementwise {
+                            name: "tanh_f".into(),
+                        },
                         inputs: vec![0],
                         output: float_vector(),
                         source: source.clone(),
@@ -1143,7 +1169,9 @@ mod tests {
                     TensorGraphNode {
                         id: 2,
                         value: Some(2),
-                        op: TensorGraphOp::Elementwise { name: "sqrt_f".into() },
+                        op: TensorGraphOp::Elementwise {
+                            name: "sqrt_f".into(),
+                        },
                         inputs: vec![1],
                         output: float_vector(),
                         source: source.clone(),
@@ -1151,7 +1179,9 @@ mod tests {
                     TensorGraphNode {
                         id: 3,
                         value: Some(3),
-                        op: TensorGraphOp::Reduction { name: "sum_t".into() },
+                        op: TensorGraphOp::Reduction {
+                            name: "sum_t".into(),
+                        },
                         inputs: vec![2],
                         output: TensorMetadata::new(
                             TensorDType::Float,
@@ -1166,24 +1196,42 @@ mod tests {
         let autodiff = AutodiffGraph::from_tensor_graph(&graph);
         let function = &autodiff.functions[0];
         assert_eq!(function.loss_node, Some(3));
-        assert!(function.diagnostics.is_empty(), "{:?}", function.diagnostics);
+        assert!(
+            function.diagnostics.is_empty(),
+            "{:?}",
+            function.diagnostics
+        );
         let tanh_rule = function
             .backward
             .iter()
-            .find(|node| matches!(&node.kind, AutodiffNodeKind::Gradient { target_node: 1, .. }))
+            .find(|node| {
+                matches!(
+                    &node.kind,
+                    AutodiffNodeKind::Gradient { target_node: 1, .. }
+                )
+            })
             .expect("tanh gradient node");
         assert_eq!(tanh_rule.rule, "d(tanh(a))=g*(1-y*y)");
         let sqrt_rule = function
             .backward
             .iter()
-            .find(|node| matches!(&node.kind, AutodiffNodeKind::Gradient { target_node: 2, .. }))
+            .find(|node| {
+                matches!(
+                    &node.kind,
+                    AutodiffNodeKind::Gradient { target_node: 2, .. }
+                )
+            })
             .expect("sqrt gradient node");
         assert_eq!(sqrt_rule.rule, "d(sqrt(a))=g*0.5/y");
     }
 
     #[test]
     fn bce_loss_registers_gradient_rule() {
-        let source = TensorGraphSource { block: 0, instruction: 0, host: None };
+        let source = TensorGraphSource {
+            block: 0,
+            instruction: 0,
+            host: None,
+        };
         let graph = TensorGraph {
             module: "test".into(),
             functions: vec![TensorGraphFunction {
@@ -1208,7 +1256,9 @@ mod tests {
                     TensorGraphNode {
                         id: 2,
                         value: Some(2),
-                        op: TensorGraphOp::Loss { name: "bce_loss".into() },
+                        op: TensorGraphOp::Loss {
+                            name: "bce_loss".into(),
+                        },
                         inputs: vec![0, 1],
                         output: TensorMetadata::new(
                             TensorDType::Float,
@@ -1223,11 +1273,20 @@ mod tests {
         let autodiff = AutodiffGraph::from_tensor_graph(&graph);
         let function = &autodiff.functions[0];
         assert_eq!(function.loss_node, Some(2));
-        assert!(function.diagnostics.is_empty(), "{:?}", function.diagnostics);
+        assert!(
+            function.diagnostics.is_empty(),
+            "{:?}",
+            function.diagnostics
+        );
         let rule = function
             .backward
             .iter()
-            .find(|node| matches!(&node.kind, AutodiffNodeKind::Gradient { target_node: 2, .. }))
+            .find(|node| {
+                matches!(
+                    &node.kind,
+                    AutodiffNodeKind::Gradient { target_node: 2, .. }
+                )
+            })
             .expect("bce gradient node");
         assert!(rule.rule.contains("clamped-p"), "{}", rule.rule);
     }
@@ -1235,7 +1294,11 @@ mod tests {
     #[test]
     fn conv_pool_dropout_register_gradient_rules() {
         use TensorGraphOp::*;
-        let source = TensorGraphSource { block: 0, instruction: 0, host: None };
+        let source = TensorGraphSource {
+            block: 0,
+            instruction: 0,
+            host: None,
+        };
         let scalar = || {
             TensorMetadata::new(
                 TensorDType::Float,
@@ -1277,7 +1340,9 @@ mod tests {
                         TensorGraphNode {
                             id: 4,
                             value: Some(4),
-                            op: Reduction { name: "sum_t".into() },
+                            op: Reduction {
+                                name: "sum_t".into(),
+                            },
 
                             inputs: vec![3],
                             output: scalar(),
@@ -1289,11 +1354,20 @@ mod tests {
             let autodiff = AutodiffGraph::from_tensor_graph(&graph);
             let function = &autodiff.functions[0];
             assert_eq!(function.loss_node, Some(4), "{name}");
-            assert!(function.diagnostics.is_empty(), "{name}: {:?}", function.diagnostics);
+            assert!(
+                function.diagnostics.is_empty(),
+                "{name}: {:?}",
+                function.diagnostics
+            );
             let rule = function
                 .backward
                 .iter()
-                .find(|node| matches!(&node.kind, AutodiffNodeKind::Gradient { target_node: 3, .. }))
+                .find(|node| {
+                    matches!(
+                        &node.kind,
+                        AutodiffNodeKind::Gradient { target_node: 3, .. }
+                    )
+                })
                 .unwrap_or_else(|| panic!("{name} gradient node"));
             assert!(rule.rule.contains(rule_part), "{name}: {}", rule.rule);
         }
@@ -1301,7 +1375,11 @@ mod tests {
     #[test]
     fn batched_and_shape_ops_register_gradient_rules() {
         use TensorGraphOp::*;
-        let source = TensorGraphSource { block: 0, instruction: 0, host: None };
+        let source = TensorGraphSource {
+            block: 0,
+            instruction: 0,
+            host: None,
+        };
         let scalar = || {
             TensorMetadata::new(
                 TensorDType::Float,
@@ -1317,8 +1395,8 @@ mod tests {
             output: TensorMetadata::unknown(),
             source: source.clone(),
         };
-        let host = |name: &str| {
-            UnknownHost { host: format!("spectra.std.tensor.{name}") }
+        let host = |name: &str| UnknownHost {
+            host: format!("spectra.std.tensor.{name}"),
         };
         let cases: Vec<(&str, TensorGraphOp, Vec<usize>, &str)> = vec![
             ("bmm", BatchedMatmul, vec![0, 1], "per batch"),
@@ -1346,7 +1424,9 @@ mod tests {
                         TensorGraphNode {
                             id: 3,
                             value: Some(3),
-                            op: Reduction { name: "sum_t".into() },
+                            op: Reduction {
+                                name: "sum_t".into(),
+                            },
                             inputs: vec![2],
                             output: scalar(),
                             source: source.clone(),
@@ -1357,11 +1437,20 @@ mod tests {
             let autodiff = AutodiffGraph::from_tensor_graph(&graph);
             let function = &autodiff.functions[0];
             assert_eq!(function.loss_node, Some(3), "{name}");
-            assert!(function.diagnostics.is_empty(), "{name}: {:?}", function.diagnostics);
+            assert!(
+                function.diagnostics.is_empty(),
+                "{name}: {:?}",
+                function.diagnostics
+            );
             let rule = function
                 .backward
                 .iter()
-                .find(|node| matches!(&node.kind, AutodiffNodeKind::Gradient { target_node: 2, .. }))
+                .find(|node| {
+                    matches!(
+                        &node.kind,
+                        AutodiffNodeKind::Gradient { target_node: 2, .. }
+                    )
+                })
                 .unwrap_or_else(|| panic!("{name} gradient node"));
             assert!(rule.rule.contains(rule_part), "{name}: {}", rule.rule);
         }

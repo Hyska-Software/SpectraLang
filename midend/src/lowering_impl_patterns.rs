@@ -36,9 +36,9 @@ impl ASTLowering {
                         if let Some(field_ty) = tuple_types.get(idx) {
                             let byte_offset =
                                 layout::layout_of(tuple_types.iter()).offsets[idx] as i64;
-                            let field_ptr = self
-                                .builder
-                                .build_field_ptr(ir_func, scrutinee, byte_offset);
+                            let field_ptr =
+                                self.builder
+                                    .build_field_ptr(ir_func, scrutinee, byte_offset);
                             let field_value =
                                 self.builder
                                     .build_load_typed(ir_func, field_ptr, field_ty.clone());
@@ -96,28 +96,27 @@ impl ASTLowering {
                 ..
             } => {
                 // Se há patterns de data, extrair valores e fazer binding recursivo
-                let ordered_patterns: Vec<&spectra_compiler::ast::Pattern> =
-                    if let Some(patterns) = data {
-                        patterns.iter().collect()
-                    } else if let Some(named_patterns) = struct_data {
-                        self.reorder_named_variant_patterns(
-                            scrutinee_enum.unwrap_or(enum_name),
-                            variant_name,
-                            named_patterns,
-                        )
-                        .unwrap_or_else(|| {
-                            named_patterns.iter().map(|(_, pattern)| pattern).collect()
-                        })
-                    } else {
-                        Vec::new()
-                    };
+                let ordered_patterns: Vec<&spectra_compiler::ast::Pattern> = if let Some(patterns) =
+                    data
+                {
+                    patterns.iter().collect()
+                } else if let Some(named_patterns) = struct_data {
+                    self.reorder_named_variant_patterns(
+                        scrutinee_enum.unwrap_or(enum_name),
+                        variant_name,
+                        named_patterns,
+                    )
+                    .unwrap_or_else(|| named_patterns.iter().map(|(_, pattern)| pattern).collect())
+                } else {
+                    Vec::new()
+                };
 
                 if !ordered_patterns.is_empty() {
                     let mut variants = self
                         .enum_variants_from_ir_type(scrutinee_type)
                         .or_else(|| {
-                            if let Some(IRType::Enum { name, .. }) = scrutinee_type
-                                .map(Self::ir_type_representation_static)
+                            if let Some(IRType::Enum { name, .. }) =
+                                scrutinee_type.map(Self::ir_type_representation_static)
                             {
                                 self.enum_definitions.get(name).cloned()
                             } else {
@@ -146,19 +145,22 @@ impl ASTLowering {
                                 if let Some(sub_type) = types.get(idx) {
                                     // Extrair elemento idx+1 da tuple (idx 0 é o tag)
                                     let byte_offset = 8 + variant_layout.offsets[idx] as i64;
-                                    let element_ptr = self
-                                        .builder
-                                        .build_field_ptr(ir_func, scrutinee, byte_offset);
+                                    let element_ptr = self.builder.build_field_ptr(
+                                        ir_func,
+                                        scrutinee,
+                                        byte_offset,
+                                    );
                                     let element_value = self.builder.build_load_typed(
                                         ir_func,
                                         element_ptr,
                                         sub_type.clone(),
                                     );
 
-                                    let next_enum = match Self::ir_type_representation_static(sub_type) {
-                                        IRType::Enum { name, .. } => Some(name.clone()),
-                                        _ => None,
-                                    };
+                                    let next_enum =
+                                        match Self::ir_type_representation_static(sub_type) {
+                                            IRType::Enum { name, .. } => Some(name.clone()),
+                                            _ => None,
+                                        };
 
                                     // Recursivamente fazer binding do sub-pattern
                                     self.lower_pattern_bindings(
@@ -216,18 +218,52 @@ impl ASTLowering {
                 match type_name {
                     "int" => IRType::Int,
                     "float" => IRType::Float,
-                    "i8" => IRType::ExactInt { signed: true, width: IRIntWidth::I8 },
-                    "i16" => IRType::ExactInt { signed: true, width: IRIntWidth::I16 },
-                    "i32" => IRType::ExactInt { signed: true, width: IRIntWidth::I32 },
-                    "i64" => IRType::ExactInt { signed: true, width: IRIntWidth::I64 },
-                    "isize" => IRType::ExactInt { signed: true, width: IRIntWidth::Isize },
-                    "u8" => IRType::ExactInt { signed: false, width: IRIntWidth::I8 },
-                    "u16" => IRType::ExactInt { signed: false, width: IRIntWidth::I16 },
-                    "u32" => IRType::ExactInt { signed: false, width: IRIntWidth::I32 },
-                    "u64" => IRType::ExactInt { signed: false, width: IRIntWidth::I64 },
-                    "usize" => IRType::ExactInt { signed: false, width: IRIntWidth::Usize },
-                    "f32" => IRType::ExactFloat { width: IRFloatWidth::F32 },
-                    "f64" => IRType::ExactFloat { width: IRFloatWidth::F64 },
+                    "i8" => IRType::ExactInt {
+                        signed: true,
+                        width: IRIntWidth::I8,
+                    },
+                    "i16" => IRType::ExactInt {
+                        signed: true,
+                        width: IRIntWidth::I16,
+                    },
+                    "i32" => IRType::ExactInt {
+                        signed: true,
+                        width: IRIntWidth::I32,
+                    },
+                    "i64" => IRType::ExactInt {
+                        signed: true,
+                        width: IRIntWidth::I64,
+                    },
+                    "isize" => IRType::ExactInt {
+                        signed: true,
+                        width: IRIntWidth::Isize,
+                    },
+                    "u8" => IRType::ExactInt {
+                        signed: false,
+                        width: IRIntWidth::I8,
+                    },
+                    "u16" => IRType::ExactInt {
+                        signed: false,
+                        width: IRIntWidth::I16,
+                    },
+                    "u32" => IRType::ExactInt {
+                        signed: false,
+                        width: IRIntWidth::I32,
+                    },
+                    "u64" => IRType::ExactInt {
+                        signed: false,
+                        width: IRIntWidth::I64,
+                    },
+                    "usize" => IRType::ExactInt {
+                        signed: false,
+                        width: IRIntWidth::Usize,
+                    },
+                    "f32" => IRType::ExactFloat {
+                        width: IRFloatWidth::F32,
+                    },
+                    "f64" => IRType::ExactFloat {
+                        width: IRFloatWidth::F64,
+                    },
                     "bool" => IRType::Bool,
                     "string" => IRType::String,
                     "char" => IRType::Char,
@@ -465,17 +501,27 @@ impl ASTLowering {
                                         .iter()
                                         .map(|ty| {
                                             let subst = self.substitute_type(ty, &type_map);
-                                            self.lower_type_annotation_with_map(&subst, substitutions)
+                                            self.lower_type_annotation_with_map(
+                                                &subst,
+                                                substitutions,
+                                            )
                                         })
                                         .collect(),
                                 )
-                            } else { v.struct_data.as_ref().map(|fields| fields
+                            } else {
+                                v.struct_data.as_ref().map(|fields| {
+                                    fields
                                         .iter()
                                         .map(|(_, ty)| {
                                             let subst = self.substitute_type(ty, &type_map);
-                                            self.lower_type_annotation_with_map(&subst, substitutions)
+                                            self.lower_type_annotation_with_map(
+                                                &subst,
+                                                substitutions,
+                                            )
                                         })
-                                        .collect()) };
+                                        .collect()
+                                })
+                            };
                             (v.name.clone(), data)
                         })
                         .collect();
@@ -503,5 +549,4 @@ impl ASTLowering {
             },
         }
     }
-
 }

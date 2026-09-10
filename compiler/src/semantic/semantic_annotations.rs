@@ -125,7 +125,10 @@ impl SemanticAnalyzer {
         }
     }
 
-    pub(crate) fn format_trait_signature(method_name: &str, signature: &TraitMethodSignature) -> String {
+    pub(crate) fn format_trait_signature(
+        method_name: &str,
+        signature: &TraitMethodSignature,
+    ) -> String {
         let params = signature
             .params
             .iter()
@@ -139,7 +142,11 @@ impl SemanticAnalyzer {
             .map(|ty| format!(" returns {}", ty))
             .unwrap_or_else(|| " returns unit".to_string());
 
-        let prefix = if signature.is_async { "async func" } else { "func" };
+        let prefix = if signature.is_async {
+            "async func"
+        } else {
+            "func"
+        };
         format!("{} {}({}){}", prefix, method_name, params, return_part)
     }
 
@@ -234,10 +241,9 @@ impl SemanticAnalyzer {
                 return;
             }
             let d = levenshtein_distance(name, candidate);
-            if d > 0 && d <= threshold
-                && best.as_ref().is_none_or(|(_, bd)| d < *bd) {
-                    best = Some((candidate.to_owned(), d));
-                }
+            if d > 0 && d <= threshold && best.as_ref().is_none_or(|(_, bd)| d < *bd) {
+                best = Some((candidate.to_owned(), d));
+            }
         };
 
         for scope in self.symbols.iter() {
@@ -256,18 +262,52 @@ impl SemanticAnalyzer {
         match name {
             "int" => Some(Type::Int),
             "float" => Some(Type::Float),
-            "i8" => Some(Type::ExactInt { signed: true, width: IntWidth::I8 }),
-            "i16" => Some(Type::ExactInt { signed: true, width: IntWidth::I16 }),
-            "i32" => Some(Type::ExactInt { signed: true, width: IntWidth::I32 }),
-            "i64" => Some(Type::ExactInt { signed: true, width: IntWidth::I64 }),
-            "isize" => Some(Type::ExactInt { signed: true, width: IntWidth::Isize }),
-            "u8" => Some(Type::ExactInt { signed: false, width: IntWidth::I8 }),
-            "u16" => Some(Type::ExactInt { signed: false, width: IntWidth::I16 }),
-            "u32" => Some(Type::ExactInt { signed: false, width: IntWidth::I32 }),
-            "u64" => Some(Type::ExactInt { signed: false, width: IntWidth::I64 }),
-            "usize" => Some(Type::ExactInt { signed: false, width: IntWidth::Usize }),
-            "f32" => Some(Type::ExactFloat { width: FloatWidth::F32 }),
-            "f64" => Some(Type::ExactFloat { width: FloatWidth::F64 }),
+            "i8" => Some(Type::ExactInt {
+                signed: true,
+                width: IntWidth::I8,
+            }),
+            "i16" => Some(Type::ExactInt {
+                signed: true,
+                width: IntWidth::I16,
+            }),
+            "i32" => Some(Type::ExactInt {
+                signed: true,
+                width: IntWidth::I32,
+            }),
+            "i64" => Some(Type::ExactInt {
+                signed: true,
+                width: IntWidth::I64,
+            }),
+            "isize" => Some(Type::ExactInt {
+                signed: true,
+                width: IntWidth::Isize,
+            }),
+            "u8" => Some(Type::ExactInt {
+                signed: false,
+                width: IntWidth::I8,
+            }),
+            "u16" => Some(Type::ExactInt {
+                signed: false,
+                width: IntWidth::I16,
+            }),
+            "u32" => Some(Type::ExactInt {
+                signed: false,
+                width: IntWidth::I32,
+            }),
+            "u64" => Some(Type::ExactInt {
+                signed: false,
+                width: IntWidth::I64,
+            }),
+            "usize" => Some(Type::ExactInt {
+                signed: false,
+                width: IntWidth::Usize,
+            }),
+            "f32" => Some(Type::ExactFloat {
+                width: FloatWidth::F32,
+            }),
+            "f64" => Some(Type::ExactFloat {
+                width: FloatWidth::F64,
+            }),
             _ => None,
         }
     }
@@ -282,7 +322,10 @@ impl SemanticAnalyzer {
     }
 
     pub(crate) fn is_numeric_type(ty: &Type) -> bool {
-        matches!(ty, Type::Int | Type::Float | Type::ExactInt { .. } | Type::ExactFloat { .. })
+        matches!(
+            ty,
+            Type::Int | Type::Float | Type::ExactInt { .. } | Type::ExactFloat { .. }
+        )
     }
 
     pub(crate) fn numeric_types_can_interact(&self, left: &Type, right: &Type) -> bool {
@@ -296,14 +339,25 @@ impl SemanticAnalyzer {
 
         if matches!(left, Type::Float) || matches!(right, Type::Float) {
             Type::Float
-        } else if matches!(left, Type::ExactFloat { .. }) || matches!(right, Type::ExactFloat { .. }) {
-            if left == right { left.clone() } else { Type::ExactFloat { width: FloatWidth::F64 } }
+        } else if matches!(left, Type::ExactFloat { .. })
+            || matches!(right, Type::ExactFloat { .. })
+        {
+            if left == right {
+                left.clone()
+            } else {
+                Type::ExactFloat {
+                    width: FloatWidth::F64,
+                }
+            }
         } else if matches!(left, Type::Int) && matches!(right, Type::Int) {
             Type::Int
         } else if matches!(left, Type::ExactInt { .. }) && left == right {
             left.clone()
         } else {
-            Type::ExactInt { signed: true, width: IntWidth::I64 }
+            Type::ExactInt {
+                signed: true,
+                width: IntWidth::I64,
+            }
         }
     }
 
@@ -506,16 +560,7 @@ impl SemanticAnalyzer {
             // Generic applications are compared structurally.  The base name
             // alone is not enough: `List<int>` and `List<string>` are distinct
             // types even though both use the same runtime handle ABI.
-            (
-                Type::Applied {
-                    name: n1,
-                    args: a1,
-                },
-                Type::Applied {
-                    name: n2,
-                    args: a2,
-                },
-            ) => {
+            (Type::Applied { name: n1, args: a1 }, Type::Applied { name: n2, args: a2 }) => {
                 n1 == n2
                     && a1.len() == a2.len()
                     && a1
@@ -640,18 +685,17 @@ impl SemanticAnalyzer {
         if self.types_match(actual, expected) {
             return true;
         }
-        let bound_accepts =
-            |semantic: &Self, param: &str, concrete: &Type| -> bool {
-                if matches!(concrete, Type::Unknown | Type::TypeParameter { .. }) {
-                    return true;
-                }
-                match semantic.get_generic_bounds(param) {
-                    Some(bounds) => bounds
-                        .iter()
-                        .all(|bound| semantic.type_satisfies_trait_bound(concrete, bound)),
-                    None => true,
-                }
-            };
+        let bound_accepts = |semantic: &Self, param: &str, concrete: &Type| -> bool {
+            if matches!(concrete, Type::Unknown | Type::TypeParameter { .. }) {
+                return true;
+            }
+            match semantic.get_generic_bounds(param) {
+                Some(bounds) => bounds
+                    .iter()
+                    .all(|bound| semantic.type_satisfies_trait_bound(concrete, bound)),
+                None => true,
+            }
+        };
         match (actual, expected) {
             (_, Type::TypeParameter { name }) => bound_accepts(self, name, actual),
             (Type::TypeParameter { name }, _) => bound_accepts(self, name, expected),
@@ -725,7 +769,6 @@ impl SemanticAnalyzer {
             _ => false,
         }
     }
-
 
     pub(crate) fn return_types_match(&self, actual: &Type, expected: &Type) -> bool {
         if matches!(actual, Type::Unknown) || matches!(expected, Type::Unknown) {
@@ -822,7 +865,6 @@ impl SemanticAnalyzer {
             _ => self.types_match(actual, expected),
         }
     }
-
 }
 
 #[cfg(test)]

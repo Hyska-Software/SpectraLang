@@ -36,12 +36,10 @@ impl SemanticAnalyzer {
 
     pub(crate) fn const_int_expression(expr: &Expression) -> Option<i64> {
         match &expr.kind {
-            ExpressionKind::NumberLiteral(raw) => {
-                match crate::numeric::parse_number_literal(raw) {
-                    Some(crate::numeric::ParsedNumber::Int(v)) => Some(v),
-                    _ => None,
-                }
-            }
+            ExpressionKind::NumberLiteral(raw) => match crate::numeric::parse_number_literal(raw) {
+                Some(crate::numeric::ParsedNumber::Int(v)) => Some(v),
+                _ => None,
+            },
             ExpressionKind::Grouping(inner) => Self::const_int_expression(inner),
             _ => None,
         }
@@ -288,8 +286,14 @@ impl SemanticAnalyzer {
                     | "permute"
             ] | [
                 "ml",
-                "linear" | "mse_loss" | "bce_loss" | "cross_entropy_loss" | "nll_loss" | "conv2d"
-                    | "max_pool2d" | "dropout"
+                "linear"
+                    | "mse_loss"
+                    | "bce_loss"
+                    | "cross_entropy_loss"
+                    | "nll_loss"
+                    | "conv2d"
+                    | "max_pool2d"
+                    | "dropout"
             ]
         );
         let is_std = matches!(parts.first(), Some(&"tensor" | &"ml" | &"io" | &"math"));
@@ -306,7 +310,9 @@ impl SemanticAnalyzer {
         }
     }
 
-    pub(crate) fn parse_tensor_metadata(type_args: &[crate::ast::TypeAnnotation]) -> TensorMetadata {
+    pub(crate) fn parse_tensor_metadata(
+        type_args: &[crate::ast::TypeAnnotation],
+    ) -> TensorMetadata {
         let mut meta = TensorMetadata::default();
         let mut dims = Vec::new();
 
@@ -478,12 +484,37 @@ impl SemanticAnalyzer {
                 } else {
                     *value >= 0 && (*value as u128) <= ((1_u128 << bits) - 1)
                 };
-                if fits { Ok(()) } else { Err(format!("E2903: constant {} does not fit in {}", value, type_name(target))) }
+                if fits {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "E2903: constant {} does not fit in {}",
+                        value,
+                        type_name(target)
+                    ))
+                }
             }
-            (ConstValue::Float(value), Type::ExactFloat { width: FloatWidth::F32 }) => {
-                if value.is_finite() && (*value as f32 as f64) == *value { Ok(()) } else { Err(format!("E2904: constant {} is not representable as f32", value)) }
+            (
+                ConstValue::Float(value),
+                Type::ExactFloat {
+                    width: FloatWidth::F32,
+                },
+            ) => {
+                if value.is_finite() && (*value as f32 as f64) == *value {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "E2904: constant {} is not representable as f32",
+                        value
+                    ))
+                }
             }
-            (ConstValue::Float(value), Type::ExactFloat { width: FloatWidth::F64 }) if value.is_finite() => Ok(()),
+            (
+                ConstValue::Float(value),
+                Type::ExactFloat {
+                    width: FloatWidth::F64,
+                },
+            ) if value.is_finite() => Ok(()),
             _ => Ok(()),
         }
     }
@@ -560,13 +591,11 @@ impl SemanticAnalyzer {
 
     pub(crate) fn eval_const_expression(&self, expr: &Expression) -> Option<ConstValue> {
         match &expr.kind {
-            ExpressionKind::NumberLiteral(raw) => {
-                match crate::numeric::parse_number_literal(raw) {
-                    Some(crate::numeric::ParsedNumber::Int(v)) => Some(ConstValue::Int(v)),
-                    Some(crate::numeric::ParsedNumber::Float(v)) => Some(ConstValue::Float(v)),
-                    None => None,
-                }
-            }
+            ExpressionKind::NumberLiteral(raw) => match crate::numeric::parse_number_literal(raw) {
+                Some(crate::numeric::ParsedNumber::Int(v)) => Some(ConstValue::Int(v)),
+                Some(crate::numeric::ParsedNumber::Float(v)) => Some(ConstValue::Float(v)),
+                None => None,
+            },
             ExpressionKind::StringLiteral(value) => Some(ConstValue::String(value.clone())),
             ExpressionKind::BoolLiteral(value) => Some(ConstValue::Bool(*value)),
             ExpressionKind::CharLiteral(value) => Some(ConstValue::Char(*value)),
@@ -705,20 +734,66 @@ impl SemanticAnalyzer {
             (ConstValue::Float(v), Type::Float) => Some(ConstValue::Float(v)),
             (ConstValue::Float(v), Type::Int) => Some(ConstValue::Int(v as i64)),
             (ConstValue::Int(v), Type::ExactInt { signed, width }) => {
-                let bits = match width { IntWidth::I8 => 8, IntWidth::I16 => 16, IntWidth::I32 => 32, IntWidth::I64 | IntWidth::Isize | IntWidth::Usize => 64 };
-                let fits = if *signed { let min = -(1_i128 << (bits - 1)); let max = (1_i128 << (bits - 1)) - 1; (v as i128) >= min && (v as i128) <= max } else { v >= 0 && (v as u128) <= ((1_u128 << bits) - 1) };
+                let bits = match width {
+                    IntWidth::I8 => 8,
+                    IntWidth::I16 => 16,
+                    IntWidth::I32 => 32,
+                    IntWidth::I64 | IntWidth::Isize | IntWidth::Usize => 64,
+                };
+                let fits = if *signed {
+                    let min = -(1_i128 << (bits - 1));
+                    let max = (1_i128 << (bits - 1)) - 1;
+                    (v as i128) >= min && (v as i128) <= max
+                } else {
+                    v >= 0 && (v as u128) <= ((1_u128 << bits) - 1)
+                };
                 fits.then_some(ConstValue::Int(v))
             }
-            (ConstValue::Float(v), Type::ExactInt { signed, width }) if v.is_finite() && v.fract() == 0.0 => {
+            (ConstValue::Float(v), Type::ExactInt { signed, width })
+                if v.is_finite() && v.fract() == 0.0 =>
+            {
                 let int = v as i128;
-                let bits = match width { IntWidth::I8 => 8, IntWidth::I16 => 16, IntWidth::I32 => 32, IntWidth::I64 | IntWidth::Isize | IntWidth::Usize => 64 };
-                let fits = if *signed { let min = -(1_i128 << (bits - 1)); let max = (1_i128 << (bits - 1)) - 1; int >= min && int <= max } else { int >= 0 && (int as u128) <= ((1_u128 << bits) - 1) };
+                let bits = match width {
+                    IntWidth::I8 => 8,
+                    IntWidth::I16 => 16,
+                    IntWidth::I32 => 32,
+                    IntWidth::I64 | IntWidth::Isize | IntWidth::Usize => 64,
+                };
+                let fits = if *signed {
+                    let min = -(1_i128 << (bits - 1));
+                    let max = (1_i128 << (bits - 1)) - 1;
+                    int >= min && int <= max
+                } else {
+                    int >= 0 && (int as u128) <= ((1_u128 << bits) - 1)
+                };
                 fits.then_some(ConstValue::Int(int as i64))
             }
-            (ConstValue::Int(v), Type::ExactFloat { width: FloatWidth::F32 }) if (v as f32 as f64) == v as f64 => Some(ConstValue::Float(v as f32 as f64)),
-            (ConstValue::Int(v), Type::ExactFloat { width: FloatWidth::F64 }) => Some(ConstValue::Float(v as f64)),
-            (ConstValue::Float(v), Type::ExactFloat { width: FloatWidth::F32 }) if v.is_finite() && (v as f32 as f64) == v => Some(ConstValue::Float(v as f32 as f64)),
-            (ConstValue::Float(v), Type::ExactFloat { width: FloatWidth::F64 }) if v.is_finite() => Some(ConstValue::Float(v)),
+            (
+                ConstValue::Int(v),
+                Type::ExactFloat {
+                    width: FloatWidth::F32,
+                },
+            ) if (v as f32 as f64) == v as f64 => Some(ConstValue::Float(v as f32 as f64)),
+            (
+                ConstValue::Int(v),
+                Type::ExactFloat {
+                    width: FloatWidth::F64,
+                },
+            ) => Some(ConstValue::Float(v as f64)),
+            (
+                ConstValue::Float(v),
+                Type::ExactFloat {
+                    width: FloatWidth::F32,
+                },
+            ) if v.is_finite() && (v as f32 as f64) == v => {
+                Some(ConstValue::Float(v as f32 as f64))
+            }
+            (
+                ConstValue::Float(v),
+                Type::ExactFloat {
+                    width: FloatWidth::F64,
+                },
+            ) if v.is_finite() => Some(ConstValue::Float(v)),
             (ConstValue::Char(v), Type::Char) => Some(ConstValue::Char(v)),
             (ConstValue::Char(v), Type::Int) => Some(ConstValue::Int(v as i64)),
             (ConstValue::Bool(v), Type::Bool) => Some(ConstValue::Bool(v)),
@@ -726,5 +801,4 @@ impl SemanticAnalyzer {
             _ => None,
         }
     }
-
 }

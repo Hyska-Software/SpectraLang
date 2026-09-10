@@ -477,10 +477,7 @@ impl SemanticAnalyzer {
                     } else {
                         self.error_coded(
                             "E017",
-                            format!(
-                                "Trait '{}' has no method '{}'",
-                                trait_name, variant_name
-                            ),
+                            format!("Trait '{}' has no method '{}'", trait_name, variant_name),
                             expr.span,
                         );
                     }
@@ -646,8 +643,9 @@ impl SemanticAnalyzer {
                         );
                     }
                 }
-                if let Some(Type::Enum { name: expected_name }) =
-                    self.current_expected_type.clone()
+                if let Some(Type::Enum {
+                    name: expected_name,
+                }) = self.current_expected_type.clone()
                 {
                     if let Some((base_name, _, expected_substitutions)) =
                         self.specialized_enum_context(&expected_name)

@@ -49,6 +49,7 @@ mod tests {
             dump_ast: false,
             run_jit: false,
             collect_metrics: false,
+            experimental_features: std::collections::HashSet::new(),
             lint: LintOptions::default(),
         };
 

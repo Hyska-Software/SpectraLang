@@ -217,7 +217,10 @@ pub(crate) extern "C" fn std_string_repeat(ctx: *mut SpectraHostCallContext) -> 
                 // Guard against `capacity overflow` panics for absurd repeat
                 // counts: fall back to the empty string when the requested
                 // size is not even addressable.
-                match s.len().checked_mul(n).filter(|&total| total <= isize::MAX as usize)
+                match s
+                    .len()
+                    .checked_mul(n)
+                    .filter(|&total| total <= isize::MAX as usize)
                 {
                     Some(_) => alloc_spectra_string(&s.repeat(n)),
                     None => alloc_spectra_string(""),
@@ -232,4 +235,3 @@ pub(crate) extern "C" fn std_string_repeat(ctx: *mut SpectraHostCallContext) -> 
     }
     HOST_STATUS_SUCCESS
 }
-

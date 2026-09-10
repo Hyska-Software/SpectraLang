@@ -56,28 +56,60 @@ impl ASTLowering {
             if compatible_source {
                 let host_operand = if source_is_float {
                     if matches!(from_ty, IRType::ExactFloat { .. }) {
-                        self.builder.build_cast(ir_func, operand, from_ty.clone(), IRType::Float)
-                    } else { operand }
+                        self.builder
+                            .build_cast(ir_func, operand, from_ty.clone(), IRType::Float)
+                    } else {
+                        operand
+                    }
                 } else if matches!(from_ty, IRType::ExactInt { .. } | IRType::Char) {
-                    self.builder.build_cast(ir_func, operand, from_ty.clone(), IRType::Int)
-                } else { operand };
-                let host = if source_is_float {
-                    format!("spectra.std.numeric.checked_float_{}{}", if *signed { "i" } else { "u" }, bits)
+                    self.builder
+                        .build_cast(ir_func, operand, from_ty.clone(), IRType::Int)
                 } else {
-                    format!("spectra.std.numeric.checked_{}{}", if *signed { "i" } else { "u" }, bits)
+                    operand
                 };
-                if let Some(value) = self.builder.build_typed_host_call(ir_func, host, vec![host_operand], to_ty.clone(), true) {
+                let host = if source_is_float {
+                    format!(
+                        "spectra.std.numeric.checked_float_{}{}",
+                        if *signed { "i" } else { "u" },
+                        bits
+                    )
+                } else {
+                    format!(
+                        "spectra.std.numeric.checked_{}{}",
+                        if *signed { "i" } else { "u" },
+                        bits
+                    )
+                };
+                if let Some(value) = self.builder.build_typed_host_call(
+                    ir_func,
+                    host,
+                    vec![host_operand],
+                    to_ty.clone(),
+                    true,
+                ) {
                     return value;
                 }
             }
         }
 
-        if matches!(to_ty, IRType::ExactFloat { width: IRFloatWidth::F32 })
-            && matches!(from_ty, IRType::Float | IRType::ExactFloat { width: IRFloatWidth::F64 })
-        {
+        if matches!(
+            to_ty,
+            IRType::ExactFloat {
+                width: IRFloatWidth::F32
+            }
+        ) && matches!(
+            from_ty,
+            IRType::Float
+                | IRType::ExactFloat {
+                    width: IRFloatWidth::F64
+                }
+        ) {
             let host_operand = if matches!(from_ty, IRType::ExactFloat { .. }) {
-                self.builder.build_cast(ir_func, operand, from_ty.clone(), IRType::Float)
-            } else { operand };
+                self.builder
+                    .build_cast(ir_func, operand, from_ty.clone(), IRType::Float)
+            } else {
+                operand
+            };
             if let Some(value) = self.builder.build_typed_host_call(
                 ir_func,
                 "spectra.std.numeric.checked_f32".to_string(),
@@ -174,9 +206,7 @@ impl ASTLowering {
             // R-210: vtables live on the runtime manual heap and are escaped to
             // the base frame so `dyn` values outlive the creating scope.
             let slot_count = methods.len().max(1) as i64;
-            let vtable_storage = self
-                .builder
-                .build_manual_alloc(ir_func, slot_count * 8);
+            let vtable_storage = self.builder.build_manual_alloc(ir_func, slot_count * 8);
 
             for (slot, method_name) in methods.iter().enumerate() {
                 let fn_name = format!("{}_{}", name, method_name);
@@ -196,7 +226,8 @@ impl ASTLowering {
             // the manual heap; explicitly promote it to the base frame along
             // with the vtable so returned/stored dyn values remain valid.
             self.builder.build_escape_manual_alloc(ir_func, data_ptr);
-            self.builder.build_escape_manual_alloc(ir_func, vtable_storage);
+            self.builder
+                .build_escape_manual_alloc(ir_func, vtable_storage);
             vtable_storage
         } else {
             self.builder.build_const_int(ir_func, 0)
@@ -205,7 +236,11 @@ impl ASTLowering {
             .build_make_dyn_fat_ptr(ir_func, data_ptr, vtable_ptr)
     }
 
-    pub(crate) fn lower_string_literal(&mut self, literal: &str, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_string_literal(
+        &mut self,
+        literal: &str,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         // R-3126: emit a single ConstString instruction. The backend resolves
         // this to a stable pointer (global .rodata section in AOT, heap
         // buffer in JIT) and tracks the compile-time length for fast
@@ -328,8 +363,8 @@ impl ASTLowering {
                 let mut variants = self
                     .enum_variants_from_ir_type(scrutinee_type)
                     .or_else(|| {
-                        if let Some(IRType::Enum { name, .. }) = scrutinee_type
-                            .map(Self::ir_type_representation_static)
+                        if let Some(IRType::Enum { name, .. }) =
+                            scrutinee_type.map(Self::ir_type_representation_static)
                         {
                             self.enum_definitions.get(name).cloned()
                         } else {
@@ -398,5 +433,4 @@ impl ASTLowering {
             }
         }
     }
-
 }

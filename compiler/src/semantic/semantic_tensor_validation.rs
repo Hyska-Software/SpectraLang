@@ -5,7 +5,10 @@ impl SemanticAnalyzer {
         self.types_match(a, b) && self.types_match(b, a)
     }
 
-    pub(crate) fn tensor_dims_match(a: &Option<Vec<Option<usize>>>, b: &Option<Vec<Option<usize>>>) -> bool {
+    pub(crate) fn tensor_dims_match(
+        a: &Option<Vec<Option<usize>>>,
+        b: &Option<Vec<Option<usize>>>,
+    ) -> bool {
         let (Some(a), Some(b)) = (a, b) else {
             return true;
         };
@@ -355,5 +358,4 @@ impl SemanticAnalyzer {
             _ => {}
         }
     }
-
 }

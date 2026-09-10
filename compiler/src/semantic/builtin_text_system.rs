@@ -1,6 +1,6 @@
 use super::*;
+use crate::ast::Type;
 use crate::semantic::module_registry::{ExportVisibility, ExportedType, ModuleExports};
-use crate::ast::{Type};
 use std::collections::HashMap;
 
 pub(crate) fn make_std_string() -> ModuleExports {
@@ -275,9 +275,10 @@ pub(crate) fn make_std_fs() -> ModuleExports {
     let result_int_error = Type::Enum {
         name: "Result_int_Error".to_string(),
     };
-    exports
-        .functions
-        .insert("fs_read".to_string(), pub_fn(vec![Type::String], result_string_error));
+    exports.functions.insert(
+        "fs_read".to_string(),
+        pub_fn(vec![Type::String], result_string_error),
+    );
     for name in ["fs_write", "fs_append", "fs_exists", "fs_remove"] {
         let params = if matches!(name, "fs_write" | "fs_append") {
             vec![Type::String, Type::String]
@@ -299,10 +300,7 @@ pub(crate) fn make_std_fs() -> ModuleExports {
     );
     exports.functions.insert(
         "rename".to_string(),
-        pub_fn(
-            vec![Type::String, Type::String],
-            result_bool_error.clone(),
-        ),
+        pub_fn(vec![Type::String, Type::String], result_bool_error.clone()),
     );
     // copy(from, to) -> Result<int, Error> (bytes copied)
     exports.functions.insert(
@@ -332,8 +330,6 @@ pub(crate) fn make_std_fs() -> ModuleExports {
 
     exports
 }
-
-
 
 /// Structured runtime failure values shared by the stable I/O surface.
 ///
@@ -448,9 +444,10 @@ pub(crate) fn make_std_env() -> ModuleExports {
     let option_string = Type::Enum {
         name: "Option_string".to_string(),
     };
-    exports
-        .functions
-        .insert("env_get".to_string(), pub_fn(vec![Type::String], option_string.clone()));
+    exports.functions.insert(
+        "env_get".to_string(),
+        pub_fn(vec![Type::String], option_string.clone()),
+    );
     exports.functions.insert(
         "env_get_option".to_string(),
         pub_fn(vec![Type::String], option_string.clone()),
@@ -464,9 +461,10 @@ pub(crate) fn make_std_env() -> ModuleExports {
     exports
         .functions
         .insert("env_args_count".to_string(), pub_fn(vec![], Type::Int));
-    exports
-        .functions
-        .insert("env_arg".to_string(), pub_fn(vec![Type::Int], option_string.clone()));
+    exports.functions.insert(
+        "env_arg".to_string(),
+        pub_fn(vec![Type::Int], option_string.clone()),
+    );
     exports.functions.insert(
         "env_arg_option".to_string(),
         pub_fn(vec![Type::Int], option_string),
@@ -474,5 +472,3 @@ pub(crate) fn make_std_env() -> ModuleExports {
 
     exports
 }
-
-

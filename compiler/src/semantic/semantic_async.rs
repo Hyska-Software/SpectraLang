@@ -481,7 +481,9 @@ impl SemanticAnalyzer {
                     .map(|info| info.ty.clone())
                     .unwrap_or(Type::Unknown)
             }),
-            ExpressionKind::StructLiteral { name, type_args, .. } => {
+            ExpressionKind::StructLiteral {
+                name, type_args, ..
+            } => {
                 if type_args.is_empty() {
                     Type::Struct { name: name.clone() }
                 } else {
@@ -983,14 +985,12 @@ impl SemanticAnalyzer {
             "RefCell" | "Cell" | "UnsafeCell" | "Rc" | "RawPtr" | "LocalOnly" | "LocalHandle"
         )
     }
-
 }
 
 #[cfg(test)]
 mod async_lambda_tests {
     use crate::ast::{ExpressionKind, Item, StatementKind};
     use crate::{CompilationOptions, CompilationPipeline, Lexer, Parser};
-    
 
     fn compile(source: &str) -> Result<(), Vec<crate::CompilerError>> {
         let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
@@ -1089,13 +1089,10 @@ mod async_lambda_tests {
         };
         assert!(matches!(
             binding.value.as_ref().map(|expr| &expr.kind),
-            Some(ExpressionKind::Lambda {
-                is_async: true,
-                ..
-            })
+            Some(ExpressionKind::Lambda { is_async: true, .. })
         ));
     }
- 
+
     #[test]
     fn async_closure_lazy_fixture_is_compile_valid() {
         compile(include_str!(
@@ -1128,4 +1125,3 @@ mod async_lambda_tests {
         );
     }
 }
-

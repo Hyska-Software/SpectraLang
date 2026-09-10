@@ -240,9 +240,7 @@ fn heartbeat_driver_threads() -> usize {
     HEARTBEAT_DRIVER_THREADS.load(Ordering::Acquire)
 }
 
-fn heartbeat_slots(
-    scheduler: &HeartbeatScheduler,
-) -> MutexGuard<'_, HashMap<u64, HeartbeatSlot>> {
+fn heartbeat_slots(scheduler: &HeartbeatScheduler) -> MutexGuard<'_, HashMap<u64, HeartbeatSlot>> {
     scheduler
         .slots
         .lock()
@@ -251,8 +249,7 @@ fn heartbeat_slots(
 
 impl HeartbeatScheduler {
     fn global() -> &'static Self {
-        static SCHEDULER: LazyLock<HeartbeatScheduler> =
-            LazyLock::new(HeartbeatScheduler::default);
+        static SCHEDULER: LazyLock<HeartbeatScheduler> = LazyLock::new(HeartbeatScheduler::default);
         &SCHEDULER
     }
 
@@ -1603,15 +1600,12 @@ mod tests {
                     .expect("accept SSE client");
                 accepted.push(connection);
             }
-            connections_tx
-                .send(accepted)
-                .expect("send SSE connections");
+            connections_tx.send(accepted).expect("send SSE connections");
         });
 
         let mut clients = Vec::with_capacity(CONNECTIONS);
         for _ in 0..CONNECTIONS {
-            let mut client =
-                TcpStream::connect(("127.0.0.1", port)).expect("connect SSE client");
+            let mut client = TcpStream::connect(("127.0.0.1", port)).expect("connect SSE client");
             client
                 .set_read_timeout(Some(Duration::from_secs(10)))
                 .expect("SSE client read timeout");

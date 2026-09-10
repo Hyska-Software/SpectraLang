@@ -141,4 +141,3 @@ pub(crate) extern "C" fn std_math_abs_f(ctx: *mut SpectraHostCallContext) -> i32
     }
     HOST_STATUS_SUCCESS
 }
-

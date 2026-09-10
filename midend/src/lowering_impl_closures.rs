@@ -36,7 +36,10 @@ impl ASTLowering {
         if public_return == IRType::Void {
             result.unwrap_or_else(|| self.builder.build_const_int(ir_func, 0))
         } else {
-            self.require_value(result, "closure call did not produce its declared return value")
+            self.require_value(
+                result,
+                "closure call did not produce its declared return value",
+            )
         }
     }
 
@@ -66,7 +69,11 @@ impl ASTLowering {
     /// functions use the public ABI, while closure callbacks use
     /// `fn(env, args...)`; this adapter keeps both contracts explicit and
     /// lets named functions cross host-call boundaries such as API handlers.
-    pub(crate) fn lower_named_function_value(&mut self, name: &str, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_named_function_value(
+        &mut self,
+        name: &str,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         let Some(public_params) = self.function_parameter_types.get(name).cloned() else {
             return self.invalid_value(format!("unknown function value '{}'", name));
         };
@@ -93,13 +100,16 @@ impl ASTLowering {
             name: "__closure_env".to_string(),
             ty: IRType::Int,
         });
-        params.extend(public_params.iter().enumerate().map(|(index, ty)| {
-            crate::ir::Parameter {
-                id: index + 1,
-                name: format!("arg{index}"),
-                ty: ty.clone(),
-            }
-        }));
+        params.extend(
+            public_params
+                .iter()
+                .enumerate()
+                .map(|(index, ty)| crate::ir::Parameter {
+                    id: index + 1,
+                    name: format!("arg{index}"),
+                    ty: ty.clone(),
+                }),
+        );
 
         let mut wrapper = IRFunction::new(&wrapper_name, params, return_type.clone());
         let entry = wrapper.add_block("entry");
@@ -125,7 +135,11 @@ impl ASTLowering {
         self.build_closure_object(ir_func, wrapper_name, &[])
     }
 
-    pub(crate) fn lower_global_value(&mut self, name: &str, ir_func: &mut IRFunction) -> Option<Value> {
+    pub(crate) fn lower_global_value(
+        &mut self,
+        name: &str,
+        ir_func: &mut IRFunction,
+    ) -> Option<Value> {
         let (global_key, ty) = self.static_globals.get(name)?.clone();
         let ptr = self
             .builder
@@ -548,5 +562,4 @@ impl ASTLowering {
             });
         }
     }
-
 }

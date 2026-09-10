@@ -7,13 +7,13 @@
 //! per-config value takes precedence over the environment variable.
 
 use crate::handles::{HandleId, HandleKind, HandleTable};
-use std::cell::RefCell;
-use std::io::{Read, Write};
 use rustls::pki_types::{pem::PemObject, CertificateDer, ServerName};
-use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 #[cfg(test)]
 use rustls::ServerConnection;
+use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
+use std::cell::RefCell;
 use std::fs;
+use std::io::{Read, Write};
 #[cfg(test)]
 use std::net::TcpListener;
 use std::net::{TcpStream, ToSocketAddrs};
@@ -529,7 +529,7 @@ pub fn stats() -> Option<(u64, u64, u64, u64, u64, bool)> {
 pub unsafe fn alloc_string(value: &str) -> i64 {
     use crate::ffi::spectra_rt_manual_alloc;
     let bytes = value.as_bytes();
-    let raw = spectra_rt_manual_alloc(bytes.len() + 1) as *mut u8;
+    let raw = spectra_rt_manual_alloc(bytes.len() + 1);
     if raw.is_null() {
         return 0;
     }
@@ -657,8 +657,8 @@ fn send_otlp(endpoint: &str, ca_pem: Option<&str>, body: &[u8]) -> Result<(), Se
     let status = if tls {
         let config = tls_client_config(ca_pem).map_err(|_| SendError { transient: false })?;
         let server_name = tls_server_name(authority).map_err(|_| SendError { transient: false })?;
-        let connection =
-            ClientConnection::new(config, server_name).map_err(|_| SendError { transient: true })?;
+        let connection = ClientConnection::new(config, server_name)
+            .map_err(|_| SendError { transient: true })?;
         let mut stream = StreamOwned::new(connection, stream);
         exchange_otlp(&mut stream, authority, path, body)?
     } else {
@@ -695,8 +695,8 @@ fn exchange_otlp<S: Read + Write>(
         Ok(_) => {}
         // Some peers close TCP without a TLS close_notify after `Connection:
         // close`; keep the response when one already arrived intact.
-        Err(error)
-            if error.kind() == std::io::ErrorKind::UnexpectedEof && !response.is_empty() => {}
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof && !response.is_empty() => {
+        }
         Err(_) => return Err(SendError { transient: true }),
     }
     parse_status_line(&response).ok_or(SendError { transient: true })
@@ -716,9 +716,11 @@ fn parse_status_line(response: &[u8]) -> Option<u16> {
 /// webpki root store. Configuration errors are permanent (non-retryable).
 fn tls_client_config(ca_pem: Option<&str>) -> Result<std::sync::Arc<ClientConfig>, ()> {
     let mut roots = RootCertStore::empty();
-    let source = ca_pem
-        .map(str::to_string)
-        .or_else(|| std::env::var("SPECTRA_OTLP_CA_PEM").ok().filter(|v| !v.trim().is_empty()));
+    let source = ca_pem.map(str::to_string).or_else(|| {
+        std::env::var("SPECTRA_OTLP_CA_PEM")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+    });
     match source {
         Some(source) => {
             let pem = match fs::read_to_string(&source) {
@@ -885,6 +887,18 @@ pub fn end_external_span(id: u64, success: bool) -> Result<(), &'static str> {
 }
 
 #[cfg(test)]
+fn http_content_length(headers: &[u8]) -> usize {
+    String::from_utf8_lossy(headers)
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())?
+        })
+        .unwrap_or(0)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -1024,7 +1038,8 @@ mod tests {
                     }
                 }
             }
-            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")?;
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")?;
             stream.flush()?;
             stream.conn.send_close_notify();
             stream.flush()?;
@@ -1089,16 +1104,4 @@ mod tests {
         assert_eq!(stats.failed.load(Ordering::Relaxed), 1);
         assert_eq!(stats.dropped.load(Ordering::Relaxed), 1);
     }
-}
-
-#[cfg(test)]
-fn http_content_length(headers: &[u8]) -> usize {
-    String::from_utf8_lossy(headers)
-        .lines()
-        .find_map(|line| {
-            let (name, value) = line.split_once(':')?;
-            name.eq_ignore_ascii_case("content-length")
-                .then(|| value.trim().parse::<usize>().ok())?
-        })
-        .unwrap_or(0)
 }

@@ -404,9 +404,7 @@ pub(crate) extern "C" fn std_ml_tokenizer_wordpiece(ctx: *mut SpectraHostCallCon
         let Some(tokenizer) = ml_parse_wordpiece_vocab(&spec) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let handle = with_ml_registry(|registry| {
-            registry.tokenizers.insert(tokenizer)
-        });
+        let handle = with_ml_registry(|registry| registry.tokenizers.insert(tokenizer));
         tensor_result(ctx_ref, handle as SpectraHostValue)
     }
 }
@@ -425,9 +423,7 @@ pub(crate) extern "C" fn std_ml_tokenizer_load(ctx: *mut SpectraHostCallContext)
         let Some(tokenizer) = ml_parse_artifact_tokenizer(&data) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let handle = with_ml_registry(|registry| {
-            registry.tokenizers.insert(tokenizer)
-        });
+        let handle = with_ml_registry(|registry| registry.tokenizers.insert(tokenizer));
         tensor_result(ctx_ref, handle as SpectraHostValue)
     }
 }
@@ -531,7 +527,6 @@ pub(crate) extern "C" fn std_ml_embedding_load(ctx: *mut SpectraHostCallContext)
     }
 }
 
-
 pub(crate) extern "C" fn std_ml_vector_index_new(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
@@ -540,9 +535,7 @@ pub(crate) extern "C" fn std_ml_vector_index_new(ctx: *mut SpectraHostCallContex
         let Ok(index) = crate::vector_index::VectorIndex::new(args[0] as usize) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let handle = with_ml_registry(|registry| {
-            registry.vector_indexes.insert(index)
-        });
+        let handle = with_ml_registry(|registry| registry.vector_indexes.insert(index));
         tensor_result(ctx_ref, handle as SpectraHostValue)
     }
 }
@@ -659,9 +652,7 @@ pub(crate) extern "C" fn std_ml_vector_index_load(ctx: *mut SpectraHostCallConte
             Ok(index) => index,
             Err(_) => return HOST_STATUS_INVALID_ARGUMENT,
         };
-        let handle = with_ml_registry(|registry| {
-            registry.vector_indexes.insert(index)
-        });
+        let handle = with_ml_registry(|registry| registry.vector_indexes.insert(index));
         tensor_result(ctx_ref, handle as SpectraHostValue)
     }
 }
@@ -778,4 +769,3 @@ pub(crate) extern "C" fn std_ml_rag_evaluate_answer(ctx: *mut SpectraHostCallCon
         tensor_result(ctx_ref, score.clamp(0, 1000))
     }
 }
-

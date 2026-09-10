@@ -59,8 +59,7 @@ impl SemanticAnalyzer {
                         } else if let Some(struct_info) = self.struct_infos.get(name) {
                             if let Some(field_info) = struct_info.fields.get(field.as_str()) {
                                 FieldLookup::Found {
-                                    ty: self
-                                        .type_annotation_to_type(&Some(field_info.ty.clone())),
+                                    ty: self.type_annotation_to_type(&Some(field_info.ty.clone())),
                                     span: field_info.span,
                                     visibility: field_info.visibility,
                                 }

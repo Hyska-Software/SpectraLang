@@ -1,6 +1,43 @@
 use super::*;
 
 impl Parser {
+    fn error_expected_item_or_legacy_alias(&mut self, fallback_message: &str) {
+        let legacy = match &self.current().kind {
+            crate::token::TokenKind::Identifier(name) => match name.as_str() {
+                "fn" => Some((
+                    "`fn` was removed; declare functions with `func`",
+                    "Replace `fn` with `func`.",
+                    "legacy function keyword",
+                )),
+                "struct" => Some((
+                    "`struct` was removed; declare aggregates with `record`",
+                    "Replace `struct` with `record`.",
+                    "legacy aggregate keyword",
+                )),
+                "pub" => Some((
+                    "`pub` was removed; use `public` visibility",
+                    "Replace `pub` with `public`.",
+                    "legacy visibility keyword",
+                )),
+                _ => None,
+            },
+            _ => None,
+        };
+        match legacy {
+            Some((message, hint, context)) => {
+                let span = self.current().span;
+                self.push_error_coded(
+                    "P001",
+                    message,
+                    span,
+                    Some(hint.to_string()),
+                    Some(context.to_string()),
+                );
+            }
+            None => self.error(fallback_message),
+        }
+    }
+
     pub(crate) fn parse_item(&mut self) -> Result<Item, ()> {
         let attributes = self.parse_outer_attributes()?;
         match &self.current().kind {
@@ -53,7 +90,11 @@ impl Parser {
             crate::token::TokenKind::Keyword(Keyword::Internal) => {
                 self.advance(); // consume 'internal'
                                 // `internal import ...` re-exports within the same package only.
-                if matches!(&self.current().kind, crate::token::TokenKind::Keyword(Keyword::Import) | crate::token::TokenKind::Keyword(Keyword::From)) {
+                if matches!(
+                    &self.current().kind,
+                    crate::token::TokenKind::Keyword(Keyword::Import)
+                        | crate::token::TokenKind::Keyword(Keyword::From)
+                ) {
                     if !attributes.is_empty() {
                         self.error_at(
                             "Attributes are currently supported only on functions, structs, and enums",
@@ -149,7 +190,9 @@ impl Parser {
                 Err(())
             }
             _ => {
-                self.error("Expected item declaration (import, func, etc.)");
+                self.error_expected_item_or_legacy_alias(
+                    "Expected item declaration (import, func, etc.)",
+                );
                 Err(())
             }
         }
@@ -311,10 +354,11 @@ impl Parser {
                 Err(())
             }
             _ => {
-                self.error("Expected function, record, enum, or impl declaration");
+                self.error_expected_item_or_legacy_alias(
+                    "Expected function, record, enum, or impl declaration",
+                );
                 Err(())
             }
         }
     }
-
 }

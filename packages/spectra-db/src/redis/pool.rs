@@ -161,7 +161,6 @@ pub struct RedisConnectionPool<F: ConnectionFactory> {
 
 /// A leased Redis connection checked out from [`RedisConnectionPool`].
 ///
-
 pub struct RedisPooledConnection<F: ConnectionFactory> {
     inner: Option<crate::PooledConnection<F>>,
 }

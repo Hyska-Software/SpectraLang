@@ -2,7 +2,8 @@ use super::*;
 
 impl ASTLowering {
     pub(crate) fn lower_statement(&mut self, stmt: &Statement, ir_func: &mut IRFunction) {
-        self.builder.set_source_span(Some(self.source_span(stmt.span)));
+        self.builder
+            .set_source_span(Some(self.source_span(stmt.span)));
         match &stmt.kind {
             StatementKind::Let(let_stmt) => {
                 let binding_name = match &let_stmt.pattern {
@@ -133,11 +134,7 @@ impl ASTLowering {
                                 // sidecar used by identifier inference and iteration.
                                 // Keeping the annotation's placeholder size (0) here
                                 // makes a valid `for` loop silently skip its body.
-                                let concrete_size = if size == 0 {
-                                    elements.len()
-                                } else {
-                                    size
-                                };
+                                let concrete_size = if size == 0 { elements.len() } else { size };
                                 self.array_map.insert(
                                     name.clone(),
                                     ArrayInfo {
@@ -177,10 +174,8 @@ impl ASTLowering {
                                     // Structs are pointers: bind the value pointer
                                     // directly so field access, method calls, and
                                     // scope-exit drop glue see the real struct.
-                                    self.struct_var_map.insert(
-                                        name.clone(),
-                                        (value, struct_type_name),
-                                    );
+                                    self.struct_var_map
+                                        .insert(name.clone(), (value, struct_type_name));
                                     self.value_map.insert(name.clone(), value);
                                 } else if let Some(&alloca_ptr) = self.alloca_map.get(&name) {
                                     self.builder.build_store(ir_func, alloca_ptr, value);
@@ -194,10 +189,8 @@ impl ASTLowering {
                             {
                                 // Value produced by a call/expression returning a
                                 // struct: track it so scope-exit drop glue runs.
-                                self.struct_var_map.insert(
-                                    name.clone(),
-                                    (value, struct_type_name.clone()),
-                                );
+                                self.struct_var_map
+                                    .insert(name.clone(), (value, struct_type_name.clone()));
                                 self.value_map.insert(name.clone(), value);
                             } else if let Some(&alloca_ptr) = self.alloca_map.get(&name) {
                                 self.builder.build_store(ir_func, alloca_ptr, value);
@@ -214,7 +207,9 @@ impl ASTLowering {
 
                 match &assign.target {
                     spectra_compiler::ast::LValue::Identifier(name) => {
-                        if let Some((global_key, static_type)) = self.static_globals.get(name).cloned() {
+                        if let Some((global_key, static_type)) =
+                            self.static_globals.get(name).cloned()
+                        {
                             let ptr = self.builder.build_global_addr(
                                 ir_func,
                                 global_key,
@@ -236,12 +231,7 @@ impl ASTLowering {
                                 .variable_types
                                 .get(name)
                                 .map(|target| {
-                                    self.coerce_value_to_type(
-                                        value,
-                                        &value_type,
-                                        &target,
-                                        ir_func,
-                                    )
+                                    self.coerce_value_to_type(value, &value_type, &target, ir_func)
                                 })
                                 .unwrap_or(value);
                             self.builder.build_store(ir_func, alloca_ptr, value);
@@ -320,12 +310,8 @@ impl ASTLowering {
                         );
 
                         // Store valor no elemento
-                        let value = self.coerce_value_to_type(
-                            value,
-                            &value_type,
-                            &elem_type,
-                            ir_func,
-                        );
+                        let value =
+                            self.coerce_value_to_type(value, &value_type, &elem_type, ir_func);
                         self.builder.build_store(ir_func, elem_ptr, value);
                     }
                     spectra_compiler::ast::LValue::FieldAccess { object, field } => {
@@ -377,12 +363,10 @@ impl ASTLowering {
                         // Step 3: field pointer (padded layout) + store
                         if let Some((field_idx, field_type)) = field_info {
                             let (offsets, struct_label) = match self.infer_expr_ir_type(object) {
-                                IRType::Struct { fields, name, .. } => {
-                                    (
-                                        layout::layout_of(fields.iter().map(|(_, ty)| ty)).offsets,
-                                        name,
-                                    )
-                                }
+                                IRType::Struct { fields, name, .. } => (
+                                    layout::layout_of(fields.iter().map(|(_, ty)| ty)).offsets,
+                                    name,
+                                ),
                                 _ => {
                                     if let spectra_compiler::ast::ExpressionKind::Identifier(
                                         var_name,
@@ -391,9 +375,8 @@ impl ASTLowering {
                                         self.struct_var_map
                                             .get(var_name.as_str())
                                             .and_then(|(_, sname)| {
-                                                self.struct_definitions
-                                                    .get(sname.as_str())
-                                                    .map(|defs| {
+                                                self.struct_definitions.get(sname.as_str()).map(
+                                                    |defs| {
                                                         (
                                                             layout::layout_of(
                                                                 defs.iter().map(|(_, ty)| ty),
@@ -401,7 +384,8 @@ impl ASTLowering {
                                                             .offsets,
                                                             sname.clone(),
                                                         )
-                                                    })
+                                                    },
+                                                )
                                             })
                                             .unwrap_or_default()
                                     } else {
@@ -416,17 +400,11 @@ impl ASTLowering {
                                 return;
                             };
                             let byte_offset = byte_offset as i64;
-                            let field_ptr = self.builder.build_field_ptr(
-                                ir_func,
-                                struct_ptr,
-                                byte_offset as i64,
-                            );
-                            let value = self.coerce_value_to_type(
-                                value,
-                                &value_type,
-                                &field_type,
-                                ir_func,
-                            );
+                            let field_ptr =
+                                self.builder
+                                    .build_field_ptr(ir_func, struct_ptr, byte_offset);
+                            let value =
+                                self.coerce_value_to_type(value, &value_type, &field_type, ir_func);
                             self.builder.build_store(ir_func, field_ptr, value);
                         }
                     }
@@ -655,7 +633,9 @@ impl ASTLowering {
                 let scrutinee_type = self.infer_expr_ir_type(value);
                 let scrutinee_enum_name = match &scrutinee_type {
                     IRType::Enum { name, .. } => Some(name.clone()),
-                    IRType::Generic { .. } => self.ir_nominal_name(&scrutinee_type).map(str::to_string),
+                    IRType::Generic { .. } => {
+                        self.ir_nominal_name(&scrutinee_type).map(str::to_string)
+                    }
                     _ => None,
                 };
 
@@ -748,7 +728,9 @@ impl ASTLowering {
                 let scrutinee_type = self.infer_expr_ir_type(value);
                 let scrutinee_enum_name = match &scrutinee_type {
                     IRType::Enum { name, .. } => Some(name.clone()),
-                    IRType::Generic { .. } => self.ir_nominal_name(&scrutinee_type).map(str::to_string),
+                    IRType::Generic { .. } => {
+                        self.ir_nominal_name(&scrutinee_type).map(str::to_string)
+                    }
                     _ => None,
                 };
 
@@ -811,5 +793,4 @@ impl ASTLowering {
             }
         }
     }
-
 }

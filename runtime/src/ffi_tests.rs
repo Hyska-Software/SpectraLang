@@ -74,7 +74,7 @@ mod tests {
         spectra_rt_manual_clear();
 
         // Packed layout: 3 bytes + one NUL terminator byte.
-        let raw = spectra_rt_manual_alloc(4) as *mut u8;
+        let raw = spectra_rt_manual_alloc(4);
         assert!(!raw.is_null());
         unsafe {
             *raw.add(0) = b'a';
@@ -607,7 +607,7 @@ mod tests {
 
         // 4-byte allocation but the string ends after one byte: the table
         // bounds the scan while the NUL terminator still ends the string.
-        let raw = spectra_rt_manual_alloc(4) as *mut u8;
+        let raw = spectra_rt_manual_alloc(4);
         assert!(!raw.is_null());
         unsafe {
             *raw.add(0) = b'x';
@@ -655,7 +655,7 @@ mod tests {
         // the round trip byte-exactly.
         for s in ["á", "日", "🎉", "héllo wörld 日本語 🎉"] {
             let bytes = s.as_bytes();
-            let raw = spectra_rt_manual_alloc(bytes.len() + 1) as *mut u8;
+            let raw = spectra_rt_manual_alloc(bytes.len() + 1);
             assert!(!raw.is_null());
             unsafe {
                 std::ptr::copy_nonoverlapping(bytes.as_ptr(), raw, bytes.len());
@@ -778,14 +778,10 @@ mod tests {
         spectra_rt_manual_clear();
 
         // Distinct sizes keep every freed address distinct and FIFO-ordered.
-        let mut evicted_addr = 0usize;
         for index in 0..=QUARANTINE_CAPACITY {
             let size = 32 + index;
             let ptr = spectra_rt_manual_alloc(size);
             assert!(!ptr.is_null());
-            if index == 0 {
-                evicted_addr = ptr as usize;
-            }
             spectra_rt_manual_free(ptr);
         }
 

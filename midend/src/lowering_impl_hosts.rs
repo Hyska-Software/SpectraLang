@@ -69,7 +69,10 @@ impl ASTLowering {
         }
     }
 
-    pub(crate) fn host_function_descriptor(&self, callee: &Expression) -> Option<HostFunctionDescriptor> {
+    pub(crate) fn host_function_descriptor(
+        &self,
+        callee: &Expression,
+    ) -> Option<HostFunctionDescriptor> {
         let path = self.resolve_call_path(callee)?;
         self.host_function_descriptor_for_path(&path)
     }
@@ -98,7 +101,8 @@ impl ASTLowering {
 
         let payload_type = |enum_type: Option<IRType>, variant: &str| {
             let enum_type = enum_type?;
-            let IRType::Enum { variants, .. } = Self::ir_type_representation_static(&enum_type) else {
+            let IRType::Enum { variants, .. } = Self::ir_type_representation_static(&enum_type)
+            else {
                 return None;
             };
             variants.iter().find_map(|(name, payload)| {
@@ -113,21 +117,26 @@ impl ASTLowering {
             "spectra.std.option.option_unwrap" | "spectra.std.option.option_unwrap_or" => {
                 payload_type(first_type.clone(), "Some").or_else(|| {
                     (descriptor.runtime_name.ends_with("unwrap_or"))
-                        .then(|| arguments.get(1).map(|argument| self.infer_expr_ir_type(argument)))
+                        .then(|| {
+                            arguments
+                                .get(1)
+                                .map(|argument| self.infer_expr_ir_type(argument))
+                        })
                         .flatten()
                 })
             }
-            "spectra.std.result.result_unwrap"
-            | "spectra.std.result.result_unwrap_or" => {
+            "spectra.std.result.result_unwrap" | "spectra.std.result.result_unwrap_or" => {
                 payload_type(first_type.clone(), "Ok").or_else(|| {
                     (descriptor.runtime_name.ends_with("unwrap_or"))
-                        .then(|| arguments.get(1).map(|argument| self.infer_expr_ir_type(argument)))
+                        .then(|| {
+                            arguments
+                                .get(1)
+                                .map(|argument| self.infer_expr_ir_type(argument))
+                        })
                         .flatten()
                 })
             }
-            "spectra.std.result.result_unwrap_err" => {
-                payload_type(first_type.clone(), "Err")
-            }
+            "spectra.std.result.result_unwrap_err" => payload_type(first_type.clone(), "Err"),
             _ => None,
         };
 
@@ -162,48 +171,44 @@ impl ASTLowering {
                     representation: Box::new(representation),
                 }
             }),
-            "spectra.std.result.result_map" => {
-                callback_return.and_then(|payload| {
-                    let error = payload_type(first_type.clone(), "Err")?;
-                    let representation = IRType::Enum {
-                        name: format!(
-                            "Result_{}_{}",
-                            self.ir_type_to_ast_name(&payload),
-                            self.ir_type_to_ast_name(&error)
-                        ),
-                        variants: vec![
-                            ("Ok".to_string(), Some(vec![payload.clone()])),
-                            ("Err".to_string(), Some(vec![error.clone()])),
-                        ],
-                    };
-                    Some(IRType::Generic {
-                        name: "Result".to_string(),
-                        args: vec![payload, error],
-                        representation: Box::new(representation),
-                    })
+            "spectra.std.result.result_map" => callback_return.and_then(|payload| {
+                let error = payload_type(first_type.clone(), "Err")?;
+                let representation = IRType::Enum {
+                    name: format!(
+                        "Result_{}_{}",
+                        self.ir_type_to_ast_name(&payload),
+                        self.ir_type_to_ast_name(&error)
+                    ),
+                    variants: vec![
+                        ("Ok".to_string(), Some(vec![payload.clone()])),
+                        ("Err".to_string(), Some(vec![error.clone()])),
+                    ],
+                };
+                Some(IRType::Generic {
+                    name: "Result".to_string(),
+                    args: vec![payload, error],
+                    representation: Box::new(representation),
                 })
-            }
-            "spectra.std.result.result_map_err" => {
-                callback_return.and_then(|error| {
-                    let ok = payload_type(first_type.clone(), "Ok")?;
-                    let representation = IRType::Enum {
-                        name: format!(
-                            "Result_{}_{}",
-                            self.ir_type_to_ast_name(&ok),
-                            self.ir_type_to_ast_name(&error)
-                        ),
-                        variants: vec![
-                            ("Ok".to_string(), Some(vec![ok.clone()])),
-                            ("Err".to_string(), Some(vec![error.clone()])),
-                        ],
-                    };
-                    Some(IRType::Generic {
-                        name: "Result".to_string(),
-                        args: vec![ok, error],
-                        representation: Box::new(representation),
-                    })
+            }),
+            "spectra.std.result.result_map_err" => callback_return.and_then(|error| {
+                let ok = payload_type(first_type.clone(), "Ok")?;
+                let representation = IRType::Enum {
+                    name: format!(
+                        "Result_{}_{}",
+                        self.ir_type_to_ast_name(&ok),
+                        self.ir_type_to_ast_name(&error)
+                    ),
+                    variants: vec![
+                        ("Ok".to_string(), Some(vec![ok.clone()])),
+                        ("Err".to_string(), Some(vec![error.clone()])),
+                    ],
+                };
+                Some(IRType::Generic {
+                    name: "Result".to_string(),
+                    args: vec![ok, error],
+                    representation: Box::new(representation),
                 })
-            }
+            }),
             _ => None,
         };
         if let Some(mapped_enum) = mapped_enum {
@@ -345,7 +350,13 @@ impl ASTLowering {
             }
         } else if matches!(operation, "list_iter" | "set_iter" | "map_iter") {
             if let Some(first_type) = first_type.as_ref() {
-                let collection = if operation == "map_iter" { "Map" } else if operation == "set_iter" { "Set" } else { "List" };
+                let collection = if operation == "map_iter" {
+                    "Map"
+                } else if operation == "set_iter" {
+                    "Set"
+                } else {
+                    "List"
+                };
                 let payload = if operation == "map_iter" {
                     map_types_for_type(first_type).map(|(key, _)| key)
                 } else {
@@ -364,23 +375,22 @@ impl ASTLowering {
             }
         } else if matches!(operation, "set_get" | "iterator_next") {
             if let Some(first_type) = first_type.as_ref() {
-                let collection = if operation == "set_get" { "Set" } else { "Iterator" };
+                let collection = if operation == "set_get" {
+                    "Set"
+                } else {
+                    "Iterator"
+                };
                 if let Some(element_type) = collection_element_for_type(first_type, collection) {
                     descriptor.return_type = option_type(element_type);
                 }
             }
         } else if matches!(
             operation,
-            "list_get" | "list_pop" | "list_pop_front" | "list_remove_at"
-        ) {
-            if let Some(first_type) = first_type.as_ref() {
-                if let Some(element_type) = collection_element_for_type(first_type, "List") {
-                    descriptor.return_type = option_type(element_type);
-                }
-            }
-        } else if matches!(
-            operation,
-            "list_get_option"
+            "list_get"
+                | "list_pop"
+                | "list_pop_front"
+                | "list_remove_at"
+                | "list_get_option"
                 | "list_pop_option"
                 | "list_pop_front_option"
                 | "list_remove_at_option"
@@ -397,13 +407,10 @@ impl ASTLowering {
                     descriptor.return_type = expected;
                 }
             }
-        } else if matches!(operation, "map_get" | "map_remove") {
-            if let Some(first_type) = first_type.as_ref() {
-                if let Some((_, value_type)) = map_types_for_type(first_type) {
-                    descriptor.return_type = option_type(value_type);
-                }
-            }
-        } else if matches!(operation, "map_get_option" | "map_remove_option") {
+        } else if matches!(
+            operation,
+            "map_get" | "map_remove" | "map_get_option" | "map_remove_option"
+        ) {
             if let Some(first_type) = first_type.as_ref() {
                 if let Some((_, value_type)) = map_types_for_type(first_type) {
                     descriptor.return_type = option_type(value_type);
@@ -435,7 +442,10 @@ impl ASTLowering {
         Some(self.refine_host_function_descriptor(descriptor, arguments))
     }
 
-    pub(crate) fn host_function_descriptor_for_path(&self, path: &[String]) -> Option<HostFunctionDescriptor> {
+    pub(crate) fn host_function_descriptor_for_path(
+        &self,
+        path: &[String],
+    ) -> Option<HostFunctionDescriptor> {
         // Direct path lookup (e.g. std.io.print).
         if let Some(desc) = lookup_std_host_function(path) {
             return Some(desc);
@@ -486,21 +496,15 @@ impl ASTLowering {
         let (value, value_type) = match value_type {
             IRType::String => return value,
             ty @ IRType::ExactFloat { .. } => {
-                let converted = self.builder.build_cast(
-                    ir_func,
-                    value,
-                    ty.clone(),
-                    IRType::Float,
-                );
+                let converted = self
+                    .builder
+                    .build_cast(ir_func, value, ty.clone(), IRType::Float);
                 (converted, IRType::Float)
             }
             ty @ (IRType::ExactInt { .. } | IRType::Char) => {
-                let converted = self.builder.build_cast(
-                    ir_func,
-                    value,
-                    ty.clone(),
-                    IRType::Int,
-                );
+                let converted = self
+                    .builder
+                    .build_cast(ir_func, value, ty.clone(), IRType::Int);
                 (converted, IRType::Int)
             }
             ty => (value, ty),
@@ -636,5 +640,4 @@ impl ASTLowering {
         let actual_type = self.infer_expr_ir_type(expr);
         self.coerce_value_to_type(value, &actual_type, expected_type, ir_func)
     }
-
 }

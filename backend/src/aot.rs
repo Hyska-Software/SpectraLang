@@ -23,8 +23,8 @@ use cranelift_codegen::{ir::ValueLabel, LabelValueLoc};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule, ObjectProduct};
 use spectra_midend::ir::{
-    ExternalFunction, Function as IRFunction, InstructionKind, Module as IRModule,
-    Type as IRType, Value as IRValue,
+    ExternalFunction, Function as IRFunction, InstructionKind, Module as IRModule, Type as IRType,
+    Value as IRValue,
 };
 use std::collections::HashMap;
 
@@ -196,7 +196,8 @@ impl AotCodeGenerator {
         ir_module: &IRModule,
         opts: &AotOptions,
     ) -> BackendResult<Vec<u8>> {
-        let (bytes, _, _, _, _) = self.compile_to_object_with_locations_and_stats(ir_module, opts)?;
+        let (bytes, _, _, _, _) =
+            self.compile_to_object_with_locations_and_stats(ir_module, opts)?;
         Ok(bytes)
     }
 
@@ -367,11 +368,17 @@ impl AotCodeGenerator {
             &ir_func.params[..]
         };
         for param in callback_params {
-            let cl_type = if callback.is_some() { types::I64 } else { CodeGenerator::ir_type_to_cranelift(&param.ty)? };
+            let cl_type = if callback.is_some() {
+                types::I64
+            } else {
+                CodeGenerator::ir_type_to_cranelift(&param.ty)?
+            };
             sig.params.push(AbiParam::new(cl_type));
         }
         if callback.is_some() && sig.params.len() != 3 {
-            while sig.params.len() < 3 { sig.params.push(AbiParam::new(types::I64)); }
+            while sig.params.len() < 3 {
+                sig.params.push(AbiParam::new(types::I64));
+            }
         }
         let return_type = if matches!(callback, Some(false)) {
             types::I8
@@ -380,7 +387,10 @@ impl AotCodeGenerator {
         } else {
             CodeGenerator::ir_type_to_cranelift(&ir_func.return_type)?
         };
-        if return_type != types::I8 || ir_func.return_type != IRType::Void || matches!(callback, Some(true)) {
+        if return_type != types::I8
+            || ir_func.return_type != IRType::Void
+            || matches!(callback, Some(true))
+        {
             sig.returns.push(AbiParam::new(return_type));
         }
 
@@ -471,7 +481,11 @@ impl AotCodeGenerator {
         }
         if CodeGenerator::async_callback_kind(ir_func).is_some() {
             for (index, &cl_value) in params.iter().enumerate() {
-                let id = ir_func.params.get(index).map(|param| param.id).unwrap_or(index);
+                let id = ir_func
+                    .params
+                    .get(index)
+                    .map(|param| param.id)
+                    .unwrap_or(index);
                 value_map.insert(id, cl_value);
             }
         }
@@ -1076,7 +1090,6 @@ fn spanned_instruction_lines(ir_func: &IRFunction) -> HashMap<usize, u32> {
     lines
 }
 
-
 /// Machine-code live ranges of one labelled IR value: `(start, end)` offset
 /// pairs relative to the start of the compiled function's body.
 ///
@@ -1104,10 +1117,8 @@ mod tests {
     use super::*;
     use crate::BackendErrorKind;
     use spectra_midend::ir::{
-        Function as IRFunction, InstructionKind, Parameter, SourceSpan, Terminator,
-        Type as IRType,
+        Function as IRFunction, InstructionKind, Parameter, SourceSpan, Terminator, Type as IRType,
     };
-
 
     #[test]
     fn r3104_aot_preinterns_duplicate_host_names_once() {
@@ -1183,22 +1194,24 @@ mod tests {
         // stack slots into the finalized Cranelift layout.
         block.add_instruction(InstructionKind::Alloca {
             result: IRValue { id: 1 },
-            ty: IRType::Array { element_type: Box::new(IRType::Int), size: 8 },
+            ty: IRType::Array {
+                element_type: Box::new(IRType::Int),
+                size: 8,
+            },
         });
         block.add_instruction(InstructionKind::Alloca {
             result: IRValue { id: 2 },
-            ty: IRType::Array { element_type: Box::new(IRType::Float), size: 4 },
+            ty: IRType::Array {
+                element_type: Box::new(IRType::Float),
+                size: 4,
+            },
         });
         block.set_terminator(Terminator::Return { value: None });
         module.add_function(func);
 
-        let (_bytes, _locations, _stats, _rows, frame_sizes) =
-            AotCodeGenerator::new()
-                .compile_to_object_with_locations_and_stats(
-                    &module,
-                    &AotOptions::default(),
-                )
-                .expect("AOT compilation of alloca function should succeed");
+        let (_bytes, _locations, _stats, _rows, frame_sizes) = AotCodeGenerator::new()
+            .compile_to_object_with_locations_and_stats(&module, &AotOptions::default())
+            .expect("AOT compilation of alloca function should succeed");
         let (_, main_frame) = frame_sizes
             .iter()
             .find(|(name, _)| name == "main")
@@ -1296,7 +1309,9 @@ mod tests {
             .compile_to_object_with_locations_and_stats(&module, &AotOptions::default())
             .expect("AOT compile should succeed");
         assert!(
-            line_rows.iter().any(|(name, _, line)| name == "main" && *line == 7),
+            line_rows
+                .iter()
+                .any(|(name, _, line)| name == "main" && *line == 7),
             "expected a real line row for main at source line 7, got {line_rows:?}"
         );
     }
@@ -1329,5 +1344,3 @@ mod tests {
         );
     }
 }
-
-

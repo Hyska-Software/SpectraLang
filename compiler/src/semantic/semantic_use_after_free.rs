@@ -59,7 +59,6 @@ fn uaf_free_all_family(name: &str) -> Option<&'static str> {
 /// Release-state introspection readers that deliberately accept released handles.
 const UAF_INTROSPECTION_READERS: &[&str] = &["value_kind"];
 
-
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UafFrame {
     /// Bindings currently known to be released: name -> line of the free.
@@ -74,8 +73,7 @@ impl UafFrame {
         match ty {
             Type::Tensor { .. } => family == "Tensor",
             Type::Struct { name } | Type::Applied { name, .. } => {
-                (family == "List"
-                    && (name == "List" || name.starts_with("List_")))
+                (family == "List" && (name == "List" || name.starts_with("List_")))
                     || (family == "Map" && (name == "Map" || name.starts_with("Map_")))
                     || (family == "Set" && (name == "Set" || name.starts_with("Set_")))
                     || (family == "Iterator"
@@ -194,13 +192,7 @@ impl SemanticAnalyzer {
 
     /// Last path segment of a callee (handles bare and dotted namespace calls).
     fn uaf_callee_last_segment(callee: &Expression) -> Option<String> {
-        namespace_path(callee)
-            .map(|path| {
-                path.rsplit('.')
-                    .next()
-                    .unwrap_or(&path)
-                    .to_string()
-            })
+        namespace_path(callee).map(|path| path.rsplit('.').next().unwrap_or(&path).to_string())
     }
 
     pub(crate) fn uaf_callee_is_introspection_reader(&self, callee: &Expression) -> bool {
@@ -209,7 +201,12 @@ impl SemanticAnalyzer {
             .unwrap_or(false)
     }
 
-    pub(crate) fn uaf_after_call_analysis(&mut self, callee: &Expression, arguments: &[Expression], span: Span) {
+    pub(crate) fn uaf_after_call_analysis(
+        &mut self,
+        callee: &Expression,
+        arguments: &[Expression],
+        span: Span,
+    ) {
         let Some(name) = Self::uaf_callee_last_segment(callee) else {
             return;
         };
@@ -258,7 +255,9 @@ mod use_after_free_tests {
 
     pub(crate) fn compile(source: &str) -> Result<(), Vec<CompilerError>> {
         let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
-        pipeline.compile(source, "use_after_free.spectra").map(|_| ())
+        pipeline
+            .compile(source, "use_after_free.spectra")
+            .map(|_| ())
     }
 
     #[test]

@@ -28,7 +28,6 @@ pub(crate) extern "C" fn std_concurrent_task_join(ctx: *mut SpectraHostCallConte
     }
 }
 
-
 pub(crate) extern "C" fn std_concurrent_task_spawn_batch(ctx: *mut SpectraHostCallContext) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
@@ -43,7 +42,9 @@ pub(crate) extern "C" fn std_concurrent_task_spawn_batch(ctx: *mut SpectraHostCa
     }
 }
 
-pub(crate) extern "C" fn std_concurrent_task_join_batch_sum(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_task_join_batch_sum(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -253,7 +254,9 @@ pub(crate) extern "C" fn std_concurrent_pipeline_sum(ctx: *mut SpectraHostCallCo
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_concurrent_stats_tasks_spawned(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_concurrent_stats_tasks_spawned(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let (_, results) = match host_call_args(ctx, 0) {
         Ok(parts) => parts,
         Err(status) => return status,

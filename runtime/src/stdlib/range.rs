@@ -158,4 +158,3 @@ pub(crate) extern "C" fn std_range_iter(ctx: *mut SpectraHostCallContext) -> i32
     };
     write_host_result(ctx, handle as i64)
 }
-

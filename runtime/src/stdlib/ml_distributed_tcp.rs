@@ -148,7 +148,10 @@ pub(crate) fn dist_read_f64(payload: &[u8], cursor: &mut usize) -> Option<f64> {
     ]))
 }
 
-pub(crate) fn dist_decode_tensor_payload(payload: &[u8], cursor: &mut usize) -> Option<(Vec<usize>, Vec<f64>)> {
+pub(crate) fn dist_decode_tensor_payload(
+    payload: &[u8],
+    cursor: &mut usize,
+) -> Option<(Vec<usize>, Vec<f64>)> {
     let rank = dist_read_u32(payload, cursor)? as usize;
     if rank == 0 || rank > 8 {
         return None;
@@ -192,7 +195,12 @@ pub(crate) fn dist_encode_hello_tokenized(worker_id: usize, token: Option<&str>)
     dist_encode_frame(ML_DIST_MSG_HELLO, &payload)
 }
 
-pub(crate) fn dist_encode_assign(x_shape: &[usize], x: &[f64], y_shape: &[usize], y: &[f64]) -> Vec<u8> {
+pub(crate) fn dist_encode_assign(
+    x_shape: &[usize],
+    x: &[f64],
+    y_shape: &[usize],
+    y: &[f64],
+) -> Vec<u8> {
     let mut payload = dist_encode_tensor_payload(x_shape, x);
     payload.extend_from_slice(&dist_encode_tensor_payload(y_shape, y));
     dist_encode_frame(ML_DIST_MSG_ASSIGN, &payload)
@@ -262,12 +270,6 @@ pub(crate) fn dist_decode_hello_full(payload: &[u8]) -> Option<DistHello> {
     })
 }
 
-/// Legacy tuple decode used by the shared protocol-roundtrip tests.
-#[cfg(test)]
-pub(crate) fn dist_decode_hello(payload: &[u8]) -> Option<(u32, usize)> {
-    dist_decode_hello_full(payload).map(|hello| (hello.version, hello.worker_id))
-}
-
 #[derive(Clone)]
 pub(crate) struct DistGradients {
     pub(crate) loss: f64,
@@ -291,7 +293,12 @@ pub(crate) fn dist_decode_gradients(payload: &[u8]) -> Option<DistGradients> {
         return None;
     }
     let step = i64::from_le_bytes(payload[cursor..cursor + 8].try_into().ok()?);
-    Some(DistGradients { loss, step, w_grad, b_grad })
+    Some(DistGradients {
+        loss,
+        step,
+        w_grad,
+        b_grad,
+    })
 }
 
 pub(crate) fn dist_decode_ack(payload: &[u8]) -> Option<(Vec<f64>, Vec<f64>)> {
@@ -308,10 +315,11 @@ pub(crate) fn dist_decode_ack(payload: &[u8]) -> Option<(Vec<f64>, Vec<f64>)> {
 /// on every participant; shards stay disjoint because each worker owns a
 /// contiguous index range.
 pub(crate) fn dist_sample_value(seed: i64, sample: usize, feature: usize) -> f64 {
-    let mut h = (seed as u64)
-        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+    let mut h = (seed as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
         ^ (sample as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9)
-        ^ ((feature as u64).wrapping_add(1).wrapping_mul(0x94D0_49BB_1331_11EB));
+        ^ ((feature as u64)
+            .wrapping_add(1)
+            .wrapping_mul(0x94D0_49BB_1331_11EB));
     h ^= h >> 30;
     h = h.wrapping_mul(0xBF58_476D_1CE4_E5B9);
     h ^= h >> 27;
@@ -353,9 +361,9 @@ pub(crate) fn dist_build_shard(spec: &DistTrainSpec, worker_id: usize) -> DistSh
     let mut y = Vec::with_capacity(rows);
     let mut row = vec![0.0f64; spec.features];
     for sample in start..end {
-        for feature in 0..spec.features {
-            row[feature] = dist_sample_value(spec.seed, sample, feature);
-            x.push(row[feature]);
+        for (feature, slot) in row.iter_mut().enumerate() {
+            *slot = dist_sample_value(spec.seed, sample, feature);
+            x.push(*slot);
         }
         y.push(dist_target_value(spec.features, &row));
     }
@@ -394,8 +402,13 @@ pub(crate) fn dist_init_params(features: usize) -> Result<(usize, usize), i32> {
         true,
         None,
     )?;
-    let bias =
-        tensor_alloc_autograd(TensorDType::Float, vec![1], f64_values_to_host(&[0.0]), true, None)?;
+    let bias = tensor_alloc_autograd(
+        TensorDType::Float,
+        vec![1],
+        f64_values_to_host(&[0.0]),
+        true,
+        None,
+    )?;
     Ok((weight, bias))
 }
 
@@ -550,12 +563,13 @@ pub(crate) fn dist_clear_param_grads(weight_handle: usize, bias_handle: usize) {
 }
 
 /// Mean of per-worker local gradients (ALLREDUCE sum/N).
-pub(crate) fn dist_average_gradients(parts: &[Option<DistGradients>]) -> Option<(Vec<f64>, Vec<f64>)> {
-    let Some(parts): Option<Vec<&DistGradients>> =
-        parts.iter().map(|part| part.as_ref()).collect()
-    else {
-        return None;
-    };
+pub(crate) fn dist_average_gradients(
+    parts: &[Option<DistGradients>],
+) -> Option<(Vec<f64>, Vec<f64>)> {
+    let parts: Vec<&DistGradients> = parts
+        .iter()
+        .map(|part| part.as_ref())
+        .collect::<Option<Vec<_>>>()?;
     let n = parts.len() as f64;
     let len = parts[0].w_grad.len();
     if parts.iter().any(|part| part.w_grad.len() != len) {
@@ -617,7 +631,6 @@ pub(crate) fn dist_parse_spec(args: &[SpectraHostValue]) -> Result<DistTrainSpec
         || total_samples < worker_count
         || total_samples > 1 << 20
     {
-
         return Err(HOST_STATUS_INVALID_ARGUMENT);
     }
     Ok(DistTrainSpec {
@@ -661,8 +674,7 @@ pub(crate) fn dist_parse_dataset_spec(
     }) else {
         return Err(HOST_STATUS_NOT_FOUND);
     };
-    let Some((feature_shape, feature_data)) = dist_dataset_tensor_f64(features_handle)
-    else {
+    let Some((feature_shape, feature_data)) = dist_dataset_tensor_f64(features_handle) else {
         return Err(HOST_STATUS_NOT_FOUND);
     };
     let Some((label_shape, label_data)) = dist_dataset_tensor_f64(labels_handle) else {
@@ -684,9 +696,9 @@ pub(crate) fn dist_parse_dataset_spec(
     if feature_data.len() != len * features {
         return Err(HOST_STATUS_INVALID_ARGUMENT);
     }
-    let label_width = if label_shape.len() == 1 && label_shape[0] == len {
-        1
-    } else if label_shape.len() == 2 && label_shape[0] == len && label_shape[1] == 1 {
+    let label_width = if (label_shape.len() == 1 && label_shape[0] == len)
+        || (label_shape.len() == 2 && label_shape[0] == len && label_shape[1] == 1)
+    {
         1
     } else {
         return Err(HOST_STATUS_INVALID_ARGUMENT);
@@ -741,6 +753,8 @@ pub(crate) fn dist_outcome_to_session(
 
 // ── multi-thread mode: OS threads running the identical gradient kernel ──────
 
+type AveragedGradients = Arc<Mutex<Option<(Vec<f64>, Vec<f64>)>>>;
+
 pub(crate) fn dist_run_multithread(spec: &DistTrainSpec) -> Result<DistRunOutcome, i32> {
     // Each worker owns a private replica of the parameters (as in real data
     // parallelism); replicas stay bit-identical because every worker applies
@@ -751,7 +765,7 @@ pub(crate) fn dist_run_multithread(spec: &DistTrainSpec) -> Result<DistRunOutcom
 
     let (tx, rx) = mpsc::channel::<Result<DistGradients, i32>>();
     let barrier = Arc::new(Barrier::new(spec.worker_count + 1));
-    let averaged: Arc<Mutex<Option<(Vec<f64>, Vec<f64>)>>> = Arc::new(Mutex::new(None));
+    let averaged: AveragedGradients = Arc::new(Mutex::new(None));
     let abort = Arc::new(AtomicBool::new(false));
 
     let (steps, features, lr) = (spec.steps, spec.features, spec.lr);
@@ -1159,8 +1173,8 @@ pub(crate) fn dist_coord_handle_frame(
             state.current_step += 1;
             state.last_round = Some((state.current_step, w_grad.clone(), b_grad.clone()));
             if state.current_step >= spec.steps {
-                let mean_loss = state.round_losses.iter().sum::<f64>()
-                    / state.round_losses.len() as f64;
+                let mean_loss =
+                    state.round_losses.iter().sum::<f64>() / state.round_losses.len() as f64;
                 let done = dist_encode_done(state.current_step as i64, mean_loss);
                 state.done_frame = Some(done.clone());
                 state.done_sent = true;
@@ -1225,7 +1239,7 @@ pub(crate) fn dist_coord_loop(
     let mut done_at: Option<StdInstant> = None;
     while !state.done_sent
         || (!state.bindings.is_empty()
-            && done_at.map_or(true, |at| at.elapsed() < timing.post_done_grace))
+            && done_at.is_none_or(|at| at.elapsed() < timing.post_done_grace))
     {
         let now = StdInstant::now();
         if now > deadline {
@@ -1302,19 +1316,10 @@ pub(crate) fn dist_coord_loop(
         // Process buffered frames per connection so HELLO and GRADIENTS are
         // attributed to the exact peer that sent them.
         for token in conns.keys().copied().collect::<Vec<_>>() {
-            loop {
-                let frame = match conns.get_mut(&token) {
-                    Some(conn) => conn.pop_frame(),
-                    None => break,
-                };
-                let Some((msg_type, payload)) = frame else {
-                    break;
-                };
-                if let Err(failure) =
-                    dist_coord_handle_frame(&mut conns, &mut state, spec, token, msg_type, payload)
-                {
-                    return Err(failure);
-                }
+            while let Some((msg_type, payload)) =
+                conns.get_mut(&token).and_then(|conn| conn.pop_frame())
+            {
+                dist_coord_handle_frame(&mut conns, &mut state, spec, token, msg_type, payload)?;
             }
         }
         for token in dead {
@@ -1382,16 +1387,16 @@ pub(crate) fn dist_run_tcp(spec: &DistTrainSpec) -> Result<DistRunOutcome, i32> 
         let connect_host = connect_host.clone();
         let token = token.clone();
         handles.push(std::thread::spawn(move || {
-            let result = dist_tcp_worker(
-                &connect_host,
+            let result = dist_tcp_worker(DistWorkerParams {
+                host: &connect_host,
                 port,
                 worker_id,
                 shard,
                 features,
                 steps,
                 lr,
-                token.as_deref(),
-            );
+                token: token.as_deref(),
+            });
             let _ = stats_tx.send(result);
         }));
     }
@@ -1490,13 +1495,11 @@ pub(crate) fn dist_tcp_attach(
                 let x_tensor = dist_decode_tensor_payload(&payload, &mut cursor);
                 let y_tensor = dist_decode_tensor_payload(&payload, &mut cursor);
                 match (x_tensor, y_tensor) {
-                    (
-                        Some((x_shape, x_values)),
-                        Some((y_shape, y_values)),
-                    ) if x_shape == vec![shard.rows, features]
-                        && y_shape == vec![shard.rows, 1]
-                        && x_values == shard.x
-                        && y_values == shard.y =>
+                    (Some((x_shape, x_values)), Some((y_shape, y_values)))
+                        if x_shape == vec![shard.rows, features]
+                            && y_shape == vec![shard.rows, 1]
+                            && x_values == shard.x
+                            && y_values == shard.y =>
                     {
                         return Ok(stream);
                     }
@@ -1521,22 +1524,35 @@ pub(crate) fn dist_tcp_attach(
     ))
 }
 
+/// Connection and training parameters for one [`dist_tcp_worker`] rank.
+pub(crate) struct DistWorkerParams<'a> {
+    pub host: &'a str,
+    pub port: u16,
+    pub worker_id: usize,
+    pub shard: DistShard,
+    pub features: usize,
+    pub steps: usize,
+    pub lr: f64,
+    pub token: Option<&'a str>,
+}
+
 /// Blocking worker client: attaches to the coordinator (retrying with
 /// exponential backoff), performs the
 /// HELLO → ASSIGN → (GRADIENTS ⇄ ACK)* → DONE conversation byte-for-byte,
 /// emits HEARTBEAT frames while idle so the coordinator can distinguish a
 /// live worker from a dead one, and survives transient disconnections by
 /// reconnecting and resubmitting the exact step it never got a reply for.
-pub(crate) fn dist_tcp_worker(
-    host: &str,
-    port: u16,
-    worker_id: usize,
-    shard: DistShard,
-    features: usize,
-    steps: usize,
-    lr: f64,
-    token: Option<&str>,
-) -> Result<(usize, f64, i64), String> {
+pub(crate) fn dist_tcp_worker(params: DistWorkerParams<'_>) -> Result<(usize, f64, i64), String> {
+    let DistWorkerParams {
+        host,
+        port,
+        worker_id,
+        shard,
+        features,
+        steps,
+        lr,
+        token,
+    } = params;
     // Private parameter replica for this rank, as in real data parallelism.
     let (weight_handle, bias_handle) =
         dist_init_params(features).map_err(|code| format!("parameter init failed: {code}"))?;
@@ -1545,7 +1561,15 @@ pub(crate) fn dist_tcp_worker(
     let mut acked_steps = 0usize;
     let mut read_buf: Vec<u8> = Vec::new();
 
-    let mut stream = dist_tcp_attach(host, port, worker_id, &shard, features, token, &mut read_buf)?;
+    let mut stream = dist_tcp_attach(
+        host,
+        port,
+        worker_id,
+        &shard,
+        features,
+        token,
+        &mut read_buf,
+    )?;
     while acked_steps < steps {
         dist_clear_param_grads(weight_handle, bias_handle);
         let gradients = dist_local_gradient_step(&shard, features, weight_handle, bias_handle)
@@ -1558,7 +1582,15 @@ pub(crate) fn dist_tcp_worker(
             &gradients.b_grad,
         );
         if stream.write_all(&submission).is_err() {
-            stream = dist_tcp_attach(host, port, worker_id, &shard, features, token, &mut read_buf)?;
+            stream = dist_tcp_attach(
+                host,
+                port,
+                worker_id,
+                &shard,
+                features,
+                token,
+                &mut read_buf,
+            )?;
             continue;
         }
         match dist_worker_read_frame(&mut stream, &mut read_buf) {
@@ -1582,7 +1614,15 @@ pub(crate) fn dist_tcp_worker(
             }
             Some((other, _)) => return Err(format!("protocol: unexpected message type {other}")),
             None => {
-                stream = dist_tcp_attach(host, port, worker_id, &shard, features, token, &mut read_buf)?;
+                stream = dist_tcp_attach(
+                    host,
+                    port,
+                    worker_id,
+                    &shard,
+                    features,
+                    token,
+                    &mut read_buf,
+                )?;
             }
         }
     }
@@ -1595,7 +1635,10 @@ pub(crate) fn dist_tcp_worker(
 /// configured `ML_DIST_HEARTBEAT_PERIOD`) so the coordinator can distinguish
 /// a live-but-idle worker from a dead one. Returns None when the peer closed
 /// the connection or IO failed.
-pub(crate) fn dist_worker_read_frame(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> Option<(u8, Vec<u8>)> {
+pub(crate) fn dist_worker_read_frame(
+    stream: &mut TcpStream,
+    buffer: &mut Vec<u8>,
+) -> Option<(u8, Vec<u8>)> {
     loop {
         if let Some((msg_type, consumed)) = dist_decode_frame(buffer) {
             let payload = buffer[ML_DIST_FRAME_HEADER_LEN..consumed].to_vec();
@@ -1653,7 +1696,9 @@ mod dist_tcp_fault_tests {
     }
 
     fn raw_hello(stream: &mut TcpStream, worker_id: usize) {
-        stream.write_all(&dist_encode_hello(worker_id)).expect("hello write");
+        stream
+            .write_all(&dist_encode_hello(worker_id))
+            .expect("hello write");
     }
 
     fn raw_expect_frame(stream: &mut TcpStream, buf: &mut Vec<u8>, want: u8) -> Vec<u8> {
@@ -1743,9 +1788,8 @@ mod dist_tcp_fault_tests {
             post_done_grace: Duration::from_secs(1),
         };
         let started = StdInstant::now();
-        let handle = std::thread::spawn(move || {
-            dist_coord_loop(listener, &fault_spec(2, 3), timing, None)
-        });
+        let handle =
+            std::thread::spawn(move || dist_coord_loop(listener, &fault_spec(2, 3), timing, None));
 
         let mut buf0 = Vec::new();
         let mut buf1 = Vec::new();
@@ -1771,7 +1815,10 @@ mod dist_tcp_fault_tests {
         );
         // Bounded: far below the deadline; not an instant spurious error.
         assert!(elapsed >= Duration::from_millis(400), "{elapsed:?}");
-        assert!(elapsed < Duration::from_secs(10), "no deadlock: {elapsed:?}");
+        assert!(
+            elapsed < Duration::from_secs(10),
+            "no deadlock: {elapsed:?}"
+        );
     }
 
     #[test]
@@ -1843,20 +1890,22 @@ mod dist_tcp_fault_tests {
             .unwrap_or_else(|| "127.0.0.1".to_owned());
         let spec = e2e_spec();
         let shard = dist_build_shard(&spec, worker_id);
-        let (_, loss_sum, samples) = dist_tcp_worker(
-            &host,
+        let (_, loss_sum, samples) = dist_tcp_worker(DistWorkerParams {
+            host: &host,
             port,
             worker_id,
             shard,
-            spec.features,
-            spec.steps,
-            spec.lr,
-            None,
-        )
+            features: spec.features,
+            steps: spec.steps,
+            lr: spec.lr,
+            token: None,
+        })
         .expect("worker conversation over real TCP");
         assert!(loss_sum.is_finite());
         assert!(samples > 0);
-        println!("dist e2e worker {worker_id}@{host}:{port}: samples={samples} loss_sum={loss_sum:.6}");
+        println!(
+            "dist e2e worker {worker_id}@{host}:{port}: samples={samples} loss_sum={loss_sum:.6}"
+        );
     }
 
     /// Coordinator-only half of the split topology: bind
@@ -1876,8 +1925,7 @@ mod dist_tcp_fault_tests {
         let addr: std::net::SocketAddr = format!("{bind}:{port}")
             .parse()
             .expect("coordinator bind address");
-        let listener =
-            mio::net::TcpListener::bind(addr).expect("coordinator bind succeeded");
+        let listener = mio::net::TcpListener::bind(addr).expect("coordinator bind succeeded");
         println!("dist e2e coordinator listening on {addr}");
         let spec = e2e_spec();
         let (global_step, last_loss) =
@@ -1943,7 +1991,10 @@ mod dist_tcp_fault_tests {
         let port = std_listener.local_addr().unwrap().port();
         std_listener.set_nonblocking(true).unwrap();
         let listener = mio::net::TcpListener::from_std(std_listener);
-        println!("dist e2e: spawning children with filter {test_name:?} exe {}", exe.display());
+        println!(
+            "dist e2e: spawning children with filter {test_name:?} exe {}",
+            exe.display()
+        );
 
         let log_dir = std::env::temp_dir().join(format!(
             "spectra_dist_e2e_{}_{}",
@@ -2139,13 +2190,16 @@ mod dist_tcp_fault_tests {
         let addr: std::net::SocketAddr = format!("{bind}:{port}")
             .parse()
             .expect("coordinator bind address");
-        let listener =
-            mio::net::TcpListener::bind(addr).expect("coordinator bind succeeded");
+        let listener = mio::net::TcpListener::bind(addr).expect("coordinator bind succeeded");
         println!("dist multi-node coordinator listening on {addr}");
         let spec = multi_node_spec();
-        let (global_step, last_loss) =
-            dist_coord_loop(listener, &spec, DistTiming::default(), env_token().as_deref())
-                .expect("multi-node coordination over real cross-namespace TCP");
+        let (global_step, last_loss) = dist_coord_loop(
+            listener,
+            &spec,
+            DistTiming::default(),
+            env_token().as_deref(),
+        )
+        .expect("multi-node coordination over real cross-namespace TCP");
         assert_eq!(global_step, spec.steps as i64);
         assert!(last_loss.is_finite());
         println!("dist multi-node coordinator done: step={global_step} loss={last_loss:.6}");
@@ -2166,16 +2220,16 @@ mod dist_tcp_fault_tests {
             .unwrap_or(0);
         let spec = multi_node_spec();
         let shard = dist_build_shard(&spec, worker_id);
-        let (_, loss_sum, samples) = dist_tcp_worker(
-            &host,
+        let (_, loss_sum, samples) = dist_tcp_worker(DistWorkerParams {
+            host: &host,
             port,
             worker_id,
             shard,
-            spec.features,
-            spec.steps,
-            spec.lr,
-            env_token().as_deref(),
-        )
+            features: spec.features,
+            steps: spec.steps,
+            lr: spec.lr,
+            token: env_token().as_deref(),
+        })
         .expect("worker conversation over real cross-namespace TCP");
         assert!(loss_sum.is_finite());
         assert!(samples > 0);
@@ -2220,16 +2274,16 @@ mod dist_tcp_fault_tests {
         let worker = std::thread::spawn(move || {
             let spec = multi_node_spec();
             let shard = dist_build_shard(&spec, 0);
-            dist_tcp_worker(
-                "127.0.0.1",
+            dist_tcp_worker(DistWorkerParams {
+                host: "127.0.0.1",
                 port,
-                0,
+                worker_id: 0,
                 shard,
-                spec.features,
-                spec.steps,
-                spec.lr,
-                Some(LOCAL_TOKEN),
-            )
+                features: spec.features,
+                steps: spec.steps,
+                lr: spec.lr,
+                token: Some(LOCAL_TOKEN),
+            })
         });
         let (_, loss_sum, samples) = worker.join().unwrap().expect("worker ok");
         let (global_step, _) = coord.join().unwrap().expect("coord ok");

@@ -1,12 +1,12 @@
 use crate::handles::ApiHandleTable;
 use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
+use serde_json::{json, Map, Value};
 use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
 };
 use spectra_runtime::handles::{HandleId, HandleKind, HandleTable};
-use serde_json::{json, Map, Value};
-use std::fmt;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
@@ -201,18 +201,24 @@ impl Router {
         let matches_template = |route: &Route| {
             route.method == method
                 && route.segments.len() == segments.len()
-                && route.segments.iter().zip(&segments).all(|(a, b)| match (a, b) {
-                    // Constraints are ignored so both `/users/{id:int}` and the
-                    // plain OpenAPI form `/users/{id}` resolve to the route.
-                    (RouteSegment::Param { name: a, .. }, RouteSegment::Param { name: b, .. }) => {
-                        a == b
-                    }
-                    (RouteSegment::Wildcard { name: a }, RouteSegment::Wildcard { name: b }) => {
-                        a == b
-                    }
-                    (RouteSegment::Literal(a), RouteSegment::Literal(b)) => a == b,
-                    _ => false,
-                })
+                && route
+                    .segments
+                    .iter()
+                    .zip(&segments)
+                    .all(|(a, b)| match (a, b) {
+                        // Constraints are ignored so both `/users/{id:int}` and the
+                        // plain OpenAPI form `/users/{id}` resolve to the route.
+                        (
+                            RouteSegment::Param { name: a, .. },
+                            RouteSegment::Param { name: b, .. },
+                        ) => a == b,
+                        (
+                            RouteSegment::Wildcard { name: a },
+                            RouteSegment::Wildcard { name: b },
+                        ) => a == b,
+                        (RouteSegment::Literal(a), RouteSegment::Literal(b)) => a == b,
+                        _ => false,
+                    })
         };
         let pattern = self
             .routes
@@ -244,17 +250,34 @@ impl Router {
         let matches = |route: &Route| {
             route.method == method
                 && route.segments.len() == segments.len()
-                && route.segments.iter().zip(&segments).all(|(a, b)| match (a, b) {
-                    (RouteSegment::Param { name: a, .. }, RouteSegment::Param { name: b, .. }) => a == b,
-                    (RouteSegment::Wildcard { name: a }, RouteSegment::Wildcard { name: b }) => a == b,
-                    (RouteSegment::Literal(a), RouteSegment::Literal(b)) => a == b,
-                    _ => false,
-                })
+                && route
+                    .segments
+                    .iter()
+                    .zip(&segments)
+                    .all(|(a, b)| match (a, b) {
+                        (
+                            RouteSegment::Param { name: a, .. },
+                            RouteSegment::Param { name: b, .. },
+                        ) => a == b,
+                        (
+                            RouteSegment::Wildcard { name: a },
+                            RouteSegment::Wildcard { name: b },
+                        ) => a == b,
+                        (RouteSegment::Literal(a), RouteSegment::Literal(b)) => a == b,
+                        _ => false,
+                    })
         };
-        let pattern = self.routes.values().find(|r| matches(r)).map(|r| r.pattern.clone());
+        let pattern = self
+            .routes
+            .values()
+            .find(|r| matches(r))
+            .map(|r| r.pattern.clone());
         match pattern {
             Some(p) => {
-                self.response_schemas.entry((method, p)).or_default().insert(status as u16, schema);
+                self.response_schemas
+                    .entry((method, p))
+                    .or_default()
+                    .insert(status as u16, schema);
                 Ok(true)
             }
             None => Ok(false),
@@ -264,12 +287,18 @@ impl Router {
     pub fn set_servers(&mut self, servers_json: &str) -> Result<(), RouteError> {
         let value: Value = serde_json::from_str(servers_json)
             .map_err(|e| RouteError::InvalidServers(e.to_string()))?;
-        let arr = value.as_array().ok_or_else(|| RouteError::InvalidServers("servers must be a JSON array".to_string()))?;
+        let arr = value.as_array().ok_or_else(|| {
+            RouteError::InvalidServers("servers must be a JSON array".to_string())
+        })?;
         let mut servers = Vec::new();
         for v in arr {
-            let s = v.as_str().ok_or_else(|| RouteError::InvalidServers("each server must be a string URL".to_string()))?;
+            let s = v.as_str().ok_or_else(|| {
+                RouteError::InvalidServers("each server must be a string URL".to_string())
+            })?;
             if s.trim().is_empty() {
-                return Err(RouteError::InvalidServers("server URL must not be empty".to_string()));
+                return Err(RouteError::InvalidServers(
+                    "server URL must not be empty".to_string(),
+                ));
             }
             servers.push(s.to_string());
         }
@@ -961,16 +990,10 @@ pub fn export_openapi(router: &Router, title: &str, version: &str) -> String {
             let mut parameters = Vec::new();
             for segment in &route.segments {
                 let (name, constraint, description) = match segment {
-                    RouteSegment::Param { name, constraint } => (
-                        name,
-                        constraint.as_deref(),
-                        None,
-                    ),
-                    RouteSegment::Wildcard { name } => (
-                        name,
-                        None,
-                        Some("matches the remaining path tail"),
-                    ),
+                    RouteSegment::Param { name, constraint } => (name, constraint.as_deref(), None),
+                    RouteSegment::Wildcard { name } => {
+                        (name, None, Some("matches the remaining path tail"))
+                    }
                     RouteSegment::Literal(_) => continue,
                 };
                 let mut parameter = Map::new();
@@ -985,12 +1008,18 @@ pub fn export_openapi(router: &Router, title: &str, version: &str) -> String {
             }
             let mut responses = Map::new();
             responses.insert("200".to_string(), json!({ "description": "OK" }));
-            if let Some(schemas) = router.response_schemas.get(&(route.method, route.pattern.clone())) {
+            if let Some(schemas) = router
+                .response_schemas
+                .get(&(route.method, route.pattern.clone()))
+            {
                 for (status, schema) in schemas {
-                    responses.insert(status.to_string(), json!({
-                        "description": "",
-                        "content": { "application/json": { "schema": schema } }
-                    }));
+                    responses.insert(
+                        status.to_string(),
+                        json!({
+                            "description": "",
+                            "content": { "application/json": { "schema": schema } }
+                        }),
+                    );
                 }
             }
             let mut operation = json!({
@@ -1007,10 +1036,7 @@ pub fn export_openapi(router: &Router, title: &str, version: &str) -> String {
                     },
                 });
             }
-            item.insert(
-                openapi_method_name(route.method).to_string(),
-                operation,
-            );
+            item.insert(openapi_method_name(route.method).to_string(), operation);
         }
         paths.insert(template, Value::Object(item));
     }
@@ -1024,7 +1050,13 @@ pub fn export_openapi(router: &Router, title: &str, version: &str) -> String {
         "paths": Value::Object(paths),
     });
     if !router.servers.is_empty() {
-        spec["servers"] = Value::Array(router.servers.iter().map(|url| json!({ "url": url })).collect());
+        spec["servers"] = Value::Array(
+            router
+                .servers
+                .iter()
+                .map(|url| json!({ "url": url }))
+                .collect(),
+        );
     }
     serde_json::to_string(&spec).expect("OpenAPI spec serializes")
 }
@@ -1243,8 +1275,7 @@ mod tests {
         assert_eq!(id_param["required"], true);
         assert_eq!(id_param["schema"]["type"], "integer");
         assert_eq!(
-            users["get"]["responses"]["200"]["description"],
-            "OK",
+            users["get"]["responses"]["200"]["description"], "OK",
             "default 200 response"
         );
 
@@ -1301,4 +1332,3 @@ mod tests {
         );
     }
 }
-

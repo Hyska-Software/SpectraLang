@@ -128,14 +128,10 @@ impl Parser {
         })
     }
 
-
     /// Parses a comma-separated imported-name list. When `inside_braces` is
     /// set (TS-style brace imports), the list may span multiple lines and the
     /// closing `}` terminates it; otherwise a line break ends the statement.
-    fn parse_named_import_list(
-        &mut self,
-        inside_braces: bool,
-    ) -> Result<Vec<NamedImport>, ()> {
+    fn parse_named_import_list(&mut self, inside_braces: bool) -> Result<Vec<NamedImport>, ()> {
         let mut names = Vec::new();
         loop {
             let (name, name_span) = self.consume_identifier("Expected imported name")?;

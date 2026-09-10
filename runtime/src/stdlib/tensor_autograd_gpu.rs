@@ -154,9 +154,8 @@ pub(crate) fn autograd_parent_grads_device_readback(
     if !gpu::is_available() {
         return Err(HOST_STATUS_INTERNAL_ERROR);
     }
-    let readback = gpu::with_device_queue(|device, queue| {
-        gpu::readback_device_f32(grad_buf, device, queue)
-    });
+    let readback =
+        gpu::with_device_queue(|device, queue| gpu::readback_device_f32(grad_buf, device, queue));
     let f32_values = match readback {
         Ok(Ok(values)) => values,
         Ok(Err(err)) | Err(err) => {

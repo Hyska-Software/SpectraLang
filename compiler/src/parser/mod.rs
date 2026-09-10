@@ -747,7 +747,6 @@ impl Parser {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -937,8 +936,7 @@ mod tests {
             }
         "#;
 
-        let module =
-            parse_source(source).expect("match expressions should parse");
+        let module = parse_source(source).expect("match expressions should parse");
 
         let mut spans = Vec::new();
         for item in &module.items {
@@ -1040,8 +1038,7 @@ mod tests {
                 let value = async 1
             }
         "#;
-        let errors =
-            parse_source(misplaced_async).expect_err("misplaced async should fail");
+        let errors = parse_source(misplaced_async).expect_err("misplaced async should fail");
         assert!(errors.iter().any(|error| {
             error.code.as_deref() == Some("P005")
                 && error
@@ -1057,8 +1054,8 @@ mod tests {
                 let value = await work()
             }
         "#;
-        let errors = parse_source(await_outside_async)
-            .expect_err("await outside async should fail");
+        let errors =
+            parse_source(await_outside_async).expect_err("await outside async should fail");
         assert!(errors.iter().any(|error| {
             error.code.as_deref() == Some("P006")
                 && error
@@ -1074,8 +1071,7 @@ mod tests {
                 let value = await work()
             }
         "#;
-        let module =
-            parse_source(await_inside_async).expect("await inside async parses");
+        let module = parse_source(await_inside_async).expect("await inside async parses");
         let crate::ast::Item::Function(function) = &module.items[0] else {
             panic!("expected function");
         };
@@ -1120,7 +1116,10 @@ mod tests {
         let errors = parse_source(source).expect_err("`for x of` must fail");
         assert!(errors.iter().any(|error| {
             error.code.as_deref() == Some("P016")
-                && error.hint.as_deref().is_some_and(|hint| hint.contains("for x in"))
+                && error
+                    .hint
+                    .as_deref()
+                    .is_some_and(|hint| hint.contains("for x in"))
         }));
     }
 
@@ -1136,8 +1135,7 @@ mod tests {
                 return 0
             }
         "#;
-        let errors =
-            parse_source(source).expect_err("missing `in` must fail");
+        let errors = parse_source(source).expect_err("missing `in` must fail");
         assert!(errors
             .iter()
             .any(|error| error.code.as_deref() == Some("P017")));
@@ -1153,11 +1151,14 @@ mod tests {
                 return 0
             }
         "#;
-        let errors = parse_source(source)
-            .expect_err("assignment to a literal expression must fail");
+        let errors =
+            parse_source(source).expect_err("assignment to a literal expression must fail");
         assert!(errors.iter().any(|error| {
             error.code.as_deref() == Some("P018")
-                && error.hint.as_deref().is_some_and(|hint| hint.contains("field accesses"))
+                && error
+                    .hint
+                    .as_deref()
+                    .is_some_and(|hint| hint.contains("field accesses"))
         }));
     }
 
@@ -1169,7 +1170,7 @@ mod tests {
         let crossing = format!("{}{}", "x".repeat(23), "é".repeat(5));
         assert!(crossing.len() > 24);
         assert!(!crossing.is_char_boundary(24));
-        let token = Token::new(TokenKind::StringLiteral(crossing), span.clone());
+        let token = Token::new(TokenKind::StringLiteral(crossing), span);
         let described = Parser::describe_token(&token);
         assert!(described.starts_with("string literal \""));
         assert!(described.ends_with("…\""));
@@ -1215,19 +1216,20 @@ mod tests {
             }
         "#;
 
-        let module = parse_source(statement_position)
-            .expect("unless parses as a statement");
+        let module = parse_source(statement_position).expect("unless parses as a statement");
         let crate::ast::Item::Function(function) = &module.items[0] else {
             panic!("expected function item");
         };
-        let crate::ast::StatementKind::Expression(expr) = &function.body.statements[0].kind
-        else {
+        let crate::ast::StatementKind::Expression(expr) = &function.body.statements[0].kind else {
             panic!("expected unless expression statement");
         };
-        assert!(matches!(expr.kind, crate::ast::ExpressionKind::Unless { .. }));
+        assert!(matches!(
+            expr.kind,
+            crate::ast::ExpressionKind::Unless { .. }
+        ));
 
-        let module = parse_source(expression_position)
-            .expect("unless parses in expression position");
+        let module =
+            parse_source(expression_position).expect("unless parses in expression position");
         let crate::ast::Item::Function(function) = &module.items[0] else {
             panic!("expected function item");
         };
@@ -1268,11 +1270,9 @@ mod tests {
         "#;
 
         let errors = parse_source(source).expect_err("unless must reject elif");
-        assert!(
-            errors
-                .iter()
-                .any(|error| error.message.contains("`unless` does not support"))
-        );
+        assert!(errors
+            .iter()
+            .any(|error| error.message.contains("`unless` does not support")));
     }
 
     #[test]
@@ -1313,9 +1313,15 @@ mod tests {
             ..
         }) = compared.value.as_ref().map(|expr| &expr.kind)
         else {
-            panic!("`1..2 == x` should parse as `(1..2) == x`, got {:#?}", compared.value.as_ref().map(|expr| &expr.kind));
+            panic!(
+                "`1..2 == x` should parse as `(1..2) == x`, got {:#?}",
+                compared.value.as_ref().map(|expr| &expr.kind)
+            );
         };
-        assert!(matches!(left.kind, crate::ast::ExpressionKind::Range { .. }));
+        assert!(matches!(
+            left.kind,
+            crate::ast::ExpressionKind::Range { .. }
+        ));
     }
 
     #[test]
@@ -1337,8 +1343,8 @@ mod tests {
         std::thread::Builder::new()
             .stack_size(256 * 1024 * 1024)
             .spawn(move || {
-                let errors = parse_source(&source)
-                    .expect_err("nesting beyond the limit must fail cleanly");
+                let errors =
+                    parse_source(&source).expect_err("nesting beyond the limit must fail cleanly");
                 assert!(
                     errors
                         .iter()
@@ -1350,7 +1356,6 @@ mod tests {
             .join()
             .expect("deep parse must not panic");
     }
-
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

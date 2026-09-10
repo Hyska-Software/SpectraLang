@@ -20,8 +20,8 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::task::{JoinHandle, JoinSet};
 use tokio::sync::{watch, Mutex};
+use tokio::task::{JoinHandle, JoinSet};
 
 pub const ALPN_HTTP3: &[u8] = b"h3";
 const DEFAULT_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
@@ -59,14 +59,22 @@ impl Http3Response {
     pub fn text(status_code: u16, body: impl Into<String>) -> Self {
         Self {
             status_code,
-            headers: vec![Http3Header { name: "content-type".into(), value: "text/plain; charset=utf-8".into() }],
+            headers: vec![Http3Header {
+                name: "content-type".into(),
+                value: "text/plain; charset=utf-8".into(),
+            }],
             body: body.into().into_bytes(),
             trailers: Vec::new(),
         }
     }
 }
 
-pub type Http3Handler = Arc<dyn Fn(Http3Request) -> BoxFuture<'static, Result<Http3Response, Http3Error>> + Send + Sync + 'static>;
+pub type Http3Handler = Arc<
+    dyn Fn(Http3Request) -> BoxFuture<'static, Result<Http3Response, Http3Error>>
+        + Send
+        + Sync
+        + 'static,
+>;
 pub type Http3Dispatcher = Http3Handler;
 
 #[derive(Debug)]
@@ -130,7 +138,11 @@ impl Default for Http3ServerConfig {
 
 impl Http3ServerConfig {
     pub fn from_tls(bind_addr: SocketAddr, tls_config: Arc<ServerConfig>) -> Self {
-        Self { bind_addr, tls_config: Some(tls_config), ..Self::default() }
+        Self {
+            bind_addr,
+            tls_config: Some(tls_config),
+            ..Self::default()
+        }
     }
     pub fn with_tls_config(mut self, tls_config: Arc<ServerConfig>) -> Self {
         self.tls_config = Some(tls_config);
@@ -175,7 +187,9 @@ impl Http3ClientConfig {
 }
 
 fn server_quinn_config(config: &Http3ServerConfig) -> Result<quinn::ServerConfig, Http3Error> {
-    let source = config.tls_config.as_ref().ok_or_else(|| Http3Error::Tls("HTTP/3 server certificate/key material is required".into()))?;
+    let source = config.tls_config.as_ref().ok_or_else(|| {
+        Http3Error::Tls("HTTP/3 server certificate/key material is required".into())
+    })?;
     let mut tls = (**source).clone();
     // Do not trust an adapter's ALPN list: HTTP/3 must never be negotiated as another protocol.
     tls.alpn_protocols = vec![ALPN_HTTP3.to_vec()];
@@ -190,7 +204,9 @@ fn server_quinn_config(config: &Http3ServerConfig) -> Result<quinn::ServerConfig
 fn client_quinn_config(config: &Http3ClientConfig) -> Result<quinn::ClientConfig, Http3Error> {
     let mut tls = match &config.tls_config {
         Some(tls) => (**tls).clone(),
-        None => ClientConfig::builder().with_root_certificates((*config.root_certificates).clone()).with_no_client_auth(),
+        None => ClientConfig::builder()
+            .with_root_certificates((*config.root_certificates).clone())
+            .with_no_client_auth(),
     };
     tls.alpn_protocols = vec![ALPN_HTTP3.to_vec()];
     let crypto = QuicClientConfig::try_from(tls).map_err(|e| Http3Error::Tls(e.to_string()))?;
@@ -201,10 +217,19 @@ fn header_map_to_owned(headers: &HeaderMap, limit: usize) -> Result<Vec<Http3Hea
     let mut used = 0usize;
     let mut output = Vec::with_capacity(headers.len());
     for (name, value) in headers {
-        let value = value.to_str().map_err(|e| Http3Error::InvalidHeader(e.to_string()))?;
-        used = used.saturating_add(name.as_str().len()).saturating_add(value.len());
-        if used > limit { return Err(Http3Error::HeaderTooLarge { limit }); }
-        output.push(Http3Header { name: name.as_str().to_owned(), value: value.to_owned() });
+        let value = value
+            .to_str()
+            .map_err(|e| Http3Error::InvalidHeader(e.to_string()))?;
+        used = used
+            .saturating_add(name.as_str().len())
+            .saturating_add(value.len());
+        if used > limit {
+            return Err(Http3Error::HeaderTooLarge { limit });
+        }
+        output.push(Http3Header {
+            name: name.as_str().to_owned(),
+            value: value.to_owned(),
+        });
     }
     Ok(output)
 }
@@ -213,10 +238,16 @@ fn owned_headers(headers: &[Http3Header], limit: usize) -> Result<HeaderMap, Htt
     let mut used = 0usize;
     let mut map = HeaderMap::new();
     for header in headers {
-        used = used.saturating_add(header.name.len()).saturating_add(header.value.len());
-        if used > limit { return Err(Http3Error::HeaderTooLarge { limit }); }
-        let name = http::header::HeaderName::from_bytes(header.name.as_bytes()).map_err(|e| Http3Error::InvalidHeader(e.to_string()))?;
-        let value = http::header::HeaderValue::from_str(&header.value).map_err(|e| Http3Error::InvalidHeader(e.to_string()))?;
+        used = used
+            .saturating_add(header.name.len())
+            .saturating_add(header.value.len());
+        if used > limit {
+            return Err(Http3Error::HeaderTooLarge { limit });
+        }
+        let name = http::header::HeaderName::from_bytes(header.name.as_bytes())
+            .map_err(|e| Http3Error::InvalidHeader(e.to_string()))?;
+        let value = http::header::HeaderValue::from_str(&header.value)
+            .map_err(|e| Http3Error::InvalidHeader(e.to_string()))?;
         map.append(name, value);
     }
     Ok(map)
@@ -236,14 +267,22 @@ async fn collect_server_body(
         };
         let Some(mut chunk) = next else { break };
         let size = chunk.remaining();
-        if body.len().saturating_add(size) > max_body { return Err(Http3Error::BodyTooLarge { limit: max_body }); }
+        if body.len().saturating_add(size) > max_body {
+            return Err(Http3Error::BodyTooLarge { limit: max_body });
+        }
         body.extend_from_slice(&chunk.copy_to_bytes(size));
     }
     let trailers = tokio::select! {
         changed = cancel.changed() => { if changed.is_ok() && *cancel.borrow() { return Err(Http3Error::Cancelled); } None },
         value = stream.recv_trailers() => value.map_err(|e| Http3Error::Protocol(e.to_string()))?,
     };
-    Ok((body, trailers.map(|h| header_map_to_owned(&h, max_headers)).transpose()?.unwrap_or_default()))
+    Ok((
+        body,
+        trailers
+            .map(|h| header_map_to_owned(&h, max_headers))
+            .transpose()?
+            .unwrap_or_default(),
+    ))
 }
 
 async fn collect_client_body(
@@ -252,13 +291,28 @@ async fn collect_client_body(
     max_headers: usize,
 ) -> Result<(Vec<u8>, Vec<Http3Header>), Http3Error> {
     let mut body = Vec::new();
-    while let Some(mut chunk) = stream.recv_data().await.map_err(|e| Http3Error::Protocol(e.to_string()))? {
+    while let Some(mut chunk) = stream
+        .recv_data()
+        .await
+        .map_err(|e| Http3Error::Protocol(e.to_string()))?
+    {
         let size = chunk.remaining();
-        if body.len().saturating_add(size) > max_body { return Err(Http3Error::BodyTooLarge { limit: max_body }); }
+        if body.len().saturating_add(size) > max_body {
+            return Err(Http3Error::BodyTooLarge { limit: max_body });
+        }
         body.extend_from_slice(&chunk.copy_to_bytes(size));
     }
-    let trailers = stream.recv_trailers().await.map_err(|e| Http3Error::Protocol(e.to_string()))?;
-    Ok((body, trailers.map(|h| header_map_to_owned(&h, max_headers)).transpose()?.unwrap_or_default()))
+    let trailers = stream
+        .recv_trailers()
+        .await
+        .map_err(|e| Http3Error::Protocol(e.to_string()))?;
+    Ok((
+        body,
+        trailers
+            .map(|h| header_map_to_owned(&h, max_headers))
+            .transpose()?
+            .unwrap_or_default(),
+    ))
 }
 
 async fn handle_server_request(
@@ -267,18 +321,37 @@ async fn handle_server_request(
     config: Http3ServerConfig,
     mut cancel: watch::Receiver<bool>,
 ) -> Result<(), Http3Error> {
-    let (request, mut stream) = resolver.resolve_request().await.map_err(|e| Http3Error::Protocol(e.to_string()))?;
-    let (body, trailers) = match collect_server_body(&mut stream, config.max_body_bytes, config.max_header_bytes, &mut cancel).await {
+    let (request, mut stream) = resolver
+        .resolve_request()
+        .await
+        .map_err(|e| Http3Error::Protocol(e.to_string()))?;
+    let (body, trailers) = match collect_server_body(
+        &mut stream,
+        config.max_body_bytes,
+        config.max_header_bytes,
+        &mut cancel,
+    )
+    .await
+    {
         Ok(value) => value,
         Err(Http3Error::BodyTooLarge { .. }) => {
-            let response = http::Response::builder().status(StatusCode::PAYLOAD_TOO_LARGE).body(()).map_err(|e| Http3Error::Protocol(e.to_string()))?;
-            stream.send_response(response).await.map_err(|e| Http3Error::Protocol(e.to_string()))?;
-            stream.finish().await.map_err(|e| Http3Error::Protocol(e.to_string()))?;
-            return Ok(())
+            let response = http::Response::builder()
+                .status(StatusCode::PAYLOAD_TOO_LARGE)
+                .body(())
+                .map_err(|e| Http3Error::Protocol(e.to_string()))?;
+            stream
+                .send_response(response)
+                .await
+                .map_err(|e| Http3Error::Protocol(e.to_string()))?;
+            stream
+                .finish()
+                .await
+                .map_err(|e| Http3Error::Protocol(e.to_string()))?;
+            return Ok(());
         }
         Err(Http3Error::Cancelled) => {
             stream.stop_stream(h3::error::Code::H3_REQUEST_CANCELLED);
-            return Err(Http3Error::Cancelled)
+            return Err(Http3Error::Cancelled);
         }
         Err(error) => return Err(error),
     };
@@ -294,20 +367,48 @@ async fn handle_server_request(
         value = (handler)(request) => value?,
     };
     let headers = owned_headers(&response.headers, config.max_header_bytes)?;
-    let status = StatusCode::from_u16(response.status_code).map_err(|e| Http3Error::Protocol(e.to_string()))?;
-    let mut head = http::Response::builder().status(status).body(()).map_err(|e| Http3Error::Protocol(e.to_string()))?;
+    let status = StatusCode::from_u16(response.status_code)
+        .map_err(|e| Http3Error::Protocol(e.to_string()))?;
+    let mut head = http::Response::builder()
+        .status(status)
+        .body(())
+        .map_err(|e| Http3Error::Protocol(e.to_string()))?;
     *head.headers_mut() = headers;
-    stream.send_response(head).await.map_err(|e| Http3Error::Protocol(e.to_string()))?;
-    for chunk in response.body.chunks(BODY_CHUNK_BYTES) { stream.send_data(Bytes::copy_from_slice(chunk)).await.map_err(|e| Http3Error::Protocol(e.to_string()))?; }
-    if !response.trailers.is_empty() { stream.send_trailers(owned_headers(&response.trailers, config.max_header_bytes)?).await.map_err(|e| Http3Error::Protocol(e.to_string()))?; }
-    stream.finish().await.map_err(|e| Http3Error::Protocol(e.to_string()))?;
+    stream
+        .send_response(head)
+        .await
+        .map_err(|e| Http3Error::Protocol(e.to_string()))?;
+    for chunk in response.body.chunks(BODY_CHUNK_BYTES) {
+        stream
+            .send_data(Bytes::copy_from_slice(chunk))
+            .await
+            .map_err(|e| Http3Error::Protocol(e.to_string()))?;
+    }
+    if !response.trailers.is_empty() {
+        stream
+            .send_trailers(owned_headers(&response.trailers, config.max_header_bytes)?)
+            .await
+            .map_err(|e| Http3Error::Protocol(e.to_string()))?;
+    }
+    stream
+        .finish()
+        .await
+        .map_err(|e| Http3Error::Protocol(e.to_string()))?;
     Ok(())
 }
 
-async fn run_server_connection(quic: quinn::Connection, handler: Http3Handler, config: Http3ServerConfig, mut shutdown: watch::Receiver<bool>) {
+async fn run_server_connection(
+    quic: quinn::Connection,
+    handler: Http3Handler,
+    config: Http3ServerConfig,
+    mut shutdown: watch::Receiver<bool>,
+) {
     let mut builder = h3::server::builder();
     builder.max_field_section_size(config.max_header_bytes as u64);
-    let mut connection = match builder.build(h3_quinn::Connection::new(quic.clone())).await { Ok(value) => value, Err(_) => return };
+    let mut connection = match builder.build(h3_quinn::Connection::new(quic.clone())).await {
+        Ok(value) => value,
+        Err(_) => return,
+    };
     let mut requests = JoinSet::new();
     let mut draining = false;
     loop {
@@ -326,7 +427,9 @@ async fn run_server_connection(quic: quinn::Connection, handler: Http3Handler, c
     }
     let deadline = tokio::time::sleep(config.shutdown_grace_period);
     tokio::pin!(deadline);
-    while !requests.is_empty() { tokio::select! { _ = &mut deadline => { requests.abort_all(); break }, _ = requests.join_next() => {} } }
+    while !requests.is_empty() {
+        tokio::select! { _ = &mut deadline => { requests.abort_all(); break }, _ = requests.join_next() => {} }
+    }
     quic.close(quinn::VarInt::from_u32(0), b"HTTP/3 server shutdown");
 }
 
@@ -337,7 +440,11 @@ pub struct Http3Server {
 }
 
 impl fmt::Debug for Http3Server {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.debug_struct("Http3Server").field("local_addr", &self.local_addr()).finish() }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Http3Server")
+            .field("local_addr", &self.local_addr())
+            .finish()
+    }
 }
 
 impl Http3Server {
@@ -354,16 +461,13 @@ impl Http3Server {
             loop {
                 tokio::select! {
                     incoming = accept_endpoint.accept() => match incoming {
-                        Some(incoming) => match incoming.await {
-                            Ok(connection) => {
-                                connections.spawn(run_server_connection(
-                                    connection,
-                                    handler.clone(),
-                                    accept_config.clone(),
-                                    receiver.clone(),
-                                ));
-                            }
-                            Err(_) => {}
+                        Some(incoming) => if let Ok(connection) = incoming.await {
+                            connections.spawn(run_server_connection(
+                                connection,
+                                handler.clone(),
+                                accept_config.clone(),
+                                receiver.clone(),
+                            ));
                         },
                         None => break,
                     },
@@ -383,7 +487,11 @@ impl Http3Server {
             accept_endpoint.close(quinn::VarInt::from_u32(0), b"HTTP/3 server shutdown");
             accept_endpoint.wait_idle().await;
         });
-        Ok(Self { endpoint, shutdown, join: Some(join) })
+        Ok(Self {
+            endpoint,
+            shutdown,
+            join: Some(join),
+        })
     }
     pub fn bind(config: Http3ServerConfig, handler: Http3Handler) -> Result<Self, Http3Error> {
         Self::start(config, handler)
@@ -392,9 +500,13 @@ impl Http3Server {
     pub fn bind_addr(&self) -> SocketAddr {
         self.endpoint.local_addr().expect("endpoint remains bound")
     }
-    pub fn local_addr(&self) -> SocketAddr { self.bind_addr() }
+    pub fn local_addr(&self) -> SocketAddr {
+        self.bind_addr()
+    }
     pub async fn shutdown(&mut self) -> Result<(), Http3Error> {
-        if self.join.is_none() { return Err(Http3Error::AlreadyStopped); }
+        if self.join.is_none() {
+            return Err(Http3Error::AlreadyStopped);
+        }
         self.shutdown.send(true).map_err(|_| Http3Error::Closed)?;
         if let Some(join) = self.join.take() {
             join.await.map_err(|e| Http3Error::Runtime(e.to_string()))?;
@@ -405,9 +517,12 @@ impl Http3Server {
 
 impl Drop for Http3Server {
     fn drop(&mut self) {
-        self.endpoint.close(quinn::VarInt::from_u32(0), b"HTTP/3 server dropped");
+        self.endpoint
+            .close(quinn::VarInt::from_u32(0), b"HTTP/3 server dropped");
         let _ = self.shutdown.send(true);
-        if let Some(join) = self.join.take() { join.abort(); }
+        if let Some(join) = self.join.take() {
+            join.abort();
+        }
     }
 }
 
@@ -422,10 +537,17 @@ pub struct Http3Client {
 }
 
 impl fmt::Debug for Http3Client {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.debug_struct("Http3Client").field("authority", &self.authority).field("closed", &self.is_closed()).finish() }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Http3Client")
+            .field("authority", &self.authority)
+            .field("closed", &self.is_closed())
+            .finish()
+    }
 }
 fn parse_endpoint(url: &str) -> Result<(String, u16), Http3Error> {
-    let rest = url.strip_prefix("https://").ok_or_else(|| Http3Error::InvalidUrl("HTTP/3 requires https://".into()))?;
+    let rest = url
+        .strip_prefix("https://")
+        .ok_or_else(|| Http3Error::InvalidUrl("HTTP/3 requires https://".into()))?;
     let authority = rest.split('/').next().unwrap_or(rest);
     if authority.is_empty() {
         return Err(Http3Error::InvalidUrl("missing host".into()));
@@ -433,7 +555,9 @@ fn parse_endpoint(url: &str) -> Result<(String, u16), Http3Error> {
     // Bracketed IPv6 literal with an optional :port, defaulting to 443 like
     // the HTTP/2 endpoint parser.
     if let Some(rest) = authority.strip_prefix('[') {
-        let end = rest.find(']').ok_or_else(|| Http3Error::InvalidUrl("invalid IPv6 authority".into()))?;
+        let end = rest
+            .find(']')
+            .ok_or_else(|| Http3Error::InvalidUrl("invalid IPv6 authority".into()))?;
         let host = &rest[..end];
         if host.is_empty() {
             return Err(Http3Error::InvalidUrl("missing host".into()));
@@ -454,7 +578,9 @@ fn parse_endpoint(url: &str) -> Result<(String, u16), Http3Error> {
                 .map_err(|error| Http3Error::InvalidUrl(error.to_string()))?;
             Ok((host.to_string(), port))
         }
-        Some(_) => Err(Http3Error::InvalidUrl("authority contains an empty host or port".into())),
+        Some(_) => Err(Http3Error::InvalidUrl(
+            "authority contains an empty host or port".into(),
+        )),
         None => Ok((authority.to_string(), 443)),
     }
 }
@@ -462,23 +588,37 @@ fn parse_endpoint(url: &str) -> Result<(String, u16), Http3Error> {
 impl Http3Client {
     pub async fn connect(url: &str, config: Http3ClientConfig) -> Result<Self, Http3Error> {
         let (host, port) = parse_endpoint(url)?;
-        let addresses = tokio::time::timeout(config.connect_timeout, tokio::net::lookup_host((host.as_str(), port)))
-            .await
-            .map_err(|_| Http3Error::Timeout)?
-            .map_err(|e| Http3Error::Io(e.to_string()))?
-            .collect::<Vec<_>>();
+        let addresses = tokio::time::timeout(
+            config.connect_timeout,
+            tokio::net::lookup_host((host.as_str(), port)),
+        )
+        .await
+        .map_err(|_| Http3Error::Timeout)?
+        .map_err(|e| Http3Error::Io(e.to_string()))?
+        .collect::<Vec<_>>();
         let address = addresses
             .iter()
             .copied()
             .find(|address| address.is_ipv4() == config.local_bind_addr.is_ipv4())
-            .ok_or_else(|| Http3Error::InvalidUrl("host has no address matching the local IP family".into()))?;
-        let mut endpoint = quinn::Endpoint::client(config.local_bind_addr).map_err(|e| Http3Error::Io(e.to_string()))?;
+            .ok_or_else(|| {
+                Http3Error::InvalidUrl("host has no address matching the local IP family".into())
+            })?;
+        let mut endpoint = quinn::Endpoint::client(config.local_bind_addr)
+            .map_err(|e| Http3Error::Io(e.to_string()))?;
         endpoint.set_default_client_config(client_quinn_config(&config)?);
-        let connecting = endpoint.connect(address, &host).map_err(|e| Http3Error::Protocol(e.to_string()))?;
-        let quic = tokio::time::timeout(config.connect_timeout, connecting).await.map_err(|_| Http3Error::Timeout)?.map_err(|e| Http3Error::Protocol(e.to_string()))?;
+        let connecting = endpoint
+            .connect(address, &host)
+            .map_err(|e| Http3Error::Protocol(e.to_string()))?;
+        let quic = tokio::time::timeout(config.connect_timeout, connecting)
+            .await
+            .map_err(|_| Http3Error::Timeout)?
+            .map_err(|e| Http3Error::Protocol(e.to_string()))?;
         let mut builder = h3::client::builder();
         builder.max_field_section_size(config.max_header_bytes as u64);
-        let (mut connection, sender) = builder.build(h3_quinn::Connection::new(quic)).await.map_err(|e| Http3Error::Protocol(e.to_string()))?;
+        let (mut connection, sender) = builder
+            .build(h3_quinn::Connection::new(quic))
+            .await
+            .map_err(|e| Http3Error::Protocol(e.to_string()))?;
         let (shutdown, mut receiver) = watch::channel(false);
         let closed = Arc::new(AtomicBool::new(false));
         let driver_closed = closed.clone();
@@ -489,29 +629,78 @@ impl Http3Client {
             }
             driver_closed.store(true, Ordering::Release);
         });
-        let authority = if host.contains(':') { format!("[{host}]:{port}") } else { format!("{host}:{port}") };
-        Ok(Self { endpoint, sender: Arc::new(Mutex::new(sender)), shutdown, driver: Arc::new(Mutex::new(Some(driver))), config, authority, closed })
+        let authority = if host.contains(':') {
+            format!("[{host}]:{port}")
+        } else {
+            format!("{host}:{port}")
+        };
+        Ok(Self {
+            endpoint,
+            sender: Arc::new(Mutex::new(sender)),
+            shutdown,
+            driver: Arc::new(Mutex::new(Some(driver))),
+            config,
+            authority,
+            closed,
+        })
     }
 
-    pub fn is_closed(&self) -> bool { self.closed.load(Ordering::Acquire) }
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
 
-    pub async fn open_request(&self, request: Http3Request) -> Result<Http3ClientRequest, Http3Error> {
-        if self.is_closed() { return Err(Http3Error::Closed); }
-        if request.body.len() > self.config.max_body_bytes { return Err(Http3Error::BodyTooLarge { limit: self.config.max_body_bytes }); }
+    pub async fn open_request(
+        &self,
+        request: Http3Request,
+    ) -> Result<Http3ClientRequest, Http3Error> {
+        if self.is_closed() {
+            return Err(Http3Error::Closed);
+        }
+        if request.body.len() > self.config.max_body_bytes {
+            return Err(Http3Error::BodyTooLarge {
+                limit: self.config.max_body_bytes,
+            });
+        }
         let headers = owned_headers(&request.headers, self.config.max_header_bytes)?;
-        let target = if request.target.is_empty() { "/" } else { request.target.as_str() };
-        let uri = if target.starts_with("https://") { target.to_owned() } else { format!("https://{}{}", self.authority, target) };
-        let mut http_request = Request::builder().method(request.method.as_str()).uri(uri).body(()).map_err(|e| Http3Error::InvalidUrl(e.to_string()))?;
+        let target = if request.target.is_empty() {
+            "/"
+        } else {
+            request.target.as_str()
+        };
+        let uri = if target.starts_with("https://") {
+            target.to_owned()
+        } else {
+            format!("https://{}{}", self.authority, target)
+        };
+        let mut http_request = Request::builder()
+            .method(request.method.as_str())
+            .uri(uri)
+            .body(())
+            .map_err(|e| Http3Error::InvalidUrl(e.to_string()))?;
         *http_request.headers_mut() = headers;
         let mut sender = self.sender.lock().await.clone();
-        let stream = tokio::time::timeout(self.config.request_timeout, sender.send_request(http_request)).await.map_err(|_| Http3Error::Timeout)?.map_err(|e| Http3Error::Protocol(e.to_string()))?;
-        Ok(Http3ClientRequest { stream, max_body_bytes: self.config.max_body_bytes, max_header_bytes: self.config.max_header_bytes, timeout: self.config.request_timeout, sent_body: 0 })
+        let stream = tokio::time::timeout(
+            self.config.request_timeout,
+            sender.send_request(http_request),
+        )
+        .await
+        .map_err(|_| Http3Error::Timeout)?
+        .map_err(|e| Http3Error::Protocol(e.to_string()))?;
+        Ok(Http3ClientRequest {
+            stream,
+            max_body_bytes: self.config.max_body_bytes,
+            max_header_bytes: self.config.max_header_bytes,
+            timeout: self.config.request_timeout,
+            sent_body: 0,
+        })
     }
     pub async fn request(&self, request: Http3Request) -> Result<Http3Response, Http3Error> {
         let body = request.body.clone();
         let trailers = request.trailers.clone();
         let mut stream = self.open_request(request).await?;
-        if !body.is_empty() { stream.send_data(Bytes::from(body)).await?; }
+        if !body.is_empty() {
+            stream.send_data(Bytes::from(body)).await?;
+        }
         if trailers.is_empty() {
             stream.finish().await?;
         } else {
@@ -522,19 +711,34 @@ impl Http3Client {
     }
 
     pub async fn shutdown(&self) -> Result<(), Http3Error> {
-        if self.is_closed() { return Ok(()); }
+        if self.is_closed() {
+            return Ok(());
+        }
         self.closed.store(true, Ordering::Release);
         let _ = self.shutdown.send(true);
         if let Some(driver) = self.driver.lock().await.take() {
-            driver.await.map_err(|e| Http3Error::Runtime(e.to_string()))?;
+            driver
+                .await
+                .map_err(|e| Http3Error::Runtime(e.to_string()))?;
         }
-        self.endpoint.close(quinn::VarInt::from_u32(0), b"HTTP/3 client shutdown");
+        self.endpoint
+            .close(quinn::VarInt::from_u32(0), b"HTTP/3 client shutdown");
         self.endpoint.wait_idle().await;
         Ok(())
     }
 }
 impl Clone for Http3Client {
-    fn clone(&self) -> Self { Self { endpoint: self.endpoint.clone(), sender: self.sender.clone(), shutdown: self.shutdown.clone(), driver: self.driver.clone(), config: self.config.clone(), authority: self.authority.clone(), closed: self.closed.clone() } }
+    fn clone(&self) -> Self {
+        Self {
+            endpoint: self.endpoint.clone(),
+            sender: self.sender.clone(),
+            shutdown: self.shutdown.clone(),
+            driver: self.driver.clone(),
+            config: self.config.clone(),
+            authority: self.authority.clone(),
+            closed: self.closed.clone(),
+        }
+    }
 }
 
 pub struct Http3ClientRequest {
@@ -548,62 +752,150 @@ pub struct Http3ClientRequest {
 impl Http3ClientRequest {
     pub async fn send_data(&mut self, data: Bytes) -> Result<(), Http3Error> {
         let len = data.len();
-        if self.sent_body.saturating_add(len) > self.max_body_bytes { self.cancel(); return Err(Http3Error::BodyTooLarge { limit: self.max_body_bytes }); }
+        if self.sent_body.saturating_add(len) > self.max_body_bytes {
+            self.cancel();
+            return Err(Http3Error::BodyTooLarge {
+                limit: self.max_body_bytes,
+            });
+        }
         let result = tokio::time::timeout(self.timeout, self.stream.send_data(data)).await;
-        match result { Ok(value) => { value.map_err(|e| Http3Error::Protocol(e.to_string()))?; self.sent_body = self.sent_body.saturating_add(len); Ok(()) }, Err(_) => { self.cancel(); Err(Http3Error::Timeout) } }
+        match result {
+            Ok(value) => {
+                value.map_err(|e| Http3Error::Protocol(e.to_string()))?;
+                self.sent_body = self.sent_body.saturating_add(len);
+                Ok(())
+            }
+            Err(_) => {
+                self.cancel();
+                Err(Http3Error::Timeout)
+            }
+        }
     }
     pub async fn send_trailers(&mut self, trailers: Vec<Http3Header>) -> Result<(), Http3Error> {
         let trailers = owned_headers(&trailers, self.max_header_bytes)?;
         let result = tokio::time::timeout(self.timeout, self.stream.send_trailers(trailers)).await;
-        match result { Ok(value) => value.map_err(|e| Http3Error::Protocol(e.to_string())), Err(_) => { self.cancel(); Err(Http3Error::Timeout) } }
+        match result {
+            Ok(value) => value.map_err(|e| Http3Error::Protocol(e.to_string())),
+            Err(_) => {
+                self.cancel();
+                Err(Http3Error::Timeout)
+            }
+        }
     }
     pub async fn finish(&mut self) -> Result<(), Http3Error> {
         let result = tokio::time::timeout(self.timeout, self.stream.finish()).await;
-        match result { Ok(value) => value.map_err(|e| Http3Error::Protocol(e.to_string())), Err(_) => { self.cancel(); Err(Http3Error::Timeout) } }
+        match result {
+            Ok(value) => value.map_err(|e| Http3Error::Protocol(e.to_string())),
+            Err(_) => {
+                self.cancel();
+                Err(Http3Error::Timeout)
+            }
+        }
     }
     pub async fn recv_response(&mut self) -> Result<Http3Response, Http3Error> {
         let result = tokio::time::timeout(self.timeout, self.receive_inner()).await;
-        match result { Ok(value) => value, Err(_) => { self.cancel(); Err(Http3Error::Timeout) } }
+        match result {
+            Ok(value) => value,
+            Err(_) => {
+                self.cancel();
+                Err(Http3Error::Timeout)
+            }
+        }
     }
     async fn receive_inner(&mut self) -> Result<Http3Response, Http3Error> {
-        let response = self.stream.recv_response().await.map_err(|e| Http3Error::Protocol(e.to_string()))?;
-        let (body, trailers) = collect_client_body(&mut self.stream, self.max_body_bytes, self.max_header_bytes).await?;
-        Ok(Http3Response { status_code: response.status().as_u16(), headers: header_map_to_owned(response.headers(), self.max_header_bytes)?, body, trailers })
+        let response = self
+            .stream
+            .recv_response()
+            .await
+            .map_err(|e| Http3Error::Protocol(e.to_string()))?;
+        let (body, trailers) =
+            collect_client_body(&mut self.stream, self.max_body_bytes, self.max_header_bytes)
+                .await?;
+        Ok(Http3Response {
+            status_code: response.status().as_u16(),
+            headers: header_map_to_owned(response.headers(), self.max_header_bytes)?,
+            body,
+            trailers,
+        })
     }
-    pub fn cancel(&mut self) { self.stream.stop_stream(h3::error::Code::H3_REQUEST_CANCELLED); }
+    pub fn cancel(&mut self) {
+        self.stream
+            .stop_stream(h3::error::Code::H3_REQUEST_CANCELLED);
+    }
 }
-impl Drop for Http3ClientRequest { fn drop(&mut self) { self.cancel(); } }
+impl Drop for Http3ClientRequest {
+    fn drop(&mut self) {
+        self.cancel();
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rcgen::generate_simple_self_signed;
-    use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+    use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 
     fn tls_pair() -> (Arc<ServerConfig>, Arc<RootCertStore>) {
         let cert = generate_simple_self_signed(vec!["localhost".into()]).expect("certificate");
         let der = cert.cert.der().clone();
         let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der()));
-        let server = ServerConfig::builder().with_no_client_auth().with_single_cert(vec![der.clone()], key).expect("server config");
+        let server = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(vec![der.clone()], key)
+            .expect("server config");
         let mut roots = RootCertStore::empty();
-        roots.add(CertificateDer::from(der)).expect("root");
+        roots.add(der).expect("root");
         (Arc::new(server), Arc::new(roots))
     }
 
     #[tokio::test]
     async fn localhost_round_trip_with_split_data_and_trailers() {
         let (tls, roots) = tls_pair();
-        let handler: Http3Handler = Arc::new(|request| Box::pin(async move {
-            assert_eq!(request.body, b"split");
-            assert_eq!(request.trailers[0].name, "x-input");
-            Ok(Http3Response { status_code: 200, headers: vec![], body: b"ok".to_vec(), trailers: vec![Http3Header { name: "x-done".into(), value: "yes".into() }] })
-        }));
-        let mut server = Http3Server::start(Http3ServerConfig::from_tls("127.0.0.1:0".parse().unwrap(), tls), handler).unwrap();
-        let client = Http3Client::connect(&format!("https://localhost:{}", server.local_addr().port()), Http3ClientConfig::default().with_root_certificates(roots)).await.unwrap();
-        let mut request = client.open_request(Http3Request { method: "POST".into(), target: "/".into(), headers: vec![], body: vec![], trailers: vec![] }).await.unwrap();
+        let handler: Http3Handler = Arc::new(|request| {
+            Box::pin(async move {
+                assert_eq!(request.body, b"split");
+                assert_eq!(request.trailers[0].name, "x-input");
+                Ok(Http3Response {
+                    status_code: 200,
+                    headers: vec![],
+                    body: b"ok".to_vec(),
+                    trailers: vec![Http3Header {
+                        name: "x-done".into(),
+                        value: "yes".into(),
+                    }],
+                })
+            })
+        });
+        let mut server = Http3Server::start(
+            Http3ServerConfig::from_tls("127.0.0.1:0".parse().unwrap(), tls),
+            handler,
+        )
+        .unwrap();
+        let client = Http3Client::connect(
+            &format!("https://localhost:{}", server.local_addr().port()),
+            Http3ClientConfig::default().with_root_certificates(roots),
+        )
+        .await
+        .unwrap();
+        let mut request = client
+            .open_request(Http3Request {
+                method: "POST".into(),
+                target: "/".into(),
+                headers: vec![],
+                body: vec![],
+                trailers: vec![],
+            })
+            .await
+            .unwrap();
         request.send_data(Bytes::from_static(b"sp")).await.unwrap();
         request.send_data(Bytes::from_static(b"lit")).await.unwrap();
-        request.send_trailers(vec![Http3Header { name: "x-input".into(), value: "yes".into() }]).await.unwrap();
+        request
+            .send_trailers(vec![Http3Header {
+                name: "x-input".into(),
+                value: "yes".into(),
+            }])
+            .await
+            .unwrap();
         request.finish().await.unwrap();
         let response = request.recv_response().await.unwrap();
         assert_eq!(response.body, b"ok");
@@ -615,15 +907,42 @@ mod tests {
     #[tokio::test]
     async fn concurrent_streams_and_oversized_body_are_isolated() {
         let (tls, roots) = tls_pair();
-        let handler: Http3Handler = Arc::new(|request| Box::pin(async move {
-            if request.target.ends_with("/slow") { tokio::time::sleep(Duration::from_millis(30)).await; }
-            Ok(Http3Response::text(200, request.target))
-        }));
-        let config = Http3ServerConfig { max_body_bytes: 3, ..Http3ServerConfig::from_tls("127.0.0.1:0".parse().unwrap(), tls) };
+        let handler: Http3Handler = Arc::new(|request| {
+            Box::pin(async move {
+                if request.target.ends_with("/slow") {
+                    tokio::time::sleep(Duration::from_millis(30)).await;
+                }
+                Ok(Http3Response::text(200, request.target))
+            })
+        });
+        let config = Http3ServerConfig {
+            max_body_bytes: 3,
+            ..Http3ServerConfig::from_tls("127.0.0.1:0".parse().unwrap(), tls)
+        };
         let mut server = Http3Server::start(config, handler).unwrap();
-        let client = Http3Client::connect(&format!("https://localhost:{}", server.local_addr().port()), Http3ClientConfig { max_body_bytes: 1024, ..Http3ClientConfig::default().with_root_certificates(roots) }).await.unwrap();
-        let first = client.request(Http3Request { method: "GET".into(), target: "/slow".into(), headers: vec![], body: vec![], trailers: vec![] });
-        let second = client.request(Http3Request { method: "POST".into(), target: "/large".into(), headers: vec![], body: b"1234".to_vec(), trailers: vec![] });
+        let client = Http3Client::connect(
+            &format!("https://localhost:{}", server.local_addr().port()),
+            Http3ClientConfig {
+                max_body_bytes: 1024,
+                ..Http3ClientConfig::default().with_root_certificates(roots)
+            },
+        )
+        .await
+        .unwrap();
+        let first = client.request(Http3Request {
+            method: "GET".into(),
+            target: "/slow".into(),
+            headers: vec![],
+            body: vec![],
+            trailers: vec![],
+        });
+        let second = client.request(Http3Request {
+            method: "POST".into(),
+            target: "/large".into(),
+            headers: vec![],
+            body: b"1234".to_vec(),
+            trailers: vec![],
+        });
         let (slow, large) = tokio::join!(first, second);
         assert_eq!(slow.unwrap().status_code, 200);
         assert_eq!(large.unwrap().status_code, 413);
@@ -634,13 +953,34 @@ mod tests {
     #[tokio::test]
     async fn timeout_resets_stream_and_server_drains_on_shutdown() {
         let (tls, roots) = tls_pair();
-        let handler: Http3Handler = Arc::new(|_| Box::pin(async move {
-            futures_util::future::pending::<Result<Http3Response, Http3Error>>().await
-        }));
-        let config = Http3ServerConfig { shutdown_grace_period: Duration::from_millis(200), ..Http3ServerConfig::from_tls("127.0.0.1:0".parse().unwrap(), tls) };
+        let handler: Http3Handler = Arc::new(|_| {
+            Box::pin(async move {
+                futures_util::future::pending::<Result<Http3Response, Http3Error>>().await
+            })
+        });
+        let config = Http3ServerConfig {
+            shutdown_grace_period: Duration::from_millis(200),
+            ..Http3ServerConfig::from_tls("127.0.0.1:0".parse().unwrap(), tls)
+        };
         let mut server = Http3Server::start(config, handler).unwrap();
-        let client = Http3Client::connect(&format!("https://localhost:{}", server.local_addr().port()), Http3ClientConfig { request_timeout: Duration::from_millis(30), ..Http3ClientConfig::default().with_root_certificates(roots) }).await.unwrap();
-        let result = client.request(Http3Request { method: "GET".into(), target: "/hang".into(), headers: vec![], body: vec![], trailers: vec![] }).await;
+        let client = Http3Client::connect(
+            &format!("https://localhost:{}", server.local_addr().port()),
+            Http3ClientConfig {
+                request_timeout: Duration::from_millis(30),
+                ..Http3ClientConfig::default().with_root_certificates(roots)
+            },
+        )
+        .await
+        .unwrap();
+        let result = client
+            .request(Http3Request {
+                method: "GET".into(),
+                target: "/hang".into(),
+                headers: vec![],
+                body: vec![],
+                trailers: vec![],
+            })
+            .await;
         assert!(matches!(result, Err(Http3Error::Timeout)));
         server.shutdown().await.unwrap();
         client.shutdown().await.unwrap();
@@ -668,4 +1008,3 @@ mod tests {
         assert!(parse_endpoint("https://example.com:/path").is_err());
     }
 }
-

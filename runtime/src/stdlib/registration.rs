@@ -27,12 +27,14 @@ pub fn register() {
     register_serve_http(); // ── ServeHttp (APPEND-ONLY call site) ──
     register_ml_text_embedding_model(); // StatsEmbed
     register_ml_generation(); // ── RagGenerate ──
-    // Anchor the fast-path extern "C" symbols so the JIT symbol resolver
-    // can find them at runtime. See `ffi::keep_fast_symbols` for details.
+                              // Anchor the fast-path extern "C" symbols so the JIT symbol resolver
+                              // can find them at runtime. See `ffi::keep_fast_symbols` for details.
     crate::ffi::keep_fast_symbols();
 }
 
-pub(crate) fn numeric_binary_args(ctx: *mut SpectraHostCallContext) -> Option<([i64; 2], *mut i64)> {
+pub(crate) fn numeric_binary_args(
+    ctx: *mut SpectraHostCallContext,
+) -> Option<([i64; 2], *mut i64)> {
     if ctx.is_null() {
         return None;
     }

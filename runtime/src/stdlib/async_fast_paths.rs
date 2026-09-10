@@ -7,10 +7,7 @@ pub fn concurrent_spawn_fn_fast(
     fn_ptr: SpectraHostValue,
     arg: SpectraHostValue,
 ) -> SpectraHostValue {
-    match spawn_concurrent_task_fn(fn_ptr, arg) {
-        Ok(task_id) => task_id,
-        Err(_) => 0,
-    }
+    spawn_concurrent_task_fn(fn_ptr, arg).unwrap_or_default()
 }
 
 /// Fast-path helper for `concurrent.task_join(task_id)`. Returns the value
@@ -29,7 +26,8 @@ pub fn concurrent_spawn_batch_fast(
     count: SpectraHostValue,
 ) -> SpectraHostValue {
     if let Some(data) = concurrent_diagnostics() {
-        data.batch_spawn_fast_abi_calls.fetch_add(1, Ordering::Relaxed);
+        data.batch_spawn_fast_abi_calls
+            .fetch_add(1, Ordering::Relaxed);
     }
     spawn_concurrent_batch(first_value, count).unwrap_or(0)
 }
@@ -37,11 +35,11 @@ pub fn concurrent_spawn_batch_fast(
 /// Fast ABI for joining every task owned by a batch and summing results.
 pub fn concurrent_join_batch_sum_fast(batch_id: SpectraHostValue) -> SpectraHostValue {
     if let Some(data) = concurrent_diagnostics() {
-        data.batch_join_fast_abi_calls.fetch_add(1, Ordering::Relaxed);
+        data.batch_join_fast_abi_calls
+            .fetch_add(1, Ordering::Relaxed);
     }
     join_concurrent_batch_sum(batch_id).unwrap_or(0)
 }
-
 
 /// Fast-path helper for `concurrent.reset()`.
 pub fn concurrent_reset_fast() -> SpectraHostValue {
@@ -63,11 +61,13 @@ pub fn concurrent_channel_new_fast() -> SpectraHostValue {
         Ok(r) => r,
         Err(_) => return 0,
     };
-    
-    registry.channels.insert(Arc::new(Mutex::new(ConcurrentChannel {
-        queue: VecDeque::with_capacity(CONCURRENT_CHANNEL_INITIAL_CAPACITY),
-        closed: false,
-    })))
+
+    registry
+        .channels
+        .insert(Arc::new(Mutex::new(ConcurrentChannel {
+            queue: VecDeque::with_capacity(CONCURRENT_CHANNEL_INITIAL_CAPACITY),
+            closed: false,
+        })))
 }
 
 /// Fast-path helper for `concurrent.channel_send(channel, value)`.

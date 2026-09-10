@@ -28,11 +28,11 @@ pub(crate) extern "C" fn std_ml_onnx_export_weights(ctx: *mut SpectraHostCallCon
         let Some(model) = ml_onnx_model_spec(&kind) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let weight_values =
-            match with_list_registry(|registry| registry.snapshot(args[2] as usize)) {
-                Ok(values) => values,
-                Err(code) => return code,
-            };
+        let weight_values = match with_list_registry(|registry| registry.snapshot(args[2] as usize))
+        {
+            Ok(values) => values,
+            Err(code) => return code,
+        };
         if weight_values.len() != model.initializers.len() {
             return HOST_STATUS_INVALID_ARGUMENT;
         }
@@ -44,10 +44,8 @@ pub(crate) extern "C" fn std_ml_onnx_export_weights(ctx: *mut SpectraHostCallCon
             let Some((shape, values, _)) = ml_tensor_float_data(*handle as usize) else {
                 return HOST_STATUS_NOT_FOUND;
             };
-            let spec_shape: Vec<i64> =
-                initializer.shape.iter().map(|dim| *dim).collect();
-            let provided: Vec<i64> =
-                shape.iter().map(|dim| *dim as i64).collect();
+            let spec_shape: Vec<i64> = initializer.shape.to_vec();
+            let provided: Vec<i64> = shape.iter().map(|dim| *dim as i64).collect();
             let spec_rendered = spec_shape
                 .iter()
                 .map(|dim| dim.to_string())
@@ -211,7 +209,7 @@ pub(crate) extern "C" fn std_ml_onnx_session_from_bytes(ctx: *mut SpectraHostCal
         #[cfg(not(feature = "onnx"))]
         {
             let _ = bytes;
-            return ml_onnx_unavailable_result(ctx_ref, ML_ONNX_SESSION_FROM_BYTES);
+            ml_onnx_unavailable_result(ctx_ref, ML_ONNX_SESSION_FROM_BYTES)
         }
     }
 }
@@ -244,7 +242,7 @@ pub(crate) extern "C" fn std_ml_onnx_run(ctx: *mut SpectraHostCallContext) -> i3
         #[cfg(not(feature = "onnx"))]
         {
             let _ = (session_handle, tensor_handle, output_name);
-            return ml_onnx_unavailable_result(ctx_ref, ML_ONNX_RUN);
+            ml_onnx_unavailable_result(ctx_ref, ML_ONNX_RUN)
         }
     }
 }
@@ -272,11 +270,10 @@ pub(crate) extern "C" fn std_ml_onnx_session_free(ctx: *mut SpectraHostCallConte
         #[cfg(not(feature = "onnx"))]
         {
             let _ = session_handle;
-            return ml_onnx_unavailable_result(ctx_ref, ML_ONNX_SESSION_FREE);
+            ml_onnx_unavailable_result(ctx_ref, ML_ONNX_SESSION_FREE)
         }
     }
 }
-
 
 // ── OnnxMultiInput: multi-graph-input inference ──
 
@@ -301,13 +298,11 @@ pub(crate) extern "C" fn std_ml_onnx_run_multi(ctx: *mut SpectraHostCallContext)
         let names_handle = args[1] as usize;
         let tensors_handle = args[2] as usize;
 
-        let name_values =
-            match with_list_registry(|registry| registry.snapshot(names_handle)) {
-                Ok(values) => values,
-                Err(code) => return code,
-            };
-        let tensor_values = match with_list_registry(|registry| registry.snapshot(tensors_handle))
-        {
+        let name_values = match with_list_registry(|registry| registry.snapshot(names_handle)) {
+            Ok(values) => values,
+            Err(code) => return code,
+        };
+        let tensor_values = match with_list_registry(|registry| registry.snapshot(tensors_handle)) {
             Ok(values) => values,
             Err(code) => return code,
         };
@@ -357,7 +352,7 @@ pub(crate) extern "C" fn std_ml_onnx_run_multi(ctx: *mut SpectraHostCallContext)
         #[cfg(not(feature = "onnx"))]
         {
             let _ = (session_handle, names, tensor_handles);
-            return ml_onnx_unavailable_result(ctx_ref, ML_ONNX_RUN_MULTI);
+            ml_onnx_unavailable_result(ctx_ref, ML_ONNX_RUN_MULTI)
         }
     }
 }

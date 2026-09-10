@@ -239,10 +239,7 @@ public async func handle(request: std.api.http.Request)  returns  std.api.http.R
                         inner.push(nested);
                     }
                     // `N:default` -> default; bare `N` -> nothing.
-                    match inner.split_once(':') {
-                        Some((_, default)) => expanded.push_str(default),
-                        None => {}
-                    }
+                    if let Some((_, default)) = inner.split_once(':') { expanded.push_str(default) }
                 }
                 _ => {
                     // bare tabstop like `$0` or `$1`: drop it.

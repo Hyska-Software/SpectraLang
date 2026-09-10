@@ -9,33 +9,32 @@ pub(crate) extern "C" fn std_serve_server_new(ctx: *mut SpectraHostCallContext) 
         Err(status) => return status,
     };
     let server_id = registry.servers.insert(ServeServer {
-            model: args[0],
+        model: args[0],
         models: std::collections::BTreeMap::new(),
-            model_version: format!("model-{}", args[0]),
-            warm: false,
-            timeout: 1,
-            queue: VecDeque::new(),
-            input_policy: None,
-            output_policy: None,
-            rate_limit: None,
-            accepted_requests: 0,
-            fallback: -1,
-            last_diagnostic:
-                "{\"schema\":\"spectra.serve.guardrail_diagnostic.v1\",\"status\":\"ok\"}"
-                    .to_string(),
-            audit_events: Vec::new(),
-            total_requests: 0,
-            completed_requests: 0,
-            blocked_requests: 0,
-            cancelled_requests: 0,
-            error_count: 0,
-            batch_count: 0,
-            latency_samples_ms: Vec::new(),
-            observed_inputs: Vec::new(),
-            observed_outputs: Vec::new(),
-            model_metrics: std::collections::BTreeMap::new(),
-            http: None,
-        });
+        model_version: format!("model-{}", args[0]),
+        warm: false,
+        timeout: 1,
+        queue: VecDeque::new(),
+        input_policy: None,
+        output_policy: None,
+        rate_limit: None,
+        accepted_requests: 0,
+        fallback: -1,
+        last_diagnostic: "{\"schema\":\"spectra.serve.guardrail_diagnostic.v1\",\"status\":\"ok\"}"
+            .to_string(),
+        audit_events: Vec::new(),
+        total_requests: 0,
+        completed_requests: 0,
+        blocked_requests: 0,
+        cancelled_requests: 0,
+        error_count: 0,
+        batch_count: 0,
+        latency_samples_ms: Vec::new(),
+        observed_inputs: Vec::new(),
+        observed_outputs: Vec::new(),
+        model_metrics: std::collections::BTreeMap::new(),
+        http: None,
+    });
     results[0] = server_id;
     HOST_STATUS_SUCCESS
 }
@@ -82,7 +81,9 @@ pub(crate) extern "C" fn std_serve_server_enqueue(ctx: *mut SpectraHostCallConte
         Ok(registry) => registry,
         Err(status) => return status,
     };
-    let ServeRegistry { servers, requests, .. } = &mut *registry;
+    let ServeRegistry {
+        servers, requests, ..
+    } = &mut *registry;
     let Some(server) = servers.get_mut(args[0]) else {
         return HOST_STATUS_NOT_FOUND;
     };
@@ -166,7 +167,9 @@ pub(crate) extern "C" fn std_serve_server_cancel(ctx: *mut SpectraHostCallContex
         Ok(registry) => registry,
         Err(status) => return status,
     };
-    let ServeRegistry { servers, requests, .. } = &mut *registry;
+    let ServeRegistry {
+        servers, requests, ..
+    } = &mut *registry;
     let Some(server) = servers.get_mut(args[0]) else {
         return HOST_STATUS_NOT_FOUND;
     };
@@ -198,7 +201,9 @@ pub(crate) extern "C" fn std_serve_server_process_batch(ctx: *mut SpectraHostCal
         Ok(registry) => registry,
         Err(status) => return status,
     };
-    let ServeRegistry { servers, requests, .. } = &mut *registry;
+    let ServeRegistry {
+        servers, requests, ..
+    } = &mut *registry;
     let Some(server) = servers.get_mut(args[0]) else {
         return HOST_STATUS_NOT_FOUND;
     };
@@ -277,12 +282,7 @@ pub(crate) extern "C" fn std_serve_server_process_batch(ctx: *mut SpectraHostCal
             output,
             output,
         ));
-        serve_record_complete(
-            server,
-            SERVE_DEFAULT_MODEL_ID,
-            output_vec[0],
-            latency_ms,
-        );
+        serve_record_complete(server, SERVE_DEFAULT_MODEL_ID, output_vec[0], latency_ms);
         if let Some((_, state)) = requests.get_mut(request_id) {
             *state = ServeRequestState::Complete(output, output_vec);
         }
@@ -464,7 +464,9 @@ pub(crate) extern "C" fn std_serve_server_benchmark(ctx: *mut SpectraHostCallCon
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_serve_server_set_input_policy(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_set_input_policy(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let (args, results) = match host_call_args(ctx, 3) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -488,7 +490,9 @@ pub(crate) extern "C" fn std_serve_server_set_input_policy(ctx: *mut SpectraHost
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_serve_server_set_output_policy(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_set_output_policy(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let (args, results) = match host_call_args(ctx, 3) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -595,7 +599,9 @@ pub(crate) extern "C" fn std_serve_server_audit_log(ctx: *mut SpectraHostCallCon
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_serve_server_set_model_version(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_set_model_version(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -619,7 +625,9 @@ pub(crate) extern "C" fn std_serve_server_set_model_version(ctx: *mut SpectraHos
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_serve_server_monitoring_snapshot(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_monitoring_snapshot(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -638,7 +646,9 @@ pub(crate) extern "C" fn std_serve_server_monitoring_snapshot(ctx: *mut SpectraH
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_serve_server_distribution_summary(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_distribution_summary(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let (args, results) = match host_call_args(ctx, 1) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -745,9 +755,7 @@ pub(crate) fn serve_parse_linear_layer(
     biases_handle: SpectraHostValue,
     activation_code: SpectraHostValue,
 ) -> Result<ServeLinearLayer, i32> {
-    let Some((weight_shape, weight_data, _)) =
-        ml_tensor_float_data(weights_handle as usize)
-    else {
+    let Some((weight_shape, weight_data, _)) = ml_tensor_float_data(weights_handle as usize) else {
         return Err(HOST_STATUS_NOT_FOUND);
     };
     let Some((bias_shape, bias_data, _)) = ml_tensor_float_data(biases_handle as usize) else {
@@ -767,10 +775,7 @@ pub(crate) fn serve_parse_linear_layer(
         3 => ServeActivation::Softmax,
         _ => return Err(HOST_STATUS_INVALID_ARGUMENT),
     };
-    let weights = weight_data
-        .chunks(cols)
-        .map(|row| row.to_vec())
-        .collect();
+    let weights = weight_data.chunks(cols).map(|row| row.to_vec()).collect();
     Ok(ServeLinearLayer {
         weights,
         biases: bias_data,
@@ -786,14 +791,16 @@ pub(crate) fn serve_parse_linear_layer(
 /// layer's input dimension must be 1 and every following layer must chain on
 /// the previous output width. Use the named-model host for wider inputs or
 /// multiple models on one server.
-pub(crate) extern "C" fn std_serve_server_register_model_linear(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_register_model_linear(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
     let (args, results) = unsafe {
         let ctx_ref = &mut *ctx;
         // Variadic: (server, w1, b1, act1, ...) -> 1 + 3 * layers args.
-        if ctx_ref.arg_len < 4 || (ctx_ref.arg_len - 1) % 3 != 0 {
+        if ctx_ref.arg_len < 4 || !(ctx_ref.arg_len - 1).is_multiple_of(3) {
             return HOST_STATUS_INVALID_ARGUMENT;
         }
         if ctx_ref.args.is_null() || ctx_ref.result_len == 0 || ctx_ref.results.is_null() {
@@ -831,9 +838,10 @@ pub(crate) extern "C" fn std_serve_server_register_model_linear(ctx: *mut Spectr
         }
         layers.push(layer);
     }
-    server
-        .models
-        .insert(SERVE_DEFAULT_MODEL_ID.to_string(), ServeModel::Linear(layers));
+    server.models.insert(
+        SERVE_DEFAULT_MODEL_ID.to_string(),
+        ServeModel::Linear(layers),
+    );
     server.audit_events.push(format!(
         "{{\"request\":0,\"event\":\"model_registered\",\"stage\":\"model\",\"value\":{},\"result\":{}}}",
         server.model,
@@ -849,7 +857,9 @@ pub(crate) extern "C" fn std_serve_server_register_model_linear(ctx: *mut Spectr
 /// delegates to `ml_onnx_run_inner` exactly like
 /// `spectra.std.ml.onnx_run`. Without the runtime `onnx` feature no real
 /// session can exist and this host rejects instead of simulating.
-pub(crate) extern "C" fn std_serve_server_register_model_onnx(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_register_model_onnx(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let (args, results) = match host_call_args(ctx, 2) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -857,7 +867,7 @@ pub(crate) extern "C" fn std_serve_server_register_model_onnx(ctx: *mut SpectraH
     #[cfg(not(feature = "onnx"))]
     {
         let _ = (args, results);
-        return HOST_STATUS_INVALID_ARGUMENT;
+        HOST_STATUS_INVALID_ARGUMENT
     }
     #[cfg(feature = "onnx")]
     {
@@ -875,9 +885,10 @@ pub(crate) extern "C" fn std_serve_server_register_model_onnx(ctx: *mut SpectraH
         let Some(server) = registry.servers.get_mut(args[0]) else {
             return HOST_STATUS_NOT_FOUND;
         };
-        server
-            .models
-            .insert(SERVE_DEFAULT_MODEL_ID.to_string(), ServeModel::Onnx(session_id));
+        server.models.insert(
+            SERVE_DEFAULT_MODEL_ID.to_string(),
+            ServeModel::Onnx(session_id),
+        );
         server.audit_events.push(format!(
             "{{\"request\":0,\"event\":\"model_registered\",\"stage\":\"model\",\"value\":{},\"result\":{}}}",
             server.model, session_id
@@ -929,14 +940,16 @@ pub(crate) extern "C" fn std_serve_server_result_vector(ctx: *mut SpectraHostCal
 /// MULTIPLE models per server. The first layer may have any input dimension
 /// N >= 1: request vectors of length N are accepted and every following
 /// layer must chain on the previous output width.
-pub(crate) extern "C" fn std_serve_server_register_named_model_linear(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_register_named_model_linear(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     if ctx.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
     let (args, results) = unsafe {
         let ctx_ref = &mut *ctx;
         // Variadic: (server, model_id, w1, b1, act1, ...) -> 2 + 3 * layers args.
-        if ctx_ref.arg_len < 5 || (ctx_ref.arg_len - 2) % 3 != 0 {
+        if ctx_ref.arg_len < 5 || !(ctx_ref.arg_len - 2).is_multiple_of(3) {
             return HOST_STATUS_INVALID_ARGUMENT;
         }
         if ctx_ref.args.is_null() || ctx_ref.result_len == 0 || ctx_ref.results.is_null() {
@@ -992,7 +1005,9 @@ pub(crate) extern "C" fn std_serve_server_register_named_model_linear(ctx: *mut 
 /// Inference delegates to `ml_onnx_run_inner` with the named model's session.
 /// Without the runtime `onnx` feature no real session can exist and this
 /// host rejects instead of simulating.
-pub(crate) extern "C" fn std_serve_server_register_named_model_onnx(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_serve_server_register_named_model_onnx(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let (args, results) = match host_call_args(ctx, 3) {
         Ok(parts) => parts,
         Err(status) => return status,
@@ -1000,7 +1015,7 @@ pub(crate) extern "C" fn std_serve_server_register_named_model_onnx(ctx: *mut Sp
     #[cfg(not(feature = "onnx"))]
     {
         let _ = (args, results);
-        return HOST_STATUS_INVALID_ARGUMENT;
+        HOST_STATUS_INVALID_ARGUMENT
     }
     #[cfg(feature = "onnx")]
     {
@@ -1060,9 +1075,7 @@ pub(crate) extern "C" fn std_serve_server_infer(ctx: *mut SpectraHostCallContext
         Err(status) => return status,
     };
     let ServeRegistry {
-        servers,
-        requests,
-        ..
+        servers, requests, ..
     } = &mut *registry;
     let Some(server) = servers.get_mut(args[0]) else {
         return HOST_STATUS_NOT_FOUND;

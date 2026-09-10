@@ -110,10 +110,7 @@ impl ManualMemory {
     /// generic [`ManualMemory::allocate_manual`] (whose statistics can only
     /// record `size_of::<T>()`), this records the full buffer length, so
     /// `stats().manual.bytes` reflects the real payload size.
-    pub fn allocate_manual_bytes(
-        &self,
-        len: usize,
-    ) -> Result<ManualBox<Vec<u8>>, AllocationError> {
+    pub fn allocate_manual_bytes(&self, len: usize) -> Result<ManualBox<Vec<u8>>, AllocationError> {
         self.manual.register(len, &self.config)?;
         let boxed = Box::new(vec![0u8; len]);
         Ok(ManualBox::new(boxed, len, self.manual.clone()))

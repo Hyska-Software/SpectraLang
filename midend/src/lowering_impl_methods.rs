@@ -258,7 +258,12 @@ impl ASTLowering {
         self.drop_excluded_names.clear();
 
         for (idx, param) in params.iter().enumerate() {
-            if method.params.get(idx).map(|param| param.is_self).unwrap_or(false) {
+            if method
+                .params
+                .get(idx)
+                .map(|param| param.is_self)
+                .unwrap_or(false)
+            {
                 self.drop_excluded_names.insert(param.name.clone());
             }
             let value = Value { id: idx };
@@ -322,7 +327,7 @@ impl ASTLowering {
                 if method.body.statements.len() > 1 {
                     for stmt in &method.body.statements[..method.body.statements.len() - 1] {
                         self.lower_statement(stmt, &mut ir_func);
-                }
+                    }
                 }
                 let last_type = self.infer_expr_ir_type(expr);
                 let last_value = self.lower_expression(expr, &mut ir_func);
@@ -348,7 +353,9 @@ impl ASTLowering {
                 .unwrap_or(false);
             if needs_terminator {
                 if let Some(block) = ir_func.get_block_mut(current_block_id) {
-                    block.set_terminator(Terminator::Return { value: implicit_return_value });
+                    block.set_terminator(Terminator::Return {
+                        value: implicit_return_value,
+                    });
                 }
             }
         }
@@ -417,10 +424,16 @@ impl ASTLowering {
             name: "__closure_env".to_string(),
             ty: IRType::Int,
         }];
-        ir_params.extend(params.iter().enumerate().map(|(idx, p)| Parameter {
-            id: idx + 1,
-            name: p.name.clone(),
-            ty: p.ty.as_ref().map(|t| self.lower_type_annotation(t)).unwrap_or(IRType::Unknown),
+        ir_params.extend(params.iter().enumerate().map(|(idx, p)| {
+            Parameter {
+                id: idx + 1,
+                name: p.name.clone(),
+                ty: p
+                    .ty
+                    .as_ref()
+                    .map(|t| self.lower_type_annotation(t))
+                    .unwrap_or(IRType::Unknown),
+            }
         }));
 
         // --- Save outer function state ---
@@ -510,8 +523,8 @@ impl ASTLowering {
             .map(|param| (param.name.clone(), param.ty.clone()))
             .collect();
         let assigned_vars = if let ExpressionKind::Block(block) = &body.kind {
-            let assigned = self
-                .find_assigned_variables_with_types(&block.statements, &mut lambda_slot_hints);
+            let assigned =
+                self.find_assigned_variables_with_types(&block.statements, &mut lambda_slot_hints);
             let mut names: Vec<String> = assigned.into_iter().collect();
             names.sort();
             names
@@ -594,5 +607,4 @@ impl ASTLowering {
 
         closure_handle
     }
-
 }

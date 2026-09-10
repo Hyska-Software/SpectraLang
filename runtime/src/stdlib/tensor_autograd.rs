@@ -139,11 +139,7 @@ pub(crate) fn autograd_parent_grads_cpu(
         AutogradOp::BatchedMatmul => {
             // left_shape/right_shape are [batch, m, k] / [batch, k, n];
             // each batch differentiates exactly like `Matmul`.
-            let (batch, m, k) = (
-                node.left_shape[0],
-                node.left_shape[1],
-                node.left_shape[2],
-            );
+            let (batch, m, k) = (node.left_shape[0], node.left_shape[1], node.left_shape[2]);
             let n = node.right_shape[2];
             let mut grad_left = vec![0.0; batch * m * k];
             let mut grad_right = vec![0.0; batch * k * n];
@@ -277,7 +273,8 @@ pub(crate) fn autograd_parent_grads_cpu(
                         for ox in 0..out_w {
                             let g = grad[((n * channels + c) * out_h + oy) * out_w + ox];
                             let mut best = f64::NEG_INFINITY;
-                            let mut best_idx = ((n * channels + c) * h + oy * pool_h) * w + ox * pool_w;
+                            let mut best_idx =
+                                ((n * channels + c) * h + oy * pool_h) * w + ox * pool_w;
                             for py in 0..pool_h {
                                 for px in 0..pool_w {
                                     let iy = oy * pool_h + py;
@@ -314,7 +311,11 @@ pub(crate) fn autograd_parent_grads_cpu(
                 grad.iter()
                     .map(|g| {
                         let keep = dropout_keep_draw(&mut stream, p);
-                        if keep { g * scale } else { 0.0 }
+                        if keep {
+                            g * scale
+                        } else {
+                            0.0
+                        }
                     })
                     .collect(),
             ))
@@ -367,7 +368,7 @@ pub(crate) fn autograd_parent_grads_cpu(
                 return None;
             }
             let mut grad_input = vec![0.0; total];
-            for in_idx in 0..total {
+            for (in_idx, slot) in grad_input.iter_mut().enumerate() {
                 let mut remainder = in_idx;
                 let mut coords = vec![0usize; rank];
                 for axis in 0..rank {
@@ -379,7 +380,7 @@ pub(crate) fn autograd_parent_grads_cpu(
                 for axis in 0..rank {
                     out_idx += coords[axis] * out_strides[axis];
                 }
-                grad_input[in_idx] = grad[out_idx];
+                *slot = grad[out_idx];
             }
             Some(single(grad_input))
         }

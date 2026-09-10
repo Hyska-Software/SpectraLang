@@ -462,14 +462,11 @@ fn read_operator(
 /// here, but gluing its `-`/`+` changes only spacing, never the parse.
 fn is_exponent_sign(result: &str) -> bool {
     let mut chars = result.chars().rev().filter(|ch| !ch.is_whitespace());
-    match (chars.next(), chars.next()) {
+    matches!(
+        (chars.next(), chars.next()),
         (Some(marker), Some(prev))
-            if (marker == 'e' || marker == 'E') && (prev.is_ascii_digit() || prev == '.') =>
-        {
-            true
-        }
-        _ => false,
-    }
+            if (marker == 'e' || marker == 'E') && (prev.is_ascii_digit() || prev == '.')
+    )
 }
 
 fn previous_non_space(result: &str) -> Option<char> {
@@ -857,7 +854,7 @@ fn try_wrap_binary_expression(content: &str) -> Option<(String, Vec<String>)> {
                 );
                 if anchored
                     && assignment
-                        .map_or(true, |(best, _)| eq_byte < best)
+                        .is_none_or(|(best, _)| eq_byte < best)
                 {
                     assignment = Some((eq_byte, position + needle.len()));
                 }
@@ -878,7 +875,7 @@ fn try_wrap_binary_expression(content: &str) -> Option<(String, Vec<String>)> {
         let rest = &content[index..];
         let length = WRAP_BINARY_PAIR_OPS
             .iter()
-            .find_map(|op| rest.starts_with(op).then(|| op.len()))
+            .find_map(|op| rest.starts_with(op).then_some(op.len()))
             .or_else(|| {
                 rest.chars().next().and_then(|ch| {
                     WRAP_BINARY_SINGLE_OPS
@@ -972,9 +969,7 @@ fn try_split_long_line(line: &FormattedLine) -> Option<Vec<FormattedLine>> {
     if content.starts_with("//") {
         return None;
     }
-    if significant_chars(content).is_none() {
-        return None;
-    }
+    significant_chars(content)?;
 
     if let Some(split) = try_wrap_delimited(content, '(', ')') {
         return Some(render_delimited_split(line, &split, true));

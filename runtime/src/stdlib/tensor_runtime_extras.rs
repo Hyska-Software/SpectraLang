@@ -95,7 +95,9 @@ pub(crate) extern "C" fn std_tensor_normal_f(ctx: *mut SpectraHostCallContext) -
     }
 }
 
-pub(crate) extern "C" fn std_tensor_set_deterministic_mode(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_set_deterministic_mode(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -500,12 +502,16 @@ pub(crate) extern "C" fn std_tensor_stats_kernel_elements(ctx: *mut SpectraHostC
     tensor_metric(ctx, |metrics| metrics.kernel_elements)
 }
 
-pub(crate) extern "C" fn std_tensor_stats_device_transfers(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_stats_device_transfers(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     tensor_metric(ctx, |metrics| metrics.device_transfers)
 }
 
 #[cfg(feature = "gpu")]
-pub(crate) extern "C" fn std_tensor_stats_device_pool_hits(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_stats_device_pool_hits(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     unsafe {
         let Ok((ctx_ref, _args)) = tensor_args(ctx, 0) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -517,7 +523,9 @@ pub(crate) extern "C" fn std_tensor_stats_device_pool_hits(ctx: *mut SpectraHost
 }
 
 #[cfg(feature = "gpu")]
-pub(crate) extern "C" fn std_tensor_stats_device_pool_misses(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_stats_device_pool_misses(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     unsafe {
         let Ok((ctx_ref, _args)) = tensor_args(ctx, 0) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -529,7 +537,9 @@ pub(crate) extern "C" fn std_tensor_stats_device_pool_misses(ctx: *mut SpectraHo
 }
 
 #[cfg(feature = "gpu")]
-pub(crate) extern "C" fn std_tensor_stats_device_pool_bytes_resident(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_stats_device_pool_bytes_resident(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     unsafe {
         let Ok((ctx_ref, _args)) = tensor_args(ctx, 0) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -584,11 +594,15 @@ pub(crate) extern "C" fn std_tensor_stats_gpu_errors(ctx: *mut SpectraHostCallCo
     }
 }
 
-pub(crate) extern "C" fn std_tensor_stats_device_resident_tensors(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_stats_device_resident_tensors(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     tensor_metric(ctx, |metrics| metrics.device_resident_tensors)
 }
 
-pub(crate) extern "C" fn std_tensor_stats_gpu_backward_ops(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_stats_gpu_backward_ops(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     let value = gpu_backward_ops_counter().load(std::sync::atomic::Ordering::Relaxed);
     tensor_metric(ctx, move |_| value)
 }
@@ -609,7 +623,9 @@ pub(crate) extern "C" fn std_tensor_stats_graph_nodes(ctx: *mut SpectraHostCallC
     }
 }
 
-pub(crate) extern "C" fn std_tensor_stats_lifetime_records(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_stats_lifetime_records(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     unsafe {
         let Ok((ctx_ref, _args)) = tensor_args(ctx, 0) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -619,7 +635,9 @@ pub(crate) extern "C" fn std_tensor_stats_lifetime_records(ctx: *mut SpectraHost
     }
 }
 
-pub(crate) extern "C" fn std_tensor_stats_released_lifetimes(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_stats_released_lifetimes(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     unsafe {
         let Ok((ctx_ref, _args)) = tensor_args(ctx, 0) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -629,7 +647,9 @@ pub(crate) extern "C" fn std_tensor_stats_released_lifetimes(ctx: *mut SpectraHo
     }
 }
 
-pub(crate) extern "C" fn std_tensor_stats_allocation_sites(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_stats_allocation_sites(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     unsafe {
         let Ok((ctx_ref, _args)) = tensor_args(ctx, 0) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -639,7 +659,9 @@ pub(crate) extern "C" fn std_tensor_stats_allocation_sites(ctx: *mut SpectraHost
     }
 }
 
-pub(crate) extern "C" fn std_tensor_stats_reuse_rate_per_mille(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_tensor_stats_reuse_rate_per_mille(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     unsafe {
         let Ok((ctx_ref, _args)) = tensor_args(ctx, 0) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -717,4 +739,3 @@ pub(crate) fn f64_bits_to_i64_if_needed(value: SpectraHostValue) -> SpectraHostV
         value
     }
 }
-

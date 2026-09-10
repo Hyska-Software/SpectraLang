@@ -166,8 +166,7 @@ fn default_worker_threads() -> usize {
     std::thread::available_parallelism()
         .map(|parallelism| parallelism.get())
         .unwrap_or(1)
-        .min(DEFAULT_MAX_WORKER_THREADS)
-        .max(1)
+        .clamp(1, DEFAULT_MAX_WORKER_THREADS)
 }
 
 #[derive(Clone, Debug)]
@@ -644,7 +643,7 @@ impl HandlerPool {
         conn_id: u64,
         request: ParsedRequest,
         context: Option<tracing::TraceContext>,
-    ) -> Result<(), mpsc::TrySendError<HandlerJob>> {
+    ) -> Result<(), Box<mpsc::TrySendError<HandlerJob>>> {
         self.jobs
             .as_ref()
             .expect("handler pool submits only while running")
@@ -653,6 +652,7 @@ impl HandlerPool {
                 request,
                 context,
             })
+            .map_err(Box::new)
     }
 
     /// Stops accepting jobs, waits for in-flight handlers to finish, and

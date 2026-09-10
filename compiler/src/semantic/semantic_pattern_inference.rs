@@ -77,11 +77,10 @@ impl SemanticAnalyzer {
                 {
                     for (field_name, sub_pattern) in fields {
                         if let Some(field) = struct_info.fields.get(field_name) {
-                            let field_type = self
-                                .type_annotation_to_type_with_substitutions(
-                                    &field.ty,
-                                    &substitutions,
-                                );
+                            let field_type = self.type_annotation_to_type_with_substitutions(
+                                &field.ty,
+                                &substitutions,
+                            );
                             self.bind_pattern_types(sub_pattern, &field_type);
                         }
                     }
@@ -241,5 +240,4 @@ impl SemanticAnalyzer {
             }
         }
     }
-
 }

@@ -7,7 +7,10 @@ pub(crate) fn ml_read_path_arg(arg: SpectraHostValue) -> Option<String> {
     Some(path)
 }
 
-pub(crate) fn ml_parse_csv_numeric(path: &str, has_header: bool) -> Result<(usize, usize, Vec<f64>), i32> {
+pub(crate) fn ml_parse_csv_numeric(
+    path: &str,
+    has_header: bool,
+) -> Result<(usize, usize, Vec<f64>), i32> {
     let content = std::fs::read_to_string(path).map_err(|_| HOST_STATUS_NOT_FOUND)?;
     let mut rows = 0usize;
     let mut cols = None;
@@ -74,7 +77,11 @@ pub(crate) fn ml_dataset_from_flat_parts(
     Ok(handle)
 }
 
-pub(crate) fn ml_dataset_from_csv_path(path: &str, label_col: usize, has_header: bool) -> Result<usize, i32> {
+pub(crate) fn ml_dataset_from_csv_path(
+    path: &str,
+    label_col: usize,
+    has_header: bool,
+) -> Result<usize, i32> {
     let (rows, cols, values) = ml_parse_csv_numeric(path, has_header)?;
     if cols < 2 || label_col >= cols {
         return Err(HOST_STATUS_INVALID_ARGUMENT);
@@ -188,7 +195,11 @@ pub(crate) fn ml_parse_npy_f64_1d(path: &str) -> Result<Vec<f64>, i32> {
     Ok(values)
 }
 
-pub(crate) fn ml_dataset_subset(dataset: MlDataset, start: usize, len: usize) -> Result<usize, i32> {
+pub(crate) fn ml_dataset_subset(
+    dataset: MlDataset,
+    start: usize,
+    len: usize,
+) -> Result<usize, i32> {
     let (feature_shape, feature_data, _) =
         ml_tensor_float_data(dataset.features).ok_or(HOST_STATUS_INVALID_ARGUMENT)?;
     let (label_shape, label_data, _) =

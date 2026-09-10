@@ -90,7 +90,6 @@ pub fn map_set_fast(handle: usize, key: i64, value: i64) -> i32 {
     }
 }
 
-
 /// Fast-path helper for `col.map_contains(handle, key)`.
 ///
 /// Returns 1 if the key is present in the map, 0 otherwise (including
@@ -101,14 +100,13 @@ pub fn map_contains_fast(handle: usize, key: i64) -> i64 {
         Some(map_arc)
             if lock_unpoisoned(&map_arc)
                 .data
-                .contains_key(&collection_key(key))
-            => {
-                1
-            }
+                .contains_key(&collection_key(key)) =>
+        {
+            1
+        }
         Some(_) | None => 0,
     }
 }
-
 
 /// Fast-path helper for `col.map_len(handle)`.
 ///

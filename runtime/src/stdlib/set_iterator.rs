@@ -66,7 +66,11 @@ impl SetRegistry {
         self.sets.insert(set).raw() as usize
     }
 
-    pub(crate) fn insert_value(&mut self, handle: usize, value: SpectraHostValue) -> Result<bool, i32> {
+    pub(crate) fn insert_value(
+        &mut self,
+        handle: usize,
+        value: SpectraHostValue,
+    ) -> Result<bool, i32> {
         let id = Self::id(handle)?;
         let set = self.sets.get_mut(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
         if set
@@ -93,7 +97,11 @@ impl SetRegistry {
             .any(|candidate| collection_values_equal(candidate, value)))
     }
 
-    pub(crate) fn remove_value(&mut self, handle: usize, value: SpectraHostValue) -> Result<bool, i32> {
+    pub(crate) fn remove_value(
+        &mut self,
+        handle: usize,
+        value: SpectraHostValue,
+    ) -> Result<bool, i32> {
         let id = Self::id(handle)?;
         let set = self.sets.get_mut(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
         let Some(index) = set
@@ -117,7 +125,11 @@ impl SetRegistry {
             .len())
     }
 
-    pub(crate) fn get_option(&self, handle: usize, index: i64) -> Result<Option<SpectraHostValue>, i32> {
+    pub(crate) fn get_option(
+        &self,
+        handle: usize,
+        index: i64,
+    ) -> Result<Option<SpectraHostValue>, i32> {
         let id = Self::id(handle)?;
         let set = self.sets.get(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
         if index < 0 {
@@ -336,10 +348,7 @@ impl IteratorRegistry {
                 *cursor += 1;
                 Ok(Some(value))
             }
-            IteratorSource::Range {
-                current,
-                remaining,
-            } => {
+            IteratorSource::Range { current, remaining } => {
                 if *remaining == 0 {
                     return Ok(None);
                 }
@@ -355,10 +364,7 @@ impl IteratorRegistry {
 
     pub(crate) fn remaining(&self, handle: usize) -> Result<usize, i32> {
         let id = Self::id(handle)?;
-        let iterator = self
-            .iterators
-            .get(id)
-            .map_err(|_| HOST_STATUS_NOT_FOUND)?;
+        let iterator = self.iterators.get(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
         Ok(match &iterator.source {
             IteratorSource::Values { items, cursor } => items.len().saturating_sub(*cursor),
             IteratorSource::Range { remaining, .. } => *remaining,
@@ -530,4 +536,3 @@ pub(crate) extern "C" fn std_iterator_from_values(ctx: *mut SpectraHostCallConte
     }
     HOST_STATUS_SUCCESS
 }
-

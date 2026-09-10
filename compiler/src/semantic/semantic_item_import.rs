@@ -48,11 +48,7 @@ impl SemanticAnalyzer {
         &mut self,
         import: &crate::ast::Import,
         user_fn_types: &mut Vec<(String, crate::ast::Type)>,
-        user_fn_signatures: &mut Vec<(
-            String,
-            Vec<crate::ast::Type>,
-            crate::ast::Type,
-        )>,
+        user_fn_signatures: &mut Vec<(String, Vec<crate::ast::Type>, crate::ast::Type)>,
         imported_static_globals: &mut Vec<(String, String, crate::ast::Type)>,
         user_enum_defs: &mut Vec<crate::ast::Enum>,
         user_struct_defs: &mut Vec<crate::ast::Struct>,
@@ -89,7 +85,10 @@ impl SemanticAnalyzer {
             if module_path.starts_with("std.") {
                 let available = self.registered_std_module_list();
                 let hint = match self.closest_registered_std_module(&module_path) {
-                    Some(suggestion) => format!("Did you mean '{}'? Available stdlib modules: {}", suggestion, available),
+                    Some(suggestion) => format!(
+                        "Did you mean '{}'? Available stdlib modules: {}",
+                        suggestion, available
+                    ),
                     None => format!("Available stdlib modules: {}", available),
                 };
                 self.error_coded_with_hint(
@@ -105,7 +104,10 @@ impl SemanticAnalyzer {
                     "E028",
                     format!("Circular import: module '{}' imports itself", module_path),
                     import.span,
-                    format!("Remove the self-import of '{}' from module '{}'", module_path, module_path),
+                    format!(
+                        "Remove the self-import of '{}' from module '{}'",
+                        module_path, module_path
+                    ),
                 );
                 return aliases;
             }
@@ -474,10 +476,8 @@ impl SemanticAnalyzer {
 
                         if stdlib_path_prefix.is_none() {
                             let imported_name = format!("{}_{}", name, method_name);
-                            user_fn_types.push((
-                                imported_name.clone(),
-                                method_export.return_type.clone(),
-                            ));
+                            user_fn_types
+                                .push((imported_name.clone(), method_export.return_type.clone()));
                             user_fn_signatures.push((
                                 imported_name,
                                 method_export.params.clone(),
@@ -608,10 +608,7 @@ impl SemanticAnalyzer {
 
                 if stdlib_path_prefix.is_none() {
                     let imported_name = format!("{}_{}", type_name, method_name);
-                    user_fn_types.push((
-                        imported_name.clone(),
-                        method_export.return_type.clone(),
-                    ));
+                    user_fn_types.push((imported_name.clone(), method_export.return_type.clone()));
                     user_fn_signatures.push((
                         imported_name,
                         method_export.params.clone(),
@@ -629,11 +626,8 @@ impl SemanticAnalyzer {
                 else {
                     continue;
                 };
-                let local_name = import_local_name(
-                    alias.as_deref(),
-                    named_alias.as_deref(),
-                    exported_name,
-                );
+                let local_name =
+                    import_local_name(alias.as_deref(), named_alias.as_deref(), exported_name);
                 let mut imported = template.clone();
                 imported.name = local_name;
                 user_generic_functions.push(imported);
@@ -674,11 +668,7 @@ impl SemanticAnalyzer {
                 (local_trait.clone(), local_type.clone()),
                 exported_impl.type_args.clone(),
             );
-            user_trait_impls.push((
-                local_trait,
-                local_type,
-                exported_impl.type_args.clone(),
-            ));
+            user_trait_impls.push((local_trait, local_type, exported_impl.type_args.clone()));
         }
 
         // For user (non-stdlib) modules: reconstruct AST enum/struct definitions

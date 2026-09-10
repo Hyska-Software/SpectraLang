@@ -2,11 +2,16 @@ use super::*;
 use crate::ir::InstructionKind;
 
 impl ASTLowering {
-    pub(crate) fn lower_expression_tail(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_tail(
+        &mut self,
+        expr: &Expression,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         match &expr.kind {
-            ExpressionKind::CharLiteral(c) => self
-                .builder
-                .build_const_int_typed(ir_func, *c as i64, IRType::Char),
+            ExpressionKind::CharLiteral(c) => {
+                self.builder
+                    .build_const_int_typed(ir_func, *c as i64, IRType::Char)
+            }
             ExpressionKind::FString(parts) => {
                 // Lower each part to a string value:
                 // - Literal parts: inline string literals (already String type)
@@ -134,13 +139,18 @@ impl ASTLowering {
                 self.lower_range_expression(start, end, *inclusive, ir_func)
                     .0
             }
-            ExpressionKind::Lambda { is_async, params, body } => {
+            ExpressionKind::Lambda {
+                is_async,
+                params,
+                body,
+            } => {
                 // Lower as a top-level IR function with a generated unique name.
                 let lambda_name = format!("__lambda_{}", self.lambda_counter);
                 self.lambda_counter += 1;
 
                 let captures = self.collect_lambda_captures(params, body);
-                let lambda_func = self.lower_lambda(lambda_name.clone(), &captures, params, body, *is_async);
+                let lambda_func =
+                    self.lower_lambda(lambda_name.clone(), &captures, params, body, *is_async);
                 self.pending_lambdas.push(lambda_func);
 
                 self.build_closure_object(ir_func, lambda_name, &captures)
@@ -242,7 +252,8 @@ impl ASTLowering {
                 let lambda_func =
                     self.lower_lambda(lambda_name.clone(), &captures, &[], &body_expression, true);
                 self.pending_lambdas.push(lambda_func);
-                let environment = self.build_closure_object(ir_func, lambda_name.clone(), &captures);
+                let environment =
+                    self.build_closure_object(ir_func, lambda_name.clone(), &captures);
                 self.require_value(
                     self.builder
                         .build_call(ir_func, lambda_name, vec![environment], true),

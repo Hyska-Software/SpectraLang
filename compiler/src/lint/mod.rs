@@ -179,7 +179,12 @@ impl<'a> LintRunner<'a> {
         self.enter_scope();
         for param in &function.params {
             let exact_num = ExactNum::from_annotation(param.ty.as_ref());
-            self.declare_binding(param.name.clone(), param.span, BindingKind::Parameter, exact_num);
+            self.declare_binding(
+                param.name.clone(),
+                param.span,
+                BindingKind::Parameter,
+                exact_num,
+            );
         }
         self.visit_block(&function.body, false);
         self.exit_scope();
@@ -272,7 +277,11 @@ impl<'a> LintRunner<'a> {
                 if let Some(value) = &let_stmt.value {
                     self.visit_expression(value);
                 }
-                self.declare_let_pattern_bindings(&let_stmt.pattern, let_stmt.ty.as_ref(), let_stmt.span);
+                self.declare_let_pattern_bindings(
+                    &let_stmt.pattern,
+                    let_stmt.ty.as_ref(),
+                    let_stmt.span,
+                );
                 true
             }
             StatementKind::Assignment(assign_stmt) => {
@@ -372,7 +381,8 @@ impl<'a> LintRunner<'a> {
     ) {
         match pattern {
             ast::Pattern::Identifier(name, _) => {
-                let exact_num = ty.and_then(|annotation| ExactNum::from_annotation(Some(annotation)));
+                let exact_num =
+                    ty.and_then(|annotation| ExactNum::from_annotation(Some(annotation)));
                 self.declare_binding(name.clone(), span, BindingKind::Variable, exact_num);
             }
             ast::Pattern::Tuple(elements) => {
@@ -549,7 +559,6 @@ impl<'a> LintRunner<'a> {
                 self.visit_expression(expr);
                 // BEGIN narrowing-cast lint (CastLint)
                 self.check_narrowing_cast(expression, expr, target_type, *mode);
-                
             }
         }
     }
@@ -739,7 +748,6 @@ fn stmt_has_break(stmt: &Statement) -> bool {
 // (descendant privacy). Implementation lives in ../semantic/semantic_cast_lint.rs.
 #[path = "../semantic/semantic_cast_lint.rs"]
 mod semantic_cast_lint;
-
 
 use crate::ast::TypeAnnotation;
 use semantic_cast_lint::ExactNum;

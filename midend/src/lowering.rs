@@ -240,7 +240,6 @@ impl RangeScopeStack {
         }
     }
 
-
     fn clear(&mut self) {
         self.scopes.clear();
         self.scopes.push(HashMap::new());
@@ -459,48 +458,88 @@ pub struct ASTLowering {
 // Former include! monolith, decomposed into real child modules. The glob
 // re-exports recreate the flat namespace the includes provided; most names are
 // consumed by the children themselves via `use super::*`.
-#[path = "lowering_impl_core.rs"] mod lowering_impl_core;
-#[path = "lowering_impl_module.rs"] mod lowering_impl_module;
-#[path = "lowering_impl_monomorphization.rs"] mod lowering_impl_monomorphization;
-#[path = "lowering_impl_types.rs"] mod lowering_impl_types;
-#[path = "lowering_impl_type_inference.rs"] mod lowering_impl_type_inference;
-#[path = "lowering_impl_functions.rs"] mod lowering_impl_functions;
-#[path = "lowering_impl_methods.rs"] mod lowering_impl_methods;
-#[path = "lowering_impl_closures.rs"] mod lowering_impl_closures;
-#[path = "lowering_impl_blocks.rs"] mod lowering_impl_blocks;
-#[path = "lowering_impl_loops.rs"] mod lowering_impl_loops;
-#[path = "lowering_impl_statements.rs"] mod lowering_impl_statements;
-#[path = "lowering_impl_hosts.rs"] mod lowering_impl_hosts;
-#[path = "lowering_impl_expression.rs"] mod lowering_impl_expression;
-#[path = "lowering_expr_literals.rs"] mod lowering_expr_literals;
 #[path = "lowering_async.rs"]
 mod lowering_async;
-#[path = "lowering_expr_binary.rs"] mod lowering_expr_binary;
-#[path = "lowering_expr_calls.rs"] mod lowering_expr_calls;
-#[path = "lowering_expr_aggregates.rs"] mod lowering_expr_aggregates;
-#[path = "lowering_expr_struct.rs"] mod lowering_expr_struct;
-#[path = "lowering_expr_fields.rs"] mod lowering_expr_fields;
-#[path = "lowering_expr_enum.rs"] mod lowering_expr_enum;
-#[path = "lowering_expr_match.rs"] mod lowering_expr_match;
-#[path = "lowering_expr_method.rs"] mod lowering_expr_method;
-#[path = "lowering_expr_tail.rs"] mod lowering_expr_tail;
-#[path = "lowering_expr_cast.rs"] mod lowering_expr_cast;
-#[path = "lowering_impl_cast_dyn.rs"] mod lowering_impl_cast_dyn;
-#[path = "lowering_impl_patterns.rs"] mod lowering_impl_patterns;
-#[path = "lowering_impl_types_tail.rs"] mod lowering_impl_types_tail;
-#[path = "lowering_impl_substitution.rs"] mod lowering_impl_substitution;
-#[path = "lowering_builtins.rs"] mod lowering_builtins;
-#[path = "lowering_std_host.rs"] mod lowering_std_host;
-#[path = "lowering_std_host_numeric.rs"] mod lowering_std_host_numeric;
-#[path = "lowering_std_host_math_io_error.rs"] mod lowering_std_host_math_io_error;
-#[path = "lowering_std_host_tensor_ml.rs"] mod lowering_std_host_tensor_ml;
-#[path = "lowering_std_host_collections_string.rs"] mod lowering_std_host_collections_string;
-#[path = "lowering_std_host_convert_time.rs"] mod lowering_std_host_convert_time;
-#[path = "lowering_std_host_fs_env_result.rs"] mod lowering_std_host_fs_env_result;
-#[path = "lowering_std_api.rs"] mod lowering_std_api;
-#[path = "lowering_json_derive.rs"] mod lowering_json_derive;
-#[path = "lowering_handles.rs"] mod lowering_handles;
-#[path = "lowering_default.rs"] mod lowering_default;
+#[path = "lowering_builtins.rs"]
+mod lowering_builtins;
+#[path = "lowering_default.rs"]
+mod lowering_default;
+#[path = "lowering_expr_aggregates.rs"]
+mod lowering_expr_aggregates;
+#[path = "lowering_expr_binary.rs"]
+mod lowering_expr_binary;
+#[path = "lowering_expr_calls.rs"]
+mod lowering_expr_calls;
+#[path = "lowering_expr_cast.rs"]
+mod lowering_expr_cast;
+#[path = "lowering_expr_enum.rs"]
+mod lowering_expr_enum;
+#[path = "lowering_expr_fields.rs"]
+mod lowering_expr_fields;
+#[path = "lowering_expr_literals.rs"]
+mod lowering_expr_literals;
+#[path = "lowering_expr_match.rs"]
+mod lowering_expr_match;
+#[path = "lowering_expr_method.rs"]
+mod lowering_expr_method;
+#[path = "lowering_expr_struct.rs"]
+mod lowering_expr_struct;
+#[path = "lowering_expr_tail.rs"]
+mod lowering_expr_tail;
+#[path = "lowering_handles.rs"]
+mod lowering_handles;
+#[path = "lowering_impl_blocks.rs"]
+mod lowering_impl_blocks;
+#[path = "lowering_impl_cast_dyn.rs"]
+mod lowering_impl_cast_dyn;
+#[path = "lowering_impl_closures.rs"]
+mod lowering_impl_closures;
+#[path = "lowering_impl_core.rs"]
+mod lowering_impl_core;
+#[path = "lowering_impl_expression.rs"]
+mod lowering_impl_expression;
+#[path = "lowering_impl_functions.rs"]
+mod lowering_impl_functions;
+#[path = "lowering_impl_hosts.rs"]
+mod lowering_impl_hosts;
+#[path = "lowering_impl_loops.rs"]
+mod lowering_impl_loops;
+#[path = "lowering_impl_methods.rs"]
+mod lowering_impl_methods;
+#[path = "lowering_impl_module.rs"]
+mod lowering_impl_module;
+#[path = "lowering_impl_monomorphization.rs"]
+mod lowering_impl_monomorphization;
+#[path = "lowering_impl_patterns.rs"]
+mod lowering_impl_patterns;
+#[path = "lowering_impl_statements.rs"]
+mod lowering_impl_statements;
+#[path = "lowering_impl_substitution.rs"]
+mod lowering_impl_substitution;
+#[path = "lowering_impl_type_inference.rs"]
+mod lowering_impl_type_inference;
+#[path = "lowering_impl_types.rs"]
+mod lowering_impl_types;
+#[path = "lowering_impl_types_tail.rs"]
+mod lowering_impl_types_tail;
+#[path = "lowering_json_derive.rs"]
+mod lowering_json_derive;
+#[path = "lowering_std_api.rs"]
+mod lowering_std_api;
+#[path = "lowering_std_host.rs"]
+mod lowering_std_host;
+#[path = "lowering_std_host_collections_string.rs"]
+mod lowering_std_host_collections_string;
+#[path = "lowering_std_host_convert_time.rs"]
+mod lowering_std_host_convert_time;
+#[path = "lowering_std_host_fs_env_result.rs"]
+mod lowering_std_host_fs_env_result;
+#[path = "lowering_std_host_math_io_error.rs"]
+mod lowering_std_host_math_io_error;
+#[path = "lowering_std_host_numeric.rs"]
+mod lowering_std_host_numeric;
+#[path = "lowering_std_host_tensor_ml.rs"]
+mod lowering_std_host_tensor_ml;
 
 /// Public re-export preserved from the pre-split layout: consumed by
 /// `packages/spectra-api` (contract-drift test) as
@@ -509,46 +548,20 @@ pub use lowering_std_api::std_api_host_call_target;
 
 #[allow(unused_imports)]
 use {
-    lowering_impl_core::*,
-    lowering_impl_module::*,
-    lowering_impl_monomorphization::*,
-    lowering_impl_types::*,
-    lowering_impl_type_inference::*,
-    lowering_impl_functions::*,
-    lowering_impl_methods::*,
-    lowering_impl_closures::*,
-    lowering_impl_blocks::*,
-    lowering_impl_loops::*,
-    lowering_impl_statements::*,
-    lowering_impl_hosts::*,
-    lowering_impl_expression::*,
-    lowering_expr_literals::*,
-    lowering_expr_binary::*,
-    lowering_expr_calls::*,
-    lowering_expr_aggregates::*,
-    lowering_expr_struct::*,
-    lowering_expr_fields::*,
-    lowering_expr_enum::*,
-    lowering_expr_match::*,
-    lowering_expr_method::*,
-    lowering_expr_tail::*,
-    lowering_expr_cast::*,
-    lowering_impl_cast_dyn::*,
-    lowering_impl_patterns::*,
-    lowering_impl_types_tail::*,
-    lowering_impl_substitution::*,
-    lowering_builtins::*,
-    lowering_std_host::*,
-    lowering_std_host_numeric::*,
-    lowering_std_host_math_io_error::*,
+    lowering_builtins::*, lowering_default::*, lowering_expr_aggregates::*,
+    lowering_expr_binary::*, lowering_expr_calls::*, lowering_expr_cast::*, lowering_expr_enum::*,
+    lowering_expr_fields::*, lowering_expr_literals::*, lowering_expr_match::*,
+    lowering_expr_method::*, lowering_expr_struct::*, lowering_expr_tail::*, lowering_handles::*,
+    lowering_impl_blocks::*, lowering_impl_cast_dyn::*, lowering_impl_closures::*,
+    lowering_impl_core::*, lowering_impl_expression::*, lowering_impl_functions::*,
+    lowering_impl_hosts::*, lowering_impl_loops::*, lowering_impl_methods::*,
+    lowering_impl_module::*, lowering_impl_monomorphization::*, lowering_impl_patterns::*,
+    lowering_impl_statements::*, lowering_impl_substitution::*, lowering_impl_type_inference::*,
+    lowering_impl_types::*, lowering_impl_types_tail::*, lowering_json_derive::*,
+    lowering_std_api::*, lowering_std_host::*, lowering_std_host_collections_string::*,
+    lowering_std_host_convert_time::*, lowering_std_host_fs_env_result::*,
+    lowering_std_host_math_io_error::*, lowering_std_host_numeric::*,
     lowering_std_host_tensor_ml::*,
-    lowering_std_host_collections_string::*,
-    lowering_std_host_convert_time::*,
-    lowering_std_host_fs_env_result::*,
-    lowering_std_api::*,
-    lowering_json_derive::*,
-    lowering_handles::*,
-    lowering_default::*,
 };
 
 #[cfg(test)]

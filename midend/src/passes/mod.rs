@@ -14,4 +14,3 @@ pub trait Pass {
     fn name(&self) -> &str;
     fn run(&mut self, module: &mut Module) -> bool; // Returns true if modified
 }
-

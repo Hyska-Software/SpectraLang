@@ -136,7 +136,7 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
     use spectra_runtime::ffi::{
-        SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
+        SpectraHostCallContext, SpectraHostValue,
         HOST_STATUS_SUCCESS,
     };
 
@@ -665,7 +665,7 @@ mod tests {
         let mut connections = Vec::new();
         let mut statements = Vec::new();
         let mut files = Vec::new();
-        for index in 0..2 {
+        for _index in 0..2 {
             let database = unique_temp_path("overlap");
             files.push(database.clone());
             let (open_status, connection) = call_host(

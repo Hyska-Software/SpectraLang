@@ -140,11 +140,7 @@ pub(crate) extern "C" fn std_string_char_at(ctx: *mut SpectraHostCallContext) ->
         let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
         let idx = args[1];
         let result = match read_spectra_string(args[0]) {
-            Some(s)
-                if idx >= 0
-                    && (idx as usize) < s.len()
-                    && s.is_char_boundary(idx as usize) =>
-            {
+            Some(s) if idx >= 0 && (idx as usize) < s.len() && s.is_char_boundary(idx as usize) => {
                 s.as_bytes()[idx as usize] as SpectraHostValue
             }
             _ => return HOST_STATUS_INVALID_ARGUMENT,
@@ -156,4 +152,3 @@ pub(crate) extern "C" fn std_string_char_at(ctx: *mut SpectraHostCallContext) ->
     }
     HOST_STATUS_SUCCESS
 }
-

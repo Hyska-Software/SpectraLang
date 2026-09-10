@@ -1171,13 +1171,9 @@ async fn serve_gateway_h2_connection<I>(
             match collect_h2_stream_body(body_stream, max_body_bytes).await {
                 Ok(body) => {
                     let parsed = gateway_parsed_request(parts, body);
-                    match resolve_dispatch_result(&dispatcher, parsed.clone(), read_timeout).await
-                    {
+                    match resolve_dispatch_result(&dispatcher, parsed.clone(), read_timeout).await {
                         Http2Outcome::Ready(response) => {
-                            send_gateway_h2_response(
-                                respond,
-                                http2_response_from_server(response),
-                            );
+                            send_gateway_h2_response(respond, http2_response_from_server(response));
                         }
                         Http2Outcome::Sse(route) => {
                             stream_routed_sse_over_h2(respond, route, parsed).await;
@@ -1445,8 +1441,7 @@ async fn serve_http11_over_tls<I>(
                 Ok(Some(request)) => break Some(request),
                 Ok(None) => {}
                 Err(_) => {
-                    let mut bad_request =
-                        crate::server::ServerResponse::text(400, "bad request");
+                    let mut bad_request = crate::server::ServerResponse::text(400, "bad request");
                     bad_request.close = true;
                     let wire = crate::server::response_to_wire(bad_request, false, true);
                     let _ = io.write_all(&wire).await;
@@ -2051,8 +2046,9 @@ mod tests {
         // RFC 8441 extended-CONNECT tunneling is not implemented: a request
         // the dispatcher routes to a WebSocket upgrade must be refused
         // honestly instead of faking a 200 OK with an idle stream.
-        let websocket_server =
-            std::sync::Arc::new(std::sync::Mutex::new(crate::websocket::WebSocketServer::new()));
+        let websocket_server = std::sync::Arc::new(std::sync::Mutex::new(
+            crate::websocket::WebSocketServer::new(),
+        ));
         let mut router = crate::routing::Router::default();
         let route = router
             .add(crate::routing::RouteMethod::Get, "/socket")

@@ -391,7 +391,7 @@ fn expression_path(expr: &spectra_compiler::ast::Expression) -> Option<String> {
 /// - `record`      record declaration with name/field placeholders
 /// - `enum`        enum declaration with variant placeholder
 /// - `match`       match expression using canonical `when .. then` /
-///                 `otherwise` arms
+///   `otherwise` arms
 /// - `if let`      if-let statement with pattern and scrutinee placeholders
 /// - `for`         for-in loop over a collection
 /// - `async block` async block expression

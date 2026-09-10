@@ -1,6 +1,5 @@
 use spectra_compiler::{CompilationOptions, CompilationPipeline, CompilerError, Lexer, Parser};
 
-
 #[test]
 fn malformed_frontend_inputs_do_not_panic() {
     let corpus = [
@@ -13,11 +12,9 @@ fn malformed_frontend_inputs_do_not_panic() {
     ];
 
     for source in corpus {
-        let _ = Lexer::new(source).tokenize().and_then(|tokens| {
-            Parser::new(tokens)
-                .parse()
-                .map_err(|_| Vec::new())
-        });
+        let _ = Lexer::new(source)
+            .tokenize()
+            .and_then(|tokens| Parser::new(tokens).parse().map_err(|_| Vec::new()));
     }
 }
 

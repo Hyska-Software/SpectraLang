@@ -121,9 +121,7 @@ impl SemanticAnalyzer {
                             let is_type_param = match &arg.kind {
                                 crate::ast::TypeAnnotationKind::Simple { segments } => {
                                     segments.len() == 1
-                                        && params
-                                            .iter()
-                                            .any(|p| p.name == segments[0])
+                                        && params.iter().any(|p| p.name == segments[0])
                                 }
                                 _ => false,
                             };
@@ -513,7 +511,11 @@ impl SemanticAnalyzer {
         // R-213: generic traits (trait Container<T>) — resolve the concrete type
         // arguments from the impl (`impl Container<int> for X`) and substitute
         // them into the trait method signatures before validation.
-        let trait_params = self.trait_type_params.get(trait_name).cloned().unwrap_or_default();
+        let trait_params = self
+            .trait_type_params
+            .get(trait_name)
+            .cloned()
+            .unwrap_or_default();
         let trait_concrete_args: Vec<Type> = if trait_params.is_empty() {
             Vec::new()
         } else {
@@ -685,8 +687,10 @@ impl SemanticAnalyzer {
                     }
 
                     // Verificar tipos dos parâmetros
-                    for (i, (trait_param, impl_param)) in
-                        substituted_trait_params.iter().zip(impl_params.iter()).enumerate()
+                    for (i, (trait_param, impl_param)) in substituted_trait_params
+                        .iter()
+                        .zip(impl_params.iter())
+                        .enumerate()
                     {
                         if !self.generic_argument_types_match(impl_param, trait_param) {
                             let mut message = format!(
@@ -712,9 +716,7 @@ impl SemanticAnalyzer {
                     ) {
                         let mut message = format!(
                             "Method '{}' has wrong return type. Expected {:?}, found {:?}",
-                            trait_method_name,
-                            substituted_trait_return,
-                            impl_signature.return_type
+                            trait_method_name, substituted_trait_return, impl_signature.return_type
                         );
 
                         if let Some(signature_repr) = &expected_signature_repr {
@@ -804,13 +806,9 @@ impl SemanticAnalyzer {
                 };
 
                 // Registrar método no tipo
-                let type_methods = self
-                    .methods
-                    .entry(type_name.to_string())
-                    .or_default();
+                let type_methods = self.methods.entry(type_name.to_string()).or_default();
                 type_methods.insert(method_name, concrete_signature);
             }
         }
     }
-
 }

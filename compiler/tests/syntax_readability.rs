@@ -1,6 +1,5 @@
 use spectra_compiler::{CompilationOptions, CompilationPipeline, Lexer, Parser};
 
-
 fn parse(source: &str) -> spectra_compiler::Module {
     let tokens = Lexer::new(source).tokenize().expect("lexer should succeed");
     Parser::new(tokens)
@@ -82,7 +81,10 @@ fn doubled_comma_in_array_literal_remains_a_parse_error() {
         .parse()
         .expect_err("a doubled comma inside an array must remain rejected");
 
-    assert!(!errors.is_empty(), "expected at least one parser diagnostic");
+    assert!(
+        !errors.is_empty(),
+        "expected at least one parser diagnostic"
+    );
 }
 
 #[test]

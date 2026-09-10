@@ -189,5 +189,4 @@ mod tests {
             .expect("modified source should reparse successfully");
         assert!(!result.reused, "modified source must trigger reparse");
     }
-
 }

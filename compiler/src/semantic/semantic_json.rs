@@ -405,7 +405,9 @@ impl SemanticAnalyzer {
 
     fn json_value_matches_type(&self, value: &serde_json::Value, expected: &Type) -> bool {
         match expected {
-            Type::Int | Type::ExactInt { .. } => value.as_i64().is_some() || value.as_u64().is_some(),
+            Type::Int | Type::ExactInt { .. } => {
+                value.as_i64().is_some() || value.as_u64().is_some()
+            }
             Type::Float | Type::ExactFloat { .. } => value.as_f64().is_some(),
             Type::Bool => value.is_boolean(),
             Type::String | Type::Char => value.is_string(),
@@ -470,5 +472,4 @@ impl SemanticAnalyzer {
             | Type::DynTrait { .. } => false,
         }
     }
-
 }

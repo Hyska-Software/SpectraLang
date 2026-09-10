@@ -1,7 +1,11 @@
 use super::*;
 
 impl ASTLowering {
-    pub(crate) fn lower_expression_match(&mut self, expr: &Expression, ir_func: &mut IRFunction) -> Value {
+    pub(crate) fn lower_expression_match(
+        &mut self,
+        expr: &Expression,
+        ir_func: &mut IRFunction,
+    ) -> Value {
         match &expr.kind {
             ExpressionKind::Match { scrutinee, arms } => {
                 // Lower do valor sendo matcheado
@@ -10,7 +14,9 @@ impl ASTLowering {
                 let scrutinee_type = self.infer_expr_ir_type(scrutinee);
                 let scrutinee_enum_name = match &scrutinee_type {
                     IRType::Enum { name, .. } => Some(name.clone()),
-                    IRType::Generic { .. } => self.ir_nominal_name(&scrutinee_type).map(str::to_string),
+                    IRType::Generic { .. } => {
+                        self.ir_nominal_name(&scrutinee_type).map(str::to_string)
+                    }
                     _ => None,
                 };
 
@@ -147,7 +153,8 @@ impl ASTLowering {
                         if let Some(result_alloca) = result_alloca {
                             self.builder.build_store(ir_func, result_alloca, body_value);
                         }
-                        self.builder.build_branch(ir_func, match_end.unwrap_or(exit_block));
+                        self.builder
+                            .build_branch(ir_func, match_end.unwrap_or(exit_block));
                     }
 
                     self.struct_var_map.pop_scope();
@@ -167,8 +174,9 @@ impl ASTLowering {
                 // match_end, alcançado apenas pelos braços que casaram.
                 if !has_guaranteed_arm {
                     self.builder.build_unreachable(ir_func);
-                    self.builder
-                        .set_current_block(match_end.expect("match_end must exist without guaranteed arm"));
+                    self.builder.set_current_block(
+                        match_end.expect("match_end must exist without guaranteed arm"),
+                    );
                 }
 
                 if let Some(result_alloca) = result_alloca {

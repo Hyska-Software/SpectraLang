@@ -64,8 +64,10 @@ impl CodeGenerator {
             InstructionKind::Call { .. } | InstructionKind::AutodiffStep { .. } => {
                 Self::generate_call_instruction(
                     module,
-                    function_map,
-                    function_params,
+                    &CallFunctionTables {
+                        ids: function_map,
+                        params: function_params,
+                    },
                     hostcall,
                     builder,
                     kind,

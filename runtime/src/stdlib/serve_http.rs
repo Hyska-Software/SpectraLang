@@ -69,9 +69,17 @@ impl ServeHttpReadError {
     /// Fixed error response emitted before the connection is closed.
     pub(crate) fn response(&self) -> Option<(u16, &'static str, &'static str)> {
         match self {
-            ServeHttpReadError::HeadTooLarge => Some((431, "Request Header Fields Too Large", "{\"error\":\"head_too_large\"}")),
-            ServeHttpReadError::BodyTooLarge => Some((413, "Payload Too Large", "{\"error\":\"body_too_large\"}")),
-            ServeHttpReadError::Malformed => Some((400, "Bad Request", "{\"error\":\"malformed_request\"}")),
+            ServeHttpReadError::HeadTooLarge => Some((
+                431,
+                "Request Header Fields Too Large",
+                "{\"error\":\"head_too_large\"}",
+            )),
+            ServeHttpReadError::BodyTooLarge => {
+                Some((413, "Payload Too Large", "{\"error\":\"body_too_large\"}"))
+            }
+            ServeHttpReadError::Malformed => {
+                Some((400, "Bad Request", "{\"error\":\"malformed_request\"}"))
+            }
             ServeHttpReadError::Closed | ServeHttpReadError::TimedOut => None,
         }
     }
@@ -81,7 +89,9 @@ pub(crate) fn serve_http_find_subsequence(haystack: &[u8], needle: &[u8]) -> Opt
     if needle.is_empty() || haystack.len() < needle.len() {
         return None;
     }
-    haystack.windows(needle.len()).position(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 /// Blocks until the listener is readable or the shutdown flag flips.
@@ -101,7 +111,10 @@ pub(crate) fn serve_http_wait_readable(
             Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(_) => return false,
         }
-        if events.iter().any(|event| event.token() == token && event.is_readable()) {
+        if events
+            .iter()
+            .any(|event| event.token() == token && event.is_readable())
+        {
             return true;
         }
     }
@@ -136,7 +149,10 @@ pub(crate) fn serve_http_read_request(
             Ok(read) => buffer.extend_from_slice(&chunk[..read]),
             Err(err)
                 if err.kind() == std::io::ErrorKind::WouldBlock
-                    || err.kind() == std::io::ErrorKind::Interrupted => continue,
+                    || err.kind() == std::io::ErrorKind::Interrupted =>
+            {
+                continue
+            }
             Err(_) => return Err(ServeHttpReadError::Closed),
         }
     };
@@ -146,8 +162,14 @@ pub(crate) fn serve_http_read_request(
     let mut lines = head.split("\r\n");
     let request_line = lines.next().ok_or(ServeHttpReadError::Malformed)?;
     let mut parts = request_line.split_whitespace();
-    let method = parts.next().ok_or(ServeHttpReadError::Malformed)?.to_ascii_uppercase();
-    let target = parts.next().ok_or(ServeHttpReadError::Malformed)?.to_string();
+    let method = parts
+        .next()
+        .ok_or(ServeHttpReadError::Malformed)?
+        .to_ascii_uppercase();
+    let target = parts
+        .next()
+        .ok_or(ServeHttpReadError::Malformed)?
+        .to_string();
     let version = parts.next().unwrap_or("HTTP/1.1");
     let mut content_length: usize = 0;
     // HTTP/1.1 defaults to keep-alive; HTTP/1.0 defaults to close.
@@ -192,7 +214,10 @@ pub(crate) fn serve_http_read_request(
             Ok(read) => body.extend_from_slice(&chunk[..read]),
             Err(err)
                 if err.kind() == std::io::ErrorKind::WouldBlock
-                    || err.kind() == std::io::ErrorKind::Interrupted => continue,
+                    || err.kind() == std::io::ErrorKind::Interrupted =>
+            {
+                continue
+            }
             Err(_) => return Err(ServeHttpReadError::Closed),
         }
     }
@@ -220,7 +245,12 @@ pub(crate) fn serve_http_status_reason(status: u16) -> &'static str {
     }
 }
 
-pub(crate) fn serve_http_response_bytes(status: u16, content_type: &str, body: &str, close: bool) -> Vec<u8> {
+pub(crate) fn serve_http_response_bytes(
+    status: u16,
+    content_type: &str,
+    body: &str,
+    close: bool,
+) -> Vec<u8> {
     let connection = if close { "close" } else { "keep-alive" };
     format!(
         "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: {}\r\n\r\n{}",
@@ -252,10 +282,14 @@ pub(crate) fn serve_http_run_inference(
     model_id: &str,
     input: &[f64],
 ) -> Result<(Vec<f64>, f64), Vec<u8>> {
-    let server = registry
-        .servers
-        .get_mut(server_handle)
-        .ok_or_else(|| serve_http_response_bytes(404, "application/json", "{\"error\":\"unknown_server\"}", false))?;
+    let server = registry.servers.get_mut(server_handle).ok_or_else(|| {
+        serve_http_response_bytes(
+            404,
+            "application/json",
+            "{\"error\":\"unknown_server\"}",
+            false,
+        )
+    })?;
     if !server.models.contains_key(model_id) {
         return Err(if server.models.is_empty() {
             serve_http_response_bytes(
@@ -424,8 +458,7 @@ pub(crate) fn serve_http_serve_connection(
             Err(error) => {
                 if let Some((status, reason_hint, body)) = error.response() {
                     let _ = reason_hint;
-                    let bytes =
-                        serve_http_response_bytes(status, "application/json", body, true);
+                    let bytes = serve_http_response_bytes(status, "application/json", body, true);
                     let _ = serve_http_write_all(&mut poll, &mut events, &mut stream, &bytes);
                 }
                 return;
@@ -475,22 +508,18 @@ pub(crate) fn serve_http_write_all(
                 loop {
                     let now = std::time::Instant::now();
                     if now >= deadline {
-                        let _ = poll.registry().reregister(
-                            stream,
-                            TOKEN,
-                            mio::Interest::READABLE,
-                        );
+                        let _ = poll
+                            .registry()
+                            .reregister(stream, TOKEN, mio::Interest::READABLE);
                         return false;
                     }
                     match poll.poll(events, Some(deadline - now)) {
                         Ok(_) => break,
                         Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
                         Err(_) => {
-                            let _ = poll.registry().reregister(
-                                stream,
-                                TOKEN,
-                                mio::Interest::READABLE,
-                            );
+                            let _ =
+                                poll.registry()
+                                    .reregister(stream, TOKEN, mio::Interest::READABLE);
                             return false;
                         }
                     }
@@ -631,7 +660,9 @@ pub(crate) extern "C" fn std_serve_http_stop(ctx: *mut SpectraHostCallContext) -
     let Some(mut runtime) = runtime else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
-    runtime.running.store(false, std::sync::atomic::Ordering::Relaxed);
+    runtime
+        .running
+        .store(false, std::sync::atomic::Ordering::Relaxed);
     if let Some(worker) = runtime.worker.take() {
         let _ = worker.join();
     }

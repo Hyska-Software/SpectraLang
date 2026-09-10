@@ -94,7 +94,10 @@ impl SemanticAnalyzer {
                                 if let Some(payload_patterns) = data {
                                     if payload_patterns.len() == expected_len
                                         && payload_patterns.iter().all(|p| {
-                                            matches!(p, Pattern::Wildcard(_) | Pattern::Identifier(_, _))
+                                            matches!(
+                                                p,
+                                                Pattern::Wildcard(_) | Pattern::Identifier(_, _)
+                                            )
                                         })
                                     {
                                         *flag = true;
@@ -254,5 +257,4 @@ impl SemanticAnalyzer {
             }
         }
     }
-
 }

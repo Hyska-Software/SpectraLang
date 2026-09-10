@@ -5,8 +5,8 @@ use spectra_db::query::{
 use spectra_db::query::{PostgresDialect, QueryError};
 use spectra_db::sqlite::{open_pool, SqliteConnection, SqliteValue};
 use spectra_db::PoolConfig;
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Same coarse-tick collision-proofing as migrations_integration.rs: nanos
 /// alone can repeat across parallel test threads sharing one database file.
@@ -189,7 +189,6 @@ fn executes_compiled_queries_through_the_shared_pool() {
     pool.shutdown().unwrap();
 }
 
-
 #[test]
 fn compiles_join_group_by_having_in_deterministic_clause_order() {
     let pg = PostgresDialect;
@@ -202,7 +201,7 @@ fn compiles_join_group_by_having_in_deterministic_clause_order() {
     let region = Column::<Text>::new("customers.region");
 
     let select = Select::from("orders")
-        .columns(&[status.clone()])
+        .columns(std::slice::from_ref(&status))
         .add_join(
             JoinKind::Inner,
             "customers",
@@ -211,7 +210,7 @@ fn compiles_join_group_by_having_in_deterministic_clause_order() {
         .aggregate(Aggregate::count_all())
         .aliased_aggregate(Aggregate::sum(total.clone()), "total_revenue")
         .where_(status.not_equals(Value::text("draft")))
-        .group_by(&[region.clone()])
+        .group_by(std::slice::from_ref(&region))
         .having(Aggregate::sum(total).ge(Value::real(250.0)))
         .order_by(region, Order::Desc)
         .limit(10)
@@ -377,14 +376,20 @@ fn handles_order_by_limit_offset_edge_cases() {
     ));
 
     // SQLite requires a LIMIT before OFFSET: an unbounded LIMIT is inserted.
-    let offset_only_sqlite = Select::from("items").offset(15).compile(&SqliteDialect).unwrap();
+    let offset_only_sqlite = Select::from("items")
+        .offset(15)
+        .compile(&SqliteDialect)
+        .unwrap();
     assert_eq!(
         offset_only_sqlite.sql,
         "SELECT * FROM \"items\" LIMIT -1 OFFSET 15"
     );
 
     // Postgres accepts a bare OFFSET.
-    let offset_only_pg = Select::from("items").offset(15).compile(&PostgresDialect).unwrap();
+    let offset_only_pg = Select::from("items")
+        .offset(15)
+        .compile(&PostgresDialect)
+        .unwrap();
     assert_eq!(offset_only_pg.sql, "SELECT * FROM \"items\" OFFSET 15");
 
     // Combined ORDER BY, LIMIT and OFFSET keep their mandatory ordering.

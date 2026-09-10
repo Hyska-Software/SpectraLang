@@ -122,21 +122,24 @@ pub(crate) unsafe fn alloc_spectra_string(s: &str) -> SpectraHostValue {
     use crate::ffi::spectra_rt_manual_alloc;
     let bytes = s.as_bytes();
     let total_bytes = bytes.len() + 1;
-    let raw = spectra_rt_manual_alloc(total_bytes) as *mut u8;
+    let raw = spectra_rt_manual_alloc(total_bytes);
     if raw.is_null() {
         return 0;
     }
     std::ptr::copy_nonoverlapping(bytes.as_ptr(), raw, bytes.len());
     *raw.add(bytes.len()) = 0; // null terminator
-    let pointer = raw as i64;
-    pointer
+
+    raw as i64
 }
 
 /// Allocate the common two-word representation used by compiler-generated
 /// `Option<T>` and `Result<T, E>` values: tag at slot zero, payload at slot one.
 /// The allocation is intentionally manual so the value can cross a host-call
 /// boundary and remain valid after this function returns.
-pub(crate) unsafe fn alloc_tagged_payload(tag: SpectraHostValue, payload: SpectraHostValue) -> SpectraHostValue {
+pub(crate) unsafe fn alloc_tagged_payload(
+    tag: SpectraHostValue,
+    payload: SpectraHostValue,
+) -> SpectraHostValue {
     use crate::ffi::spectra_rt_manual_alloc;
     let raw = spectra_rt_manual_alloc(2 * std::mem::size_of::<i64>()) as *mut i64;
     if raw.is_null() {
@@ -242,4 +245,3 @@ pub(crate) fn fs_write_text_result(
         std::fs::write(path, content.as_bytes())
     }
 }
-

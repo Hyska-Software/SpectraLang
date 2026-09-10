@@ -74,7 +74,10 @@ pub(super) unsafe fn alloc_error(
     value
 }
 
-pub(crate) unsafe fn read_error_field(error: SpectraHostValue, field: usize) -> Option<SpectraHostValue> {
+pub(crate) unsafe fn read_error_field(
+    error: SpectraHostValue,
+    field: usize,
+) -> Option<SpectraHostValue> {
     if error == 0 || field >= ERROR_FIELD_COUNT {
         return None;
     }

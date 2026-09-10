@@ -152,7 +152,9 @@ pub(crate) extern "C" fn std_ml_experiment_set_lockfile(ctx: *mut SpectraHostCal
     }
 }
 
-pub(crate) extern "C" fn std_ml_experiment_set_model_output(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_experiment_set_model_output(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -238,7 +240,9 @@ pub(crate) extern "C" fn std_ml_experiment_repro_command(ctx: *mut SpectraHostCa
     }
 }
 
-pub(crate) extern "C" fn std_ml_experiment_compare_manifests(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_experiment_compare_manifests(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -334,7 +338,9 @@ pub(crate) extern "C" fn std_ml_distributed_global_step(ctx: *mut SpectraHostCal
     }
 }
 
-pub(crate) extern "C" fn std_ml_distributed_worker_step_count(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_distributed_worker_step_count(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 2) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -352,7 +358,9 @@ pub(crate) extern "C" fn std_ml_distributed_worker_step_count(ctx: *mut SpectraH
     }
 }
 
-pub(crate) extern "C" fn std_ml_distributed_checkpoint_save(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_distributed_checkpoint_save(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
@@ -416,9 +424,7 @@ pub(crate) extern "C" fn std_ml_distributed_resume(ctx: *mut SpectraHostCallCont
             worker.active = true;
         }
         session.interrupted_worker = None;
-        let handle = with_ml_registry(|registry| {
-            registry.distributed_sessions.insert(session)
-        });
+        let handle = with_ml_registry(|registry| registry.distributed_sessions.insert(session));
         tensor_result(ctx_ref, handle as SpectraHostValue)
     }
 }
@@ -440,20 +446,21 @@ pub(crate) extern "C" fn std_ml_distributed_summary(ctx: *mut SpectraHostCallCon
     }
 }
 
-
 // ── DistTCP ──────────────────────────────────────────────────────────────────
 // Real data-parallel training entry points. Both run actual forward/backward
 // passes on OS-thread workers over disjoint shards and ALLREDUCE the gradients;
 // they differ only in transport (shared-memory barriers vs TCP loopback).
 
-pub(crate) extern "C" fn std_ml_distributed_train_multithread(ctx: *mut SpectraHostCallContext) -> i32 {
+pub(crate) extern "C" fn std_ml_distributed_train_multithread(
+    ctx: *mut SpectraHostCallContext,
+) -> i32 {
     ml_distributed_train(ctx, ML_DISTRIBUTED_TOPOLOGY_MULTITHREAD, |spec| {
         dist_run_multithread(spec)
     })
 }
 
 pub(crate) extern "C" fn std_ml_distributed_train_tcp(ctx: *mut SpectraHostCallContext) -> i32 {
-    ml_distributed_train(ctx, ML_DISTRIBUTED_TOPOLOGY_TCP, |spec| dist_run_tcp(spec))
+    ml_distributed_train(ctx, ML_DISTRIBUTED_TOPOLOGY_TCP, dist_run_tcp)
 }
 
 pub(crate) extern "C" fn std_ml_distributed_train_dataset_multithread(
@@ -467,9 +474,7 @@ pub(crate) extern "C" fn std_ml_distributed_train_dataset_multithread(
 pub(crate) extern "C" fn std_ml_distributed_train_dataset_tcp(
     ctx: *mut SpectraHostCallContext,
 ) -> i32 {
-    ml_distributed_train_dataset(ctx, ML_DISTRIBUTED_TOPOLOGY_TCP, |spec| {
-        dist_run_tcp(spec)
-    })
+    ml_distributed_train_dataset(ctx, ML_DISTRIBUTED_TOPOLOGY_TCP, dist_run_tcp)
 }
 
 /// Dataset-backed twin of [`ml_distributed_train`]: identical runners,
@@ -495,8 +500,7 @@ where
             return HOST_STATUS_INVALID_ARGUMENT;
         };
         let lr = f64::from_bits(args[4] as u64);
-        let spec = match dist_parse_dataset_spec(dataset as usize, args[2], args[3], lr, args[5])
-        {
+        let spec = match dist_parse_dataset_spec(dataset as usize, args[2], args[3], lr, args[5]) {
             Ok(spec) => spec,
             Err(code) => return code,
         };
@@ -506,11 +510,9 @@ where
         match run(&spec) {
             Ok(outcome) => {
                 let name = format!("distributed-dataset-{dataset}");
-                let session =
-                    dist_outcome_to_session(name, out_dir, &spec, topology, outcome);
-                let handle = with_ml_registry(|registry| {
-                    registry.distributed_sessions.insert(session)
-                });
+                let session = dist_outcome_to_session(name, out_dir, &spec, topology, outcome);
+                let handle =
+                    with_ml_registry(|registry| registry.distributed_sessions.insert(session));
                 tensor_result(ctx_ref, handle as SpectraHostValue)
             }
             Err(code) => code,
@@ -544,11 +546,9 @@ where
         }
         match run(&spec) {
             Ok(outcome) => {
-                let session =
-                    dist_outcome_to_session(name, out_dir, &spec, topology, outcome);
-                let handle = with_ml_registry(|registry| {
-                    registry.distributed_sessions.insert(session)
-                });
+                let session = dist_outcome_to_session(name, out_dir, &spec, topology, outcome);
+                let handle =
+                    with_ml_registry(|registry| registry.distributed_sessions.insert(session));
                 tensor_result(ctx_ref, handle as SpectraHostValue)
             }
             Err(code) => code,

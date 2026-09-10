@@ -35,8 +35,8 @@ fn resolve_panic_message(ptr_val: SpectraHostValue) -> String {
     if ptr_val == 0 {
         return "unknown".to_string();
     }
-    let limit = crate::ffi::manual_allocation_size(ptr_val)
-        .unwrap_or(PANIC_MESSAGE_SCAN_LIMIT_BYTES);
+    let limit =
+        crate::ffi::manual_allocation_size(ptr_val).unwrap_or(PANIC_MESSAGE_SCAN_LIMIT_BYTES);
     let raw = ptr_val as *const u8;
     let mut bytes: Vec<u8> = Vec::new();
     for offset in 0..limit {

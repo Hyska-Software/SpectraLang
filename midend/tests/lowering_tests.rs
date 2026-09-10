@@ -784,11 +784,7 @@ fn test_tail_self_recursion_is_marked() {
     let if_expr = Expression {
         span: s(),
         kind: ExpressionKind::If {
-            condition: Box::new(bin(
-                ident("n"),
-                BinaryOperator::LessEqual,
-                int_lit(0),
-            )),
+            condition: Box::new(bin(ident("n"), BinaryOperator::LessEqual, int_lit(0))),
             then_block: Block {
                 span: s(),
                 statements: vec![Statement {
@@ -863,15 +859,10 @@ fn test_tail_self_recursion_is_marked() {
         .expect("main function should exist");
     assert!(
         main_ir.blocks.iter().all(|block| {
-            block.instructions.iter().all(|i| {
-                !matches!(
-                    &i.kind,
-                    InstructionKind::Call {
-                        is_tail: true,
-                        ..
-                    }
-                )
-            })
+            block
+                .instructions
+                .iter()
+                .all(|i| !matches!(&i.kind, InstructionKind::Call { is_tail: true, .. }))
         }),
         "main is entered externally and must never be marked"
     );
@@ -879,7 +870,6 @@ fn test_tail_self_recursion_is_marked() {
 
 #[test]
 fn test_cross_function_tail_call_is_not_marked() {
-    use spectra_compiler::ast::StatementKind;
     // fn helper(n: int) -> int { return n; }
     // fn caller() -> int { return helper(5); }  // cross-function: NOT a self call
     let helper_fn = make_function_with_params(
@@ -968,11 +958,9 @@ fn test_char_to_u8_cast_uses_checked_host() {
                         saw_checked_host = true;
                     }
                 }
-                InstructionKind::Cast {
-                    from_ty, to_ty, ..
-                } => {
-                    let narrows_char = matches!(from_ty, IRType::Char)
-                        && matches!(to_ty, IRType::ExactInt { .. });
+                InstructionKind::Cast { from_ty, to_ty, .. } => {
+                    let narrows_char =
+                        matches!(from_ty, IRType::Char) && matches!(to_ty, IRType::ExactInt { .. });
                     assert!(
                         !narrows_char,
                         "raw char narrowing must not reach the backend"

@@ -10,7 +10,9 @@ impl ASTLowering {
             IRType::Struct { name, fields } => {
                 self.trait_implementations
                     .contains_key(&(name.clone(), "Drop".to_string()))
-                    || fields.iter().any(|(_, field_ty)| self.type_has_drop(field_ty))
+                    || fields
+                        .iter()
+                        .any(|(_, field_ty)| self.type_has_drop(field_ty))
             }
             IRType::Tuple { elements } => elements.iter().any(|ty| self.type_has_drop(ty)),
             IRType::Array { element_type, .. } => self.type_has_drop(element_type),
@@ -35,16 +37,15 @@ impl ASTLowering {
                     .trait_implementations
                     .contains_key(&(name.clone(), "Drop".to_string()))
                 {
-                    self.builder.build_call(
-                        ir_func,
-                        format!("{}_drop", name),
-                        vec![value],
-                        false,
-                    );
+                    self.builder
+                        .build_call(ir_func, format!("{}_drop", name), vec![value], false);
                 }
 
                 let owned_fields = if fields.is_empty() {
-                    self.struct_definitions.get(name).cloned().unwrap_or_default()
+                    self.struct_definitions
+                        .get(name)
+                        .cloned()
+                        .unwrap_or_default()
                 } else {
                     fields.clone()
                 };
@@ -56,12 +57,10 @@ impl ASTLowering {
                     let Some(offset) = layout.offsets.get(index).copied() else {
                         continue;
                     };
-                    let field_ptr = self
-                        .builder
-                        .build_field_ptr(ir_func, value, offset as i64);
-                    let field_value = self
-                        .builder
-                        .build_load_typed(ir_func, field_ptr, field_ty.clone());
+                    let field_ptr = self.builder.build_field_ptr(ir_func, value, offset as i64);
+                    let field_value =
+                        self.builder
+                            .build_load_typed(ir_func, field_ptr, field_ty.clone());
                     self.emit_drop_for_value(field_value, field_ty, ir_func);
                 }
             }
@@ -74,12 +73,10 @@ impl ASTLowering {
                     let Some(offset) = layout.offsets.get(index).copied() else {
                         continue;
                     };
-                    let element_ptr =
+                    let element_ptr = self.builder.build_field_ptr(ir_func, value, offset as i64);
+                    let element_value =
                         self.builder
-                            .build_field_ptr(ir_func, value, offset as i64);
-                    let element_value = self
-                        .builder
-                        .build_load_typed(ir_func, element_ptr, element_ty.clone());
+                            .build_load_typed(ir_func, element_ptr, element_ty.clone());
                     self.emit_drop_for_value(element_value, element_ty, ir_func);
                 }
             }
@@ -123,7 +120,10 @@ impl ASTLowering {
             IRType::Struct { name, fields } => {
                 self.builder.build_escape_manual_alloc(ir_func, value);
                 let owned_fields = if fields.is_empty() {
-                    self.struct_definitions.get(name).cloned().unwrap_or_default()
+                    self.struct_definitions
+                        .get(name)
+                        .cloned()
+                        .unwrap_or_default()
                 } else {
                     fields.clone()
                 };
@@ -142,12 +142,10 @@ impl ASTLowering {
                     let Some(offset) = layout.offsets.get(index).copied() else {
                         continue;
                     };
-                    let field_ptr = self
-                        .builder
-                        .build_field_ptr(ir_func, value, offset as i64);
-                    let field_value = self
-                        .builder
-                        .build_load_typed(ir_func, field_ptr, field_ty.clone());
+                    let field_ptr = self.builder.build_field_ptr(ir_func, value, offset as i64);
+                    let field_value =
+                        self.builder
+                            .build_load_typed(ir_func, field_ptr, field_ty.clone());
                     self.emit_escape_for_value(field_value, field_ty, ir_func);
                 }
             }
@@ -168,12 +166,10 @@ impl ASTLowering {
                     let Some(offset) = layout.offsets.get(index).copied() else {
                         continue;
                     };
-                    let element_ptr = self
-                        .builder
-                        .build_field_ptr(ir_func, value, offset as i64);
-                    let element_value = self
-                        .builder
-                        .build_load_typed(ir_func, element_ptr, element_ty.clone());
+                    let element_ptr = self.builder.build_field_ptr(ir_func, value, offset as i64);
+                    let element_value =
+                        self.builder
+                            .build_load_typed(ir_func, element_ptr, element_ty.clone());
                     self.emit_escape_for_value(element_value, element_ty, ir_func);
                 }
             }
@@ -244,14 +240,12 @@ impl ASTLowering {
             .rev()
             .map(|scope| {
                 scope
-                .iter()
-                .filter(|(name, _)| {
-                    !skipped_names.contains(*name) && !self.drop_excluded_names.contains(*name)
-                })
-                .map(|(name, (value, struct_name))| {
-                    (name.clone(), *value, struct_name.clone())
-                })
-                .collect()
+                    .iter()
+                    .filter(|(name, _)| {
+                        !skipped_names.contains(*name) && !self.drop_excluded_names.contains(*name)
+                    })
+                    .map(|(name, (value, struct_name))| (name.clone(), *value, struct_name.clone()))
+                    .collect()
             })
             .collect();
         for mut values in scopes {
@@ -291,9 +285,7 @@ impl ASTLowering {
         }
 
         let Some(payload) = value else {
-            return self.invalid_value(
-                "async function is missing its return value payload",
-            );
+            return self.invalid_value("async function is missing its return value payload");
         };
         self.builder
             .build_async_ready(ir_func, Some(payload), output_type.clone());
@@ -467,10 +459,8 @@ impl ASTLowering {
         for stmt in statements {
             match &stmt.kind {
                 StatementKind::Let(let_stmt) => {
-                    if let (
-                        spectra_compiler::ast::Pattern::Identifier(name, _),
-                        Some(value),
-                    ) = (&let_stmt.pattern, &let_stmt.value)
+                    if let (spectra_compiler::ast::Pattern::Identifier(name, _), Some(value)) =
+                        (&let_stmt.pattern, &let_stmt.value)
                     {
                         if !hints.contains_key(name) {
                             if let Some(ty) = Self::syntactic_ir_type_hint(value) {
@@ -523,7 +513,10 @@ impl ASTLowering {
                 StatementKind::IfLet(if_let) => {
                     self.collect_assigned_variables_in_expr(&if_let.value, &mut assigned);
                     assigned.extend(
-                        self.find_assigned_variables_with_types(&if_let.then_block.statements, hints),
+                        self.find_assigned_variables_with_types(
+                            &if_let.then_block.statements,
+                            hints,
+                        ),
                     );
                     if let Some(else_b) = &if_let.else_block {
                         assigned.extend(
@@ -742,7 +735,9 @@ impl ASTLowering {
         match &expr.kind {
             ExpressionKind::NumberLiteral(value) => {
                 match spectra_compiler::numeric::parse_number_literal(value) {
-                    Some(spectra_compiler::numeric::ParsedNumber::Int(int_value)) => Some(int_value),
+                    Some(spectra_compiler::numeric::ParsedNumber::Int(int_value)) => {
+                        Some(int_value)
+                    }
                     _ => None,
                 }
             }
@@ -861,5 +856,4 @@ impl ASTLowering {
             _ => None,
         }
     }
-
 }

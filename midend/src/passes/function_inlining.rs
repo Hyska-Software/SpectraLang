@@ -212,12 +212,7 @@ fn find_inline_call(
 ) -> Option<(usize, usize, String)> {
     for (block_index, block) in function.blocks.iter().enumerate() {
         for (instruction_index, instruction) in block.instructions.iter().enumerate() {
-            if let InstructionKind::Call {
-                function,
-                args,
-                ..
-            } = &instruction.kind
-            {
+            if let InstructionKind::Call { function, args, .. } = &instruction.kind {
                 if let Some(candidate) = candidates.get(function) {
                     if candidate.function.params.len() == args.len() {
                         return Some((block_index, instruction_index, function.clone()));

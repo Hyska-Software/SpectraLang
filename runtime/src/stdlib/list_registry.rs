@@ -135,4 +135,3 @@ pub(crate) fn string_builder_registry() -> &'static Mutex<StringBuilderRegistry>
     static REGISTRY: OnceLock<Mutex<StringBuilderRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(StringBuilderRegistry::new()))
 }
-
