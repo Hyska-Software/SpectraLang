@@ -1,0 +1,48 @@
+// 06-fanout-pipeline: sums 1..1000 across 4 spawned workers,
+// each owning a 250-wide partition. 1+...+1000 = 500500.
+module main
+
+import std.io
+import std.convert as c
+import std.concurrent as concurrent
+import pipeline
+
+public func main() returns int {
+    concurrent.reset()
+    let w1 = concurrent.task_spawn_fn(| lo: int | part_sum(lo, lo + 249), 1)
+    let w2 = concurrent.task_spawn_fn(| lo: int | part_sum(lo, lo + 249), 251)
+    let w3 = concurrent.task_spawn_fn(| lo: int | part_sum(lo, lo + 249), 501)
+    let w4 = concurrent.task_spawn_fn(| lo: int | part_sum(lo, lo + 249), 751)
+
+    let p1 = concurrent.task_join(w1)
+    let p2 = concurrent.task_join(w2)
+    let p3 = concurrent.task_join(w3)
+    let p4 = concurrent.task_join(w4)
+
+    if p1 != 31375 {
+        return 1
+    }
+    if p2 != 93875 {
+        return 2
+    }
+    if p3 != 156375 {
+        return 3
+    }
+    if p4 != 218875 {
+        return 4
+    }
+    let total = p1 + p2 + p3 + p4
+    if total != 500500 {
+        return 5
+    }
+    if concurrent.stats_tasks_spawned() != 4 {
+        return 6
+    }
+    concurrent.reset()
+    if concurrent.stats_tasks_spawned() != 0 {
+        return 7
+    }
+
+    println(f"PIPELINE ok total={c.int_to_string(total)} mode=spawn")
+    return 0
+}

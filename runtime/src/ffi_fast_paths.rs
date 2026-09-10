@@ -70,7 +70,7 @@ pub extern "C" fn spectra_rt_manual_alloc(size: usize) -> *mut u8 {
     );
 
     if let Some(frame) = guard.current_frame_mut() {
-        frame.allocations.push(ptr_value);
+        frame.track(ptr_value);
     }
 
     ptr

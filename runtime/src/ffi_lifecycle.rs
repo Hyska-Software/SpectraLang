@@ -186,7 +186,7 @@ pub extern "C" fn spectra_rt_manual_escape(ptr: *mut u8, current_frame_id: usize
         .rev()
         .find(|f| f.id == parent_frame_id)
     {
-        parent.allocations.push(ptr_value);
+        parent.track(ptr_value);
     }
     let escaped_bytes = guard
         .allocations

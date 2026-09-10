@@ -1,0 +1,59 @@
+// 09-json-bench: 20 JSON object encode/decode roundtrips per round,
+// 5 rounds (100 objects). Checksums: sum_ids = 950, sum_scores = 950.
+// Record and JSON calls share this module.
+module bench_json_20
+
+import std.io
+import std.string as s
+import std.convert as c
+
+#[derive(Serialize, Deserialize)]
+record Item {
+    id: int,
+    label: string,
+    score: int,
+}
+
+public func main() returns int {
+    let per_round = 20
+    let iters = 5
+    let sum_ids = 0
+    let sum_scores = 0
+    let count = 0
+    let it = 0
+    while it < iters {
+        let id = 0
+        while id < per_round {
+            let label = s.concat("u", c.int_to_string(id))
+            let score = id % 100
+            let item = Item { id: id, label: label, score: score }
+            let enc: string = item.to_json()
+            let back: Item = Item::from_json(enc)
+            if back.id != id {
+                return 1
+            }
+            if back.label != label {
+                return 2
+            }
+            if back.score != score {
+                return 3
+            }
+            sum_ids = sum_ids + back.id
+            sum_scores = sum_scores + back.score
+            count = count + 1
+            id = id + 1
+        }
+        it = it + 1
+    }
+    if count != 100 {
+        return 4
+    }
+    if sum_ids != 950 {
+        return 5
+    }
+    if sum_scores != 950 {
+        return 6
+    }
+    println(f"JSON ok objs={c.int_to_string(count)} sum_ids={c.int_to_string(sum_ids)}")
+    return 0
+}

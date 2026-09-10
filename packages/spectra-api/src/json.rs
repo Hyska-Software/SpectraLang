@@ -416,6 +416,15 @@ fn stored_json_value(raw: SpectraHostValue) -> Option<Value> {
     store.values.get(&raw).cloned()
 }
 
+/// Looks up one object member by key under a single store lock, cloning only
+/// the child. Unlike `value_get` (which clones the parent, then the child,
+/// then inserts a fresh handle), this leaves the parent untouched and
+/// creates no handle: the caller owns the returned value outright.
+fn stored_json_child(obj: SpectraHostValue, key: &str) -> Option<Value> {
+    let store = &mut *json_store().lock().ok()?;
+    store.values.get(&obj)?.get(key).cloned()
+}
+
 fn json_kind_of_serde(value: &Value) -> SpectraHostValue {
     match value {
         Value::Null => JSON_KIND_NULL,
@@ -618,12 +627,52 @@ pub extern "C" fn json_decode_field(ctx: *mut SpectraHostCallContext) -> i32 {
     let type_name = read_spectra_string(args[2]).unwrap_or_default();
     let optional = args[3] != 0;
     let default = args[4];
-    let missing = |reason: String| decode_failure(&path, &reason);
     let field = if args[0] == 0 {
         None
     } else {
         stored_json_value(args[0]).filter(|value| !value.is_null())
     };
+    // Object mode echoes the child handle: it already names the nested
+    // object, so no new store entry is needed.
+    write_decoded_field(ctx, field, &path, &type_name, optional, default, Some(args[0]))
+}
+
+/// Derive support: `value_get` + `decode_field` collapsed into one host call.
+///
+/// Arguments: `(obj_handle, key, path, type_name, optional, default_value)`.
+/// Looks the member up by key without cloning the parent and without
+/// creating a child handle. Scalar fields are extracted directly; nested
+/// objects (any other `type_name`) are moved into a fresh handle which the
+/// caller must release with `value_free`.
+pub extern "C" fn json_decode_field_by_key(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 6) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let key = read_spectra_string(args[1]).unwrap_or_default();
+    let path = read_spectra_string(args[2]).unwrap_or_else(|| "$".to_string());
+    let type_name = read_spectra_string(args[3]).unwrap_or_default();
+    let optional = args[4] != 0;
+    let default = args[5];
+    let field = stored_json_child(args[0], &key).filter(|value| !value.is_null());
+    // Object mode has no incoming child handle, so the nested object is
+    // moved into a fresh store entry (`None` selects the insert path).
+    write_decoded_field(ctx, field, &path, &type_name, optional, default, None)
+}
+
+/// Shared extraction for `json_decode_field` and
+/// `json_decode_field_by_key`. `object_handle` selects object-mode behavior
+/// for nested derived structs: `Some(handle)` echoes an existing child
+/// handle, `None` moves the owned `field` into a fresh store entry.
+fn write_decoded_field(
+    ctx: *mut SpectraHostCallContext,
+    field: Option<Value>,
+    path: &str,
+    type_name: &str,
+    optional: bool,
+    default: SpectraHostValue,
+    object_handle: Option<SpectraHostValue>,
+) -> i32 {
+    let missing = |reason: String| decode_failure(path, &reason);
     let Some(field) = field else {
         if optional {
             return write_result(ctx, default);
@@ -633,7 +682,7 @@ pub extern "C" fn json_decode_field(ctx: *mut SpectraHostCallContext) -> i32 {
         }
         return missing("missing required field".to_string());
     };
-    match type_name.as_str() {
+    match type_name {
         "bool" => match field.as_bool() {
             Some(flag) => write_result(ctx, i64::from(flag)),
             None => missing(format!(
@@ -672,7 +721,12 @@ pub extern "C" fn json_decode_field(ctx: *mut SpectraHostCallContext) -> i32 {
             if !field.is_object() {
                 return missing("expected object".to_string());
             }
-            write_result(ctx, args[0])
+            match object_handle {
+                Some(handle) => write_result(ctx, handle),
+                // No incoming handle: move the nested object into a fresh
+                // store entry the caller releases with `value_free`.
+                None => write_result(ctx, insert_json_value(field)),
+            }
         }
     }
 }
@@ -1336,6 +1390,132 @@ mod tests {
         assert_eq!(
             call_json_host_no_result(json_value_free, &[0]),
             HOST_STATUS_SUCCESS
+        );
+    }
+
+    #[test]
+    fn host_parse_get_free_cycle_releases_handles() {
+        // Mirrors one derived `from_json` field access: parse a document,
+        // look up a member, then free the child and the root. Freed handles
+        // must classify as invalid even across repeated cycles, so a loop
+        // of roundtrips cannot accumulate live entries in the JSON store.
+        // Only per-handle state is asserted: the store is process-global and
+        // shared with other tests running on other threads.
+        for _ in 0..32 {
+            let (_, root) = call_json_host(json_parse, &[alloc_spectra_string(SAMPLE)]);
+            assert_ne!(root, 0, "valid document must yield a nonzero handle");
+            let (_, child) =
+                call_json_host(json_value_get, &[root, alloc_spectra_string("name")]);
+            assert_ne!(child, 0, "present member must yield a nonzero handle");
+            assert_eq!(
+                call_json_host_no_result(json_value_free, &[child]),
+                HOST_STATUS_SUCCESS
+            );
+            assert_eq!(
+                call_json_host_no_result(json_value_free, &[root]),
+                HOST_STATUS_SUCCESS
+            );
+            assert_eq!(
+                call_json_host(json_value_kind, &[child]).1,
+                JSON_KIND_INVALID,
+                "freed child handles must classify as invalid"
+            );
+            assert_eq!(
+                call_json_host(json_value_kind, &[root]).1,
+                JSON_KIND_INVALID,
+                "freed document handles must classify as invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn host_decode_field_by_key_extracts_scalars_and_nested() {
+        let doc = alloc_spectra_string(r#"{"outer":{"x":5},"n":7}"#);
+        let (_, root) = call_json_host(json_parse, &[doc]);
+        assert_ne!(root, 0);
+
+        // Scalar field: lookup by key and typed extraction in one call.
+        let (_, n) = call_json_host(
+            json_decode_field_by_key,
+            &[
+                root,
+                alloc_spectra_string("n"),
+                alloc_spectra_string("n"),
+                alloc_spectra_string("int"),
+                0,
+                0,
+            ],
+        );
+        assert_eq!(n, 7);
+
+        // Absent optional field yields the default value.
+        let (status, fallback) = call_json_host(
+            json_decode_field_by_key,
+            &[
+                root,
+                alloc_spectra_string("missing"),
+                alloc_spectra_string("missing"),
+                alloc_spectra_string("int"),
+                1,
+                42,
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(fallback, 42);
+
+        // Nested object mode returns a fresh handle the caller must free.
+        let (status, nested) = call_json_host(
+            json_decode_field_by_key,
+            &[
+                root,
+                alloc_spectra_string("outer"),
+                alloc_spectra_string("outer"),
+                alloc_spectra_string("Outer"),
+                0,
+                0,
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_ne!(nested, 0);
+        assert_ne!(nested, root);
+        let (_, x) = call_json_host(
+            json_decode_field_by_key,
+            &[
+                nested,
+                alloc_spectra_string("x"),
+                alloc_spectra_string("outer.x"),
+                alloc_spectra_string("int"),
+                0,
+                0,
+            ],
+        );
+        assert_eq!(x, 5);
+        assert_eq!(
+            call_json_host_no_result(json_value_free, &[nested]),
+            HOST_STATUS_SUCCESS
+        );
+
+        // Wrong wire type fails loudly instead of synthesizing a value.
+        let (status, _) = call_json_host(
+            json_decode_field_by_key,
+            &[
+                root,
+                alloc_spectra_string("n"),
+                alloc_spectra_string("n"),
+                alloc_spectra_string("string"),
+                0,
+                0,
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_INVALID_ARGUMENT);
+
+        assert_eq!(
+            call_json_host_no_result(json_value_free, &[root]),
+            HOST_STATUS_SUCCESS
+        );
+        assert_eq!(
+            call_json_host(json_value_kind, &[root]).1,
+            JSON_KIND_INVALID
         );
     }
 }

@@ -21,7 +21,8 @@ pub(crate) struct JsonFieldSchema {
 struct JsonDecodeField<'a> {
     field: &'a JsonFieldSchema,
     field_type: &'a IRType,
-    child: Value,
+    obj: Value,
+    key: Value,
     path: &'a str,
     field_ptr: Value,
 }
@@ -105,18 +106,18 @@ impl ASTLowering {
         self.json_enum_schemas
             .insert(enum_def.name.clone(), variants);
     }
-
-    fn json_concat(&mut self, ir_func: &mut IRFunction, lhs: Value, rhs: Value) -> Value {
-        self.require_value(
-            self.builder.build_typed_host_call(
-                ir_func,
-                "spectra.std.string.concat".to_string(),
-                vec![lhs, rhs],
-                IRType::String,
-                true,
-            ),
-            "JSON derive string concatenation did not produce a value",
-        )
+    /// Push one finished piece into the encode builder. The push status is
+    /// intentionally unchecked: the builder handle is fresh from
+    /// `builder_new` in the same straight-line sequence, and the host itself
+    /// swallows push errors, so there is no failure to observe.
+    fn json_builder_push(&mut self, ir_func: &mut IRFunction, builder: Value, piece: Value) {
+        self.json_host(
+            ir_func,
+            "spectra.std.string.builder_push",
+            vec![builder, piece],
+            IRType::Int,
+            "JSON derive string builder push did not produce a value",
+        );
     }
 
     fn json_host(
@@ -284,7 +285,22 @@ impl ASTLowering {
         stack: &mut Vec<String>,
     ) -> Value {
         let layout = layout::layout_of(field_defs.iter().map(|(_, ty)| ty));
-        let mut json = self.lower_string_literal("{", ir_func);
+        // Capacity hint only: braces plus a rough per-field allowance. The
+        // builder grows on demand, so underestimation costs nothing but a
+        // reallocation.
+        let capacity = self.builder.build_const_int(
+            ir_func,
+            2 + field_defs.len() as i64 * 16,
+        );
+        let builder = self.json_host(
+            ir_func,
+            "spectra.std.string.builder_new",
+            vec![capacity],
+            IRType::Int,
+            "did not create a JSON string builder",
+        );
+        let open = self.lower_string_literal("{", ir_func);
+        self.json_builder_push(ir_func, builder, open);
         for (idx, (source_name, field_type)) in field_defs.iter().enumerate() {
             let Some(field) = schema.iter().find(|f| &f.source_name == source_name) else {
                 return self.invalid_value(format!(
@@ -306,18 +322,30 @@ impl ASTLowering {
                     field.source_name, field_type
                 ));
             };
+            // Field names are compile-time constants, but the midend has no
+            // serde dependency to quote them with; one runtime `quote_string`
+            // per field keeps escaping exactly serde-compatible.
             let key = self.json_quote(ir_func, &field.json_name);
             let colon = self.lower_string_literal(":", ir_func);
-            json = self.json_concat(ir_func, json, key);
-            json = self.json_concat(ir_func, json, colon);
-            json = self.json_concat(ir_func, json, encoded);
+            self.json_builder_push(ir_func, builder, key);
+            self.json_builder_push(ir_func, builder, colon);
+            self.json_builder_push(ir_func, builder, encoded);
             if idx + 1 < field_defs.len() {
                 let comma = self.lower_string_literal(",", ir_func);
-                json = self.json_concat(ir_func, json, comma);
+                self.json_builder_push(ir_func, builder, comma);
             }
         }
         let close = self.lower_string_literal("}", ir_func);
-        self.json_concat(ir_func, json, close)
+        self.json_builder_push(ir_func, builder, close);
+        // `builder_finish` consumes the builder, so no free is needed: the
+        // only new store entry is the finished string itself.
+        self.json_host(
+            ir_func,
+            "spectra.std.string.builder_finish",
+            vec![builder],
+            IRType::String,
+            "did not finish a JSON string builder",
+        )
     }
 
     /// Decode a JSON object handle into a freshly allocated struct value.
@@ -369,18 +397,12 @@ impl ASTLowering {
                 format!("{base_path}.{}", field.json_name)
             };
             let key = self.lower_string_literal(&field.json_name, ir_func);
-            let child = self.json_host(
-                ir_func,
-                "spectra.api.json.value_get",
-                vec![obj, key],
-                IRType::Int,
-                "did not look up a JSON field",
-            );
             let decoded = self.lower_json_decode_field(
                 JsonDecodeField {
                     field,
                     field_type,
-                    child,
+                    obj,
+                    key,
                     path: &path,
                     field_ptr,
                 },
@@ -408,7 +430,8 @@ impl ASTLowering {
         let JsonDecodeField {
             field,
             field_type,
-            child,
+            obj,
+            key,
             path,
             field_ptr,
         } = decode;
@@ -435,10 +458,13 @@ impl ASTLowering {
                 let optional = self
                     .builder
                     .build_const_int(ir_func, i64::from(field.optional));
+                // One host call looks the member up by key and extracts the
+                // scalar: no `value_get` child handle, no parent clone, and
+                // nothing to free (scalars leave no store entry behind).
                 let value = self.json_host(
                     ir_func,
-                    "spectra.api.json.decode_field",
-                    vec![child, path_lit, type_lit, optional, default],
+                    "spectra.api.json.decode_field_by_key",
+                    vec![obj, key, path_lit, type_lit, optional, default],
                     representation.clone(),
                     "did not decode a JSON field",
                 );
@@ -456,16 +482,26 @@ impl ASTLowering {
                 let type_lit = self.lower_string_literal(&name, ir_func);
                 let path_lit = self.lower_string_literal(path, ir_func);
                 let required = self.builder.build_const_int(ir_func, 0);
+                // `decode_field_by_key` moves the nested object into a fresh
+                // handle: recurse into it, then free it (one free per nested
+                // field, mirroring the step-3 child frees this replaces).
                 let nested = self.json_host(
                     ir_func,
-                    "spectra.api.json.decode_field",
-                    vec![child, path_lit, type_lit, required, required],
+                    "spectra.api.json.decode_field_by_key",
+                    vec![obj, key, path_lit, type_lit, required, required],
                     IRType::Int,
                     "did not decode a nested JSON object",
                 );
                 let nested_ptr =
                     self.lower_derive_decode_object(&name, nested, path, ir_func, stack);
                 self.builder.build_store(ir_func, field_ptr, nested_ptr);
+                self.json_host(
+                    ir_func,
+                    "spectra.api.json.value_free",
+                    vec![nested],
+                    IRType::Int,
+                    "did not free a nested JSON object handle",
+                );
                 Some(())
             }
             IRType::Array { .. } => {
@@ -512,7 +548,17 @@ impl ASTLowering {
             "did not validate a JSON object root",
         );
         let mut stack = Vec::new();
-        self.lower_derive_decode_object(struct_name, obj, "", ir_func, &mut stack)
+        let out = self.lower_derive_decode_object(struct_name, obj, "", ir_func, &mut stack);
+        // Object-mode `decode_field` returns the root handle unchanged, so a
+        // single free releases the whole parsed document.
+        self.json_host(
+            ir_func,
+            "spectra.api.json.value_free",
+            vec![root],
+            IRType::Int,
+            "did not free a JSON document handle",
+        );
+        out
     }
 
     /// Render the schema DSL consumed by `spectra.api.json.typed_error_field`.

@@ -444,6 +444,10 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
         function: json::json_decode_field,
     },
     HostCallSpec {
+        name: "spectra.api.json.decode_field_by_key",
+        function: json::json_decode_field_by_key,
+    },
+    HostCallSpec {
         name: "spectra.api.json.typed_error_field",
         function: json::json_typed_error_field,
     },

@@ -71,6 +71,37 @@ struct QuarantineEntry {
 struct Frame {
     id: usize,
     allocations: Vec<usize>,
+    /// Maps a live pointer to its position in `allocations`, so removal is
+    /// O(1). The table pins freed addresses in quarantine, therefore a live
+    /// pointer can never appear twice in the same frame.
+    index: HashMap<usize, usize>,
+}
+
+impl Frame {
+    fn new(id: usize) -> Self {
+        Self {
+            id,
+            allocations: Vec::new(),
+            index: HashMap::new(),
+        }
+    }
+
+    fn track(&mut self, ptr: usize) {
+        self.index.insert(ptr, self.allocations.len());
+        self.allocations.push(ptr);
+    }
+
+    fn untrack(&mut self, ptr: usize) {
+        let Some(&pos) = self.index.get(&ptr) else {
+            return;
+        };
+        self.allocations.swap_remove(pos);
+        self.index.remove(&ptr);
+        // `swap_remove` moved the last element into `pos`; fix its index.
+        if let Some(&moved) = self.allocations.get(pos) {
+            self.index.insert(moved, pos);
+        }
+    }
 }
 
 struct AllocationTable {
@@ -88,10 +119,7 @@ impl AllocationTable {
     fn new() -> Self {
         Self {
             allocations: HashMap::new(),
-            frames: vec![Frame {
-                id: 0,
-                allocations: Vec::new(),
-            }],
+            frames: vec![Frame::new(0)],
             next_frame: 1,
             quarantine: VecDeque::new(),
             next_freed_epoch: 0,
@@ -101,10 +129,7 @@ impl AllocationTable {
     fn push_frame(&mut self) -> usize {
         let id = self.next_frame;
         self.next_frame = self.next_frame.wrapping_add(1).max(1);
-        self.frames.push(Frame {
-            id,
-            allocations: Vec::new(),
-        });
+        self.frames.push(Frame::new(id));
         id
     }
 
@@ -137,30 +162,23 @@ impl AllocationTable {
     }
 
     fn remove_from_frame(&mut self, frame_id: usize, ptr: usize) {
+        // Frame lookup stays linear: frame depth is the call-stack depth
+        // (tiny). The per-frame membership test is O(1) via `Frame::index`,
+        // so freeing no longer scans the whole live set of the frame.
         if let Some(frame) = self
             .frames
             .iter_mut()
             .rev()
             .find(|frame| frame.id == frame_id)
         {
-            if let Some((index, _)) = frame
-                .allocations
-                .iter()
-                .enumerate()
-                .find(|(_, &stored)| stored == ptr)
-            {
-                frame.allocations.swap_remove(index);
-            }
+            frame.untrack(ptr);
         }
     }
 
     fn clear_all(&mut self) {
         self.allocations.clear();
         self.frames.clear();
-        self.frames.push(Frame {
-            id: 0,
-            allocations: Vec::new(),
-        });
+        self.frames.push(Frame::new(0));
         self.next_frame = 1;
         // A full clear also drops every tombstone: after
         // `spectra_rt_manual_clear` there is no live state left to protect,
@@ -240,6 +258,15 @@ impl AllocationTable {
                     _ => return false,
                 }
             }
+            // Per-frame removal index must mirror the allocation vector.
+            if frame.index.len() != frame.allocations.len() {
+                return false;
+            }
+            for (pos, ptr) in frame.allocations.iter().enumerate() {
+                if frame.index.get(ptr) != Some(&pos) {
+                    return false;
+                }
+            }
         }
 
         if !self.allocations.iter().all(|(ptr, allocation)| {
@@ -247,9 +274,6 @@ impl AllocationTable {
         }) {
             return false;
         }
-
-        // Quarantine tombstones must be disjoint from live allocations and
-        // frames, and their epochs must strictly increase from oldest to
         // newest (FIFO order).
         let mut previous_epoch = None;
         self.quarantine.iter().all(|entry| {

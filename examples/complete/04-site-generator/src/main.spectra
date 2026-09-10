@@ -1,0 +1,59 @@
+// 04-site-generator: renders 3 markdown pages to HTML plus an index.
+module main
+
+import std.io
+import std.string as s
+import md
+import site
+
+public func main() returns int {
+    let home_body = s.concat(heading(1, "Home"), para(s.concat("Welcome to ", bold("Spectra"))))
+    let about_body = s.concat(heading(1, "About"), para(s.concat("Read ", link("the docs", "https://example.com/docs"))))
+    let blog_body = s.concat(heading(2, "First post"), para("Hello world"))
+
+    let home = render_page("Home", home_body)
+    let about = render_page("About", about_body)
+    let blog = render_page("Blog", blog_body)
+
+    if not s.contains(home, "<h1>Home</h1>") {
+        return 1
+    }
+    if not s.contains(home, "<strong>Spectra</strong>") {
+        return 2
+    }
+    if not s.contains(about, "<a href=\"https://example.com/docs\">the docs</a>") {
+        return 3
+    }
+    if not s.contains(blog, "<h2>First post</h2>") {
+        return 4
+    }
+    if not s.contains(home, "</body></html>") {
+        return 5
+    }
+    if not s.contains(about, "</body></html>") {
+        return 6
+    }
+    if not s.contains(blog, "</body></html>") {
+        return 7
+    }
+
+    let index = render_index(index_entry("home", "Home"), index_entry("about", "About"), index_entry("blog", "Blog"))
+    if not s.contains(index, "home.html") {
+        return 8
+    }
+    if not s.contains(index, "about.html") {
+        return 9
+    }
+    if not s.contains(index, "blog.html") {
+        return 10
+    }
+
+    println("--- page:home ---")
+    println(home)
+    println("--- page:about ---")
+    println(about)
+    println("--- page:blog ---")
+    println(blog)
+    println("SITE ok pages=3")
+    return 0
+}

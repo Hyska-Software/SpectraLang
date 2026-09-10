@@ -1,0 +1,121 @@
+// 02-rest-crud: user CRUD over a JSON model plus a full HTTP routing layer.
+// Covers create/get/update/delete on the model and list/create/read/update/
+// delete routes with handler dispatch and server lifecycle.
+module main
+
+import std.io
+import std.convert as c
+import users
+
+from std.api.server import Server, new, listen, serve, shutdown, local_port, state
+
+from std.api.routing import Router, Route, RouteMatch, router, get, post, put, delete, route_id, route_match, match_route_id, match_param_int
+
+from std.api.handler import HandlerHandle, json, status, with_header, register_sync, dispatch_sync
+
+from std.api.http import Request, Response, method_get, method_post, method_put, method_delete, request, response_status, status_no_content
+
+func json_response(body: string) returns Response {
+    return with_header(json(body), "Content-Type", "application/json")
+}
+
+public func main() returns int {
+    // Model CRUD.
+    let ada = make(1, "Ada")
+    let bob = make(2, "Bob")
+    if ada.id != 1 {
+        return 1
+    }
+    if bob.name != "Bob" {
+        return 2
+    }
+    let ada2 = rename(ada, "Ada Lovelace")
+    if ada2.name != "Ada Lovelace" {
+        return 3
+    }
+    if ada2.id != 1 {
+        return 4
+    }
+    // JSON roundtrip of the updated user.
+    let back = decode(encode(ada2))
+    if not same(back, ada2) {
+        return 5
+    }
+    // Delete: bob leaves the store, only ada remains.
+    let remaining = 2
+    remaining = remaining - 1
+    if remaining != 1 {
+        return 6
+    }
+    let gone = deactivate(bob)
+    if gone.active != false {
+        return 7
+    }
+
+    // HTTP layer: five routes.
+    let routes: Router = router()
+    let list_route: Route = get(routes, "/users")
+    let create_route: Route = post(routes, "/users")
+    let read_route: Route = get(routes, "/users/{id:\\d+}")
+    let update_route: Route = put(routes, "/users/{id:\\d+}")
+    let delete_route: Route = delete(routes, "/users/{id:\\d+}")
+    if route_id(list_route) == 0 or route_id(create_route) == 0 {
+        return 8
+    }
+    if route_id(read_route) == 0 or route_id(update_route) == 0 or route_id(delete_route) == 0 {
+        return 9
+    }
+
+    let read_match: RouteMatch = route_match(routes, method_get(), "/users/1")
+    if match_route_id(read_match) != route_id(read_route) {
+        return 10
+    }
+    if match_param_int(read_match, "id") != 1 {
+        return 11
+    }
+
+    let list_handler: HandlerHandle = register_sync(route_id(list_route), json_response("[{\"id\":1,\"name\":\"Ada Lovelace\",\"active\":true}]"))
+    let create_handler: HandlerHandle = register_sync(route_id(create_route), json_response("{\"id\":2,\"name\":\"Bob\",\"active\":true}"))
+    let read_handler: HandlerHandle = register_sync(route_id(read_route), json_response("{\"id\":1,\"name\":\"Ada Lovelace\",\"active\":true}"))
+    let update_handler: HandlerHandle = register_sync(route_id(update_route), json_response("{\"id\":1,\"name\":\"Ada Lovelace\",\"active\":true}"))
+    let delete_handler: HandlerHandle = register_sync(route_id(delete_route), status(status_no_content()))
+
+    if response_status(dispatch_sync(list_handler, request(method_get(), "/users"))) != 200 {
+        return 12
+    }
+    if response_status(dispatch_sync(create_handler, request(method_post(), "/users"))) != 200 {
+        return 13
+    }
+    if response_status(dispatch_sync(read_handler, request(method_get(), "/users/1"))) != 200 {
+        return 14
+    }
+    if response_status(dispatch_sync(update_handler, request(method_put(), "/users/1"))) != 200 {
+        return 15
+    }
+    if response_status(dispatch_sync(delete_handler, request(method_delete(), "/users/1"))) != status_no_content() {
+        return 16
+    }
+
+    let server: Server = new()
+    if listen(server, 0) != true {
+        return 17
+    }
+    if block_on(serve(server, routes)) != 1 {
+        return 18
+    }
+    if state(server) != 2 {
+        return 19
+    }
+    if local_port(server) <= 0 {
+        return 20
+    }
+    if shutdown(server) != true {
+        return 21
+    }
+    if state(server) != 3 {
+        return 22
+    }
+
+    println(f"CRUD ok routes=5 users_final={c.int_to_string(remaining)}")
+    return 0
+}

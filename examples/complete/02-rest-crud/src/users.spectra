@@ -1,0 +1,43 @@
+// User model with JSON persistence. All JSON calls stay in this module
+// next to the record definition (derive codegen is module-local).
+module users
+
+#[derive(Serialize, Deserialize)]
+public record User {
+    public id: int,
+    public name: string,
+    public active: bool,
+}
+
+public func make(id: int, name: string) returns User {
+    return User { id: id, name: name, active: true }
+}
+
+public func rename(user: User, name: string) returns User {
+    return User { id: user.id, name: name, active: user.active }
+}
+
+public func deactivate(user: User) returns User {
+    return User { id: user.id, name: user.name, active: false }
+}
+
+public func encode(user: User) returns string {
+    return user.to_json()
+}
+
+public func decode(raw: string) returns User {
+    return User::from_json(raw)
+}
+
+public func same(left: User, right: User) returns bool {
+    if left.id != right.id {
+        return false
+    }
+    if left.name != right.name {
+        return false
+    }
+    if left.active != right.active {
+        return false
+    }
+    return true
+}

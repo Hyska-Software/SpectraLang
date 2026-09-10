@@ -68,6 +68,12 @@ returning `int`; handles must be released with `value_free`.
   `float`, `bool`, `string`, `char` (anything else selects object mode and
   returns the handle), absent `optional` fields yield `default`; any other
   violation prints `decode error at '<path>'` and fails the host call
+- `spectra.api.json.decode_field_by_key(obj, key, path, type_name, optional, default) -> int` —
+  collapsed `value_get` + `decode_field` for derive lowering: looks the
+  member up by key without cloning the parent and without creating a child
+  handle. Scalars extract directly (no store entry, nothing to free); object
+  mode moves the nested object into a fresh handle the caller releases with
+  `value_free`
 - `spectra.api.json.typed_error_field(schema, input) -> string` — first JSON
   path violating a derive schema, or `""` when valid (`$` for root problems)
 

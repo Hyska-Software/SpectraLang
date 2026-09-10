@@ -1,0 +1,78 @@
+// 05-lru-cache: capacity-3 LRU. put 1,2,3; get 1; put 4 (evicts 2);
+// put 5 (evicts 3). Final order front-first: [5,4,1].
+module main
+
+import std.io
+import std.convert as c
+import std.collections as col
+import lru
+
+public func main() returns int {
+    let m = col.map_new()
+    let order = [0, 0, 0]
+    let size = 0
+    let evicts = 0
+
+    size = insert_fresh(order, size, 1)
+    col.map_set(m, 1, 1)
+    size = insert_fresh(order, size, 2)
+    col.map_set(m, 2, 2)
+    size = insert_fresh(order, size, 3)
+    col.map_set(m, 3, 3)
+    if size != 3 {
+        return 1
+    }
+    if col.map_len(m) != 3 {
+        return 2
+    }
+
+    if not col.map_contains(m, 1) {
+        return 3
+    }
+    if touch(order, size, 1) == -1 {
+        return 4
+    }
+    let hits = 1
+    if order[0] != 1 {
+        return 5
+    }
+
+    let victim = evict_and_insert(order, size, 4, 3)
+    if victim != 2 {
+        return 6
+    }
+    col.map_remove(m, victim)
+    col.map_set(m, 4, 4)
+    evicts = evicts + 1
+    if col.map_contains(m, 2) {
+        return 7
+    }
+    if col.map_len(m) != 3 {
+        return 8
+    }
+
+    victim = evict_and_insert(order, size, 5, 3)
+    if victim != 3 {
+        return 9
+    }
+    col.map_remove(m, victim)
+    col.map_set(m, 5, 5)
+    evicts = evicts + 1
+    if col.map_contains(m, 3) {
+        return 10
+    }
+    if not col.map_contains(m, 5) {
+        return 11
+    }
+    if order[0] != 5 or order[1] != 4 or order[2] != 1 {
+        return 12
+    }
+
+    if col.map_contains(m, 2) {
+        return 13
+    }
+
+    col.map_free(m)
+    println(f"LRU ok hits={c.int_to_string(hits)} evicts={c.int_to_string(evicts)}")
+    return 0
+}

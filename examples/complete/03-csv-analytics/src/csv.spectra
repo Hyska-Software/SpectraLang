@@ -1,0 +1,37 @@
+// Minimal CSV parsing for `id,name,score` rows.
+// Limitation: no quoted commas; fields are split on every comma.
+module csv
+
+import std.string as string
+import std.convert as convert
+import std.collections as collections
+import std.option as option
+
+// Returns the field at `idx`, or "" when missing.
+public func field_at(line: string, idx: int) returns string {
+    let parts = string.split_by(line, ",")
+    let value = ""
+    let got = collections.list_get(parts, idx)
+    if option.is_some(got) {
+        value = option.option_unwrap(got)
+    }
+    collections.list_free(parts)
+    return value
+}
+
+// Parses the score (3rd column). Returns -1 for malformed rows.
+public func parse_score(line: string) returns int {
+    let parts = string.split_by(line, ",")
+    if collections.list_len(parts) != 3 {
+        collections.list_free(parts)
+        return -1
+    }
+    let cell = collections.list_get(parts, 2)
+    if option.is_none(cell) {
+        collections.list_free(parts)
+        return -1
+    }
+    let score = convert.string_to_int(option.option_unwrap(cell))
+    collections.list_free(parts)
+    return score
+}

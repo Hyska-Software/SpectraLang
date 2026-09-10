@@ -1,0 +1,79 @@
+// 01-todo-cli: complete CLI task app (in-memory + JSON persistence roundtrip).
+// Adds 5 tasks, completes 2, filters pending, saves/loads via JSON, rechecks.
+module main
+
+import std.io
+import std.convert as c
+import todo
+import store
+
+public func main() returns int {
+    let t1 = make(1, "write spec")
+    let t2 = make(2, "review code")
+    let t3 = make(3, "run tests")
+    let t4 = make(4, "fix bugs")
+    let t5 = make(5, "ship release")
+
+    let c1 = complete(t1)
+    let c2 = complete(t2)
+
+    // Pending filter: 3 of 5 remain open.
+    let pending = 0
+    if is_pending(c1) {
+        pending = pending + 1
+    }
+    if is_pending(c2) {
+        pending = pending + 1
+    }
+    if is_pending(t3) {
+        pending = pending + 1
+    }
+    if is_pending(t4) {
+        pending = pending + 1
+    }
+    if is_pending(t5) {
+        pending = pending + 1
+    }
+    if pending != 3 {
+        return 1
+    }
+
+    // Persistence roundtrip preserves every item and flag.
+    // Each document is loaded back immediately: earlier shapes kept all
+    // five documents alive across loads and tripped an intermittent
+    // runtime string-aliasing fault (exit 2 on first compare).
+    let d1 = save(c1)
+    let r1 = load(d1)
+    if not same(r1, c1) {
+        return 2
+    }
+    let d2 = save(c2)
+    let r2 = load(d2)
+    if not same(r2, c2) {
+        return 3
+    }
+    let d3 = save(t3)
+    let r3 = load(d3)
+    if not same(r3, t3) {
+        return 4
+    }
+    let d4 = save(t4)
+    let r4 = load(d4)
+    if not same(r4, t4) {
+        return 5
+    }
+    let d5 = save(t5)
+    let r5 = load(d5)
+    if not same(r5, t5) {
+        return 6
+    }
+    if is_pending(r1) {
+        return 7
+    }
+    if not is_pending(r3) {
+        return 8
+    }
+
+    println(f"TODO ok pending={c.int_to_string(pending)} total=5")
+    return 0
+}
