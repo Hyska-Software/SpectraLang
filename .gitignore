@@ -71,3 +71,4 @@ TEST_RESULTS.baseline.txt
 tests/projects/valid/integrated_ai_data_experiment/target/
 tests/projects/valid/integrated_basic_components/target/spectra-async-tests/0000_core_language_package_testscore_language_package_passes/core_language_package_tests.spectra
 tests/projects/valid/integrated_basic_deep_components/target/spectra-async-tests/0000_deep_components_package_testsdeep_components_workflow_passes/deep_components_package_tests.spectra
+/.bench-charts/

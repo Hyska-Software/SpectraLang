@@ -1,7 +1,7 @@
 // Phase 31: cpu-string-build (Rust)
 
 fn main() {
-    let iters: i64 = 50;
+    let iters: i64 = 500;
     let mut total: usize = 0;
     for _ in 0..iters {
         let mut s = String::with_capacity(200);
@@ -10,7 +10,7 @@ fn main() {
         }
         total += s.len();
     }
-    if total != 10_000 {
+    if total != 100_000 {
         eprintln!("unexpected: {}", total);
         std::process::exit(1);
     }

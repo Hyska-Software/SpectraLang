@@ -25,36 +25,36 @@
     },
     "cpu-string-build": {
       "category": "cpu",
-      "iterations": 50,
-      "expected_output_bytes": 10000,
+      "iterations": 500,
+      "expected_output_bytes": 100000,
       "tolerance": "exact",
-      "spectra_ns_per_iter": 47954150,
+      "spectra_ns_per_iter": 20795800,
       "placeholder": false,
       "r3122_fast_abi_speedup_x": 5.8
     },
     "cpu-hashmap": {
       "category": "cpu",
-      "iterations": 30,
+      "iterations": 300,
       "expected_value": "n>0",
       "tolerance": "exact",
-      "spectra_ns_per_iter": 134579390,
+      "spectra_ns_per_iter": 33414300,
       "placeholder": false
     },
     "tensor-create": {
       "category": "tensor",
-      "iterations": 20,
-      "expected_count": 20971520,
+      "iterations": 60,
+      "expected_count": 62914560,
       "tolerance": "exact",
-      "spectra_ns_per_iter": 186906850,
+      "spectra_ns_per_iter": 88618450,
       "placeholder": false,
       "r3107_pool_speedup_x": 2.74,
       "r3118_refill_bench": true
     },
     "tensor-elementwise": {
       "category": "tensor",
-      "iterations": 10,
+      "iterations": 50,
       "expected_tolerance": "1e-6",
-      "spectra_ns_per_iter": 43305625,
+      "spectra_ns_per_iter": 56476450,
       "placeholder": false
     },
     "tensor-reduce": {
@@ -69,14 +69,14 @@
       "category": "tensor",
       "iterations": 20,
       "expected_tolerance": "1e-4",
-      "spectra_ns_per_iter": 56710280,
+      "spectra_ns_per_iter": 23960800,
       "placeholder": false
     },
     "ml-mlp-step": {
       "category": "ml",
-      "iterations": 10,
+      "iterations": 50,
       "expected_tolerance": "1e-3",
-      "spectra_ns_per_iter": 76160370,
+      "spectra_ns_per_iter": 22971050,
       "placeholder": false
     },
     "async-echo": {

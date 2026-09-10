@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 fn main() {
     let n: i64 = 200;
-    let iters: i64 = 30;
+    let iters: i64 = 300;
     let mut acc: i64 = 0;
     for _ in 0..iters {
         let mut m: HashMap<i64, i64> = HashMap::with_capacity(n as usize);

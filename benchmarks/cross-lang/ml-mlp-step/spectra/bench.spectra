@@ -1,5 +1,6 @@
 // Phase 31: ml-mlp-step (Spectra, simplified)
-// Forward + backward + sgd_step on a small linear model, 10 iterations.
+// Forward + backward + sgd_step on a small linear model, 50 iterations
+// (parity with the Go/Rust fixtures).
 
 module bench_ml_mlp_step
 

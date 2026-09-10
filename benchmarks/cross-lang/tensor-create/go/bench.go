@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	const iters = 20
+	const iters = 60
 	total := 0
 	for i := 0; i < iters; i++ {
 		t := make([]float64, 1_048_576)
@@ -17,7 +17,7 @@ func main() {
 		}
 		total += len(t)
 	}
-	if total != 20_971_520 {
+	if total != 62_914_560 {
 		fmt.Fprintf(os.Stderr, "unexpected: %d\n", total)
 		os.Exit(1)
 	}
