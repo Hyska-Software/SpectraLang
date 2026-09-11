@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 555
+PACKAGE_HOST_CALL_COUNT = 557
 SESSION_CALLS = [
     "memory_store",
     "redis_store",

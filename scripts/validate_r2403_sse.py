@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 555
+PACKAGE_HOST_CALL_COUNT = 557
 SSE_CALLS = [
     "server_new",
     "server_response",
