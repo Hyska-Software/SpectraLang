@@ -87,3 +87,22 @@ locks, ~5 whole-`Value` clones per object, plus dispatch overhead.
 - Round 2: dev-profile `opt-level = 2` for the 5 hot crates (279ms →
   ~91ms); whole-struct `encode_struct` in one call (~91ms → ~66ms);
   363 byte-pin test. 279ms → 66ms.
+
+
+## Known correctness issue (pre-existing, not caused by perf work)
+
+`s.len()` over `for-in` loop variables of string arrays returns wrong
+values (`tests/validation/array_iteration_sum.spectra` fails check #5:
+`letters != 14`). Direct indexing (`words[1]`) and direct literals are
+correct; only the loop-variable path is wrong, intermittently
+(observed lens `12,12`, `6,7`, `5,5,5` for `5,4,5`).
+
+- Fails 8/8 on `9e79062` (pre-round-1), 8/8 on `be83cf8` (round-1),
+  10/10 on current tree: fully pre-existing, all build configs.
+- Full-corpus run comparison current-vs-baseline: identical 52-file
+  nonzero sets, i.e. zero new runtime failures from perf work.
+- Suspected area (hypothesis, not proven): `for-in` string loop-var
+  materialization / backend stack codegen reading past the string
+  (first iteration correct, later garbage, ASLR-sensitive). The
+  canonical corpus gate is compile-only, which is why it never caught
+  this; any fix must add a run-gate for `array_iteration_sum`.
