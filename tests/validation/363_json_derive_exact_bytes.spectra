@@ -1,0 +1,65 @@
+module json_derive_exact_bytes
+
+import std.io
+
+// Byte-exact pins for `to_json`: any change in field order, separators,
+// number formatting, name quoting, or escaping breaks these assertions.
+// Paired with a decode-back check so identical bytes with shifted semantics
+// cannot pass silently.
+#[derive(Serialize, Deserialize)]
+record Address {
+    city: string,
+    zip: int,
+}
+
+#[derive(Serialize, Deserialize)]
+record Measurement {
+    #[json(rename = "sensor_id")]
+    id: int,
+    temp: float,
+    active: bool,
+    label: string,
+    unit: char,
+    #[json(optional)]
+    note: string,
+    location: Address,
+}
+
+#[derive(Serialize, Deserialize)]
+record Empty {
+}
+
+public func main() returns int {
+    let home = Address { city: "Lima", zip: 15001 }
+    let m = Measurement {
+        id: 7,
+        temp: 21.5,
+        active: true,
+        label: "Ada \"ace\" \\bert\ntab\there",
+        unit: 'X',
+        note: "hi",
+        location: home,
+    }
+    let expected = "{\"sensor_id\":7,\"temp\":21.5,\"active\":true,\"label\":\"Ada \\\"ace\\\" \\\\bert\\ntab\\there\",\"unit\":\"X\",\"note\":\"hi\",\"location\":{\"city\":\"Lima\",\"zip\":15001}}"
+    if m.to_json() != expected {
+        return 1
+    }
+    let back: Measurement = Measurement::from_json(expected)
+    if back.id != 7 {
+        return 2
+    }
+    if back.label != "Ada \"ace\" \\bert\ntab\there" {
+        return 3
+    }
+    if back.location.city != "Lima" {
+        return 4
+    }
+    if back.location.zip != 15001 {
+        return 5
+    }
+    let e = Empty { }
+    if e.to_json() != "{}" {
+        return 6
+    }
+    return 0
+}

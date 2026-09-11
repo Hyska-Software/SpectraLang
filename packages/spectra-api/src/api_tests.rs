@@ -90,9 +90,9 @@ mod tests {
             assert!(names.insert(spec.name), "duplicate {}", spec.name);
         }
         #[cfg(feature = "http3")]
-        assert_eq!(HOST_CALLS.len(), 556);
+        assert_eq!(HOST_CALLS.len(), 557);
         #[cfg(not(feature = "http3"))]
-        assert_eq!(HOST_CALLS.len(), 528);
+        assert_eq!(HOST_CALLS.len(), 529);
         let registered_names: HashSet<_> = HOST_CALLS.iter().map(|spec| spec.name).collect();
         for (name, _) in db::POSTGRES_HOST_CALLS {
             assert!(

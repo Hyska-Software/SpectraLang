@@ -106,20 +106,6 @@ impl ASTLowering {
         self.json_enum_schemas
             .insert(enum_def.name.clone(), variants);
     }
-    /// Push one finished piece into the encode builder. The push status is
-    /// intentionally unchecked: the builder handle is fresh from
-    /// `builder_new` in the same straight-line sequence, and the host itself
-    /// swallows push errors, so there is no failure to observe.
-    fn json_builder_push(&mut self, ir_func: &mut IRFunction, builder: Value, piece: Value) {
-        self.json_host(
-            ir_func,
-            "spectra.std.string.builder_push",
-            vec![builder, piece],
-            IRType::Int,
-            "JSON derive string builder push did not produce a value",
-        );
-    }
-
     fn json_host(
         &mut self,
         ir_func: &mut IRFunction,
@@ -146,78 +132,51 @@ impl ASTLowering {
         )
     }
 
-    /// Encode one field value as JSON text. Aggregate (struct/array) values
-    /// arrive as pointers and are consumed without loading; only scalars are
-    /// loaded. Returns `None` for types with no real encoding so the caller
-    /// can emit a typed error naming the field.
-    fn lower_json_encode_value(
+    /// Lower one field value to its `encode_struct` kind token and raw value.
+    /// Aggregate (struct/array) values arrive as pointers and are consumed
+    /// without loading; only scalars are loaded. Returns `None` for types
+    /// with no real encoding so the caller can emit a typed error naming
+    /// the field. Kinds mirror `json_encode_struct`: scalars pass through
+    /// untouched and the host formats them; nested structs are encoded
+    /// recursively first and passed as pre-encoded `raw` chunks.
+    fn lower_json_encode_field(
         &mut self,
         field_type: &IRType,
         field_ptr: Value,
         ir_func: &mut IRFunction,
         stack: &mut Vec<String>,
-    ) -> Option<Value> {
+    ) -> Option<(&'static str, Value)> {
         let representation = self.ir_type_representation(field_type).clone();
         match representation {
             IRType::Int | IRType::ExactInt { .. } => {
                 let value = self
                     .builder
                     .build_load_typed(ir_func, field_ptr, representation);
-                Some(self.json_host(
-                    ir_func,
-                    "spectra.std.convert.int_to_string",
-                    vec![value],
-                    IRType::String,
-                    "did not convert an int field",
-                ))
+                Some(("int", value))
             }
             IRType::Float | IRType::ExactFloat { .. } => {
                 let value = self
                     .builder
                     .build_load_typed(ir_func, field_ptr, representation);
-                Some(self.json_host(
-                    ir_func,
-                    "spectra.api.json.encode_number",
-                    vec![value],
-                    IRType::String,
-                    "did not encode a float field",
-                ))
+                Some(("float", value))
             }
             IRType::Bool => {
                 let value = self
                     .builder
                     .build_load_typed(ir_func, field_ptr, IRType::Bool);
-                Some(self.json_host(
-                    ir_func,
-                    "spectra.std.convert.bool_to_string",
-                    vec![value],
-                    IRType::String,
-                    "did not convert a bool field",
-                ))
+                Some(("bool", value))
             }
             IRType::String => {
                 let value = self
                     .builder
                     .build_load_typed(ir_func, field_ptr, IRType::String);
-                Some(self.json_host(
-                    ir_func,
-                    "spectra.api.json.quote_string",
-                    vec![value],
-                    IRType::String,
-                    "did not quote a string field",
-                ))
+                Some(("string", value))
             }
             IRType::Char => {
                 let value = self
                     .builder
                     .build_load_typed(ir_func, field_ptr, IRType::Char);
-                Some(self.json_host(
-                    ir_func,
-                    "spectra.api.json.quote_char",
-                    vec![value],
-                    IRType::String,
-                    "did not quote a char field",
-                ))
+                Some(("char", value))
             }
             IRType::Struct { name, .. } => {
                 // Struct-typed fields store an 8-byte pointer (see
@@ -228,7 +187,8 @@ impl ASTLowering {
                     fields: nested_defs,
                 };
                 let nested_ptr = self.builder.build_load_typed(ir_func, field_ptr, nested_ty);
-                Some(self.lower_derive_encode_struct(&name, nested_ptr, ir_func, stack))
+                let nested = self.lower_derive_encode_struct(&name, nested_ptr, ir_func, stack);
+                Some(("raw", nested))
             }
             // Array annotations erase to dynamic size (`size: 0`) before
             // lowering, so element counts are unknowable at compile time and
@@ -285,22 +245,10 @@ impl ASTLowering {
         stack: &mut Vec<String>,
     ) -> Value {
         let layout = layout::layout_of(field_defs.iter().map(|(_, ty)| ty));
-        // Capacity hint only: braces plus a rough per-field allowance. The
-        // builder grows on demand, so underestimation costs nothing but a
-        // reallocation.
-        let capacity = self.builder.build_const_int(
-            ir_func,
-            2 + field_defs.len() as i64 * 16,
-        );
-        let builder = self.json_host(
-            ir_func,
-            "spectra.std.string.builder_new",
-            vec![capacity],
-            IRType::Int,
-            "did not create a JSON string builder",
-        );
-        let open = self.lower_string_literal("{", ir_func);
-        self.json_builder_push(ir_func, builder, open);
+        // Field pairs are collected first so the `kinds` descriptor (which
+        // must lead the call arguments) can be built after the loop.
+        let mut kinds: Vec<&str> = Vec::with_capacity(field_defs.len());
+        let mut pairs: Vec<Value> = Vec::with_capacity(2 * field_defs.len());
         for (idx, (source_name, field_type)) in field_defs.iter().enumerate() {
             let Some(field) = schema.iter().find(|f| &f.source_name == source_name) else {
                 return self.invalid_value(format!(
@@ -315,36 +263,34 @@ impl ASTLowering {
             let field_ptr = self
                 .builder
                 .build_field_ptr(ir_func, struct_ptr, offset as i64);
-            let Some(encoded) = self.lower_json_encode_value(field_type, field_ptr, ir_func, stack)
+            let Some((kind, value)) =
+                self.lower_json_encode_field(field_type, field_ptr, ir_func, stack)
             else {
                 return self.invalid_value(format!(
                     "JSON to_json on '{struct_name}.{}' is not supported for field type {:?}",
                     field.source_name, field_type
                 ));
             };
-            // Field names are compile-time constants, but the midend has no
-            // serde dependency to quote them with; one runtime `quote_string`
-            // per field keeps escaping exactly serde-compatible.
-            let key = self.json_quote(ir_func, &field.json_name);
-            let colon = self.lower_string_literal(":", ir_func);
-            self.json_builder_push(ir_func, builder, key);
-            self.json_builder_push(ir_func, builder, colon);
-            self.json_builder_push(ir_func, builder, encoded);
-            if idx + 1 < field_defs.len() {
-                let comma = self.lower_string_literal(",", ir_func);
-                self.json_builder_push(ir_func, builder, comma);
-            }
+            // Raw field names travel as literals; the host quotes them with
+            // the same `serde_json` escaping `quote_string` used, so no
+            // compile-time quoting (and no serde dependency here) is needed.
+            kinds.push(kind);
+            pairs.push(self.lower_string_literal(&field.json_name, ir_func));
+            pairs.push(value);
         }
-        let close = self.lower_string_literal("}", ir_func);
-        self.json_builder_push(ir_func, builder, close);
-        // `builder_finish` consumes the builder, so no free is needed: the
-        // only new store entry is the finished string itself.
+        // One host call encodes the whole object: framing, name quoting, and
+        // scalar formatting happen against a single buffer with a single
+        // trailing allocation, replacing ~4 host calls per field.
+        let kinds = self.lower_string_literal(&kinds.join(";"), ir_func);
+        let mut call_args = Vec::with_capacity(1 + pairs.len());
+        call_args.push(kinds);
+        call_args.extend(pairs);
         self.json_host(
             ir_func,
-            "spectra.std.string.builder_finish",
-            vec![builder],
+            "spectra.api.json.encode_struct",
+            call_args,
             IRType::String,
-            "did not finish a JSON string builder",
+            "did not encode a JSON object",
         )
     }
 

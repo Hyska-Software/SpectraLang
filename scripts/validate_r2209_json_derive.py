@@ -183,6 +183,7 @@ def run_regressions() -> None:
     run_command([str(SPECTRALANG), "compile", "tests/validation/133_json_derive_surface.spectra"])
     run_command([str(SPECTRALANG), "run", "tests/validation/133_json_derive_surface.spectra"])
     run_command([str(SPECTRALANG), "run", "tests/validation/357_json_derive_roundtrip.spectra"])
+    run_command([str(SPECTRALANG), "run", "tests/validation/363_json_derive_exact_bytes.spectra"])
     malformed = run_command(
         [str(SPECTRALANG), "run", "tests/errors/json_malformed_rejects.spectra"],
         expect_success=False,

@@ -15,3 +15,41 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
+
+[profile.dev.package.spectra-runtime]
+# JSON/perf round 2: these crates execute on every `spectralang run`
+# (compile pipeline + JIT host calls). Optimized codegen in dev builds
+# without touching debug info or assertions: pure speedup, no behavior
+# change. Top-level CLI binary itself stays unoptimized.
+opt-level = 2
+
+[profile.dev.package.spectra-api]
+opt-level = 2
+
+[profile.dev.package.spectra-midend]
+opt-level = 2
+
+[profile.dev.package.spectra-backend]
+opt-level = 2
+
+[profile.dev.package.spectra-compiler]
+opt-level = 2
+
+# Test builds always run unoptimized: several runtime concurrency tests
+# assert wall-clock timing (80ms worker sleeps) and hang under opt.
+# This shadows the dev overrides above for the  profile only;
+# normal dev builds (the spectralang binary) stay optimized.
+[profile.test.package.spectra-runtime]
+opt-level = 0
+
+[profile.test.package.spectra-api]
+opt-level = 0
+
+[profile.test.package.spectra-midend]
+opt-level = 0
+
+[profile.test.package.spectra-backend]
+opt-level = 0
+
+[profile.test.package.spectra-compiler]
+opt-level = 0

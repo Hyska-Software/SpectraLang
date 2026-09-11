@@ -600,6 +600,82 @@ pub extern "C" fn json_encode_number(ctx: *mut SpectraHostCallContext) -> i32 {
     write_result(ctx, alloc_spectra_string(&number.to_string()))
 }
 
+/// Derive support: encode one struct's fields as a JSON object in a single
+/// host call.
+///
+/// Arguments: `(kinds, name_1, value_1, ..., name_n, value_n)` where `kinds`
+/// is a `;`-separated list parallel to the field pairs: `int`, `float`,
+/// `bool`, `string`, `char`, or `raw` for a pre-encoded nested value.
+/// Names are quoted with the same `serde_json` escaping as `quote_string`;
+/// scalars reuse the exact formatting of `int_to_string`, `encode_number`,
+/// `bool_to_string`, and `quote_char`, so output is byte-identical to the
+/// previous multi-call lowering with a single trailing allocation.
+/// Non-finite floats fail exactly like `encode_number`.
+pub extern "C" fn json_encode_struct(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(kinds) = read_spectra_string(args[0]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let kinds: Vec<&str> = if kinds.is_empty() {
+        Vec::new()
+    } else {
+        kinds.split(';').collect()
+    };
+    if args.len() != 1 + 2 * kinds.len() {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    let mut out = String::with_capacity(2 + kinds.len() * 16);
+    out.push('{');
+    for (index, kind) in kinds.iter().enumerate() {
+        let Some(name) = read_spectra_string(args[1 + 2 * index]) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        let value = args[1 + 2 * index + 1];
+        if index > 0 {
+            out.push(',');
+        }
+        out.push_str(&serde_json::to_string(&name).unwrap_or_default());
+        out.push(':');
+        match *kind {
+            "int" => out.push_str(&value.to_string()),
+            "float" => {
+                let number = f64::from_bits(value as u64);
+                let Some(number) = Number::from_f64(number) else {
+                    eprintln!("spectra.api.json encode error: non-finite float cannot be encoded as JSON");
+                    return HOST_STATUS_INVALID_ARGUMENT;
+                };
+                out.push_str(&number.to_string());
+            }
+            "bool" => out.push_str(if value != 0 { "true" } else { "false" }),
+            "string" => {
+                let Some(text) = read_spectra_string(value) else {
+                    return HOST_STATUS_INVALID_ARGUMENT;
+                };
+                out.push_str(&serde_json::to_string(&text).unwrap_or_default());
+            }
+            "char" => {
+                let Some(ch) = char::from_u32(value as u32) else {
+                    return HOST_STATUS_INVALID_ARGUMENT;
+                };
+                let mut text = String::with_capacity(ch.len_utf8());
+                text.push(ch);
+                out.push_str(&serde_json::to_string(&text).unwrap_or_default());
+            }
+            "raw" => {
+                let Some(chunk) = read_spectra_string(value) else {
+                    return HOST_STATUS_INVALID_ARGUMENT;
+                };
+                out.push_str(&chunk);
+            }
+            _ => return HOST_STATUS_INVALID_ARGUMENT,
+        }
+    }
+    out.push('}');
+    write_result(ctx, alloc_spectra_string(&out))
+}
+
 /// Report a typed decode failure to stderr and fail the host call.
 ///
 /// The backend turns the error status into `runtime error: host call ...`,
@@ -1517,5 +1593,75 @@ mod tests {
             call_json_host(json_value_kind, &[root]).1,
             JSON_KIND_INVALID
         );
+    }
+
+    #[test]
+    fn host_encode_struct_formats_all_kinds_in_one_call() {
+        let (status, out) = call_json_host(
+            json_encode_struct,
+            &[
+                alloc_spectra_string("int;float;bool;string;char;string;raw"),
+                alloc_spectra_string("sensor_id"),
+                7,
+                alloc_spectra_string("temp"),
+                21.5_f64.to_bits() as i64,
+                alloc_spectra_string("active"),
+                1,
+                alloc_spectra_string("label"),
+                alloc_spectra_string("Ada \"ace\""),
+                alloc_spectra_string("unit"),
+                'X' as i64,
+                alloc_spectra_string("note"),
+                alloc_spectra_string("hi"),
+                alloc_spectra_string("location"),
+                alloc_spectra_string(r#"{"city":"Lima","zip":15001}"#),
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            read_spectra_string(out).as_deref(),
+            Some(
+                r#"{"sensor_id":7,"temp":21.5,"active":true,"label":"Ada \"ace\"","unit":"X","note":"hi","location":{"city":"Lima","zip":15001}}"#
+            ),
+            "one call must match the previous multi-call bytes exactly"
+        );
+    }
+
+    #[test]
+    fn host_encode_struct_rejects_bad_shapes() {
+        // Empty kinds encodes the empty object.
+        let (status, out) =
+            call_json_host(json_encode_struct, &[alloc_spectra_string("")]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(read_spectra_string(out).as_deref(), Some("{}"));
+
+        // Arg count must be exactly 1 + 2 per kind.
+        let (status, _) = call_json_host(
+            json_encode_struct,
+            &[alloc_spectra_string("int"), alloc_spectra_string("a")],
+        );
+        assert_eq!(status, HOST_STATUS_INVALID_ARGUMENT);
+
+        // Unknown kind tokens fail instead of emitting wrong JSON.
+        let (status, _) = call_json_host(
+            json_encode_struct,
+            &[
+                alloc_spectra_string("wat"),
+                alloc_spectra_string("a"),
+                1,
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_INVALID_ARGUMENT);
+
+        // Non-finite floats fail exactly like `encode_number`.
+        let (status, _) = call_json_host(
+            json_encode_struct,
+            &[
+                alloc_spectra_string("float"),
+                alloc_spectra_string("x"),
+                f64::NAN.to_bits() as i64,
+            ],
+        );
+        assert_eq!(status, HOST_STATUS_INVALID_ARGUMENT);
     }
 }

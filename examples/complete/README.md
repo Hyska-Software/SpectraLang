@@ -43,7 +43,7 @@ Charts: `.bench-charts/09-complete-benchmarks.png` and page 9 of
 |-------|---------|----|------|-------|
 | 07 sieve | 166.8ms | 11.9ms | 10.3ms | 14.0x |
 | 08 hashmap | 232.4ms | 18.0ms | 13.9ms | 12.9x |
-| 09 json | 100.7ms | 12.3ms | 9.4ms | 8.2x |
+| 09 json | 55.0ms | 12.3ms | 9.4ms | 4.5x |
 | 10 matmul | 50.2ms | 13.0ms | 11.8ms | 3.9x |
 
 Sem o custo fixo (página 10 do PDF, `10-complete-benchmarks-exec-only.png`):
@@ -55,7 +55,7 @@ projetos; checksums 190000 / 1000000 / 600+17700 / 1117388800) e diferencial
 |-------|----------------|---------|
 | 07 sieve | 1.7x (1.11us vs 0.67us/iter) | 14.0x no wall era custo fixo |
 | 08 hashmap | 15.2x (0.95ms vs 0.06ms/round) | map via host call: custo real |
-| 09 json | 16.2x (0.31ms vs 0.02ms/obj) | host calls + 1 alloc final por roundtrip, sem termo quadrático |
+| 09 json | 5.7x (0.11ms vs 0.02ms/obj) | 1 call de encode + 5 de decode por roundtrip |
 | 10 matmul | 0.6x (12.6us vs 20.5us/round) | Spectra mais rápido no loop puro |
 
 ## Porting notes (learned while building these)

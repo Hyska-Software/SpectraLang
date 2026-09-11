@@ -4190,6 +4190,20 @@ docs = "docs/api/std-api-json.md"
 fixture = "tests/validation/357_json_derive_roundtrip.spectra"
 
 [[entry]]
+path = "std.api.json.encode_struct"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(string, ...) -> string"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.encode_struct"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-json.md"
+fixture = "tests/validation/363_json_derive_exact_bytes.spectra"
+
+[[entry]]
 path = "std.api.json.typed_error_field"
 kind = "function"
 namespace = "std.api.json"

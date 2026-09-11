@@ -4502,7 +4502,7 @@ that `std.api.*` will dispatch into.
 
 - Added the `packages/spectra-api` Rust crate and the `spectra.api` package
   manifest at `packages/spectra-api/spectra.toml`.
-- Added 556 public `spectra.api.*` host calls covering the Phase 22, R-2301, R-2302, R-2303, R-2304, R-2305, R-2306, R-2307, R-2308, R-2309, R-2312, R-2313, R-2314, R-2316, R-2317, R-2311, R-2401, R-2402, R-2403, HTTP/3 over QUIC, gRPC over HTTP/2, GraphQL registration, JSON derive lowering supports (quote_string, quote_char, encode_number, decode_field, typed_error_field), language-backed gRPC services (service_create, service_handle_method, service_free), and client TLS pinning (client.set_tls_config, tls.config_add_root)
+- Added 557 public `spectra.api.*` host calls covering the Phase 22, R-2301, R-2302, R-2303, R-2304, R-2305, R-2306, R-2307, R-2308, R-2309, R-2312, R-2313, R-2314, R-2316, R-2317, R-2311, R-2401, R-2402, R-2403, HTTP/3 over QUIC, gRPC over HTTP/2, GraphQL registration, JSON derive lowering supports (quote_string, quote_char, encode_number, decode_field, typed_error_field), language-backed gRPC services (service_create, service_handle_method, service_free), and client TLS pinning (client.set_tls_config, tls.config_add_root)
   surface for version metadata, HTTP method/status/header helpers, request and
   response handles, server/client handles, JSON classification, TLS config
   handles, routing handles, error metadata, and sync/async handler callback
@@ -4511,7 +4511,7 @@ that `std.api.*` will dispatch into.
 - Host calls are registered in the existing runtime host-call registry through
   `spectra_api::register()`, and the crate exports
   `spectra_api_register_host_calls` for native integration.
-- The required 556-name `spectra.api.*` namespace lives in the canonical `packages/spectra-api/src/host_calls.rs` registry (`runtime/src/api/mod.rs` was removed as a stale duplicate).
+- The required 557-name `spectra.api.*` namespace lives in the canonical `packages/spectra-api/src/host_calls.rs` registry (`runtime/src/api/mod.rs` was removed as a stale duplicate).
 - Added stable `request_body` and `request_with_body` bridges so handlers and
   clients can read and construct UTF-8 request payloads through `std.api.http`.
 - Added `std.api.session` with a shared backend contract, cryptographically

@@ -74,6 +74,13 @@ returning `int`; handles must be released with `value_free`.
   handle. Scalars extract directly (no store entry, nothing to free); object
   mode moves the nested object into a fresh handle the caller releases with
   `value_free`
+- `spectra.api.json.encode_struct(kinds, name_1, value_1, ..., name_n, value_n) -> string` —
+  whole-struct encode for derive lowering in one host call: `kinds` is a
+  `;`-separated list parallel to the field pairs (`int`, `float`, `bool`,
+  `string`, `char`, `raw` for pre-encoded nested values). Names are quoted
+  and scalars formatted exactly like `quote_string`/`int_to_string`/
+  `encode_number`/`bool_to_string`/`quote_char`, so output is byte-identical
+  to the previous multi-call lowering with a single trailing allocation
 - `spectra.api.json.typed_error_field(schema, input) -> string` — first JSON
   path violating a derive schema, or `""` when valid (`$` for root problems)
 
