@@ -2489,3 +2489,156 @@ way it applies to the AI/ML work.
 - Conformance: `R-2801` is the final API conformance gate; release
   candidates for `spectra.api` v1.0 cannot be certified while any
   required category fails.
+
+---
+
+# Agent Platform Vision
+
+Phases 21 to 31 made SpectraLang a language with first-class async, a real
+API platform, and performance parity work. Phase 32 makes it a language whose
+programs are legible, bounded and reproducible **for agents** — both the
+coding agents that edit Spectra source and the agents a Spectra service runs
+in production.
+
+The same substrate serves both: every external effect in SpectraLang is
+already a named host call resolved through a single process-wide registry, so
+a capability decision taken at that dispatch point covers the whole language,
+not just a library. No other language in production can make that claim
+without becoming a hosted runtime.
+
+## Why this is a language concern, not a framework concern
+
+Agent frameworks orchestrate; they do not constrain. A framework can describe
+the tools an agent may use, but it cannot prevent a called library from
+reaching the network, and it cannot produce a machine-readable description of
+a project's public surface without parsing it as text.
+
+SpectraLang can do all three because of properties that already exist:
+
+- `runtime/src/ffi_host_registry.rs:226` registers every external effect by
+  name; `runtime/src/ffi_lifecycle.rs:280` dispatches it. There is no FFI and
+  no `extern` in the language (`compiler/src/token.rs:5`), so there is no
+  escape hatch to bypass a decision taken there.
+- `midend/src/ir.rs:276-280` carries the host call name in the IR, so effects
+  and required capabilities are derivable rather than declared.
+- `packages/spectra-contract/catalog/stdlib.toml` already carries
+  `effects`, `abi`, `error_model`, `maturity`, `owner`, `docs` and `fixture`
+  per symbol, so most of the introspection data exists already.
+- `std.ml` already ships tokenizers, embeddings, a vector index and the RAG
+  toolkit validated by `R-1803`, so agent memory is a thin layer, not a new
+  subsystem.
+
+## What Phase 32 refuses
+
+Three refusals define the phase as much as its deliverables do.
+
+1. **No second native package.** Each staticlib embeds `spectra-runtime` and
+   linking two of them duplicates Rust symbols
+   (`tools/spectra-cli/src/linker.rs:288-289`), and exactly one C
+   registration symbol exists
+   (`packages/spectra-api/src/api_registration.rs:14`). `spectra.agent`
+   therefore ships as an rlib aggregated by the existing registration.
+2. **No second attribute.** Attributes on functions have no validation path
+   today (`compiler/src/semantic/semantic_module_analysis.rs:253` falls
+   through to `_ => {}`), so the first one is expensive. `#[agent_tool]`
+   carries only the description; name, input schema, effects and required
+   capabilities are derived from the existing `Serialize` derive and the IR.
+3. **No effect annotations.** The compiler already knows every effect. Asking
+   a human to restate them adds a metadata surface that can lie, in a
+   repository whose main maintenance hazard is already four hand-maintained
+   copies of one surface.
+
+## Phase 32: Agent Platform
+
+Deliver `std.agent` as a production surface with governed model calls, tool
+exposure, memory, capability enforcement, budgeted durable runs, evaluation,
+and protocol interoperability, plus the machine-readable project surface that
+coding agents need.
+
+| Group | Items | Focus |
+|---|---|---|
+| Surface | `R-3202` to `R-3205` | `surface`, `impact`, `explain`, embedded reference |
+| Single source of truth | `R-3206` to `R-3208` | Catalog schema, generated lowering tables and host-call table |
+| Namespace and core | `R-3209` to `R-3212` | `std.agent`, tool attribute, model gateway, memory |
+| Governance | `R-3213` to `R-3217` | Run context, capability enforcement, vocabulary, budget, journal |
+| Interop, eval, release | `R-3218` to `R-3221` | MCP, A2A and ACP, eval harness, package and conformance |
+
+Foundations for the phase are `R-3201` (three ADRs and the fast-path
+invariant) and `R-3209`, which lands one function end to end through every
+layer to measure the real cost of a native surface addition before twelve
+more follow.
+
+## Architectural Principles for the Agent Platform
+
+1. **Derive, do not declare.** Effects, schemas, capability requirements, tool
+   names and dependency impact are all derived. The only authored strings are
+   the tool description and the run goal.
+2. **Enforce, do not document.** A capability that does not block a call is a
+   comment with syntax. Enforcement lives at the dispatch point and applies to
+   everything reached from a run, including third-party code.
+3. **Observe, do not infer.** `surface` and `impact` answer questions from the
+   compiler's own data instead of leaving a coding agent to reconstruct them
+   from text.
+4. **The fast path is out of scope and pinned.** The 28 fast host calls are
+   in-process compute with no external effect, so the capability policy does
+   not need to traverse them; a completeness test must fail if that ever
+   stops being true.
+5. **Existing programs are untouched.** Enforcement applies only while a run
+   is active, so the phase is additive for every current Spectra program.
+6. **Durability is not an annotation.** Because a run is a runtime object,
+   journaling, budget and replay are consequences of running inside one, not
+   annotations a developer must remember to add.
+
+## Workstream Dependencies
+
+```
+R-3201 ─┬─ R-3202 ─┬─ R-3220
+        │          │
+        ├─ R-3203 ─┘
+        └─ R-3206 ─┬─ R-3207 ─┐
+                   └─ R-3208 ─┴─ R-3209 ─┬─ R-3210 ──┐
+                                        ├─ R-3211 ──┤
+                                        ├─ R-3212   │
+                                        └─ R-3213 ─┬─ R-3214 ─┬─ R-3215
+                                                   ├─ R-3216 │
+                                                   └─ R-3217 ┴─ R-3218 ─┬─ R-3219
+                                                                        └─ R-3221
+```
+
+`R-3204` and `R-3205` are independent of the chain and can start immediately.
+
+## Owner Groups
+
+No new owner group is introduced in this phase. Items are assigned to existing
+groups: `runtime` owns governance and the namespace, `tooling` owns the CLI
+surface and the eval harness, `semantic` owns the attribute and capability
+vocabulary, `web` owns the model gateway and protocol adapters, `ml` owns
+memory, `midend` and `ecosystem` own the generated surface and packaging, and
+`frontend` owns the diagnostic repair contract.
+
+## Risk Register
+
+| Risk | Mitigation |
+|---|---|
+| Capability policy bypassed through the fast path | Fast-path invariant test landed in `R-3201`; fast calls cannot express denial by construction |
+| Run context lost across worker threads | Fail-closed default for detached work in `R-3213` |
+| ABI change breaking AOT silently | Every item touching `runtime/src/abi.rs` must exercise a real `--emit-exe` build, not only JIT |
+| Catalog migration breaking the contract auditor | Three-step migration with a diff-empty gate at each step in `R-3207` |
+| Attribute surface growing beyond one attribute | Recorded as a non-goal; a second attribute requires revising ADR 0017 first |
+| Durability implemented as best-effort writing | Flush before returning from any effect-bearing call, plus a crash test that kills the process mid-effect |
+| Evaluation suites flaky under model variance | Deterministic graders in CI; judge grading opt-in only |
+| Security claims exceeding the mechanism | Documentation states that capabilities bound damage, not persuasion; prompt injection is scoped explicitly |
+
+## Cross-Reference
+
+- Strategic direction: this chapter.
+- Executable detail: `docs/agent-platform-roadmap.yaml` (tasks, file anchors,
+  decisions and invariants per item).
+- Executable backlog: `docs/roadmap-backlog.md`, Phase 32.
+- Machine-readable tracker: `roadmap/roadmap.toml`, items `R-3201` to
+  `R-3221` in `phase_32`.
+- Architecture decisions: `docs/adr/0016` to `docs/adr/0018`, produced by
+  `R-3201`.
+- Conformance: `R-3221` is the agent platform certification gate; the phase
+  cannot be marked complete while any capability-enforcement, journal-replay
+  or integrated-project assertion fails.

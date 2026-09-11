@@ -1,6 +1,6 @@
 version = 1
 title = "SpectraLang Production AI Roadmap"
-updated_at = "2026-08-07"
+updated_at = "2026-09-11"
 status_scale = ["not_started", "in_progress", "blocked", "complete"]
 priority_scale = ["P0", "P1", "P2", "P3"]
 
@@ -5168,4 +5168,367 @@ acceptance = [
   "a dynamic async handler call returns Task<Response> and can be awaited without an internal Int/Task mismatch",
   "tests/validation/273_api_handler_async_trait.spectra passes check and run through the normal CLI path",
   "scripts/validate_language_bug_hunt.py validates the async API trait regression"
+]
+
+[[phases]]
+id = "phase_32"
+name = "Agent Platform"
+goal = "Deliver `std.agent` as a production native surface: a governed model and tool runtime with capability enforcement at the host-call dispatch point, durable journaled runs, agent evaluation, and protocol interoperability, without adding a second native package, a second attribute, or any effect annotation."
+
+[[items]]
+id = "R-3201"
+title = "ADR and Invariants for Agent Governance"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "medium"
+dependencies = []
+summary = "Fix the architecture before code: single dispatch hook, fast-path exclusion, denial channel, run context and catalog-driven surface."
+acceptance = [
+  "Three ADRs exist, are Accepted, and each records rationale plus consequence.",
+  "The fast-path invariant test exists and fails when a fast host call is temporarily reclassified into an effect namespace.",
+  "scripts/validate_r3201_agent_platform_adr.py checks the ADRs, the invariant test, and the phase_32 registration in roadmap.toml.",
+]
+
+[[items]]
+id = "R-3202"
+title = "spectralang surface --json"
+phase = "phase_32"
+owner = "tooling"
+priority = "P0"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3201"]
+summary = "Emit the project and builtin public surface as machine-readable JSON with a token budget."
+acceptance = [
+  "surface --json on a real project lists every public module, function and type with stable ordering.",
+  "Output is byte-identical across runs; --tokens trims deterministically and reports what was trimmed.",
+  "Unknown module or missing project root fails with exit 64/65 and a JSON diagnostic, not a panic.",
+  "scripts/validate_r3202_surface_json.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3203"
+title = "spectralang impact --json"
+phase = "phase_32"
+owner = "tooling"
+priority = "P1"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3201"]
+summary = "Answer 'what breaks if I change this symbol' from the call graph, not from text search."
+acceptance = [
+  "impact --json returns the full caller set for a changed function, including cross-module callers.",
+  "Field-level impact returns the functions that read or construct the type.",
+  "Unresolved dynamic sites are reported, not silently omitted.",
+  "scripts/validate_r3203_impact_json.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3204"
+title = "Diagnostics with Repair Information"
+phase = "phase_32"
+owner = "frontend"
+priority = "P1"
+status = "not_started"
+risk = "medium"
+dependencies = []
+summary = "Add expected, actual and fix to the JSON diagnostic contract and expose explain --json."
+acceptance = [
+  "check --json on a type mismatch emits expected, actual and fix.",
+  "explain --json returns the documented description for every code in the reference file.",
+  "SARIF output remains schema-valid with and without fixes.",
+  "scripts/validate_r3204_diagnostics_repair.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3205"
+title = "Version-Matched Language Reference from the CLI"
+phase = "phase_32"
+owner = "tooling"
+priority = "P2"
+status = "not_started"
+risk = "low"
+dependencies = []
+summary = "spectralang docs --json serves the reference of the installed binary, not of the repository."
+acceptance = [
+  "docs --json reports the version and hash of the embedded reference.",
+  "--section returns a strict subset of the full output.",
+  "Changing the reference file changes the reported hash after rebuild.",
+  "scripts/validate_r3205_embedded_docs.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3206"
+title = "Extended Contract Catalog Schema"
+phase = "phase_32"
+owner = "ecosystem"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3201"]
+summary = "Add the fields the catalog needs to generate the midend lowering tables and the Rust host-call table."
+acceptance = [
+  "Catalog parses with the extended schema; existing entries gained the new fields with no semantic change.",
+  "The auditor rejects a function entry missing ir_return, returns_value or rust_symbol.",
+  "scripts/validate_r3206_catalog_schema.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3207"
+title = "Generate Midend Lowering Tables from the Catalog"
+phase = "phase_32"
+owner = "midend"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3206"]
+summary = "Replace the hand-written lowering tables with checked-in generated files plus a staleness check."
+acceptance = [
+  "The seven lowering files are generated; a manual edit makes --check fail.",
+  "All existing contract_drift tests pass unchanged.",
+  "Full validation suite unchanged: no fixture regresses.",
+  "scripts/validate_r3207_lowering_generation.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3208"
+title = "Generate HOST_CALLS and Remove the Manual Count"
+phase = "phase_32"
+owner = "web"
+priority = "P1"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3206"]
+summary = "Generate the Rust host-call table from the catalog and derive its size instead of hardcoding it."
+acceptance = [
+  "The host-call table is generated; the count assertion is computed.",
+  "spectra_api_host_call_count() matches HOST_CALLS.len() in both feature configurations.",
+  "validate_r2202_spectra_api_hostcalls.py still passes.",
+  "scripts/validate_r3208_hostcall_generation.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3209"
+title = "std.agent Namespace and packages/spectra-agent Crate"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3207", "R-3208"]
+summary = "Land the namespace and the crate with exactly one function, proving every layer end to end before scaling."
+acceptance = [
+  "`import std.agent` resolves, token_count type-checks, lowers, and returns the same value in JIT and AOT.",
+  "Adding a second function afterwards requires the documented three-edit path, evidenced in the PR description.",
+  "Contract catalog, snapshot and probe are consistent; validate_r3007 passes with --require-catalog.",
+  "scripts/validate_r3209_agent_namespace.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3210"
+title = "agent_tool Attribute and Derived JSON Schema"
+phase = "phase_32"
+owner = "semantic"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3209"]
+summary = "One function attribute that turns a public function into a model-callable tool, with name, schema, effects and capabilities derived."
+acceptance = [
+  "A public async function with the attribute appears in surface --json with derived name, input_schema, effects and capabilities.",
+  "Each rejection case produces a stable code and a hint; fixtures exist under tests/errors/.",
+  "fmt is idempotent on attributed functions; LSP does not flag the attribute.",
+  "scripts/validate_r3210_agent_tool.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3211"
+title = "Model Gateway, Run and Provider Abstraction"
+phase = "phase_32"
+owner = "web"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3209"]
+summary = "AgentSpec, Run, ask, ask_stream, ask_json, embed, agent_start and agent_end over the existing HTTP client."
+acceptance = [
+  "An agent that calls ask twice and ends cleanly reports tokens and cost consistent with the mock provider.",
+  "ask_json rejects a schema-violating response with a typed error even when the provider claims compliance.",
+  "Run lifecycle misuse (double end, use after end, unknown run) returns typed errors.",
+  "scripts/validate_r3211_model_gateway.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3212"
+title = "Agent Memory over std.ml"
+phase = "phase_32"
+owner = "ml"
+priority = "P1"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3211"]
+summary = "remember and recall as a thin, provenance-carrying layer over the existing vector index and RAG toolkit."
+acceptance = [
+  "Memory survives persist and load across processes.",
+  "Recall returns identical ordering for identical inputs.",
+  "Every recalled entry can report its origin and the run that wrote it.",
+  "scripts/validate_r3212_agent_memory.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3213"
+title = "Run Context and Propagation"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3209"]
+summary = "An active-run context that the runtime can consult on every dispatch, with explicit propagation and fail-closed behavior for detached work."
+acceptance = [
+  "A tool invoked by a run sees the run; a host call inside it is attributable to that run.",
+  "Work spawned by a run carries the context; detached work does not and is rejected without a grant.",
+  "No ABI change: the repr(C) call context is untouched.",
+  "scripts/validate_r3213_run_context.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3214"
+title = "Capability Enforcement at the Dispatch Point"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3213", "R-3206"]
+summary = "One policy decision, applied at every generic dispatch entrypoint, with a dedicated denial path and no fast-path hole."
+acceptance = [
+  "A host call outside the grant fails, through all four generic entrypoints, including the cached and batch paths.",
+  "The fast-path invariant test from R-3201 still passes and would fail if a fast call were effect-bearing.",
+  "authorize() reports the same decision the dispatch enforces.",
+  "Programs without an active run behave exactly as before.",
+  "scripts/validate_r3214_capability_enforcement.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3215"
+title = "Capability Vocabulary Validated by the Compiler"
+phase = "phase_32"
+owner = "semantic"
+priority = "P0"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3214", "R-3206"]
+summary = "Capability strings are validated against the registered host-call namespaces, with did-you-mean, instead of being free-form strings."
+acceptance = [
+  "An unknown capability fails compilation with a near-match suggestion.",
+  "A scoped capability on a host call without an extractor fails with its own code.",
+  "The generated capability reference matches the catalog.",
+  "scripts/validate_r3215_capability_vocabulary.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3216"
+title = "Budget, Accounting and Cooperative Cancellation"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3213"]
+summary = "Hard ceilings on tokens, cost, wall time and tool calls, enforced by cancelling the run."
+acceptance = [
+  "No run exceeds a declared ceiling; the report states which ceiling was hit.",
+  "Cancellation propagates to in-flight model calls and tool executions.",
+  "Accounting matches the mock provider's reported usage exactly.",
+  "scripts/validate_r3216_agent_budget.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3217"
+title = "Journal, Replay, Approval and Tracing"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3213", "R-3211"]
+summary = "Every side effect recorded once, replayable without repeating effects, with human approval and OpenTelemetry GenAI spans."
+acceptance = [
+  "Killing the process mid-run and resuming completes the run without duplicating any effect, proven by a counting test server.",
+  "A replayed run produces identical tool ordering and outputs.",
+  "Approval decisions survive replay and are attributed.",
+  "Spans validate against the pinned conventions version; content is absent unless opted in.",
+  "scripts/validate_r3217_agent_journal.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3218"
+title = "std.agent.mcp Client and Server"
+phase = "phase_32"
+owner = "web"
+priority = "P1"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3211", "R-3214"]
+summary = "Consume and expose Model Context Protocol tools over HTTP transport, with untrusted-description handling."
+acceptance = [
+  "A Spectra agent calls a remote MCP tool through the governed dispatch path and the journal records it.",
+  "A Spectra project exposes its tools over MCP and a third-party client can call them.",
+  "Untrusted descriptions never influence control flow: covered by a fixture that feeds a hostile description.",
+  "scripts/validate_r3218_mcp.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3219"
+title = "std.agent.protocol: A2A and ACP Exposure"
+phase = "phase_32"
+owner = "web"
+priority = "P2"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3217", "R-3218"]
+summary = "Expose a Spectra agent as an A2A server and as an ACP agent, reusing the approval primitive for permission requests."
+acceptance = [
+  "A remote A2A client can delegate a task and observe completion or failure with a stable reason.",
+  "ACP permission denial aborts the action and is journaled.",
+  "Neither adapter bypasses the capability dispatch path.",
+  "scripts/validate_r3219_agent_protocols.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3220"
+title = "Evaluation Harness and spectralang agent eval"
+phase = "phase_32"
+owner = "tooling"
+priority = "P0"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3217", "R-3203"]
+summary = "Agent behavior measured as regression, with deterministic graders, judge graders and pass@k."
+acceptance = [
+  "agent eval runs a suite, reports pass@1 and pass^k, and fails the build on regression against the recorded baseline.",
+  "Judge-based grading is opt-in and never runs in the default CI path.",
+  "Governance assertions are covered by deterministic tests, not by evals.",
+  "scripts/validate_r3220_agent_eval.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3221"
+title = "Agent Platform Integration, Conformance and Release"
+phase = "phase_32"
+owner = "ecosystem"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3210", "R-3211", "R-3212", "R-3214", "R-3215", "R-3216", "R-3217", "R-3218", "R-3219", "R-3220"]
+summary = "Prove the platform works with the rest of the language, document it, publish it and gate the release."
+acceptance = [
+  "The package is publishable to the local registry and consumable by another project through the normal package flow.",
+  "Formatter, LSP, lint and REPL handle the new attribute and namespace without special cases.",
+  "Conformance suite passes and its report is required by the release gate.",
+  "The integrated project runs in JIT and AOT, including interruption and resume.",
+  "scripts/validate_r3221_agent_package.py, scripts/validate_r3221_agent_conformance.py and scripts/validate_r3221_integrated_agent_service.py pass and are registered in run_tests.ps1.",
 ]
