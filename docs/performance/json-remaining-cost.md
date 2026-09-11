@@ -88,21 +88,22 @@ locks, ~5 whole-`Value` clones per object, plus dispatch overhead.
   ~91ms); whole-struct `encode_struct` in one call (~91ms → ~66ms);
   363 byte-pin test. 279ms → 66ms.
 
+## Known correctness issue (found pre-existing, now fixed)
 
-## Known correctness issue (pre-existing, not caused by perf work)
+`s.len()` over `for-in` loop variables of string arrays returned wrong
+values (`tests/validation/array_iteration_sum.spectra` failed check #5).
+Root cause: the backend's inline `s.len` emitter
+(`emit_string_len_inline`, `backend/src/codegen_strings.rs`) declared
+its Cranelift counter variable but never initialized it to zero, so the
+NUL scan started at a garbage offset. Literals were unaffected (the
+same fast path constant-folds them), which is why only loaded strings
+misbehaved, nondeterministically.
 
-`s.len()` over `for-in` loop variables of string arrays returns wrong
-values (`tests/validation/array_iteration_sum.spectra` fails check #5:
-`letters != 14`). Direct indexing (`words[1]`) and direct literals are
-correct; only the loop-variable path is wrong, intermittently
-(observed lens `12,12`, `6,7`, `5,5,5` for `5,4,5`).
-
-- Fails 8/8 on `9e79062` (pre-round-1), 8/8 on `be83cf8` (round-1),
-  10/10 on current tree: fully pre-existing, all build configs.
-- Full-corpus run comparison current-vs-baseline: identical 52-file
-  nonzero sets, i.e. zero new runtime failures from perf work.
-- Suspected area (hypothesis, not proven): `for-in` string loop-var
-  materialization / backend stack codegen reading past the string
-  (first iteration correct, later garbage, ASLR-sensitive). The
-  canonical corpus gate is compile-only, which is why it never caught
-  this; any fix must add a run-gate for `array_iteration_sum`.
+- Failed 8/8 on `9e79062` (pre-round-1), 8/8 on `be83cf8`, 10/10 on the
+  post-round-2 tree: fully pre-existing, all build configs. Sibling
+  emitters (`char_at`) were audited and initialize correctly.
+- Fix: one `def_var(count_var, zero)`; regression gate added as a
+  `run_array_iteration_sum` case in `run_tests.ps1` (the corpus gate is
+  otherwise compile-only and could never catch this class).
+- Full-corpus run comparison fixed-vs-baseline: zero new failures,
+  exactly one fix (`array_iteration_sum.spectra`).

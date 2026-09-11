@@ -809,6 +809,13 @@ $cliTests = @(
         Contains = "0: main()"
         UseStdin = $false
     }
+    [PSCustomObject]@{
+        Nome = "run_array_iteration_sum"
+        Args = @("run", "tests\validation\array_iteration_sum.spectra")
+        ExpectExit = 0
+        Contains = ""
+        UseStdin = $false
+    }
 )
 
 Write-Host ""

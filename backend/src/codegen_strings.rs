@@ -130,6 +130,7 @@ impl CodeGenerator {
         let count_var = builder.declare_var(types::I64);
         let zero = builder.ins().iconst(types::I64, 0);
         let zero_byte = builder.ins().iconst(types::I8, 0);
+        builder.def_var(count_var, zero);
 
         let loop_block = builder.create_block();
         let advance_block = builder.create_block();
