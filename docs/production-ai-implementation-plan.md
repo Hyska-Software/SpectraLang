@@ -2530,43 +2530,52 @@ SpectraLang can do all three because of properties that already exist:
 
 ## What Phase 32 refuses
 
-Three refusals define the phase as much as its deliverables do.
+Four refusals define the phase as much as its deliverables do.
 
 1. **No second native package.** Each staticlib embeds `spectra-runtime` and
    linking two of them duplicates Rust symbols
-   (`tools/spectra-cli/src/linker.rs:288-289`), and exactly one C
-   registration symbol exists
-   (`packages/spectra-api/src/api_registration.rs:14`). `spectra.agent`
-   therefore ships as an rlib aggregated by the existing registration.
-2. **No second attribute.** Attributes on functions have no validation path
-   today (`compiler/src/semantic/semantic_module_analysis.rs:253` falls
-   through to `_ => {}`), so the first one is expensive. `#[agent_tool]`
-   carries only the description; name, input schema, effects and required
-   capabilities are derived from the existing `Serialize` derive and the IR.
+   (`tools/spectra-cli/src/linker.rs:286-288`), and the AOT shim imports the
+   existing registration pair (`spectra_api_register_host_calls` /
+   `spectra_api_host_call_count`, `packages/spectra-api/src/api_registration.rs:13-21`).
+   `spectra.agent` therefore ships as an rlib aggregated by the existing
+   registration.
+2. **No second attribute.** Function attributes have no validation path
+   today — the `Item::Function` arm
+   (`compiler/src/semantic/semantic_module_analysis.rs:70`) never reads
+   `func.attributes`, and only `derive`/`json` on records and enums are
+   validated — so the first one is expensive. `#[agent_tool]` carries only
+   the description; name, input schema, effects and required capabilities are
+   derived from the existing `Serialize` derive and the IR.
 3. **No effect annotations.** The compiler already knows every effect. Asking
    a human to restate them adds a metadata surface that can lie, in a
    repository whose main maintenance hazard is already four hand-maintained
    copies of one surface.
+4. **No automatic rollback from the fatal path.** Compensation is declared,
+   journaled and executed by an explicit `rollback(run, reason)` through the
+   governed dispatch. Re-entering compiled tool code from the capability
+   denial path is out of scope; the phase promises exactly what it can keep.
 
 ## Phase 32: Agent Platform
 
 Deliver `std.agent` as a production surface with governed model calls, tool
-exposure, memory, capability enforcement, budgeted durable runs, evaluation,
-and protocol interoperability, plus the machine-readable project surface that
+loops, memory, capability enforcement, message-level taint with sensitive-sink
+gating, budgeted durable runs with declared compensation, evaluation, and
+protocol interoperability, plus the machine-readable project surface that
 coding agents need.
 
 | Group | Items | Focus |
 |---|---|---|
 | Surface | `R-3202` to `R-3205` | `surface`, `impact`, `explain`, embedded reference |
 | Single source of truth | `R-3206` to `R-3208` | Catalog schema, generated lowering tables and host-call table |
-| Namespace and core | `R-3209` to `R-3212` | `std.agent`, tool attribute, model gateway, memory |
-| Governance | `R-3213` to `R-3217` | Run context, capability enforcement, vocabulary, budget, journal |
+| Namespace and core | `R-3209` to `R-3212`, `R-3222` | `std.agent`, tool attribute, model gateway, tool loop, memory |
+| Governance | `R-3213` to `R-3217`, `R-3223`, `R-3224` | Run context, capability enforcement, vocabulary, budget, journal/approval/assertions, taint, compensation |
 | Interop, eval, release | `R-3218` to `R-3221` | MCP, A2A and ACP, eval harness, package and conformance |
 
-Foundations for the phase are `R-3201` (three ADRs and the fast-path
-invariant) and `R-3209`, which lands one function end to end through every
-layer to measure the real cost of a native surface addition before twelve
-more follow.
+Foundations for the phase are `R-3201` (four ADRs and the fast-path invariant)
+and `R-3209`, which lands one function end to end through every layer to
+measure the real cost of a native surface addition before the rest of the
+surface follows. `R-3222` opens with a dispatcher spike so the tool-invocation
+ABI is proven in JIT and AOT before the loop is built.
 
 ## Architectural Principles for the Agent Platform
 
@@ -2588,33 +2597,44 @@ more follow.
 6. **Durability is not an annotation.** Because a run is a runtime object,
    journaling, budget and replay are consequences of running inside one, not
    annotations a developer must remember to add.
+7. **Tool invocation is a proven ABI, not an improvisation.** The tool loop
+   runs in the runtime; the compiler synthesizes per-tool marshalling
+   wrappers and a static tool table, and the runtime invokes wrappers by
+   address through the same i64 callback mechanism the coroutine machinery
+   already uses. The ABI is frozen in ADR 0019 after a spike proves JIT and
+   AOT with async tools in two modules.
+8. **Taint and compensation are documented at their real strength.**
+   Provenance is message-granular, not full information flow; compensation is
+   declared and executed explicitly, not inferred. The documentation and the
+   conformance suite must state the limits with the same precision as the
+   guarantees.
 
 ## Workstream Dependencies
 
-```
-R-3201 ─┬─ R-3202 ─┬─ R-3220
-        │          │
-        ├─ R-3203 ─┘
-        └─ R-3206 ─┬─ R-3207 ─┐
-                   └─ R-3208 ─┴─ R-3209 ─┬─ R-3210 ──┐
-                                        ├─ R-3211 ──┤
-                                        ├─ R-3212   │
-                                        └─ R-3213 ─┬─ R-3214 ─┬─ R-3215
-                                                   ├─ R-3216 │
-                                                   └─ R-3217 ┴─ R-3218 ─┬─ R-3219
-                                                                        └─ R-3221
-```
+Authoritative edges (`roadmap/roadmap.toml` carries the full list):
+
+- `R-3201` → `R-3202`, `R-3203`, `R-3206`
+- `R-3206` → `R-3207`, `R-3208`; `R-3207` + `R-3208` → `R-3209`
+- `R-3209` → `R-3210`, `R-3211`, `R-3213`
+- `R-3211` → `R-3212`
+- `R-3210` + `R-3211` → `R-3222` → `R-3224`
+- `R-3213` → `R-3214`, `R-3216`, `R-3217`; `R-3214` also needs `R-3206`
+- `R-3213` + `R-3214` + `R-3217` + `R-3211` → `R-3223`
+- `R-3211` + `R-3214` → `R-3218` → `R-3219` (which also needs `R-3217`)
+- `R-3217` + `R-3203` → `R-3220`
+- `R-3221` requires every item in the phase.
 
 `R-3204` and `R-3205` are independent of the chain and can start immediately.
 
 ## Owner Groups
 
 No new owner group is introduced in this phase. Items are assigned to existing
-groups: `runtime` owns governance and the namespace, `tooling` owns the CLI
-surface and the eval harness, `semantic` owns the attribute and capability
-vocabulary, `web` owns the model gateway and protocol adapters, `ml` owns
-memory, `midend` and `ecosystem` own the generated surface and packaging, and
-`frontend` owns the diagnostic repair contract.
+groups: `runtime` owns governance, the namespace, the run loop and the tool
+registry, `tooling` owns the CLI surface and the eval harness, `semantic` owns
+the attribute and capability vocabulary, `web` owns the model gateway and
+protocol adapters, `ml` owns memory, `midend` owns the generated lowering
+tables and the tool-dispatch synthesis, `ecosystem` owns packaging and
+documentation, and `frontend` owns the diagnostic repair contract.
 
 ## Risk Register
 
@@ -2628,17 +2648,20 @@ memory, `midend` and `ecosystem` own the generated surface and packaging, and
 | Durability implemented as best-effort writing | Flush before returning from any effect-bearing call, plus a crash test that kills the process mid-effect |
 | Evaluation suites flaky under model variance | Deterministic graders in CI; judge grading opt-in only |
 | Security claims exceeding the mechanism | Documentation states that capabilities bound damage, not persuasion; prompt injection is scoped explicitly |
+| Tool-dispatch ABI surprises (address lifetime, cross-module relocation, async tools) | Spike before the loop (`R-3222`-T1) proves JIT and AOT with async tools in two modules; ADR 0019 freezes the contract with spike evidence |
+| Taint or compensation read as stronger than they are | Documentation states message-granularity taint and explicit-rollback compensation; conformance pins the behavioral limits |
 
 ## Cross-Reference
 
 - Strategic direction: this chapter.
-- Executable detail: `docs/agent-platform-roadmap.yaml` (tasks, file anchors,
-  decisions and invariants per item).
+- Executable detail: `docs/agent-platform-plan.md` (analysis and comparisons,
+  decisions, milestones, tasks with file anchors, engineering standards,
+  validation strategy, metrics and risks).
 - Executable backlog: `docs/roadmap-backlog.md`, Phase 32.
 - Machine-readable tracker: `roadmap/roadmap.toml`, items `R-3201` to
-  `R-3221` in `phase_32`.
-- Architecture decisions: `docs/adr/0016` to `docs/adr/0018`, produced by
+  `R-3224` in `phase_32`.
+- Architecture decisions: `docs/adr/0016` to `docs/adr/0019`, produced by
   `R-3201`.
 - Conformance: `R-3221` is the agent platform certification gate; the phase
-  cannot be marked complete while any capability-enforcement, journal-replay
-  or integrated-project assertion fails.
+  cannot be marked complete while any capability-enforcement, journal-replay,
+  taint, compensation or integrated-project assertion fails.

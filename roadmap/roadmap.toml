@@ -5194,7 +5194,7 @@ acceptance = [
 [[phases]]
 id = "phase_32"
 name = "Agent Platform"
-goal = "Deliver `std.agent` as a production native surface: a governed model and tool runtime with capability enforcement at the host-call dispatch point, durable journaled runs, agent evaluation, and protocol interoperability, without adding a second native package, a second attribute, or any effect annotation."
+goal = "Deliver `std.agent` as a production native surface: a governed model and tool runtime with capability enforcement at the host-call dispatch point, message-level taint with sensitive-sink gating, durable journaled runs with declared compensation, agent evaluation, and protocol interoperability, without adding a second native package, a second attribute, or any effect annotation."
 
 [[items]]
 id = "R-3201"
@@ -5205,10 +5205,11 @@ priority = "P0"
 status = "not_started"
 risk = "medium"
 dependencies = []
-summary = "Fix the architecture before code: single dispatch hook, fast-path exclusion, denial channel, run context and catalog-driven surface."
+summary = "Fix the architecture before code: single dispatch hook, fast-path exclusion, denial channel, run context, tool-dispatch ABI and catalog-driven surface."
 acceptance = [
-  "Three ADRs exist, are Accepted, and each records rationale plus consequence.",
+  "Four ADRs exist (0016-0019), are Accepted, and each records rationale plus consequence.",
   "The fast-path invariant test exists and fails when a fast host call is temporarily reclassified into an effect namespace.",
+  "The E3201-E3209 diagnostics family is allocated in docs/diagnostics/error-code-reference.md.",
   "scripts/validate_r3201_agent_platform_adr.py checks the ADRs, the invariant test, and the phase_32 registration in roadmap.toml.",
 ]
 
@@ -5289,10 +5290,10 @@ priority = "P0"
 status = "not_started"
 risk = "high"
 dependencies = ["R-3201"]
-summary = "Add the fields the catalog needs to generate the midend lowering tables and the Rust host-call table."
+summary = "Add the fields the catalog needs to generate the midend lowering tables, the Rust host-call table, and the sink/scope classification consumed by governance."
 acceptance = [
   "Catalog parses with the extended schema; existing entries gained the new fields with no semantic change.",
-  "The auditor rejects a function entry missing ir_return, returns_value or rust_symbol.",
+  "The auditor rejects a function entry missing ir_return, returns_value or rust_symbol, and rejects an unknown scope key.",
   "scripts/validate_r3206_catalog_schema.py passes and is registered in run_tests.ps1.",
 ]
 
@@ -5356,10 +5357,10 @@ priority = "P0"
 status = "not_started"
 risk = "high"
 dependencies = ["R-3209"]
-summary = "One function attribute that turns a public function into a model-callable tool, with name, schema, effects and capabilities derived."
+summary = "One function attribute that turns a public async function into a model-callable tool, with name, schema, effects and capabilities derived; tool names are unique project-wide."
 acceptance = [
   "A public async function with the attribute appears in surface --json with derived name, input_schema, effects and capabilities.",
-  "Each rejection case produces a stable code and a hint; fixtures exist under tests/errors/.",
+  "Each rejection case produces a stable code (E3203, E3204) and a hint; fixtures exist under tests/errors/.",
   "fmt is idempotent on attributed functions; LSP does not flag the attribute.",
   "scripts/validate_r3210_agent_tool.py passes and is registered in run_tests.ps1.",
 ]
@@ -5377,6 +5378,7 @@ summary = "AgentSpec, Run, ask, ask_stream, ask_json, embed, agent_start and age
 acceptance = [
   "An agent that calls ask twice and ends cleanly reports tokens and cost consistent with the mock provider.",
   "ask_json rejects a schema-violating response with a typed error even when the provider claims compliance.",
+  "ask_stream returns a chunk stream consumed with stream_next/stream_close; embed returns a 1-D float tensor.",
   "Run lifecycle misuse (double end, use after end, unknown run) returns typed errors.",
   "scripts/validate_r3211_model_gateway.py passes and is registered in run_tests.ps1.",
 ]
@@ -5469,18 +5471,18 @@ acceptance = [
 
 [[items]]
 id = "R-3217"
-title = "Journal, Replay, Approval and Tracing"
+title = "Journal, Replay, Approval, Assertions and Tracing"
 phase = "phase_32"
 owner = "runtime"
 priority = "P0"
 status = "not_started"
 risk = "high"
 dependencies = ["R-3213", "R-3211"]
-summary = "Every side effect recorded once, replayable without repeating effects, with human approval and OpenTelemetry GenAI spans."
+summary = "Every side effect recorded once, replayable without repeating effects, with human approval, governed assertions and OpenTelemetry GenAI spans."
 acceptance = [
   "Killing the process mid-run and resuming completes the run without duplicating any effect, proven by a counting test server.",
   "A replayed run produces identical tool ordering and outputs.",
-  "Approval decisions survive replay and are attributed.",
+  "Approval decisions survive replay and are attributed; require(false) returns a typed error naming the assertion message and the run goal.",
   "Spans validate against the pinned conventions version; content is absent unless opted in.",
   "scripts/validate_r3217_agent_journal.py passes and is registered in run_tests.ps1.",
 ]
@@ -5544,12 +5546,63 @@ owner = "ecosystem"
 priority = "P0"
 status = "not_started"
 risk = "high"
-dependencies = ["R-3210", "R-3211", "R-3212", "R-3214", "R-3215", "R-3216", "R-3217", "R-3218", "R-3219", "R-3220"]
+dependencies = ["R-3210", "R-3211", "R-3212", "R-3214", "R-3215", "R-3216", "R-3217", "R-3218", "R-3219", "R-3220", "R-3222", "R-3223", "R-3224"]
 summary = "Prove the platform works with the rest of the language, document it, publish it and gate the release."
 acceptance = [
   "The package is publishable to the local registry and consumable by another project through the normal package flow.",
   "Formatter, LSP, lint and REPL handle the new attribute and namespace without special cases.",
-  "Conformance suite passes and its report is required by the release gate.",
+  "Conformance suite passes (capability denial on all four dispatch entrypoints, journal replay, taint policy, compensation exactly-once, surface determinism) and its report is required by the release gate.",
   "The integrated project runs in JIT and AOT, including interruption and resume.",
   "scripts/validate_r3221_agent_package.py, scripts/validate_r3221_agent_conformance.py and scripts/validate_r3221_integrated_agent_service.py pass and are registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3222"
+title = "Tool Loop and Governed Dispatch (act)"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3210", "R-3211"]
+summary = "act(run, prompt) runs model-to-tool turns, invoking the project's agent_tool functions through synthesized marshalling wrappers, proven by an ABI spike in JIT and AOT before the loop is built."
+acceptance = [
+  "The dispatcher spike proves JIT and AOT tool invocation by address with two tools in two modules, including one async tool; ADR 0019 carries the evidence.",
+  "A tool chain completes end to end against the mock provider with every invocation journaled and capability-checked once R-3214 lands.",
+  "Malformed arguments are repaired by feeding the typed error back to the model; unknown tool names never crash.",
+  "scripts/validate_r3222_agent_act.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3223"
+title = "Message and Handle Taint"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3213", "R-3214", "R-3217", "R-3211"]
+summary = "Provenance for everything entering a run, explicit audited declassification (untrusted/trust), and gating of catalog-classified sensitive sinks under a per-run block/approve/allow policy."
+acceptance = [
+  "With untrusted content in context, sensitive sinks are never reached silently; the policy decides and the decision is journaled.",
+  "Declassification requires a reason and is attributable; the documented limits (message granularity, no string-level flow) appear in docs/agent-platform.md.",
+  "The hostile tool-description fixture never influences control flow.",
+  "scripts/validate_r3223_agent_taint.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3224"
+title = "Compensation Declaration and Execution"
+phase = "phase_32"
+owner = "runtime"
+priority = "P1"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3214", "R-3217", "R-3222"]
+summary = "compensate declares how to undo an irreversible step; rollback executes declarations in LIFO order through the governed dispatch, exactly once and replay-safe."
+acceptance = [
+  "Compensation executes exactly once in LIFO order; crash plus replay does not duplicate it, proven by a counting server.",
+  "Compensations run through the governed dispatch (capability and taint decisions apply).",
+  "Unknown literal tool names fail compilation with E3205; agent_end surfaces pending compensations.",
+  "scripts/validate_r3224_agent_compensation.py passes and is registered in run_tests.ps1.",
 ]
