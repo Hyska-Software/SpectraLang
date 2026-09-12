@@ -2352,6 +2352,12 @@ returns `NULL` and the JIT panics.
   `SPECTRA_RELEASE_SIGNING_KEY`, generate evidence, verify it, and publish the
   evidence as a workflow artifact while keeping public release assets focused on
   installable packages and binaries.
+- Revision (2026-09-11): the release workflow was simplified to build, package,
+  and publish only. It no longer requires `SPECTRA_RELEASE_SIGNING_KEY` and no
+  longer generates or publishes signing evidence, so published GitHub release
+  assets are unsigned unless the evidence steps are run manually. Evidence
+  generation and verification remain in `scripts/release_security.py` and are
+  still validated by `run_tests.ps1`.
 - Updated `.github/workflows/ci.yml` with `cargo audit` and high-severity
   `npm audit` dependency scanning.
 - Added local validation coverage through `run_tests.ps1`.

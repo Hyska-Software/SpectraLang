@@ -2682,7 +2682,10 @@ Release security:
   `release-manifest.json.sig`.
 - Production release signing requires `SPECTRA_RELEASE_SIGNING_KEY`.
 - Local validation may use `--allow-dev-key`; release workflows must not.
-- `.github/workflows/release.yml` verifies evidence before publishing assets.
+- `.github/workflows/release.yml` builds, packages, and publishes assets only.
+  Signing evidence generation and verification live in
+  `scripts/release_security.py` and are validated by `run_tests.ps1`; the release
+  workflow no longer runs them.
 
 Dependency scanning:
 

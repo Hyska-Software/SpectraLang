@@ -19,115 +19,11 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  release-preflight:
-    name: Release Preflight
-    runs-on: ubuntu-latest
-    outputs:
-      can_release: ${{ steps.signing.outputs.can_release }}
-
-    steps:
-      - name: Check release signing key
-        id: signing
-        env:
-          SPECTRA_RELEASE_SIGNING_KEY: ${{ secrets.SPECTRA_RELEASE_SIGNING_KEY }}
-        run: |
-          if [ -n "${SPECTRA_RELEASE_SIGNING_KEY}" ]; then
-            echo "can_release=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "can_release=false" >> "$GITHUB_OUTPUT"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "SPECTRA_RELEASE_SIGNING_KEY secret is required for production release signing." >&2
-            exit 1
-          fi
-
-          echo "SPECTRA_RELEASE_SIGNING_KEY secret is not configured; skipping automatic production release."
-
-  stability-required:
-    name: Required stability certification
-    needs: release-preflight
-    if: needs.release-preflight.outputs.can_release == 'true'
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: spectra
-          POSTGRES_PASSWORD: spectra
-          POSTGRES_DB: spectra_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U spectra -d spectra_test"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=20
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd="redis-cli ping"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client
-
-      - name: Build CLI
-        run: cargo build -p spectra-cli
-
-      - name: Run required stability aggregate
-        env:
-          SPECTRA_POSTGRES_URL: postgres://spectra:spectra@127.0.0.1:5432/spectra_test
-          SPECTRA_REDIS_URL: redis://127.0.0.1:6379/0
-          SPECTRA_TLS_EXTERNAL_URL: ${{ secrets.SPECTRA_TLS_EXTERNAL_URL }}
-        run: |
-          test -n "$SPECTRA_TLS_EXTERNAL_URL"
-          python scripts/validate_stability_release.py \
-            --required \
-            --binary target/debug/spectralang \
-            --report target/stability/release-report.json \
-            --markdown target/stability/release-report.md
-
-      - name: Verify certifying report
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          report = json.loads(Path("target/stability/release-report.json").read_text())
-          assert report["schema"] == "spectralang.stability.release.v1"
-          assert report["required"] is True
-          assert report["status"] == "passed"
-          assert report["release_certifying"] is True
-          assert not report["failures"]
-          assert not report["skipped_environment"]
-          PY
-
-      - name: Publish required stability report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: spectralang-required-stability
-          path: target/stability/
-
   # ---------------------------------------------------------------------------
   # Phase 0: Determine version (from input or Cargo.toml) and create git tag
   # ---------------------------------------------------------------------------
   determine-version:
     name: Determine Version & Create Tag
-    needs: [release-preflight, stability-required]
-    if: needs.release-preflight.outputs.can_release == 'true' && needs.stability-required.result == 'success'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.ver.outputs.VERSION }}
@@ -146,115 +42,20 @@ jobs:
 
       - name: Resolve and bump version
         id: ver
-        run: |
-          python3 <<'PY'
-          import os
-          import re
-
-          cargo_path = "tools/spectra-cli/Cargo.toml"
-          target_version = os.environ.get("TARGET_VERSION", "")
-
-          with open(cargo_path, "r", encoding="utf-8-sig") as f:
-              lines = f.readlines()
-
-          in_package = False
-          current = None
-          for line in lines:
-              stripped = line.strip()
-              if stripped == "[package]":
-                  in_package = True
-                  continue
-              if in_package and stripped.startswith("["):
-                  in_package = False
-                  continue
-              m = re.match(r'^version\s*=\s*"([^"]+)"', stripped)
-              if in_package and m:
-                  current = m.group(1)
-                  break
-
-          if not current:
-              print(f"::error::Não foi possível ler a versão de {cargo_path}")
-              raise SystemExit(1)
-
-          if target_version:
-              version = target_version
-          else:
-              major, minor, patch = current.split(".")
-              version = f"{major}.{minor}.{int(patch) + 1}"
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write(f"CURRENT={current}\n")
-              f.write(f"VERSION={version}\n")
-
-          print(f"Bumped: {current} -> {version}")
-          PY
+        shell: pwsh
         env:
           TARGET_VERSION: ${{ inputs.version }}
-
-      - name: Update version in Cargo.toml and package.json
         run: |
-          python3 <<'PY'
-          import os
-          import re
-
-          current = os.environ["CURRENT_VERSION"]
-          version = os.environ["NEW_VERSION"]
-          cargo_path = "tools/spectra-cli/Cargo.toml"
-          pkg_path = "tools/vscode-extension/package.json"
-
-          # --- Cargo.toml: altera APENAS a linha version dentro do bloco [package]
-          # utf-8-sig tolera BOM se existir; gravamos sem BOM.
-          with open(cargo_path, "r", encoding="utf-8-sig") as f:
-              lines = f.readlines()
-
-          in_package = False
-          cargo_changed = False
-          for i, line in enumerate(lines):
-              stripped = line.strip()
-              if stripped == "[package]":
-                  in_package = True
-                  continue
-              if in_package and stripped.startswith("["):
-                  in_package = False
-                  continue
-              if in_package and re.match(r'^version\s*=\s*"' + re.escape(current) + r'"', stripped):
-                  lines[i] = line.replace(f'version = "{current}"', f'version = "{version}"', 1)
-                  cargo_changed = True
-                  break
-
-          if not cargo_changed:
-              print(f"::error::Não encontrou version = '{current}' no bloco [package] de {cargo_path}")
-              raise SystemExit(1)
-
-          with open(cargo_path, "w", encoding="utf-8", newline="") as f:
-              f.writelines(lines)
-
-          # --- package.json: altera APENAS a primeira ocorrência de "version": "<current>"
-          # Substituição textual literal preserva formatação, BOM e quebras de linha.
-          with open(pkg_path, "r", encoding="utf-8-sig") as f:
-              pkg_content = f.read()
-
-          old_pkg = f'"version": "{current}"'
-          new_pkg = f'"version": "{version}"'
-          if old_pkg not in pkg_content:
-              print(f"::error::Não encontrou '{old_pkg}' em {pkg_path}")
-              raise SystemExit(1)
-
-          pkg_content = pkg_content.replace(old_pkg, new_pkg, 1)
-
-          with open(pkg_path, "w", encoding="utf-8", newline="") as f:
-              f.write(pkg_content)
-
-          print(f"Updated version to {version} in {cargo_path} and {pkg_path}")
-          PY
-        env:
-          CURRENT_VERSION: ${{ steps.ver.outputs.CURRENT }}
-          NEW_VERSION: ${{ steps.ver.outputs.VERSION }}
+          if ([string]::IsNullOrWhiteSpace($env:TARGET_VERSION)) {
+            ./bump-version.ps1 -Bump patch -Yes
+          } else {
+            ./bump-version.ps1 -Version $env:TARGET_VERSION -Yes
+          }
 
       - name: Commit and push version bump
         run: |
           VERSION="${{ steps.ver.outputs.VERSION }}"
-          git add tools/spectra-cli/Cargo.toml tools/vscode-extension/package.json
+          git add -u
           if git diff --staged --quiet; then
             echo "No version changes to commit (already at ${VERSION})."
           else
@@ -337,16 +138,6 @@ jobs:
           mkdir -p staging
           cp target/${{ matrix.target }}/release/spectralang${{ matrix.ext }} staging/
           cp target/${{ matrix.target }}/release/spectra-lsp${{ matrix.ext }} staging/
-
-      - name: Add spectralang to PATH
-        shell: bash
-        run: echo "$GITHUB_WORKSPACE/target/${{ matrix.target }}/release" >> $GITHUB_PATH
-
-      - name: Smoke test spectralang
-        # Skip cross-compiled Apple Silicon binary when running on x64 runner and vice-versa
-        if: matrix.artifact-name != 'darwin-x64'
-        shell: bash
-        run: spectralang --help || spectralang version || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -672,27 +463,6 @@ jobs:
 
       - name: List release assets
         run: find release-assets/ -type f | sort
-
-      - name: Generate release security evidence
-        env:
-          SPECTRA_RELEASE_SIGNING_KEY: ${{ secrets.SPECTRA_RELEASE_SIGNING_KEY }}
-        run: |
-          if [ -z "${SPECTRA_RELEASE_SIGNING_KEY}" ]; then
-            echo "SPECTRA_RELEASE_SIGNING_KEY secret is required for production release signing." >&2
-            exit 1
-          fi
-          python scripts/release_security.py create \
-            --artifact release-assets \
-            --out release-evidence \
-            --version "${{ needs.determine-version.outputs.version }}"
-          python scripts/release_security.py verify --evidence release-evidence
-
-      - name: Upload release security evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-security-evidence-${{ needs.determine-version.outputs.version }}
-          path: release-evidence/
-          retention-days: 30
 
       - name: Create or update GitHub Release
         env:

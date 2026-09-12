@@ -19,14 +19,14 @@ Generated files:
   `tools/vscode-extension/package-lock.json`.
 - `SHA256SUMS`: user-facing artifact checksum list.
 
-Production releases require the environment variable
-`SPECTRA_RELEASE_SIGNING_KEY`. The local `--allow-dev-key` flag is only for
-validation tests and must not be used in release workflows.
+Signing requires the environment variable `SPECTRA_RELEASE_SIGNING_KEY`; the
+local `--allow-dev-key` flag is only for validation tests and must not be used
+for published evidence.
 
-The GitHub release workflow runs a signing-key preflight before version bumps,
-tags, builds, or release asset publication. Automatic `push` runs skip the
-production release when the secret is not configured; manual
-`workflow_dispatch` runs fail fast until the secret is configured.
+The release workflow only builds, packages, and publishes assets. It no longer
+runs a signing preflight or generates signing evidence, so published GitHub
+release assets are unsigned unless `scripts/release_security.py` is run on
+demand (it is also exercised by `run_tests.ps1`).
 
 Example:
 
@@ -60,10 +60,10 @@ CI includes a dependency scan job:
 - `cargo audit` for Rust dependencies.
 - `npm audit --audit-level=high` for the VS Code extension.
 
-The release workflow also generates and verifies signed release evidence before
-creating or updating the GitHub Release. The evidence is uploaded as a workflow
-artifact named `release-security-evidence-<version>` so the public release asset
-list remains focused on installable packages and binaries.
+The release workflow builds, packages, and publishes installable artifacts only.
+Signed release evidence is generated and verified manually with
+`scripts/release_security.py`; it is not produced or uploaded by the release
+workflow.
 
 ## Stress and Soak Testing
 
