@@ -17,8 +17,9 @@ module agent_mcp
 // itself, so the whole cycle runs in one process in JIT and AOT: `mcp_serve`
 // binds an ephemeral port, `mcp_connect` discovers the tools this module
 // declares, and `tool_call` invokes one through the remote registry entry.
-// No host HTTP transport is installed in the CLI, so the request is answered
-// by the in-process loopback -- it never leaves the process.
+// The CLI installs the host HTTP transport (R-3221), so the request crosses a
+// real loopback socket through `spectra.api.client`; it still never leaves
+// the process.
 //
 // `writer` is the injection: a tool whose authored description *asks* for a
 // write the program never performs. The description is served verbatim (data),

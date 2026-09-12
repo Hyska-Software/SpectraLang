@@ -47,6 +47,7 @@ rede), em JIT (`spectralang run`) e AOT (`compile --debug-info=none --emit-exe`)
 |---|---|
 | `01-tool-and-run` | `#[agent_tool]`, `agent_start`/`ask`/`act`/`tool_call`/`agent_end` |
 | `02-approval-and-budget` | negação padrão de aprovação, `require` e teto de tokens |
+| `03-mcp-and-memory` | `mcp_serve`/`mcp_connect`/`tool_call` pelo loopback em processo e `remember`/`recall` |
 | `04-durable-replay` | journal e replay com o mesmo `run_id`, sem repetir o efeito |
 
 Ver `docs/book/11-agents.md`.

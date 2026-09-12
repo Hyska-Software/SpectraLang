@@ -1,0 +1,93 @@
+module agent_host_adapters
+
+// R-3221 end-to-end fixture: the host-installed `std.agent` adapters, in JIT
+// and AOT.
+//
+// `spectra_api::register()` installs the two seams the language does not own:
+// the real `HttpTransport` (over `spectra.api.client`, so the
+// OpenAI-compatible provider can reach a model server) and the GenAI
+// `TraceSink` (over `std.api.trace`, so a run's spans reach the OTLP
+// exporter). This fixture exercises both through the CLI:
+//
+//  * `SPECTRA_R3221_ENDPOINT` is a local OpenAI-compatible server started by
+//    the validator. `ask` must return exactly the content that server sent,
+//    which is only possible if the request really left the process over the
+//    installed transport and its response was parsed.
+//  * `SPECTRA_R3221_OTLP_ENDPOINT` is a local OTLP collector. When present,
+//    the fixture configures tracing, and the validator asserts the exported
+//    payload carries the run's `invoke_agent`/`chat` spans with the pinned
+//    conventions version and no content.
+//
+// An absent `SPECTRA_R3221_ENDPOINT` is a setup failure: the fixture is only
+// meaningful with a server to talk to.
+
+import std.agent
+import std.env as env
+import std.option as option
+from std.api.trace import TraceConfig, config_new, config_start, flush
+
+const GOAL = "fixture-383-adapters"
+const PROMPT = "host adapters"
+const EXPECTED = "local answer 383"
+
+// The provider endpoint the validator started, or "" when it was not set.
+func endpoint() returns string {
+    let value = env.env_get("SPECTRA_R3221_ENDPOINT")
+    if let Option::Some(text) = value {
+        return text
+    }
+    return ""
+}
+
+// The OTLP endpoint (full traces URL) when the validator configured one.
+func otlp_endpoint() returns string {
+    let value = env.env_get("SPECTRA_R3221_OTLP_ENDPOINT")
+    if let Option::Some(text) = value {
+        return text
+    }
+    return ""
+}
+
+// A journal-free spec: the fixture exercises the adapters, not durability.
+func spec(url: string) returns string {
+    return "{\"goal\":\"" + GOAL + "\",\"model\":\"test/local\",\"endpoint\":\"" + url + "\",\"journal\":\"\"}"
+}
+
+public func main() returns int {
+    let url = endpoint()
+    if url == "" {
+        return 1
+    }
+
+    let otlp = otlp_endpoint()
+    if otlp != "" {
+        let config: TraceConfig = config_new(otlp, "spectra-r3221-adapters")
+        if config_start(config) != true {
+            return 2
+        }
+    }
+
+    let started = agent_start(spec(url))
+    if let Result::Ok(run) = started {
+        let reply = block_on(ask(run, PROMPT))
+        if let Result::Ok(text) = reply {
+            if text != EXPECTED {
+                return 3
+            }
+        } else {
+            return 4
+        }
+        let ended = agent_end(run)
+        if let Result::Err(end_error) = ended {
+            let _ = end_error
+            return 5
+        }
+    } else {
+        return 6
+    }
+
+    // Exports and waits for the collector; with no trace configuration this
+    // returns the not-configured error, ignored exactly as the hosts do.
+    flush()
+    return 0
+}

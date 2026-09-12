@@ -18,10 +18,10 @@ module main
 // and are flushed before the effecting call returns, which is what makes the
 // replay a resume rather than a re-execution.
 
+from std.io import println
 import std.agent
 import std.convert as conv
 import std.fs as fs
-from std.io import println
 import std.string as str
 
 const JOURNAL_DIR = ".spectra/example-04-journal"
@@ -40,7 +40,7 @@ public record RecordArgs {
 // executes.
 #[agent_tool("Appends one event to the run's event log")]
 public async func record_event(run: Run, args: RecordArgs) returns int {
-    let before = 0
+    let before  = 0
     let present = fs.fs_exists(COUNTER)
     if let Result::Ok(exists) = present {
         if exists == true {
@@ -50,10 +50,10 @@ public async func record_event(run: Run, args: RecordArgs) returns int {
             }
         }
     }
-    let next = before + 1
+    let next    = before + 1
     let written = fs.fs_write(COUNTER, conv.int_to_string(next) + " " + args.label)
     if let Result::Err(write_error) = written {
-        return -1
+        return-1
     }
     return next
 }
@@ -61,7 +61,11 @@ public async func record_event(run: Run, args: RecordArgs) returns int {
 // `run_id` pins the journal file the run opens; `journal_payloads` keeps the
 // record payloads on disk so the example can show what replay returns.
 func spec(run_id: string) returns string {
-    return "{\"goal\":\"example-durable-replay\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"spectra.std.fs\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":3,\"journal\":\"" + JOURNAL_DIR + "\",\"journal_payloads\":true,\"run_id\":\"" + run_id + "\"}"
+    return "{\"goal\":\"example-durable-replay\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"spectra.std.fs\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":3,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        run_id +
+        "\"}"
 }
 
 func journal_path(run_id: string) returns string {

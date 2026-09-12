@@ -21,11 +21,11 @@ module main
 // same seam the spectra-agent crate tests exercise. A Spectra program can ask
 // and must handle both answers.
 
+from std.io import println
 import std.agent
 import std.convert as conv
 import std.error as error
 import std.fs as fs
-from std.io import println
 import std.string as str
 
 const JOURNAL_DIR = ".spectra/example-02-journal"
@@ -36,14 +36,22 @@ const WRITE_ACTION = "spectra.std.fs.fs_write"
 // A spec with a journal and a fixed run id, so the example can read back what
 // the run recorded. `journal_payloads` keeps the approval action readable.
 func journaled_spec(run_id: string) returns string {
-    return "{\"goal\":\"example-approval-and-budget\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"" + JOURNAL_DIR + "\",\"journal_payloads\":true,\"run_id\":\"" + run_id + "\"}"
+    return "{\"goal\":\"example-approval-and-budget\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        run_id +
+        "\"}"
 }
 
 // `max_tokens` counts every billable token (input + output). The mock reports
 // 1 input + 3 output tokens per echoed turn, so two turns take the run from 0
 // to 8 of 6 and the run is cancelled on the ceiling.
 func token_ceiling_spec(run_id: string) returns string {
-    return "{\"goal\":\"example-approval-and-budget\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":6,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"" + JOURNAL_DIR + "\",\"journal_payloads\":true,\"run_id\":\"" + run_id + "\"}"
+    return "{\"goal\":\"example-approval-and-budget\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":6,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        run_id +
+        "\"}"
 }
 
 func journal_path(run_id: string) returns string {

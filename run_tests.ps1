@@ -3106,6 +3106,16 @@ if ($r3221IntegratedAgentService.Status -eq "PASSOU") {
 $results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3221_integrated_agent_service"; Status = $r3221IntegratedAgentService.Status; Detalhe = $r3221IntegratedAgentService.Detail }
 
 Write-Host ""
+Write-Host "--- R-3221 host adapters (HTTP transport and GenAI span sink, JIT/AOT) ---" -ForegroundColor Yellow
+$r3221HostAdapters = Invoke-HostCommand -name "validate_r3221_host_adapters" -fileName "python" -arguments @("scripts\validate_r3221_host_adapters.py") -workingDir (Get-Location).Path
+if ($r3221HostAdapters.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3221_host_adapters"; Status = $r3221HostAdapters.Status; Detalhe = $r3221HostAdapters.Detail }
+
+Write-Host ""
 Write-Host "--- R-3219 A2A and ACP protocol exposure ---" -ForegroundColor Yellow
 $r3219AgentProtocols = Invoke-HostCommand -name "validate_r3219_agent_protocols" -fileName "python" -arguments @("scripts\validate_r3219_agent_protocols.py") -workingDir (Get-Location).Path
 if ($r3219AgentProtocols.Status -eq "PASSOU") {
@@ -3114,6 +3124,26 @@ if ($r3219AgentProtocols.Status -eq "PASSOU") {
     $totalFailed++
 }
 $results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3219_agent_protocols"; Status = $r3219AgentProtocols.Status; Detalhe = $r3219AgentProtocols.Detail }
+
+Write-Host ""
+Write-Host "--- R-3221 spectra.agent package gate ---" -ForegroundColor Yellow
+$r3221AgentPackage = Invoke-HostCommand -name "validate_r3221_agent_package" -fileName "python" -arguments @("scripts\validate_r3221_agent_package.py") -workingDir (Get-Location).Path
+if ($r3221AgentPackage.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3221_agent_package"; Status = $r3221AgentPackage.Status; Detalhe = $r3221AgentPackage.Detail }
+
+Write-Host ""
+Write-Host "--- R-3221 agent platform conformance gate ---" -ForegroundColor Yellow
+$r3221AgentConformance = Invoke-HostCommand -name "validate_r3221_agent_conformance" -fileName "python" -arguments @("scripts\validate_r3221_agent_conformance.py") -workingDir (Get-Location).Path -timeoutSeconds 3600
+if ($r3221AgentConformance.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3221_agent_conformance"; Status = $r3221AgentConformance.Status; Detalhe = $r3221AgentConformance.Detail }
 
 # ---------------------------------------------------------------------------
 # Resumo

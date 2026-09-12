@@ -15,8 +15,8 @@ module main
 // tool name, its input schema and its effects are all derived — only the
 // description string is authored.
 
-import std.agent
 from std.io import println
+import std.agent
 import std.string as str
 
 #[derive(Serialize, Deserialize)]

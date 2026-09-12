@@ -139,7 +139,7 @@ it. The compensation fixture is
 
 ## Runnable Examples
 
-All three examples run against the deterministic mock provider: no network and
+All four examples run against the deterministic mock provider: no network and
 no credentials. The mock is scripted through the prompt
 (`spectra:tool=<name> {json}`, `spectra:final=<text>`, `spectra:json`,
 `spectra:sleep-ms=N`), which is what makes the tool loops reproducible in CI.
@@ -191,6 +191,34 @@ allow. Allowing the action needs an approver attached by the process that
 embeds the runtime (`spectra_agent::set_approver`); a Spectra program asks and
 must handle both answers.
 
+### 03 — MCP and Memory
+
+`examples/agent/03-mcp-and-memory` both serves and consumes MCP in one process
+(`example-03-agent.exe` for the AOT path). `mcp_serve` binds an ephemeral
+loopback port, `mcp_connect` discovers the module's own derived tool surface
+through it, `tool_call` invokes the discovered entry through the governed
+dispatch, and `remember`/`recall` write and read back the
+provenance-carrying memory. The CLI installs no HTTP transport, so the request
+is answered by the in-process loopback and never reaches the network.
+
+```powershell
+.\target\debug\spectralang.exe run examples\agent\03-mcp-and-memory
+```
+
+```text
+serve  -> 127.0.0.1:17797
+remote -> 42
+recall -> {"schema":"spectra.agent.memory_recall.v1","scope":"example-mcp-and-memory","top_k":1,...,"entries":[{"ordinal":0,"tier":"episodic","origin":"agent",...,"text":"the loopback tool answered 42"}]}
+report -> {"status":"completed","steps":0,"tool_calls":2,...,"replay":false}
+```
+
+The report counts two governed tool calls: the client-side invocation of the
+discovered `mcp__<authority>__add` entry and the serving-side `tools/call` that
+executed the compiled tool. Both are durable, so the journal holds one `mcp`
+record (the discovery) and one `tool` record (the invocation). The discovered
+descriptor document is untrusted data throughout: a description that contains
+instructions can only ever add a gate, never become control flow.
+
 ### 04 — Durable Replay
 
 `examples/agent/04-durable-replay` writes a journal and then re-runs with the
@@ -214,7 +242,7 @@ journal -> .spectra/example-04-journal/example-04.jsonl
 
 After the replay the counter still reads `1 first`: the recorded tool result was
 returned instead of executing the effect twice, and `elapsed_ms` for the
-replayed work is `0`. `03-mcp-and-memory` follows when the MCP item lands.
+replayed work is `0`.
 
 ## Governance
 
@@ -331,9 +359,18 @@ claims are covered by deterministic tests, not by evals.
 Each example is an ordinary project and is reproduced by the two commands
 above: `spectralang run` for JIT, then `compile --debug-info=none --emit-exe`
 and the produced binary for AOT. Both modes run with the deterministic mock
-provider and need no credentials or network.
+provider and need no credentials or network. The formatter check
+(`spectralang fmt --check examples/agent`) is clean, `spectralang check --json`
+reports no diagnostics for any example, and the LSP crate's suite
+(`cargo test -p spectra-lsp`) passes.
 
 The Phase 32 validators (`scripts/validate_r32*.py`) are registered in
-`run_tests.ps1` as the items land; the package and conformance gates of
-`R-3221` are added with the remaining items, and the integrated-project gate is
+`run_tests.ps1` as the items land. `R-3221` adds the crate conformance suite
+(`cargo test -p spectra-agent --test conformance`), the certification gate
+`scripts/validate_r3221_agent_conformance.py` — which re-runs every item
+validator, checks surface determinism, runs each example in JIT and AOT and
+then the integrated-project gate, writing
+`target/r3221-agent-conformance/report.json` — the package gate
+`scripts/validate_r3221_agent_package.py` (manifest, publish, consumer add and
+build/check/run) and the integrated-project gate
 `scripts/validate_r3221_integrated_agent_service.py`.

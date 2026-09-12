@@ -132,6 +132,50 @@ the approval registry, and neither adds a dispatch path.
   back-pressure — so bind it to loopback or front it with the application's own
   server, and route `a2a_handle`/`acp_handle` directly if you have one.
 
+### Host adapters: the HTTP transport and the GenAI span sink (R-3211/R-3217)
+
+`std.agent` reaches the network and the tracer through two seams it does not
+own: the providers' `HttpTransport` and the OpenTelemetry GenAI `TraceSink`.
+Both implementations live in the host —
+`packages/spectra-api/src/agent_transport.rs` — and `spectra_api::register()`
+calls `install_agent_host_adapters()` before any host call is registered, so a
+process that registers the platform also owns every outbound byte and every
+exported span. A test that installed its own fake through the same public seam
+keeps it: both seams are process-global.
+
+- **HTTP transport.** `ApiHttpTransport` implements the seam over the
+  `spectra.api.client` `HttpClient`, so TLS trust anchors, connection pooling,
+  redirect handling and the SSRF policy are exactly the client's and an agent
+  request cannot bypass them. The installed adapter permits private networks:
+  every agent endpoint is authored program data (the spec's `endpoint`, the
+  `mcp_connect` URL) and the MCP design serves and consumes an in-process
+  loopback, so a local model server has to be reachable. The seam is
+  first-install-wins, so an embedder that wants the client's strict SSRF
+  default (or any other client policy) installs its own adapter with
+  `install_agent_host_adapters_with(ClientConfig)` before registering — the
+  earlier installation is the one in use — and a later `register()` never
+  displaces a transport already in use.
+- **GenAI span sink.** `ApiTraceSink` forwards each span into the runtime
+  tracer (`std.api.trace`), so a configured program exports the run's
+  `invoke_agent`, `plan`, `execute_tool` and `chat {model}` spans through the
+  same OTLP path as the hosts' own spans. With no active trace configuration
+  the runtime drops them, exactly as it drops a `std.api.trace` span with no
+  exporter.
+- **Attributes.** Every `gen_ai.*` attribute the agent layer attached is mapped
+  verbatim (`gen_ai.operation.name`, `gen_ai.agent.name`,
+  `gen_ai.conversation.id`, and `gen_ai.request.model`/`gen_ai.tool.name` where
+  they apply), plus `gen_ai.conventions.version` and
+  `gen_ai.conventions.schema_url` — the pinned `1.34.0` identity, which the
+  runtime span has no dedicated field for — and `spectra.agent.step` for spans
+  that belong to an effect step. `chat {model}` is recorded as a client span
+  and the other operations as internal spans; the agent layer carries no
+  outcome, so no span status is invented.
+- **Content capture stays off.** The sink keeps `captures_content() == false`
+  (the trait default), so the agent layer never attaches prompts, completions or
+  tool payloads, and the sink never reads `Span::content`/`Span::result`. The
+  pinned conventions and the absence of content are stated in
+  [`docs/adr/0018-agent-run-contract.md`](adr/0018-agent-run-contract.md).
+
 <!-- BEGIN GENERATED CAPABILITY REFERENCE -->
 
 ### Grant forms

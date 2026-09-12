@@ -1,0 +1,196 @@
+module main
+
+// Example 03 — MCP and memory.
+//
+// An agent service that both serves and consumes the Model Context Protocol,
+// plus the provenance-carrying memory:
+//
+//   1. `mcp_serve(run, "127.0.0.1:0")` exposes this module's derived
+//      `#[agent_tool]` surface (name, description, JSON Schema, annotations)
+//      on an ephemeral loopback port;
+//   2. `mcp_connect(run, url)` discovers that surface as an MCP client and
+//      registers every remote tool as a governed registry entry namespaced by
+//      the server identity (`mcp.<authority>`);
+//   3. `tool_call` invokes the discovered tool through the governed dispatch,
+//      so the run's grant, the journal and the tool-call ceiling apply exactly
+//      as they do to a compiled local tool;
+//   4. `remember`/`recall` record what the run learned and read it back with
+//      its provenance (tier, origin, the run that wrote it).
+//
+// No credentials and no network: the provider is the deterministic mock
+// (`endpoint: "mock:"`), and the MCP request crosses a real loopback socket
+// through the host-installed HTTP transport to the listener `mcp_serve` bound.
+// The whole cycle therefore runs in one process, in JIT and AOT.
+
+from std.io import println
+import std.agent
+import std.fs as fs
+import std.string as str
+
+const JOURNAL_DIR = ".spectra/example-03-journal"
+const RUN_ID = "example-03"
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+// The tool the service exposes: the payload record becomes the JSON Schema the
+// MCP `tools/list` answer serves, and the body derives no effect, so the tool
+// is reported read-only.
+#[agent_tool("Adds two integers")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+// The spec: the mock provider, the per-server `mcp` grant the discovered entry
+// derives its effect from, and a journal pinned to a stable run id so the run's
+// steps can be read back.
+func spec() returns string {
+    return "{\"goal\":\"example-mcp-and-memory\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"mcp\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":5,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        RUN_ID +
+        "\"}"
+}
+
+func journal_path() returns string {
+    return JOURNAL_DIR + "/" + RUN_ID + ".jsonl"
+}
+
+// Removes a previous journal file so the example starts from a known state.
+func clean(path: string) returns int {
+    let present = fs.fs_exists(path)
+    if let Result::Ok(exists) = present {
+        if exists == true {
+            let removed = fs.fs_remove(path)
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+async func run_checks() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(start_error) = started {
+        let _ = start_error
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        // Serve this module's derived tool surface on an ephemeral port.
+        let bound     = mcp_serve(run, "127.0.0.1:0")
+        let authority = ""
+        if let Result::Ok(address) = bound {
+            authority = address
+        } else {
+            return 2
+        }
+        println("serve  -> " + authority)
+
+        // Discover it as a client. No transport is installed in the CLI, so the
+        // request is answered by the in-process loopback and never leaves the
+        // process. The descriptor document is untrusted data.
+        let connected = await mcp_connect(run, "http://" + authority + "/mcp")
+        if let Result::Ok(document) = connected {
+            // Each descriptor carries the process-local dispatch name and the
+            // peer's own tool name.
+            if str.contains(document, "\"remoteName\":\"add\"") == false {
+                return 3
+            }
+            if str.contains(document, "Adds two integers") == false {
+                return 4
+            }
+            if str.contains(document, "\"server\":\"mcp." + authority + "\"") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+
+        // The remote entry is registered under the server's namespace, with the
+        // authority sanitized exactly as the client derives it.
+        let namespace = str.replace(str.replace(authority, ".", "_"), ":", "_")
+        let invoked   = await tool_call(run, "mcp__" + namespace + "__add", "{\"a\":20,\"b\":22}")
+        if let Result::Ok(result) = invoked {
+            println("remote -> " + result)
+            if result != "42" {
+                return 7
+            }
+        } else {
+            return 8
+        }
+
+        // Memory: the run records what it learned...
+        let stored = remember(run, "the loopback tool answered 42")
+        if let Result::Ok(ok) = stored {
+            if ok == false {
+                return 9
+            }
+        } else {
+            return 10
+        }
+
+        // ...and reads it back with its provenance: the `episodic` tier, the
+        // `agent` origin and the text itself.
+        let recalled = recall(run, "what did the loopback tool answer", 1)
+        if let Result::Ok(payload) = recalled {
+            println("recall -> " + payload)
+            if str.contains(payload, "the loopback tool answered 42") == false {
+                return 11
+            }
+            if str.contains(payload, "\"tier\":\"episodic\"") == false {
+                return 12
+            }
+            if str.contains(payload, "\"origin\":\"agent\"") == false {
+                return 13
+            }
+        } else {
+            return 14
+        }
+
+        // Closing the run returns the report: the client-side dispatch and the
+        // serving-side `tools/call` are both governed tool calls.
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report -> " + report)
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 15
+            }
+            if str.contains(report, "\"tool_calls\":2") == false {
+                return 16
+            }
+        } else {
+            return 17
+        }
+    }
+
+    // Discovery and the remote invocation are durable steps, exactly as a local
+    // tool call is.
+    let journal = fs.fs_read(journal_path())
+    if let Result::Ok(text) = journal {
+        if str.contains(text, "\"kind\":\"mcp\"") == false {
+            return 18
+        }
+        if str.contains(text, "\"kind\":\"tool\"") == false {
+            return 19
+        }
+    } else {
+        return 20
+    }
+    return 0
+}
+
+public func main() returns int {
+    if clean(journal_path()) != 0 {
+        return 30
+    }
+    // Entry points stay synchronous; `block_on` drives the async run.
+    return block_on(run_checks())
+}

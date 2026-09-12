@@ -42,7 +42,7 @@ programs, plus the machine-readable project surface that coding agents consume. 
   host-call dispatch point; message-level taint with sensitive-sink gating; mandatory
   budgets; durable journaled runs with replay; human approval; declared compensation;
   OpenTelemetry GenAI spans.
-- **C. Library (Spectra code consumes):** `std.agent` — 20 free functions plus
+- **C. Library (Spectra code consumes):** `std.agent` — 28 free functions plus
   `json_schema` on derived records — for model calls, streaming, tool loops, memory,
   approval, assertions, provenance and compensation.
 
@@ -243,6 +243,14 @@ Adaptations recorded while implementing (they refine the surface, not the guaran
     (`spectra.async.`, `spectra.api.json.`, `spectra.std.convert.`, `spectra.std.string.`)
     are exempt from grants as an explicit, documented exception list — not a weakened
     default; ADR 0016's rule is otherwise unchanged.
+19. **One namespace, not four modules.** The concept's `std.agent` / `std.agent.mcp` /
+    `std.agent.eval` / `std.agent.protocol` split collapsed into the single `std.agent`
+    namespace: one declared module keeps the seam cost (compiler table + midend gate +
+    probe + catalog entries) paid once, while crate modules (`provider/`, `mcp/`,
+    `protocol/`, `eval/`) keep the implementation organised. The surface therefore carries
+    the adapter functions (`mcp_*`, `a2a_*`, `acp_*`) alongside the core, and the eval
+    harness ships as a CLI command over the crate API rather than as language functions.
+    With the adapter additions the surface is 28 free functions plus `json_schema`.
 
 ### 2.3 Verified substrate (exists today)
 
@@ -324,7 +332,7 @@ Copied forward from the concept and enforced by this plan:
 └──────────────────────────────────────────────────────────────────────┘
                                  │ authorizes
 ┌─ C. EXECUTION (std.agent) ───────────────────────────────────────────┐
-│  20 free functions + json_schema; tools are ordinary functions        │
+│  28 free functions + json_schema; tools are ordinary functions        │
 │  Consumer: Spectra code written by humans or agents                  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -429,6 +437,14 @@ remaining fields; the raw record stays available for full control. Additive eith
 | `compensate` | `(run: Run, tool: string, arguments_json: string) returns Result<bool, Error>` | Journals a pending compensation (LIFO). Unknown tool names are compile errors when literal (`E3205`). |
 | `rollback` | `(run: Run, reason: string) returns Result<int, Error>` | Executes pending compensations in LIFO through the governed dispatch; replay-safe; returns the number executed. |
 | `token_count` | `(text: string) returns int` | Token count over the existing tokenizer path (no second tokenizer). |
+| `mcp_connect` | `(run: Run, url: string) returns Task<Result<string, Error>>` | MCP client: initialize, `tools/list`, and register the remote tools as governed dispatchers; every peer description is recorded as untrusted before use and discovery is replay-safe. |
+| `mcp_handle` | `(run: Run, request: string) returns Result<string, Error>` | Serves one JSON-RPC request from the derived tool surface (`tools/list`, `tools/call` through the governed path); a host stack can front it. |
+| `mcp_serve` | `(run: Run, bind: string) returns Result<string, Error>` | In-crate HTTP/1.1 listener route for `mcp_handle` (POST-only, one request per connection, application/json; documented limits). |
+| `a2a_card` | `(run: Run, description: string) returns Result<string, Error>` | A2A agent card: authored strings plus the derived tool list; capabilities advertised honestly (journal-backed history). |
+| `a2a_handle` | `(run: Run, request: string) returns Result<string, Error>` | A2A JSON-RPC 0.3 (`message/send`, `tasks/get`, `tasks/cancel`); a task is a run, and `tasks/get` resumes an interrupted task from its journal. |
+| `a2a_serve` | `(run: Run, bind: string, description: string) returns Result<string, Error>` | Serves the well-known agent card plus the A2A endpoint over the shared listener. |
+| `acp_handle` | `(run: Run, request: string) returns Result<string, Error>` | ACP binding: `initialize` (only implemented capabilities), `session/new`, `session/prompt` through the governed loop, `session/cancel`. |
+| `acp_permission` | `(run: Run, action: string) returns Result<bool, Error>` | Permission bridge: asks the installed `AcpClient` with `session/request_permission` and maps allow-once/allow-always into the approval registry; an unmappable answer never allows. |
 | `T::json_schema` | `() returns string` | Associated function added to the existing JSON derive, emitting the JSON Schema from the same field data that produces `to_json`/`from_json`. |
 
 ### 4.3 The tool form

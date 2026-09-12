@@ -656,6 +656,26 @@ python scripts/generate_capability_reference.py --check
 # Evaluation: deterministic graders against the checked-in baseline; exits 65
 # on regression. The judge grader never runs by default.
 .\target\debug\spectralang.exe agent eval --json
+
+# R-3221: crate-level conformance suite (capability denial, replay, budget,
+# approval, taint matrix, compensation, MCP round trip, surface determinism).
+cargo test -p spectra-agent --test conformance
+
+# R-3221: the certification gate. It re-runs every phase-32 item validator,
+# checks surface determinism, runs every example in JIT and AOT and then the
+# integrated-project gate, writing target/r3221-agent-conformance/report.json;
+# it exits non-zero on the first failure. It is the release gate, so it is
+# heavy by design. The package gate is a peer of it.
+python scripts/validate_r3221_agent_package.py
+python scripts/validate_r3221_agent_conformance.py
+python scripts/validate_r3221_integrated_agent_service.py
+
+# Language tooling on the examples: the formatter is idempotent, the checker is
+# diagnostic-free and lint reports no findings. The LSP suite is
+# `cargo test -p spectra-lsp`.
+.\target\debug\spectralang.exe fmt --check examples\agent
+.\target\debug\spectralang.exe check --json examples\agent\03-mcp-and-memory\src\main.spectra
+.\target\debug\spectralang.exe lint examples\agent\03-mcp-and-memory
 ```
 
 Agent programs must exercise both `spectralang run` and

@@ -274,12 +274,13 @@ spans validate against the pinned version with content absent unless opted in.
 Landed seam: R-3217 provides `TraceSink` plus `set_trace_sink` in
 `spectra-agent`. No sink means no spans (a no-op, no allocation). A sink opts
 into content with `captures_content`, which defaults to `false`, so content is
-absent unless a sink asks for it. The adapter that forwards a span into the
-runtime's `std.api.trace` exporter lives outside this crate (this crate must
-not depend on `spectra-api`, which aggregates it) and remains **pending**; the
-trait is the seam it will implement, and the deterministic span-shape test
-already pins the conventions version, the operation names, the attributes and
-the absence of content.
+absent unless a sink asks for it. R-3221 lands the adapter outside this crate
+(this crate must not depend on `spectra-api`, which aggregates it):
+`packages/spectra-api/src/agent_transport.rs` implements `ApiTraceSink`, and
+`install_agent_host_adapters()` installs it from `spectra_api::register()`, so
+every span reaches the runtime's `std.api.trace` exporter. The deterministic
+span-shape test still pins the conventions version, the operation names, the
+attributes and the absence of content.
 
 ### What an eval may assert versus what a test must cover
 

@@ -1,0 +1,13 @@
+version = 2
+root = "spectra.agent"
+
+[[packages]]
+name = "spectra.agent"
+version = "0.1.0"
+channel = "beta"
+compatibility = "spectralang-0.1"
+source = "path+"
+source_kind = "path"
+checksum = "6d1ab0b55736c95d97c5c65697d664860b0b7cb34275bad08b5a864ee727c6a3"
+manifest_hash = "6d1ab0b55736c95d97c5c65697d664860b0b7cb34275bad08b5a864ee727c6a3"
+dependencies = []

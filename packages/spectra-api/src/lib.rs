@@ -15,6 +15,7 @@ use spectra_runtime::ffi::{
     HOST_STATUS_INVALID_ARGUMENT, HOST_STATUS_SUCCESS,
 };
 
+pub mod agent_transport;
 pub mod client;
 pub mod conformance;
 pub mod cors;
