@@ -749,6 +749,7 @@ mod simd_avx2 {
     );
 }
 
+#[cfg(target_arch = "x86_64")]
 mod simd_sse {
     use super::ElementwiseOp;
     use core::arch::x86_64::*;
@@ -825,9 +826,13 @@ pub(crate) fn elementwise_f64(left: &[f64], right: &[f64], out: &mut [f64], op: 
         unsafe { simd_neon::f64x2::elementwise_into(left, right, out, op) };
         return;
     }
-    // Portable fallback with strict sequential ordering.
-    for (idx, slot) in out.iter_mut().enumerate() {
-        *slot = op.apply(left[idx], right[idx]);
+    // Portable fallback with strict sequential ordering. aarch64 always
+    // returns above, so this loop is unreachable and cfg'd out there.
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        for (idx, slot) in out.iter_mut().enumerate() {
+            *slot = op.apply(left[idx], right[idx]);
+        }
     }
 }
 
@@ -854,8 +859,11 @@ pub(crate) fn elementwise_f32(left: &[f32], right: &[f32], out: &mut [f32], op: 
         unsafe { simd_neon::f32x4::elementwise_into(left, right, out, op) };
         return;
     }
-    for (idx, slot) in out.iter_mut().enumerate() {
-        *slot = op.apply(left[idx], right[idx]);
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        for (idx, slot) in out.iter_mut().enumerate() {
+            *slot = op.apply(left[idx], right[idx]);
+        }
     }
 }
 
@@ -880,11 +888,14 @@ pub(crate) fn dot_f64(left: &[f64], right: &[f64]) -> f64 {
         // SAFETY: NEON fp64 arithmetic is part of the arm64 baseline.
         return unsafe { simd_neon::f64x2::dot(left, right) };
     }
-    let mut total = 0.0f64;
-    for idx in 0..left.len() {
-        total += left[idx] * right[idx];
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let mut total = 0.0f64;
+        for idx in 0..left.len() {
+            total += left[idx] * right[idx];
+        }
+        total
     }
-    total
 }
 
 /// Runtime-dispatching dot product for f32 lanes.
@@ -907,11 +918,14 @@ pub(crate) fn dot_f32(left: &[f32], right: &[f32]) -> f32 {
         // SAFETY: NEON fp32 arithmetic is part of the arm64 baseline.
         return unsafe { simd_neon::f32x4::dot(left, right) };
     }
-    let mut total = 0.0f32;
-    for idx in 0..left.len() {
-        total += left[idx] * right[idx];
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let mut total = 0.0f32;
+        for idx in 0..left.len() {
+            total += left[idx] * right[idx];
+        }
+        total
     }
-    total
 }
 
 pub(crate) fn kernel_elementwise_f64_bits(
