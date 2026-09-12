@@ -90,6 +90,44 @@ impl ASTLowering {
         Some(self.refine_host_function_descriptor(descriptor, arguments))
     }
 
+    /// Shapes the arguments of a standard-library host call.
+    ///
+    /// The polymorphic print family (`io.print`/`println`/`eprint`/`eprintln`)
+    /// consumes `(type_tag, value)` pairs so the runtime can pick a formatter
+    /// per argument; every other host call takes its raw arguments. Both the
+    /// direct call path and the qualified `io.println(x)` method-call path must
+    /// shape them identically.
+    pub(crate) fn host_call_arguments(
+        &mut self,
+        runtime_name: &str,
+        arg_values: Vec<Value>,
+        arg_exprs: &[Expression],
+        ir_func: &mut IRFunction,
+    ) -> Vec<Value> {
+        if !matches!(
+            runtime_name,
+            "spectra.std.io.print"
+                | "spectra.std.io.println"
+                | "spectra.std.io.eprint"
+                | "spectra.std.io.eprintln"
+        ) {
+            return arg_values;
+        }
+        let mut paired = Vec::with_capacity(arg_values.len() * 2);
+        for (arg_val, arg_expr) in arg_values.iter().zip(arg_exprs.iter()) {
+            let tag: i64 = match self.infer_expr_ir_type(arg_expr) {
+                IRType::String => 1, // PRINT_TAG_STR
+                IRType::Bool => 2,   // PRINT_TAG_BOOL
+                IRType::Float => 3,  // PRINT_TAG_FLOAT
+                _ => 0,              // PRINT_TAG_INT
+            };
+            let tag_val = self.builder.build_const_int(ir_func, tag);
+            paired.push(tag_val);
+            paired.push(*arg_val);
+        }
+        paired
+    }
+
     pub(crate) fn refine_host_function_descriptor(
         &mut self,
         mut descriptor: HostFunctionDescriptor,

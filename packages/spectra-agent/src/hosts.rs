@@ -135,6 +135,27 @@ where
     }
 }
 
+/// Runs `work` with the run entered on the active run chain.
+///
+/// R-3223 T3: the run-scoped hosts — the model gateway (`ask`, `ask_json`,
+/// `ask_stream`, `embed`) and the dispatch primitives (`act`, `tool_call`) —
+/// execute with the run active. That is the dynamic extent in which the run
+/// performs work of its own: the chain is captured when the host spawns its
+/// worker (R-3213 T2), and a tool wrapper invoked by `act`/`tool_call`
+/// dispatches its host calls while the run is on the chain, so the policy seam
+/// can enforce the run's capabilities and its taint policy there.
+///
+/// The program frame between `agent_start` and `agent_end` is deliberately not
+/// entered: a host call the author wrote directly is the author's own action,
+/// while the model-driven path is what a run's authority bounds. A program
+/// without a run therefore behaves exactly as before (invariant I5).
+fn in_run<F>(run_handle: i64, work: F) -> i32
+where
+    F: FnOnce() -> i32,
+{
+    run::in_run_scope(run_handle, work)
+}
+
 pub(crate) fn read_run_and_prompt(
     ctx: *mut SpectraHostCallContext,
     expected: usize,
@@ -404,6 +425,10 @@ pub(crate) fn model_turn_with(
 ) -> Result<provider::ProviderResponse, AgentError> {
     let (spec, sampling) = snapshot(run_handle)?;
     let provider = resolve_provider(&spec)?;
+    // R-3223 T1: every message in the transcript carries its origin before it
+    // reaches the provider; a tool result is untrusted, and observation is
+    // monotone so re-sending the transcript never launders earlier content.
+    crate::taint::observe_transcript(run_handle, &messages)?;
     let fingerprint = request_fingerprint(&spec, sampling, &messages, json_schema.as_deref(), &tools);
 
     let token: Token = match replay::resolve(run_handle, Kind::Model, &fingerprint)? {
@@ -609,13 +634,15 @@ extern "C" fn ask_host(ctx: *mut SpectraHostCallContext) -> i32 {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
     let prompt = strings[0].clone();
-    write_run_task(ctx, run_handle, move || {
-        let response = model_turn(run_handle, &prompt, None)?;
-        let pointer = unsafe { abi::alloc_string(&response.text) };
-        if pointer == 0 {
-            return Err(AgentError::Internal("could not allocate the response".to_string()));
-        }
-        Ok(pointer)
+    in_run(run_handle, || {
+        write_run_task(ctx, run_handle, move || {
+            let response = model_turn(run_handle, &prompt, None)?;
+            let pointer = unsafe { abi::alloc_string(&response.text) };
+            if pointer == 0 {
+                return Err(AgentError::Internal("could not allocate the response".to_string()));
+            }
+            Ok(pointer)
+        })
     })
 }
 
@@ -626,17 +653,19 @@ extern "C" fn ask_json_host(ctx: *mut SpectraHostCallContext) -> i32 {
     };
     let prompt = strings[0].clone();
     let json_schema = strings[1].clone();
-    write_run_task(ctx, run_handle, move || {
-        let response = model_turn(run_handle, &prompt, Some(json_schema.clone()))?;
-        // Provider-side constrained decoding is never trusted: the response
-        // is validated here, independently of what the provider claims.
-        schema::validate(&response.text, &json_schema)
-            .map_err(AgentError::SchemaViolation)?;
-        let pointer = unsafe { abi::alloc_string(&response.text) };
-        if pointer == 0 {
-            return Err(AgentError::Internal("could not allocate the response".to_string()));
-        }
-        Ok(pointer)
+    in_run(run_handle, || {
+        write_run_task(ctx, run_handle, move || {
+            let response = model_turn(run_handle, &prompt, Some(json_schema.clone()))?;
+            // Provider-side constrained decoding is never trusted: the response
+            // is validated here, independently of what the provider claims.
+            schema::validate(&response.text, &json_schema)
+                .map_err(AgentError::SchemaViolation)?;
+            let pointer = unsafe { abi::alloc_string(&response.text) };
+            if pointer == 0 {
+                return Err(AgentError::Internal("could not allocate the response".to_string()));
+            }
+            Ok(pointer)
+        })
     })
 }
 
@@ -646,82 +675,84 @@ extern "C" fn ask_stream_host(ctx: *mut SpectraHostCallContext) -> i32 {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
     let prompt = strings[0].clone();
-    write_run_task(ctx, run_handle, move || {
-        let (spec, sampling) = snapshot(run_handle)?;
-        let provider = resolve_provider(&spec)?;
-        let fingerprint = format!(
-            "stream\0{}",
-            request_fingerprint(
+    in_run(run_handle, || {
+        write_run_task(ctx, run_handle, move || {
+            let (spec, sampling) = snapshot(run_handle)?;
+            let provider = resolve_provider(&spec)?;
+            let fingerprint = format!(
+                "stream\0{}",
+                request_fingerprint(
+                    &spec,
+                    sampling,
+                    &[Message::user(prompt.clone())],
+                    None,
+                    &[]
+                )
+            );
+            let token = match replay::resolve(run_handle, Kind::Model, &fingerprint)? {
+                Resolved::Recorded(record) => {
+                    let (chunks, usage, cost_micros, retries) = stream_from_json(&record.output)?;
+                    run::with_run(run_handle, |state| {
+                        state.record_turn(usage.0, usage.1, cost_micros, retries)
+                    })?;
+                    trace::emit_chat(
+                        &record.run,
+                        &spec.goal,
+                        record.step,
+                        &spec.model,
+                        None,
+                        None,
+                    );
+                    return run::alloc_stream(chunks);
+                }
+                Resolved::Fresh(token) => token,
+            };
+            let request = build_request(
                 &spec,
                 sampling,
-                &[Message::user(prompt.clone())],
+                vec![Message::user(prompt.clone())],
                 None,
-                &[]
-            )
-        );
-        let token = match replay::resolve(run_handle, Kind::Model, &fingerprint)? {
-            Resolved::Recorded(record) => {
-                let (chunks, usage, cost_micros, retries) = stream_from_json(&record.output)?;
-                run::with_run(run_handle, |state| {
-                    state.record_turn(usage.0, usage.1, cost_micros, retries)
-                })?;
-                trace::emit_chat(
-                    &record.run,
-                    &spec.goal,
-                    record.step,
-                    &spec.model,
-                    None,
-                    None,
-                );
-                return run::alloc_stream(chunks);
-            }
-            Resolved::Fresh(token) => token,
-        };
-        let request = build_request(
-            &spec,
-            sampling,
-            vec![Message::user(prompt.clone())],
-            None,
-            Vec::new(),
-        );
-        let stream = match provider.stream(&request) {
-            Ok(stream) => stream,
-            Err(error) => {
-                let _ = run::with_run(run_handle, |state| state.mark_failed());
-                return Err(AgentError::from(error));
-            }
-        };
-        run::with_run(run_handle, |state| {
-            state.record_turn(
-                stream.usage.input_tokens,
-                stream.usage.output_tokens,
-                stream.cost_micros,
-                stream.retries,
-            )
-        })?;
-        replay::commit(
-            run_handle,
-            &token,
-            Some(&fingerprint),
-            &stream_json(&stream),
-            StepUsage {
-                tokens_in: stream.usage.input_tokens,
-                tokens_out: stream.usage.output_tokens,
-                cost_micros: stream.cost_micros,
-            },
-            sampling.seed.unwrap_or(-1),
-            None,
-        )?;
-        let run_id = run::with_run(run_handle, |state| state.run_id.clone())?;
-        trace::emit_chat(
-            &run_id,
-            &spec.goal,
-            token.step,
-            &spec.model,
-            Some(&prompt),
-            None,
-        );
-        run::alloc_stream(stream.chunks)
+                Vec::new(),
+            );
+            let stream = match provider.stream(&request) {
+                Ok(stream) => stream,
+                Err(error) => {
+                    let _ = run::with_run(run_handle, |state| state.mark_failed());
+                    return Err(AgentError::from(error));
+                }
+            };
+            run::with_run(run_handle, |state| {
+                state.record_turn(
+                    stream.usage.input_tokens,
+                    stream.usage.output_tokens,
+                    stream.cost_micros,
+                    stream.retries,
+                )
+            })?;
+            replay::commit(
+                run_handle,
+                &token,
+                Some(&fingerprint),
+                &stream_json(&stream),
+                StepUsage {
+                    tokens_in: stream.usage.input_tokens,
+                    tokens_out: stream.usage.output_tokens,
+                    cost_micros: stream.cost_micros,
+                },
+                sampling.seed.unwrap_or(-1),
+                None,
+            )?;
+            let run_id = run::with_run(run_handle, |state| state.run_id.clone())?;
+            trace::emit_chat(
+                &run_id,
+                &spec.goal,
+                token.step,
+                &spec.model,
+                Some(&prompt),
+                None,
+            );
+            run::alloc_stream(stream.chunks)
+        })
     })
 }
 
@@ -762,8 +793,9 @@ extern "C" fn embed_host(ctx: *mut SpectraHostCallContext) -> i32 {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
     let text = strings[0].clone();
-    write_run_task(ctx, run_handle, move || {
-        let (spec, _sampling) = snapshot(run_handle)?;
+    in_run(run_handle, || {
+        write_run_task(ctx, run_handle, move || {
+            let (spec, _sampling) = snapshot(run_handle)?;
         let provider = resolve_provider(&spec)?;
         let fingerprint = format!("embed\0{}\0{}", spec.model, text);
         let token = match replay::resolve(run_handle, Kind::Embed, &fingerprint)? {
@@ -782,7 +814,8 @@ extern "C" fn embed_host(ctx: *mut SpectraHostCallContext) -> i32 {
             -1,
             None,
         )?;
-        alloc_float_tensor(&vector)
+            alloc_float_tensor(&vector)
+        })
     })
 }
 
@@ -811,15 +844,17 @@ extern "C" fn act_host(ctx: *mut SpectraHostCallContext) -> i32 {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
     let prompt = strings[0].clone();
-    write_run_task(ctx, run_handle, move || {
-        let text = crate::act::act(run_handle, &prompt)?;
-        let pointer = unsafe { abi::alloc_string(&text) };
-        if pointer == 0 {
-            return Err(AgentError::Internal(
-                "could not allocate the answer".to_string(),
-            ));
-        }
-        Ok(pointer)
+    in_run(run_handle, || {
+        write_run_task(ctx, run_handle, move || {
+            let text = crate::act::act(run_handle, &prompt)?;
+            let pointer = unsafe { abi::alloc_string(&text) };
+            if pointer == 0 {
+                return Err(AgentError::Internal(
+                    "could not allocate the answer".to_string(),
+                ));
+            }
+            Ok(pointer)
+        })
     })
 }
 
@@ -832,15 +867,17 @@ extern "C" fn tool_call_host(ctx: *mut SpectraHostCallContext) -> i32 {
     };
     let name = strings[0].clone();
     let arguments = strings[1].clone();
-    write_run_task(ctx, run_handle, move || {
-        let result = crate::act::tool_call(run_handle, &name, &arguments)?;
-        let pointer = unsafe { abi::alloc_string(&result) };
-        if pointer == 0 {
-            return Err(AgentError::Internal(
-                "could not allocate the tool result".to_string(),
-            ));
-        }
-        Ok(pointer)
+    in_run(run_handle, || {
+        write_run_task(ctx, run_handle, move || {
+            let result = crate::act::tool_call(run_handle, &name, &arguments)?;
+            let pointer = unsafe { abi::alloc_string(&result) };
+            if pointer == 0 {
+                return Err(AgentError::Internal(
+                    "could not allocate the tool result".to_string(),
+                ));
+            }
+            Ok(pointer)
+        })
     })
 }
 
@@ -908,6 +945,54 @@ extern "C" fn require_host(ctx: *mut SpectraHostCallContext) -> i32 {
     )
 }
 
+// ── taint hosts (R-3223 T4) ──────────────────────────────────────────────
+
+/// `spectra.std.agent.untrusted(run, value, origin) -> Result<string, Error>`.
+///
+/// Records that `value` entered the run from `origin`; the value is returned
+/// unchanged, so a caller can tag content inline. The ledger entry is keyed by
+/// the value's content digest and journaled.
+extern "C" fn untrusted_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some((run_handle, strings)) = read_run_and_prompt(ctx, 3) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let (value, origin) = (strings[0].clone(), strings[1].clone());
+    let outcome = (|| -> Result<i64, AgentError> {
+        crate::taint::mark_untrusted(run_handle, &value, &origin)?;
+        let pointer = unsafe { abi::alloc_string(&value) };
+        if pointer == 0 {
+            return Err(AgentError::Internal(
+                "could not allocate the untrusted value".to_string(),
+            ));
+        }
+        Ok(pointer)
+    })();
+    write_outcome(ctx, outcome)
+}
+
+/// `spectra.std.agent.trust(run, value, reason) -> Result<string, Error>`.
+///
+/// Declassifies the digest of `value` and returns the value unchanged. The
+/// reason is mandatory and is the audit record; without one the call fails
+/// with a typed `taint_error`.
+extern "C" fn trust_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some((run_handle, strings)) = read_run_and_prompt(ctx, 3) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let (value, reason) = (strings[0].clone(), strings[1].clone());
+    let outcome = (|| -> Result<i64, AgentError> {
+        crate::taint::declassify(run_handle, &value, &reason)?;
+        let pointer = unsafe { abi::alloc_string(&value) };
+        if pointer == 0 {
+            return Err(AgentError::Internal(
+                "could not allocate the declassified value".to_string(),
+            ));
+        }
+        Ok(pointer)
+    })();
+    write_outcome(ctx, outcome)
+}
+
 /// Registers every `spectra.std.agent.*` host function and returns the number
 /// of newly inserted entries.
 pub(crate) fn register() -> usize {
@@ -927,6 +1012,8 @@ pub(crate) fn register() -> usize {
         ("spectra.std.agent.register_tool", register_tool_host as _),
         ("spectra.std.agent.approve", approve_host as _),
         ("spectra.std.agent.require", require_host as _),
+        ("spectra.std.agent.untrusted", untrusted_host as _),
+        ("spectra.std.agent.trust", trust_host as _),
     ] {
         if spectra_runtime::ffi::register_host_function(name, function) {
             inserted += 1;
@@ -980,7 +1067,11 @@ mod tests {
     }
 
     fn spec_json(extra: &str) -> SpectraHostValue {
-        let json = format!(r#"{{"goal":"g","model":"mock/echo","endpoint":"mock:"{extra}}}"#);
+        // `journal:""` disables the run journal: these tests exercise the
+        // gateway, not durability, and must not write into the process cwd.
+        let json = format!(
+            r#"{{"goal":"g","model":"mock/echo","endpoint":"mock:","journal":""{extra}}}"#
+        );
         unsafe { abi::alloc_string(&json) }
     }
 
@@ -997,9 +1088,9 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         spectra_runtime::ffi::clear_host_functions();
         spectra_runtime::register();
-        // Nine R-3211 gateway functions plus the three R-3222 dispatch hosts
-        // and the two R-3217 governance hosts.
-        assert_eq!(register(), 14);
+        // Nine R-3211 gateway functions, the three R-3222 dispatch hosts, the
+        // two R-3217 governance hosts and the two R-3223 taint hosts.
+        assert_eq!(register(), 16);
         guard
     }
 
@@ -1181,7 +1272,7 @@ mod tests {
 
         // An OpenAI-compatible endpoint accepts the seed best-effort only and
         // therefore cannot back a deterministic run.
-        let json = r#"{"goal":"g","model":"gpt-test","endpoint":"https://provider.invalid","seed":5}"#;
+        let json = r#"{"goal":"g","model":"gpt-test","endpoint":"https://provider.invalid","journal":"","seed":5}"#;
         let (status, result) = call(
             "spectra.std.agent.agent_start",
             &[unsafe { abi::alloc_string(json) }],
@@ -1302,7 +1393,7 @@ mod tests {
     #[test]
     fn a_cost_ceiling_fails_closed_at_agent_start_without_a_cost_reporting_provider() {
         let _guard = setup();
-        let json = r#"{"goal":"g","model":"gpt-test","endpoint":"https://provider.invalid","max_cost_micros":5}"#;
+        let json = r#"{"goal":"g","model":"gpt-test","endpoint":"https://provider.invalid","journal":"","max_cost_micros":5}"#;
         let (status, result) = call(
             "spectra.std.agent.agent_start",
             &[unsafe { abi::alloc_string(json) }],
@@ -1313,7 +1404,7 @@ mod tests {
         assert!(message.contains("cost_accounting_unavailable"), "{message}");
         // Without the ceiling the same provider starts normally.
         let json =
-            r#"{"goal":"g","model":"gpt-test","endpoint":"https://provider.invalid"}"#;
+            r#"{"goal":"g","model":"gpt-test","endpoint":"https://provider.invalid","journal":""}"#;
         let (_, result) = call(
             "spectra.std.agent.agent_start",
             &[unsafe { abi::alloc_string(json) }],

@@ -14,10 +14,16 @@ use crate::spec::AgentSpec;
 
 /// One conversation message. Roles are closed because the host never invents
 /// a role the provider did not define.
+///
+/// `tool_name` is carried for provenance only (R-3223 T1): the transcript
+/// origin of a tool result is `tool:<name>`, and the ledger cannot recover the
+/// name once the message has been built. It is never serialized — the wire
+/// shape stays `{role, content}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Message {
     pub role: &'static str,
     pub content: String,
+    pub tool_name: Option<String>,
 }
 
 impl Message {
@@ -25,6 +31,7 @@ impl Message {
         Self {
             role: "user",
             content: content.into(),
+            tool_name: None,
         }
     }
 
@@ -32,16 +39,18 @@ impl Message {
         Self {
             role: "assistant",
             content: content.into(),
+            tool_name: None,
         }
     }
 
-    /// A completed tool result. `name` is accepted for call-site clarity but
-    /// deliberately not stored: the provider-independent `Message` shape is
-    /// `{role, content}`, and the mock keys off the `"tool"` role alone.
-    pub(crate) fn tool(_name: &str, content: impl Into<String>) -> Self {
+    /// A completed tool result. The `name` is kept so the run's taint ledger
+    /// can tag the message `tool:<name>`; providers still see `{role, content}`
+    /// and the mock still keys off the `"tool"` role alone.
+    pub(crate) fn tool(name: &str, content: impl Into<String>) -> Self {
         Self {
             role: "tool",
             content: content.into(),
+            tool_name: Some(name.to_string()),
         }
     }
 }

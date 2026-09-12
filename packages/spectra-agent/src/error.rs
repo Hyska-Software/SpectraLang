@@ -75,6 +75,10 @@ pub(crate) enum AgentError {
     AssertionFailed(String),
     /// The run journal could not be read, written or replayed (R-3217 T1/T2).
     Journal(String),
+    /// A taint ledger operation was rejected (R-3223): an empty or control-
+    /// bearing origin/reason, or a malformed ledger input. A declassification
+    /// without a reason is the audit gap the ledger exists to close.
+    Taint(String),
     /// A bug or an exhausted runtime resource.
     Internal(String),
 }
@@ -101,6 +105,7 @@ impl AgentError {
             Self::CostAccountingUnavailable(_) => "cost_accounting_unavailable",
             Self::AssertionFailed(_) => "assertion_failed",
             Self::Journal(_) => "journal_error",
+            Self::Taint(_) => "taint_error",
             Self::Internal(_) => "internal",
         }
     }
@@ -112,6 +117,7 @@ impl AgentError {
                 ERROR_CODE_INVALID_ARGUMENT
             }
             Self::AssertionFailed(_) => ERROR_CODE_INVALID_ARGUMENT,
+            Self::Taint(_) => ERROR_CODE_INVALID_ARGUMENT,
             Self::UnknownHandle(_) => ERROR_CODE_NOT_FOUND,
             Self::UnknownTool(_) => ERROR_CODE_NOT_FOUND,
             Self::CapabilityDenied(_) => ERROR_CODE_PERMISSION_DENIED,
@@ -144,6 +150,7 @@ impl AgentError {
             Self::CostAccountingUnavailable(_) => "agent_start",
             Self::AssertionFailed(_) => "require",
             Self::Journal(_) => "agent_journal",
+            Self::Taint(_) => "agent_taint",
             Self::Internal(_) => "agent",
         }
     }
@@ -167,6 +174,7 @@ impl AgentError {
             | Self::CostAccountingUnavailable(detail)
             | Self::AssertionFailed(detail)
             | Self::Journal(detail)
+            | Self::Taint(detail)
             | Self::Internal(detail) => detail,
         }
     }

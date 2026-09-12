@@ -2984,6 +2984,7 @@ name = "spectra-agent"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "spectra-contract",
  "spectra-runtime",
 ]
 
@@ -3048,6 +3049,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "spectra-agent",
  "spectra-api",
  "spectra-backend",
  "spectra-compiler",

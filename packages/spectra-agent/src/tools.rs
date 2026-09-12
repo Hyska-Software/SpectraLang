@@ -117,6 +117,14 @@ pub(crate) fn clear() {
     lock().clear();
 }
 
+/// Serializes crate tests that mutate the process-global tool registry.
+///
+/// Shared with the replay tests, which register a counting wrapper: one lock
+/// per process-global resource, so a test in another module cannot clear the
+/// registry while a wrapper is being invoked.
+#[cfg(test)]
+pub(crate) static REGISTRY_TEST_LOCK: Mutex<()> = Mutex::new(());
+
 /// Parses the compiler-emitted JSON array of effect names.
 ///
 /// A malformed document cannot be produced by the compiler (the list is built
@@ -232,10 +240,19 @@ pub(crate) fn invoke(run_handle: i64, name: &str, arguments: &str) -> Result<Str
 /// declared authority, which is exactly the bypass invariant I7 forbids. The
 /// agent's own primitives (`spectra.std.agent.*`) are excluded: a run may
 /// always call the loop that ends it.
+///
+/// The compiler's own machinery is excluded as well (R-3223): the coroutine
+/// ABI and the JSON/format helpers the compiler emits around the author's code
+/// are not effects the author chose, so a tool that compares strings does not
+/// make its spec grant the compiler's helper. See
+/// [`crate::policy::is_compiler_emitted`].
 pub(crate) fn enforce_run_grant(run_handle: i64) -> Result<(), AgentError> {
     let grants = run::with_run(run_handle, |state| state.spec.allow.clone())?;
     for tool in registered() {
         for effect in &tool.effects {
+            if policy::is_compiler_emitted(effect) {
+                continue;
+            }
             if !grants
                 .iter()
                 .any(|grant| policy::grant_matches(grant, effect))
@@ -257,10 +274,8 @@ mod tests {
     use super::*;
 
     /// Serializes tests that mutate the process-global registry.
-    static REGISTRY_LOCK: Mutex<()> = Mutex::new(());
-
     fn with_registry<T>(work: impl FnOnce() -> T) -> T {
-        let _guard = REGISTRY_LOCK
+        let _guard = REGISTRY_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         clear();

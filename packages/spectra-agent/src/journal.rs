@@ -88,7 +88,7 @@ impl Record {
         object
     }
 
-    fn from_json(value: &Value) -> Result<Self, AgentError> {
+    pub(crate) fn from_json(value: &Value) -> Result<Self, AgentError> {
         let object = value
             .as_object()
             .ok_or_else(|| AgentError::Journal("record is not a JSON object".to_string()))?;
@@ -357,6 +357,43 @@ pub(crate) fn run_id_of(path: &Path) -> Option<String> {
     let first = contents.lines().next()?;
     let value: Value = serde_json::from_str(first).ok()?;
     value.get("run").and_then(Value::as_str).map(str::to_string)
+}
+
+/// The journal file path for a run under `dir`, before it exists.
+pub(crate) fn file_path(dir: &Path, run: &str) -> PathBuf {
+    dir.join(file_name(run))
+}
+
+/// Reads a run's journal file, oldest step first.
+///
+/// A missing file is not an error: "the run recorded nothing" is an
+/// observation the eval harness grades, not a failure of the reader. A
+/// malformed line is an error, matching [`Journal::open`]: silently skipping
+/// it would defeat the durability promise.
+pub(crate) fn read_records(dir: &Path, run: &str) -> Result<Vec<Record>, AgentError> {
+    let path = file_path(dir, run);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let contents = fs::read_to_string(&path).map_err(|error| {
+        AgentError::Journal(format!("cannot read journal {}: {error}", path.display()))
+    })?;
+    let mut records = Vec::new();
+    for (index, line) in contents.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let value: Value = serde_json::from_str(line).map_err(|error| {
+            AgentError::Journal(format!(
+                "journal {} line {} is not valid JSON: {error}",
+                path.display(),
+                index + 1
+            ))
+        })?;
+        records.push(Record::from_json(&value)?);
+    }
+    records.sort_by_key(|record| record.step);
+    Ok(records)
 }
 
 #[cfg(test)]

@@ -96,50 +96,18 @@ impl ASTLowering {
                         }
                     }
 
-                    // Special case: io.print / io.println / io.eprint / io.eprintln
-                    // use (type_tag, value) pairs so the runtime can dispatch the
-                    // correct formatter per argument.
-                    if descriptor.runtime_name == "spectra.std.io.print"
-                        || descriptor.runtime_name == "spectra.std.io.println"
-                        || descriptor.runtime_name == "spectra.std.io.eprint"
-                        || descriptor.runtime_name == "spectra.std.io.eprintln"
-                    {
-                        let mut paired: Vec<Value> = Vec::with_capacity(arg_values.len() * 2);
-                        for (arg_val, arg_expr) in arg_values.iter().zip(arguments.iter()) {
-                            let tag: i64 = match self.infer_expr_ir_type(arg_expr) {
-                                IRType::String => 1, // PRINT_TAG_STR
-                                IRType::Bool => 2,   // PRINT_TAG_BOOL
-                                IRType::Float => 3,  // PRINT_TAG_FLOAT
-                                _ => 0,              // PRINT_TAG_INT
-                            };
-                            let tag_val = self.builder.build_const_int(ir_func, tag);
-                            paired.push(tag_val);
-                            paired.push(*arg_val);
-                        }
-                        let result_value = self.builder.build_typed_host_call(
-                            ir_func,
-                            descriptor.runtime_name.to_string(),
-                            paired,
-                            descriptor.return_type.clone(),
-                            descriptor.returns_value,
-                        );
-                        return if descriptor.returns_value {
-                            self.require_value(
-                                result_value,
-                                "I/O host call did not produce its declared result",
-                            )
-                        } else {
-                            // Void host calls (e.g. print as a statement) have
-                            // no observable value; any use of one is untyped
-                            // at the semantic level, so this never surfaces.
-                            result_value.unwrap_or_else(|| self.builder.build_const_int(ir_func, 0))
-                        };
-                    }
-
+                    // Polymorphic io print family arguments are (type_tag, value)
+                    // pairs; every other host call takes its raw arguments.
+                    let call_args = self.host_call_arguments(
+                        &descriptor.runtime_name,
+                        arg_values,
+                        arguments,
+                        ir_func,
+                    );
                     let result_value = self.builder.build_typed_host_call(
                         ir_func,
                         descriptor.runtime_name.to_string(),
-                        arg_values.clone(),
+                        call_args,
                         descriptor.return_type.clone(),
                         descriptor.returns_value,
                     );
@@ -149,7 +117,9 @@ impl ASTLowering {
                             "standard-library host call did not produce its declared result",
                         )
                     } else {
-                        // Same as above: discarded Void results keep a plain zero.
+                        // Discarded Void results keep a plain zero (unobservable;
+                        // any use is untyped at the semantic level), and print
+                        // family calls are Void.
                         result_value.unwrap_or_else(|| self.builder.build_const_int(ir_func, 0))
                     };
                 }

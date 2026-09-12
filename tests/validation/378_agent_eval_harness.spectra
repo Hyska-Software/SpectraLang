@@ -1,0 +1,198 @@
+module agent_eval_harness
+
+// R-3220 evaluation-harness fixture. The harness runs this program once per
+// case attempt:
+//
+//   spectralang run tests/validation/378_agent_eval_harness.spectra -- <input> <run_id> <journal>
+//
+// and grades two observable records: the run journal
+// (`<journal>/<run_id>.jsonl`) and the last non-empty stdout line, which must
+// be the `agent_end` report. The program therefore performs exactly one run,
+// selected by `input`, and prints that run's report.
+//
+// The scenarios are the four behaviors the example suite measures:
+//   approval  — a denied approval is journaled and the run continues,
+//   refusal   — the denial refuses the action and no tool runs,
+//   budget    — the `max_tool_calls` ceiling denies the second dispatch,
+//   schema    — `ask_json` returns a schema-shaped document.
+//
+// A non-zero exit means the fixture's own self-check failed: the platform did
+// not behave as the case assumes, which must surface as a failed attempt
+// rather than as a silently different grading.
+
+import std.agent
+import std.env as env
+import std.error as error
+from std.io import println
+import std.option as option
+import std.string as str
+
+const GOAL = "agent-eval"
+const WRITE_ACTION = "spectra.std.fs.fs_write"
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[agent_tool("Adds two integers")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+// One forwarded program argument; absent arguments are the empty string.
+func arg(index: int) returns string {
+    let value = env.env_arg(index)
+    if option.is_some(value) {
+        return option.option_unwrap(value)
+    }
+    return ""
+}
+
+// `journal_payloads` is on so the harness can read which action was approved
+// and which tools ran; the journal's digests alone would not name them.
+//
+// `allow` stays empty: the scenarios only call the run's own primitives, and
+// a programming error in the harness must not be admitted by a grant.
+func spec_unbounded(run_id: string, journal: string) returns string {
+    return "{\"goal\":\"" + GOAL + "\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":11,\"journal\":\"" + journal + "\",\"journal_payloads\":true,\"run_id\":\"" + run_id + "\"}"
+}
+
+func spec_one_tool_call(run_id: string, journal: string) returns string {
+    return "{\"goal\":\"" + GOAL + "\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":1,\"untrusted\":\"approve\",\"seed\":11,\"journal\":\"" + journal + "\",\"journal_payloads\":true,\"run_id\":\"" + run_id + "\"}"
+}
+
+func schema_json() returns string {
+    return "{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"},\"label\":{\"type\":\"string\"}},\"required\":[\"count\",\"label\"],\"additionalProperties\":false}"
+}
+
+// Ends the run, prints the report the harness grades, and returns 0.
+func finish(run: Run) returns int {
+    let ended = agent_end(run)
+    if let Result::Ok(report) = ended {
+        println(report)
+        return 0
+    }
+    return 20
+}
+
+// A denied approval is journaled as an approval step, and the run is free to
+// continue with work the denial did not cover.
+func scenario_approval(run_id: string, journal: string) returns int {
+    let started = agent_start(spec_unbounded(run_id, journal))
+    if let Result::Ok(run) = started {
+        let approval = approve(run, WRITE_ACTION)
+        if let Result::Ok(allowed) = approval {
+            // No approver is attached in a fresh process: the decision must be
+            // a deny, never an implicit allow.
+            if allowed == true {
+                return 11
+            }
+        } else {
+            return 12
+        }
+        let script = "spectra:tool=add {\"a\":20,\"b\":22}\nspectra:final=approval recorded"
+        let answer = block_on(act(run, script))
+        if let Result::Ok(text) = answer {
+            if text != "approval recorded" {
+                return 13
+            }
+        } else {
+            return 14
+        }
+        return finish(run)
+    }
+    return 10
+}
+
+// The denial refuses the action: the run records the refusal as a failed
+// assertion and performs no tool call at all.
+func scenario_refusal(run_id: string, journal: string) returns int {
+    let started = agent_start(spec_unbounded(run_id, journal))
+    if let Result::Ok(run) = started {
+        let approval = approve(run, WRITE_ACTION)
+        if let Result::Ok(allowed) = approval {
+            if allowed == true {
+                return 11
+            }
+        } else {
+            return 12
+        }
+        let refused = require(run, false, "refused: fs_write was not approved")
+        if let Result::Err(refusal) = refused {
+            let message = error.message(refusal)
+            if str.contains(message, "refused") == false {
+                return 13
+            }
+        } else {
+            return 14
+        }
+        return finish(run)
+    }
+    return 10
+}
+
+// The declared `max_tool_calls` ceiling denies the second dispatch: the first
+// call is journaled, the second never reaches the tool, and the run reports
+// which ceiling it hit.
+func scenario_budget(run_id: string, journal: string) returns int {
+    let started = agent_start(spec_one_tool_call(run_id, journal))
+    if let Result::Ok(run) = started {
+        let script = "spectra:tool=add {\"a\":1,\"b\":1}\nspectra:tool=add {\"a\":2,\"b\":2}\nspectra:final=never reached"
+        let answer = block_on(act(run, script))
+        if let Result::Ok(done) = answer {
+            // The ceiling must have denied the second call, so `act` cannot
+            // have produced a final answer.
+            return 11
+        }
+        return finish(run)
+    }
+    return 10
+}
+
+// `ask_json` returns the schema-shaped document the mock scripts for
+// `spectra:json`; the harness re-validates it against the case's schema.
+func scenario_schema(run_id: string, journal: string) returns int {
+    let started = agent_start(spec_unbounded(run_id, journal))
+    if let Result::Ok(run) = started {
+        let document = block_on(ask_json(run, "please spectra:json", schema_json()))
+        if let Result::Ok(text) = document {
+            if str.contains(text, "\"count\"") == false {
+                return 11
+            }
+        } else {
+            return 12
+        }
+        return finish(run)
+    }
+    return 10
+}
+
+public func main() returns int {
+    let input = arg(1)
+    let run_id = arg(2)
+    let journal = arg(3)
+    if input == "" {
+        return 2
+    }
+    if run_id == "" {
+        return 3
+    }
+    if journal == "" {
+        return 4
+    }
+    if input == "approval" {
+        return scenario_approval(run_id, journal)
+    }
+    if input == "refusal" {
+        return scenario_refusal(run_id, journal)
+    }
+    if input == "budget" {
+        return scenario_budget(run_id, journal)
+    }
+    if input == "schema" {
+        return scenario_schema(run_id, journal)
+    }
+    return 5
+}

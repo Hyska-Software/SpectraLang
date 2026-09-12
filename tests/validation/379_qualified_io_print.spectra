@@ -1,0 +1,42 @@
+module qualified_io_print
+
+// Regression: qualified and aliased std.io print calls (`io.println(x)` and
+// `std.io.println(x)`) are parsed as method calls, so they lower through the
+// method-call path. That path emitted the raw argument while the runtime
+// consumes (type_tag, value) pairs, so every value printed as nothing. The
+// print host calls must be shaped identically on both lowering paths.
+
+import std.io as io
+from std.io import println
+
+// Each print below must lower to one host call carrying a (type_tag, value)
+// pair. The program cannot observe stdout, so it asserts on the same operands
+// it prints; the argument shape is pinned by the midend lowering test
+// `qualified_io_print_pairs_type_tags_with_arguments`.
+public func main() returns int {
+    let name = "HELLO"
+    let number = 40 + 2
+    let flag = 1 < 2
+
+    io.println(name)
+    io.println(number)
+    io.println(flag)
+    io.print("alias:")
+    io.println(number)
+
+    std.io.println("qualified")
+    io.eprintln("stderr")
+    println("direct")
+
+    if name != "HELLO" {
+        return 1
+    }
+    if number != 42 {
+        return 2
+    }
+    if flag != true {
+        return 3
+    }
+
+    return 0
+}

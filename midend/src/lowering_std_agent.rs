@@ -143,6 +143,15 @@ pub(crate) fn lookup_std_host_group_agent(
             "spectra.std.agent.require",
             builtin_result_ir_type(IRType::Bool),
         )),
+        // ── taint (sync; R-3223) ─────────────────────────────────────────
+        ("agent", "untrusted") => Some(agent_descriptor(
+            "spectra.std.agent.untrusted",
+            builtin_result_ir_type(IRType::String),
+        )),
+        ("agent", "trust") => Some(agent_descriptor(
+            "spectra.std.agent.trust",
+            builtin_result_ir_type(IRType::String),
+        )),
         _ => None,
     }
 }

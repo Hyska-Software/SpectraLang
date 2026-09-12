@@ -381,6 +381,42 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/375_agent_act.spectra"
 
 [[entry]]
+path = "std.agent.trust"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string, string) -> Result<string, Error>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }, { name = "arg2", ty = "string" }]
+returns = "Result<string, Error>"
+ir_return = "Result<string,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.trust"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/377_agent_taint.spectra"
+
+[[entry]]
+path = "std.agent.untrusted"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string, string) -> Result<string, Error>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }, { name = "arg2", ty = "string" }]
+returns = "Result<string, Error>"
+ir_return = "Result<string,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.untrusted"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/377_agent_taint.spectra"
+
+[[entry]]
 path = "std.api"
 kind = "module"
 namespace = "std"

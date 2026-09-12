@@ -187,9 +187,15 @@ fn invoke_host_function(
 
 /// The single policy decision point for generic host dispatch (ADR 0016 D3).
 ///
-/// Consults the active capability policy hook once; on [`PolicyDecision::Deny`]
-/// it records the reason and returns [`HOST_STATUS_DENIED`] without invoking
-/// the host function. Otherwise it delegates to [`invoke_host_function`].
+/// Consults the active capability policy hook once with the host-call name and
+/// the dispatch arguments; on [`PolicyDecision::Deny`] it records the reason
+/// and returns [`HOST_STATUS_DENIED`] without invoking the host function.
+/// Otherwise it delegates to [`invoke_host_function`].
+///
+/// The argument borrow handed to the hook is a view over the caller's own
+/// buffer (the same one the host function receives), so no copy is made and no
+/// allocation is introduced on the dispatch path; the borrow must not outlive
+/// the call (documented on [`crate::agent::policy_hook`]).
 ///
 /// It must never panic: denial is a status like any other, including inside
 /// the cached batch dispatcher's outer `catch_unwind`.
@@ -201,8 +207,15 @@ pub(crate) fn dispatch_generic(
     results_ptr: *mut SpectraHostValue,
     result_len: usize,
 ) -> i32 {
+    // `arg_len == 0` (or a null pointer) is the documented empty argument list,
+    // so the empty slice is never formed from a dangling pointer.
+    let args: &[SpectraHostValue] = if arg_len == 0 || args_ptr.is_null() {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(args_ptr, arg_len) }
+    };
     if let crate::agent::policy_hook::PolicyDecision::Deny { reason } =
-        crate::agent::policy_hook::evaluate(name)
+        crate::agent::policy_hook::evaluate(name, args)
     {
         crate::agent::policy_hook::record_denial(&reason);
         return HOST_STATUS_DENIED;

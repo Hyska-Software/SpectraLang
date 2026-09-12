@@ -36,6 +36,12 @@ pub(crate) enum Kind {
     Approval,
     /// One `require` assertion outcome.
     Assertion,
+    /// One provenance or declassification entry (R-3223 T1): the ledger's
+    /// audit trail.
+    Taint,
+    /// One gated sink decision (R-3223 T3): `allow` or `deny` under the run's
+    /// `untrusted` policy.
+    TaintDecision,
 }
 
 impl Kind {
@@ -46,6 +52,8 @@ impl Kind {
             Self::Tool => "tool",
             Self::Approval => "approval",
             Self::Assertion => "assertion",
+            Self::Taint => "taint",
+            Self::TaintDecision => "taint_decision",
         }
     }
 }
@@ -290,6 +298,12 @@ mod tests {
     #[test]
     fn a_crashed_run_resumes_without_repeating_a_completed_effect() {
         let _guard = crate::GLOBAL_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // The tool registry is a second process-global resource; its test lock
+        // is shared with the registry tests, so neither can clear it while the
+        // other holds a registered wrapper.
+        let _registry = crate::tools::REGISTRY_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         spectra_runtime::ffi::clear_host_functions();

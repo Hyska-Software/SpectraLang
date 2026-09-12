@@ -15,3 +15,8 @@ crate-type = ["rlib"]
 # `spectra-runtime`, so this adds a direct edge, not a new crate.
 serde_json = "1.0"
 spectra-runtime = { path = "../../runtime" }
+# The contract catalog is the single source of truth for the sink
+# classification (R-3223 T2): the taint gate derives its sink set from
+# `spectra_contract::catalog()` rather than from a list maintained here, so a
+# namespace cannot drift out of the classification.
+spectra-contract = { path = "../spectra-contract" }

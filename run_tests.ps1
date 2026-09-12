@@ -3026,6 +3026,16 @@ if ($r3217AgentJournal.Status -eq "PASSOU") {
 $results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3217_agent_journal"; Status = $r3217AgentJournal.Status; Detalhe = $r3217AgentJournal.Detail }
 
 Write-Host ""
+Write-Host "--- R-3223 message and handle taint ---" -ForegroundColor Yellow
+$r3223AgentTaint = Invoke-HostCommand -name "validate_r3223_agent_taint" -fileName "python" -arguments @("scripts\validate_r3223_agent_taint.py") -workingDir (Get-Location).Path
+if ($r3223AgentTaint.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3223_agent_taint"; Status = $r3223AgentTaint.Status; Detalhe = $r3223AgentTaint.Detail }
+
+Write-Host ""
 Write-Host "--- R-3222 tool loop act and governed tool dispatch ---" -ForegroundColor Yellow
 $r3222AgentAct = Invoke-HostCommand -name "validate_r3222_agent_act" -fileName "python" -arguments @("scripts\validate_r3222_agent_act.py") -workingDir (Get-Location).Path
 if ($r3222AgentAct.Status -eq "PASSOU") {
@@ -3034,6 +3044,26 @@ if ($r3222AgentAct.Status -eq "PASSOU") {
     $totalFailed++
 }
 $results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3222_agent_act"; Status = $r3222AgentAct.Status; Detalhe = $r3222AgentAct.Detail }
+
+Write-Host ""
+Write-Host "--- R-3220 evaluation harness and agent eval ---" -ForegroundColor Yellow
+$r3220AgentEval = Invoke-HostCommand -name "validate_r3220_agent_eval" -fileName "python" -arguments @("scripts\validate_r3220_agent_eval.py") -workingDir (Get-Location).Path
+if ($r3220AgentEval.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3220_agent_eval"; Status = $r3220AgentEval.Status; Detalhe = $r3220AgentEval.Detail }
+
+Write-Host ""
+Write-Host "--- R-3223 message and handle taint ---" -ForegroundColor Yellow
+$r3223AgentTaint = Invoke-HostCommand -name "validate_r3223_agent_taint" -fileName "python" -arguments @("scripts\validate_r3223_agent_taint.py") -workingDir (Get-Location).Path
+if ($r3223AgentTaint.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3223_agent_taint"; Status = $r3223AgentTaint.Status; Detalhe = $r3223AgentTaint.Detail }
 
 # ---------------------------------------------------------------------------
 # Resumo

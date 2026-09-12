@@ -9,13 +9,15 @@
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::Instant;
 
+use spectra_runtime::agent::run_context;
 use spectra_runtime::handles::{HandleError, HandleId, HandleKind, HandleTable};
 use spectra_runtime::stdlib::CancellationToken;
 
 use crate::budget::{Budget, Ceiling};
 use crate::error::AgentError;
 use crate::journal::Journal;
-use crate::spec::AgentSpec;
+use crate::spec::{AgentSpec, UntrustedPolicy};
+use crate::taint::Ledger;
 
 /// Live state of one `agent_start` -> `agent_end` run.
 pub(crate) struct RunState {
@@ -52,6 +54,8 @@ pub(crate) struct RunState {
     /// Cancellation tokens of this run's in-flight background tasks, removed
     /// by identity when their task finishes.
     pub tasks: Vec<CancellationToken>,
+    /// Provenance of everything that entered the run (R-3223 T1).
+    pub taint: Ledger,
 }
 
 impl RunState {
@@ -74,6 +78,7 @@ impl RunState {
             ceiling: None,
             cancelled: false,
             tasks: Vec::new(),
+            taint: Ledger::default(),
         }
     }
 
@@ -168,6 +173,21 @@ pub(crate) struct ChunkStreamState {
     pub cursor: usize,
 }
 
+/// What the taint gate needs to know about one live run (R-3223 T3).
+pub(crate) struct RunTaint {
+    /// Raw handle, so the gate can journal its decision and consult the
+    /// approval registry for the run that made the call.
+    pub handle: i64,
+    pub run_id: String,
+    pub goal: String,
+    /// The run's `AgentSpec.untrusted` policy.
+    pub policy: UntrustedPolicy,
+    /// Whether any ledger entry is still untrusted.
+    pub holds_untrusted: bool,
+    /// Origins of the untrusted entries (deduplicated), for the denial text.
+    pub untrusted_origins: Vec<String>,
+}
+
 fn lock<T>(mutex: &'static Mutex<T>) -> MutexGuard<'static, T> {
     mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
@@ -240,6 +260,24 @@ pub(crate) fn take_run(handle: i64) -> Result<RunState, AgentError> {
     table.remove(id).map_err(|error| unknown(handle, error))
 }
 
+/// Runs `work` with `run_handle` entered on the active run chain.
+///
+/// This is how a run becomes *active* for the single policy seam (ADR 0016
+/// D3/D5): the chain is pushed, not replaced, so a nested run stacks on its
+/// enclosing run and can only narrow authority.
+///
+/// The run-scoped host calls enter it for their dynamic extent — the model
+/// gateway, the dispatch primitives and the taint ledger — which is where the
+/// run executes work of its own (a tool wrapper's host calls, work it spawns).
+/// The program frame between `agent_start` and `agent_end` is deliberately not
+/// entered: a host call the author wrote directly is the author's own action,
+/// while the model-driven path is what a run's authority bounds. A program
+/// without a run therefore behaves exactly as before (invariant I5).
+pub(crate) fn in_run_scope<T>(run_handle: i64, work: impl FnOnce() -> T) -> T {
+    let _guard = run_context::push(run_handle as u64);
+    work()
+}
+
 /// Number of live runs; the policy hook is cleared when this reaches zero.
 pub(crate) fn live_run_count() -> usize {
     lock(runs()).len()
@@ -269,6 +307,26 @@ pub(crate) fn allow_for_raw_id(raw: u64) -> Option<Vec<String>> {
     }
     let table = lock(runs());
     table.get(id).ok().map(|state| state.spec.allow.clone())
+}
+
+/// Taint state of a raw run identifier, if it is a live run.
+///
+/// Used by [`crate::taint::gate`] for each identifier on the active run chain.
+pub(crate) fn taint_for_raw_id(raw: u64) -> Option<RunTaint> {
+    let id = HandleId::from_raw(raw as i64).ok()?;
+    if id.kind() != HandleKind::AgentRun {
+        return None;
+    }
+    let table = lock(runs());
+    let state = table.get(id).ok()?;
+    Some(RunTaint {
+        handle: raw as i64,
+        run_id: state.run_id.clone(),
+        goal: state.spec.goal.clone(),
+        policy: state.spec.untrusted,
+        holds_untrusted: state.taint.holds_untrusted(),
+        untrusted_origins: state.taint.untrusted_origins(),
+    })
 }
 
 /// Allocates a chunk stream and returns its raw handle.
@@ -381,5 +439,34 @@ mod tests {
         assert!(allow_for_raw_id(0).is_none());
         take_run(handle).expect("end");
         assert!(allow_for_raw_id(handle as u64).is_none());
+    }
+
+    /// The run scope is what makes host calls the run performs attributable to
+    /// it; entering is a push, so nested runs stack and cannot widen authority.
+    #[test]
+    fn the_run_scope_activates_the_run_for_its_dynamic_extent() {
+        let handle = run();
+        assert!(run_context::current_chain().is_empty());
+        let outer = run();
+        in_run_scope(handle, || {
+            assert_eq!(run_context::current_chain(), vec![handle as u64]);
+            in_run_scope(outer, || {
+                assert_eq!(
+                    run_context::current_chain(),
+                    vec![handle as u64, outer as u64]
+                );
+                let taint = taint_for_raw_id(outer as u64).expect("live run");
+                assert!(!taint.holds_untrusted);
+                assert_eq!(taint.policy, UntrustedPolicy::Approve);
+            });
+            assert_eq!(run_context::current_chain(), vec![handle as u64]);
+        });
+        assert!(
+            run_context::current_chain().is_empty(),
+            "leaving the scope must restore the caller's chain"
+        );
+        take_run(handle).expect("end");
+        take_run(outer).expect("end");
+        assert!(taint_for_raw_id(handle as u64).is_none());
     }
 }

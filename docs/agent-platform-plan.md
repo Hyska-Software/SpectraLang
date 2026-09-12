@@ -232,6 +232,17 @@ Adaptations recorded while implementing (they refine the surface, not the guaran
     adapters (`R-3218`/`R-3219`) reuse one governed path. It charges the tool-call budget
     before invoking and returns the tool's JSON result or a typed error. The count of
     free functions is 20 with it.
+18. **The run context is active for the dynamic extent of run-scoped hosts, not from
+    `agent_start` onward.** Entering the run at `agent_start` made every author-written
+    host call inside that window require a grant, which broke the existing suite: the
+    compiler's own machinery (`spectra.async.task.block_on`, JSON marshalling, pure
+    string/convert helpers) would have to be granted by every spec. The run is therefore
+    active while `ask`, `ask_json`, `ask_stream`, `embed`, `act` and `tool_call` execute,
+    so model-driven effects and tool wrappers are bounded by the run's ceiling while the
+    program's own frame keeps pre-phase behaviour (I5). Compiler-emitted namespaces
+    (`spectra.async.`, `spectra.api.json.`, `spectra.std.convert.`, `spectra.std.string.`)
+    are exempt from grants as an explicit, documented exception list — not a weakened
+    default; ADR 0016's rule is otherwise unchanged.
 
 ### 2.3 Verified substrate (exists today)
 

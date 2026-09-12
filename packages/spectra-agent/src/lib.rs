@@ -5,7 +5,9 @@
 //! adds provenance-carrying memory (`remember`/`recall`), R-3216 adds
 //! budget accounting, cooperative cancellation and `budget_remaining`, and
 //! R-3217 adds the durable journal with replay, human approval, governed
-//! assertions and the OpenTelemetry GenAI span seam. This crate is an `rlib`
+//! assertions and the OpenTelemetry GenAI span seam, and R-3223 adds the
+//! message/handle taint ledger with `untrusted`/`trust` and the sink gate at
+//! the dispatch seam. This crate is an `rlib`
 //! aggregated by `spectra_api::register` (see
 //! `packages/spectra-api/src/api_registration.rs`): it declares no staticlib,
 //! no `#[no_mangle]` symbol, and no linker entry.
@@ -17,6 +19,7 @@ mod assert;
 mod budget;
 mod digest;
 mod error;
+mod eval;
 mod hosts;
 mod journal;
 mod memory;
@@ -26,11 +29,16 @@ mod replay;
 mod run;
 mod schema;
 mod spec;
+mod taint;
 mod token;
 mod tools;
 mod trace;
 
 pub use approval::{set_approver, ApprovalRequest, Approver, Decision};
+pub use eval::{
+    run_suite, Baseline, BaselineStatus, CaseExecution, CaseExecutor, CaseInvocation, EvalSuite,
+    GraderKind, Regression, SuiteReport,
+};
 pub use provider::transport::{
     clear_http_transport, set_http_transport, HttpTransport, TransportResponse,
 };
@@ -65,6 +73,12 @@ pub const APPROVE_HOST_CALL: &str = "spectra.std.agent.approve";
 /// Runtime host-call name the midend lowers `std.agent.require` to.
 pub const REQUIRE_HOST_CALL: &str = "spectra.std.agent.require";
 
+/// Runtime host-call name the midend lowers `std.agent.untrusted` to.
+pub const UNTRUSTED_HOST_CALL: &str = "spectra.std.agent.untrusted";
+
+/// Runtime host-call name the midend lowers `std.agent.trust` to.
+pub const TRUST_HOST_CALL: &str = "spectra.std.agent.trust";
+
 /// Register this crate's host functions into the process-wide runtime
 /// registry and return the number of newly inserted entries.
 pub fn register() -> usize {
@@ -91,7 +105,12 @@ mod tests {
         spectra_runtime::ffi::clear_host_functions();
         let first = register();
         let second = register();
-        assert_eq!(first, 17, "token_count + the eight R-3211 host functions + remember/recall + budget_remaining + act/tool_call/register_tool + approve/require");
+        assert_eq!(
+            first, 19,
+            "token_count + the eight R-3211 host functions + remember/recall + \
+             budget_remaining + act/tool_call/register_tool + approve/require + \
+             untrusted/trust"
+        );
         assert_eq!(second, 0);
     }
 }

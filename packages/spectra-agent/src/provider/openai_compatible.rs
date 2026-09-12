@@ -268,7 +268,16 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     /// Serializes tests that mutate the process-global transport slot.
-    static TRANSPORT_LOCK: Mutex<()> = Mutex::new(());
+    ///
+    /// This is the crate-wide global-state lock, not a module-local one: the
+    /// transport (like the host registry) is process-global, and `hosts` /
+    /// `replay` tests install their own transports. A module-local lock would
+    /// let two tests own the slot at once.
+    fn transport_lock() -> std::sync::MutexGuard<'static, ()> {
+        crate::GLOBAL_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     struct ScriptedTransport {
         status: i64,
@@ -332,7 +341,7 @@ mod tests {
 
     #[test]
     fn parses_a_well_formed_chat_completion() {
-        let _guard = TRANSPORT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = transport_lock();
         clear_http_transport();
         let calls = ScriptedTransport::install(
             200,
@@ -357,7 +366,7 @@ mod tests {
 
     #[test]
     fn a_non_idempotent_request_is_not_retried() {
-        let _guard = TRANSPORT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = transport_lock();
         clear_http_transport();
         let calls = ScriptedTransport::install(503, "unavailable");
         let error = provider().complete(&request(None)).expect_err("http error");
@@ -368,7 +377,7 @@ mod tests {
 
     #[test]
     fn a_seeded_request_retries_up_to_the_bound() {
-        let _guard = TRANSPORT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = transport_lock();
         clear_http_transport();
         let calls = ScriptedTransport::install(500, "boom");
         let error = provider().complete(&request(Some(3))).expect_err("http error");
@@ -379,7 +388,7 @@ mod tests {
 
     #[test]
     fn a_missing_transport_fails_closed() {
-        let _guard = TRANSPORT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = transport_lock();
         clear_http_transport();
         let error = provider().complete(&request(None)).expect_err("no transport");
         assert!(matches!(error, ProviderError::Transport(_)));
@@ -388,7 +397,7 @@ mod tests {
 
     #[test]
     fn parses_a_tool_call_response_without_text_content() {
-        let _guard = TRANSPORT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = transport_lock();
         clear_http_transport();
         let calls = ScriptedTransport::install(
             200,
@@ -415,7 +424,7 @@ mod tests {
 
     #[test]
     fn a_message_with_neither_content_nor_tool_calls_is_invalid() {
-        let _guard = TRANSPORT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = transport_lock();
         clear_http_transport();
         ScriptedTransport::install(200, r#"{"choices":[{"message":{"role":"assistant"}}]}"#);
         let error = provider().complete(&request(None)).expect_err("invalid");
@@ -446,7 +455,7 @@ mod tests {
 
     #[test]
     fn json_schema_and_seed_reach_the_request_body() {
-        let _guard = TRANSPORT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = transport_lock();
         let mut request = request(Some(9));
         request.json_schema = Some(r#"{"type":"object","required":["count"]}"#.to_string());
         let body = provider().request_body(&request);

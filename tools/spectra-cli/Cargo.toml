@@ -25,6 +25,7 @@ spectra-compiler = { path = "../../compiler" }
 spectra-midend = { path = "../../midend" }
 spectra-backend = { path = "../../backend" }
 spectra-api = { path = "../../packages/spectra-api" }
+spectra-agent = { path = "../../packages/spectra-agent" }
 spectra-db = { path = "../../packages/spectra-db" }
 spectra-runtime = { path = "../../runtime" }
 toml = "0.8"

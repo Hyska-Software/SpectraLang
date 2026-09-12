@@ -1,0 +1,73 @@
+{
+  "schema": "spectralang.agent-eval-suite.v1",
+  "repeat": 2,
+  "cases": [
+    {
+      "name": "approval-presence",
+      "program": "../../../tests/validation/378_agent_eval_harness.spectra",
+      "input": "approval",
+      "run_id": "eval-378-approval",
+      "journal": "../../../.spectra/r3220-eval",
+      "graders": ["approval", "tool_set", "budget"],
+      "expectations": {
+        "approval_required": ["spectra.std.fs.fs_write"],
+        "approval_denied": ["spectra.std.fs.fs_write"],
+        "tool_subset": ["add"],
+        "tool_required": ["add"],
+        "budget": {"max_tool_calls": 1, "status": "completed"}
+      }
+    },
+    {
+      "name": "refusal-blocks-the-effect",
+      "program": "../../../tests/validation/378_agent_eval_harness.spectra",
+      "input": "refusal",
+      "run_id": "eval-378-refusal",
+      "journal": "../../../.spectra/r3220-eval",
+      "graders": ["refusal", "tool_set", "budget"],
+      "expectations": {
+        "refusal": {
+          "expected": true,
+          "action": "spectra.std.fs.fs_write",
+          "forbidden_tools": ["fs_write"]
+        },
+        "tool_subset": [],
+        "budget": {"max_tool_calls": 0, "status": "failed"}
+      }
+    },
+    {
+      "name": "budget-ceiling",
+      "program": "../../../tests/validation/378_agent_eval_harness.spectra",
+      "input": "budget",
+      "run_id": "eval-378-budget",
+      "journal": "../../../.spectra/r3220-eval",
+      "graders": ["budget", "tool_set"],
+      "expectations": {
+        "budget": {"max_tool_calls": 1, "status": "budget_exceeded", "exceeded": true},
+        "tool_subset": ["add"],
+        "tool_required": ["add"]
+      }
+    },
+    {
+      "name": "schema-conformance",
+      "program": "../../../tests/validation/378_agent_eval_harness.spectra",
+      "input": "schema",
+      "run_id": "eval-378-schema",
+      "journal": "../../../.spectra/r3220-eval",
+      "repeat": 3,
+      "graders": ["schema", "tool_set", "budget"],
+      "expectations": {
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "count": {"type": "integer"},
+            "label": {"type": "string"}
+          },
+          "required": ["count", "label"],
+          "additionalProperties": false
+        },
+        "tool_subset": [],
+        "budget": {"status": "completed"}
+      }
+    }
+  ]
+}

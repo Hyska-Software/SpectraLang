@@ -603,7 +603,7 @@ mod tests {
     /// Installs an evaluator that denies exactly `denied` and allows every
     /// other host name. Callers must hold `test_guard()` and clear it after.
     fn deny_only(denied: &'static str) {
-        crate::agent::policy_hook::set_policy_evaluator(move |name| {
+        crate::agent::policy_hook::set_policy_evaluator(move |name, _args| {
             if name == denied {
                 crate::agent::policy_hook::PolicyDecision::Deny {
                     reason: format!("capability not granted for {name}"),

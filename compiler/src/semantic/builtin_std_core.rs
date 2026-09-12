@@ -410,6 +410,26 @@ pub(crate) fn make_std_agent() -> ModuleExports {
             result_of(Type::Bool),
         ),
     );
+    // untrusted(run: Run, value: string, origin: string) -> Result<string, Error>
+    // (sync; R-3223). Records that `value` entered the run from `origin` and
+    // returns the value unchanged, so a caller can tag content inline.
+    exports.functions.insert(
+        "untrusted".to_string(),
+        pub_fn(
+            vec![run.clone(), Type::String, Type::String],
+            result_of(Type::String),
+        ),
+    );
+    // trust(run: Run, value: string, reason: string) -> Result<string, Error>
+    // (sync; R-3223). Declassifies the digest of `value` and returns it
+    // unchanged; the reason is mandatory and is the audit record.
+    exports.functions.insert(
+        "trust".to_string(),
+        pub_fn(
+            vec![run.clone(), Type::String, Type::String],
+            result_of(Type::String),
+        ),
+    );
 
     exports
 }

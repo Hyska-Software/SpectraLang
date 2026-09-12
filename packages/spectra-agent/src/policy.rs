@@ -13,15 +13,63 @@
 //!   (`spectra.std.agent.*`), otherwise a run could never end;
 //! * every other host call requires a grant from *every* run on the chain
 //!   (grants intersect, so a nested run can only narrow authority);
-//! * an empty grant list denies every non-agent host call.
+//! * an empty grant list denies every non-agent host call, except the
+//!   compiler-emitted execution machinery in
+//!   [`COMPILER_EMITTED_NAMESPACES`] (the coroutine ABI and the JSON
+//!   marshalling a tool wrapper is built from).
+//!
+//! R-3223 adds the taint gate *after* the capability check: a call the run was
+//! not granted is refused as a capability denial whatever the taint state, and
+//! a granted call that targets a catalog-classified sink is additionally gated
+//! when the chain holds untrusted content ([`crate::taint::gate`]).
 
 use spectra_runtime::agent::policy_hook::{
     clear_policy_evaluator, set_policy_evaluator, PolicyDecision,
 };
 use spectra_runtime::agent::run_context;
+use spectra_runtime::ffi::SpectraHostValue;
 
 /// Namespace of the run's own primitives.
 const AGENT_NAMESPACE: &str = "spectra.std.agent.";
+
+/// Host-call namespaces the compiler emits on the run's own execution path and
+/// that never reach outside the process, so a run's grant does not govern
+/// them.
+///
+/// A capability bounds effects: a tool body's host calls are the tool's
+/// declared effects, and `tools::enforce_run_grant` already refuses to start a
+/// dispatch unless every registered tool's effects are inside the run's grant.
+/// What is left ungranted on that path is the language's own machinery — the
+/// coroutine/task protocol the compiler emits for `await`, and the JSON
+/// derive/format helpers that marshal a tool's payload and encode its result.
+/// Requiring a grant for those would mean every tool-bearing spec grants the
+/// compiler its own marshalling code, which is not an author decision.
+///
+/// This is an exception list, not a default: every other namespace still
+/// requires a grant, and none of these namespaces contains a catalog sink, so
+/// the taint gate (which keys on sinks) is unaffected.
+const COMPILER_EMITTED_NAMESPACES: &[&str] = &[
+    // `await`/`block_on` over a Task (the coroutine ABI).
+    "spectra.async.",
+    // JSON derive: parse/decode_field/typed_error_field/quote_string/...
+    "spectra.api.json.",
+    // The encoding helpers the same marshalling emits.
+    "spectra.std.convert.",
+    "spectra.std.string.",
+];
+
+/// Whether the host call is part of the compiler's own machinery on the run's
+/// path (see [`COMPILER_EMITTED_NAMESPACES`]).
+///
+/// Shared with the tool grant check (R-3222 T5), so a tool's *derived effects*
+/// do not include the coroutine ABI or the JSON/format helpers the compiler
+/// emits around the author's code: a tool body may use `==` on strings without
+/// its spec having to grant the compiler's helper.
+pub(crate) fn is_compiler_emitted(host_call: &str) -> bool {
+    COMPILER_EMITTED_NAMESPACES
+        .iter()
+        .any(|namespace| host_call.starts_with(namespace))
+}
 
 /// Installs the evaluator. Idempotent: installing twice replaces the slot with
 /// an equivalent closure.
@@ -29,15 +77,7 @@ const AGENT_NAMESPACE: &str = "spectra.std.agent.";
 /// The installed closure calls [`authorize`], so the predicate an out-of-band
 /// caller sees and the decision the dispatch seam enforces are the same code.
 pub(crate) fn install() {
-    set_policy_evaluator(|host_call| {
-        if authorize(host_call) {
-            PolicyDecision::Allow
-        } else {
-            PolicyDecision::Deny {
-                reason: format!("run does not grant '{host_call}'"),
-            }
-        }
-    });
+    set_policy_evaluator(|host_call, args| evaluate(host_call, args));
 }
 
 /// Removes the evaluator once no run is live.
@@ -47,16 +87,30 @@ pub(crate) fn uninstall_if_idle() {
     }
 }
 
-/// Whether the active run chain authorizes `host_call`.
+/// Whether the active run chain authorizes `host_call` (ADR 0016 D4).
 ///
-/// This is the same predicate the installed evaluator applies, so an
-/// out-of-band `authorize()` query cannot disagree with enforcement.
+/// The same predicate the installed evaluator applies, so an out-of-band
+/// `authorize()` query cannot disagree with enforcement. The capability
+/// decision does not depend on the call's arguments, so the query passes the
+/// empty argument list; the taint gate is not part of this predicate.
+#[allow(dead_code)] // the ADR's out-of-band predicate; the dispatch seam is the enforcement path
 pub(crate) fn authorize(host_call: &str) -> bool {
-    matches!(evaluate(host_call), PolicyDecision::Allow)
+    matches!(evaluate(host_call, &[]), PolicyDecision::Allow)
 }
 
-fn evaluate(host_call: &str) -> PolicyDecision {
+/// The full decision for one host call: capabilities first, then taint.
+fn evaluate(host_call: &str, args: &[SpectraHostValue]) -> PolicyDecision {
     let chain = run_context::current_chain();
+    let grant = evaluate_grants(&chain, host_call);
+    if !matches!(grant, PolicyDecision::Allow) {
+        return grant;
+    }
+    crate::taint::gate(&chain, host_call, args)
+}
+
+/// The capability decision alone. `Allow` when no run is active, the call is
+/// the run's own primitive, or a grant matches.
+fn evaluate_grants(chain: &[u64], host_call: &str) -> PolicyDecision {
     if chain.is_empty() {
         return PolicyDecision::Allow;
     }
@@ -65,7 +119,7 @@ fn evaluate(host_call: &str) -> PolicyDecision {
     // live agent run contributes nothing (it belongs to another subsystem).
     let mut grants: Option<Vec<String>> = None;
     for id in chain {
-        let Some(allowed) = crate::run::allow_for_raw_id(id) else {
+        let Some(allowed) = crate::run::allow_for_raw_id(*id) else {
             continue;
         };
         grants = Some(match grants {
@@ -81,6 +135,9 @@ fn evaluate(host_call: &str) -> PolicyDecision {
     };
 
     if host_call.starts_with(AGENT_NAMESPACE) {
+        return PolicyDecision::Allow;
+    }
+    if is_compiler_emitted(host_call) {
         return PolicyDecision::Allow;
     }
     if grants.iter().any(|grant| grant_matches(grant, host_call)) {
@@ -132,7 +189,7 @@ mod tests {
         assert!(authorize("spectra.std.agent.ask"));
         assert!(!authorize("spectra.std.fs.fs_write"));
         assert!(matches!(
-            evaluate("spectra.std.fs.fs_write"),
+            evaluate("spectra.std.fs.fs_write", &[]),
             PolicyDecision::Deny { .. }
         ));
         drop(_guard);
@@ -186,6 +243,23 @@ mod tests {
 
         take_run(run).expect("end");
         uninstall_if_idle();
+    }
+
+    #[test]
+    fn the_compilers_own_machinery_needs_no_grant() {
+        let run = run_with(&[]);
+        let _guard = run_context::push(run as u64);
+        // The coroutine ABI and the tool-payload marshalling the compiler
+        // emits are not author effects.
+        assert!(authorize("spectra.async.task.block_on"));
+        assert!(authorize("spectra.api.json.typed_error_field"));
+        assert!(authorize("spectra.std.convert.int_to_string"));
+        assert!(authorize("spectra.std.string.eq"));
+        // An outward call in the same run is still denied.
+        assert!(!authorize("spectra.std.env.env_get"));
+        assert!(!authorize("spectra.api.client.request"));
+        drop(_guard);
+        take_run(run).expect("end");
     }
 
     #[test]

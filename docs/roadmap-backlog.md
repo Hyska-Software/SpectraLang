@@ -10262,7 +10262,7 @@ Interop is an adapter, not an architecture. It lands last because the primitives
 
 ## R-3220 Evaluation Harness and spectralang agent eval
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `tooling`
 - Risk: `medium`
@@ -10326,7 +10326,7 @@ The tool loop is the difference between a chatbot and an agent; it must exist be
 
 ## R-3223 Message and Handle Taint
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `runtime`
 - Risk: `high`

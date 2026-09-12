@@ -24,6 +24,12 @@ impl ASTLowering {
                     for arg in arguments {
                         call_args.push(self.lower_expression(arg, ir_func));
                     }
+                    let call_args = self.host_call_arguments(
+                        &desc.runtime_name,
+                        call_args,
+                        arguments,
+                        ir_func,
+                    );
                     let result = self.builder.build_typed_host_call(
                         ir_func,
                         desc.runtime_name.to_string(),

@@ -30,7 +30,7 @@ writing it fails `E3201`, and the diagnostic suggests the runtime name.
 
 ### Namespaces
 
-51 namespace grants cover 1115 host calls.
+51 namespace grants cover 1117 host calls.
 
 | Namespace grant | Host calls |
 | --- | --- |
@@ -65,7 +65,7 @@ writing it fails `E3201`, and the diagnostic suggests the runtime name.
 | `spectra.api.validation` | 17 |
 | `spectra.api.version` | 3 |
 | `spectra.api.websocket` | 24 |
-| `spectra.std.agent` | 17 |
+| `spectra.std.agent` | 19 |
 | `spectra.std.char` | 8 |
 | `spectra.std.collections` | 48 |
 | `spectra.std.concurrent` | 17 |
@@ -97,3 +97,64 @@ A scoped grant is accepted only where the host call declares the key
 | `spectra.api.db.migrate.apply_sqlite` | `table` |
 
 <!-- END GENERATED CAPABILITY REFERENCE -->
+## Taint: provenance, sinks and the gate (R-3223)
+
+A run records **provenance** for everything that enters it. `untrusted(run,
+value, origin)` tags a value (`user`, `model`, `tool:<name>`,
+`external:<source>`); `trust(run, value, reason)` declassifies it and requires
+a reason. Both return the value unchanged, so a program tags content inline,
+and both are journaled (`kind = "taint"`).
+
+Every message in a run's transcript is tagged with its origin before it reaches
+the provider: a prompt is `user`, model output is `model`, and a tool result is
+`tool:<name>` and is **untrusted by default**. The ledger is keyed by content
+digest and taint is monotone — an untrusted digest is never downgraded by
+observation, only by an explicit `trust(run, value, reason)`, and only for the
+digest it names. A value derived from an untrusted one has a different digest
+and stays untrusted, so `trust` cannot launder a transformation the ledger never
+saw.
+
+A **sink** is a catalog entry classified `sink = true` (its effects contain
+`mutation`). The sink set is read from `spectra_contract::catalog()`, not from a
+list maintained beside it, so a namespace cannot drift out of the
+classification. When the run holds untrusted content and a sink is dispatched,
+`AgentSpec.untrusted` decides: `block` denies with a `trust_required` reason,
+`approve` (the default) routes through the approval registry and fails closed
+when no approver is attached, `allow` proceeds. Every decision is journaled
+(`kind = "taint_decision"`), so a replayed run never re-asks.
+
+The gate runs at the run's dynamic extent: the model gateway (`ask`,
+`ask_json`, `ask_stream`, `embed`) and the dispatch primitives (`act`,
+`tool_call`) execute with the run on the active chain, so a tool wrapper's host
+calls are decided against the run. A host call the author writes directly on
+the program frame is the author's own action, not the run's; that keeps a
+program without a run exactly as it was.
+
+### Honest limits
+
+* **Message granularity.** The ledger is per content digest and per message. It
+  records that a value with this digest entered the run from some origin and
+  whether it was declassified; it records nothing about how that value was
+  transformed afterwards. Gating is therefore "this run chain holds untrusted
+  content", not "this argument derived from that value" — the conservative
+  direction: a sink that does not touch the untrusted value can still be gated,
+  and a sink is never reached silently.
+* **No string-level flow.** The host ABI carries `i64` scalars and handles;
+  there is no per-byte provenance to track, and this item does not pretend
+  otherwise. What is bounded is what a run may do *without a decision* once
+  external content is in context.
+* **Scope predicates are partially deferred.** A sink's declared `scope_keys`
+  are read from the dispatch arguments where an extractor exists beside the host
+  call (`spectra.api.db.migrate.apply_sqlite` → `table`). The `method` predicate
+  on `spectra.api.client.request` is not extracted: the method lives inside the
+  `std.api.http.Request` handle owned by `packages/spectra-api`, and decoding it
+  from `spectra-agent` would invert the crate dependency. That call is not a
+  catalog sink today (`effects = ["host"]`), so nothing classified write-side is
+  left ungated; a future method predicate belongs with the request handle's
+  owner.
+* **Capabilities do not govern the compiler's own machinery.** The coroutine
+  ABI (`spectra.async.*`), the JSON derive helpers (`spectra.api.json.*`) and
+  the pure format helpers (`spectra.std.convert.*`, `spectra.std.string.*`) the
+  compiler emits around author code need no grant, and are excluded from a
+  tool's derived effects: requiring a grant for them would mean every
+  tool-bearing spec grants the compiler.

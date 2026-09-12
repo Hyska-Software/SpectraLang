@@ -362,4 +362,73 @@ mod tests {
         // identifier field path, and the general expression field path.
         assert!(pretty.matches("field_ptr").count() >= 8);
     }
+
+    /// Qualified and aliased print calls (`io.println(x)`, `std.io.println(x)`)
+    /// parse as method calls, so they lower through the method-call path. Both
+    /// lowering paths must satisfy the runtime contract: one (type_tag, value)
+    /// pair per printed value, with the tag as an integer constant.
+    #[test]
+    fn qualified_io_print_pairs_type_tags_with_arguments() {
+        let ir = lower_source(
+            r#"
+            module qualified_io_print_test
+
+            import std.io as io
+            from std.io import println
+
+            func emit()  returns  int {
+                io.println("text")
+                io.println(7)
+                io.println(true)
+                std.io.println(2.5)
+                println("direct")
+                return 0
+            }
+            "#,
+        );
+
+        let mut tags: Vec<i64> = Vec::new();
+        for function in &ir.functions {
+            if function.name != "emit" {
+                continue;
+            }
+            let mut constants: std::collections::HashMap<usize, i64> =
+                std::collections::HashMap::new();
+            for block in &function.blocks {
+                for instruction in &block.instructions {
+                    if let crate::ir::InstructionKind::ConstInt { result, value } =
+                        &instruction.kind
+                    {
+                        constants.insert(result.id, *value);
+                    }
+                }
+            }
+            for block in &function.blocks {
+                for instruction in &block.instructions {
+                    let crate::ir::InstructionKind::HostCall { host, args, .. } = &instruction.kind
+                    else {
+                        continue;
+                    };
+                    if host != "spectra.std.io.println" {
+                        continue;
+                    }
+                    assert_eq!(
+                        args.len(),
+                        2,
+                        "print arguments must be (type_tag, value) pairs, got {args:?}",
+                    );
+                    let tag = constants
+                        .get(&args[0].id)
+                        .copied()
+                        .expect("print type tag must be an integer constant");
+                    tags.push(tag);
+                }
+            }
+        }
+        assert_eq!(
+            tags,
+            vec![1, 0, 2, 3, 1],
+            "expected string/int/bool/float/string tags",
+        );
+    }
 }

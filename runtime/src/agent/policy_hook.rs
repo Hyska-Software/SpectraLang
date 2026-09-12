@@ -8,11 +8,30 @@
 //!
 //! Until an evaluator is installed the hook defaults to [`PolicyDecision::Allow`],
 //! which keeps invariant I5: a program without an active run behaves exactly as
-//! before this workstream. The evaluator is called with the host function name
-//! (`spectra.api.client.request`, `spectra.std.fs.read`, ...) — the same name
-//! the dispatch already resolved, so the decision costs nothing extra.
+//! before this workstream.
+//!
+//! # Hook signature
+//!
+//! ```text
+//! evaluate(host_call: &str, args: &[SpectraHostValue]) -> PolicyDecision
+//! ```
+//!
+//! * `host_call` is the host function name the dispatch already resolved
+//!   (`spectra.api.client.request`, `spectra.std.fs.fs_read`, ...).
+//! * `args` borrows the caller's argument buffer for the duration of the call;
+//!   a host call without arguments passes an empty slice. The evaluator MUST
+//!   NOT retain the borrow (the buffer belongs to the generated frame) and MUST
+//!   NOT read past its length. R-3214 decides from the name alone; R-3223 adds
+//!   the taint gate, which reads a declared scope key (a sink's `scope_keys`)
+//!   from the arguments while the arguments are still live, so the decision
+//!   costs nothing beyond the one lookup the dispatch already performed.
+//!
+//! The repr(C) host-call ABI is unchanged: `args` is a borrow of the same
+//! buffer the host function itself receives, never a new channel.
 
 use std::sync::{Arc, LazyLock, Mutex};
+
+use crate::ffi::SpectraHostValue;
 
 /// The decision returned for a single generic host call.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,8 +43,9 @@ pub enum PolicyDecision {
     Deny { reason: String },
 }
 
-/// Signature of an installed policy evaluator.
-pub type PolicyEvaluator = dyn Fn(&str) -> PolicyDecision + Send + Sync + 'static;
+/// Signature of an installed policy evaluator (see the module docs).
+pub type PolicyEvaluator =
+    dyn Fn(&str, &[SpectraHostValue]) -> PolicyDecision + Send + Sync + 'static;
 
 fn evaluator_slot() -> &'static Mutex<Option<Arc<PolicyEvaluator>>> {
     static SLOT: LazyLock<Mutex<Option<Arc<PolicyEvaluator>>>> =
@@ -47,7 +67,7 @@ thread_local! {
 /// panic at the dispatch seam (ADR 0016 D3).
 pub fn set_policy_evaluator<F>(evaluator: F)
 where
-    F: Fn(&str) -> PolicyDecision + Send + Sync + 'static,
+    F: Fn(&str, &[SpectraHostValue]) -> PolicyDecision + Send + Sync + 'static,
 {
     let mut guard = evaluator_slot()
         .lock()
@@ -69,13 +89,14 @@ pub fn clear_policy_evaluator() {
 /// Defaults to [`PolicyDecision::Allow`] when no evaluator is installed. The
 /// evaluator is cloned out of the slot before being called so it can never
 /// deadlock against [`set_policy_evaluator`] or [`clear_policy_evaluator`].
-pub(crate) fn evaluate(name: &str) -> PolicyDecision {
+/// `args` is forwarded unchanged: see the module docs for its borrow contract.
+pub(crate) fn evaluate(name: &str, args: &[SpectraHostValue]) -> PolicyDecision {
     let evaluator = evaluator_slot()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone();
     match evaluator {
-        Some(evaluate) => evaluate(name),
+        Some(evaluate) => evaluate(name, args),
         None => PolicyDecision::Allow,
     }
 }
@@ -103,7 +124,10 @@ mod tests {
         let _lock = test_guard();
         clear_policy_evaluator();
 
-        assert_eq!(evaluate("spectra.test.unrestricted"), PolicyDecision::Allow);
+        assert_eq!(
+            evaluate("spectra.test.unrestricted", &[]),
+            PolicyDecision::Allow
+        );
     }
 
     #[test]
@@ -111,10 +135,10 @@ mod tests {
         let _lock = test_guard();
         clear_policy_evaluator();
 
-        set_policy_evaluator(|name| {
+        set_policy_evaluator(|name, args| {
             if name == "spectra.test.denied" {
                 PolicyDecision::Deny {
-                    reason: "not granted".to_string(),
+                    reason: format!("not granted ({} arg(s))", args.len()),
                 }
             } else {
                 PolicyDecision::Allow
@@ -122,16 +146,20 @@ mod tests {
         });
 
         assert_eq!(
-            evaluate("spectra.test.denied"),
+            evaluate("spectra.test.denied", &[7]),
             PolicyDecision::Deny {
-                reason: "not granted".to_string()
-            }
+                reason: "not granted (1 arg(s))".to_string()
+            },
+            "the evaluator must observe the dispatch arguments"
         );
-        assert_eq!(evaluate("spectra.test.allowed"), PolicyDecision::Allow);
+        assert_eq!(
+            evaluate("spectra.test.allowed", &[]),
+            PolicyDecision::Allow
+        );
 
         clear_policy_evaluator();
         assert_eq!(
-            evaluate("spectra.test.denied"),
+            evaluate("spectra.test.denied", &[]),
             PolicyDecision::Allow,
             "clearing the evaluator must restore the default-Allow hook"
         );

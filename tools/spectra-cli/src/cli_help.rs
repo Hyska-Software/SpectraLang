@@ -16,6 +16,7 @@ fn print_global_help() {
     println!("    repl       Start an interactive Spectra prompt");
     println!("    new        Scaffold a new Spectra project");
     println!("    release-info  Report CLI and package release channel metadata");
+    println!("    agent      Evaluate agent programs (agent eval) against a baseline");
     println!("    surface    Emit the machine-readable public surface of a project");
     println!("    impact     Report what changing a symbol affects (call graph)");
     println!("    docs       Print the embedded language reference (version-matched)");
@@ -43,6 +44,7 @@ fn print_global_help() {
     println!("    {} repl --run", program_name());
     println!("    {} new my-project", program_name());
     println!("    {} release-info --json --root .", program_name());
+    println!("    {} agent eval --json", program_name());
     println!("    {} package build --root .", program_name());
     println!("    {} package add math --path ../math", program_name());
     println!(
@@ -167,6 +169,44 @@ fn print_new_help() {
     println!("Examples:");
     println!("    {} new hello-world", program_name());
     println!("    {} new --force .", program_name());
+}
+
+fn print_agent_eval_help() {
+    println!("SpectraLang CLI - 'agent eval' command");
+    println!();
+    println!("USAGE:");
+    println!(
+        "    {} agent eval [OPTIONS] [suite]",
+        program_name()
+    );
+    println!();
+    println!("Run an agent evaluation suite and gate on a checked-in baseline.");
+    println!();
+    println!("A suite is JSON: it names cases, each pointing at a Spectra program and");
+    println!("an input. The command runs each case in a fresh process through the normal");
+    println!("compile+run path, then grades the run journal and report. Deterministic");
+    println!("graders (approval, refusal, tool_set, budget, schema) run by default; the");
+    println!("model-based judge grader runs only with '--judge'.");
+    println!();
+    println!("OPTIONS:");
+    println!("    --json             Emit the machine-readable report");
+    println!("    --suite <path>     Suite to run (default: examples/agent/evals/agent_core.json)");
+    println!("    --repeat <n>       Override every case's repeat count (pass^k uses k = n)");
+    println!("    --baseline <path>  Baseline to gate on (default: <suite stem>.baseline.json)");
+    println!("    --judge            Enable the judge grader; requires a 'judge' block in the suite");
+    println!();
+    println!("EXIT CODES:");
+    println!("    0   Ran, and either no baseline regressed or the first baseline was written");
+    println!("    64  Usage error (bad flags, --judge without a suite judge block)");
+    println!("    65  A case regressed against the baseline");
+    println!("    74  I/O failure while reading the suite or writing the baseline");
+    println!();
+    println!("EXAMPLES:");
+    println!("    {} agent eval --json", program_name());
+    println!(
+        "    {} agent eval --suite examples/agent/evals/agent_core.json --repeat 3",
+        program_name()
+    );
 }
 
 fn print_release_info_help() {

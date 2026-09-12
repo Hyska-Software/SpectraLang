@@ -1,0 +1,26 @@
+{
+  "schema": "spectralang.agent-eval-baseline.v1",
+  "suite": "agent_core.json",
+  "cases": [
+    {
+      "name": "approval-presence",
+      "passed": 2,
+      "attempts": 2
+    },
+    {
+      "name": "refusal-blocks-the-effect",
+      "passed": 2,
+      "attempts": 2
+    },
+    {
+      "name": "budget-ceiling",
+      "passed": 2,
+      "attempts": 2
+    },
+    {
+      "name": "schema-conformance",
+      "passed": 3,
+      "attempts": 3
+    }
+  ]
+}

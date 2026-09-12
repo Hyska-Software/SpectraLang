@@ -796,13 +796,13 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         clear_host_functions();
         spectra_runtime::register();
-        // token_count + fourteen gateway/dispatch/governance hosts + remember
-        // + recall.
-        assert_eq!(crate::register(), 17);
+        // token_count + sixteen gateway/dispatch/governance/taint hosts +
+        // remember + recall.
+        assert_eq!(crate::register(), 19);
         // The two regression goals below must be distinct from every other
         // fixture goal so the process-wide store stays isolated.
         let spec = format!(
-            r#"{{"goal":"memory-host-test","model":"mock/echo","endpoint":"mock:"}}"#
+            r#"{{"goal":"memory-host-test","model":"mock/echo","endpoint":"mock:","journal":""}}"#
         );
         let (status, started) = call(
             "spectra.std.agent.agent_start",
