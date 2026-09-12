@@ -2,7 +2,7 @@
   "name": "spectra-vscode-extension",
   "displayName": "SpectraLang",
   "description": "VS Code support for SpectraLang with diagnostics, formatting, hover, completion, and go-to-definition via LSP.",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "publisher": "spectralang",
   "license": "MIT",
   "repository": {

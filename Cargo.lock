@@ -3031,7 +3031,7 @@ dependencies = [
 
 [[package]]
 name = "spectra-cli"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "diff",
  "embed-resource",
@@ -3090,7 +3090,7 @@ version = "0.1.0"
 
 [[package]]
 name = "spectra-lsp"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "serde_json",
  "spectra-compiler",
