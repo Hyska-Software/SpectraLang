@@ -390,3 +390,24 @@ operator or author might otherwise infer them.
   a replay returns recorded outputs, not recorded request payloads.
 - **Exactly one attribute.** `#[agent_tool("...")]` is the only new attribute;
   a second one requires revising ADR 0017 first.
+
+## Extending the surface: the measured seam
+
+The first function of the namespace (`token_count`, R-3209) paid the one-time
+cost of the seam: the Cargo workspace member, the crate and its aggregated
+registration, the compiler module registration, the midend gate arm, the
+contract probe and the fixture — 11 new or modified source files. Every
+function after it costs three hand edits:
+
+1. the compiler export in `make_std_agent`
+   (`compiler/src/semantic/builtin_std_core.rs`),
+2. the midend descriptor arm (`midend/src/lowering_std_agent.rs`),
+3. the host implementation and its one-line registration in
+   `packages/spectra-agent/src/`;
+
+plus the derived regeneration (`python scripts/generate_stdlib_catalog.py`,
+then the `--check` gates) and, when behavior needs proof, a fixture and a probe
+extension. `remember`/`recall` (R-3212), `approve`/`require` (R-3217) and
+`compensate`/`rollback` (R-3224) all followed that path. Absorbing the
+`std.agent` table into the R-3207 generator is a recorded follow-up
+(plan adaptation 14); it does not change the edit count above.
