@@ -192,6 +192,21 @@ path = "tests/validation/357_json_derive_roundtrip.spectra"
 covers = ["std.api.json.quote_string", "std.api.json.quote_char", "std.api.json.encode_number", "std.api.json.decode_field", "std.api.json.typed_error_field"]
 
 [[probe]]
+id = "agent-memory"
+path = "tests/validation/369_agent_memory.spectra"
+covers = ["std.agent.remember", "std.agent.recall"]
+
+[[probe]]
+id = "agent-budget"
+path = "tests/validation/372_agent_budget.spectra"
+covers = ["std.agent.budget_remaining"]
+
+[[probe]]
+id = "agent-act"
+path = "tests/validation/375_agent_act.spectra"
+covers = ["std.agent.act", "std.agent.tool_call"]
+
+[[probe]]
 id = "agent-surface"
 path = "tests/validation/365_agent_surface.spectra"
 covers = ["std.agent.*"]
@@ -428,13 +443,13 @@ prefix = "std.agent"
 owner = "runtime"
 classification = "baseline"
 roadmap = "R-3209"
-reason = "Phase 32 M2 seam: exactly one function (token_count) is landed end to end through compiler, midend, runtime, catalog, JIT and AOT; the remaining agent library follows in R-3210 and later."
+reason = "Phase 32 M3 in progress: the namespace seam (token_count), the model gateway and run lifecycle (R-3211) and provenance-carrying memory (R-3212) are landed end to end through compiler, midend, runtime, catalog, JIT and AOT; the remaining agent library follows in R-3213 to R-3224."
 
 [[follow_up]]
 prefix = "std.agent"
 owner = "runtime"
 roadmap = "R-3209"
-reason = "The auditor's semantic source list only reads compiler/src/semantic/builtin_modules.rs, which decomposed into #[path] child modules, so make_std_agent is not seen as a semantic declaration; the runtime registration and the compiler declaration are both present and the seam is proven by the agent-surface probe."
+reason = "The auditor's semantic source list only reads compiler/src/semantic/builtin_modules.rs, which decomposed into #[path] child modules, so make_std_agent is not seen as a semantic declaration; the runtime registration and the compiler declaration are both present and the seam is proven by the agent-surface and agent-memory probes."
 
 [[namespace]]
 prefix = "std.api.trace"

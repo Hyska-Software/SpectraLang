@@ -1,0 +1,16 @@
+module agent_tool_wrong_arity
+
+// E3203: the attribute takes exactly one string-literal description.
+
+public record Payload {
+    id: string,
+}
+
+#[agent_tool("first", "second")]
+public async func arity_tool(run: int, payload: Payload) returns string {
+    return payload.id
+}
+
+public func main() returns int {
+    return 0
+}

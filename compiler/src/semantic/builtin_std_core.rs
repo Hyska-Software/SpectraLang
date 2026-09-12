@@ -1,6 +1,9 @@
 use super::*;
-use crate::ast::{FloatWidth, IntWidth, Type};
-use crate::semantic::module_registry::{ExportVisibility, ExportedType, ModuleExports};
+use crate::ast::{FloatWidth, IntWidth, Type, TypeAnnotation, TypeAnnotationKind};
+use crate::semantic::module_registry::{
+    ExportVisibility, ExportedFunction, ExportedType, ModuleExports,
+};
+use crate::span::Span;
 
 pub(crate) fn make_std_io() -> ModuleExports {
     let mut exports = ModuleExports {
@@ -168,10 +171,48 @@ pub(crate) fn make_std_math() -> ModuleExports {
     exports
 }
 
+/// An async `std.agent` export: the compiler-visible signature is the
+/// *output* type; `is_async` plus the explicit `Task<T>` return mirrors
+/// [`crate::semantic::semantic_type_system::SemanticAnalyzer::async_task_type`]
+/// so import sites observe exactly `Task<output>`.
+fn agent_async_fn(params: Vec<Type>, output: Type) -> ExportedFunction {
+    ExportedFunction {
+        params,
+        return_type: Type::Task {
+            output: Box::new(output),
+        },
+        visibility: ExportVisibility::Public,
+        is_async: true,
+    }
+}
+
+/// A `std.agent` record declared purely for typed authoring and `surface`
+/// documentation. The host ABI has no record channel, so `AgentSpec`/`Report`
+/// travel as JSON documents and are decoded in user code with the existing
+/// JSON derive (plan adaptation 11).
+fn agent_record(members: &[(&str, TypeAnnotation)]) -> ExportedType {
+    ExportedType {
+        members: members.iter().map(|(name, _)| (*name).to_string()).collect(),
+        visibility: ExportVisibility::Public,
+        is_enum: false,
+        struct_fields: Some(
+            members
+                .iter()
+                .map(|(name, ty)| ((*name).to_string(), ty.clone()))
+                .collect(),
+        ),
+        enum_variants: None,
+        enum_struct_variants: None,
+    }
+}
+
 /// `std.agent` — Phase 32 agent-platform namespace.
 ///
-/// R-3209 lands exactly one function so the compiler/midend/runtime/catalog
-/// seam is proven end to end before the rest of the library follows.
+/// R-3209 landed the namespace seam (`token_count`); R-3211 adds the model
+/// gateway and run lifecycle; R-3212 adds `remember`/`recall`.
+/// `Run`/`ChunkStream` are opaque handle types;
+/// `AgentSpec`/`Report` are the authored record shapes carried as JSON across
+/// the host ABI (no record-value channel exists).
 pub(crate) fn make_std_agent() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "agent".to_string()]),
@@ -179,10 +220,177 @@ pub(crate) fn make_std_agent() -> ModuleExports {
         ..Default::default()
     };
 
+    // ── types ────────────────────────────────────────────────────────────
+    // Opaque generational handles owned by the runtime run/stream tables.
+    exports.types.insert("Run".to_string(), public_type(&[]));
+    exports.types.insert("ChunkStream".to_string(), public_type(&[]));
+    exports.types.insert(
+        "AgentSpec".to_string(),
+        agent_record(&[
+            ("goal", builtin_type_annotation("string")),
+            ("model", builtin_type_annotation("string")),
+            ("endpoint", builtin_type_annotation("string")),
+            (
+                "allow",
+                TypeAnnotation {
+                    kind: TypeAnnotationKind::Generic {
+                        name: "List".to_string(),
+                        type_args: vec![builtin_type_annotation("string")],
+                    },
+                    span: Span::dummy(),
+                },
+            ),
+            ("max_tokens", builtin_type_annotation("int")),
+            ("max_cost_micros", builtin_type_annotation("int")),
+            ("max_seconds", builtin_type_annotation("int")),
+            ("max_tool_calls", builtin_type_annotation("int")),
+            ("untrusted", builtin_type_annotation("string")),
+            ("seed", builtin_type_annotation("int")),
+            ("journal", builtin_type_annotation("string")),
+        ]),
+    );
+    exports.types.insert(
+        "Report".to_string(),
+        agent_record(&[
+            ("status", builtin_type_annotation("string")),
+            ("steps", builtin_type_annotation("int")),
+            ("tool_calls", builtin_type_annotation("int")),
+            ("tokens_in", builtin_type_annotation("int")),
+            ("tokens_out", builtin_type_annotation("int")),
+            ("cost_micros", builtin_type_annotation("int")),
+            ("elapsed_ms", builtin_type_annotation("int")),
+            ("compensations_pending", builtin_type_annotation("int")),
+        ]),
+    );
+
+    // ── functions ────────────────────────────────────────────────────────
+    let std_error = Type::Struct {
+        name: "Error".to_string(),
+    };
+    let run = Type::Struct {
+        name: "Run".to_string(),
+    };
+    let chunk_stream = Type::Struct {
+        name: "ChunkStream".to_string(),
+    };
+    let float_tensor = Type::Tensor {
+        dtype: Box::new(Type::Float),
+        rank: Some(1),
+        dims: None,
+        layout: None,
+        device: None,
+    };
+    let result_of = |ok: Type| Type::Applied {
+        name: "Result".to_string(),
+        args: vec![ok, std_error.clone()],
+    };
+
     // token_count(text: string) -> int
     exports.functions.insert(
         "token_count".to_string(),
         pub_fn(vec![Type::String], Type::Int),
+    );
+    // agent_start(spec_json: string) -> Result<Run, Error>
+    exports.functions.insert(
+        "agent_start".to_string(),
+        pub_fn(vec![Type::String], result_of(run.clone())),
+    );
+    // agent_end(run: Run) -> Result<string, Error>
+    exports.functions.insert(
+        "agent_end".to_string(),
+        pub_fn(vec![run.clone()], result_of(Type::String)),
+    );
+    // ask(run: Run, prompt: string) -> Result<string, Error> (async)
+    exports.functions.insert(
+        "ask".to_string(),
+        agent_async_fn(vec![run.clone(), Type::String], result_of(Type::String)),
+    );
+    // ask_json(run: Run, prompt: string, schema: string) -> Result<string, Error> (async)
+    exports.functions.insert(
+        "ask_json".to_string(),
+        agent_async_fn(
+            vec![run.clone(), Type::String, Type::String],
+            result_of(Type::String),
+        ),
+    );
+    // ask_stream(run: Run, prompt: string) -> Result<ChunkStream, Error> (async)
+    exports.functions.insert(
+        "ask_stream".to_string(),
+        agent_async_fn(vec![run.clone(), Type::String], result_of(chunk_stream.clone())),
+    );
+    // stream_next(stream: ChunkStream) -> Result<string, Error> (async; "" ends)
+    exports.functions.insert(
+        "stream_next".to_string(),
+        agent_async_fn(vec![chunk_stream.clone()], result_of(Type::String)),
+    );
+    // stream_close(stream: ChunkStream) -> Result<bool, Error> (async; idempotent)
+    exports.functions.insert(
+        "stream_close".to_string(),
+        agent_async_fn(vec![chunk_stream.clone()], result_of(Type::Bool)),
+    );
+    // embed(run: Run, text: string) -> Result<Tensor, Error> (async; 1-D float)
+    exports.functions.insert(
+        "embed".to_string(),
+        agent_async_fn(vec![run.clone(), Type::String], result_of(float_tensor)),
+    );
+    // budget_remaining(run: Run) -> Result<int, Error> (sync; R-3216 T1)
+    // The int is the tokens left before `max_tokens`; `i64::MAX` when the
+    // spec declares no token ceiling.
+    exports.functions.insert(
+        "budget_remaining".to_string(),
+        pub_fn(vec![run.clone()], result_of(Type::Int)),
+    );
+    // remember(run: Run, text: string) -> Result<bool, Error> (sync; R-3212)
+    exports.functions.insert(
+        "remember".to_string(),
+        pub_fn(vec![run.clone(), Type::String], result_of(Type::Bool)),
+    );
+    // recall(run: Run, query: string, top_k: int) -> Result<string, Error> (sync; R-3212)
+    exports.functions.insert(
+        "recall".to_string(),
+        pub_fn(
+            vec![run.clone(), Type::String, Type::Int],
+            result_of(Type::String),
+        ),
+    );
+    // act(run: Run, prompt: string) -> Result<string, Error> (async; R-3222)
+    // Runs model<->tool turns until the model answers without a tool call.
+    exports.functions.insert(
+        "act".to_string(),
+        agent_async_fn(vec![run.clone(), Type::String], result_of(Type::String)),
+    );
+    // tool_call(run: Run, name: string, args_json: string) -> Result<string, Error>
+    // (async; R-3222). The single dispatcher primitive `act` is built on: it
+    // invokes one registered `#[agent_tool]` wrapper by address through the
+    // governed dispatch and returns its JSON result.
+    exports.functions.insert(
+        "tool_call".to_string(),
+        agent_async_fn(
+            vec![run.clone(), Type::String, Type::String],
+            result_of(Type::String),
+        ),
+    );
+    // register_tool(name, wrapper_address, description, input_schema, effects)
+    // -> Result<bool, Error> (sync; R-3222).
+    //
+    // Emitted only by the compiler: lowering registers each tool's synthesized
+    // marshalling wrapper before the first dispatch of a module. The entry is
+    // `internal` so user code cannot name an arbitrary code address as a tool
+    // wrapper; it exists in the contract so the catalog records the binding.
+    exports.functions.insert(
+        "register_tool".to_string(),
+        ExportedFunction {
+            params: vec![
+                Type::String,
+                Type::Int,
+                Type::String,
+                Type::String,
+                Type::String,
+            ],
+            return_type: result_of(Type::Bool),
+            visibility: ExportVisibility::Internal,
+            is_async: false,
+        },
     );
 
     exports

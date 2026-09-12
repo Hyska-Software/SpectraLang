@@ -627,14 +627,24 @@ impl CodeGenerator {
                 let status = builder.inst_results(call)[0];
 
                 let zero = builder.ins().iconst(types::I32, 0);
+                let denied_code = builder
+                    .ins()
+                    .iconst(types::I32, spectra_runtime::ffi::HOST_STATUS_DENIED as i64);
                 let is_ok = builder.ins().icmp(IntCC::Equal, status, zero);
+                let is_denied = builder.ins().icmp(IntCC::Equal, status, denied_code);
                 let success_block = builder.create_block();
+                let not_ok_block = builder.create_block();
+                let denied_block = builder.create_block();
                 let failure_block = builder.create_block();
                 builder
                     .ins()
-                    .brif(is_ok, success_block, &[], failure_block, &[]);
+                    .brif(is_ok, success_block, &[], not_ok_block, &[]);
 
-                builder.switch_to_block(failure_block);
+                // Every non-success status releases the stack-owned arenas
+                // before it terminates. Denial (ADR 0016 D4) reports through
+                // the dedicated symbol so a capability refusal is
+                // distinguishable from an ordinary host failure.
+                builder.switch_to_block(not_ok_block);
                 if let Some(ptr) = result_allocation {
                     let free_ref = module.declare_func_in_func(
                         hostcall.runtime_func(RuntimeImport::ManualFree),
@@ -649,6 +659,21 @@ impl CodeGenerator {
                     );
                     builder.ins().call(free_ref, &[ptr]);
                 }
+                builder
+                    .ins()
+                    .brif(is_denied, denied_block, &[], failure_block, &[]);
+                builder.seal_block(not_ok_block);
+
+                builder.switch_to_block(denied_block);
+                Self::emit_capability_denied(
+                    module,
+                    hostcall,
+                    builder,
+                    &format!("host call '{host}'"),
+                )?;
+                builder.seal_block(denied_block);
+
+                builder.switch_to_block(failure_block);
                 Self::emit_runtime_panic(
                     module,
                     hostcall,

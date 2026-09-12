@@ -1,0 +1,107 @@
+module agent_model_surface
+
+// R-3211 end-to-end surface fixture. The mock provider makes every assertion
+// deterministic (no network, no model variance), so JIT and AOT runs produce
+// identical results.
+
+import std.agent
+
+func spec_json() returns string {
+    return "{\"goal\":\"fixture\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}"
+}
+
+func schema_json() returns string {
+    return "{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"},\"label\":{\"type\":\"string\"}},\"required\":[\"count\",\"label\"],\"additionalProperties\":false}"
+}
+
+async func checks() returns int {
+    let start = agent_start(spec_json())
+    if let Result::Ok(run) = start {
+        let first = await ask(run, "alpha")
+        if let Result::Ok(first_text) = first {
+            if first_text != "mock echo: alpha" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        let second = await ask(run, "beta")
+        if let Result::Err(second_error) = second {
+            return 4
+        }
+
+        // Constrained response: the client-side validator accepts the
+        // schema-shaped payload.
+        let good = await ask_json(run, "spectra:json", schema_json())
+        if let Result::Ok(good_text) = good {
+            if good_text != "{\"count\":3,\"label\":\"mock-response\"}" {
+                return 6
+            }
+        } else {
+            return 5
+        }
+
+        // The mock's scripted invalid payload must be rejected client-side
+        // even though the provider reported success.
+        let bad = await ask_json(run, "spectra:invalid-json", schema_json())
+        if let Result::Ok(bad_text) = bad {
+            return 7
+        }
+
+        // Chunked delivery ends with the empty chunk.
+        let stream = await ask_stream(run, "chunks")
+        if let Result::Ok(chunk_stream) = stream {
+            let total = ""
+            let done = false
+            while done == false {
+                let chunk = await stream_next(chunk_stream)
+                if let Result::Ok(text) = chunk {
+                    if text == "" {
+                        done = true
+                    } else {
+                        total = total + text
+                    }
+                } else {
+                    return 8
+                }
+            }
+            if total != "mock echo: chunks" {
+                return 9
+            }
+            let closed = await stream_close(chunk_stream)
+            if let Result::Err(close_error) = closed {
+                return 10
+            }
+        } else {
+            return 11
+        }
+
+        let vector = await embed(run, "embedding")
+        if let Result::Err(embed_error) = vector {
+            return 12
+        }
+
+        let report = agent_end(run)
+        if let Result::Ok(report_json) = report {
+            if report_json == "" {
+                return 14
+            }
+        } else {
+            return 13
+        }
+
+        // Double end is a typed error, never a panic.
+        let again = agent_end(run)
+        if let Result::Ok(again_report) = again {
+            return 15
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(checks())
+}

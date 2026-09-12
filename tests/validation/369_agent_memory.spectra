@@ -1,0 +1,170 @@
+module agent_memory
+
+// R-3212 end-to-end surface fixture. Memory runs over the runtime vector index
+// and the mock provider's deterministic embeddings, so JIT and AOT runs are
+// reproducible: ordering, provenance and the token cap are all asserted.
+
+import std.agent
+import std.string as str
+
+func spec_json(goal: string) returns string {
+    return "{\"goal\":\"" + goal + "\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}"
+}
+
+// 520 whitespace tokens: larger than the 512-token recall payload budget, so a
+// recall that ranks it must drop it and report `truncated`.
+func long_text() returns string {
+    let text = ""
+    let index = 0
+    while index < 520 {
+        text = text + "filler "
+        index = index + 1
+    }
+    return text
+}
+
+public func main() returns int {
+    return block_on(checks())
+}
+
+async func checks() returns int {
+    let spec = spec_json("agent-memory-fixture")
+    let start = agent_start(spec)
+    if let Result::Err(start_error) = start {
+        return 1
+    }
+    if let Result::Ok(run) = start {
+        let first = remember(run, "alpha beta gamma")
+        if let Result::Ok(inserted) = first {
+            if inserted == false {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let second = remember(run, "delta epsilon")
+        if let Result::Err(second_error) = second {
+            return 4
+        }
+
+        // Deterministic retrieval: the exact match ranks first, and every
+        // entry reports its tier, origin, run, goal and timestamp.
+        let recall_all = recall(run, "alpha beta gamma", 5)
+        if let Result::Ok(payload) = recall_all {
+            if str.contains(payload, "\"schema\":\"spectra.agent.memory_recall.v1\"") == false {
+                return 5
+            }
+            if str.contains(payload, "\"scope\":\"agent-memory-fixture\"") == false {
+                return 6
+            }
+            if str.contains(payload, "\"tier\":\"episodic\"") == false {
+                return 7
+            }
+            if str.contains(payload, "\"origin\":\"agent\"") == false {
+                return 8
+            }
+            if str.contains(payload, "\"goal\":\"agent-memory-fixture\"") == false {
+                return 9
+            }
+            if str.contains(payload, "\"timestamp_ms\":") == false {
+                return 10
+            }
+            let alpha = str.index_of(payload, "\"text\":\"alpha beta gamma\"")
+            let delta = str.index_of(payload, "\"text\":\"delta epsilon\"")
+            if alpha < 0 {
+                return 11
+            }
+            if delta < 0 {
+                return 12
+            }
+            if alpha > delta {
+                return 13
+            }
+        } else {
+            return 14
+        }
+
+        // top_k bounds the result set on its own.
+        let recall_one = recall(run, "alpha beta gamma", 1)
+        if let Result::Ok(payload) = recall_one {
+            if str.contains(payload, "delta epsilon") {
+                return 15
+            }
+        } else {
+            return 16
+        }
+
+        // The payload is capped by tokens, not only by top_k: the 520-token
+        // entry is ranked but cannot fit into the budget.
+        let long = remember(run, long_text())
+        if let Result::Err(long_error) = long {
+            return 17
+        }
+        let recall_capped = recall(run, "alpha beta gamma", 5)
+        if let Result::Ok(payload) = recall_capped {
+            if str.contains(payload, "\"truncated\":true") == false {
+                return 18
+            }
+            if str.contains(payload, "filler filler") {
+                return 19
+            }
+        } else {
+            return 20
+        }
+
+        // top_k below one is a typed error, never a runtime trap.
+        let bad_top_k = recall(run, "alpha", 0)
+        if let Result::Ok(bad_payload) = bad_top_k {
+            return 21
+        }
+
+        // Memory outlives the run that wrote it: a second run with the same
+        // goal recalls the first run's entries and attributes them to it.
+        let end_first = agent_end(run)
+        if let Result::Err(end_error) = end_first {
+            return 22
+        }
+        let restart = agent_start(spec)
+        if let Result::Err(restart_error) = restart {
+            return 23
+        }
+        if let Result::Ok(second_run) = restart {
+            let cross_run = recall(second_run, "alpha beta gamma", 3)
+            if let Result::Ok(payload) = cross_run {
+                if str.contains(payload, "\"text\":\"alpha beta gamma\"") == false {
+                    return 24
+                }
+                if str.contains(payload, "\"origin\":\"agent\"") == false {
+                    return 25
+                }
+            } else {
+                return 26
+            }
+            let ended = agent_end(second_run)
+            if let Result::Err(second_end_error) = ended {
+                return 27
+            }
+        }
+
+        // A different goal has its own memory.
+        let other = agent_start(spec_json("agent-memory-other"))
+        if let Result::Err(other_error) = other {
+            return 28
+        }
+        if let Result::Ok(other_run) = other {
+            let isolated = recall(other_run, "alpha beta gamma", 3)
+            if let Result::Ok(payload) = isolated {
+                if str.contains(payload, "\"entries\":[]") == false {
+                    return 29
+                }
+            } else {
+                return 30
+            }
+            let end_other = agent_end(other_run)
+            if let Result::Err(other_end_error) = end_other {
+                return 31
+            }
+        }
+    }
+    return 0
+}

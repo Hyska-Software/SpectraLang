@@ -113,6 +113,18 @@ impl ASTLowering {
                         }
                         return self.lower_derive_from_json(enum_name, call_args[0], ir_func);
                     }
+                    // R-3210: `json_schema()` takes no arguments; the schema is
+                    // a compile-time string literal built from the derive data.
+                    if variant_name == "json_schema"
+                        && self.json_struct_schemas.contains_key(enum_name.as_str())
+                    {
+                        if data.as_deref().is_some_and(|args| !args.is_empty()) {
+                            return self.invalid_value(format!(
+                                "{enum_name}::json_schema takes no arguments"
+                            ));
+                        }
+                        return self.lower_derive_json_schema(enum_name, ir_func);
+                    }
                     let function_name = format!("{}_{}", enum_name, variant_name);
                     let mut call_args: Vec<Value> = Vec::new();
                     if let Some(data_exprs) = data {

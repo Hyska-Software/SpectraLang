@@ -1,0 +1,52 @@
+module agent_tool_surface
+
+// R-3210 end-to-end fixture: a public async function becomes a model-callable
+// tool whose name, input schema, effects and capabilities are derived. Only the
+// description is authored. `Cobranca::json_schema()` emits the JSON Schema from
+// the same field data that drives `to_json`/`from_json` (R-3210 T2); the
+// tool body performs one reachable host call so `surface --json` can derive a
+// non-empty effect set (R-3210 T3 / R-3214 T4).
+
+import std.agent
+
+#[derive(Serialize, Deserialize)]
+public record Cobranca {
+    id: string,
+    amount: int,
+    #[json(optional)]
+    note: string,
+}
+
+// The run handle is the model-invocability marker and must be first. `Run` is
+// a std.agent opaque handle type: it crosses the ABI as an integer handle, so
+// `surface --json` derives the same tool metadata as any other signature.
+#[agent_tool("Cria uma cobrança no provedor de pagamentos")]
+public async func cobrar(run: Run, cobranca: Cobranca) returns string {
+    let weight = token_count(cobranca.id)
+    let schema = Cobranca::json_schema()
+    if weight == 0 {
+        return schema
+    }
+    return schema
+}
+
+public func main() returns int {
+    // Derived schema: declaration order, wire names and `optional` (absent from
+    // `required`) all come from the derive data.
+    let schema = Cobranca::json_schema()
+    let expected = "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"amount\":{\"type\":\"integer\"},\"note\":{\"type\":\"string\"}},\"required\":[\"id\",\"amount\"]}"
+    if schema != expected {
+        return 1
+    }
+
+    // The schema accompanies the same wire form `to_json` produces.
+    let cobranca = Cobranca {
+        id: "inv-1",
+        amount: 7,
+        note: "urgent",
+    }
+    if cobranca.to_json() != "{\"id\":\"inv-1\",\"amount\":7,\"note\":\"urgent\"}" {
+        return 2
+    }
+    return 0
+}

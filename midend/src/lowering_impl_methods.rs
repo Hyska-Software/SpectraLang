@@ -1,6 +1,26 @@
 use super::*;
 
 impl ASTLowering {
+    /// Allocate a promoted stack slot for a mutable local and record its
+    /// pointee type so later loads read the slot at its declared width.
+    pub(crate) fn allocate_slot(&mut self, func: &mut IRFunction, name: &str, ty: IRType) -> Value {
+        let slot = self.builder.build_alloca(func, ty.clone());
+        self.alloca_map.insert(name.to_string(), slot);
+        self.alloca_slot_types.insert(slot.id, ty);
+        slot
+    }
+
+    /// Load the current value of a promoted local at its declared width.
+    pub(crate) fn load_slot(&mut self, name: &str, ir_func: &mut IRFunction) -> Option<Value> {
+        let alloca_ptr = *self.alloca_map.get(name)?;
+        let ty = self
+            .alloca_slot_types
+            .get(&alloca_ptr.id)
+            .cloned()
+            .unwrap_or(IRType::Int);
+        Some(self.builder.build_load_typed(ir_func, alloca_ptr, ty))
+    }
+
     pub(crate) fn lower_function(&mut self, ast_func: &ASTFunction) -> IRFunction {
         // Convert parameters
         let params: Vec<Parameter> = ast_func
@@ -59,6 +79,7 @@ impl ASTLowering {
         self.value_map.clear();
         self.variable_types.clear();
         self.alloca_map.clear();
+        self.alloca_slot_types.clear();
         self.array_map.clear();
         self.range_map.clear();
         self.struct_var_map.clear();
@@ -108,8 +129,7 @@ impl ASTLowering {
         };
         for var_name in &assigned_vars {
             let slot_type = slot_hints.get(var_name).cloned().unwrap_or(IRType::Int);
-            let alloca_value = self.builder.build_alloca(&mut ir_func, slot_type);
-            self.alloca_map.insert(var_name.clone(), alloca_value);
+            self.allocate_slot(&mut ir_func, var_name, slot_type);
         }
 
         // Lower async bodies as poll work. The ramp is generated below and
@@ -252,6 +272,7 @@ impl ASTLowering {
         self.value_map.clear();
         self.variable_types.clear();
         self.alloca_map.clear();
+        self.alloca_slot_types.clear();
         self.array_map.clear();
         self.range_map.clear();
         self.struct_var_map.clear();
@@ -307,8 +328,7 @@ impl ASTLowering {
         };
         for var_name in &assigned_vars {
             let slot_type = slot_hints.get(var_name).cloned().unwrap_or(IRType::Int);
-            let alloca_value = self.builder.build_alloca(&mut ir_func, slot_type);
-            self.alloca_map.insert(var_name.clone(), alloca_value);
+            self.allocate_slot(&mut ir_func, var_name, slot_type);
         }
 
         self.current_function = Some(ir_func.clone());
@@ -440,6 +460,7 @@ impl ASTLowering {
         let saved_value_map = self.value_map.clone();
         let saved_variable_types = self.variable_types.clone();
         let saved_alloca_map = std::mem::take(&mut self.alloca_map);
+        let saved_alloca_slot_types = std::mem::take(&mut self.alloca_slot_types);
         let saved_array_map = self.array_map.clone();
         let saved_async_output = self.current_async_output_type.clone();
         let saved_async_poll = self.lowering_async_poll;
@@ -453,6 +474,7 @@ impl ASTLowering {
         self.value_map.clear();
         self.variable_types.clear();
         self.alloca_map = HashMap::new();
+        self.alloca_slot_types = HashMap::new();
         self.array_map.clear();
         self.range_map.clear();
         self.struct_var_map.clear();
@@ -536,8 +558,7 @@ impl ASTLowering {
                 .get(var_name)
                 .cloned()
                 .unwrap_or(IRType::Int);
-            let alloca_value = self.builder.build_alloca(&mut lambda_func, slot_type);
-            self.alloca_map.insert(var_name.clone(), alloca_value);
+            self.allocate_slot(&mut lambda_func, var_name, slot_type);
         }
 
         // Lower the body
@@ -562,6 +583,7 @@ impl ASTLowering {
         self.value_map = saved_value_map;
         self.variable_types = saved_variable_types;
         self.alloca_map = saved_alloca_map;
+        self.alloca_slot_types = saved_alloca_slot_types;
         self.array_map = saved_array_map;
         self.struct_var_map = saved_struct_var_map;
         self.current_function = saved_current_function;

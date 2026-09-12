@@ -4,55 +4,71 @@
 //! which shares the std.ml text-tokenizer definition (`ml_text_tokens`). This
 //! module owns only the host-call ABI plumbing.
 
-use spectra_runtime::ffi::{
-    SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT, HOST_STATUS_SUCCESS,
-};
+use spectra_runtime::ffi::{SpectraHostCallContext, HOST_STATUS_INVALID_ARGUMENT};
 
-/// Upper bound for scanning a NUL-terminated packed UTF-8 buffer, matching the
-/// runtime's conservative `SPECTRA_STRING_SCAN_LIMIT` when the allocation is
-/// not tracked by the runtime allocation table.
-const STRING_SCAN_LIMIT: usize = 16 * 1024 * 1024;
-
-/// Read a Spectra string argument (packed UTF-8 bytes plus a single NUL byte).
-fn read_string_arg(value: SpectraHostValue) -> Option<String> {
-    if value == 0 {
-        return None;
-    }
-    let ptr = value as *const u8;
-    let mut bytes = Vec::new();
-    let mut offset = 0usize;
-    while offset < STRING_SCAN_LIMIT {
-        let byte = unsafe { *ptr.add(offset) };
-        if byte == 0 {
-            break;
-        }
-        bytes.push(byte);
-        offset += 1;
-    }
-    if offset >= STRING_SCAN_LIMIT {
-        return None;
-    }
-    String::from_utf8(bytes).ok()
-}
+use crate::abi;
 
 /// Host entry for `spectra.std.agent.token_count`.
 pub(crate) extern "C" fn token_count_host(ctx: *mut SpectraHostCallContext) -> i32 {
-    if ctx.is_null() {
+    let Some(args) = abi::args(ctx) else {
         return HOST_STATUS_INVALID_ARGUMENT;
-    }
-    let ctx_ref = unsafe { &mut *ctx };
-    let args = unsafe { ctx_ref.args_slice() };
+    };
     if args.len() != 1 {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
-    let Some(text) = read_string_arg(args[0]) else {
+    let Some(text) = abi::read_string_arg(args[0]) else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
     let count = spectra_runtime::stdlib::text_token_count(&text);
-    let results = unsafe { ctx_ref.results_slice_mut() };
-    if results.is_empty() {
-        return HOST_STATUS_INVALID_ARGUMENT;
+    abi::write_value(ctx, count as i64)
+}
+
+/// Registers the `token_count` host function; returns the number of newly
+/// inserted entries (0 when already registered).
+pub(crate) fn register() -> usize {
+    usize::from(spectra_runtime::ffi::register_host_function(
+        crate::TOKEN_COUNT_HOST_CALL,
+        token_count_host,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spectra_runtime::ffi::{clear_host_functions, HOST_STATUS_SUCCESS};
+
+    fn call(name: &str, args: &[i64]) -> (i32, i64) {
+        let function = spectra_runtime::ffi::lookup_host_function(name).expect("registered");
+        let mut results = [0 as i64; 1];
+        let mut ctx = SpectraHostCallContext {
+            args: args.as_ptr(),
+            arg_len: args.len(),
+            results: results.as_mut_ptr(),
+            result_len: results.len(),
+            invoke_fn: None,
+        };
+        (function(&mut ctx), results[0])
     }
-    results[0] = count as SpectraHostValue;
-    HOST_STATUS_SUCCESS
+
+    #[test]
+    fn token_count_reports_required_and_invalid_arguments() {
+        let _guard = crate::GLOBAL_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        clear_host_functions();
+        assert_eq!(register(), 1);
+        let text = unsafe { abi::alloc_string("alpha beta gamma") };
+        let (status, count) = call(crate::TOKEN_COUNT_HOST_CALL, &[text]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(count, 3);
+        // Wrong arity and a null string are rejected without panicking.
+        assert_eq!(
+            call(crate::TOKEN_COUNT_HOST_CALL, &[]).0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            call(crate::TOKEN_COUNT_HOST_CALL, &[0]).0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+    }
 }

@@ -1,0 +1,16 @@
+module agent_tool_missing_run
+
+// E3203: the run handle is the model-invocability marker and must be declared.
+
+public record Payload {
+    id: string,
+}
+
+#[agent_tool("no run")]
+public async func no_run(payload: Payload) returns string {
+    return payload.id
+}
+
+public func main() returns int {
+    return 0
+}

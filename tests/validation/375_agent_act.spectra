@@ -1,0 +1,255 @@
+module agent_act
+
+// R-3222 end-to-end fixture: the tool loop `act` and the governed dispatch it
+// is built on, against the deterministic mock provider.
+//
+// The mock is scripted through the prompt: a line `spectra:tool=<name> <json>`
+// makes the turn emit one tool call, `spectra:final=<text>` makes it answer.
+// The mock picks the directive at index N where N is the number of completed
+// tool results in the transcript, so a chain of directives drives a multi-step
+// loop without a network and the *selection* of the final directive is itself
+// proof that the preceding tool result (success or typed failure) was fed back
+// to the model.
+//
+// `tool_call` is the dispatcher primitive `act` uses; it is exercised directly
+// here so the wrapper ABI is proven in JIT and AOT independently of the loop.
+
+import std.agent
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[derive(Serialize, Deserialize)]
+public record EchoArgs {
+    text: string,
+}
+
+// A pure tool: the wrapper decodes `AddArgs` from JSON, calls the async tool
+// and encodes the `int` result.
+#[agent_tool("Adds two integers")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+// An async tool with a real IO round trip through the run's provider (the
+// deterministic mock), so the wrapper must drive a coroutine that itself
+// awaits another host call.
+#[agent_tool("Echoes text through the run's model provider")]
+public async func echo(run: Run, args: EchoArgs) returns string {
+    let reply = await ask(run, args.text)
+    if let Result::Ok(text) = reply {
+        return text
+    }
+    return "provider error"
+}
+
+func spec_unbounded() returns string {
+    return "{\"goal\":\"agent-act\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":3,\"journal\":\"\"}"
+}
+
+func spec_one_call() returns string {
+    return "{\"goal\":\"agent-act-ceiling\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":1,\"untrusted\":\"approve\",\"seed\":3,\"journal\":\"\"}"
+}
+
+// The wrappers are registered by the synthesized registration call at the top
+// of every dispatch entry point; `tool_call` invokes one by address.
+func dispatch_primitive() returns int {
+    let started = agent_start(spec_unbounded())
+    if let Result::Ok(run) = started {
+        let sum = block_on(tool_call(run, "add", "{\"a\":20,\"b\":22}"))
+        if let Result::Ok(value) = sum {
+            if value != "42" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        // The async tool's wrapper drives a coroutine that awaits the mock.
+        let echoed = block_on(tool_call(run, "echo", "{\"text\":\"hi\"}"))
+        if let Result::Ok(value) = echoed {
+            if value != "\"mock echo: hi\"" {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(end_error) = ended {
+            return 6
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// Two tool calls then a final answer.
+func multi_step_chain() returns int {
+    let started = agent_start(spec_unbounded())
+    if let Result::Ok(run) = started {
+        let script = "spectra:tool=add {\"a\":1,\"b\":2}\nspectra:tool=echo {\"text\":\"again\"}\nspectra:final=chain complete"
+        let answer = block_on(act(run, script))
+        if let Result::Ok(text) = answer {
+            if text != "chain complete" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"tool_calls\":2") == false {
+                return 4
+            }
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// Malformed arguments: the wrapper's typed decode error reaches the model as a
+// tool result, and the next scripted directive is the final answer.
+func malformed_arguments_are_repaired() returns int {
+    let started = agent_start(spec_unbounded())
+    if let Result::Ok(run) = started {
+        let script = "spectra:tool=add {\"a\":\"not-a-number\",\"b\":1}\nspectra:final=repaired after a typed error"
+        let answer = block_on(act(run, script))
+        if let Result::Ok(text) = answer {
+            if text != "repaired after a typed error" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            // The denied call is still charged: dispatch was attempted.
+            if str.contains(report, "\"tool_calls\":1") == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// An unknown tool name is a tool result, never a crash.
+func unknown_tool_is_reported() returns int {
+    let started = agent_start(spec_unbounded())
+    if let Result::Ok(run) = started {
+        let script = "spectra:tool=does_not_exist {}\nspectra:final=unknown tool handled"
+        let answer = block_on(act(run, script))
+        if let Result::Ok(text) = answer {
+            if text != "unknown tool handled" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let ended = agent_end(run)
+        if let Result::Err(end_error) = ended {
+            return 4
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// A declared ceiling denies the (max+1)-th call and names itself in the report.
+func tool_call_ceiling_denies() returns int {
+    let started = agent_start(spec_one_call())
+    if let Result::Ok(run) = started {
+        let script = "spectra:tool=add {\"a\":1,\"b\":1}\nspectra:tool=add {\"a\":2,\"b\":2}\nspectra:final=never reached"
+        let answer = block_on(act(run, script))
+        if let Result::Ok(text) = answer {
+            return 2
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"tool_calls\":1") == false {
+                return 3
+            }
+            if str.contains(report, "\"status\":\"budget_exceeded\"") == false {
+                return 4
+            }
+            if str.contains(report, "\"ceiling\":\"max_tool_calls\"") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// A model that answers without requesting a tool ends the loop immediately.
+func final_answer_without_tools() returns int {
+    let started = agent_start(spec_unbounded())
+    if let Result::Ok(run) = started {
+        let answer = block_on(act(run, "spectra:final=plain answer"))
+        if let Result::Ok(text) = answer {
+            if text != "plain answer" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"tool_calls\":0") == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    let direct = dispatch_primitive()
+    if direct != 0 {
+        return direct
+    }
+    let chain = multi_step_chain()
+    if chain != 0 {
+        return 100 + chain
+    }
+    let malformed = malformed_arguments_are_repaired()
+    if malformed != 0 {
+        return 200 + malformed
+    }
+    let unknown = unknown_tool_is_reported()
+    if unknown != 0 {
+        return 300 + unknown
+    }
+    let ceiling = tool_call_ceiling_denies()
+    if ceiling != 0 {
+        return 400 + ceiling
+    }
+    let plain = final_answer_without_tools()
+    if plain != 0 {
+        return 500 + plain
+    }
+    return 0
+}

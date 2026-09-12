@@ -42,6 +42,15 @@ impl SemanticAnalyzer {
                                     attribute.span,
                                 );
                             }
+                            AttributeArgument::StringLiteral(value) => {
+                                self.error(
+                                    format!(
+                                        "derive attribute on '{}' does not accept string argument \"{}\"",
+                                        owner_name, value
+                                    ),
+                                    attribute.span,
+                                );
+                            }
                         }
                     }
                 }
@@ -124,6 +133,15 @@ impl SemanticAnalyzer {
                             format!(
                                 "Unsupported json key '{}' on field '{}.{}'",
                                 key, owner_name, field_name
+                            ),
+                            attribute.span,
+                        );
+                    }
+                    AttributeArgument::StringLiteral(value) => {
+                        self.error(
+                            format!(
+                                "Unsupported json option \"{}\" on field '{}.{}'",
+                                value, owner_name, field_name
                             ),
                             attribute.span,
                         );
@@ -270,6 +288,20 @@ impl SemanticAnalyzer {
             );
             definitions.insert("to_json".to_string(), span);
             visibilities.insert("to_json".to_string(), Visibility::Public);
+
+            // R-3210: the schema is emitted from the same field data that
+            // produces `to_json`, so it cannot drift from the wire form.
+            type_methods.insert(
+                "json_schema".to_string(),
+                FunctionSignature {
+                    params: vec![],
+                    return_type: Type::String,
+                    self_kind: None,
+                    is_async: false,
+                },
+            );
+            definitions.insert("json_schema".to_string(), span);
+            visibilities.insert("json_schema".to_string(), Visibility::Public);
         }
 
         if derives.deserialize {

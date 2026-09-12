@@ -600,6 +600,244 @@ mod tests {
         );
     }
 
+    /// Installs an evaluator that denies exactly `denied` and allows every
+    /// other host name. Callers must hold `test_guard()` and clear it after.
+    fn deny_only(denied: &'static str) {
+        crate::agent::policy_hook::set_policy_evaluator(move |name| {
+            if name == denied {
+                crate::agent::policy_hook::PolicyDecision::Deny {
+                    reason: format!("capability not granted for {name}"),
+                }
+            } else {
+                crate::agent::policy_hook::PolicyDecision::Allow
+            }
+        });
+    }
+
+    #[test]
+    fn policy_denial_covers_uncached_single_invoke() {
+        let _lock = test_guard();
+        spectra_rt_host_clear();
+        crate::agent::policy_hook::clear_policy_evaluator();
+
+        let allowed = b"spectra.test.dispatch_allowed";
+        let denied = b"spectra.test.dispatch_denied";
+        assert!(spectra_rt_host_register(
+            allowed.as_ptr(),
+            allowed.len(),
+            host_context_add as *const ()
+        ));
+        assert!(spectra_rt_host_register(
+            denied.as_ptr(),
+            denied.len(),
+            host_context_add as *const ()
+        ));
+
+        deny_only("spectra.test.dispatch_denied");
+
+        let args = [20, 22];
+        let mut results = [0];
+        assert_eq!(
+            spectra_rt_host_invoke(
+                denied.as_ptr(),
+                denied.len(),
+                args.as_ptr(),
+                args.len(),
+                results.as_mut_ptr(),
+                results.len(),
+            ),
+            HOST_STATUS_DENIED
+        );
+        assert_eq!(results[0], 0, "a denied call must not write a result");
+
+        assert_eq!(
+            spectra_rt_host_invoke(
+                allowed.as_ptr(),
+                allowed.len(),
+                args.as_ptr(),
+                args.len(),
+                results.as_mut_ptr(),
+                results.len(),
+            ),
+            HOST_STATUS_SUCCESS
+        );
+        assert_eq!(results[0], 42);
+
+        crate::agent::policy_hook::clear_policy_evaluator();
+        spectra_rt_host_clear();
+    }
+
+    #[test]
+    fn policy_denial_covers_cached_single_invoke_on_cache_hits() {
+        let _lock = test_guard();
+        spectra_rt_host_clear();
+        crate::agent::policy_hook::clear_policy_evaluator();
+
+        let denied = b"spectra.test.dispatch_cached_denied";
+        assert!(spectra_rt_host_register(
+            denied.as_ptr(),
+            denied.len(),
+            host_context_add as *const ()
+        ));
+        deny_only("spectra.test.dispatch_cached_denied");
+
+        let cache = SpectraHostCallCache::new();
+        let args = [20, 22];
+        let mut results = [0];
+        assert_eq!(
+            spectra_rt_host_invoke_cached(
+                &cache,
+                denied.as_ptr(),
+                denied.len(),
+                args.as_ptr(),
+                args.len(),
+                results.as_mut_ptr(),
+                results.len(),
+            ),
+            HOST_STATUS_DENIED
+        );
+        assert!(
+            !cache
+                .function
+                .load(std::sync::atomic::Ordering::Acquire)
+                .is_null(),
+            "the first call must publish the cache slot so the second call is a hit"
+        );
+        // The second call resolves without consulting the registry, so this
+        // exercises policy evaluation on the cache-hit path.
+        assert_eq!(
+            spectra_rt_host_invoke_cached(
+                &cache,
+                denied.as_ptr(),
+                denied.len(),
+                args.as_ptr(),
+                args.len(),
+                results.as_mut_ptr(),
+                results.len(),
+            ),
+            HOST_STATUS_DENIED
+        );
+        assert_eq!(results[0], 0);
+
+        crate::agent::policy_hook::clear_policy_evaluator();
+        spectra_rt_host_clear();
+    }
+
+    #[test]
+    fn policy_denial_covers_uncached_batch_per_item() {
+        let _lock = test_guard();
+        spectra_rt_host_clear();
+        crate::agent::policy_hook::clear_policy_evaluator();
+
+        let allowed = b"spectra.test.dispatch_batch_allowed";
+        let denied = b"spectra.test.dispatch_batch_denied";
+        assert!(spectra_rt_host_register(
+            allowed.as_ptr(),
+            allowed.len(),
+            host_context_add as *const ()
+        ));
+        assert!(spectra_rt_host_register(
+            denied.as_ptr(),
+            denied.len(),
+            host_context_add as *const ()
+        ));
+        deny_only("spectra.test.dispatch_batch_denied");
+
+        let args_one = [1, 2];
+        let args_two = [3, 4];
+        let args_three = [5, 6];
+        let mut result_one = [0];
+        let mut result_two = [0];
+        let mut result_three = [99];
+        let calls = [
+            SpectraHostBatchCall {
+                name_ptr: allowed.as_ptr(),
+                name_len: allowed.len(),
+                args_ptr: args_one.as_ptr(),
+                arg_len: args_one.len(),
+                results_ptr: result_one.as_mut_ptr(),
+                result_len: result_one.len(),
+            },
+            SpectraHostBatchCall {
+                name_ptr: denied.as_ptr(),
+                name_len: denied.len(),
+                args_ptr: args_two.as_ptr(),
+                arg_len: args_two.len(),
+                results_ptr: result_two.as_mut_ptr(),
+                result_len: result_two.len(),
+            },
+            SpectraHostBatchCall {
+                name_ptr: allowed.as_ptr(),
+                name_len: allowed.len(),
+                args_ptr: args_three.as_ptr(),
+                arg_len: args_three.len(),
+                results_ptr: result_three.as_mut_ptr(),
+                result_len: result_three.len(),
+            },
+        ];
+
+        // The allowed item is evaluated and dispatched; the denied item is
+        // evaluated per item and stops the batch before the third descriptor.
+        assert_eq!(
+            spectra_rt_host_invoke_batch(calls.as_ptr(), calls.len()),
+            HOST_STATUS_DENIED
+        );
+        assert_eq!(result_one[0], 3);
+        assert_eq!(result_two[0], 0);
+        assert_eq!(result_three[0], 99);
+
+        crate::agent::policy_hook::clear_policy_evaluator();
+        spectra_rt_host_clear();
+    }
+
+    #[test]
+    fn policy_denial_covers_cached_batch_including_hits() {
+        let _lock = test_guard();
+        spectra_rt_host_clear();
+        crate::agent::policy_hook::clear_policy_evaluator();
+
+        let denied = b"spectra.test.dispatch_cached_batch_denied";
+        assert!(spectra_rt_host_register(
+            denied.as_ptr(),
+            denied.len(),
+            host_context_add as *const ()
+        ));
+        deny_only("spectra.test.dispatch_cached_batch_denied");
+
+        let cache = SpectraHostCallCache::new();
+        let args = [20, 22];
+        let mut results = [0];
+        let calls = [SpectraHostCachedBatchCall {
+            cache_ptr: &cache,
+            name_ptr: denied.as_ptr(),
+            name_len: denied.len(),
+            args_ptr: args.as_ptr(),
+            arg_len: args.len(),
+            results_ptr: results.as_mut_ptr(),
+            result_len: results.len(),
+        }];
+
+        assert_eq!(
+            spectra_rt_host_invoke_cached_batch(calls.as_ptr(), calls.len()),
+            HOST_STATUS_DENIED
+        );
+        assert!(
+            !cache
+                .function
+                .load(std::sync::atomic::Ordering::Acquire)
+                .is_null(),
+            "the first call must publish the cache slot so the second call is a hit"
+        );
+        assert_eq!(
+            spectra_rt_host_invoke_cached_batch(calls.as_ptr(), calls.len()),
+            HOST_STATUS_DENIED
+        );
+        assert_eq!(results[0], 0);
+
+        crate::agent::policy_hook::clear_policy_evaluator();
+        spectra_rt_host_clear();
+    }
+
     #[test]
     fn string_fast_abi_uses_allocation_table_bounds() {
         let _lock = test_guard();

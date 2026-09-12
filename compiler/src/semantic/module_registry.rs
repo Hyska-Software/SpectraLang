@@ -96,6 +96,28 @@ pub struct ExportedType {
     pub enum_struct_variants: Option<HashMap<String, Vec<(String, TypeAnnotation)>>>,
 }
 
+/// A validated `#[agent_tool]` declaration exported with its module.
+///
+/// Only the description is authored; name, input schema and payload type are
+/// derived by the semantic pass (`semantic_agent.rs`). Effects and required
+/// capabilities are deliberately absent: they are read from the IR by the
+/// surface command, never declared here.
+#[derive(Debug, Clone)]
+pub struct ExportedTool {
+    /// Derived tool name (the function name), unique project-wide.
+    pub name: String,
+    /// Authored description string.
+    pub description: String,
+    /// JSON Schema object for the payload parameter.
+    pub input_schema: String,
+    /// Name of the payload parameter (the one that is not `run`).
+    pub payload_param: String,
+    /// Rendered payload parameter type.
+    pub payload_type: String,
+    /// Span of the declaration, used for cross-module duplicate reporting.
+    pub span: crate::span::Span,
+}
+
 /// All public symbols exported by a single module.
 #[derive(Debug, Clone, Default)]
 pub struct ModuleExports {
@@ -110,6 +132,8 @@ pub struct ModuleExports {
     pub trait_impls: Vec<ExportedTraitImpl>,
     /// Inherent methods exported by type name, then method name.
     pub methods: HashMap<String, HashMap<String, ExportedMethod>>,
+    /// `#[agent_tool]` declarations keyed by derived tool name.
+    pub tools: HashMap<String, ExportedTool>,
     /// Package this module belongs to (from `spectra.toml` `name` field).
     pub package_name: Option<String>,
     /// Stdlib module path segments for builtin modules (e.g. ["std","io"]).

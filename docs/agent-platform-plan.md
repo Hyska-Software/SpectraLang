@@ -42,7 +42,7 @@ programs, plus the machine-readable project surface that coding agents consume. 
   host-call dispatch point; message-level taint with sensitive-sink gating; mandatory
   budgets; durable journaled runs with replay; human approval; declared compensation;
   OpenTelemetry GenAI spans.
-- **C. Library (Spectra code consumes):** `std.agent` — 18 free functions plus
+- **C. Library (Spectra code consumes):** `std.agent` — 20 free functions plus
   `json_schema` on derived records — for model calls, streaming, tool loops, memory,
   approval, assertions, provenance and compensation.
 
@@ -180,6 +180,59 @@ Each row is a place where the concept, verified against the code, cannot hold as
     `#[agent_tool]` only; the lenient treatment of other function attributes is left
     unchanged (documented), so existing sources keep compiling.
 
+Adaptations recorded while implementing (they refine the surface, not the guarantees):
+
+11. **Records cross the host ABI as JSON documents.** The host-call ABI carries scalars,
+    handles and pointers; there is no record-value channel. `AgentSpec` and `Report`
+    therefore remain compiler-declared records for typed authoring, and the ABI form is
+    JSON: `agent_start(spec: AgentSpec)` is written with the existing derive as
+    `agent_start(spec.to_json())`, and `agent_end(run)` returns the report JSON, decoded
+    with `Report::from_json(...)`. Zero new ABI; the typed surface is preserved.
+12. **The provider transport is injected, not imported.** `spectra-api` depends on
+    `spectra-agent` (D1 aggregation), so `spectra-agent` cannot depend on the API client.
+    `spectra-agent` defines an `HttpTransport` trait installed at registration time;
+    `spectra-api` supplies the real implementation over its client (TLS, pooling, SSRF
+    unchanged), and tests install a mock transport. The dependency DAG stays acyclic.
+13. **`stream_next` encodes end-of-stream as an empty chunk.** Nested
+    `Result<Option<string>, Error>` is not a host-return shape; model chunks are never
+    empty, so `stream_next(stream) -> Result<string, Error>` returns `""` at the end and
+    an `Err` on failure. Documented in section 4.2 and the bindings.
+14. **The `std.agent` midend table is hand-written until the generator absorbs new
+    namespaces.** R-3207's generator owns the seven legacy tables; the new namespace's
+    `midend/src/lowering_std_agent.rs` follows the same descriptor shape and is a
+    three-edit path for each new function. Absorbing it into the generator's LAYOUT is a
+    recorded follow-up, not a correctness gap (all `--check` gates stay green).
+15. **Memory persistence has no path-bearing surface entry.** The M3 surface table
+    pins `remember(run, text)` and `recall(run, query, top_k)`, so there is no
+    argument through which a caller could name an artifact path, and an implicit
+    write inside the host call would be an ungoverned filesystem effect. The item
+    therefore lands the persistence *format and API* at the module level:
+    `packages/spectra-agent/src/memory.rs` stores a `VectorIndex` (public seam
+    `spectra_runtime::vector_index::{write_artifact, read_artifact}`) whose
+    provenance ledger travels in the artifact metadata, and the spectra-agent
+    regression test persists, drops the writer and loads again — the restart path.
+    Stores are scoped by the run goal so a restarted agent with the same goal
+    recalls earlier memory across runs, which the checked-in fixture proves.
+    Wiring an explicit `persist`/`load` surface waits for R-3217, whose journal is
+    the phase's path-bearing artifact.
+16. **Tool registration is per module, not a static table passed to `agent_start`.**
+    A relocated data blob is not expressible in the IR, so `R-3222` lowers each module
+    that declares tools into an idempotent `__spectra_agent_register_tools_<module>()`
+    synthesized function (one `register_tool(name, wrapper_addr, description,
+    input_schema, effects_json)` host call per tool), called from every function that
+    dispatches and from the registration of each imported module that declares tools.
+    The wrapper ABI is frozen in ADR 0019:
+    `extern "C" fn __spectra_agent_tool_<name>(run, args_json_ptr, out_slot_ptr) -> i64`,
+    invoked by address through the same callback shape the coroutine machinery proves in
+    JIT and AOT. The wrapper receives the raw JSON argument document so it can reuse the
+    derived `from_json` lowering, and async tools are driven through the task ramp inside
+    the wrapper.
+17. **`tool_call(run, name, arguments_json)` is part of the surface.** `R-3222` added the
+    dispatcher primitive so the wrapper ABI is independently testable and the MCP/A2A
+    adapters (`R-3218`/`R-3219`) reuse one governed path. It charges the tool-call budget
+    before invoking and returns the tool's JSON result or a typed error. The count of
+    free functions is 20 with it.
+
 ### 2.3 Verified substrate (exists today)
 
 Verified by direct code inspection (`docs/agent-platform-plan.md` authoring pass; line
@@ -260,7 +313,7 @@ Copied forward from the concept and enforced by this plan:
 └──────────────────────────────────────────────────────────────────────┘
                                  │ authorizes
 ┌─ C. EXECUTION (std.agent) ───────────────────────────────────────────┐
-│  18 free functions + json_schema; tools are ordinary functions        │
+│  20 free functions + json_schema; tools are ordinary functions        │
 │  Consumer: Spectra code written by humans or agents                  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -345,19 +398,21 @@ remaining fields; the raw record stays available for full control. Additive eith
 
 | Function | Signature | Behavior |
 |---|---|---|
-| `agent_start` | `(spec: AgentSpec) returns Result<Run, Error>` | Validates the spec, validates every capability against the catalog, checks that the project's tools are known, allocates the run, opens the journal, registers the tool table (hidden lowering-provided arguments). |
-| `agent_end` | `(run: Run) returns Result<Report, Error>` | Closes the run, frees the handle, returns counters. Double end / use-after-end return typed errors. |
+| `agent_start` | `(spec: AgentSpec) returns Result<Run, Error>` | Validates the spec, validates every capability against the catalog, checks that the project's tools are known, allocates the run, opens the journal, registers the tool table (hidden lowering-provided arguments). The ABI form is `agent_start(spec.to_json())` (adaptation 11). |
+| `agent_end` | `(run: Run) returns Result<string, Error>` | Closes the run, frees the handle, returns the report as a JSON document (`Report::from_json` decodes it; adaptation 11). Double end / use-after-end return typed errors. |
 | `ask` | `(run: Run, prompt: string) returns Result<string, Error>` | One model turn under budget and journal. |
 | `ask_stream` | `(run: Run, prompt: string) returns Result<ChunkStream, Error>` | Same turn delivered in chunks. |
-| `stream_next` | `(stream: ChunkStream) returns Result<Option<string>, Error>` | Awaitable; `Option::None` marks the end. |
+| `stream_next` | `(stream: ChunkStream) returns Result<string, Error>` | Awaitable; the empty chunk marks the end (adaptation 13). |
 | `stream_close` | `(stream: ChunkStream) returns Result<bool, Error>` | Releases the stream; idempotent. |
 | `ask_json` | `(run: Run, prompt: string, schema: string) returns Result<string, Error>` | Schema-constrained response, validated client-side regardless of provider-side decoding. |
 | `act` | `(run: Run, prompt: string) returns Result<string, Error>` | Tool loop: model turn → tool call → journaled execution through the governed dispatch → repeat until a final answer or a ceiling. |
+| `tool_call` | `(run: Run, name: string, arguments_json: string) returns Result<string, Error>` | Governed dispatcher primitive `act` is built on: charges the tool-call budget, invokes the registered wrapper by address, and returns the tool's JSON result or a typed error. Added by `R-3222` so the dispatch ABI is independently testable and reusable by the MCP/A2A adapters. |
 | `embed` | `(run: Run, text: string) returns Result<Tensor, Error>` | 1-D float embedding tensor. |
 | `remember` | `(run: Run, text: string) returns Result<bool, Error>` | Appends to run memory with origin, run id, timestamp and goal. |
 | `recall` | `(run: Run, query: string, top_k: int) returns Result<string, Error>` | Deterministic retrieval (score ties broken by insertion order); payload capped by tokens. |
 | `approve` | `(run: Run, action: string) returns Result<bool, Error>` | Asks the registered approver; default approver denies when none is attached. Decisions are journaled. |
 | `require` | `(run: Run, condition: bool, message: string) returns Result<bool, Error>` | Governed assertion: `true` passes; `false` returns a typed error carrying the message and the run goal, and marks the run failed. |
+| `budget_remaining` | `(run: Run) returns Result<int, Error>` | Tokens remaining before the run's `max_tokens` ceiling (`i64::MAX` when unlimited); introspection never fails because a run was cancelled. Added by `R-3216` per its task text; the authored surface stays otherwise as specified. |
 | `untrusted` | `(run: Run, value: string, origin: string) returns string` | Records the value's digest as untrusted in the run ledger; returns the value unchanged. |
 | `trust` | `(run: Run, value: string, reason: string) returns string` | Records an audited declassification for the value's digest; returns the value unchanged. |
 | `compensate` | `(run: Run, tool: string, arguments_json: string) returns Result<bool, Error>` | Journals a pending compensation (LIFO). Unknown tool names are compile errors when literal (`E3205`). |

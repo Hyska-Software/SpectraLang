@@ -138,6 +138,26 @@ impl SemanticAnalyzer {
         };
         let stdlib_path_prefix = exports.stdlib_path.clone();
 
+        // R-3222: record the tools this import brings into scope. Their
+        // marshalling wrappers and registration function live in the exporting
+        // module; the midend calls that module's registration function at
+        // every dispatch entry point of this module.
+        if stdlib_path_prefix.is_none() {
+            for tool in exports.tools.values() {
+                if !self
+                    .imported_agent_tools
+                    .iter()
+                    .any(|existing| existing.name == tool.name)
+                {
+                    self.imported_agent_tools
+                        .push(crate::ast::ImportedAgentTool {
+                            module_path: module_path.clone(),
+                            name: tool.name.clone(),
+                        });
+                }
+            }
+        }
+
         // Register all prefix segments of the module path as known namespaces
         // so that qualified calls like `std.string.len(x)` don't trigger
         // "Undefined variable 'std'" errors.

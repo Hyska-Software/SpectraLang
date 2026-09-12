@@ -3,19 +3,59 @@ impl CodeGenerator {
     /// and terminates the current block.
     ///
     /// The runtime function prints `runtime error: <message>` to stderr,
-    /// flushes, and exits the process with code 101. The trailing `trap` is
-    /// unreachable in practice (the runtime call never returns) but keeps the
-    /// block terminated for the Cranelift verifier.
-    ///
-    /// Unlike `ConstString` literals — which resolve through heap storage in
-    /// JIT mode and pre-interned `.rodata` sections in AOT mode — panic
-    /// messages are always embedded as read-only data objects here. This
-    /// keeps the pointer valid in both backends without requiring AOT
-    /// pre-interning to know every lowering-generated message.
+    /// flushes, and exits the process with code 101 (deterministic for CI).
     pub(crate) fn emit_runtime_panic<M: Module>(
         module: &mut M,
         hostcall: &mut HostCallLoweringContext<'_>,
         builder: &mut FunctionBuilder,
+        message: &str,
+    ) -> BackendResult<()> {
+        Self::emit_fatal_message(
+            module,
+            hostcall,
+            builder,
+            RuntimeImport::SpectraPanic,
+            message,
+        )
+    }
+
+    /// Emits a call to `spectra_rt_capability_denied` with an interned message
+    /// literal and terminates the current block.
+    ///
+    /// The generic host-call lowering uses this when the dispatcher returns
+    /// `HOST_STATUS_DENIED` (ADR 0016 D4). The runtime prefixes the message
+    /// with `capability denied: ` and appends the policy evaluator's recorded
+    /// reason, so the trap is distinguishable from the generic host-failure
+    /// panic emitted by [`Self::emit_runtime_panic`].
+    pub(crate) fn emit_capability_denied<M: Module>(
+        module: &mut M,
+        hostcall: &mut HostCallLoweringContext<'_>,
+        builder: &mut FunctionBuilder,
+        message: &str,
+    ) -> BackendResult<()> {
+        Self::emit_fatal_message(
+            module,
+            hostcall,
+            builder,
+            RuntimeImport::HostDenied,
+            message,
+        )
+    }
+
+    /// Emits a fatal runtime call carrying one interned message literal.
+    ///
+    /// Unlike `ConstString` literals — which resolve through heap storage in
+    /// JIT mode and pre-interned `.rodata` sections in AOT mode — fatal
+    /// messages are always embedded as read-only data objects here. This keeps
+    /// the pointer valid in both backends without requiring AOT pre-interning
+    /// to know every lowering-generated message. The trailing `trap` is
+    /// unreachable in practice (the runtime call never returns) but keeps the
+    /// block terminated for the Cranelift verifier.
+    fn emit_fatal_message<M: Module>(
+        module: &mut M,
+        hostcall: &mut HostCallLoweringContext<'_>,
+        builder: &mut FunctionBuilder,
+        import: RuntimeImport,
         message: &str,
     ) -> BackendResult<()> {
         let record = match hostcall.string_literal_data.get(message) {
@@ -34,13 +74,13 @@ impl CodeGenerator {
                     hash ^= byte as u64;
                     hash = hash.wrapping_mul(0x100000001b3);
                 }
-                let symbol = format!(".__spectra_panic_str_{hash:016x}");
+                let symbol = format!(".__spectra_fatal_str_{hash:016x}");
 
                 let data_id = module
                     .declare_data(&symbol, Linkage::Local, false, false)
                     .map_err(|error| {
                         BackendCodegenError::cranelift(format!(
-                            "failed to declare panic message data '{symbol}': {error}"
+                            "failed to declare fatal message data '{symbol}': {error}"
                         ))
                     })?;
                 let mut data_ctx = DataDescription::new();
@@ -48,7 +88,7 @@ impl CodeGenerator {
                 data_ctx.define(bytes.into_boxed_slice());
                 module.define_data(data_id, &data_ctx).map_err(|error| {
                     BackendCodegenError::cranelift(format!(
-                        "failed to define panic message data '{symbol}': {error}"
+                        "failed to define fatal message data '{symbol}': {error}"
                     ))
                 })?;
 
@@ -63,12 +103,12 @@ impl CodeGenerator {
                 record
             }
         };
-        let gv = module.declare_data_in_func(record.data_id.expect("panic literal has data"), builder.func);
-        let msg_ptr = builder.ins().global_value(types::I64, gv);
-        let func_ref = module.declare_func_in_func(
-            hostcall.runtime_func(RuntimeImport::SpectraPanic),
+        let gv = module.declare_data_in_func(
+            record.data_id.expect("fatal literal has data"),
             builder.func,
         );
+        let msg_ptr = builder.ins().global_value(types::I64, gv);
+        let func_ref = module.declare_func_in_func(hostcall.runtime_func(import), builder.func);
         builder.ins().call(func_ref, &[msg_ptr]);
         builder
             .ins()

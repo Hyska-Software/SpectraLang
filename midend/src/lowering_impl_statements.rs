@@ -162,6 +162,11 @@ impl ASTLowering {
                             self.struct_var_map
                                 .insert(name.clone(), (value, actual_name.clone()));
                             self.value_map.insert(name.clone(), value);
+                            // A reassigned record local's slot holds its current
+                            // pointer; initialize it with the literal's address.
+                            if let Some(&alloca_ptr) = self.alloca_map.get(&name) {
+                                self.builder.build_store(ir_func, alloca_ptr, value);
+                            }
                         }
                         _ => {
                             if let Some(ref type_ann) = let_stmt.ty {
@@ -177,6 +182,9 @@ impl ASTLowering {
                                     self.struct_var_map
                                         .insert(name.clone(), (value, struct_type_name));
                                     self.value_map.insert(name.clone(), value);
+                                    if let Some(&alloca_ptr) = self.alloca_map.get(&name) {
+                                        self.builder.build_store(ir_func, alloca_ptr, value);
+                                    }
                                 } else if let Some(&alloca_ptr) = self.alloca_map.get(&name) {
                                     self.builder.build_store(ir_func, alloca_ptr, value);
                                 } else {
@@ -192,6 +200,9 @@ impl ASTLowering {
                                 self.struct_var_map
                                     .insert(name.clone(), (value, struct_type_name.clone()));
                                 self.value_map.insert(name.clone(), value);
+                                if let Some(&alloca_ptr) = self.alloca_map.get(&name) {
+                                    self.builder.build_store(ir_func, alloca_ptr, value);
+                                }
                             } else if let Some(&alloca_ptr) = self.alloca_map.get(&name) {
                                 self.builder.build_store(ir_func, alloca_ptr, value);
                             } else {
@@ -236,9 +247,13 @@ impl ASTLowering {
                                 .unwrap_or(value);
                             self.builder.build_store(ir_func, alloca_ptr, value);
 
+                            // Keep the binding's nominal type for inference and
+                            // drop glue; the record pointer itself lives in the
+                            // slot, which is the authoritative base address.
                             if let Some((_, struct_name)) = self.struct_var_map.get(name) {
+                                let struct_name = struct_name.clone();
                                 self.struct_var_map
-                                    .insert(name.clone(), (alloca_ptr, struct_name));
+                                    .insert(name.clone(), (value, struct_name));
                             }
 
                             if let Some(IRType::Array { element_type, size }) =
@@ -346,19 +361,11 @@ impl ASTLowering {
                                 }
                             };
 
-                        // Step 2: get (or compute) the struct pointer
-                        let struct_ptr =
-                            if let spectra_compiler::ast::ExpressionKind::Identifier(var_name) =
-                                &object.kind
-                            {
-                                if let Some((ptr, _)) = self.struct_var_map.get(var_name.as_str()) {
-                                    ptr
-                                } else {
-                                    self.lower_expression(object, ir_func)
-                                }
-                            } else {
-                                self.lower_expression(object, ir_func)
-                            };
+                        // Step 2: get (or compute) the struct pointer.
+                        // `lower_expression` is authoritative here: it resolves a
+                        // reassigned local through its promoted slot, and a plain
+                        // struct binding through `struct_var_map`.
+                        let struct_ptr = self.lower_expression(object, ir_func);
 
                         // Step 3: field pointer (padded layout) + store
                         if let Some((field_idx, field_type)) = field_info {

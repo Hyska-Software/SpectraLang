@@ -141,6 +141,19 @@ the code.
 | `E2119` | semantic | task-local value is used from a different executor lane | keep the value on its original lane or make it `Send` |
 | `E2120` | semantic | reserved async diagnostic catch-all | file a targeted diagnostic code before relying on this code in tooling |
 
+## Phase 32 Agent Platform Diagnostics
+
+The agent-platform range is stable for tooling. Codes are reserved even when a
+later phase broadens the implementation behind the code; individual functions
+of the range are documented as the items that emit them land.
+
+| Code | Phase | Meaning | Expected hint/action |
+| --- | --- | --- | --- |
+| `E3201` | semantic | capability grant in a literal `agent_start` spec that names no registered host call or namespace prefix in the contract catalog | use the runtime host-call name (`spectra.std.fs.fs_read`), a namespace prefix (`spectra.std.fs`), or a scoped form; the diagnostic suggests the nearest catalog name (the catalog path `std.fs.fs_read` is not a grant form) |
+| `E3202` | semantic | scoped capability grant (`name:key=value`) whose key the named host call does not register an extractor for, or a malformed scope form | only keys listed in the host call's catalog `scope_keys` are accepted (for example `spectra.api.client.request` supports `host` and `method`); remove the predicate or use a supported key |
+| `E3203` | semantic | invalid `#[agent_tool]` declaration: non-public, non-async, generic, `dyn` parameter, missing/misplaced `run` parameter, non-literal description, wrong arity, or a duplicate tool name | each condition carries its own hint: make the function `public async`, remove the type parameters or `dyn` parameter, declare `run` first, pass one string-literal description, or rename the duplicate |
+| `E3204` | semantic | tool payload parameter whose type the JSON derive cannot decode (exact-width ints/floats, arrays, non-unit enums, records without a derive, `optional` on a non-primitive) | use `int`, `float`, `bool`, `string`, `char`, a record with `#[derive(Serialize)]`/`#[derive(Deserialize)]`, or a unit-only enum |
+
 ## Machine-Readable JSON Diagnostics
 
 Current CLI contract:

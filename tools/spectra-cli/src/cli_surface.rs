@@ -29,6 +29,8 @@ struct SurfaceReportJson {
     estimated_tokens: usize,
     trimmed: SurfaceTrimJson,
     modules: Vec<SurfaceModuleJson>,
+    /// `#[agent_tool]` declarations with IR-derived effects/capabilities.
+    tools: Vec<SurfaceToolJson>,
 }
 
 #[derive(Serialize, Default)]
@@ -38,6 +40,27 @@ struct SurfaceTrimJson {
     types_dropped: usize,
     traits_dropped: usize,
     modules_dropped: usize,
+    tools_dropped: usize,
+}
+
+/// One `#[agent_tool]` declaration (R-3210).
+///
+/// `name`, `description`, `input_schema` and the payload fields come from the
+/// compiler's semantic snapshot; `effects` and `capabilities` are derived from
+/// the SIR call graph and are never authored (`R-3214`-T4).
+#[derive(Serialize, Clone)]
+struct SurfaceToolJson {
+    name: String,
+    description: String,
+    input_schema: String,
+    payload_param: String,
+    payload_type: String,
+    module: String,
+    /// Host-call names reachable from the tool function through the call graph.
+    effects: Vec<String>,
+    /// Minimal grants that authorize those effects, in namespace-prefix form
+    /// (`spectra.std.fs.fs_write` -> `spectra.std.fs`).
+    capabilities: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -212,6 +235,20 @@ fn surface_report_from_snapshot(
         estimated_tokens: 0,
         trimmed: SurfaceTrimJson::default(),
         modules,
+        tools: snapshot
+            .tools
+            .iter()
+            .map(|tool| SurfaceToolJson {
+                name: tool.name.clone(),
+                description: tool.description.clone(),
+                input_schema: tool.input_schema.clone(),
+                payload_param: tool.payload_param.clone(),
+                payload_type: tool.payload_type.clone(),
+                module: tool.module.clone(),
+                effects: Vec::new(),
+                capabilities: Vec::new(),
+            })
+            .collect(),
     }
 }
 
@@ -243,6 +280,25 @@ fn apply_surface_token_budget(report: &mut SurfaceReportJson, budget: usize) -> 
     report.trimmed.applied.push("type_members".to_string());
     if measure(report)? <= budget {
         return Ok(());
+    }
+
+    // Tools carry authored descriptions and derived schemas; drop the
+    // descriptions first (doc-like), then the tool list itself, before
+    // touching the module surface.
+    if !report.tools.is_empty() {
+        for tool in &mut report.tools {
+            tool.description.clear();
+        }
+        report.trimmed.applied.push("tool_descriptions".to_string());
+        if measure(report)? <= budget {
+            return Ok(());
+        }
+        report.trimmed.tools_dropped = report.tools.len();
+        report.tools.clear();
+        report.trimmed.applied.push("tools".to_string());
+        if measure(report)? <= budget {
+            return Ok(());
+        }
     }
 
     let traits_dropped: usize = report.modules.iter().map(|module| module.traits.len()).sum();
@@ -336,6 +392,101 @@ fn surface_error_code(error: &CompilerError) -> Option<String> {
     }
 }
 
+/// Derive each tool's effects and required capabilities from the SIR.
+///
+/// Effects are the host-call names reachable from the tool function through the
+/// static call graph; capabilities are those names in namespace-prefix form —
+/// the smallest grant `spectra_agent::policy` accepts (`grant_matches` treats a
+/// grant as exact or as an enclosing namespace). Both are derived here, never
+/// declared, so a tool declaration cannot lie about what it does.
+fn derive_tool_effects(
+    tools: &mut [SurfaceToolJson],
+    modules: &[(String, spectra_midend::ir::Module)],
+) {
+    use std::collections::{BTreeSet, HashMap, HashSet};
+
+    // A call into another module appears as a plain function name in the
+    // caller's IR; merging the project-wide maps lets the walk cross modules.
+    let mut callees: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut host_calls: HashMap<String, HashSet<String>> = HashMap::new();
+    for (_, module) in modules {
+        for (function, targets) in spectra_midend::callgraph::direct_calls(module) {
+            callees.entry(function).or_default().extend(targets);
+        }
+        for function in &module.functions {
+            let edges = callees.entry(function.name.clone()).or_default();
+            for block in &function.blocks {
+                for instruction in &block.instructions {
+                    match &instruction.kind {
+                        spectra_midend::ir::InstructionKind::HostCall { host, .. } => {
+                            host_calls
+                                .entry(function.name.clone())
+                                .or_default()
+                                .insert(host.clone());
+                        }
+                        // An async body lives in its generated poll function;
+                        // the ramp only creates the coroutine, so the edge is
+                        // not a `Call` and must be followed explicitly.
+                        spectra_midend::ir::InstructionKind::CoroutineCreate {
+                            poll, drop, ..
+                        } => {
+                            edges.insert(poll.clone());
+                            edges.insert(drop.clone());
+                        }
+                        // Taking a function's address makes it reachable.
+                        spectra_midend::ir::InstructionKind::FuncAddr { function, .. } => {
+                            edges.insert(function.clone());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    for tool in tools.iter_mut() {
+        let mut visited: HashSet<String> = HashSet::new();
+        let mut pending: Vec<String> = vec![tool.name.clone()];
+        let mut effects: BTreeSet<String> = BTreeSet::new();
+        while let Some(function) = pending.pop() {
+            if !visited.insert(function.clone()) {
+                continue;
+            }
+            if let Some(found) = host_calls.get(&function) {
+                effects.extend(found.iter().cloned());
+            }
+            if let Some(next) = callees.get(&function) {
+                pending.extend(next.iter().cloned());
+            }
+        }
+        tool.effects = effects.iter().cloned().collect();
+        let mut capabilities: BTreeSet<String> = BTreeSet::new();
+        for effect in &tool.effects {
+            capabilities.insert(host_namespace_prefix(effect));
+        }
+        tool.capabilities = capabilities.into_iter().collect();
+    }
+}
+
+/// `spectra.std.fs.fs_write` -> `spectra.std.fs` (the grant form).
+fn host_namespace_prefix(host_call: &str) -> String {
+    match host_call.rfind('.') {
+        Some(index) => host_call[..index].to_string(),
+        None => host_call.to_string(),
+    }
+}
+
+/// First duplicated tool name in deterministic (module, name) order.
+fn duplicate_tool_name(tools: &[SurfaceToolJson]) -> Option<(String, String, String)> {
+    let mut seen: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+    for tool in tools {
+        if let Some(first) = seen.insert(tool.name.as_str(), tool.module.as_str()) {
+            return Some((tool.name.clone(), first.to_string(), tool.module.clone()));
+        }
+    }
+    None
+}
+
 fn execute_surface(options: SurfaceOptions) -> CliResult<()> {
     if !options.root.exists() {
         let message = format!("Project path '{}' does not exist.", options.root.display());
@@ -360,11 +511,16 @@ fn execute_surface(options: SurfaceOptions) -> CliResult<()> {
 
     let mut compile_options = CompilationOptions::default();
     compile_options.run_jit = false;
+    // Tool effects are read from the SIR call graph, so the surface compile
+    // stays unoptimized: inlining would erase the call edges the derivation
+    // walks (same rationale as `impact --json`).
+    compile_options.optimize = false;
     let mut compiler = SpectraCompiler::new(compile_options);
     compiler.set_emit_internal_metrics(false);
     compiler.set_emit_output(false);
 
     let mut diagnostics: Vec<SurfaceDiagnosticJson> = Vec::new();
+    let mut ir_modules: Vec<(String, spectra_midend::ir::Module)> = Vec::new();
     for module in plan.modules() {
         let path = module.path.clone();
         let display_path = path_to_string(&path);
@@ -377,24 +533,18 @@ fn execute_surface(options: SurfaceOptions) -> CliResult<()> {
             }
         };
         compiler.set_current_package_name(module.package_name.clone());
-        if let Err(errors) = compiler.compile_for_diagnostics(&source, &display_path) {
-            for error in errors {
-                diagnostics.push(SurfaceDiagnosticJson {
-                    file: display_path.clone(),
-                    message: error.to_string(),
-                    code: surface_error_code(&error),
-                });
+        match compiler.compile_module_ir(&source, &display_path) {
+            Ok(ir_module) => ir_modules.push((module.name.clone(), ir_module)),
+            Err(errors) => {
+                for error in errors {
+                    diagnostics.push(SurfaceDiagnosticJson {
+                        file: display_path.clone(),
+                        message: error.to_string(),
+                        code: surface_error_code(&error),
+                    });
+                }
             }
         }
-    }
-
-    if !diagnostics.is_empty() {
-        let message = format!(
-            "surface failed: {} diagnostic(s) across the project.",
-            diagnostics.len()
-        );
-        emit_surface_failure(&message, diagnostics)?;
-        return Err(CliError::compilation(message));
     }
 
     let registry = compiler.registry();
@@ -410,6 +560,44 @@ fn execute_surface(options: SurfaceOptions) -> CliResult<()> {
 
     let mut report = surface_report_from_snapshot(&snapshot, &options);
 
+    // Tool-name uniqueness is a project-level rule, so it is checked before the
+    // per-module diagnostic summary: the modules register their exports before
+    // the backend runs, and a duplicate name is the actionable error even when
+    // the duplicate function also collides downstream.
+    if !report.tools.is_empty() {
+        derive_tool_effects(&mut report.tools, &ir_modules);
+        if let Some((name, first_module, second_module)) = duplicate_tool_name(&report.tools) {
+            let message = format!(
+                "Duplicate tool name '{name}' declared in modules '{first_module}' and '{second_module}'; tool names must be unique project-wide."
+            );
+            emit_surface_failure(
+                &message,
+                vec![
+                    SurfaceDiagnosticJson {
+                        file: first_module,
+                        message: format!("first declaration of tool '{name}'"),
+                        code: Some("E3203".to_string()),
+                    },
+                    SurfaceDiagnosticJson {
+                        file: second_module,
+                        message: format!("second declaration of tool '{name}'"),
+                        code: Some("E3203".to_string()),
+                    },
+                ],
+            )?;
+            return Err(CliError::compilation(message));
+        }
+    }
+
+    if !diagnostics.is_empty() {
+        let message = format!(
+            "surface failed: {} diagnostic(s) across the project.",
+            diagnostics.len()
+        );
+        emit_surface_failure(&message, diagnostics)?;
+        return Err(CliError::compilation(message));
+    }
+
     if let Some(package) = &options.package {
         report
             .modules
@@ -419,6 +607,14 @@ fn execute_surface(options: SurfaceOptions) -> CliResult<()> {
             emit_surface_failure(&message, Vec::new())?;
             return Err(CliError::compilation(message));
         }
+        let retained: std::collections::HashSet<&str> = report
+            .modules
+            .iter()
+            .map(|module| module.path.as_str())
+            .collect();
+        report
+            .tools
+            .retain(|tool| retained.contains(tool.module.as_str()));
     }
 
     if let Some(budget) = options.tokens {

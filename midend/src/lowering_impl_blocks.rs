@@ -253,7 +253,7 @@ impl ASTLowering {
             // names to keep destructor output deterministic until declaration
             // ordering is represented explicitly in the scope structure.
             values.sort_by(|left, right| right.0.cmp(&left.0));
-            for (_, value, struct_name) in values {
+            for (name, value, struct_name) in values {
                 let ty = IRType::Struct {
                     name: struct_name.clone(),
                     fields: self
@@ -263,7 +263,14 @@ impl ASTLowering {
                         .unwrap_or_default(),
                 };
                 if self.type_has_drop(&ty) {
-                    self.emit_drop_for_value(value, &ty, ir_func);
+                    // A reassigned record local's slot holds the pointer that is
+                    // currently live; drop that rather than a stale map entry.
+                    let target = if self.alloca_map.contains_key(&name) {
+                        self.load_slot(&name, ir_func).unwrap_or(value)
+                    } else {
+                        value
+                    };
+                    self.emit_drop_for_value(target, &ty, ir_func);
                 }
             }
         }

@@ -1,0 +1,14 @@
+module first
+
+// R-3210: tool names are unique project-wide. This module and `second` both
+// declare a tool named `cobrar`, so `surface --json` must fail with exit 65.
+
+#[derive(Serialize, Deserialize)]
+public record FirstPayload {
+    id: string,
+}
+
+#[agent_tool("first declaration")]
+public async func cobrar(run: int, payload: FirstPayload) returns string {
+    return payload.id
+}

@@ -57,6 +57,9 @@ impl SemanticAnalyzer {
             .imported_generic_functions
             .extend(new_generic_functions);
         module.imported_trait_decls.extend(new_trait_decls);
+        module
+            .imported_agent_tools
+            .extend(self.imported_agent_tools.drain(..));
 
         // First pass: collect all declarations (functions, generic structs, generic enums)
         for item in &module.items {
@@ -284,6 +287,10 @@ impl SemanticAnalyzer {
             let Item::Function(func) = item else {
                 continue;
             };
+            // R-3210: validate `#[agent_tool]` here, after the declaration pass
+            // registered every struct derive and enum shape the payload schema
+            // resolution needs (declaration order must not matter).
+            self.validate_function_attributes(func);
             let pushed_generics = self.push_generic_params(&func.type_params);
             let params: Vec<Type> = func
                 .params

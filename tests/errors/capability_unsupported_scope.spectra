@@ -1,0 +1,13 @@
+module capability_unsupported_scope
+
+// E3202: `spectra.std.fs.fs_read` registers no scope extractor, so the
+// `:host=…` predicate would be silently ignored at runtime. Only the catalog
+// `scope_keys` of the named host call are accepted (for example
+// `spectra.api.client.request` declares `host` and `method`).
+
+import std.agent
+
+public func main() returns int {
+    let start = agent_start("{\"goal\":\"r3215-scope\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"spectra.std.fs.fs_read:host=files.internal\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}")
+    return 0
+}

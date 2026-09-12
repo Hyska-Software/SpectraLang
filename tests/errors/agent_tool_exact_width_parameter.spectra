@@ -1,0 +1,12 @@
+module agent_tool_exact_width_parameter
+
+// E3204: exact-width scalars are not decodable by the JSON derive.
+
+#[agent_tool("exact width payload")]
+public async func exact_tool(run: int, payload: i32) returns string {
+    return "unreachable"
+}
+
+public func main() returns int {
+    return 0
+}

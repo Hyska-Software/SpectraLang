@@ -467,6 +467,105 @@ impl ASTLowering {
         }
     }
 
+    /// Render a real JSON Schema object for a derived struct.
+    ///
+    /// Properties come from the same `JsonFieldSchema` data that drives
+    /// `to_json`/`from_json` (wire names, optionality, lowered field types), so
+    /// the schema cannot drift from the encoding. No revalidation happens here:
+    /// the semantic pass owns derive validation and tool-parameter limits.
+    fn derive_json_schema_string(
+        &mut self,
+        struct_name: &str,
+        stack: &mut Vec<String>,
+    ) -> Result<String, String> {
+        if stack.iter().any(|entry| entry == struct_name) {
+            return Err(format!(
+                "JSON json_schema on recursive struct '{struct_name}' is not supported"
+            ));
+        }
+        let Some(schema) = self.json_struct_schemas.get(struct_name).cloned() else {
+            return Err(format!("JSON json_schema on unknown struct '{struct_name}'"));
+        };
+        stack.push(struct_name.to_string());
+        let mut properties: Vec<String> = Vec::with_capacity(schema.len());
+        let mut required: Vec<String> = Vec::new();
+        for field in &schema {
+            let property = match self.json_schema_type(&field.field_type, stack) {
+                Ok(property) => property,
+                Err(reason) => {
+                    stack.pop();
+                    return Err(format!(
+                        "JSON json_schema on '{struct_name}.{}': {reason}",
+                        field.source_name
+                    ));
+                }
+            };
+            properties.push(format!(
+                "{}:{}",
+                json_quote_text(&field.json_name),
+                property
+            ));
+            if !field.optional {
+                required.push(json_quote_text(&field.json_name));
+            }
+        }
+        stack.pop();
+        Ok(format!(
+            "{{\"type\":\"object\",\"properties\":{{{}}},\"required\":[{}]}}",
+            properties.join(","),
+            required.join(",")
+        ))
+    }
+
+    fn json_schema_type(
+        &mut self,
+        field_type: &IRType,
+        stack: &mut Vec<String>,
+    ) -> Result<String, String> {
+        let representation = self.ir_type_representation(field_type).clone();
+        match representation {
+            IRType::Int => Ok("{\"type\":\"integer\"}".to_string()),
+            IRType::Float => Ok("{\"type\":\"number\"}".to_string()),
+            IRType::Bool => Ok("{\"type\":\"boolean\"}".to_string()),
+            IRType::String | IRType::Char => Ok("{\"type\":\"string\"}".to_string()),
+            IRType::Struct { name, .. } => self.derive_json_schema_string(&name, stack),
+            IRType::Enum { name, .. } => {
+                let unit_only = self
+                    .enum_definitions
+                    .get(&name)
+                    .is_some_and(|variants| variants.iter().all(|(_, _, data)| data.is_none()));
+                if unit_only {
+                    Ok("{\"type\":\"string\"}".to_string())
+                } else {
+                    Err(format!(
+                        "enum '{name}' carries variant data; only unit-only enums are serializable"
+                    ))
+                }
+            }
+            IRType::ExactInt { .. } => {
+                Err("exact-width integer fields are not supported".to_string())
+            }
+            IRType::ExactFloat { .. } => {
+                Err("exact-width float fields are not supported".to_string())
+            }
+            IRType::Array { .. } => Err("array fields are not supported".to_string()),
+            other => Err(format!("field type {other:?} is not supported")),
+        }
+    }
+
+    /// Lower `Type::json_schema()` to the schema string literal.
+    pub(crate) fn lower_derive_json_schema(
+        &mut self,
+        struct_name: &str,
+        ir_func: &mut IRFunction,
+    ) -> Value {
+        let mut stack = Vec::new();
+        match self.derive_json_schema_string(struct_name, &mut stack) {
+            Ok(schema) => self.lower_string_literal(&schema, ir_func),
+            Err(message) => self.invalid_value(message),
+        }
+    }
+
     /// Decode a whole JSON document into a struct value.
     pub(crate) fn lower_derive_from_json(
         &mut self,
@@ -698,4 +797,29 @@ fn is_json_scalar(field_type: &IRType) -> bool {
         field_type,
         IRType::Int | IRType::Float | IRType::Bool | IRType::String | IRType::Char
     )
+}
+
+/// Quote a JSON member name for the schema document.
+///
+/// The wire names are identifiers or `#[json(rename = "...")]` strings; this
+/// escapes the JSON metacharacters without pulling `serde_json` into the
+/// midend crate (the schema is a compile-time string literal, not a value).
+fn json_quote_text(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            control if (control as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", control as u32));
+            }
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
 }

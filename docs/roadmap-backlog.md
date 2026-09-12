@@ -10048,7 +10048,7 @@ The cost of a native module lives in the seam between compiler, midend, runtime 
 
 ## R-3210 agent_tool Attribute and Derived JSON Schema
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `semantic`
 - Risk: `high`
@@ -10069,7 +10069,7 @@ A tool declaration that a human writes once and a model consumes must not be abl
 
 ## R-3211 Model Gateway, Run and Provider Abstraction
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -10091,7 +10091,7 @@ The only thing a real agent needs from a language is a governed way to talk to a
 
 ## R-3212 Agent Memory over std.ml
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `ml`
 - Risk: `medium`
@@ -10105,9 +10105,10 @@ Long-running agents need memory that survives a restart and can be audited. The 
 
 ### Acceptance
 
-- Memory survives persist and load across processes.
-- Recall returns identical ordering for identical inputs.
-- Every recalled entry can report its origin and the run that wrote it.
+- Stores are goal-scoped: a second run with the same goal recalls the entries of the first, and every entry still names the run that wrote it.
+- Recall ordering is identical for identical inputs (cosine score, ties broken by insertion order) and the payload is capped by tokens, not only by `top_k`.
+- Every recalled entry reports its tier, origin, run identity, goal and timestamp.
+- `MemoryStore::persist`/`load` reuse the vector-index artifact format; the spectra-agent regression test drops the writer before loading, so the restart path shares no in-process state.
 - scripts/validate_r3212_agent_memory.py passes and is registered in run_tests.ps1.
 
 ## R-3213 Run Context and Propagation
@@ -10133,7 +10134,7 @@ Enforcement without a reliable notion of the current run is theater. This item i
 
 ## R-3214 Capability Enforcement at the Dispatch Point
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `runtime`
 - Risk: `high`
@@ -10155,7 +10156,7 @@ This is the only capability in this roadmap that a competitor cannot match by ad
 
 ## R-3215 Capability Vocabulary Validated by the Compiler
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `semantic`
 - Risk: `medium`
@@ -10176,7 +10177,7 @@ The most common failure of permission systems is a grant that matches nothing an
 
 ## R-3216 Budget, Accounting and Cooperative Cancellation
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `runtime`
 - Risk: `medium`
@@ -10304,7 +10305,7 @@ A library that is not integrated with the formatter, LSP, package flow, docs and
 
 ## R-3222 Tool Loop and Governed Dispatch (act)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `runtime`
 - Risk: `high`

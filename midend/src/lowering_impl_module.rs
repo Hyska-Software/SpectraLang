@@ -1,6 +1,25 @@
 use super::*;
 
 impl ASTLowering {
+    /// Whether `name` is a JSON derive method that lowering always inlines.
+    ///
+    /// Such a name has no IR body to link against in any module, so an
+    /// importing module must not declare it as an external function.
+    fn is_inlined_derive_method(&self, name: &str) -> bool {
+        const INLINED_METHODS: [&str; 4] = [
+            "_to_json",
+            "_from_json",
+            "_json_schema",
+            "_json_error_field",
+        ];
+        INLINED_METHODS.iter().any(|suffix| {
+            name.strip_suffix(suffix).is_some_and(|struct_name| {
+                self.json_struct_schemas.contains_key(struct_name)
+                    || self.struct_definitions.contains_key(struct_name)
+            })
+        })
+    }
+
     pub fn lower_module(&mut self, ast_module: &ASTModule) -> Result<IRModule, Vec<MidendError>> {
         let mut ir_module = IRModule::new(&ast_module.name);
         ir_module.source_file = Some(self.source_file.clone());
@@ -189,6 +208,16 @@ impl ASTLowering {
         // through its persistent function map, while each AOT object is
         // intentionally generated in isolation.
         for (name, params, return_type) in &ast_module.imported_function_signatures {
+            // JSON derive methods (`Record_to_json`, `Record_from_json`,
+            // `Record_json_schema`, `Record_json_error_field`) have no native
+            // definition anywhere: the semantic pass synthesizes their
+            // signatures and every use site lowers them inline from the
+            // struct's derive schema. Declaring them as linker imports leaves
+            // unresolved externals and breaks AOT linking for every project
+            // that imports a module declaring a derived record.
+            if self.is_inlined_derive_method(name) {
+                continue;
+            }
             let external = ExternalFunction {
                 name: name.clone(),
                 params: params.iter().map(|param| self.lower_type(param)).collect(),
@@ -572,6 +601,12 @@ impl ASTLowering {
         for lambda in lambdas {
             ir_module.add_function(lambda);
         }
+        // R-3222: synthesize the marshalling wrappers declared by this module
+        // and the registration that hands their addresses to the runtime. Runs
+        // after every user function and coroutine exists, because the wrapper
+        // calls the tool ramp and reuses its lowered parameter/return types.
+        self.synthesize_agent_tools(ast_module, &mut ir_module);
+
         // Mark direct self-tail-recursion so the backend can emit native
         // Cranelift `return_call`s (see passes::tail_call_marking).
         crate::passes::tail_call_marking::mark_tail_self_recursion(&mut ir_module);

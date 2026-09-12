@@ -1,0 +1,16 @@
+module agent_tool_run_not_first
+
+// E3203: the run handle must be the first parameter.
+
+public record Payload {
+    id: string,
+}
+
+#[agent_tool("late run")]
+public async func late_run(payload: Payload, run: int) returns string {
+    return payload.id
+}
+
+public func main() returns int {
+    return 0
+}

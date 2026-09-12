@@ -2955,6 +2955,76 @@ if ($r3209AgentNamespace.Status -eq "PASSOU") {
 }
 $results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3209_agent_namespace"; Status = $r3209AgentNamespace.Status; Detalhe = $r3209AgentNamespace.Detail }
 
+Write-Host ""
+Write-Host "--- R-3210 agent_tool attribute and derived JSON schema ---" -ForegroundColor Yellow
+$r3210AgentTool = Invoke-HostCommand -name "validate_r3210_agent_tool" -fileName "python" -arguments @("scripts\validate_r3210_agent_tool.py") -workingDir (Get-Location).Path
+if ($r3210AgentTool.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3210_agent_tool"; Status = $r3210AgentTool.Status; Detalhe = $r3210AgentTool.Detail }
+
+Write-Host ""
+Write-Host "--- R-3211 model gateway, run and provider ---" -ForegroundColor Yellow
+$r3211ModelGateway = Invoke-HostCommand -name "validate_r3211_model_gateway" -fileName "python" -arguments @("scripts\validate_r3211_model_gateway.py") -workingDir (Get-Location).Path
+if ($r3211ModelGateway.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3211_model_gateway"; Status = $r3211ModelGateway.Status; Detalhe = $r3211ModelGateway.Detail }
+
+Write-Host ""
+Write-Host "--- R-3214 capability enforcement at the dispatch point ---" -ForegroundColor Yellow
+$r3214CapabilityEnforcement = Invoke-HostCommand -name "validate_r3214_capability_enforcement" -fileName "python" -arguments @("scripts\validate_r3214_capability_enforcement.py") -workingDir (Get-Location).Path
+if ($r3214CapabilityEnforcement.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3214_capability_enforcement"; Status = $r3214CapabilityEnforcement.Status; Detalhe = $r3214CapabilityEnforcement.Detail }
+
+Write-Host ""
+Write-Host "--- R-3212 agent memory over the runtime vector index ---" -ForegroundColor Yellow
+$r3212AgentMemory = Invoke-HostCommand -name "validate_r3212_agent_memory" -fileName "python" -arguments @("scripts\validate_r3212_agent_memory.py") -workingDir (Get-Location).Path
+if ($r3212AgentMemory.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3212_agent_memory"; Status = $r3212AgentMemory.Status; Detalhe = $r3212AgentMemory.Detail }
+
+Write-Host ""
+Write-Host "--- R-3215 capability vocabulary validated by the compiler ---" -ForegroundColor Yellow
+$r3215CapabilityVocabulary = Invoke-HostCommand -name "validate_r3215_capability_vocabulary" -fileName "python" -arguments @("scripts\validate_r3215_capability_vocabulary.py") -workingDir (Get-Location).Path
+if ($r3215CapabilityVocabulary.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3215_capability_vocabulary"; Status = $r3215CapabilityVocabulary.Status; Detalhe = $r3215CapabilityVocabulary.Detail }
+
+Write-Host ""
+Write-Host "--- R-3216 budget, accounting and cooperative cancellation ---" -ForegroundColor Yellow
+$r3216AgentBudget = Invoke-HostCommand -name "validate_r3216_agent_budget" -fileName "python" -arguments @("scripts\validate_r3216_agent_budget.py") -workingDir (Get-Location).Path
+if ($r3216AgentBudget.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3216_agent_budget"; Status = $r3216AgentBudget.Status; Detalhe = $r3216AgentBudget.Detail }
+
+Write-Host ""
+Write-Host "--- R-3222 tool loop act and governed tool dispatch ---" -ForegroundColor Yellow
+$r3222AgentAct = Invoke-HostCommand -name "validate_r3222_agent_act" -fileName "python" -arguments @("scripts\validate_r3222_agent_act.py") -workingDir (Get-Location).Path
+if ($r3222AgentAct.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3222_agent_act"; Status = $r3222AgentAct.Status; Detalhe = $r3222AgentAct.Detail }
+
 # ---------------------------------------------------------------------------
 # Resumo
 # ---------------------------------------------------------------------------

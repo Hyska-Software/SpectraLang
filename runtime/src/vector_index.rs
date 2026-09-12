@@ -25,13 +25,13 @@ pub(crate) struct VectorEntry {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct QueryResult {
+pub struct QueryResult {
     pub id: String,
     pub score: f64,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct QueryEvidence {
+pub struct QueryEvidence {
     pub results: Vec<QueryResult>,
     pub visited_nodes: usize,
     pub latency_us: u64,
@@ -46,18 +46,18 @@ pub(crate) struct VectorIndexMetrics {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct VectorIndex {
-    pub dimension: usize,
-    pub metadata: BTreeMap<String, String>,
-    pub entries: Vec<VectorEntry>,
-    pub links: Vec<Vec<Vec<usize>>>,
-    pub entry_point: usize,
-    pub max_level: usize,
-    pub metrics: VectorIndexMetrics,
+pub struct VectorIndex {
+    pub(crate) dimension: usize,
+    pub(crate) metadata: BTreeMap<String, String>,
+    pub(crate) entries: Vec<VectorEntry>,
+    pub(crate) links: Vec<Vec<Vec<usize>>>,
+    pub(crate) entry_point: usize,
+    pub(crate) max_level: usize,
+    pub(crate) metrics: VectorIndexMetrics,
 }
 
 #[derive(Debug)]
-pub(crate) enum VectorIndexError {
+pub enum VectorIndexError {
     Invalid(String),
 }
 
@@ -149,7 +149,7 @@ fn neighbor_cap(layer: usize) -> usize {
 }
 
 impl VectorIndex {
-    pub(crate) fn new(dimension: usize) -> Result<Self, VectorIndexError> {
+    pub fn new(dimension: usize) -> Result<Self, VectorIndexError> {
         if dimension == 0 {
             return Err(invalid("dimension must be positive"));
         }
@@ -188,7 +188,7 @@ impl VectorIndex {
         true
     }
 
-    pub(crate) fn insert(&mut self, id: String, vector: &[f64]) -> Result<usize, VectorIndexError> {
+    pub fn insert(&mut self, id: String, vector: &[f64]) -> Result<usize, VectorIndexError> {
         if id.is_empty() {
             return Err(invalid("id must not be empty"));
         }
@@ -436,7 +436,7 @@ impl VectorIndex {
         self.links[node][layer] = self.select_neighbors(&reference, &candidates, capacity);
     }
 
-    pub(crate) fn query(
+    pub fn query(
         &mut self,
         vector: &[f64],
         top_k: usize,
@@ -749,6 +749,48 @@ impl VectorIndex {
     pub(crate) fn metrics(&self) -> &VectorIndexMetrics {
         &self.metrics
     }
+
+    /// Number of live vectors.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Vector width fixed at construction.
+    pub fn dimension(&self) -> usize {
+        self.dimension
+    }
+
+    /// Attaches a caller-owned metadata entry (for example the provenance
+    /// ledger of `std.agent` memory). Unlike [`Self::set_metadata`], the key
+    /// is not restricted; the entry survives `artifact_data`/`from_artifact`
+    /// because both clone the metadata map verbatim.
+    pub fn set_custom_metadata(&mut self, key: &str, value: &str) {
+        self.metadata.insert(key.to_owned(), value.to_owned());
+    }
+
+    /// Reads a caller-owned metadata entry written by
+    /// [`Self::set_custom_metadata`].
+    pub fn custom_metadata(&self, key: &str) -> Option<&str> {
+        self.metadata.get(key).map(String::as_str)
+    }
+}
+
+/// Writes `index` to `path` in the standard vector-index artifact encoding
+/// (`artifact_role = "vector_index"`, `index_version = v2`).
+///
+/// Public seam for `std.agent` memory (R-3212): the artifact is the same one
+/// `spectra.std.ml.vector_index_persist` produces, so a memory store and a
+/// vector index are interchangeable on disk.
+pub fn write_artifact(path: &std::path::Path, index: &VectorIndex) -> Result<(), String> {
+    let data = index.artifact_data().map_err(|error| error.to_string())?;
+    crate::artifact::write_atomic(path, &data).map_err(|error| error.to_string())
+}
+
+/// Reads a vector index written by [`write_artifact`] (or by
+/// `spectra.std.ml.vector_index_persist`).
+pub fn read_artifact(path: &std::path::Path) -> Result<VectorIndex, String> {
+    let data = crate::artifact::read(path).map_err(|error| error.to_string())?;
+    VectorIndex::from_artifact(&data).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

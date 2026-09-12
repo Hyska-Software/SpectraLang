@@ -1,0 +1,16 @@
+module agent_tool_dyn_parameter
+
+// E3203: the marshalling wrapper cannot decode a dyn trait object.
+
+public trait Named {
+    func name(self) returns string
+}
+
+#[agent_tool("dyn tool")]
+public async func dyn_tool(run: int, payload: dyn Named) returns string {
+    return "unreachable"
+}
+
+public func main() returns int {
+    return 0
+}

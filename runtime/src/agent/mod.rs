@@ -5,4 +5,5 @@
 //! fail-closed detached-work policy; capability enforcement (`R-3214`) and the
 //! remaining governance items build on it.
 
+pub mod policy_hook;
 pub mod run_context;

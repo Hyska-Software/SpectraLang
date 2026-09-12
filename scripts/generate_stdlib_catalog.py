@@ -302,9 +302,30 @@ def signature_ir_return(returns: str) -> str:
         return IR_WIDTH_TYPES[value]
     if value in {"int_tensor", "float_tensor", "bool_tensor", "string_tensor"}:
         return f"Tensor<{value[: -len('_tensor')]}>"
-    if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(<[^<>]*(<[^<>]*>)?[^<>]*>)?", value):
+    if _is_ir_type_expression(value):
         return value
     raise RuntimeError(f"cannot map semantic return type {returns!r} onto the IR grammar")
+
+
+def _is_ir_type_expression(value: str) -> bool:
+    """Accept `Name` or `Name<arg[,arg]*>` nested to any depth.
+
+    Async host returns such as `Task<Result<Tensor<float, rank=1>, Error>>`
+    need arbitrary nesting; the previous single-level regex rejected them.
+    """
+    if not value or not re.match(r"[A-Za-z_]", value):
+        return False
+    if not re.fullmatch(r"[A-Za-z0-9_\.<>,= ]+", value):
+        return False
+    depth = 0
+    for char in value:
+        if char == "<":
+            depth += 1
+        elif char == ">":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
 
 
 

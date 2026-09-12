@@ -1,0 +1,90 @@
+module main
+
+// R-3222 cross-module dispatch: `main` declares no tools of its own. It imports
+// `tools`, so lowering calls `tools`' synthesized registration function at the
+// top of every function that dispatches, and the runtime then reaches the
+// wrappers defined in that other module by address.
+
+import std.agent
+import std.string as str
+import tools
+
+func spec() returns string {
+    return "{\"goal\":\"agent-act-cross-module\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":5,\"journal\":\"\"}"
+}
+
+// Direct dispatch of a tool declared in another module.
+func cross_module_tool_call() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let scaled = block_on(tool_call(run, "scale", "{\"value\":6,\"factor\":7}"))
+        if let Result::Ok(value) = scaled {
+            if value != "42" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        // The async tool in the other module round-trips through the provider.
+        let echoed = block_on(tool_call(run, "echo", "{\"text\":\"cross\"}"))
+        if let Result::Ok(value) = echoed {
+            if value != "\"mock echo: cross\"" {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(end_error) = ended {
+            return 6
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// The `act` loop with a tool chain whose tools both live in the imported
+// module.
+func cross_module_act_chain() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let script = "spectra:tool=scale {\"value\":5,\"factor\":5}\nspectra:tool=echo {\"text\":\"done\"}\nspectra:final=cross-module chain complete"
+        let answer = block_on(act(run, script))
+        if let Result::Ok(text) = answer {
+            if text != "cross-module chain complete" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"tool_calls\":2") == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    if triple(2) != 6 {
+        return 1
+    }
+    let direct = cross_module_tool_call()
+    if direct != 0 {
+        return 100 + direct
+    }
+    let chain = cross_module_act_chain()
+    if chain != 0 {
+        return 200 + chain
+    }
+    return 0
+}

@@ -57,17 +57,19 @@ impl ASTLowering {
                 else if let Some(info) = self.array_map.get(name) {
                     info.ptr
                 }
+                // A reassigned record local keeps its current pointer in its
+                // promoted slot; the slot is function-scoped while
+                // `struct_var_map` is block-scoped, so the slot must win or
+                // reads after a rebinding scope would observe a stale pointer.
+                else if let Some(value) = self.load_slot(name, ir_func) {
+                    value
+                }
                 // Check if this is a struct variable
                 else if let Some((struct_ptr, _)) = self.struct_var_map.get(name) {
                     // Struct variables are represented as pointers — return the pointer directly.
                     // Field access via FieldAccess/struct_var_map uses the pointer for GEP;
                     // method calls receive the pointer as `self`.
                     struct_ptr
-                }
-                // Check if variable is in memory (mutable)
-                else if let Some(&alloca_ptr) = self.alloca_map.get(name) {
-                    // Load from memory
-                    self.builder.build_load(ir_func, alloca_ptr)
                 } else if let Some(value) = self.value_map.get(name) {
                     // Use SSA value directly
                     value

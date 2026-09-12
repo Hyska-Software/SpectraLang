@@ -46,6 +46,26 @@ pub struct SurfaceTrait {
     pub visibility: String,
 }
 
+/// A `#[agent_tool]` declaration (R-3210).
+///
+/// Effects and required capabilities are not part of the semantic snapshot:
+/// they are derived from the IR by the surface command, never authored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurfaceTool {
+    /// Derived tool name (the function name), unique project-wide.
+    pub name: String,
+    /// Authored description string.
+    pub description: String,
+    /// JSON Schema object derived from the payload parameter.
+    pub input_schema: String,
+    /// Name of the payload parameter (the one that is not `run`).
+    pub payload_param: String,
+    /// Rendered payload parameter type.
+    pub payload_type: String,
+    /// Module that owns the tool.
+    pub module: String,
+}
+
 /// Everything a module exposes to importers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceModule {
@@ -63,6 +83,8 @@ pub struct SurfaceModule {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceSnapshot {
     pub modules: Vec<SurfaceModule>,
+    /// Project-wide tools, sorted by module then tool name.
+    pub tools: Vec<SurfaceTool>,
 }
 
 /// Build a surface snapshot from a populated module registry.
@@ -76,7 +98,28 @@ pub fn snapshot_from_registry(registry: &ModuleRegistry, include_builtins: bool)
         .map(|(path, exports)| module_snapshot(path, exports))
         .collect();
     modules.sort_by(|a, b| a.path.cmp(&b.path));
-    SurfaceSnapshot { modules }
+
+    let mut tools: Vec<SurfaceTool> = registry
+        .iter_modules()
+        .filter(|(_, exports)| include_builtins || exports.stdlib_path.is_none())
+        .flat_map(|(path, exports)| {
+            exports.tools.iter().map(move |(_, tool)| SurfaceTool {
+                name: tool.name.clone(),
+                description: tool.description.clone(),
+                input_schema: tool.input_schema.clone(),
+                payload_param: tool.payload_param.clone(),
+                payload_type: tool.payload_type.clone(),
+                module: path.to_string(),
+            })
+        })
+        .collect();
+    tools.sort_by(|a, b| {
+        a.module
+            .cmp(&b.module)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    SurfaceSnapshot { modules, tools }
 }
 
 fn module_snapshot(path: &str, exports: &ModuleExports) -> SurfaceModule {

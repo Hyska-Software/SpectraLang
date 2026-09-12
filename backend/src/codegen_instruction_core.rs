@@ -16,6 +16,7 @@ impl CodeGenerator {
         global_data: &HashMap<String, DataId>,
         frame_var: Variable,
         track_allocations: bool,
+        frame_locals: bool,
         current_block_id: usize,
         block_map: &HashMap<usize, Block>,
         phi_map: &HashMap<usize, Vec<PhiDescriptor>>,
@@ -60,6 +61,7 @@ impl CodeGenerator {
                 global_data,
                 frame_var,
                 track_allocations,
+                frame_locals,
             ),
             InstructionKind::Call { .. } | InstructionKind::AutodiffStep { .. } => {
                 Self::generate_call_instruction(

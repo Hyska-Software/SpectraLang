@@ -1,0 +1,18 @@
+module agent_tool_non_unit_enum_parameter
+
+// E3204: only unit-only enums are decodable; a data-carrying variant has no
+// JSON object representation.
+
+public enum Command {
+    Stop,
+    Move(int),
+}
+
+#[agent_tool("enum payload")]
+public async func enum_tool(run: int, payload: Command) returns string {
+    return "unreachable"
+}
+
+public func main() returns int {
+    return 0
+}

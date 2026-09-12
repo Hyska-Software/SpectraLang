@@ -1,0 +1,16 @@
+module agent_tool_non_literal_description
+
+// E3203: the description is the only authored string, and it must be a literal.
+
+public record Payload {
+    id: string,
+}
+
+#[agent_tool(description_text)]
+public async func literal_tool(run: int, payload: Payload) returns string {
+    return payload.id
+}
+
+public func main() returns int {
+    return 0
+}

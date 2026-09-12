@@ -1,0 +1,49 @@
+module async_await_loop
+
+// Regression: a scalar promoted local must live in the coroutine frame so its
+// value survives a suspension. Before the fix the local was lowered behind an
+// alloca whose address was stored in the frame; that address died with the poll
+// activation (stack slot, or manual allocation released by the per-poll frame
+// exit), so every post-await read observed garbage and the loop never
+// converged. Loop-carried locals must be frame-resident, not address-resident.
+
+import std.agent
+
+func spec_json() returns string {
+    return "{\"goal\":\"fixture\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}"
+}
+
+async func loop_with_await() returns int {
+    let start = agent_start(spec_json())
+    if let Result::Ok(run) = start {
+        let n = 0
+        let total = 0
+        let guard = 0
+        while n < 3 {
+            let reply = await ask(run, "tick")
+            if let Result::Ok(text) = reply {
+                total = total + 1
+            } else {
+                return 5
+            }
+            n = n + 1
+            guard = guard + 1
+            if guard > 5 {
+                return 7
+            }
+        }
+        if n != 3 {
+            return 8
+        }
+        if total != 3 {
+            return 9
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(loop_with_await())
+}

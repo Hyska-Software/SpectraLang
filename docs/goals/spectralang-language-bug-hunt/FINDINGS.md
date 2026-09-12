@@ -39,6 +39,25 @@ Os casos serão adicionados uma linha por vez. Falhas de compilação, crashes,
 timeouts e resultados incorretos devem preservar o output relevante em uma
 seção própria abaixo antes de qualquer promoção ou correção.
 
+## Phase 32 discovery — coroutine frame slots (found while implementing R-3211)
+
+Três defeitos de codegen na mesma área (locals promovidos em coroutines),
+descobertos pelo fixture de superfície do agente (`tests/validation/366`).
+
+| Fixture | Categoria | Comando | Resultado | Fase | Classificação | Próxima ação |
+|---|---|---|---|---|---|---|
+| `tests/validation/367_async_bool_loop.spectra` | `bool` local reatribuído em loop dentro de `async` | `target/debug/spectralang.exe run ...` | pré-fix: `exit=65` (`counter__poll` inválido: `icmp.i64 eq` com operando `i8`); pós-fix: `exit=0` em JIT O0–O3 e no AOT (`--debug-info=none`) | midend lowering (leitura de slot promovido sem tipo) | `FIXED` (R-3211) | manter regressão |
+| `tests/validation/368_async_await_loop.spectra` | variável escalar de loop mutada através de `await` | `target/debug/spectralang.exe run ...` | pré-fix: loop infinito e valores corrompidos (`n=-8403277092570101864`); pós-fix: `n=3`, `exit=0` (JIT e AOT) | midend lowering_async (alloca promovido guardado como ponteiro no frame) | `FIXED` (R-3211) | manter regressão |
+| `tests/validation/370_async_aggregate_across_await.spectra` | record/array local com endereço obtido através de `await` | `target/debug/spectralang.exe run ...` | pré-fix: `exit=8` (leitura de endereço de slot morto); pós-fix: `exit=0` (JIT O0/O2/O3 e AOT) | midend/backend/runtime (allocas de função com barreira de suspensão agora vivem em `spectra_rt_coroutine_local_ptr` + `AsyncFrame.locals`) | `FIXED` (R-3211) | manter regressão |
+| `tests/validation/373_record_reassign_in_loop.spectra` | record local reatribuído em loop (sem async) e variante com `await` entre atribuições | `target/debug/spectralang.exe run ...` | pré-fix: `exit=9`/`exit=11` (leitura de campos pela base errada); pós-fix: `exit=0` (JIT O0/O2/O3 e AOT) | midend lowering (base autoritativa do record local: slot promovido) | `FIXED` (R-3211) | manter regressão |
+
+Observações:
+- Os três defeitos eram latentes: nenhum fixture existente combinava `await`
+  com mutação de estado em loop (verificado: apenas o fixture 366 o fazia).
+- A limitação de PDB do MSVC (`LNK1318`) em fixtures grandes no `--emit-exe`
+  padrão é pré-existente e independente do std.agent (fixtures 127/185 também
+  falham); a aceitação de AOT desta fase usa `--debug-info=none`.
+
 ## Reproductions
 
 ### 258: mixed scalar layout reaches a codegen verifier failure

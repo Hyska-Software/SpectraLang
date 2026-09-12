@@ -104,6 +104,26 @@ pub extern "C" fn spectra_rt_coroutine_state_load(frame_ptr: i64) -> i64 {
     registry.state_ptr(frame_ptr).map(i64::from).unwrap_or(-1)
 }
 
+/// Returns durable per-frame storage for a promoted-local slot, allocating its
+/// backing bytes on first use. The address stays valid across suspension until
+/// the frame is dropped, so generated code may keep it in a frame slot.
+#[no_mangle]
+pub extern "C" fn spectra_rt_coroutine_local_ptr(frame_ptr: i64, slot: i64, size: i64) -> i64 {
+    let (Ok(slot), Ok(size)) = (usize::try_from(slot), usize::try_from(size)) else {
+        return 0;
+    };
+    let mut guard = frames().lock().unwrap_or_else(|poison| poison.into_inner());
+    if let Some(FrameOwner::Pending(frame)) = guard.get_mut(&frame_ptr) {
+        return frame.local_ptr(slot, size).unwrap_or(0);
+    }
+    drop(guard);
+    let registry = match crate::stdlib::lock_async_task_registry() {
+        Ok(registry) => registry.coroutine_frames.clone(),
+        Err(_) => return 0,
+    };
+    registry.local_ptr(frame_ptr, slot, size).unwrap_or(0)
+}
+
 #[no_mangle]
 pub extern "C" fn spectra_rt_coroutine_state_store(frame_ptr: i64, state: i64) -> i64 {
     let Ok(state) = u32::try_from(state) else {

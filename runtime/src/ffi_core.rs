@@ -321,6 +321,12 @@ pub const HOST_STATUS_SUCCESS: i32 = 0;
 pub const HOST_STATUS_INVALID_ARGUMENT: i32 = 1;
 pub const HOST_STATUS_NOT_FOUND: i32 = 2;
 pub const HOST_STATUS_INTERNAL_ERROR: i32 = 3;
+/// The active run's capability grant refused this host call (ADR 0016 D4).
+///
+/// Denial happens before the host function is invoked, so no effect occurs.
+/// The lowering traps on this code through the dedicated fatal symbol
+/// (`spectra_rt_capability_denied`) instead of the generic host-failure text.
+pub const HOST_STATUS_DENIED: i32 = 4;
 
 /// Context passed to host functions containing argument and result buffers.
 #[repr(C)]

@@ -1,20 +1,21 @@
 # ADR 0019: Agent Tool Dispatch ABI
 
-Status: Accepted (interface frozen; concrete ABI details subject to the R-3222-T1 spike)
+Status: Accepted. The wrapper ABI, registration protocol and address-lifetime
+rules are **frozen** by the R-3222-T1 spike, which proved tool invocation by
+address in JIT and AOT with two tools in two modules (one async with a real
+provider round trip); see "Frozen ABI" below for the contract and the evidence.
 
 Date: 2026-09-12
 
-Roadmap item: R-3201
+Roadmap item: R-3201 (shape), R-3222 (implementation and spike)
 
-> **Spike dependency.** The _shape_ of this decision — a runtime-side `act`
-> loop, compiler-synthesized marshalling wrappers, and a static tool table
-> passed to the runtime as hidden lowering-provided arguments of
-> `agent_start` — is frozen here. The _concrete_ wrapper ABI, table layout and
-> address-lifetime rules are provisional until `R-3222-T1` (the dispatcher
-> spike) proves tool invocation by address in JIT **and** AOT with two tools
-> in two modules. `R-3222-T1` updates this ADR with the spike evidence and
-> finalizes the details. No implementation may depend on the provisional
-> details before that spike lands.
+> **Implementation note (R-3222).** The shape below is what landed. Two details
+> changed against the original planning text and are recorded with their
+> evidence in "Frozen ABI": the tool table is not passed as hidden arguments of
+> `agent_start` — each module registers its own wrappers through
+> `spectra.std.agent.register_tool` — and the wrapper receives the raw argument
+> document rather than a decoded buffer (it decodes with the derived
+> `from_json`).
 
 ## Context
 
@@ -47,16 +48,17 @@ The wrapper:
 4. writes the encoded result to a caller-provided out-slot and signals success
    or failure through a status.
 
-The compiler/midend also synthesizes a **static tool table**: for each tool, a
-name and the wrapper's address (plus the metadata the loop needs). The table is
-passed to the runtime as **hidden lowering-provided arguments of
-`agent_start`**. Nothing in user code refers to the table; the user writes only
-the attribute and the function.
+The compiler/midend also synthesizes a **registration function per module** that
+hands the runtime each tool's name, wrapper address and metadata through
+`spectra.std.agent.register_tool`. Nothing in user code refers to any of it; the
+user writes only the attribute and the function. (The originally planned "static
+tool table passed to `agent_start`" was replaced by registration during the
+spike; the rationale and evidence are in "Frozen ABI".)
 
 The runtime invokes a wrapper **by address** through the proven i64 callback
-ABI. The wrapper's arguments are the decoded-argument buffer and the result
-out-slot; the return value is a status in the same shape host calls use, so a
-tool failure is a typed error at the loop, not a trap.
+ABI. The wrapper's arguments are the model's JSON argument document, the run
+handle and the result out-slot; the return value is a status, so a tool failure
+is a typed error at the loop, not a trap.
 
 Rationale for putting the loop in the runtime: the loop, budget, journal,
 approval and transcript all live in one place, and the same wrapper invocation
@@ -101,29 +103,137 @@ references it across modules:
 
 ### Shielding synthesized functions
 
-Synthesized wrappers and table constructors must not be inlined, duplicated or
-eliminated by ordinary optimization passes. The midend already has the
-precedent: `Function.suspension_barrier` (`midend/src/ir.rs:74`) marks
-generated poll/drop functions opaque to ordinary CFG rewrites. Synthesized
-tool-dispatch functions carry the same shield (or an equivalent one), so an
-optimizer cannot remove a wrapper the runtime will call by address or
-duplicate it into inconsistent copies.
+Synthesized wrappers and the registration function must not be inlined away or
+eliminated by ordinary optimization passes. `Function.suspension_barrier`
+(`midend/src/ir.rs:74`) is the precedent for opaque generated functions, but it
+is **not** the right shield here: it also selects coroutine frame-local lowering
+for allocas, and the wrapper is a plain function. The equivalent shield, and why
+it holds, is recorded in "Frozen ABI" → "Equivalent shield".
 
-## Provisional details (finalized by R-3222-T1)
+## Frozen ABI (finalized by R-3222-T1, with spike evidence)
 
-The following are intentionally not frozen here and must be recorded as spike
-evidence in this ADR before `act` is built:
+Status: **frozen**. The spike ran on 2026-09-12 with two tools in two modules
+(one async with a real provider round trip) and passed in JIT and AOT.
 
-- the exact wrapper signature and its status encoding;
-- the exact table layout (entry struct, alignment, length and address
-  arguments to `agent_start`);
-- the result hand-off protocol (out-slot scratch buffer ownership and size
-  negotiation) and the error channel for unknown tool / invalid arguments /
-  tool failure;
-- address-lifetime rules across JIT finalization and AOT relocation, including
-  what happens when a module is recompiled or a table outlives one compilation;
-- how the async tools of the tool set are driven (an async tool is a coroutine;
-  the wrapper must create and drive it under the run's context).
+### Wrapper signature and status encoding
+
+```
+extern "C" fn __spectra_agent_tool_<name>(
+    run:       i64,   // the live agent-run handle
+    args_json: i64,   // pointer to the model's JSON argument document,
+                      // packed UTF-8 with a single trailing NUL, arena-owned
+    out_slot:  i64,   // pointer to one arena word written by the wrapper
+) -> i64              // 0 = success, 1 = the call was rejected
+```
+
+- All four values are machine-word integers, i.e. exactly the callback shape
+  `CoroutineCreate` already passes for `poll`/`drop`; the runtime transmutes the
+  address to `unsafe extern "C" fn(i64, i64, i64) -> i64` at the call site
+  (`packages/spectra-agent/src/tools.rs`).
+- The `Run` parameter is typed as the opaque `Run` handle in IR, so the wrapper
+  is declared `(Run, string, int) -> int`.
+- **Result hand-off.** `out_slot` always receives a pointer to a packed UTF-8
+  string: the JSON result document on success, the typed error message on
+  failure. No size negotiation is needed because the payload is always a JSON
+  document, and no memory is owned by the runtime beyond the arena block it
+  allocates for the slot. This replaces the provisional "decoded-argument
+  buffer" wording: the wrapper receives the raw document and decodes it, which
+  lets the wrapper reuse the derived `from_json` lowering.
+- **Error channel.** Malformed arguments and tool failures are *values*
+  (`status = 1` plus the message), never a trap: `tools::invoke` turns them into
+  `AgentError::ToolFailed`, which the loop feeds back to the model. An unknown
+  name is `AgentError::UnknownTool`, raised before the wrapper is reached. A
+  crossed `max_tool_calls` ceiling is `AgentError::BudgetExceeded`, raised
+  before the call, and is terminal.
+
+### Registration (adapted from "hidden arguments on `agent_start`")
+
+The SPIKE disproved the provisional table-passing shape: a static table would
+need a relocated data blob, which the IR has no facility for. The sanctioned
+fallback from the item description is what landed:
+
+- Each module that declares tools synthesizes
+  `__spectra_agent_register_tools_<module path>() -> int`, which emits one
+  `spectra.std.agent.register_tool(name, wrapper_address, description,
+  input_schema, effects_json) -> Result<bool, Error>` host call per tool. The
+  address is a `FuncAddr` on the synthesized wrapper, so it materializes through
+  the existing JIT/AOT mechanism.
+- Every function that contains a dispatch call (`spectra.std.agent.act` or
+  `spectra.std.agent.tool_call`) gets a call to its own module's registration
+  function *and* to the registration function of every imported module that
+  declares tools (the symbol name is derived from the module path). This is how
+  a cross-module tool is registered without a second dispatch path and without
+  cross-module `FuncAddr`: the defining module owns its wrappers and its
+  metadata, the importing module only calls a known symbol.
+- The runtime registry is process-global and idempotent by tool name; the same
+  name at the same address refreshes metadata without duplicating an entry, and
+  a different address replaces the stale entry.
+- Registration also carries the tool's derived **effects** (host-call names
+  reachable from the tool body), so `act`/`tool_call` can fail the run before
+  the first dispatch when the tool's effects exceed `AgentSpec.allow`
+  (`tools::enforce_run_grant`, reusing `policy::grant_matches`).
+
+### Address lifetime
+
+- **JIT**: `FuncAddr` prefers `finalized_function_ptrs`
+  (`backend/src/codegen_instruction_indirect.rs:21-35`); a wrapper compiled in
+  an earlier module of the same run is therefore already callable. Project
+  builds compile dependencies first, which is the same ordering cross-module
+  calls already rely on.
+- **AOT**: the module that declares a tool also defines it, so no cross-module
+  wrapper symbol is needed; the only cross-module symbol is the registration
+  function, declared as an ordinary `external_functions` entry and resolved by
+  the native linker.
+- The registry lives for the process. Re-registering a name replaces its
+  address, so a recompiled module never leaves a stale pointer reachable.
+
+### Equivalent shield
+
+`Function.suspension_barrier` (`midend/src/ir.rs:74`) is **not** used for the
+synthesized functions: the flag selects coroutine frame-local lowering for
+allocas, and the wrapper is a plain function whose allocas must stay ordinary.
+The equivalent shield is structural: the wrapper body contains `Call`/`HostCall`
+instructions, which excludes it from `function_inlining` (an inline candidate
+may contain neither), dead-code elimination only removes instructions and never
+whole functions, and the `FuncAddr` inside the registration function is what
+makes the wrapper reachable. The registration function is reached by `Call`
+from the dispatch entry points. A regression here would surface as an AOT
+linker error for the missing wrapper symbol, not as a silent miscompile.
+
+### Async tools
+
+An `#[agent_tool]` function is async by validation. The wrapper calls the
+tool's public ramp (which returns a `Task`), then emits
+`spectra.async.task.block_on` + `spectra.async.task.result` — the same pair the
+language's `block_on` lowers to — so the coroutine is created and driven
+entirely inside the wrapper, under the run's context. The spike's `echo` tool
+awaits the run's provider inside the tool body, proving a wrapper drives a
+coroutine that itself awaits a host call.
+
+### Spike evidence
+
+| Evidence | Result |
+| --- | --- |
+| `tests/validation/375_agent_act.spectra` (two tools, one async with a provider round trip; multi-step chain of two calls then a final answer; malformed arguments repaired through the typed error; unknown tool reported to the model; `max_tool_calls` denial) | `spectralang run` exit 0; `compile --debug-info=none --emit-exe` binary exit 0 |
+| `tests/projects/valid/agent_act` (tools in module `tools`, dispatcher in module `main`) | JIT exit 0; AOT binary exit 0 |
+| IR inspection | `func_addr __spectra_agent_tool_<name>` + `hostcall spectra.std.agent.register_tool` in the synthesized registration function |
+| `cargo test -p spectra-agent`, `-p spectra-midend`, `-p spectra-compiler`, `-p spectra-api` | all green |
+
+Two defects found by the spike are fixed alongside it:
+
+1. **String comparison in synthesized IR.** The first wrapper used the raw `ne`
+   instruction to test the JSON validator's verdict against `""`, which compares
+   pointers and was therefore always true. The wrapper now uses
+   `spectra.std.string.eq`, the same codec the language's `!=` uses on strings.
+   This is a general hazard for any synthesized IR: comparisons on aggregate
+   values must go through the runtime codec.
+2. **Cross-module JSON derive methods were declared as linker imports.** An
+   importing module received `Record_to_json`/`_from_json`/`_json_schema`/
+   `_json_error_field` in `imported_function_signatures`, and AOT emitted them
+   as undefined symbols although no module ever defines them (they are always
+   lowered inline). Any project importing a module that declares a
+   `#[derive(Serialize)]` record failed to link. Lowering now skips those
+   names (`ASTLowering::is_inlined_derive_method`).
 
 ## Rationale
 
@@ -145,10 +255,14 @@ execution modes. Reusing it avoids a second dynamic-call mechanism, a symbol
 registry, or a `dlsym`-style lookup, all of which would have their own JIT/AOT
 lifetime rules.
 
-**Why hidden arguments on `agent_start`.** The table is compiler-known data.
-Passing it as hidden lowering-provided arguments keeps user code free of it,
-keeps the surface function signature stable (`agent_start(spec)`), and puts the
-data where the runtime already is when a run starts.
+**Why registration instead of a table pointer.** Registration gives each module
+ownership of the data only it knows (the wrapper address, the tool's description
+and schema, its derived effects) and keeps user code free of any of it. The
+grant check in `act`/`tool_call` runs over the registry the same file populated,
+so a tool whose effects exceed `AgentSpec.allow` fails before it can run. The
+provisional "hidden arguments on `agent_start`" shape would have required a
+relocated static data blob, which the IR has no facility for; it is recorded as
+an adaptation in "Frozen ABI" with the spike's evidence.
 
 **Why freeze the shape now.** The shape determines which items can be built in
 parallel (the attribute, the run, the surface) without rework. The concrete
@@ -159,18 +273,21 @@ rather than guessed.
 
 - `R-3210` derives the tool name, input schema, effects and capabilities; the
   input schema is the same JSON schema the wrapper's `from_json` decodes.
-- `R-3211` implements `agent_start` accepting hidden lowering-provided
-  arguments (table address and length) in addition to `AgentSpec`.
-- `R-3222-T1` runs the dispatcher spike and updates this ADR with the frozen
-  wrapper ABI, table layout, error channel and lifetime rules.
-- `R-3222-T2` synthesizes per-tool wrappers, the static table,
-  `external_functions` declarations for cross-module tools, the shield, and the
-  hidden arguments at every `agent_start` call site.
+- `R-3222-T1` ran the dispatcher spike and froze the wrapper ABI, the
+  registration protocol, the error channel and the lifetime rules (see "Frozen
+  ABI").
+- `R-3222-T2` synthesizes the per-tool wrappers and the per-module registration
+  function, wires registration into every dispatch entry point, declares the
+  cross-module registration symbol, and derives each tool's effects
+  (`midend/src/lowering_agent_tools.rs`).
 - `R-3222-T3` implements the runtime tool registry and address invocation with
-  an out-slot scratch buffer and typed errors.
-- `R-3222-T5` routes tool execution through the governed dispatch so
-  capabilities, taint and journaling apply inside `act` exactly as they do for
-  host calls (I7).
+  an out-slot word and typed errors (`packages/spectra-agent/src/tools.rs`).
+- `R-3222-T4` implements the `act` loop and the `tool_call` dispatcher
+  primitive (`packages/spectra-agent/src/act.rs`).
+- `R-3222-T5` routes tool execution through `tools::invoke`, which charges the
+  budget before the call and enforces the run's grant over each tool's derived
+  effects before the first dispatch (I7). Journaling is the documented seam
+  R-3217 fills.
 - `R-3218` (MCP) and `R-3219` (A2A/ACP) reuse the same wrapper invocation; they
   do not introduce a second dispatch path.
 - No tool call can bypass the governed dispatch; a second path would violate

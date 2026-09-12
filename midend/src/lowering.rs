@@ -4,8 +4,8 @@
 use crate::builder::IRBuilder;
 use crate::ir::{
     Constant, ExternalFunction, FloatWidth as IRFloatWidth, Function as IRFunction, Global,
-    IntWidth as IRIntWidth, LocalDebugInfo, Module as IRModule, Parameter, SourceSpan, Terminator,
-    Type as IRType, Value,
+    Instruction, IntWidth as IRIntWidth, LocalDebugInfo, Module as IRModule, Parameter, SourceSpan,
+    Terminator, Type as IRType, Value,
 };
 use crate::layout;
 use spectra_compiler::ast::{
@@ -366,6 +366,11 @@ pub struct ASTLowering {
     variable_types: TypeScopeStack,
     /// Maps variable names to their allocated memory locations (for mutable variables)
     alloca_map: HashMap<String, Value>,
+    /// Pointee type of each promoted stack slot, keyed by the alloca pointer
+    /// value id. Loads from a slot must read at the declared width; defaulting
+    /// to `Int` corrupts bool/float/char locals once scalar replacement cannot
+    /// apply (e.g. coroutine frame slots).
+    alloca_slot_types: HashMap<usize, IRType>,
     /// Maps array names to metadata for lowering (scoped)
     array_map: ArrayScopeStack,
     /// Maps range variables to lowered bounds when known in the current function.
@@ -542,6 +547,8 @@ mod lowering_std_host_numeric;
 mod lowering_std_host_tensor_ml;
 #[path = "lowering_std_agent.rs"]
 mod lowering_std_agent;
+#[path = "lowering_agent_tools.rs"]
+mod lowering_agent_tools;
 
 /// Public re-export preserved from the pre-split layout: consumed by
 /// `packages/spectra-api` (contract-drift test) as
@@ -550,7 +557,7 @@ pub use lowering_std_api::std_api_host_call_target;
 
 #[allow(unused_imports)]
 use {
-    lowering_builtins::*, lowering_default::*, lowering_expr_aggregates::*,
+    lowering_agent_tools::*, lowering_builtins::*, lowering_default::*, lowering_expr_aggregates::*,
     lowering_expr_binary::*, lowering_expr_calls::*, lowering_expr_cast::*, lowering_expr_enum::*,
     lowering_expr_fields::*, lowering_expr_literals::*, lowering_expr_match::*,
     lowering_expr_method::*, lowering_expr_struct::*, lowering_expr_tail::*, lowering_handles::*,

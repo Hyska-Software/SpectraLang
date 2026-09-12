@@ -1,0 +1,161 @@
+module async_aggregate_across_await
+
+// Regression: an aggregate local's address can be kept in a coroutine frame
+// slot and dereferenced after a suspension. The storage must therefore be
+// owned by the frame (frame-local), not by one poll activation, otherwise every
+// post-await field/element read observes reclaimed memory. Covers record field
+// mutation, nested field mutation, array element mutation, and an aggregate
+// passed by address to a sync call after an await.
+
+import std.agent
+
+func spec_json() returns string {
+    return "{\"goal\":\"fixture\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}"
+}
+
+record Pair {
+    a: int
+    b: int
+}
+
+record Inner {
+    v: int
+}
+
+record Outer {
+    inner: Inner
+    tag: int
+}
+
+func pair_sum(p: Pair) returns int {
+    return p.a + p.b
+}
+
+async func record_field_across_await() returns int {
+    let start = agent_start(spec_json())
+    if let Result::Ok(run) = start {
+        let p = Pair { a: 0, b: 0 }
+        let n = 0
+        while n < 3 {
+            let reply = await ask(run, "tick")
+            if let Result::Ok(text) = reply {
+                p.a = p.a + 1
+                p.b = p.b + 2
+                n = n + 1
+            } else {
+                return 5
+            }
+        }
+        if p.a != 3 {
+            return 8
+        }
+        if p.b != 6 {
+            return 9
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+async func array_field_across_await() returns int {
+    let start = agent_start(spec_json())
+    if let Result::Ok(run) = start {
+        let xs = [0, 0, 0]
+        let n = 0
+        while n < 3 {
+            let reply = await ask(run, "tick")
+            if let Result::Ok(text) = reply {
+                xs[0] = xs[0] + 1
+                xs[1] = xs[1] + 2
+                n = n + 1
+            } else {
+                return 5
+            }
+        }
+        if xs[0] != 3 {
+            return 8
+        }
+        if xs[1] != 6 {
+            return 9
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+async func nested_field_across_await() returns int {
+    let start = agent_start(spec_json())
+    if let Result::Ok(run) = start {
+        let o = Outer { inner: Inner { v: 0 }, tag: 7 }
+        let n = 0
+        while n < 3 {
+            let reply = await ask(run, "tick")
+            if let Result::Ok(text) = reply {
+                o.inner.v = o.inner.v + 1
+                n = n + 1
+            } else {
+                return 5
+            }
+        }
+        if o.inner.v != 3 {
+            return 8
+        }
+        if o.tag != 7 {
+            return 9
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+async func passed_by_address_across_await() returns int {
+    let start = agent_start(spec_json())
+    if let Result::Ok(run) = start {
+        let p = Pair { a: 4, b: 5 }
+        let xs = [1, 2, 3]
+        let n = 0
+        let sum = 0
+        while n < 2 {
+            let reply = await ask(run, "tick")
+            if let Result::Ok(text) = reply {
+                sum = pair_sum(p) + xs[0] + xs[1] + xs[2]
+                n = n + 1
+            } else {
+                return 5
+            }
+        }
+        if sum != 15 {
+            return 8
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    let a = block_on(record_field_across_await())
+    if a != 0 {
+        return 10 + a
+    }
+
+    let b = block_on(array_field_across_await())
+    if b != 0 {
+        return 20 + b
+    }
+
+    let c = block_on(nested_field_across_await())
+    if c != 0 {
+        return 30 + c
+    }
+
+    let d = block_on(passed_by_address_across_await())
+    if d != 0 {
+        return 40 + d
+    }
+
+    return 0
+}

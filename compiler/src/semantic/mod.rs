@@ -30,8 +30,8 @@ pub mod surface;
 use builtin_modules::register_builtin_modules;
 use module_registry::{
     ExportVisibility, ExportedFunction, ExportedMethod, ExportedSelfParamKind, ExportedStatic,
-    ExportedTrait, ExportedTraitImpl, ExportedTraitMethod, ExportedType, ModuleExports,
-    ModuleRegistry,
+    ExportedTool, ExportedTrait, ExportedTraitImpl, ExportedTraitMethod, ExportedType,
+    ModuleExports, ModuleRegistry,
 };
 
 type GenericStructDefinition = (
@@ -539,6 +539,15 @@ pub struct SemanticAnalyzer {
     // Struct metadata for validation and lookup
     struct_infos: HashMap<String, StructInfo>,
     json_struct_derives: HashMap<String, JsonDerivedStructInfo>,
+    // `#[agent_tool]` descriptors keyed by function name, mirroring
+    // `json_struct_derives`: the semantic pass owns validation and the
+    // midend/CLI read the derived metadata from the module registry.
+    agent_tools: HashMap<String, semantic_agent::AgentToolInfo>,
+    // `#[agent_tool]` declarations exported by user modules this module
+    // imports (R-3222). Drained into `Module::imported_agent_tools` per module
+    // so the midend can call each declaring module's registration function at
+    // the dispatch entry points.
+    imported_agent_tools: Vec<crate::ast::ImportedAgentTool>,
     // Enum metadata (including variant payload types)
     enum_infos: HashMap<String, EnumInfo>,
     // Generic structs: maps struct_name to (type_params, field_definitions)
@@ -753,6 +762,8 @@ fn namespace_path(expr: &Expression) -> Option<String> {
 
 use semantic_use_after_free::UafFrame;
 
+#[path = "semantic_agent.rs"]
+mod semantic_agent;
 #[path = "semantic_annotations.rs"]
 mod semantic_annotations;
 #[path = "semantic_async.rs"]

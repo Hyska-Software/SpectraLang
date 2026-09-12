@@ -67,3 +67,29 @@ pub extern "C" fn spectra_rt_panic(message_ptr: i64) {
     let _ = stderr.flush();
     std::process::exit(SPECTRA_RUNTIME_PANIC_EXIT_CODE);
 }
+
+/// Reports a capability denial from generated code and exits.
+///
+/// The lowering calls this instead of [`spectra_rt_panic`] when a generic host
+/// call returns `HOST_STATUS_DENIED` (ADR 0016 D4). `message_ptr` carries the
+/// codegen-interned call-site text (the denied host-call name); the evaluator's
+/// reason recorded by `dispatch_generic` on this thread is appended when
+/// present. The message contains only dispatch metadata — never secrets,
+/// payloads, headers, prompts or model output — and the process terminates with
+/// the same deterministic exit code as [`spectra_rt_panic`].
+#[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn spectra_rt_capability_denied(message_ptr: i64) {
+    let message = resolve_panic_message(message_ptr);
+    let mut stderr = std::io::stderr().lock();
+    match crate::agent::policy_hook::take_denial_reason() {
+        Some(reason) => {
+            let _ = writeln!(stderr, "capability denied: {message}: {reason}");
+        }
+        None => {
+            let _ = writeln!(stderr, "capability denied: {message}");
+        }
+    }
+    let _ = stderr.flush();
+    std::process::exit(SPECTRA_RUNTIME_PANIC_EXIT_CODE);
+}

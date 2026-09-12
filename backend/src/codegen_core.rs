@@ -509,6 +509,7 @@ impl CodeGenerator {
                 &self.global_data,
                 frame_var,
                 manual_frame_active,
+                ir_func.suspension_barrier,
                 ir_block.id,
                 &phi_map,
                 &mut emitted_tail_call,

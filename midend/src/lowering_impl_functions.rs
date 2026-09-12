@@ -154,6 +154,9 @@ impl ASTLowering {
                     if variant_name == "json_error_field" {
                         return IRType::String;
                     }
+                    if variant_name == "json_schema" {
+                        return IRType::String;
+                    }
                     if variant_name == "from_json" {
                         return IRType::Struct {
                             name: enum_name.clone(),

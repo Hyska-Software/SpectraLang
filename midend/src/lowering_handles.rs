@@ -34,6 +34,14 @@ pub(crate) fn is_std_api_handle_type_segments(segments: &[String]) -> bool {
         {
             name.as_str()
         }
+        // std.agent opaque handles: `std.agent.Run`, `spectra.std.agent.Run`,
+        // `std.agent.ChunkStream`, `spectra.std.agent.ChunkStream`.
+        [std, agent, name] if std == "std" && agent == "agent" => name.as_str(),
+        [spectra, std, agent, name]
+            if spectra == "spectra" && std == "std" && agent == "agent" =>
+        {
+            name.as_str()
+        }
         [spectra, std, api, module, name]
             if spectra == "spectra"
                 && std == "std"
@@ -124,6 +132,9 @@ pub(crate) fn is_std_api_handle_type_segments(segments: &[String]) -> bool {
             | "PostgresNotificationChannel"
             | "PostgresNotification"
             | "RedisConnection"
+            // std.agent opaque handles (R-3210/R-3211).
+            | "Run"
+            | "ChunkStream"
     )
 }
 
@@ -182,6 +193,9 @@ pub(crate) fn is_std_api_handle_type_name(name: &str) -> bool {
             | "PostgresNotificationChannel"
             | "PostgresNotification"
             | "RedisConnection"
+            // std.agent opaque handles (R-3210/R-3211).
+            | "Run"
+            | "ChunkStream"
     )
 }
 

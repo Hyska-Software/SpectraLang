@@ -1,0 +1,16 @@
+module agent_tool_non_public
+
+// E3203: a tool is model-invocable, so it must be part of the public surface.
+
+public record Payload {
+    id: string,
+}
+
+#[agent_tool("hidden tool")]
+async func hidden(run: int, payload: Payload) returns string {
+    return payload.id
+}
+
+public func main() returns int {
+    return 0
+}

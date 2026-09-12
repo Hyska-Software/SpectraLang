@@ -1,0 +1,13 @@
+module capability_unknown
+
+// E3201: the grant names no registered host call, so it could never authorize
+// anything. The diagnostic suggests the nearest catalog name
+// (`spectra.std.fs.fs_read`); a permission that silently matches nothing is
+// exactly the failure mode compile-time validation exists to prevent.
+
+import std.agent
+
+public func main() returns int {
+    let start = agent_start("{\"goal\":\"r3215-unknown\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"spectra.std.fs.fs_raed\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}")
+    return 0
+}

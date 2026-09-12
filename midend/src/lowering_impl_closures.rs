@@ -50,10 +50,12 @@ impl ASTLowering {
             value
         } else if let Some(info) = self.array_map.get(name) {
             info.ptr
+        } else if let Some(value) = self.load_slot(name, ir_func) {
+            // A reassigned local's promoted slot is authoritative (see the
+            // expression-literal identifier path).
+            value
         } else if let Some((struct_ptr, _)) = self.struct_var_map.get(name) {
             struct_ptr
-        } else if let Some(&alloca_ptr) = self.alloca_map.get(name) {
-            self.builder.build_load(ir_func, alloca_ptr)
         } else if let Some(value) = self.value_map.get(name) {
             value
         } else if self.function_parameter_types.contains_key(name)

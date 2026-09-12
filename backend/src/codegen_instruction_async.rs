@@ -3,7 +3,7 @@ fn const_i64(builder: &mut FunctionBuilder, value: i64) -> Value {
 }
 
 impl CodeGenerator {
-    fn runtime_call<M: Module>(
+    pub(crate) fn runtime_call<M: Module>(
         module: &mut M,
         hostcall: &HostCallLoweringContext<'_>,
         builder: &mut FunctionBuilder,

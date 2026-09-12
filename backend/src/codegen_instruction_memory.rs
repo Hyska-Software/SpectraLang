@@ -14,6 +14,7 @@ impl CodeGenerator {
         global_data: &HashMap<String, DataId>,
         frame_var: Variable,
         track_allocations: bool,
+        frame_locals: bool,
     ) -> BackendResult<()> {
         let get_value = |v: &IRValue| -> BackendResult<Value> {
             value_map
@@ -54,6 +55,31 @@ impl CodeGenerator {
                     return Ok(());
                 }
                 let size_bytes = Self::type_size_bytes(ty) as i64;
+                // Inside a coroutine poll the frame outlives the poll
+                // activation: an address kept in a frame slot must therefore
+                // reference frame-owned storage, not a stack slot or a
+                // per-poll manual allocation.
+                if frame_locals {
+                    let frame = value_map
+                        .get(0)
+                        .ok_or_else(|| BackendCodegenError::missing_value(0))?;
+                    let slot = builder.ins().iconst(types::I64, result.id as i64);
+                    let size = builder.ins().iconst(types::I64, size_bytes);
+                    let ptr = Self::runtime_call(
+                        module,
+                        hostcall,
+                        builder,
+                        RuntimeImport::CoroutineLocalPtr,
+                        &[frame, slot, size],
+                    )
+                    .ok_or_else(|| {
+                        BackendCodegenError::cranelift(
+                            "coroutine local allocation returned no value",
+                        )
+                    })?;
+                    value_map.insert(result.id, ptr);
+                    return Ok(());
+                }
                 if stack_allocas.contains(&result.id) {
                     let slot =
                         builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(

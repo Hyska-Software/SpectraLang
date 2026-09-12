@@ -205,6 +205,14 @@ impl SemanticAnalyzer {
                 // Resource-release classification (E034).
                 self.uaf_after_call_analysis(callee, arguments, expr.span);
 
+                // R-3215: a literal `AgentSpec` argument is the only spec the
+                // compiler can see; a computed one is validated at runtime.
+                if let ExpressionKind::Identifier(name) = &callee.kind {
+                    if name == "agent_start" && self.functions.contains_key(name.as_str()) {
+                        self.validate_agent_start_capabilities(arguments);
+                    }
+                }
+
                 self.validate_static_tensor_call(callee, arguments, expr.span);
             }
             _ => unreachable!("expression category mismatch"),

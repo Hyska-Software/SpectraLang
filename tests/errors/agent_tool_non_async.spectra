@@ -1,0 +1,17 @@
+module agent_tool_non_async
+
+// E3203: a tool body is awaited by the run loop, so the declaration must be
+// `async`.
+
+public record Payload {
+    id: string,
+}
+
+#[agent_tool("sync tool")]
+public func sync_tool(run: int, payload: Payload) returns string {
+    return payload.id
+}
+
+public func main() returns int {
+    return 0
+}

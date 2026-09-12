@@ -8,9 +8,16 @@ impl ASTLowering {
     ) -> Value {
         match &expr.kind {
             ExpressionKind::FieldAccess { object, field } => {
-                // Se o objeto é um identificador, buscar no struct_var_map
+                // Se o objeto é um identificador, buscar no struct_var_map.
+                // A reassigned local keeps its current pointer in its promoted
+                // slot, so let the generic path below resolve the base through
+                // the slot instead of the (block-scoped, possibly stale) map.
                 if let ExpressionKind::Identifier(name) = &object.kind {
-                    if let Some((struct_ptr, struct_name)) = self.struct_var_map.get(name) {
+                    if let Some((struct_ptr, struct_name)) = self
+                        .struct_var_map
+                        .get(name)
+                        .filter(|_| !self.alloca_map.contains_key(name))
+                    {
                         // Buscar definição do struct
                         if let Some(field_defs) = self.struct_definitions.get(&struct_name) {
                             // Encontrar índice do campo

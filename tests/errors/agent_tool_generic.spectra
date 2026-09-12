@@ -1,0 +1,13 @@
+module agent_tool_generic
+
+// E3203: a tool is dispatched through a fixed marshalling wrapper, so it cannot
+// be generic.
+
+#[agent_tool("generic tool")]
+public async func generic_tool<T>(run: int, payload: string) returns string {
+    return payload
+}
+
+public func main() returns int {
+    return 0
+}

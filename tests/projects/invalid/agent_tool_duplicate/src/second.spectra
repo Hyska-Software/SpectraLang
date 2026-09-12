@@ -1,0 +1,13 @@
+module second
+
+// R-3210: same derived tool name as `first`, in a different module.
+
+#[derive(Serialize, Deserialize)]
+public record SecondPayload {
+    id: string,
+}
+
+#[agent_tool("second declaration")]
+public async func cobrar(run: int, payload: SecondPayload) returns string {
+    return payload.id
+}

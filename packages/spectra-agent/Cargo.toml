@@ -10,4 +10,8 @@ edition = "2021"
 crate-type = ["rlib"]
 
 [dependencies]
+# JSON crosses the host ABI for `AgentSpec`/`Report` (plan adaptation 11) and
+# provider payloads; `serde_json` is already in the workspace graph through
+# `spectra-runtime`, so this adds a direct edge, not a new crate.
+serde_json = "1.0"
 spectra-runtime = { path = "../../runtime" }

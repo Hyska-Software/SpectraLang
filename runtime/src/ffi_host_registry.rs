@@ -185,41 +185,39 @@ fn invoke_host_function(
     }
 }
 
-fn invoke_host_function_unchecked(
+/// The single policy decision point for generic host dispatch (ADR 0016 D3).
+///
+/// Consults the active capability policy hook once; on [`PolicyDecision::Deny`]
+/// it records the reason and returns [`HOST_STATUS_DENIED`] without invoking
+/// the host function. Otherwise it delegates to [`invoke_host_function`].
+///
+/// It must never panic: denial is a status like any other, including inside
+/// the cached batch dispatcher's outer `catch_unwind`.
+pub(crate) fn dispatch_generic(
+    name: &str,
     func_ptr: *const (),
     args_ptr: *const SpectraHostValue,
     arg_len: usize,
     results_ptr: *mut SpectraHostValue,
     result_len: usize,
 ) -> i32 {
-    if func_ptr.is_null() {
-        return HOST_STATUS_NOT_FOUND;
+    if let crate::agent::policy_hook::PolicyDecision::Deny { reason } =
+        crate::agent::policy_hook::evaluate(name)
+    {
+        crate::agent::policy_hook::record_denial(&reason);
+        return HOST_STATUS_DENIED;
     }
 
-    let func: HostFunction = unsafe { mem::transmute(func_ptr) };
-    let mut ctx = SpectraHostCallContext {
-        args: args_ptr,
-        arg_len,
-        results: results_ptr,
-        result_len,
-        invoke_fn: Some(spectra_rt_invoke_closure),
-    };
-    func(&mut ctx as *mut _)
+    invoke_host_function(func_ptr, args_ptr, arg_len, results_ptr, result_len)
 }
 
-fn invoke_registered_host(
-    name: &str,
-    args_ptr: *const SpectraHostValue,
-    arg_len: usize,
-    results_ptr: *mut SpectraHostValue,
-    result_len: usize,
-) -> i32 {
+/// Resolves a registered host function under the registry lock.
+fn resolve_registered_host(name: &str) -> *const () {
     let registry = host_registry();
     let guard = registry.lock().unwrap_or_else(|e| e.into_inner());
     let func_ptr = guard.lookup(name);
     drop(guard);
-
-    invoke_host_function(func_ptr, args_ptr, arg_len, results_ptr, result_len)
+    func_ptr
 }
 
 /// Registers a host function accessible to JITed code.

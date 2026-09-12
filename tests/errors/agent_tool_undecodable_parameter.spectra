@@ -1,0 +1,13 @@
+module agent_tool_undecodable_parameter
+
+// E3204: tool inputs cross the host ABI as JSON documents, and the derive
+// cannot decode a dynamic array.
+
+#[agent_tool("array payload")]
+public async func array_tool(run: int, payload: [int]) returns string {
+    return "unreachable"
+}
+
+public func main() returns int {
+    return 0
+}

@@ -225,6 +225,11 @@ struct AsyncFrameHeader {
 pub(crate) struct AsyncFrame {
     header: AsyncFrameHeader,
     slots: Vec<AsyncFrameSlot>,
+    /// Durable storage for promoted-local allocas, indexed by the alloca's
+    /// value id. A local's address can be written into a frame slot and
+    /// dereferenced after a suspension, so the bytes must live as long as the
+    /// frame rather than as long as one poll activation.
+    locals: Vec<Option<Box<[u8]>>>,
     poll: AsyncPollFn,
     drop: AsyncDropFn,
 }
@@ -237,6 +242,7 @@ impl AsyncFrame {
                 drop_invoked: false,
             },
             slots,
+            locals: Vec::new(),
             poll,
             drop,
         }
@@ -282,6 +288,24 @@ impl AsyncFrame {
     pub(crate) fn load_slot(&self, slot: usize) -> Option<SpectraHostValue> {
         let slot = self.slots.get(slot)?;
         slot.is_initialized().then_some(slot.value)
+    }
+
+    /// Returns the durable address of a promoted-local slot, allocating its
+    /// backing bytes on first use. Repeat calls for the same slot return the
+    /// same buffer, so re-executing an alloca (for example inside a loop body)
+    /// reuses the frame-owned storage instead of leaking a new block.
+    pub(crate) fn local_ptr(&mut self, slot: usize, size: usize) -> Option<i64> {
+        if size == 0 || slot >= self.slots.len() {
+            return None;
+        }
+        if self.locals.len() <= slot {
+            self.locals.resize_with(slot + 1, || None);
+        }
+        let entry = self.locals[slot].get_or_insert_with(|| vec![0u8; size].into_boxed_slice());
+        if entry.len() < size {
+            *entry = vec![0u8; size].into_boxed_slice();
+        }
+        Some(entry.as_mut_ptr() as i64)
     }
 
     pub(crate) fn pointer(&mut self) -> *mut c_void {
@@ -488,6 +512,19 @@ impl AsyncFrameRegistry {
             .values()
             .find(|record| record.frame.as_ref() as *const AsyncFrame as i64 == frame_ptr)
             .and_then(|record| record.frame.load_slot(slot))
+    }
+
+    /// Durable promoted-local storage for a frame owned by the registry.
+    pub(crate) fn local_ptr(&self, frame_ptr: i64, slot: usize, size: usize) -> Option<i64> {
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        inner
+            .frames
+            .values_mut()
+            .find(|record| record.frame.as_ref() as *const AsyncFrame as i64 == frame_ptr)
+            .and_then(|record| record.frame.local_ptr(slot, size))
     }
 
     pub(crate) fn state_ptr(&self, frame_ptr: i64) -> Option<u32> {

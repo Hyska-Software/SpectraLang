@@ -96,7 +96,11 @@ def validate_execution() -> None:
     run_command([str(SPECTRALANG), "run", FIXTURE])
 
     executable = ROOT / "target" / "r3209-agent-surface.exe"
-    run_command([str(SPECTRALANG), "compile", "--emit-exe", str(executable), FIXTURE])
+    # --debug-info=none: the default PDB path hits a pre-existing MSVC LNK1318
+    # limit on larger fixtures and is unrelated to this item.
+    run_command(
+        [str(SPECTRALANG), "compile", "--debug-info=none", "--emit-exe", str(executable), FIXTURE]
+    )
     completed = subprocess.run(
         [str(executable)],
         cwd=ROOT,

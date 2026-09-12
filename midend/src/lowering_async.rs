@@ -21,7 +21,13 @@ impl ASTLowering {
         let poll_name = format!("{base}__poll");
         let drop_name = format!("{base}__drop");
         shift_body_values(&mut body, 3);
+        // Promoted locals must live in the frame, not behind an address: a
+        // per-poll stack slot or manual allocation does not survive suspension.
+        let local_slot_types = promote_scalar_locals_to_frame_slots(&mut body, Value { id: 0 });
         let mut type_hints = collect_value_types(&body);
+        for (slot, ty) in &local_slot_types {
+            type_hints.insert(*slot, ty.clone());
+        }
         for (index, parameter) in source_params.iter().enumerate() {
             type_hints.insert(index + 3, parameter.ty.clone());
         }
@@ -508,7 +514,10 @@ impl ASTLowering {
         // Comprehensive frame slots: every value id (params, original SSA,
         // and machine temps) owns the slot with its own id. Unused slots are
         // harmless; this keeps every conservative reload/store in range.
-        let final_hints = collect_value_types(&body);
+        let mut final_hints = collect_value_types(&body);
+        for (slot, ty) in &local_slot_types {
+            final_hints.insert(*slot, ty.clone());
+        }
         let slots: Vec<AsyncFrameSlot> = (0..body.next_value_id)
             .map(|id| {
                 let (name, ty) = match id {
@@ -931,6 +940,110 @@ fn remap_terminator_operands(
         _ => {}
     }
 }
+
+/// Replace scalar promoted-local allocas with durable coroutine frame slots.
+///
+/// A promoted local is lowered as an `alloca` addressed by load/store. Across a
+/// suspension that address is no longer trustworthy: a stack slot dies with the
+/// poll activation and a manual allocation is released by the per-poll frame
+/// exit, while the pointer itself stays in the coroutine frame and is reused on
+/// the next poll. Moving the local's bytes into the frame slot that already
+/// carries its value id keeps every read and write on durable state.
+///
+/// Only allocas whose address is used exclusively as the pointer operand of a
+/// load/store pair are rewritten; any other use lets the address escape and
+/// keeps the address-based lowering.
+fn promote_scalar_locals_to_frame_slots(
+    body: &mut IRFunction,
+    frame: Value,
+) -> std::collections::HashMap<usize, IRType> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut candidates: HashMap<usize, IRType> = HashMap::new();
+    for block in &body.blocks {
+        for instruction in &block.instructions {
+            if let InstructionKind::Alloca { result, ty } = &instruction.kind {
+                if matches!(ty, IRType::Int | IRType::Float | IRType::Bool | IRType::Char) {
+                    candidates.insert(result.id, ty.clone());
+                }
+            }
+        }
+    }
+    if candidates.is_empty() {
+        return HashMap::new();
+    }
+
+    // Reject any candidate whose address escapes: every use must be the pointer
+    // operand of a load or store.
+    let mut escaped: HashSet<usize> = HashSet::new();
+    for block in &body.blocks {
+        for instruction in &block.instructions {
+            let mut uses = Vec::new();
+            collect_instruction_uses(instruction, &mut uses);
+            for id in uses {
+                if !candidates.contains_key(&id) {
+                    continue;
+                }
+                let direct = matches!(
+                    &instruction.kind,
+                    InstructionKind::Load { ptr, .. } | InstructionKind::Store { ptr, .. }
+                        if ptr.id == id
+                );
+                if !direct {
+                    escaped.insert(id);
+                }
+            }
+        }
+        if let Some(terminator) = &block.terminator {
+            let mut uses = Vec::new();
+            collect_terminator_uses(terminator, &mut uses);
+            for id in uses {
+                if candidates.contains_key(&id) {
+                    escaped.insert(id);
+                }
+            }
+        }
+    }
+
+    let mut slot_types: HashMap<usize, IRType> = HashMap::new();
+    for block in &mut body.blocks {
+        let mut rewritten = Vec::with_capacity(block.instructions.len());
+        for mut instruction in std::mem::take(&mut block.instructions) {
+            instruction.kind = match instruction.kind {
+                InstructionKind::Alloca { result, ty }
+                    if candidates.contains_key(&result.id) && !escaped.contains(&result.id) =>
+                {
+                    slot_types.insert(result.id, ty);
+                    continue;
+                }
+                InstructionKind::Load { result, ptr, .. }
+                    if candidates.contains_key(&ptr.id) && !escaped.contains(&ptr.id) =>
+                {
+                    InstructionKind::FrameLoad {
+                        result,
+                        frame,
+                        slot: ptr.id,
+                        ty: candidates[&ptr.id].clone(),
+                    }
+                }
+                InstructionKind::Store { ptr, value }
+                    if candidates.contains_key(&ptr.id) && !escaped.contains(&ptr.id) =>
+                {
+                    InstructionKind::FrameStore {
+                        frame,
+                        slot: ptr.id,
+                        value,
+                    }
+                }
+                other => other,
+            };
+            rewritten.push(instruction);
+        }
+        block.instructions = rewritten;
+    }
+    slot_types
+}
+
 fn shift_body_values(function: &mut IRFunction, amount: usize) {
     fn shift(value: &mut Value, amount: usize) {
         value.id += amount;

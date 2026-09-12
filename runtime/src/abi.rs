@@ -114,6 +114,8 @@ pub enum RuntimeImport {
     CoroutineFrameAlloc,
     CoroutineFrameStore,
     CoroutineFrameLoad,
+    /// Durable per-frame storage for a promoted-local alloca.
+    CoroutineLocalPtr,
     CoroutineStateLoad,
     CoroutineStateStore,
     CoroutineCreate,
@@ -126,10 +128,14 @@ pub enum RuntimeImport {
     CoroutineError,
     CoroutineCancelled,
     CoroutinePollReturn,
+    /// Fatal capability-denial reporter used by the generic host-call lowering
+    /// when the dispatcher returns `HOST_STATUS_DENIED`. Prints
+    /// `capability denied: <message>` and exits with 101.
+    HostDenied,
 }
 
 impl RuntimeImport {
-    pub const COUNT: usize = 55;
+    pub const COUNT: usize = 57;
 
     pub const ALL: &'static [Self] = &[
         Self::ManualAlloc,
@@ -175,6 +181,7 @@ impl RuntimeImport {
         Self::CoroutineFrameAlloc,
         Self::CoroutineFrameStore,
         Self::CoroutineFrameLoad,
+        Self::CoroutineLocalPtr,
         Self::CoroutineStateLoad,
         Self::CoroutineStateStore,
         Self::CoroutineCreate,
@@ -187,6 +194,7 @@ impl RuntimeImport {
         Self::CoroutineError,
         Self::CoroutineCancelled,
         Self::CoroutinePollReturn,
+        Self::HostDenied,
     ];
     pub const fn index(self) -> usize {
         self as usize
@@ -237,6 +245,7 @@ impl RuntimeImport {
             Self::CoroutineFrameAlloc => "spectra_rt_coroutine_frame_alloc",
             Self::CoroutineFrameStore => "spectra_rt_coroutine_frame_store",
             Self::CoroutineFrameLoad => "spectra_rt_coroutine_frame_load",
+            Self::CoroutineLocalPtr => "spectra_rt_coroutine_local_ptr",
             Self::CoroutineStateLoad => "spectra_rt_coroutine_state_load",
             Self::CoroutineStateStore => "spectra_rt_coroutine_state_store",
             Self::CoroutineCreate => "spectra_rt_coroutine_create",
@@ -249,6 +258,7 @@ impl RuntimeImport {
             Self::CoroutineError => "spectra_rt_coroutine_error",
             Self::CoroutineCancelled => "spectra_rt_coroutine_cancelled",
             Self::CoroutinePollReturn => "spectra_rt_coroutine_poll_return",
+            Self::HostDenied => "spectra_rt_capability_denied",
         }
     }
 
@@ -294,9 +304,11 @@ impl RuntimeImport {
             Self::ChannelClose => (I64, I32),
             Self::ChannelLen => (I64, I64),
             Self::SpectraPanic => (I64, EMPTY),
+            Self::HostDenied => (I64, EMPTY),
             Self::CoroutineFrameAlloc => (I64, I64),
             Self::CoroutineFrameStore => (I64_I64_I64, I64),
             Self::CoroutineFrameLoad => (I64_I64, I64),
+            Self::CoroutineLocalPtr => (I64_I64_I64, I64),
             Self::CoroutineStateLoad => (I64, I64),
             Self::CoroutineStateStore => (I64_I64, I64),
             Self::CoroutineCreate => (I64_I64_I64, I64),
@@ -361,6 +373,7 @@ impl RuntimeImport {
             Self::HostInvokeCached => ffi::spectra_rt_host_invoke_cached as *const u8,
             Self::HostInvokeCachedBatch => ffi::spectra_rt_host_invoke_cached_batch as *const u8,
             Self::SpectraPanic => crate::panic::spectra_rt_panic as *const u8,
+            Self::HostDenied => crate::panic::spectra_rt_capability_denied as *const u8,
             Self::CoroutineFrameAlloc => {
                 crate::async_abi::spectra_rt_coroutine_frame_alloc as *const u8
             }
@@ -369,6 +382,9 @@ impl RuntimeImport {
             }
             Self::CoroutineFrameLoad => {
                 crate::async_abi::spectra_rt_coroutine_frame_load as *const u8
+            }
+            Self::CoroutineLocalPtr => {
+                crate::async_abi::spectra_rt_coroutine_local_ptr as *const u8
             }
             Self::CoroutineStateLoad => {
                 crate::async_abi::spectra_rt_coroutine_state_load as *const u8

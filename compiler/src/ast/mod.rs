@@ -131,6 +131,24 @@ pub struct Module {
     /// Trait declarations imported from builtin or user modules for midend
     /// vtable slot/signature construction.
     pub imported_trait_decls: Vec<TraitDeclaration>,
+    /// `#[agent_tool]` declarations exported by imported user modules
+    /// (R-3222).
+    ///
+    /// A tool's marshalling wrapper is synthesized in the tool's own module,
+    /// and so is the function that registers it with the runtime. A module
+    /// that dispatches through `act`/`tool_call` calls the registration
+    /// function of every imported module that declares tools, which is how a
+    /// cross-module tool becomes reachable by address.
+    pub imported_agent_tools: Vec<ImportedAgentTool>,
+}
+
+/// One `#[agent_tool]` an import brought into scope (R-3222).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportedAgentTool {
+    /// Canonical module path of the declaring module (`import a.b;` -> "a.b").
+    pub module_path: String,
+    /// Derived tool name, for diagnostics.
+    pub name: String,
 }
 
 impl Module {
@@ -148,6 +166,7 @@ impl Module {
             imported_trait_impls: Vec::new(),
             imported_generic_functions: Vec::new(),
             imported_trait_decls: Vec::new(),
+            imported_agent_tools: Vec::new(),
         }
     }
 }
@@ -210,7 +229,13 @@ pub struct Attribute {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttributeArgument {
+    /// Positional bare identifier, e.g. `#[derive(Serialize)]`.
     Name(String),
+    /// Positional string literal, e.g. `#[agent_tool("description")]`.
+    ///
+    /// Distinct from [`AttributeArgument::Name`] so validation can reject a
+    /// non-literal where a literal is required (`E3203`).
+    StringLiteral(String),
     KeyValue { key: String, value: String },
 }
 

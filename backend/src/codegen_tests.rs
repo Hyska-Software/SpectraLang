@@ -1094,6 +1094,64 @@ mod tests {
             );
         }
     }
+
+    /// Builds `fn name() -> int { return host(-7) }` with a generic host call
+    /// so the lowering emits both the generic failure panic and the
+    /// capability-denial branch.
+    fn generic_host_call_function(name: &str) -> IRFunction {
+        use spectra_midend::ir::{InstructionKind, Terminator, Value};
+
+        let mut func = IRFunction::new(name, vec![], IRType::Int);
+        let entry_block_id = func.add_block("entry");
+        let entry_block = func.get_block_mut(entry_block_id).unwrap();
+        let arg = Value { id: 0 };
+        entry_block.add_instruction(InstructionKind::ConstInt {
+            result: arg,
+            value: -7,
+        });
+        let result = Value { id: 1 };
+        entry_block.add_instruction(InstructionKind::HostCall {
+            result: Some(result),
+            host: "spectra.std.math.abs".to_string(),
+            args: vec![arg],
+            result_type: Some(IRType::Int),
+        });
+        entry_block.set_terminator(Terminator::Return {
+            value: Some(result),
+        });
+        func
+    }
+
+    #[test]
+    fn aot_generic_host_call_references_capability_denial_symbol() {
+        let name = "aot_capability_denied";
+        let mut module = IRModule::new(name);
+        module.add_function(generic_host_call_function(name));
+
+        let bytes = crate::AotCodeGenerator::new()
+            .compile_to_object(&module, &crate::AotOptions::default())
+            .expect("AOT compile of generic host-call module");
+        let haystack = String::from_utf8_lossy(&bytes);
+        // HOST_STATUS_DENIED must branch to the dedicated fatal symbol rather
+        // than reusing the generic `spectra_rt_panic` failure path.
+        assert!(
+            haystack.contains("spectra_rt_capability_denied"),
+            "AOT object does not reference spectra_rt_capability_denied"
+        );
+        assert!(
+            haystack.contains("spectra_rt_panic"),
+            "AOT object does not reference spectra_rt_panic"
+        );
+        // The denial message is the call-site text without the failure suffix.
+        let expected: Vec<u8> = "host call 'spectra.std.math.abs'"
+            .bytes()
+            .chain(std::iter::once(0))
+            .collect();
+        assert!(
+            bytes.windows(expected.len()).any(|window| window == expected),
+            "AOT object does not embed the denial message"
+        );
+    }
     // -----------------------------------------------------------------------
     // Self-tail-recursion → Cranelift `return_call` (Onda 3)
     // -----------------------------------------------------------------------

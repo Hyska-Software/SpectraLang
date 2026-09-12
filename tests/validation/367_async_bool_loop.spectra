@@ -1,0 +1,46 @@
+module async_bool_loop
+
+// Regression: a bool local reassigned inside an async loop body must keep one
+// width across the coroutine frame store/load path and the comparison. Before
+// the fix the promoted slot load was typed `int` (i64) while the bool literal
+// stayed i8, so Cranelift rejected `icmp.i64 eq <load>, <i8 const>` while
+// defining the poll function.
+
+async func counter() returns int {
+    let done = false
+    let n = 0
+    while done == false {
+        n = n + 1
+        if n >= 3 {
+            done = true
+        }
+    }
+    return n
+}
+
+async func counter_two_bools() returns int {
+    let done = false
+    let stop = false
+    let n = 0
+    while done == stop {
+        n = n + 1
+        if n >= 2 {
+            done = true
+        }
+    }
+    return n
+}
+
+public func main() returns int {
+    let first = block_on(counter())
+    if first != 3 {
+        return 1
+    }
+
+    let second = block_on(counter_two_bools())
+    if second != 2 {
+        return 2
+    }
+
+    return 0
+}

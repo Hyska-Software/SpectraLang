@@ -1,0 +1,252 @@
+module agent_budget
+
+// R-3216 end-to-end fixture: every ceiling the runtime can enforce through the
+// public surface is crossed here, plus the `budget_remaining` introspection
+// binding and the report that names the ceiling that was hit.
+//
+// The mock provider makes the runs deterministic: fixed usage numbers drive
+// the token and cost ceilings, and `spectra:sleep-ms=N` drives the wall-clock
+// ceiling. The tool-call ceiling is exercised by the crate tests, because the
+// governed tool dispatch (`act`) is R-3222 and no source-visible call path
+// exists yet.
+
+import std.agent
+import std.string as str
+
+func spec_unbounded() returns string {
+    return "{\"goal\":\"budget-unbounded\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}"
+}
+
+func spec_token_ceiling() returns string {
+    return "{\"goal\":\"budget-tokens\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":6,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}"
+}
+
+func spec_cost_ceiling() returns string {
+    return "{\"goal\":\"budget-cost\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":10,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}"
+}
+
+func spec_time_ceiling() returns string {
+    return "{\"goal\":\"budget-time\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":1,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}"
+}
+
+// A cost ceiling on a provider that never reports cost must fail closed at
+// `agent_start`, because the ceiling could never be enforced.
+func spec_unenforceable_cost() returns string {
+    return "{\"goal\":\"budget-cost-unenforceable\",\"model\":\"gpt-test\",\"endpoint\":\"https://provider.invalid\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":5,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":-1,\"journal\":\"\"}"
+}
+
+// `max_tokens` counts every billable token (input + output). The mock reports
+// 1 input + 3 output tokens for "alpha"/"beta": the first turn takes the run to
+// 4 of 6, the second to 8 of 6 and cancels it.
+async func token_ceiling() returns int {
+    let start = agent_start(spec_token_ceiling())
+    if let Result::Ok(run) = start {
+        let before = budget_remaining(run)
+        if let Result::Ok(remaining) = before {
+            if remaining != 6 {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        let alpha = await ask(run, "alpha")
+        if let Result::Err(alpha_error) = alpha {
+            return 4
+        }
+        let middle = budget_remaining(run)
+        if let Result::Ok(remaining) = middle {
+            if remaining != 2 {
+                return 5
+            }
+        } else {
+            return 6
+        }
+
+        // The crossing turn is accounted and still delivers its value.
+        let beta = await ask(run, "beta")
+        if let Result::Err(beta_error) = beta {
+            return 7
+        }
+        let after = budget_remaining(run)
+        if let Result::Ok(remaining) = after {
+            if remaining != 0 {
+                return 8
+            }
+        } else {
+            return 9
+        }
+
+        // Every subsequent call fails with the typed `budget_exceeded` error
+        // naming the ceiling, and it is refused before reaching the provider.
+        let gamma = await ask(run, "gamma")
+        if let Result::Ok(gamma_text) = gamma {
+            return 10
+        }
+
+        let end = agent_end(run)
+        if let Result::Ok(report) = end {
+            if str.contains(report, "\"status\":\"budget_exceeded\"") == false {
+                return 11
+            }
+            if str.contains(report, "\"ceiling\":\"max_tokens\"") == false {
+                return 12
+            }
+            if str.contains(report, "\"steps\":2") == false {
+                return 13
+            }
+        } else {
+            return 14
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// The mock costs 1 micro per input token and 2 per output token, so one
+// "alpha" turn costs 7: two turns reach 14 of 10 and cancel the run.
+async func cost_ceiling() returns int {
+    let start = agent_start(spec_cost_ceiling())
+    if let Result::Ok(run) = start {
+        let alpha = await ask(run, "alpha")
+        if let Result::Err(alpha_error) = alpha {
+            return 2
+        }
+        let beta = await ask(run, "beta")
+        if let Result::Err(beta_error) = beta {
+            return 3
+        }
+        let gamma = await ask(run, "gamma")
+        if let Result::Ok(gamma_text) = gamma {
+            return 4
+        }
+        let end = agent_end(run)
+        if let Result::Ok(report) = end {
+            if str.contains(report, "\"status\":\"budget_exceeded\"") == false {
+                return 5
+            }
+            if str.contains(report, "\"ceiling\":\"max_cost_micros\"") == false {
+                return 6
+            }
+            if str.contains(report, "\"cost_micros\":14") == false {
+                return 7
+            }
+        } else {
+            return 8
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// The scripted slow prompt takes longer than the one-second ceiling, so the
+// turn that produced the answer is the run's last unit of work.
+async func wall_time_ceiling() returns int {
+    let start = agent_start(spec_time_ceiling())
+    if let Result::Ok(run) = start {
+        let slow = await ask(run, "spectra:sleep-ms=1100")
+        if let Result::Err(slow_error) = slow {
+            return 2
+        }
+        let fast = await ask(run, "fast")
+        if let Result::Ok(fast_text) = fast {
+            return 3
+        }
+        let end = agent_end(run)
+        if let Result::Ok(report) = end {
+            if str.contains(report, "\"status\":\"budget_exceeded\"") == false {
+                return 4
+            }
+            if str.contains(report, "\"ceiling\":\"max_seconds\"") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// No ceiling: `budget_remaining` returns the documented sentinel and the
+// report has no ceiling name.
+async func unbounded_run() returns int {
+    let start = agent_start(spec_unbounded())
+    if let Result::Ok(run) = start {
+        let before = budget_remaining(run)
+        if let Result::Ok(remaining) = before {
+            if remaining < 1000000000 {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let turn = await ask(run, "alpha")
+        if let Result::Err(turn_error) = turn {
+            return 4
+        }
+        let still = budget_remaining(run)
+        if let Result::Ok(remaining) = still {
+            if remaining < 1000000000 {
+                return 5
+            }
+        } else {
+            return 6
+        }
+        let end = agent_end(run)
+        if let Result::Ok(report) = end {
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 7
+            }
+            if str.contains(report, "\"ceiling\":\"\"") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// A cost ceiling on a provider whose responses carry no cost is refused at
+// `agent_start` instead of silently accepting an unenforceable ceiling.
+func unenforceable_cost_ceiling() returns int {
+    let start = agent_start(spec_unenforceable_cost())
+    if let Result::Ok(run) = start {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(checks())
+}
+
+async func checks() returns int {
+    let tokens = await token_ceiling()
+    if tokens != 0 {
+        return tokens
+    }
+    let cost = await cost_ceiling()
+    if cost != 0 {
+        return 100 + cost
+    }
+    let wall = await wall_time_ceiling()
+    if wall != 0 {
+        return 200 + wall
+    }
+    let unbounded = await unbounded_run()
+    if unbounded != 0 {
+        return 300 + unbounded
+    }
+    let closed = unenforceable_cost_ceiling()
+    if closed != 0 {
+        return 400 + closed
+    }
+    return 0
+}

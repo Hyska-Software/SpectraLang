@@ -19,6 +19,296 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.agent.AgentSpec"
+kind = "type"
+namespace = "std.agent"
+signature = "record AgentSpec { allow: List<string>, endpoint: string, goal: string, journal: string, max_cost_micros: int, max_seconds: int, max_tokens: int, max_tool_calls: int, model: string, seed: int, untrusted: string }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.agent.AgentSpec"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.ChunkStream"
+kind = "type"
+namespace = "std.agent"
+signature = "record ChunkStream {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.agent.ChunkStream"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.Report"
+kind = "type"
+namespace = "std.agent"
+signature = "record Report { compensations_pending: int, cost_micros: int, elapsed_ms: int, status: string, steps: int, tokens_in: int, tokens_out: int, tool_calls: int }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.agent.Report"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.Run"
+kind = "type"
+namespace = "std.agent"
+signature = "record Run {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.agent.Run"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.act"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string) -> Task<Result<string, Error>>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }]
+returns = "Task<Result<string, Error>>"
+ir_return = "Task<Result<string,Error>>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.act"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/375_agent_act.spectra"
+
+[[entry]]
+path = "std.agent.agent_end"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run) -> Result<string, Error>"
+params = [{ name = "arg0", ty = "Run" }]
+returns = "Result<string, Error>"
+ir_return = "Result<string,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.agent_end"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.agent_start"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(string) -> Result<Run, Error>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Result<Run, Error>"
+ir_return = "Result<Run,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.agent_start"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.ask"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string) -> Task<Result<string, Error>>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }]
+returns = "Task<Result<string, Error>>"
+ir_return = "Task<Result<string,Error>>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.ask"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.ask_json"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string, string) -> Task<Result<string, Error>>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }, { name = "arg2", ty = "string" }]
+returns = "Task<Result<string, Error>>"
+ir_return = "Task<Result<string,Error>>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.ask_json"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.ask_stream"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string) -> Task<Result<ChunkStream, Error>>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }]
+returns = "Task<Result<ChunkStream, Error>>"
+ir_return = "Task<Result<ChunkStream,Error>>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.ask_stream"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.budget_remaining"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run) -> Result<int, Error>"
+params = [{ name = "arg0", ty = "Run" }]
+returns = "Result<int, Error>"
+ir_return = "Result<int,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.budget_remaining"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/372_agent_budget.spectra"
+
+[[entry]]
+path = "std.agent.embed"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string) -> Task<Result<Tensor<float, rank=1>, Error>>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }]
+returns = "Task<Result<Tensor<float, rank=1>, Error>>"
+ir_return = "Task<Result<Tensor<float,rank=1>,Error>>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.embed"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.recall"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string, int) -> Result<string, Error>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }, { name = "arg2", ty = "int" }]
+returns = "Result<string, Error>"
+ir_return = "Result<string,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.recall"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/369_agent_memory.spectra"
+
+[[entry]]
+path = "std.agent.register_tool"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(string, int, string, string, string) -> Result<bool, Error>"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "int" }, { name = "arg2", ty = "string" }, { name = "arg3", ty = "string" }, { name = "arg4", ty = "string" }]
+returns = "Result<bool, Error>"
+ir_return = "Result<bool,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.register_tool"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.remember"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string) -> Result<bool, Error>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }]
+returns = "Result<bool, Error>"
+ir_return = "Result<bool,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.remember"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/369_agent_memory.spectra"
+
+[[entry]]
+path = "std.agent.stream_close"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(ChunkStream) -> Task<Result<bool, Error>>"
+params = [{ name = "arg0", ty = "ChunkStream" }]
+returns = "Task<Result<bool, Error>>"
+ir_return = "Task<Result<bool,Error>>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.stream_close"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.stream_next"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(ChunkStream) -> Task<Result<string, Error>>"
+params = [{ name = "arg0", ty = "ChunkStream" }]
+returns = "Task<Result<string, Error>>"
+ir_return = "Task<Result<string,Error>>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.stream_next"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
 path = "std.agent.token_count"
 kind = "function"
 namespace = "std.agent"
@@ -35,6 +325,24 @@ maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.tool_call"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string, string) -> Task<Result<string, Error>>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }, { name = "arg2", ty = "string" }]
+returns = "Task<Result<string, Error>>"
+ir_return = "Task<Result<string,Error>>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.tool_call"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/375_agent_act.spectra"
 
 [[entry]]
 path = "std.api"

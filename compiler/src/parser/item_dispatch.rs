@@ -231,6 +231,27 @@ impl Parser {
         }
 
         loop {
+            // A positional argument is either a bare identifier (`derive(Serialize)`)
+            // or a string literal (`agent_tool("description")`). The two stay
+            // distinct in the AST so `#[agent_tool(desc)]` can be rejected as a
+            // non-literal description instead of silently reading as an identifier
+            // with the literal's spelling.
+            if let TokenKind::StringLiteral(value) = self.current().kind.clone() {
+                self.advance();
+                arguments.push(AttributeArgument::StringLiteral(value));
+                if self.check_symbol(',') {
+                    self.advance();
+                    if self.check_symbol(')') {
+                        break;
+                    }
+                } else if self.check_symbol(')') {
+                    break;
+                } else {
+                    self.error("Expected ',' or ')' in attribute argument list");
+                    return Err(());
+                }
+                continue;
+            }
             let (key, _) = self.consume_identifier("Expected attribute argument")?;
             if self.check_symbol('=') {
                 self.advance();

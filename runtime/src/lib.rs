@@ -19,7 +19,7 @@ pub mod panic;
 pub mod reactor;
 pub mod stdlib;
 pub mod tracing;
-pub(crate) mod vector_index;
+pub mod vector_index;
 
 pub use memory::{ManualMemory, ManualStats, MemoryConfig, MemoryStats};
 pub use stdlib::concurrent_diagnostics_report_json;
