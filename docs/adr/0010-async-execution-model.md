@@ -1,6 +1,8 @@
 # ADR 0010: Async/Await Execution Model
 
-Status: Accepted
+Status: Superseded by docs/adr/0015-async-execution-model.md (execution
+model only; syntax surface, types, cancellation, and Send/Sync rules below
+remain normative)
 
 Date: 2026-06-15
 

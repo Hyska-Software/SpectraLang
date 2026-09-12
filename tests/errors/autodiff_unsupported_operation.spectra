@@ -1,11 +1,13 @@
 module autodiff_unsupported_operation
 
 import std.tensor as tensor
+import std.ml as ml
 
 public func main() returns int {
-    let x = tensor.full_f(2, 1.0)
+    let scores = tensor.reshape(tensor.full_f(6, 1.0), 2, 3)
+    let labels = tensor.arange(0, 2, 1)
     let y = diff {
-        tensor.sum_t(tensor.tanh_f(x))
+        ml.cross_entropy_loss(scores, labels)
     }
     return tensor.len(y)
 }

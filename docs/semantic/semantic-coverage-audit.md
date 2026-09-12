@@ -24,8 +24,8 @@ Status labels:
 | Trait impl blocks | supported | Signature conformance is validated. |
 | Inherent impl blocks | supported | Method registration and lookup are active. |
 | Type aliases | supported | Aliases are parsed and registered in current semantic flows. |
-| Const/static items | partial | Top-level `const` eval is supported for primitive constant expressions; `static` remains a surface/global item model. |
-| Class declarations | partial | Frontend admits the syntax, but semantic support is not yet treated as production-grade. |
+| Const/static items | supported | `const` and scalar `static` initializers are compile-time checked; scalar statics lower to mutable IR globals, export/import relocatable data symbols, and execute through local and cross-module JIT/AOT. Aggregate/string/tensor/handle globals and synchronized task sharing remain outside the stable scalar contract. |
+| Class declarations | reserved | `class` is lexed as a reserved keyword and rejected by the parser with `P007`; use `struct` + `impl` + `trait`. |
 
 ## Statements
 
@@ -98,7 +98,7 @@ Status labels:
 
 ## Known Partial or Deferred Areas
 
-- static/global initialization beyond the current alpha surface
+- aggregate, string, tensor, and handle global initialization beyond the stable scalar `static` surface
 - deeper class model finalization: future semantic backlog
 - production-grade indexed collections and shape-aware tensor types: `R-201` through `R-304`
 - exact-width numeric runtime semantics beyond the canonical alpha ABI

@@ -1,0 +1,13 @@
+module json_derive_array_field
+
+#[derive(Serialize, Deserialize)]
+record WithTags {
+    id: int,
+    tags: [string],
+}
+
+public func main() returns int {
+    let w = WithTags { id: 1, tags: ["a", "b"] }
+    let encoded: string = w.to_json()
+    return 0
+}

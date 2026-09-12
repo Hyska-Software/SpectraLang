@@ -28,16 +28,25 @@ def run(command: list[str]) -> subprocess.CompletedProcess[str]:
 
 def require_contains(path: Path, needles: list[str]) -> None:
     text = path.read_text(encoding="utf-8")
+    require_contains_text(str(path), text, needles)
+
+
+def require_contains_text(label: str, text: str, needles: list[str]) -> None:
     missing = [needle for needle in needles if needle not in text]
     if missing:
         for needle in missing:
-            print(f"[R-2107] missing marker in {path}: {needle}", file=sys.stderr)
+            print(f"[R-2107] missing marker in {label}: {needle}", file=sys.stderr)
         raise SystemExit(1)
 
 
 def main() -> int:
-    require_contains(
-        ROOT / "runtime" / "src" / "stdlib" / "mod.rs",
+    stdlib_root = ROOT / "runtime" / "src" / "stdlib"
+    stdlib_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(stdlib_root.rglob("*.rs"))
+    )
+    require_contains_text(
+        str(stdlib_root),
+        stdlib_text,
         [
             "spectra.async.fs.read_async",
             "spectra.async.fs.write_async",

@@ -1,0 +1,41 @@
+// 08-hashmap-bench: 500 hashmap inserts + 500 contains per round,
+// repeated 200 times. Checksum total = 500 * 200 = 100000.
+module bench_hashmap_500
+
+import std.io
+import std.convert as c
+import std.collections as col
+
+public func main() returns int {
+    let n = 500
+    let iters = 200
+    let total = 0
+    let it = 0
+    while it < iters {
+        let m = col.map_new()
+        let i = 0
+        while i < n {
+            col.map_set(m, i * 7, i)
+            i = i + 1
+        }
+        let found = 0
+        let k = 0
+        while k < n {
+            if col.map_contains(m, k * 7) {
+                found = found + 1
+            }
+            k = k + 1
+        }
+        if col.map_len(m) != n {
+            return 1
+        }
+        col.map_free(m)
+        total = total + found
+        it = it + 1
+    }
+    if total != 100000 {
+        return 2
+    }
+    println(f"HASHMAP ok total={c.int_to_string(total)}")
+    return 0
+}

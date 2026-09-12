@@ -1,0 +1,75 @@
+// R-213: generic traits (trait Container<T>) with concrete and generic impls.
+module r213_gen_traits
+
+import std.io
+
+trait BoxOf<T> {
+    func get(&self) returns T
+    func label(&self) returns string
+}
+
+record IntBox {
+    public v: int,
+}
+
+impl BoxOf<int> for IntBox {
+    func get(&self) returns int {
+        self.v
+    }
+    func label(&self) returns string {
+        "int-box"
+    }
+}
+
+record StrBox {
+    public s: string,
+}
+
+impl BoxOf<string> for StrBox {
+    func get(&self) returns string {
+        self.s
+    }
+    func label(&self) returns string {
+        "str-box"
+    }
+}
+
+// Generic impl clause: impl<U> Trait<U> for Type
+record GenBox {
+    public v: int,
+}
+
+impl<U> BoxOf<U> for GenBox {
+    func get(&self) returns int {
+        self.v
+    }
+    func label(&self) returns string {
+        "gen-box"
+    }
+}
+
+// Static dispatch through a generic bound.
+func label_box<T: BoxOf>(b: T) returns string {
+    b.label()
+}
+
+public func main() returns int {
+    let ib = IntBox { v: 42 }
+    let g = ib.get()
+    let sb = StrBox { s: "hi" }
+    let y = sb.get()
+
+    let gb = GenBox { v: 9 }
+    let l1 = label_box(ib)
+    let l2 = label_box(gb)
+    let l3 = gb.label()
+
+    println(f"{g}/{y}/{l1}/{l2}/{l3}")
+
+    if g == 42 && y == "hi" && l1 == "int-box" && l2 == "gen-box" && l3 == "gen-box" {
+        println("R-213 generic traits ok")
+        return 42
+    }
+    return 0
+}
+

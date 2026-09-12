@@ -1,0 +1,35 @@
+// R-272 candidate: a trait method on an OOP value must preserve tensor
+// metadata while the tensor is consumed and released by the runtime.
+module r272_tensor_trait_lifecycle
+
+import std.tensor as tensor
+
+trait Metric {
+    func measure(&self, values: Tensor<float, rank1, dim4, row_major, cpu>) returns int
+}
+
+record WeightedMetric {
+    public weight: int,
+}
+
+impl Metric for WeightedMetric {
+    func measure(&self, values: Tensor<float, rank1, dim4, row_major, cpu>) returns int {
+        tensor.len(values) * self.weight
+    }
+}
+
+public func main() returns int {
+    let metric = WeightedMetric { weight: 3 }
+    let values: Tensor<float, rank1, dim4, row_major, cpu> = [1.0, 2.0, 3.0, 4.0]
+    let result = metric.measure(values)
+    if result != 12 {
+        return result
+    }
+
+    let dynamic: dyn Metric = metric as dyn Metric
+    let other: Tensor<float, rank1, dim4, row_major, cpu> = [4.0, 3.0, 2.0, 1.0]
+    if dynamic.measure(other) != 12 {
+        return 2
+    }
+    return 0
+}

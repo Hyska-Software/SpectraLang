@@ -3,25 +3,26 @@ use std::thread::ThreadId;
 use std::time::{Duration, Instant, SystemTime};
 
 pub mod abi;
-pub mod api;
 pub(crate) mod artifact;
+pub(crate) mod async_abi;
+pub(crate) mod async_frame;
 pub mod ffi;
 #[cfg(feature = "gpu")]
 pub mod gpu;
+pub mod handles;
 pub mod health;
 pub mod memory;
 pub mod metrics;
 pub mod numeric;
+pub mod panic;
 pub mod reactor;
 pub mod stdlib;
 pub mod tracing;
 pub(crate) mod vector_index;
 
-pub use memory::{
-    CollectionOutcome, HybridMemory, ManualStats, MemoryConfig, MemoryStats, TracedStats,
-};
+pub use memory::{ManualMemory, ManualStats, MemoryConfig, MemoryStats};
 pub use stdlib::concurrent_diagnostics_report_json;
-pub use stdlib::register as register_standard_library;
+pub use stdlib::register;
 
 /// Sets the program arguments visible to Spectra code via `std.env.env_args_count`
 /// and `std.env.env_arg`. Must be called before any Spectra code executes.
@@ -38,7 +39,7 @@ pub struct RuntimeState {
     start_instant: Instant,
     start_time: SystemTime,
     init_thread: ThreadId,
-    memory: HybridMemory,
+    memory: ManualMemory,
 }
 
 impl RuntimeState {
@@ -47,7 +48,7 @@ impl RuntimeState {
             start_instant: Instant::now(),
             start_time: SystemTime::now(),
             init_thread: std::thread::current().id(),
-            memory: HybridMemory::with_config(config),
+            memory: ManualMemory::with_config(config),
         }
     }
 
@@ -66,8 +67,8 @@ impl RuntimeState {
         self.init_thread
     }
 
-    /// Returns the hybrid memory manager associated with this runtime.
-    pub fn memory(&self) -> &HybridMemory {
+    /// Returns the manual memory manager associated with this runtime.
+    pub fn memory(&self) -> &ManualMemory {
         &self.memory
     }
 
@@ -79,11 +80,6 @@ impl RuntimeState {
     /// Returns the active memory configuration.
     pub fn memory_config(&self) -> MemoryConfig {
         self.memory.config()
-    }
-
-    /// Forces a garbage collection cycle via the hybrid memory manager.
-    pub fn collect_garbage(&self) -> CollectionOutcome {
-        self.memory.collect_garbage()
     }
 }
 

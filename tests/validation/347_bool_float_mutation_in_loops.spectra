@@ -1,0 +1,70 @@
+// Regression 347: locals of non-int scalar types mutated inside loops.
+//
+// Root cause fixed here: the lowering pre-pass used to allocate every
+// mutable local's stack slot as `int`, so promoting a `bool` slot to a
+// Cranelift variable panicked the frontend ("declared type of variable
+// does not match type of value") whenever a bool was stored across loop
+// blocks. Float and string slots exercise the same promotion path.
+//
+// Returns 0 only when every mutated scalar keeps its value through
+// while / for-array / break / continue control flow.
+module bool_loop_regression
+
+import std.convert
+public func main() returns int {
+    // bool mutated across a while back-edge.
+    let seen_odd = false
+    let i = 0
+    while i < 5 {
+        if i % 2 == 1 {
+            seen_odd = true
+        }
+        i = i + 1
+    }
+    if seen_odd != true {
+        return 1
+    }
+
+    // bool mutated inside a for-over-array body with continue.
+    let squares = [0, 1, 4, 9, 16]
+    let saw_big = false
+    let visited = 0
+    for v in squares {
+        if v < 9 {
+            continue
+        }
+        visited = visited + 1
+        if v >= 16 {
+            saw_big = true
+        }
+    }
+    if visited != 2 {
+        return 2
+    }
+    if saw_big != true {
+        return 3
+    }
+
+    // float slot mutated across a loop.
+    let total = 0.0
+    for v in squares {
+        total = total + int_to_float(v) * 0.5
+    }
+    if total != 15.0 {
+        return 4
+    }
+
+    // break leaves the flag written before the exit.
+    let hit_nine = false
+    for v in squares {
+        if v == 9 {
+            hit_nine = true
+            break
+        }
+    }
+    if hit_nine != true {
+        return 5
+    }
+
+    return 0
+}

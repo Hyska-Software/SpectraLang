@@ -1,0 +1,16 @@
+module autodiff_loop_carried_value
+
+import std.tensor as tensor
+
+public func main() returns int {
+    let x0 = tensor.full_f(3, 2.0)
+    let x = tensor.requires_grad(x0, true)
+    let acc = x
+    for i in 0..3 {
+        acc = tensor.mul(acc, x)
+    }
+    let y = diff {
+        tensor.sum_t(acc)
+    }
+    return tensor.len(y)
+}

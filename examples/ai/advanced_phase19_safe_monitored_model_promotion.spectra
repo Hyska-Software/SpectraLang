@@ -12,6 +12,11 @@ public func main() returns int {
     tensor.free_all()
     serve.reset()
 
+    // ServeReal requires an explicitly registered model on every server:
+    // y = relu(3*x + 0), matching every expected result below.
+    let model_weight = tensor.full2_f(1, 1, 3.0)
+    let model_biases = tensor.full_f(1, 0.0)
+
     let labels         = tensor.arange(0, 4, 1)
     let predictions    = tensor.arange(0, 4, 1)
     let classification = ml.metrics_classification(labels, predictions)
@@ -59,6 +64,9 @@ public func main() returns int {
     serve.server_set_output_policy(reference, 0, 250)
     serve.server_set_rate_limit(reference, 10)
     serve.server_warmup(reference)
+    if serve.server_register_model_linear(reference, model_weight, model_biases, 0) != 1 {
+        return 13
+    }
 
     let ref_a = serve.server_enqueue(reference, 10)
     let ref_b = serve.server_enqueue(reference, 20)
@@ -78,6 +86,9 @@ public func main() returns int {
     serve.server_set_output_policy(live, 0, 100)
     serve.server_set_rate_limit(live, 10)
     serve.server_warmup(live)
+    if serve.server_register_model_linear(live, model_weight, model_biases, 0) != 1 {
+        return 14
+    }
 
     let ok            = serve.server_enqueue(live, 30)
     let blocked_input = serve.server_enqueue(live, 151)

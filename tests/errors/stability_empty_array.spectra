@@ -1,0 +1,7 @@
+module stability_empty_array
+
+public func main() returns int {
+    let values = []
+    return 0
+}
+

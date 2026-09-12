@@ -1,0 +1,50 @@
+// R-2107 regression: real await waiting with out-of-order completion.
+//
+// Two tasks are created up front: one finishes almost immediately, the
+// other performs ~200 ms of wall-clock work via time.sleep_ms before
+// producing its value. The awaits run in reverse creation order, so the
+// second await must block until the slow task reaches a terminal state
+// (spectra.async.task.wait parks in the reactor) before fetching the
+// result. Exit code 0 asserts every value survived the waits.
+module async_wait_out_of_order
+
+import std.time as time
+
+async func quick_inc(value: int) returns int {
+    value + 1
+}
+
+async func slow_double(value: int) returns int {
+    time.sleep_ms(200)
+    value * 2
+}
+
+async func drive() returns int {
+    let started = time.monotonic_millis()
+
+    let slow_task = slow_double(20)
+    let quick_task = quick_inc(9)
+
+    // Out of order: the quick task completes first even though it was
+    // created second.
+    let quick_value = await quick_task
+    if quick_value != 10 {
+        return 1
+    }
+
+    // This await must tolerate real elapsed time beyond the synchronous
+    // tick: the slow task spent ~200 ms inside time.sleep_ms.
+    let slow_value = await slow_task
+    if slow_value != 40 {
+        return 2
+    }
+
+    if time.monotonic_millis() - started < 200 {
+        return 3
+    }
+    0
+}
+
+public func main() returns int {
+    block_on(drive())
+}

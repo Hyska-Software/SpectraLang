@@ -721,10 +721,47 @@ impl Retangulo {
     }
 
     func canto_x(&self) returns int {
-        self.canto.obter_x()    // Chama método do Ponto aninhado
+        self.canto.obter_x()    // Chama m�todo do Ponto aninhado
     }
 }
 ```
+
+### Impl Gen�rico / Generic Impl Blocks (R-211)
+
+**PT-BR:**
+Um bloco `impl` pode ser gen�rico escrevendo os par�metros de tipo do record
+ap�s o nome: `impl Par<T>`. Os m�todos valem para todas as instancia��es e o
+compilador especializa o corpo por instancia��o concreta (despacho est�tico).
+
+**EN-US:**
+An `impl` block can be generic by writing the record's type parameters after
+the name: `impl Par<T>`. The methods apply to every instantiation and the
+compiler specializes the body per concrete instantiation (static dispatch).
+
+```spectra
+record Par<T> {
+    valor: T
+}
+
+impl Par<T> {
+    func obter(&self) returns T {
+        self.valor
+    }
+
+    func definir(&mut self, v: T) {
+        self.valor = v
+    }
+}
+
+public func main() returns int {
+    let p = Par<int> { valor: 40 }
+    p.definir(42)
+    p.obter() // 42
+}
+```
+
+O alvo do impl tamb�m pode ser qualificado por m�dulo:
+`impl modulo::Tipo { ... }` (R-211).
 
 ---
 

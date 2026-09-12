@@ -1,0 +1,44 @@
+// Test: Literal patterns em match expressions
+// Expected: Compile successfully
+
+module test
+
+// Test: Match com literal int
+func test_int() returns int {
+    let x = 5
+    match x {
+        when 1 then 10,
+        when 2 then 20,
+        when 5 then 50,
+        otherwise then 0
+    }
+}
+
+// Test: Match com literal bool
+func test_bool() returns int {
+    let flag = false
+    match flag {
+        when true then 1,
+        when false then 2
+    }
+}
+
+// Test: Match com zero
+func test_zero() returns int {
+    let x = 0
+    match x {
+        when 0 then 100,
+        otherwise then 200
+    }
+}
+
+func main() returns int {
+    let a = test_int()
+    // 50
+    let b = test_bool()
+    // 2
+    let c = test_zero()
+    // 100
+
+    a + b + c // 152
+}

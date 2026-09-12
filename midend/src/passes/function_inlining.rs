@@ -38,6 +38,9 @@ impl Pass for FunctionInlining {
 
             let mut round_modified = false;
             for function in &mut module.functions {
+                if function.suspension_barrier {
+                    continue;
+                }
                 if inline_calls_in_function(function, &candidates) {
                     round_modified = true;
                 }
@@ -88,7 +91,7 @@ fn collect_candidates(
 }
 
 fn is_inline_candidate(function: &Function, call_graph: &HashMap<String, HashSet<String>>) -> bool {
-    if function.name == "main" || function.params.len() > 8 {
+    if function.name == "main" || function.params.len() > 8 || function.suspension_barrier {
         return false;
     }
     if !matches!(function.return_type, Type::Int | Type::Bool | Type::Void) {
@@ -120,8 +123,6 @@ fn is_inline_candidate(function: &Function, call_graph: &HashMap<String, HashSet
                 | InstructionKind::Call { .. }
                 | InstructionKind::CallIndirect { .. }
                 | InstructionKind::FuncAddr { .. }
-                | InstructionKind::AsyncSuspend { .. }
-                | InstructionKind::AsyncResume { .. }
                 | InstructionKind::AsyncReady { .. }
                 | InstructionKind::MakeDynFatPtr { .. }
                 | InstructionKind::LoadDynDataPtr { .. }
@@ -192,12 +193,9 @@ fn inline_calls_in_function(
     candidates: &HashMap<String, InlineCandidate>,
 ) -> bool {
     let mut modified = false;
-    loop {
-        let Some((block_index, instruction_index, candidate_name)) =
-            find_inline_call(function, candidates)
-        else {
-            break;
-        };
+    while let Some((block_index, instruction_index, candidate_name)) =
+        find_inline_call(function, candidates)
+    {
         let candidate = candidates
             .get(&candidate_name)
             .expect("candidate disappeared")
@@ -214,12 +212,7 @@ fn find_inline_call(
 ) -> Option<(usize, usize, String)> {
     for (block_index, block) in function.blocks.iter().enumerate() {
         for (instruction_index, instruction) in block.instructions.iter().enumerate() {
-            if let InstructionKind::Call {
-                function,
-                args,
-                result: _,
-            } = &instruction.kind
-            {
+            if let InstructionKind::Call { function, args, .. } = &instruction.kind {
                 if let Some(candidate) = candidates.get(function) {
                     if candidate.function.params.len() == args.len() {
                         return Some((block_index, instruction_index, function.clone()));
@@ -243,6 +236,7 @@ fn inline_call(
             result,
             function,
             args,
+            ..
         } => (*result, function.clone(), args.clone()),
         _ => unreachable!("inline_call called for non-call"),
     };
@@ -441,6 +435,11 @@ fn remap_instruction(kind: &InstructionKind, values: &HashMap<usize, Value>) -> 
             result: map_value(*result, values),
             ty: ty.clone(),
         },
+        InstructionKind::GlobalAddr { result, name, ty } => InstructionKind::GlobalAddr {
+            result: map_value(*result, values),
+            name: name.clone(),
+            ty: ty.clone(),
+        },
         InstructionKind::Load { result, ptr, ty } => InstructionKind::Load {
             result: map_value(*result, values),
             ptr: map_value(*ptr, values),
@@ -460,6 +459,22 @@ fn remap_instruction(kind: &InstructionKind, values: &HashMap<usize, Value>) -> 
             ptr: map_value(*ptr, values),
             index: map_value(*index, values),
             element_type: element_type.clone(),
+        },
+        InstructionKind::FieldPtr {
+            result,
+            ptr,
+            offset,
+        } => InstructionKind::FieldPtr {
+            result: map_value(*result, values),
+            ptr: map_value(*ptr, values),
+            offset: *offset,
+        },
+        InstructionKind::ManualAlloc { result, size } => InstructionKind::ManualAlloc {
+            result: map_value(*result, values),
+            size: *size,
+        },
+        InstructionKind::EscapeManualAlloc { ptr } => InstructionKind::EscapeManualAlloc {
+            ptr: map_value(*ptr, values),
         },
         InstructionKind::Copy { result, source } => InstructionKind::Copy {
             result: map_value(*result, values),
@@ -570,13 +585,19 @@ fn instruction_result(kind: &InstructionKind) -> Option<Value> {
         | InstructionKind::Or { result, .. }
         | InstructionKind::Not { result, .. }
         | InstructionKind::Alloca { result, .. }
+        | InstructionKind::GlobalAddr { result, .. }
+        | InstructionKind::ManualAlloc { result, .. }
         | InstructionKind::Load { result, .. }
         | InstructionKind::GetElementPtr { result, .. }
+        | InstructionKind::FieldPtr { result, .. }
         | InstructionKind::Copy { result, .. }
         | InstructionKind::Phi { result, .. }
         | InstructionKind::ConstInt { result, .. }
+        | InstructionKind::ConstIntTyped { result, .. }
         | InstructionKind::ConstFloat { result, .. }
+        | InstructionKind::ConstFloatTyped { result, .. }
         | InstructionKind::ConstBool { result, .. }
+        | InstructionKind::ConstString { result, .. }
         | InstructionKind::Cast { result, .. }
         | InstructionKind::FuncAddr { result, .. }
         | InstructionKind::MakeDynFatPtr { result, .. }

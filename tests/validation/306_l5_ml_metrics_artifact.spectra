@@ -1,0 +1,37 @@
+module bug_hunt_v2_306_ml_metrics_artifact
+
+import std.tensor as tensor
+import std.ml as ml
+import std.string as str
+
+public func main() returns int {
+    tensor.free_all()
+    let labels = tensor.arange(0, 4, 1)
+    let predicted = tensor.arange(0, 4, 1)
+    let classification = ml.metrics_classification(labels, predicted)
+    if not str.contains(classification, "\"accuracy\":1.000000") {
+        return 1
+    }
+
+    let expected = tensor.full_f(4, 1.0)
+    let actual = tensor.full_f(4, 1.0)
+    let regression = ml.metrics_regression(expected, actual)
+    if not str.contains(regression, "\"mse\":0.000000") {
+        return 2
+    }
+
+    let report = ml.evaluation_report(
+        "target/bug-hunt-v2/ml-metrics-report.json",
+        "bug-hunt-v2",
+        classification,
+        regression,
+        ml.metrics_ranking(labels, tensor.full_f(4, 1.0), 3),
+        ml.metrics_generation("retrieval answer", "answer"),
+        ml.serving_metrics(tensor.arange(10, 50, 10), 4, 0),
+    )
+    if not str.contains(report, "ml-metrics-report.json") {
+        return 3
+    }
+    tensor.free_all()
+    return 0
+}

@@ -71,18 +71,14 @@ fn cancellers() -> &'static mpsc::SyncSender<CancelJob> {
     })
 }
 
-pub(super) fn dispatch_cancellation(
-    work: impl FnOnce() + Send + 'static,
-) -> PostgresResult<()> {
-    cancellers()
-        .try_send(Box::new(work))
-        .map_err(|error| {
-            let code = match error {
-                TrySendError::Full(_) => "DB2505_ASYNC_QUEUE_FULL",
-                TrySendError::Disconnected(_) => "DB2505_ASYNC_WORKER_UNAVAILABLE",
-            };
-            PostgresError::new(code, "PostgreSQL cancellation queue is unavailable")
-        })
+pub(super) fn dispatch_cancellation(work: impl FnOnce() + Send + 'static) -> PostgresResult<()> {
+    cancellers().try_send(Box::new(work)).map_err(|error| {
+        let code = match error {
+            TrySendError::Full(_) => "DB2505_ASYNC_QUEUE_FULL",
+            TrySendError::Disconnected(_) => "DB2505_ASYNC_WORKER_UNAVAILABLE",
+        };
+        PostgresError::new(code, "PostgreSQL cancellation queue is unavailable")
+    })
 }
 
 struct Shared<T> {
@@ -266,8 +262,7 @@ mod tests {
 
     #[test]
     fn cancellation_before_poll_prevents_dispatch() {
-        let future =
-            PostgresFuture::new_cancellable(|| Ok::<_, PostgresError>(7), None);
+        let future = PostgresFuture::new_cancellable(|| Ok::<_, PostgresError>(7), None);
         assert!(future.cancel());
         assert!(!future.cancel());
     }

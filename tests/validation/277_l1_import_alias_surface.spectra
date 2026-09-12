@@ -1,0 +1,21 @@
+module bug_hunt_v2_277_import_alias_surface
+
+import std.math as math
+import std.string as text
+
+public func main() returns int {
+    let distance = math.abs(-42)
+    let bounded = math.max(math.min(distance, 50), 40)
+    let label = text.to_upper("spectra")
+
+    if bounded != 42 {
+        return 1
+    }
+    if label != "SPECTRA" {
+        return 2
+    }
+    if not text.starts_with(label, "SPEC") {
+        return 3
+    }
+    return 0
+}

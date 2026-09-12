@@ -1,0 +1,14 @@
+module main
+
+import geometry
+
+public func main() returns int {
+    let point = Point { x: 20, y: 22 }
+    if geometry::sum(point) != 42 {
+        return 1
+    }
+    if point.magnitude() != 42 {
+        return 2
+    }
+    return 0
+}

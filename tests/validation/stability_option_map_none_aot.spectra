@@ -1,0 +1,11 @@
+module stability_option_map_none_aot
+
+import std.option as option
+
+public func main() returns int {
+    let mapped = option.option_map(Option::None, |value: int| value + 1)
+    if option.is_some(mapped) {
+        return 1
+    }
+    return 0
+}

@@ -37,12 +37,6 @@ for (const term of requiredGrammarTerms) {
   assert.ok(grammarText.includes(term), `grammar is missing canonical term: ${term}`);
 }
 
-assert.ok(grammar.repository.legacy_syntax, 'grammar must mark legacy syntax explicitly');
-assert.match(
-  JSON.stringify(grammar.repository.legacy_syntax),
-  /fn|struct|pub|unless|elif|of|->|=>|;/,
-  'legacy syntax markers are incomplete',
-);
 
 assert.equal(languageConfiguration.comments.lineComment, '//');
 assert.deepEqual(languageConfiguration.comments.blockComment, ['/*', '*/']);

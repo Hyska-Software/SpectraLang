@@ -1,0 +1,6 @@
+module sem_shadow_builtin
+func len() returns int { return 0 }
+public func main() returns int {
+    let len = "shadow"
+    return len()
+}

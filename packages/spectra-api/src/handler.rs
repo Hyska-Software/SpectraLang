@@ -1,9 +1,10 @@
+use crate::handles::ApiHandleTable;
 use crate::http::{self, Request, Response, Status};
 use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use spectra_runtime::ffi::{
-    SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
+    SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT, HOST_STATUS_SUCCESS,
 };
-use std::collections::HashMap;
+use spectra_runtime::handles::HandleKind;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Mutex, OnceLock};
@@ -120,50 +121,49 @@ where
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum HandlerKind {
+pub(crate) enum HandlerKind {
     Sync,
     Async,
+}
+
+pub(crate) type ClosureInvoker = unsafe extern "C" fn(i64, *const i64, usize, *mut i64) -> i32;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CallbackEntry {
+    pub(crate) closure: SpectraHostValue,
+    pub(crate) invoke: ClosureInvoker,
 }
 
 #[derive(Clone, Debug)]
 struct HandlerEntry {
     route_id: SpectraHostValue,
-    response: SpectraHostValue,
+    response: Option<SpectraHostValue>,
+    callback: Option<CallbackEntry>,
     kind: HandlerKind,
 }
 
 struct HandlerStore {
-    next_handler: SpectraHostValue,
-    next_error: SpectraHostValue,
-    handlers: HashMap<SpectraHostValue, HandlerEntry>,
-    errors: HashMap<SpectraHostValue, HandlerError>,
+    handlers: ApiHandleTable<HandlerEntry>,
+    errors: ApiHandleTable<HandlerError>,
     last_error: Option<HandlerError>,
 }
 
 impl HandlerStore {
     fn new() -> Self {
         Self {
-            next_handler: 1,
-            next_error: 1,
-            handlers: HashMap::new(),
-            errors: HashMap::new(),
+            handlers: ApiHandleTable::new(HandleKind::ApiHandler),
+            errors: ApiHandleTable::new(HandleKind::ApiHandlerError),
             last_error: None,
         }
     }
 
     fn handler_handle(&mut self, entry: HandlerEntry) -> SpectraHostValue {
-        let handle = self.next_handler;
-        self.next_handler = self.next_handler.saturating_add(1).max(1);
-        self.handlers.insert(handle, entry);
-        handle
+        self.handlers.insert(entry)
     }
 
     fn error_handle(&mut self, error: HandlerError) -> SpectraHostValue {
         self.last_error = Some(error.clone());
-        let handle = self.next_error;
-        self.next_error = self.next_error.saturating_add(1).max(1);
-        self.errors.insert(handle, error);
-        handle
+        self.errors.insert(error)
     }
 }
 
@@ -224,9 +224,58 @@ pub(crate) fn response_for_route(route_id: SpectraHostValue) -> Option<Response>
         .iter()
         .filter(|(_, entry)| entry.route_id == route_id)
         .max_by_key(|(handle, _)| *handle)
-        .map(|(_, entry)| entry.response);
+        .and_then(|(_, entry)| entry.response);
     drop(handler_store);
     response.and_then(http::clone_response)
+}
+
+pub(crate) enum RegisteredHandler {
+    Response {
+        handle: SpectraHostValue,
+        response: Response,
+    },
+    Callback {
+        kind: HandlerKind,
+        callback: CallbackEntry,
+    },
+}
+
+pub(crate) fn registered_handler_for_route(
+    route_id: SpectraHostValue,
+) -> Option<RegisteredHandler> {
+    let handler_store = store().lock().unwrap_or_else(|e| e.into_inner());
+    let entry = handler_store
+        .handlers
+        .iter()
+        .filter(|(_, entry)| entry.route_id == route_id)
+        .max_by_key(|(handle, _)| *handle)
+        .map(|(_, entry)| entry.clone())?;
+    drop(handler_store);
+
+    match (entry.response, entry.callback) {
+        (Some(handle), _) => response_for_route(route_id)
+            .map(|response| RegisteredHandler::Response { handle, response }),
+        (None, Some(callback)) => Some(RegisteredHandler::Callback {
+            kind: entry.kind,
+            callback,
+        }),
+        (None, None) => None,
+    }
+}
+
+pub(crate) fn invoke_callback(
+    callback: CallbackEntry,
+    request: SpectraHostValue,
+) -> Result<SpectraHostValue, i32> {
+    let args = [request];
+    let mut result = 0_i64;
+    let status =
+        unsafe { (callback.invoke)(callback.closure, args.as_ptr(), args.len(), &mut result) };
+    if status == HOST_STATUS_SUCCESS {
+        Ok(result)
+    } else {
+        Err(status)
+    }
 }
 
 #[cfg(test)]
@@ -238,7 +287,22 @@ pub(crate) fn register_sync_response_for_route(
     let mut store = store().lock().unwrap_or_else(|e| e.into_inner());
     store.handler_handle(HandlerEntry {
         route_id,
-        response,
+        response: Some(response),
+        callback: None,
+        kind: HandlerKind::Sync,
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn register_sync_response_handle_for_route(
+    route_id: SpectraHostValue,
+    response: SpectraHostValue,
+) -> SpectraHostValue {
+    let mut store = store().lock().unwrap_or_else(|e| e.into_inner());
+    store.handler_handle(HandlerEntry {
+        route_id,
+        response: Some(response),
+        callback: None,
         kind: HandlerKind::Sync,
     })
 }
@@ -385,6 +449,14 @@ pub extern "C" fn register_async(ctx: *mut SpectraHostCallContext) -> i32 {
     register_handler(ctx, HandlerKind::Async)
 }
 
+pub extern "C" fn register_sync_callback(ctx: *mut SpectraHostCallContext) -> i32 {
+    register_callback(ctx, HandlerKind::Sync)
+}
+
+pub extern "C" fn register_async_callback(ctx: *mut SpectraHostCallContext) -> i32 {
+    register_callback(ctx, HandlerKind::Async)
+}
+
 fn register_handler(ctx: *mut SpectraHostCallContext, kind: HandlerKind) -> i32 {
     let Ok(args) = read_args(ctx, 2) else {
         return HOST_STATUS_INVALID_ARGUMENT;
@@ -395,7 +467,31 @@ fn register_handler(ctx: *mut SpectraHostCallContext, kind: HandlerKind) -> i32 
     let mut store = store().lock().unwrap_or_else(|e| e.into_inner());
     let handle = store.handler_handle(HandlerEntry {
         route_id: args[0],
-        response: args[1],
+        response: Some(args[1]),
+        callback: None,
+        kind,
+    });
+    write_result(ctx, handle)
+}
+
+fn register_callback(ctx: *mut SpectraHostCallContext, kind: HandlerKind) -> i32 {
+    let Ok(args) = read_args(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(invoke) = (unsafe { ctx.as_ref() }).and_then(|ctx| ctx.invoke_fn) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    if args[1] == 0 {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    let mut store = store().lock().unwrap_or_else(|e| e.into_inner());
+    let handle = store.handler_handle(HandlerEntry {
+        route_id: args[0],
+        response: None,
+        callback: Some(CallbackEntry {
+            closure: args[1],
+            invoke,
+        }),
         kind,
     });
     write_result(ctx, handle)
@@ -423,12 +519,33 @@ fn dispatch_handler(ctx: *mut SpectraHostCallContext, expected: HandlerKind) -> 
         store.last_error = Some(HandlerError::new(500, "handler kind mismatch"));
         return HOST_STATUS_INVALID_ARGUMENT;
     }
-    let Some(response) = http::clone_response(entry.response) else {
+    let _route_id = entry.route_id;
+    if let Some(response) = entry.response.and_then(http::clone_response) {
+        return write_response(ctx, Ok(response));
+    }
+    let Some(callback) = entry.callback else {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
-    let _route_id = entry.route_id;
-    let _request = args[1];
-    write_response(ctx, Ok(response))
+    let Ok(result) = invoke_callback(callback, args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    match entry.kind {
+        HandlerKind::Sync => {
+            let Some(response) = http::clone_response(result) else {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            };
+            write_response(ctx, Ok(response))
+        }
+        HandlerKind::Async => {
+            let Ok(response_handle) = spectra_runtime::stdlib::block_on_task_value(result) else {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            };
+            let Some(response) = http::clone_response(response_handle) else {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            };
+            write_response(ctx, Ok(response))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -505,12 +622,14 @@ mod tests {
         let mut handler_store = store().lock().unwrap_or_else(|e| e.into_inner());
         let sync = handler_store.handler_handle(HandlerEntry {
             route_id: 7,
-            response,
+            response: Some(response),
+            callback: None,
             kind: HandlerKind::Sync,
         });
         let async_h = handler_store.handler_handle(HandlerEntry {
             route_id: 8,
-            response,
+            response: Some(response),
+            callback: None,
             kind: HandlerKind::Async,
         });
         drop(handler_store);

@@ -1,0 +1,33 @@
+// R-266 candidate: the aggregate ABI used by JIT execution must also survive
+// object emission and executable linking.
+module r266_oop_aot_aggregate
+
+record Point {
+    public x: int,
+    public y: int,
+}
+
+impl Point {
+    public func sum(&self) returns int {
+        self.x + self.y
+    }
+}
+
+record Envelope {
+    public point: Point,
+    public enabled: bool,
+}
+
+public func main() returns int {
+    let envelope = Envelope {
+        point: Point { x: 17, y: 25 },
+        enabled: true,
+    }
+    if not envelope.enabled {
+        return 1
+    }
+    if envelope.point.sum() != 42 {
+        return 2
+    }
+    return 0
+}

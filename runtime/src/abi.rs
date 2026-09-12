@@ -73,11 +73,9 @@ pub enum RuntimeImport {
     ManualEscape,
     HostInvoke,
     HostInvokeBatch,
-    ConcurrentSpawn,
     ConcurrentJoin,
     ConcurrentSpawnBatch,
     ConcurrentJoinBatchSum,
-    ConcurrentSpawnJoin,
     ConcurrentReset,
     BuilderNew,
     BuilderPush,
@@ -85,7 +83,6 @@ pub enum RuntimeImport {
     BuilderFinish,
     BuilderFree,
     MapSet,
-    MapGet,
     MapContains,
     MlLinear,
     MlMseLoss,
@@ -97,7 +94,6 @@ pub enum RuntimeImport {
     StringLen,
     StringCharAt,
     MapNew,
-    MapRemove,
     MapLen,
     MapClear,
     MapFree,
@@ -110,10 +106,30 @@ pub enum RuntimeImport {
     HostInvokeCached,
     /// Generic host batch dispatch using cache slots embedded in descriptors.
     HostInvokeCachedBatch,
+    /// Fatal runtime error reporter used by Div/Rem zero checks and failed
+    /// host calls. Prints `runtime error: <message>` and exits with 101.
+    SpectraPanic,
+    /// Real-concurrency spawn of a JIT closure onto the worker pool.
+    ConcurrentSpawnFn,
+    CoroutineFrameAlloc,
+    CoroutineFrameStore,
+    CoroutineFrameLoad,
+    CoroutineStateLoad,
+    CoroutineStateStore,
+    CoroutineCreate,
+    CoroutinePollChild,
+    CoroutinePollResult,
+    CoroutineSubscribe,
+    CoroutineWake,
+    CoroutineSuspend,
+    CoroutineComplete,
+    CoroutineError,
+    CoroutineCancelled,
+    CoroutinePollReturn,
 }
 
 impl RuntimeImport {
-    pub const COUNT: usize = 42;
+    pub const COUNT: usize = 55;
 
     pub const ALL: &'static [Self] = &[
         Self::ManualAlloc,
@@ -123,11 +139,9 @@ impl RuntimeImport {
         Self::ManualEscape,
         Self::HostInvoke,
         Self::HostInvokeBatch,
-        Self::ConcurrentSpawn,
         Self::ConcurrentJoin,
         Self::ConcurrentSpawnBatch,
         Self::ConcurrentJoinBatchSum,
-        Self::ConcurrentSpawnJoin,
         Self::ConcurrentReset,
         Self::BuilderNew,
         Self::BuilderPush,
@@ -135,7 +149,6 @@ impl RuntimeImport {
         Self::BuilderFinish,
         Self::BuilderFree,
         Self::MapSet,
-        Self::MapGet,
         Self::MapContains,
         Self::MlLinear,
         Self::MlMseLoss,
@@ -147,7 +160,6 @@ impl RuntimeImport {
         Self::StringLen,
         Self::StringCharAt,
         Self::MapNew,
-        Self::MapRemove,
         Self::MapLen,
         Self::MapClear,
         Self::MapFree,
@@ -158,8 +170,24 @@ impl RuntimeImport {
         Self::ChannelLen,
         Self::HostInvokeCached,
         Self::HostInvokeCachedBatch,
+        Self::SpectraPanic,
+        Self::ConcurrentSpawnFn,
+        Self::CoroutineFrameAlloc,
+        Self::CoroutineFrameStore,
+        Self::CoroutineFrameLoad,
+        Self::CoroutineStateLoad,
+        Self::CoroutineStateStore,
+        Self::CoroutineCreate,
+        Self::CoroutinePollChild,
+        Self::CoroutinePollResult,
+        Self::CoroutineSubscribe,
+        Self::CoroutineWake,
+        Self::CoroutineSuspend,
+        Self::CoroutineComplete,
+        Self::CoroutineError,
+        Self::CoroutineCancelled,
+        Self::CoroutinePollReturn,
     ];
-
     pub const fn index(self) -> usize {
         self as usize
     }
@@ -173,11 +201,10 @@ impl RuntimeImport {
             Self::ManualEscape => "spectra_rt_manual_escape",
             Self::HostInvoke => "spectra_rt_host_invoke",
             Self::HostInvokeBatch => "spectra_rt_host_invoke_batch",
-            Self::ConcurrentSpawn => "spectra_rt_concurrent_spawn_fast",
             Self::ConcurrentJoin => "spectra_rt_concurrent_join_fast",
             Self::ConcurrentSpawnBatch => "spectra_rt_concurrent_spawn_batch_fast",
             Self::ConcurrentJoinBatchSum => "spectra_rt_concurrent_join_batch_sum_fast",
-            Self::ConcurrentSpawnJoin => "spectra_rt_concurrent_spawn_join_fast",
+            Self::ConcurrentSpawnFn => "spectra_rt_concurrent_spawn_fn_fast",
             Self::ConcurrentReset => "spectra_rt_concurrent_reset_fast",
             Self::BuilderNew => "spectra_rt_builder_new",
             Self::BuilderPush => "spectra_rt_builder_push",
@@ -185,7 +212,6 @@ impl RuntimeImport {
             Self::BuilderFinish => "spectra_rt_builder_finish",
             Self::BuilderFree => "spectra_rt_builder_free",
             Self::MapSet => "spectra_rt_map_set_fast",
-            Self::MapGet => "spectra_rt_map_get_fast",
             Self::MapContains => "spectra_rt_map_contains_fast",
             Self::MlLinear => "spectra_rt_ml_linear_fast",
             Self::MlMseLoss => "spectra_rt_ml_mse_loss_fast",
@@ -197,7 +223,6 @@ impl RuntimeImport {
             Self::StringLen => "spectra_rt_string_len_fast",
             Self::StringCharAt => "spectra_rt_string_char_at_fast",
             Self::MapNew => "spectra_rt_map_new_fast",
-            Self::MapRemove => "spectra_rt_map_remove_fast",
             Self::MapLen => "spectra_rt_map_len_fast",
             Self::MapClear => "spectra_rt_map_clear_fast",
             Self::MapFree => "spectra_rt_map_free_fast",
@@ -208,6 +233,22 @@ impl RuntimeImport {
             Self::ChannelLen => "spectra_rt_channel_len_fast",
             Self::HostInvokeCached => "spectra_rt_host_invoke_cached",
             Self::HostInvokeCachedBatch => "spectra_rt_host_invoke_cached_batch",
+            Self::SpectraPanic => "spectra_rt_panic",
+            Self::CoroutineFrameAlloc => "spectra_rt_coroutine_frame_alloc",
+            Self::CoroutineFrameStore => "spectra_rt_coroutine_frame_store",
+            Self::CoroutineFrameLoad => "spectra_rt_coroutine_frame_load",
+            Self::CoroutineStateLoad => "spectra_rt_coroutine_state_load",
+            Self::CoroutineStateStore => "spectra_rt_coroutine_state_store",
+            Self::CoroutineCreate => "spectra_rt_coroutine_create",
+            Self::CoroutinePollChild => "spectra_rt_coroutine_poll_child",
+            Self::CoroutinePollResult => "spectra_rt_coroutine_poll_result",
+            Self::CoroutineSubscribe => "spectra_rt_coroutine_subscribe",
+            Self::CoroutineWake => "spectra_rt_coroutine_wake",
+            Self::CoroutineSuspend => "spectra_rt_coroutine_suspend",
+            Self::CoroutineComplete => "spectra_rt_coroutine_complete",
+            Self::CoroutineError => "spectra_rt_coroutine_error",
+            Self::CoroutineCancelled => "spectra_rt_coroutine_cancelled",
+            Self::CoroutinePollReturn => "spectra_rt_coroutine_poll_return",
         }
     }
 
@@ -222,19 +263,17 @@ impl RuntimeImport {
             Self::HostInvokeBatch => (I64_I64, I32),
             Self::HostInvokeCached => (HOST_INVOKE_CACHED_PARAMS, I32),
             Self::HostInvokeCachedBatch => (I64_I64, I32),
-            Self::ConcurrentSpawn => (I64, I64),
             Self::ConcurrentJoin => (I64, I64),
             Self::ConcurrentSpawnBatch => (I64_I64, I64),
             Self::ConcurrentJoinBatchSum => (I64, I64),
-            Self::ConcurrentSpawnJoin => (I64, I64),
             Self::ConcurrentReset => (EMPTY, I64),
+            Self::ConcurrentSpawnFn => (I64_I64, I64),
             Self::BuilderNew => (I64, I64),
             Self::BuilderPush => (I64_I64, EMPTY),
             Self::BuilderLen => (I64, I64),
             Self::BuilderFinish => (I64, I64),
             Self::BuilderFree => (I64, EMPTY),
             Self::MapSet => (I64_I64_I64, I32),
-            Self::MapGet => (I64_I64, I64),
             Self::MapContains => (I64_I64, I64),
             Self::MlLinear => (I64_I64_I64, I64),
             Self::MlMseLoss => (I64_I64, I64),
@@ -246,7 +285,6 @@ impl RuntimeImport {
             Self::StringLen => (I64, I64),
             Self::StringCharAt => (I64_I64, I64),
             Self::MapNew => (EMPTY, I64),
-            Self::MapRemove => (I64_I64, I64),
             Self::MapLen => (I64, I64),
             Self::MapClear => (I64, EMPTY),
             Self::MapFree => (I64, EMPTY),
@@ -255,6 +293,22 @@ impl RuntimeImport {
             Self::ChannelRecv => (I64, I64),
             Self::ChannelClose => (I64, I32),
             Self::ChannelLen => (I64, I64),
+            Self::SpectraPanic => (I64, EMPTY),
+            Self::CoroutineFrameAlloc => (I64, I64),
+            Self::CoroutineFrameStore => (I64_I64_I64, I64),
+            Self::CoroutineFrameLoad => (I64_I64, I64),
+            Self::CoroutineStateLoad => (I64, I64),
+            Self::CoroutineStateStore => (I64_I64, I64),
+            Self::CoroutineCreate => (I64_I64_I64, I64),
+            Self::CoroutinePollChild => (I64, I64),
+            Self::CoroutinePollResult => (I64, I64),
+            Self::CoroutineSubscribe => (I64_I64, I64),
+            Self::CoroutineWake => (I64, I64),
+            Self::CoroutineSuspend => (I64_I64, I64),
+            Self::CoroutineComplete => (I64_I64, I64),
+            Self::CoroutineError => (I64_I64, I64),
+            Self::CoroutineCancelled => (I64, I64),
+            Self::CoroutinePollReturn => (I64, EMPTY),
         };
         AbiSignature { params, returns }
     }
@@ -272,13 +326,12 @@ impl RuntimeImport {
             Self::ManualEscape => ffi::spectra_rt_manual_escape as *const u8,
             Self::HostInvoke => ffi::spectra_rt_host_invoke as *const u8,
             Self::HostInvokeBatch => ffi::spectra_rt_host_invoke_batch as *const u8,
-            Self::ConcurrentSpawn => ffi::spectra_rt_concurrent_spawn_fast as *const u8,
             Self::ConcurrentJoin => ffi::spectra_rt_concurrent_join_fast as *const u8,
             Self::ConcurrentSpawnBatch => ffi::spectra_rt_concurrent_spawn_batch_fast as *const u8,
             Self::ConcurrentJoinBatchSum => {
                 ffi::spectra_rt_concurrent_join_batch_sum_fast as *const u8
             }
-            Self::ConcurrentSpawnJoin => ffi::spectra_rt_concurrent_spawn_join_fast as *const u8,
+            Self::ConcurrentSpawnFn => ffi::spectra_rt_concurrent_spawn_fn_fast as *const u8,
             Self::ConcurrentReset => ffi::spectra_rt_concurrent_reset_fast as *const u8,
             Self::BuilderNew => ffi::spectra_rt_builder_new as *const u8,
             Self::BuilderPush => ffi::spectra_rt_builder_push as *const u8,
@@ -286,7 +339,6 @@ impl RuntimeImport {
             Self::BuilderFinish => ffi::spectra_rt_builder_finish as *const u8,
             Self::BuilderFree => ffi::spectra_rt_builder_free as *const u8,
             Self::MapSet => ffi::spectra_rt_map_set_fast as *const u8,
-            Self::MapGet => ffi::spectra_rt_map_get_fast as *const u8,
             Self::MapContains => ffi::spectra_rt_map_contains_fast as *const u8,
             Self::MlLinear => ffi::spectra_rt_ml_linear_fast as *const u8,
             Self::MlMseLoss => ffi::spectra_rt_ml_mse_loss_fast as *const u8,
@@ -298,7 +350,6 @@ impl RuntimeImport {
             Self::StringLen => ffi::spectra_rt_string_len_fast as *const u8,
             Self::StringCharAt => ffi::spectra_rt_string_char_at_fast as *const u8,
             Self::MapNew => ffi::spectra_rt_map_new_fast as *const u8,
-            Self::MapRemove => ffi::spectra_rt_map_remove_fast as *const u8,
             Self::MapLen => ffi::spectra_rt_map_len_fast as *const u8,
             Self::MapClear => ffi::spectra_rt_map_clear_fast as *const u8,
             Self::MapFree => ffi::spectra_rt_map_free_fast as *const u8,
@@ -309,6 +360,42 @@ impl RuntimeImport {
             Self::ChannelLen => ffi::spectra_rt_channel_len_fast as *const u8,
             Self::HostInvokeCached => ffi::spectra_rt_host_invoke_cached as *const u8,
             Self::HostInvokeCachedBatch => ffi::spectra_rt_host_invoke_cached_batch as *const u8,
+            Self::SpectraPanic => crate::panic::spectra_rt_panic as *const u8,
+            Self::CoroutineFrameAlloc => {
+                crate::async_abi::spectra_rt_coroutine_frame_alloc as *const u8
+            }
+            Self::CoroutineFrameStore => {
+                crate::async_abi::spectra_rt_coroutine_frame_store as *const u8
+            }
+            Self::CoroutineFrameLoad => {
+                crate::async_abi::spectra_rt_coroutine_frame_load as *const u8
+            }
+            Self::CoroutineStateLoad => {
+                crate::async_abi::spectra_rt_coroutine_state_load as *const u8
+            }
+            Self::CoroutineStateStore => {
+                crate::async_abi::spectra_rt_coroutine_state_store as *const u8
+            }
+            Self::CoroutineCreate => crate::async_abi::spectra_rt_coroutine_create as *const u8,
+            Self::CoroutinePollChild => {
+                crate::async_abi::spectra_rt_coroutine_poll_child as *const u8
+            }
+            Self::CoroutinePollResult => {
+                crate::async_abi::spectra_rt_coroutine_poll_result as *const u8
+            }
+            Self::CoroutineSubscribe => {
+                crate::async_abi::spectra_rt_coroutine_subscribe as *const u8
+            }
+            Self::CoroutineWake => crate::async_abi::spectra_rt_coroutine_wake as *const u8,
+            Self::CoroutineSuspend => crate::async_abi::spectra_rt_coroutine_suspend as *const u8,
+            Self::CoroutineComplete => crate::async_abi::spectra_rt_coroutine_complete as *const u8,
+            Self::CoroutineError => crate::async_abi::spectra_rt_coroutine_error as *const u8,
+            Self::CoroutineCancelled => {
+                crate::async_abi::spectra_rt_coroutine_cancelled as *const u8
+            }
+            Self::CoroutinePollReturn => {
+                crate::async_abi::spectra_rt_coroutine_poll_return as *const u8
+            }
         }
     }
 }
@@ -353,8 +440,6 @@ pub enum FastHostCall {
     ConcurrentReset,
     StringLen,
     StringCharAt,
-    ConcurrentSpawnJoin,
-    ConcurrentSpawn,
     ConcurrentSpawnBatch,
     ConcurrentJoinBatchSum,
     ConcurrentJoin,
@@ -364,10 +449,8 @@ pub enum FastHostCall {
     BuilderFinish,
     BuilderFree,
     MapSet,
-    MapGet,
     MapContains,
     MapNew,
-    MapRemove,
     MapLen,
     MapClear,
     MapFree,
@@ -381,17 +464,15 @@ pub enum FastHostCall {
     TensorBackward,
     MlSgdStep,
     TensorFullF,
+    ConcurrentSpawnFn,
 }
-
 impl FastHostCall {
-    pub const COUNT: usize = 31;
+    pub const COUNT: usize = 28;
 
     pub const ALL: &'static [Self] = &[
         Self::ConcurrentReset,
         Self::StringLen,
         Self::StringCharAt,
-        Self::ConcurrentSpawnJoin,
-        Self::ConcurrentSpawn,
         Self::ConcurrentSpawnBatch,
         Self::ConcurrentJoinBatchSum,
         Self::ConcurrentJoin,
@@ -401,10 +482,8 @@ impl FastHostCall {
         Self::BuilderFinish,
         Self::BuilderFree,
         Self::MapSet,
-        Self::MapGet,
         Self::MapContains,
         Self::MapNew,
-        Self::MapRemove,
         Self::MapLen,
         Self::MapClear,
         Self::MapFree,
@@ -418,6 +497,7 @@ impl FastHostCall {
         Self::TensorBackward,
         Self::MlSgdStep,
         Self::TensorFullF,
+        Self::ConcurrentSpawnFn,
     ];
 
     pub const fn index(self) -> usize {
@@ -429,8 +509,6 @@ impl FastHostCall {
             Self::ConcurrentReset => "spectra.std.concurrent.reset",
             Self::StringLen => "spectra.std.string.len",
             Self::StringCharAt => "spectra.std.string.char_at",
-            Self::ConcurrentSpawnJoin => "spectra.std.concurrent.task_spawn_join",
-            Self::ConcurrentSpawn => "spectra.std.concurrent.task_spawn",
             Self::ConcurrentSpawnBatch => "spectra.std.concurrent.task_spawn_batch",
             Self::ConcurrentJoinBatchSum => "spectra.std.concurrent.task_join_batch_sum",
             Self::ConcurrentJoin => "spectra.std.concurrent.task_join",
@@ -440,10 +518,8 @@ impl FastHostCall {
             Self::BuilderFinish => "spectra.std.string.builder_finish",
             Self::BuilderFree => "spectra.std.string.builder_free",
             Self::MapSet => "spectra.std.collections.map_set",
-            Self::MapGet => "spectra.std.collections.map_get",
             Self::MapContains => "spectra.std.collections.map_contains",
             Self::MapNew => "spectra.std.collections.map_new",
-            Self::MapRemove => "spectra.std.collections.map_remove",
             Self::MapLen => "spectra.std.collections.map_len",
             Self::MapClear => "spectra.std.collections.map_clear",
             Self::MapFree => "spectra.std.collections.map_free",
@@ -457,6 +533,7 @@ impl FastHostCall {
             Self::TensorBackward => "spectra.std.tensor.backward",
             Self::MlSgdStep => "spectra.std.ml.sgd_step",
             Self::TensorFullF => "spectra.std.tensor.full_f",
+            Self::ConcurrentSpawnFn => "spectra.std.concurrent.task_spawn_fn",
         }
     }
 
@@ -465,8 +542,6 @@ impl FastHostCall {
             Self::ConcurrentReset => RuntimeImport::ConcurrentReset,
             Self::StringLen => RuntimeImport::StringLen,
             Self::StringCharAt => RuntimeImport::StringCharAt,
-            Self::ConcurrentSpawnJoin => RuntimeImport::ConcurrentSpawnJoin,
-            Self::ConcurrentSpawn => RuntimeImport::ConcurrentSpawn,
             Self::ConcurrentSpawnBatch => RuntimeImport::ConcurrentSpawnBatch,
             Self::ConcurrentJoinBatchSum => RuntimeImport::ConcurrentJoinBatchSum,
             Self::ConcurrentJoin => RuntimeImport::ConcurrentJoin,
@@ -476,10 +551,8 @@ impl FastHostCall {
             Self::BuilderFinish => RuntimeImport::BuilderFinish,
             Self::BuilderFree => RuntimeImport::BuilderFree,
             Self::MapSet => RuntimeImport::MapSet,
-            Self::MapGet => RuntimeImport::MapGet,
             Self::MapContains => RuntimeImport::MapContains,
             Self::MapNew => RuntimeImport::MapNew,
-            Self::MapRemove => RuntimeImport::MapRemove,
             Self::MapLen => RuntimeImport::MapLen,
             Self::MapClear => RuntimeImport::MapClear,
             Self::MapFree => RuntimeImport::MapFree,
@@ -493,6 +566,7 @@ impl FastHostCall {
             Self::TensorBackward => RuntimeImport::TensorBackward,
             Self::MlSgdStep => RuntimeImport::MlSgdStep,
             Self::TensorFullF => RuntimeImport::TensorFullF,
+            Self::ConcurrentSpawnFn => RuntimeImport::ConcurrentSpawnFn,
         }
     }
 
@@ -629,11 +703,15 @@ mod tests {
     #[test]
     fn incorrect_fast_arity_resolves_to_generic_lowering() {
         assert_eq!(
-            resolve_host_call("spectra.std.collections.map_get", 2),
-            HostCallClass::Fast(FastHostCall::MapGet)
+            resolve_host_call("spectra.std.collections.map_set", 3),
+            HostCallClass::Fast(FastHostCall::MapSet)
         );
         assert_eq!(
-            resolve_host_call("spectra.std.collections.map_get", 1),
+            resolve_host_call("spectra.std.collections.map_set", 1),
+            HostCallClass::Generic
+        );
+        assert_eq!(
+            resolve_host_call("spectra.std.collections.map_get", 2),
             HostCallClass::Generic
         );
     }

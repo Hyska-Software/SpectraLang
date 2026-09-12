@@ -44,13 +44,90 @@ jobs:
 
           echo "SPECTRA_RELEASE_SIGNING_KEY secret is not configured; skipping automatic production release."
 
+  stability-required:
+    name: Required stability certification
+    needs: release-preflight
+    if: needs.release-preflight.outputs.can_release == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: spectra
+          POSTGRES_PASSWORD: spectra
+          POSTGRES_DB: spectra_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U spectra -d spectra_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Build CLI
+        run: cargo build -p spectra-cli
+
+      - name: Run required stability aggregate
+        env:
+          SPECTRA_POSTGRES_URL: postgres://spectra:spectra@127.0.0.1:5432/spectra_test
+          SPECTRA_REDIS_URL: redis://127.0.0.1:6379/0
+          SPECTRA_TLS_EXTERNAL_URL: ${{ secrets.SPECTRA_TLS_EXTERNAL_URL }}
+        run: |
+          test -n "$SPECTRA_TLS_EXTERNAL_URL"
+          python scripts/validate_stability_release.py \
+            --required \
+            --binary target/debug/spectralang \
+            --report target/stability/release-report.json \
+            --markdown target/stability/release-report.md
+
+      - name: Verify certifying report
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("target/stability/release-report.json").read_text())
+          assert report["schema"] == "spectralang.stability.release.v1"
+          assert report["required"] is True
+          assert report["status"] == "passed"
+          assert report["release_certifying"] is True
+          assert not report["failures"]
+          assert not report["skipped_environment"]
+          PY
+
+      - name: Publish required stability report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spectralang-required-stability
+          path: target/stability/
+
   # ---------------------------------------------------------------------------
   # Phase 0: Determine version (from input or Cargo.toml) and create git tag
   # ---------------------------------------------------------------------------
   determine-version:
     name: Determine Version & Create Tag
-    needs: release-preflight
-    if: needs.release-preflight.outputs.can_release == 'true'
+    needs: [release-preflight, stability-required]
+    if: needs.release-preflight.outputs.can_release == 'true' && needs.stability-required.result == 'success'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.ver.outputs.VERSION }}

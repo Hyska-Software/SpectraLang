@@ -1,0 +1,37 @@
+// R-211: generic impl blocks (impl Par<T>) and module-qualified impl targets.
+module r211_gen_impl
+
+import std.io
+
+record Boxed<T> {
+    public value: T,
+}
+
+impl Boxed<T> {
+    public func get(&self) returns T {
+        self.value
+    }
+    public func set(&mut self, v: T) {
+        self.value = v
+    }
+    public func describe(&self) returns string {
+        f"boxed={self.value}"
+    }
+}
+
+public func main() returns int {
+    let b = Boxed<int> { value: 40 }
+    b.set(42)
+    let v = b.get()
+    println(b.describe())
+
+    let f = Boxed<float> { value: 2.5 }
+    let fv = f.get()
+
+    if v == 42 && fv == 2.5 {
+        println("R-211 generic impl ok")
+        return 42
+    }
+    return 0
+}
+

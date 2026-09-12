@@ -1,13 +1,30 @@
 // AOT (Ahead-of-Time) code generation using Cranelift ObjectModule.
 // Translates Spectra IR to native object files (.o / .obj) that can be linked
 // with the Spectra runtime static library to produce standalone executables.
-
+//
+// Native debug metadata (line rows, value locations, frame sizes, types) with
+// machine-code anchors is collected ONLY on this AOT path. The JIT execution
+// path used by `run`/`run --timings` compiles through `cranelift_jit::JITModule`,
+// which never materializes an object container: there are no section symbols,
+// no final function addresses and no post-link layout to anchor native
+// CodeView/DWARF records to; those sections therefore stay exclusive to
+// `build --debug-info=native` AOT artifacts.
+//
+// The JIT path DOES share this module's span/label collection: Cranelift's
+// post-allocation value-label pass yields compiler-proven ranges relative to
+// the start of each compiled function regardless of the module kind
+// (see `value_label_ranges`). The JSON sidecar written on `run`
+// (`<source>.spectra-jit-debug.json`, gated by `--timings` or
+// `SPECTRA_JIT_DEBUG=1`) is built exclusively from that proven data via
+// `CodeGenerator::take_jit_debug_functions`; it supplements and never replaces
+// the native artifact.
 use cranelift::prelude::*;
-use cranelift_codegen::ir::ValueLabel;
+use cranelift_codegen::{ir::ValueLabel, LabelValueLoc};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule, ObjectProduct};
 use spectra_midend::ir::{
-    Function as IRFunction, InstructionKind, Module as IRModule, Type as IRType,
+    ExternalFunction, Function as IRFunction, InstructionKind, Module as IRModule, Type as IRType,
+    Value as IRValue,
 };
 use std::collections::HashMap;
 
@@ -21,6 +38,47 @@ use crate::hostcall_abi::{
 };
 use spectra_runtime::abi::{RuntimeImport, SpectraHostCallCache};
 
+/// The location class selected by Cranelift's post-allocation value-label
+/// pass.  These are deliberately kept as native locations rather than being
+/// guessed from source/IR text: a location is only exported after Cranelift
+/// has proven that the value is live there in the generated machine code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeValueLocation {
+    CfaOffset(i64),
+    /// Hardware register encoding for the target ISA.  The CLI maps this to
+    /// the target debugger's register namespace when it emits CodeView/DWARF.
+    Register(u8),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeValueLocationRange {
+    pub start: u32,
+    pub end: u32,
+    pub location: NativeValueLocation,
+}
+
+pub type DebugLocation = (String, usize, NativeValueLocationRange);
+
+/// One collapsed, span-derived source-line row:
+/// `(function name, machine-code offset relative to the function start,
+/// 1-based source line)`. Offsets come from Cranelift's post-allocation
+/// value-label ranges; the line from the defining instruction's
+/// `source_span`.
+pub type DebugLineRow = (String, u32, u32);
+
+/// Per-function real stack-frame size captured from Cranelift's finalized
+/// layout: `(function name, total sized-stack-slot bytes)`. Covers explicit
+/// allocas plus register-allocator spill slots.
+pub type DebugFrameSize = (String, u32);
+
+type AotCompileOutput = (
+    Vec<u8>,
+    Vec<DebugLocation>,
+    HostCallBatchStats,
+    Vec<DebugLineRow>,
+    Vec<DebugFrameSize>,
+);
+
 /// Options that control AOT code generation.
 #[derive(Debug, Clone, Default)]
 pub struct AotOptions {
@@ -32,6 +90,11 @@ pub struct AotOptions {
     /// When `false` (the default), `main` is exported as-is and no shim is
     /// generated. Use this when producing an object file for manual linking.
     pub emit_executable: bool,
+    /// When `true`, the executable entry point also registers the public
+    /// `spectra.api` host-call table. Object-only builds leave this disabled so
+    /// consumers that link the object manually can choose their own API
+    /// registration policy.
+    pub register_api: bool,
     /// Request native debug records in the emitted object. The backend keeps
     /// this explicit so callers cannot mistake the JSON sidecar for native
     /// debug information.
@@ -43,6 +106,8 @@ pub struct AotCodeGenerator {
     ctx: codegen::Context,
     builder_context: FunctionBuilderContext,
     function_map: HashMap<String, FuncId>,
+    /// Mapping from IR global names to writable Cranelift data objects.
+    global_data: HashMap<String, DataId>,
     runtime_bindings: RuntimeBindings,
     /// Dedup table for string literals (R-3126). Each unique
     /// `ConstString` value resolves to one entry pre-populated in
@@ -52,15 +117,21 @@ pub struct AotCodeGenerator {
     /// this stays empty because every entry is pre-populated with a
     /// `data_id`; the field exists to satisfy the `generate_block`
     /// signature shared with the JIT path. Layout matches the JIT
-    /// side: one byte per `i64` slot.
-    string_literal_storage: Vec<Box<[i64]>>,
+    /// side: packed UTF-8 bytes with a single-byte NUL terminator.
+    string_literal_storage: Vec<Box<[u8]>>,
     host_call_sites: HashMap<String, HostCallSiteRecord>,
     hostcall_batch_stats: HostCallBatchStats,
     /// Locations produced by Cranelift's register allocator for labelled IR
-    /// values: (function, IR value id, CFA-relative offset).  These are
-    /// intentionally collected from compiled machine code, never guessed
-    /// from source or sidecar text.
-    debug_locations: Vec<(String, usize, i64)>,
+    /// values. These are intentionally collected from compiled machine code,
+    /// never guessed from source or sidecar text.
+    debug_locations: Vec<DebugLocation>,
+    /// Span-derived source-line rows collected from compiled machine code,
+    /// mirroring [`Self::debug_locations`]: the offset is compiler-proven by
+    /// Cranelift's value-label pass, never guessed.
+    debug_line_rows: Vec<DebugLineRow>,
+    /// Real stack-frame sizes captured from the finalized Cranelift layout,
+    /// one entry per defined function in definition order.
+    debug_frame_sizes: Vec<DebugFrameSize>,
 }
 
 impl AotCodeGenerator {
@@ -75,6 +146,12 @@ impl AotCodeGenerator {
         settings_builder
             .set("opt_level", "speed")
             .expect("failed to set cranelift opt_level to speed");
+        // Cranelift's x64 `return_call` implementation restores the caller's
+        // frame pointer, so it requires frame pointers to be preserved
+        // (see emit_return_common_sequence in cranelift x64 emit).
+        settings_builder
+            .set("preserve_frame_pointers", "true")
+            .expect("failed to enable preserve_frame_pointers");
         let isa = cranelift_native::builder()
             .expect("Failed to create native ISA builder")
             .finish(settings::Flags::new(settings_builder))
@@ -97,9 +174,12 @@ impl AotCodeGenerator {
 
         Self {
             module,
+            debug_frame_sizes: Vec::new(),
             ctx,
             builder_context: FunctionBuilderContext::new(),
             function_map: HashMap::new(),
+            global_data: HashMap::new(),
+            debug_line_rows: Vec::new(),
             runtime_bindings,
             host_call_sites: HashMap::new(),
             hostcall_batch_stats: HostCallBatchStats::default(),
@@ -116,7 +196,8 @@ impl AotCodeGenerator {
         ir_module: &IRModule,
         opts: &AotOptions,
     ) -> BackendResult<Vec<u8>> {
-        let (bytes, _, _) = self.compile_to_object_with_locations_and_stats(ir_module, opts)?;
+        let (bytes, _, _, _, _) =
+            self.compile_to_object_with_locations_and_stats(ir_module, opts)?;
         Ok(bytes)
     }
 
@@ -124,8 +205,8 @@ impl AotCodeGenerator {
         self,
         ir_module: &IRModule,
         opts: &AotOptions,
-    ) -> BackendResult<(Vec<u8>, Vec<(String, usize, i64)>)> {
-        let (bytes, locations, _) =
+    ) -> BackendResult<(Vec<u8>, Vec<DebugLocation>)> {
+        let (bytes, locations, _, _, _) =
             self.compile_to_object_with_locations_and_stats(ir_module, opts)?;
         Ok((bytes, locations))
     }
@@ -134,7 +215,7 @@ impl AotCodeGenerator {
         mut self,
         ir_module: &IRModule,
         opts: &AotOptions,
-    ) -> BackendResult<(Vec<u8>, Vec<(String, usize, i64)>, HostCallBatchStats)> {
+    ) -> BackendResult<AotCompileOutput> {
         self.hostcall_batch_stats = HostCallBatchStats::default();
         let rename_main = opts.emit_executable;
         let _tensor_ir = validate_tensor_ir(ir_module)?;
@@ -151,14 +232,48 @@ impl AotCodeGenerator {
         // pointing at these sections instead of going through `manual_alloc`.
         self.pre_intern_string_literals(ir_module);
 
+        self.define_globals(ir_module)?;
+
+        // AOT compiles one relocatable object per source module. Imported
+        // user functions therefore need explicit declarations in the current
+        // ObjectModule so Cranelift emits undefined relocations for the native
+        // linker instead of treating them as missing local bodies.
+        for external in &ir_module.external_functions {
+            if ir_module
+                .functions
+                .iter()
+                .any(|function| function.name == external.name)
+            {
+                continue;
+            }
+            self.declare_external_function(external)?;
+        }
+
         // First pass: declare all functions.
         for func in &ir_module.functions {
             self.declare_function(func, rename_main)?;
         }
 
+        // Function parameter types for call-site argument coercion.
+        let mut function_params: HashMap<String, Vec<IRType>> = ir_module
+            .functions
+            .iter()
+            .map(|func| {
+                (
+                    func.name.clone(),
+                    func.params.iter().map(|param| param.ty.clone()).collect(),
+                )
+            })
+            .collect();
+        for external in &ir_module.external_functions {
+            function_params
+                .entry(external.name.clone())
+                .or_insert_with(|| external.params.clone());
+        }
+
         // Second pass: define all functions.
         for func in &ir_module.functions {
-            self.define_function(func)?;
+            self.define_function(func, &function_params)?;
         }
 
         // If building an executable, validate that a `main` entry point exists
@@ -168,21 +283,69 @@ impl AotCodeGenerator {
             if !has_main {
                 return Err(BackendCodegenError::missing_function("main"));
             }
-            self.generate_exe_entry_point()?;
+            self.generate_exe_entry_point(opts.register_api)?;
         }
 
         // Emit the finished object.
         let debug_locations = self.take_debug_locations();
+        let debug_line_rows = self.take_debug_line_rows();
+        let debug_frame_sizes = self.take_debug_frame_sizes();
         let product: ObjectProduct = self.module.finish();
 
         let bytes = product
             .emit()
             .map_err(|e| BackendCodegenError::cranelift(format!("Object emit error: {}", e)))?;
-        Ok((bytes, debug_locations, self.hostcall_batch_stats))
+        Ok((
+            bytes,
+            debug_locations,
+            self.hostcall_batch_stats,
+            debug_line_rows,
+            debug_frame_sizes,
+        ))
     }
 
-    pub fn take_debug_locations(&mut self) -> Vec<(String, usize, i64)> {
+    fn declare_external_function(&mut self, external: &ExternalFunction) -> BackendResult<FuncId> {
+        let mut sig = self.module.make_signature();
+        for param in &external.params {
+            sig.params
+                .push(AbiParam::new(CodeGenerator::ir_type_to_cranelift(param)?));
+        }
+        let return_type = CodeGenerator::ir_type_to_cranelift(&external.return_type)?;
+        if return_type != types::I8 || external.return_type != IRType::Void {
+            sig.returns.push(AbiParam::new(return_type));
+        }
+        let func_id = self
+            .module
+            .declare_function(&external.name, Linkage::Import, &sig)
+            .map_err(|error| {
+                BackendCodegenError::cranelift(format!(
+                    "Failed to declare imported function '{}': {}",
+                    external.name, error
+                ))
+            })?;
+        self.function_map.insert(external.name.clone(), func_id);
+        Ok(func_id)
+    }
+
+    pub fn take_debug_locations(&mut self) -> Vec<DebugLocation> {
         std::mem::take(&mut self.debug_locations)
+    }
+
+    /// Collapsed, span-derived `(function, offset, line)` rows collected
+    /// during compilation. Sorted and deduplicated; offsets are relative to
+    /// the start of each function's machine code.
+    pub fn take_debug_line_rows(&mut self) -> Vec<DebugLineRow> {
+        let mut rows = std::mem::take(&mut self.debug_line_rows);
+        rows.sort_unstable();
+        rows.dedup();
+        rows
+    }
+
+    /// Per-function real stack-frame sizes captured from Cranelift's
+    /// finalized layout. One entry per defined function; the byte count
+    /// covers explicit allocas plus register-allocator spill slots.
+    pub fn take_debug_frame_sizes(&mut self) -> Vec<DebugFrameSize> {
+        std::mem::take(&mut self.debug_frame_sizes)
     }
 
     fn declare_function(
@@ -191,12 +354,43 @@ impl AotCodeGenerator {
         rename_main: bool,
     ) -> BackendResult<FuncId> {
         let mut sig = self.module.make_signature();
-        for param in &ir_func.params {
-            let cl_type = CodeGenerator::ir_type_to_cranelift(&param.ty)?;
+        if CodeGenerator::uses_tail_call_convention(ir_func) {
+            // Self-tail-recursive functions need `CallConv::Tail` so the
+            // backend can emit Cranelift's native `return_call`. The exported
+            // symbol ABI differs from the platform default, which is safe
+            // because only Spectra-compiled code calls these functions.
+            sig.call_conv = isa::CallConv::Tail;
+        }
+        let callback = CodeGenerator::async_callback_kind(ir_func);
+        let callback_params = if callback.is_some() {
+            &ir_func.params[..ir_func.params.len().min(3)]
+        } else {
+            &ir_func.params[..]
+        };
+        for param in callback_params {
+            let cl_type = if callback.is_some() {
+                types::I64
+            } else {
+                CodeGenerator::ir_type_to_cranelift(&param.ty)?
+            };
             sig.params.push(AbiParam::new(cl_type));
         }
-        let return_type = CodeGenerator::ir_type_to_cranelift(&ir_func.return_type)?;
-        if return_type != types::I8 || ir_func.return_type != IRType::Void {
+        if callback.is_some() && sig.params.len() != 3 {
+            while sig.params.len() < 3 {
+                sig.params.push(AbiParam::new(types::I64));
+            }
+        }
+        let return_type = if matches!(callback, Some(false)) {
+            types::I8
+        } else if matches!(callback, Some(true)) {
+            types::I64
+        } else {
+            CodeGenerator::ir_type_to_cranelift(&ir_func.return_type)?
+        };
+        if return_type != types::I8
+            || ir_func.return_type != IRType::Void
+            || matches!(callback, Some(true))
+        {
             sig.returns.push(AbiParam::new(return_type));
         }
 
@@ -224,7 +418,11 @@ impl AotCodeGenerator {
         Ok(func_id)
     }
 
-    fn define_function(&mut self, ir_func: &IRFunction) -> BackendResult<()> {
+    fn define_function(
+        &mut self,
+        ir_func: &IRFunction,
+        function_params: &HashMap<String, Vec<IRType>>,
+    ) -> BackendResult<()> {
         let func_id = *self
             .function_map
             .get(&ir_func.name)
@@ -281,10 +479,38 @@ impl AotCodeGenerator {
         for (param, &cl_value) in ir_func.params.iter().zip(params.iter()) {
             value_map.insert(param.id, cl_value);
         }
+        if CodeGenerator::async_callback_kind(ir_func).is_some() {
+            for (index, &cl_value) in params.iter().enumerate() {
+                let id = ir_func
+                    .params
+                    .get(index)
+                    .map(|param| param.id)
+                    .unwrap_or(index);
+                value_map.insert(id, cl_value);
+            }
+        }
+        CodeGenerator::seed_async_source_values(
+            &mut self.module,
+            &HostCallLoweringContext {
+                bindings: &self.runtime_bindings,
+                host_call_sites: &self.host_call_sites,
+                string_literal_data: &mut self.string_literal_data,
+                string_literal_storage: &mut self.string_literal_storage,
+                batch_stats: &mut self.hostcall_batch_stats,
+                finalized_function_ptrs: None,
+            },
+            &mut builder,
+            ir_func,
+            &mut value_map,
+        )?;
 
+        // Async poll functions may move a generated dispatch block to the
+        // front without renumbering existing CFG block IDs. The first IR
+        // block, not necessarily ID zero, is the native entry.
+        let entry_ir_id = ir_func.blocks.first().map(|block| block.id).unwrap_or(0);
         for ir_block in &ir_func.blocks {
-            if ir_block.id == 0 {
-                block_map.insert(0, entry_block);
+            if ir_block.id == entry_ir_id {
+                block_map.insert(ir_block.id, entry_block);
             } else {
                 let block = builder.create_block();
                 block_map.insert(ir_block.id, block);
@@ -325,17 +551,20 @@ impl AotCodeGenerator {
         }
 
         let blocks = ir_func.blocks.clone();
+        let mut emitted_tail_call = false;
         let mut hostcall = HostCallLoweringContext {
             bindings: &self.runtime_bindings,
             host_call_sites: &self.host_call_sites,
             string_literal_data: &mut self.string_literal_data,
             string_literal_storage: &mut self.string_literal_storage,
             batch_stats: &mut self.hostcall_batch_stats,
+            finalized_function_ptrs: None,
         };
         for ir_block in &blocks {
             CodeGenerator::generate_block(
                 &mut self.module,
                 &self.function_map,
+                function_params,
                 &mut hostcall,
                 &mut builder,
                 ir_block,
@@ -346,15 +575,18 @@ impl AotCodeGenerator {
                 &mut string_literal_lengths,
                 &stack_allocas,
                 &scalar_alloca_vars,
+                &self.global_data,
                 frame_var,
                 manual_frame_active,
                 ir_block.id,
                 &phi_map,
+                &mut emitted_tail_call,
             )?;
         }
 
+        let entry_ir_id = ir_func.blocks.first().map(|block| block.id).unwrap_or(0);
         for ir_block in &ir_func.blocks {
-            if ir_block.id != 0 {
+            if ir_block.id != entry_ir_id {
                 if let Some(&block) = block_map.get(&ir_block.id) {
                     builder.seal_block(block);
                 }
@@ -371,6 +603,20 @@ impl AotCodeGenerator {
                 }
             }
         }
+        // Label every instruction result as well, mirroring the local labels
+        // above. Cranelift's post-allocation value-label pass then yields a
+        // machine-code range per defining instruction, which becomes a real
+        // source-line row when the lowering recorded a `source_span`.
+        for ir_block in &ir_func.blocks {
+            for instr in &ir_block.instructions {
+                let Some(result) = instruction_result_value(&instr.kind) else {
+                    continue;
+                };
+                if let Some(value) = value_map.get(result.id) {
+                    builder.set_val_label(value, ValueLabel::from_u32(result.id as u32));
+                }
+            }
+        }
         builder.finalize();
 
         self.module
@@ -381,6 +627,13 @@ impl AotCodeGenerator {
                     ir_func.name, e
                 ))
             })?;
+        // Cranelift computes the final stack-frame layout during legalization.
+        // After `define_function` the sum of all sized stack slots (explicit
+        // allocas plus spill slots) is authoritative for native debug
+        // consumers; the context is cleared below, so capture it now.
+        let frame_size = self.ctx.func.fixed_stack_size();
+        self.debug_frame_sizes
+            .push((ir_func.name.clone(), frame_size));
         if let Some(compiled) = self.ctx.compiled_code() {
             for local in &ir_func.locals {
                 let Some(value_id) = local.value_id else {
@@ -389,22 +642,91 @@ impl AotCodeGenerator {
                 let label = ValueLabel::from_u32(value_id as u32);
                 if let Some(ranges) = compiled.value_labels_ranges.get(&label) {
                     for range in ranges {
-                        let rendered = format!("{:?}", range.loc);
-                        if let Some(offset) = rendered
-                            .strip_prefix("CFAOffset(")
-                            .and_then(|s| s.strip_suffix(')'))
-                            .and_then(|s| s.parse::<i64>().ok())
-                        {
-                            self.debug_locations
-                                .push((ir_func.name.clone(), value_id, offset));
-                            break;
-                        }
+                        let location = match range.loc {
+                            LabelValueLoc::CFAOffset(offset) => {
+                                NativeValueLocation::CfaOffset(offset)
+                            }
+                            LabelValueLoc::Reg(reg) => {
+                                let Some(real_reg) = reg.to_real_reg() else {
+                                    continue;
+                                };
+                                NativeValueLocation::Register(real_reg.hw_enc())
+                            }
+                        };
+                        self.debug_locations.push((
+                            ir_func.name.clone(),
+                            value_id,
+                            NativeValueLocationRange {
+                                start: range.start,
+                                end: range.end,
+                                location,
+                            },
+                        ));
+                    }
+                }
+            }
+            // Span-derived line rows: one row per live range of each labelled
+            // instruction result. Instructions without a span (compiler-
+            // generated or optimized-out values) simply produce no row and
+            // fall back to the uniform heuristic at emission time.
+            for (value_id, line) in &spanned_instruction_lines(ir_func) {
+                let label = ValueLabel::from_u32(*value_id as u32);
+                if let Some(ranges) = compiled.value_labels_ranges.get(&label) {
+                    for range in ranges {
+                        self.debug_line_rows
+                            .push((ir_func.name.clone(), range.start, *line));
                     }
                 }
             }
         }
         self.module.clear_context(&mut self.ctx);
 
+        Ok(())
+    }
+
+    fn define_globals(&mut self, ir_module: &IRModule) -> BackendResult<()> {
+        for global in &ir_module.globals {
+            if self.global_data.contains_key(&global.name) {
+                continue;
+            }
+            let symbol = CodeGenerator::global_symbol(&ir_module.name, &global.name);
+            let Some(_initializer) = global.initializer.as_ref() else {
+                let data_id = self
+                    .module
+                    .declare_data(&symbol, Linkage::Import, true, false)
+                    .map_err(|error| {
+                        BackendCodegenError::cranelift(format!(
+                            "failed to declare imported global '{}': {}",
+                            global.name, error
+                        ))
+                    })?;
+                self.global_data.insert(global.name.clone(), data_id);
+                continue;
+            };
+            let data_id = self
+                .module
+                // Module-level statics are part of the cross-module object
+                // contract: downstream objects may reference their qualified
+                // symbol, so the defining object must export the data section.
+                .declare_data(&symbol, Linkage::Export, true, false)
+                .map_err(|error| {
+                    BackendCodegenError::cranelift(format!(
+                        "failed to declare global '{}': {}",
+                        global.name, error
+                    ))
+                })?;
+            let mut data = DataDescription::new();
+            let bytes = CodeGenerator::global_initializer_bytes(global)?;
+            data.set_align(CodeGenerator::type_size_bytes(&global.ty).clamp(1, 8) as u64);
+            data.define(bytes.into_boxed_slice());
+            self.module.define_data(data_id, &data).map_err(|error| {
+                BackendCodegenError::cranelift(format!(
+                    "failed to define global '{}': {}",
+                    global.name, error
+                ))
+            })?;
+            self.global_data.insert(global.name.clone(), data_id);
+        }
         Ok(())
     }
 }
@@ -420,7 +742,7 @@ impl AotCodeGenerator {
     ///   1. calls `spectra_rt_startup_with_args(argc, argv)` to initialise the runtime;
     ///   2. calls `spectra_user_main()` (the renamed Spectra `main` function);
     ///   3. returns `0` to the OS.
-    fn generate_exe_entry_point(&mut self) -> BackendResult<()> {
+    fn generate_exe_entry_point(&mut self, register_api: bool) -> BackendResult<()> {
         // ── declare spectra_rt_startup_with_args import ──────────────────────
         let mut startup_sig = self.module.make_signature();
         startup_sig.params.push(AbiParam::new(types::I32)); // argc: i32
@@ -438,6 +760,23 @@ impl AotCodeGenerator {
                     e
                 ))
             })?;
+
+        let api_register_func_id = if register_api {
+            let mut api_sig = self.module.make_signature();
+            api_sig.returns.push(AbiParam::new(types::I64));
+            Some(
+                self.module
+                    .declare_function("spectra_api_register_host_calls", Linkage::Import, &api_sig)
+                    .map_err(|e| {
+                        BackendCodegenError::cranelift(format!(
+                            "Failed to declare 'spectra_api_register_host_calls': {}",
+                            e
+                        ))
+                    })?,
+            )
+        } else {
+            None
+        };
 
         // ── look up spectra_user_main (stored under IR name "main") ──────────
         let user_main_func_id = *self
@@ -482,13 +821,20 @@ impl AotCodeGenerator {
             .declare_func_in_func(startup_func_id, builder.func);
         builder.ins().call(startup_ref, &[argc, argv]);
 
+        if let Some(api_register_func_id) = api_register_func_id {
+            let api_register_ref = self
+                .module
+                .declare_func_in_func(api_register_func_id, builder.func);
+            builder.ins().call(api_register_ref, &[]);
+        }
+
         // Call spectra_user_main() — ignore any return value
         let user_main_ref = self
             .module
             .declare_func_in_func(user_main_func_id, builder.func);
         builder.ins().call(user_main_ref, &[]);
 
-        // Call spectra_rt_maybe_pause() — pauses when running via double-click.
+        // Call spectra_rt_maybe_pause() — no-op unless SPECTRA_PAUSE_ON_EXIT=1.
         let pause_sig = self.module.make_signature();
         let pause_func_id = self
             .module
@@ -623,21 +969,13 @@ impl AotCodeGenerator {
     /// value. Stores the resulting `StringLiteralRecord` (with
     /// `data_id = Some(...)`) in `self.string_literal_data`.
     fn create_string_literal_data(&mut self, value: &str) {
-        // Layout: one byte per `i64` slot (8 bytes each), null-terminated.
-        // This matches the JIT `Box<[i64]>` buffer and the `*8` indexing
-        // in `emit_stack_string_char_at_inline`.
-        let mut slots: Vec<i64> = value.as_bytes().iter().map(|&b| b as i64).collect();
-        slots.push(0);
-        let len_with_null = slots.len() as i64;
-        // Convert the i64 slots to a raw byte buffer for the data section.
-        // Safety: `i64` is `repr(i64)` and we want the same byte layout.
-        let bytes: Vec<u8> = unsafe {
-            std::slice::from_raw_parts(
-                slots.as_ptr() as *const u8,
-                slots.len() * std::mem::size_of::<i64>(),
-            )
-            .to_vec()
-        };
+        // Layout: packed UTF-8 bytes, NUL-terminated with a single byte.
+        // This matches the JIT `Box<[u8]>` buffer and the stride-1
+        // indexing in the inline `char_at`/`len` emitters.
+        let mut bytes: Vec<u8> = value.as_bytes().to_vec();
+        bytes.push(0);
+        let len_with_null = bytes.len() as i64;
+
         // Use a simple FNV-1a 64-bit hash for compact, deterministic naming
         // without depending on an external hash crate.
         let mut hash: u64 = 0xcbf29ce484222325;
@@ -656,6 +994,9 @@ impl AotCodeGenerator {
         };
 
         let mut data_ctx = DataDescription::new();
+        // Spectra strings are packed byte buffers read through `*const u8`,
+        // so byte alignment (1) is sufficient and keeps `.rodata` compact.
+        data_ctx.set_align(std::mem::align_of::<u8>() as u64);
         data_ctx.define(bytes.into_boxed_slice());
         let _ = self.module.define_data(data_id, &data_ctx);
 
@@ -668,11 +1009,116 @@ impl AotCodeGenerator {
     }
 }
 
+/// The single SSA value produced by an instruction, when its kind defines
+/// exactly one result.
+pub(crate) fn instruction_result_value(kind: &InstructionKind) -> Option<IRValue> {
+    match kind {
+        InstructionKind::Add { result, .. }
+        | InstructionKind::Sub { result, .. }
+        | InstructionKind::Mul { result, .. }
+        | InstructionKind::Div { result, .. }
+        | InstructionKind::Rem { result, .. }
+        | InstructionKind::Eq { result, .. }
+        | InstructionKind::Ne { result, .. }
+        | InstructionKind::Lt { result, .. }
+        | InstructionKind::Le { result, .. }
+        | InstructionKind::Gt { result, .. }
+        | InstructionKind::Ge { result, .. }
+        | InstructionKind::And { result, .. }
+        | InstructionKind::Or { result, .. }
+        | InstructionKind::Alloca { result, .. }
+        | InstructionKind::FrameAlloc { result, .. }
+        | InstructionKind::FrameLoad { result, .. }
+        | InstructionKind::StateLoad { result, .. }
+        | InstructionKind::CoroutineCreate { result, .. }
+        | InstructionKind::GlobalAddr { result, .. }
+        | InstructionKind::ManualAlloc { result, .. }
+        | InstructionKind::Load { result, .. }
+        | InstructionKind::GetElementPtr { result, .. }
+        | InstructionKind::FieldPtr { result, .. }
+        | InstructionKind::FuncAddr { result, .. }
+        | InstructionKind::AsyncReady { result, .. }
+        | InstructionKind::Phi { result, .. }
+        | InstructionKind::Copy { result, .. }
+        | InstructionKind::ConstInt { result, .. }
+        | InstructionKind::ConstIntTyped { result, .. }
+        | InstructionKind::ConstFloat { result, .. }
+        | InstructionKind::ConstFloatTyped { result, .. }
+        | InstructionKind::ConstBool { result, .. }
+        | InstructionKind::ConstString { result, .. }
+        | InstructionKind::Cast { result, .. }
+        | InstructionKind::MakeDynFatPtr { result, .. }
+        | InstructionKind::LoadDynDataPtr { result, .. }
+        | InstructionKind::LoadDynVtablePtr { result, .. }
+        | InstructionKind::LoadVtableSlot { result, .. } => Some(*result),
+        InstructionKind::Call { result, .. }
+        | InstructionKind::HostCall { result, .. }
+        | InstructionKind::AutodiffStep { result, .. }
+        | InstructionKind::CallIndirect { result, .. } => *result,
+        InstructionKind::CoroutinePollChild { status, .. } => Some(*status),
+        InstructionKind::Not { .. }
+        | InstructionKind::Store { .. }
+        | InstructionKind::EscapeManualAlloc { .. }
+        | InstructionKind::FrameStore { .. }
+        | InstructionKind::StateStore { .. }
+        | InstructionKind::CoroutineSubscribe { .. }
+        | InstructionKind::CoroutineWake { .. }
+        | InstructionKind::CoroutineSuspend { .. }
+        | InstructionKind::CoroutineComplete { .. }
+        | InstructionKind::CoroutineError { .. }
+        | InstructionKind::CoroutineCancelled { .. }
+        | InstructionKind::CoroutinePollReturn { .. }
+        | InstructionKind::Await { .. } => None,
+    }
+}
+
+/// Map each instruction-result SSA value id to the 1-based source line of
+/// the instruction that defines it, using the spans recorded by lowering.
+fn spanned_instruction_lines(ir_func: &IRFunction) -> HashMap<usize, u32> {
+    let mut lines = HashMap::new();
+    for block in &ir_func.blocks {
+        for instr in &block.instructions {
+            let Some(span) = &instr.source_span else {
+                continue;
+            };
+            let Some(result) = instruction_result_value(&instr.kind) else {
+                continue;
+            };
+            lines.entry(result.id).or_insert(span.start_line);
+        }
+    }
+    lines
+}
+
+/// Machine-code live ranges of one labelled IR value: `(start, end)` offset
+/// pairs relative to the start of the compiled function's body.
+///
+/// This is the single collection point shared by the AOT native-debug path
+/// and the JIT sidecar: both read Cranelift's post-allocation
+/// `value_labels_ranges` map, so every emitted range is compiler-proven.
+pub(crate) fn value_label_ranges(
+    value_labels_ranges: &HashMap<ValueLabel, Vec<cranelift_codegen::ValueLocRange>>,
+    value_id: usize,
+) -> Vec<(u32, u32)> {
+    let label = ValueLabel::from_u32(value_id as u32);
+    value_labels_ranges
+        .get(&label)
+        .map(|ranges| {
+            ranges
+                .iter()
+                .map(|range| (range.start, range.end))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::BackendErrorKind;
-    use spectra_midend::ir::{Function as IRFunction, InstructionKind, Terminator, Type as IRType};
+    use spectra_midend::ir::{
+        Function as IRFunction, InstructionKind, Parameter, SourceSpan, Terminator, Type as IRType,
+    };
 
     #[test]
     fn r3104_aot_preinterns_duplicate_host_names_once() {
@@ -736,5 +1182,165 @@ mod tests {
             .expect_err("AOT missing target block must be reported, not panic");
         assert_eq!(err.kind(), &BackendErrorKind::MissingBlock);
         assert!(err.message().contains("42"));
+    }
+
+    #[test]
+    fn aot_captures_real_frame_size_when_function_has_allocas() {
+        let mut module = IRModule::new("debug_frame_size");
+        let mut func = IRFunction::new("main", vec![], IRType::Void);
+        let entry = func.add_block("entry");
+        let block = func.get_block_mut(entry).unwrap();
+        // Array allocas are never scalar-promoted, so they force real sized
+        // stack slots into the finalized Cranelift layout.
+        block.add_instruction(InstructionKind::Alloca {
+            result: IRValue { id: 1 },
+            ty: IRType::Array {
+                element_type: Box::new(IRType::Int),
+                size: 8,
+            },
+        });
+        block.add_instruction(InstructionKind::Alloca {
+            result: IRValue { id: 2 },
+            ty: IRType::Array {
+                element_type: Box::new(IRType::Float),
+                size: 4,
+            },
+        });
+        block.set_terminator(Terminator::Return { value: None });
+        module.add_function(func);
+
+        let (_bytes, _locations, _stats, _rows, frame_sizes) = AotCodeGenerator::new()
+            .compile_to_object_with_locations_and_stats(&module, &AotOptions::default())
+            .expect("AOT compilation of alloca function should succeed");
+        let (_, main_frame) = frame_sizes
+            .iter()
+            .find(|(name, _)| name == "main")
+            .expect("compiled module must report a frame size for 'main'");
+        assert!(
+            *main_frame > 0,
+            "function with allocas must report a non-zero frame size"
+        );
+    }
+
+    #[test]
+    fn spanned_instructions_map_results_to_source_lines() {
+        // IR function with known spans: the lowering records `source_span`
+        // per instruction; the line-table collector must map each
+        // instruction-result value to that line.
+        let mut func = IRFunction::new("main", vec![], IRType::Void);
+        let entry = func.add_block("entry");
+        let block = func.get_block_mut(entry).unwrap();
+        block.add_instruction(InstructionKind::ConstInt {
+            result: IRValue { id: 10 },
+            value: 1,
+        });
+        block.add_instruction(InstructionKind::ConstInt {
+            result: IRValue { id: 11 },
+            value: 2,
+        });
+        block.add_instruction(InstructionKind::Add {
+            result: IRValue { id: 12 },
+            lhs: IRValue { id: 10 },
+            rhs: IRValue { id: 11 },
+        });
+        let span_for_line = |line: u32| SourceSpan {
+            file: "fixture.spectra".to_string(),
+            start_line: line,
+            start_column: 5,
+            end_line: line,
+            end_column: 10,
+        };
+        block.instructions[0].source_span = Some(span_for_line(3));
+        block.instructions[1].source_span = Some(span_for_line(4));
+        block.instructions[2].source_span = Some(span_for_line(5));
+        block.set_terminator(Terminator::Return {
+            value: Some(IRValue { id: 12 }),
+        });
+
+        let lines = spanned_instruction_lines(&func);
+        assert_eq!(lines.get(&10), Some(&3));
+        assert_eq!(lines.get(&11), Some(&4));
+        assert_eq!(lines.get(&12), Some(&5));
+    }
+
+    #[test]
+    fn aot_compile_produces_real_line_rows_from_known_spans() {
+        // `main(a, b) { return a + b; }` with a span on the Add. The add must
+        // materialize (operands are parameters), so Cranelift's value-label
+        // pass yields at least one machine range whose row carries the span's
+        // line.
+        let mut module = IRModule::new("aot_line_rows");
+        let mut func = IRFunction::new(
+            "main",
+            vec![
+                Parameter {
+                    id: 0,
+                    name: "a".to_string(),
+                    ty: IRType::Int,
+                },
+                Parameter {
+                    id: 1,
+                    name: "b".to_string(),
+                    ty: IRType::Int,
+                },
+            ],
+            IRType::Int,
+        );
+        let entry = func.add_block("entry");
+        let block = func.get_block_mut(entry).unwrap();
+        block.add_instruction(InstructionKind::Add {
+            result: IRValue { id: 2 },
+            lhs: IRValue { id: 0 },
+            rhs: IRValue { id: 1 },
+        });
+        block.instructions[0].source_span = Some(SourceSpan {
+            file: "fixture.spectra".to_string(),
+            start_line: 7,
+            start_column: 1,
+            end_line: 7,
+            end_column: 12,
+        });
+        block.set_terminator(Terminator::Return {
+            value: Some(IRValue { id: 2 }),
+        });
+        module.add_function(func);
+
+        let (_, _, _, line_rows, _) = AotCodeGenerator::new()
+            .compile_to_object_with_locations_and_stats(&module, &AotOptions::default())
+            .expect("AOT compile should succeed");
+        assert!(
+            line_rows
+                .iter()
+                .any(|(name, _, line)| name == "main" && *line == 7),
+            "expected a real line row for main at source line 7, got {line_rows:?}"
+        );
+    }
+
+    #[test]
+    fn instructions_without_spans_yield_no_line_rows() {
+        let mut module = IRModule::new("aot_no_span_rows");
+        let mut func = IRFunction::new(
+            "main",
+            vec![Parameter {
+                id: 0,
+                name: "a".to_string(),
+                ty: IRType::Int,
+            }],
+            IRType::Int,
+        );
+        let entry = func.add_block("entry");
+        let block = func.get_block_mut(entry).unwrap();
+        block.set_terminator(Terminator::Return {
+            value: Some(IRValue { id: 0 }),
+        });
+        module.add_function(func);
+
+        let (_, _, _, line_rows, _) = AotCodeGenerator::new()
+            .compile_to_object_with_locations_and_stats(&module, &AotOptions::default())
+            .expect("AOT compile should succeed");
+        assert!(
+            !line_rows.iter().any(|(name, _, _)| name == "main"),
+            "no span means no real rows (uniform fallback applies), got {line_rows:?}"
+        );
     }
 }

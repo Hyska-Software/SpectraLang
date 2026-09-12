@@ -1,0 +1,53 @@
+// R-2215/R-2216 regression: registered user callbacks must cross the closure
+// ABI, preserve the Request argument, and return Response or Task<Response>.
+module api_handler_callbacks
+
+from std.api.http import Request, Response, method_get, request, request_path, response_body_len, response_status
+from std.api.handler import AsyncHandlerHandle, HandlerHandle, dispatch_async, dispatch_sync, register_async_callback, register_sync_callback, text
+
+func sync_callback(req: Request) returns Response {
+    if request_path(req) == "/sync" {
+        return text("sync callback")
+    }
+    return text("wrong path")
+}
+
+async func async_callback(req: Request) returns Response {
+    if request_path(req) == "/async" {
+        return text("async callback")
+    }
+    return text("wrong path")
+}
+
+func setup_sync_handler() returns HandlerHandle {
+    return register_sync_callback(3301, sync_callback)
+}
+
+func setup_async_handler() returns AsyncHandlerHandle {
+    return register_async_callback(3302, async_callback)
+}
+
+public func main() returns int {
+    let req_sync: Request = request(method_get(), "/sync")
+    let req_async: Request = request(method_get(), "/async")
+
+    let sync_handler: HandlerHandle = setup_sync_handler()
+    let sync_response: Response = dispatch_sync(sync_handler, req_sync)
+    if response_status(sync_response) != 200 {
+        return 1
+    }
+    if response_body_len(sync_response) != 13 {
+        return 2
+    }
+
+    let async_handler: AsyncHandlerHandle = setup_async_handler()
+    let async_response: Response = dispatch_async(async_handler, req_async)
+    if response_status(async_response) != 200 {
+        return 3
+    }
+    if response_body_len(async_response) != 14 {
+        return 4
+    }
+
+    return 0
+}

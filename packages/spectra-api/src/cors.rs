@@ -1,11 +1,12 @@
 use crate::handler::HandlerError;
+use crate::handles::ApiHandleTable;
 use crate::http::{self, Method, Request, Response, Status};
 use crate::middleware::{self, Middleware, MiddlewareContext, MiddlewareDecision};
 use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
 };
-use std::collections::HashMap;
+use spectra_runtime::handles::HandleKind;
 use std::sync::{Mutex, OnceLock};
 
 const HEADER_ORIGIN: &str = "Origin";
@@ -28,6 +29,12 @@ pub struct CorsPolicy {
     exposed_headers: Vec<String>,
     allow_credentials: bool,
     max_age: Option<u32>,
+}
+
+impl Default for CorsPolicy {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CorsPolicy {
@@ -208,9 +215,7 @@ impl CorsPolicy {
             .with_header(HEADER_ALLOW_ORIGIN, value)
             .map_err(to_handler_error)?;
         if self.allow_credentials || !self.allow_any_origin {
-            response = response
-                .with_header(HEADER_VARY, HEADER_ORIGIN)
-                .map_err(to_handler_error)?;
+            response = add_vary(response, HEADER_ORIGIN)?;
         }
         Ok(response)
     }
@@ -279,6 +284,23 @@ impl CorsPolicy {
     }
 }
 
+fn add_vary(response: Response, value: &str) -> Result<Response, HandlerError> {
+    let Some(existing) = response.header(HEADER_VARY).map(str::to_string) else {
+        return response
+            .with_header(HEADER_VARY, value)
+            .map_err(to_handler_error);
+    };
+    if existing.split(',').any(|token| {
+        let token = token.trim();
+        token == "*" || token.eq_ignore_ascii_case(value)
+    }) {
+        return Ok(response);
+    }
+    response
+        .with_header(HEADER_VARY, format!("{existing}, {value}"))
+        .map_err(to_handler_error)
+}
+
 #[derive(Clone)]
 struct CorsMiddleware {
     policy: CorsPolicy,
@@ -317,23 +339,18 @@ impl Middleware for CorsMiddleware {
 }
 
 struct CorsStore {
-    next_policy: SpectraHostValue,
-    policies: HashMap<SpectraHostValue, CorsPolicy>,
+    policies: ApiHandleTable<CorsPolicy>,
 }
 
 impl CorsStore {
     fn new() -> Self {
         Self {
-            next_policy: 1,
-            policies: HashMap::new(),
+            policies: ApiHandleTable::new(HandleKind::ApiCorsPolicy),
         }
     }
 
     fn insert(&mut self, policy: CorsPolicy) -> SpectraHostValue {
-        let handle = self.next_policy;
-        self.next_policy = self.next_policy.saturating_add(1).max(1);
-        self.policies.insert(handle, policy);
-        handle
+        self.policies.insert(policy)
     }
 }
 
@@ -622,6 +639,21 @@ mod tests {
         );
         assert_eq!(response.header(HEADER_ALLOW_CREDENTIALS), Some("true"));
         assert_eq!(response.header(HEADER_VARY), Some(HEADER_ORIGIN));
+    }
+
+    #[test]
+    fn actual_cors_merges_vary_with_existing_compression_dimension() {
+        let policy = CorsPolicy::new().allow_origin("https://app.example");
+        let response = Response::new(Status::new(200).unwrap())
+            .with_header(HEADER_VARY, "Accept-Encoding")
+            .expect("vary header");
+        let response = policy
+            .apply_actual_response(&request(Method::Get), response)
+            .expect("actual response");
+        assert_eq!(
+            response.header(HEADER_VARY),
+            Some("Accept-Encoding, Origin")
+        );
     }
 
     #[test]

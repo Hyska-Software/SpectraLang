@@ -17,9 +17,9 @@ The scalar types `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`,
 `isize`, `usize`, `f32`, and `f64` are represented explicitly in semantic and
 midend IR. `int` remains the compatibility spelling for `i64`, and `float`
 for `f64`. `as` casts are checked by default; `as wrapping` is reserved for
-integer modular conversion. The exact-width contract is still `in_progress`
-until dynamic overflow diagnostics, AOT/interop evidence, and the complete
-ABI gate pass.
+integer modular conversion. The certified exact-width scalar matrix is stable:
+dynamic overflow diagnostics, AOT/interop evidence, and the C ABI gate pass in
+R-2901. Scalar forms outside this matrix remain deferred.
 
 `std.numeric.wrapping_add_*`, `wrapping_sub_*`, and `wrapping_mul_*` provide
 explicit modular operations for the supported integer widths.
@@ -35,11 +35,12 @@ explicit modular operations for the supported integer widths.
 5. [std.collections — Coleções / Collections](#5-stdcollections--coleções--collections)
 6. [std.random — Números Aleatórios / Random Numbers](#6-stdrandom--números-aleatórios--random-numbers)
 7. [std.fs — Sistema de Arquivos / File System](#7-stdfs--sistema-de-arquivos--file-system)
-8. [std.env — Ambiente / Environment](#8-stdenv--ambiente--environment)
-9. [std.option — Operações em Option / Option Operations](#9-stdoption--operações-em-option--option-operations)
-10. [std.result — Operações em Result / Result Operations](#10-stdresult--operações-em-result--result-operations)
-11. [std.char — Operações em Caracteres / Character Operations](#11-stdchar--operações-em-caracteres--character-operations)
-12. [std.time — Tempo / Time](#12-stdtime--tempo--time)
+8. [std.error — Erros estruturados / Structured Errors](#81-stderror--erros-estruturados--structured-errors)
+9. [std.env — Ambiente / Environment](#9-stdenv--ambiente--environment)
+10. [std.option — Operações em Option / Option Operations](#10-stdoption--operações-em-option--option-operations)
+11. [std.result — Operações em Result / Result Operations](#11-stdresult--operações-em-result--result-operations)
+12. [std.char — Operações em Caracteres / Character Operations](#12-stdchar--operações-em-caracteres--character-operations)
+13. [std.time — Tempo / Time](#13-stdtime--tempo--time)
 
 ---
 
@@ -326,6 +327,18 @@ let ultima = std.string.split_last("nome:Alice:30", ":")
 ```spectra
 let count = std.string.count_occurrences("banana", "a")
   // 3
+```
+
+#### `split_by(s: string, sep: string) -> List<string>` (beta)
+
+Retorna uma lista tipada com as partes separadas por `sep`. O resultado pode
+ser usado com `std.collections.list_len` e os demais acessors de `List<T>`.
+
+```spectra
+let parts = std.string.split_by("a,b,c", ",")
+let count = std.collections.list_len(parts)
+// 3
+std.collections.list_free(parts)
 ```
 
 #### `is_empty(s: string) -> bool`
@@ -723,10 +736,16 @@ let i2 = std.convert.bool_to_int(false)
 ## 5. std.collections — Coleções / Collections
 
 **PT-BR:**  
-O módulo `std.collections` proVê listas dinâmicas via **handles** opacos (inteiros). Um handle é um identificador numérico para uma lista gerenciada pelo runtime. Não manipule handles diretamente.
+O contrato de fonte de `std.collections` usa `List<T>`, `Map<K,V>`, `Set<T>` e
+`Iterator<T>` tipados. A implementação atual transporta esses valores como
+handles opacos na ABI do runtime; esse detalhe não faz parte do tipo que o
+programa SpectraLang deve manipular.
 
 **EN-US:**  
-The `std.collections` module provides dynamic lists via opaque **handles** (integers). A handle is a numeric identifier for a runtime-managed list. Do not manipulate handles directly.
+The source contract of `std.collections` uses typed `List<T>`, `Map<K,V>`,
+`Set<T>`, and `Iterator<T>`. The current runtime ABI transports those values as
+opaque handles; that representation is not a source-level type to manipulate
+directly.
 
 ```spectra
 import std.collections as col
@@ -734,92 +753,114 @@ import std.collections as col
 
 ### Operações Básicas / Basic Operations
 
-#### `list_new() -> int`
+#### `list_new<T>() -> List<T>` (beta)
 
-**PT-BR:** Cria uma nova lista vazia. Retorna o handle.  
-**EN-US:** Creates a new empty list. Returns the handle.
+**PT-BR:** Cria uma nova lista vazia. O tipo `T` vem do contexto de uso.
+**EN-US:** Creates a new empty list. `T` is inferred from the use context.
 
 ```spectra
-let lista = col.list_new()
-    // handle, ex: 1
+let lista: List<int> = col.list_new()
 ```
 
-#### `list_push(handle: int, value: int) -> unit`
+#### `list_push<T>(list: List<T>, value: T) -> unit` (beta)
 
 ```spectra
-let lista = col.list_new()
+let lista: List<int> = col.list_new()
 col.list_push(lista, 10)
 col.list_push(lista, 20)
 col.list_push(lista, 30)
 ```
 
-#### `list_len(handle: int) -> int`
+#### `list_len<T>(list: List<T>) -> int` (beta)
 
 ```spectra
 let n = col.list_len(lista)
    // 3
 ```
 
-#### `list_get(handle: int, index: int) -> int`
+#### Typed absence-safe accessors (beta)
 
-**PT-BR:** Retorna o elemento no índice. Retorna `-1` se fora dos limites.  
-**EN-US:** Returns the element at the index. Returns `-1` if out of bounds.
+The main `std.collections` names return `Option<T>` whenever the operation can
+legitimately have no value. This keeps an absent element distinct from valid
+payloads such as `-1` or `0`.
+
+| Função / Function | Assinatura / Signature | Ausência / Missing value |
+|---|---|---|
+| `list_get` | `list_get<T>(list: List<T>, index: int) -> Option<T>` | `None` for an invalid index |
+| `list_pop` | `list_pop<T>(list: List<T>) -> Option<T>` | `None` for an empty list |
+| `list_pop_front` | `list_pop_front<T>(list: List<T>) -> Option<T>` | `None` for an empty list |
+| `list_remove_at` | `list_remove_at<T>(list: List<T>, index: int) -> Option<T>` | `None` for an invalid index |
+| `map_get` | `map_get<K,V>(map: Map<K,V>, key: K) -> Option<V>` | `None` for an unknown key |
+| `map_remove` | `map_remove<K,V>(map: Map<K,V>, key: K) -> Option<V>` | `None` for an unknown key |
+| `list_get_option` | `list_get_option<T>(list: List<T>, index: int) -> Option<T>` | `None` for an invalid index |
+| `list_pop_option` | `list_pop_option<T>(list: List<T>) -> Option<T>` | `None` for an empty list |
+| `list_pop_front_option` | `list_pop_front_option<T>(list: List<T>) -> Option<T>` | `None` for an empty list |
+| `list_remove_at_option` | `list_remove_at_option<T>(list: List<T>, index: int) -> Option<T>` | `None` for an invalid index |
+| `map_get_option` | `map_get_option<K,V>(map: Map<K,V>, key: K) -> Option<V>` | `None` for an unknown key |
+| `map_remove_option` | `map_remove_option<K,V>(map: Map<K,V>, key: K) -> Option<V>` | `None` for an unknown key |
 
 ```spectra
-let v = col.list_get(lista, 0)
-    // 10
-let oob = col.list_get(lista, 99)
- // -1
+import std.option as option
+
+let maybe_value = col.list_get(lista, 99)
+if option.is_some(maybe_value) {
+    let value = option.option_unwrap(maybe_value)
+    println(value)
+}
 ```
 
-#### `list_set(handle: int, index: int, value: int) -> unit`
+The names ending in `_option` remain explicit aliases for the same absence-safe
+operations and are useful when migrating code that already used those names.
+
+#### `list_set<T>(list: List<T>, index: int, value: T) -> unit`
 
 ```spectra
 col.list_set(lista, 0, 99)
     // Substitui o elemento 0 por 99
 ```
 
-#### `list_pop(handle: int) -> int`
+#### `list_pop<T>(list: List<T>) -> Option<T>`
 
-**PT-BR:** Remove e retorna o último elemento. Retorna `-1` se vazia.  
-**EN-US:** Removes and returns the last element. Returns `-1` if empty.
+**PT-BR:** Remove e retorna o último elemento, ou `None` se a lista estiver vazia.
+**EN-US:** Removes and returns the last element, or `None` if the list is empty.
 
 ```spectra
 let ultimo = col.list_pop(lista)
-    // 30
+// Some(30)
 ```
 
-#### `list_pop_front(handle: int) -> int`
+#### `list_pop_front<T>(list: List<T>) -> Option<T>`
 
 ```spectra
 let primeiro = col.list_pop_front(lista)
-    // 10
+// Some(10)
 ```
 
-#### `list_insert_at(handle: int, index: int, value: int) -> unit`
+#### `list_insert_at<T>(list: List<T>, index: int, value: T) -> unit`
 
 ```spectra
 col.list_insert_at(lista, 1, 50)
     // Insere 50 na posição 1
 ```
 
-#### `list_remove_at(handle: int, index: int) -> int`
+#### `list_remove_at<T>(list: List<T>, index: int) -> Option<T>`
 
-**PT-BR:** Remove o elemento no índice e o retorna. Retorna `-1` se inválido.  
-**EN-US:** Removes the element at the index and returns it. Returns `-1` if invalid.
+**PT-BR:** Remove o elemento no índice e o retorna, ou `None` se o índice for inválido.
+**EN-US:** Removes the element at the index and returns it, or `None` if invalid.
 
 ```spectra
 let removido = col.list_remove_at(lista, 0)
+// Some(10)
 ```
 
-#### `list_contains(handle: int, value: int) -> bool`
+#### `list_contains<T>(list: List<T>, value: T) -> bool`
 
 ```spectra
 let tem = col.list_contains(lista, 20)
    // true/false
 ```
 
-#### `list_index_of(handle: int, value: int) -> int`
+#### `list_index_of<T>(list: List<T>, value: T) -> int`
 
 **PT-BR:** Retorna o índice da primeira ocorrência ou `-1`.  
 **EN-US:** Returns the index of the first occurrence or `-1`.
@@ -829,7 +870,7 @@ let idx = col.list_index_of(lista, 20)
    // índice ou -1
 ```
 
-#### `list_sort(handle: int) -> unit`
+#### `list_sort<T>(list: List<T>) -> unit`
 
 **PT-BR:** Ordena a lista em ordem crescente in-place.  
 **EN-US:** Sorts the list in ascending order in-place.
@@ -838,14 +879,14 @@ let idx = col.list_index_of(lista, 20)
 col.list_sort(lista)
 ```
 
-#### `list_clear(handle: int) -> unit`
+#### `list_clear<T>(list: List<T>) -> unit`
 
 ```spectra
 col.list_clear(lista)
     // Remove todos os elementos
 ```
 
-#### `list_free(handle: int) -> unit`
+#### `list_free<T>(list: List<T>) -> unit`
 
 **PT-BR:** Libera a memória da lista. **Importante:** Chamar quando não precisar mais.  
 **EN-US:** Frees the list's memory. **Important:** Call when no longer needed.
@@ -864,26 +905,81 @@ col.list_free(lista)
 let liberadas = col.list_free_all()
 ```
 
+### Set e Iterator / Set and Iterator (beta)
+
+`Set<T>` preserva a ordem de inserção para tornar snapshots e iteração
+determinísticos; chaves `string` usam igualdade por valor. Inserção e remoção retornam `bool`; acesso posicional é seguro
+e retorna `Option<T>`. `Iterator<T>` é consumível: `iterator_next` retorna
+`Option<T>` e `iterator_remaining` informa quantos elementos ainda podem ser
+consumidos.
+
+`Set<T>` preserves insertion order so snapshots and iteration are deterministic;
+`string` keys use value equality.
+Insertion and removal return `bool`; positional access is safe and returns
+`Option<T>`. `Iterator<T>` is consumable: `iterator_next` returns `Option<T>`
+and `iterator_remaining` reports the remaining elements.
+
+```spectra
+from std.collections import Set, Iterator
+import std.option as option
+
+let ids: Set<int> = col.set_new()
+col.set_insert(ids, 10)
+col.set_insert(ids, 20)
+let ids_iter: Iterator<int> = col.set_iter(ids)
+let first = col.iterator_next(ids_iter)
+if option.is_some(first) {
+    println(option.option_unwrap(first))
+}
+col.iterator_free(ids_iter)
+col.set_free(ids)
+```
+
+As funções `list_iter`, `set_iter` e `map_iter` criam iteradores snapshot;
+`map_iter` percorre as chaves em uma ordem estável para o snapshot atual. A expressão `for`
+consome o mesmo protocolo para ranges, arrays, listas, sets, mapas e iteradores
+explícitos. `std.range.iter` é o adaptador público para ranges.
+
+The `list_iter`, `set_iter`, and `map_iter` functions create snapshot
+iterators; `map_iter` visits keys in a stable order for the current snapshot. The `for` expression
+uses the same protocol for ranges, arrays, lists, sets, maps, and explicit
+iterators. `std.range.iter` is the public range adapter.
+
+| Função / Function | Assinatura / Signature | Resultado / Result |
+|---|---|---|
+| `set_new` | `set_new<T>() -> Set<T>` | conjunto vazio / empty set |
+| `set_insert` | `set_insert<T>(set: Set<T>, value: T) -> bool` | `true` se inseriu / inserted |
+| `set_contains` | `set_contains<T>(set: Set<T>, value: T) -> bool` | presença / membership |
+| `set_remove` | `set_remove<T>(set: Set<T>, value: T) -> bool` | `true` se removeu / removed |
+| `set_len` | `set_len<T>(set: Set<T>) -> int` | cardinalidade / cardinality |
+| `set_get` | `set_get<T>(set: Set<T>, index: int) -> Option<T>` | snapshot posicional |
+| `list_iter` / `set_iter` | `List<T>` / `Set<T> -> Iterator<T>` | snapshot iterator |
+| `map_iter` | `Map<K,V> -> Iterator<K>` | iterator de chaves / key iterator |
+| `iterator_next` | `iterator_next<T>(iterator: Iterator<T>) -> Option<T>` | próximo valor / next value |
+| `iterator_remaining` | `iterator_remaining<T>(iterator: Iterator<T>) -> int` | itens restantes / remaining |
+| `iterator_free` | `iterator_free<T>(iterator: Iterator<T>) -> unit` | libera o handle / drops handle |
+
 ### Funções de Alta Ordem / Higher-Order Functions
 
-#### `list_map(handle: int, fn_ptr: int) -> int`
+#### `list_map(list: List<int>, fn: func(int) returns int) -> List<int>`
 
-**PT-BR:** Cria uma nova lista aplicando a função a cada elemento.  
-**EN-US:** Creates a new list by applying the function to each element.
+**PT-BR:** Cria uma nova lista aplicando a closure tipada a cada elemento.
+**EN-US:** Creates a new list by applying the typed closure to each element.
 
-> **Nota / Note:** `fn_ptr` é um ponteiro para função obtido via conversão. O uso direto com closures SpectraLang está em desenvolvimento.
+O callback de `list_map` precisa aceitar e retornar `int` na implementação
+runtime atual. O resultado é uma nova `List<int>` independente.
 
-#### `list_filter(handle: int, fn_ptr: int) -> int`
+#### `list_filter(list: List<int>, predicate: func(int) returns bool) -> List<int>`
 
-**PT-BR:** Cria uma nova lista com apenas os elementos que satisfazem o predicado.  
-**EN-US:** Creates a new list with only elements satisfying the predicate.
+**PT-BR:** Cria uma nova lista com apenas os elementos que satisfazem o predicado booleano.
+**EN-US:** Creates a new list with only elements satisfying the boolean predicate.
 
-#### `list_reduce(handle: int, initial: int, fn_ptr: int) -> int`
+#### `list_reduce(list: List<int>, initial: int, fn: func(int, int) returns int) -> int`
 
 **PT-BR:** Reduz a lista a um único valor acumulando com a função.  
 **EN-US:** Reduces the list to a single value by accumulating with the function.
 
-#### `list_sort_by(handle: int, fn_ptr: int) -> unit`
+#### `list_sort_by(list: List<int>, comparator: func(int, int) returns int) -> unit`
 
 **PT-BR:** Ordena com comparador customizado. A função comparador deve retornar `-1`, `0`, ou `1`.  
 **EN-US:** Sorts with a custom comparator. The comparator function must return `-1`, `0`, or `1`.
@@ -894,12 +990,14 @@ let liberadas = col.list_free_all()
 module usando_colecoes
 
 import std.collections as col
+from std.collections import List
 from std.io import println
 import std.convert
+import std.option as option
 
 public func main() {
     // Criar lista / Create list
-    let lista = col.list_new()
+    let lista: List<int> = col.list_new()
 
     // Adicionar elementos / Add elements
     col.list_push(lista, 5)
@@ -918,7 +1016,8 @@ public func main() {
     // Imprimir todos / Print all
     let i = 0
     while i < col.list_len(lista) {
-        println(std.convert.int_to_string(col.list_get(lista, i)))
+        let maybe_value = col.list_get(lista, i)
+        println(std.convert.int_to_string(option.option_unwrap(maybe_value)))
         i = i + 1
     }
     // 1, 2, 3, 5, 8, 9
@@ -1144,12 +1243,12 @@ import std.ml as ml
 | `experiment_manifest_path`, `experiment_repro_command`, `experiment_compare_manifests` | Manifest path, reproduction command, and manifest comparison |
 | `distributed_session_start`, `distributed_worker_step`, `distributed_global_step` | Single-machine simulated distributed training coordination |
 | `distributed_checkpoint_save`, `distributed_resume`, `distributed_summary`, `distributed_worker_step_count` | Checkpoint/resume and worker progress inspection |
-| `onnx_export`, `onnx_import_summary`, `onnx_validate`, `onnx_roundtrip` | Binary ONNX subset export/import/round-trip for supported AI model blocks |
+| `onnx_export_weights`, `onnx_import_summary`, `onnx_validate`, `onnx_roundtrip` | Binary ONNX subset export/import/round-trip for supported AI model blocks (`onnx_export_weights(path, kind, weights)` fills the kind's initializers from live float-tensor handles in spec order, e.g. `linear` takes `[weight[2,3], bias[3]]`) |
 | `embedding_lookup`, `positional_encoding`, `layer_norm`, `gelu`, `swiglu`, `attention` | Transformer tensor primitives |
-| `kv_cache_new`, `kv_cache_append`, `kv_cache_keys`, `kv_cache_values`, `kv_cache_len`, `logits_sample` | LLM KV-cache and logits sampling helpers |
-| `tokenizer_wordpiece`, `tokenizer_encode`, `tokenizer_decode`, `text_embed` | Deterministic tokenization and text embedding utilities |
+| `kv_cache_new`, `kv_cache_append`, `kv_cache_keys`, `kv_cache_values`, `kv_cache_len`, `logits_sample`, `logits_sample_seeded` | LLM KV-cache and logits sampling helpers (`logits_sample` uses the global RNG; `logits_sample_seeded(seed, logits, temperature)` samples the same full-vocabulary distribution from a per-call splitmix64 stream, so a fixed seed reproduces the token) |
+| `tokenizer_wordpiece`, `tokenizer_encode`, `tokenizer_decode` | Deterministic tokenization utilities |
 | `vector_index_new`, `vector_index_insert`, `vector_index_query`, `vector_index_persist`, `vector_index_load`, `vector_index_set_metadata`, `vector_index_metrics` | Deterministic HNSW vector index APIs backed by the R-3003 Artifact Container v1; legacy JSON is rejected |
-| `rag_chunk_text`, `rag_build_prompt`, `rag_evaluate_answer` | RAG chunking, prompt assembly, and evaluation |
+| `rag_chunk_text`, `rag_build_prompt`, `rag_evaluate_answer` | RAG chunking, prompt assembly, and token-overlap evaluation (`rag_evaluate_answer` returns token-overlap F1 scaled to permille `0..1000`, the same `answer_overlap_score` semantics as `ml.metrics_generation`; it is not a model-graded judge) |
 
 Exemplos completos estão em:
 
@@ -1209,74 +1308,170 @@ let b = std.random.random_bool()
 ## 8. std.fs — Sistema de Arquivos / File System
 
 ```spectra
-import std.fs
+import std.fs as fs
+import std.error as error
 ```
 
-#### `fs_read(path: string) -> string`
+As operações públicas de `std.fs` retornam `Result<T, Error>`. O caminho de
+sucesso fica no variant `Ok`; falhas de validação ou do sistema operacional
+ficam no variant `Err`, sem usar string vazia ou `false` como erro. A superfície
+está em migração beta até que os gates multiplataforma e de release certifiquem
+todo o contrato.
 
-**PT-BR:** Lê o conteúdo completo de um arquivo. Retorna `""` em caso de erro.  
-**EN-US:** Reads the full content of a file. Returns `""` on error.
+#### `fs_read(path: string) -> Result<string, Error>`
+
+**PT-BR:** Lê o conteúdo completo de um arquivo. Falhas são retornadas em `Err`.  
+**EN-US:** Reads the full content of a file. Failures are returned as `Err`.
 
 ```spectra
-let conteudo = std.fs.fs_read("dados.txt")
-if std.string.is_empty(conteudo) {
-    println("Arquivo não encontrado ou vazio")
+let resultado = fs.fs_read("dados.txt")
+if let Result::Ok(conteudo) = resultado {
+    println(conteudo)
+} else {
+    println("não foi possível ler o arquivo")
 }
 ```
 
-#### `fs_write(path: string, content: string) -> bool`
+#### `fs_write(path: string, content: string) -> Result<bool, Error>`
 
-**PT-BR:** Escreve (substitui) o conteúdo de um arquivo. Cria diretórios pais ausentes quando possível. Retorna `true` em sucesso e `false` em falhas controladas de sistema de arquivos.
-**EN-US:** Writes (replaces) file content. Creates missing parent directories when possible. Returns `true` on success and `false` for controlled filesystem failures.
+**PT-BR:** Escreve (substitui) o conteúdo de um arquivo. Cria diretórios pais ausentes quando possível.
+**EN-US:** Writes (replaces) file content and creates missing parent directories when possible.
 
 ```spectra
-let ok = std.fs.fs_write("target/artefatos/saida.txt", "Hello, World!\n")
+let resultado = fs.fs_write("target/artefatos/saida.txt", "Hello, World!\n")
+if let Result::Err(falha) = resultado {
+    println(error.message(falha))
+}
 ```
 
-#### `fs_append(path: string, content: string) -> bool`
+#### `fs_append(path: string, content: string) -> Result<bool, Error>`
 
-**PT-BR:** Adiciona conteúdo ao final de um arquivo. Cria diretórios pais ausentes quando possível e retorna `false` em falhas controladas.
-**EN-US:** Appends content to the end of a file. Creates missing parent directories when possible and returns `false` for controlled failures.
+**PT-BR:** Adiciona conteúdo ao final de um arquivo. Falhas são retornadas em `Err`.
+**EN-US:** Appends content to the end of a file. Failures are returned as `Err`.
 
 ```spectra
-std.fs.fs_append("log.txt", "Nova entrada de log\n")
+let resultado = fs.fs_append("log.txt", "Nova entrada de log\n")
 ```
 
 Falhas comuns, como caminho vazio, pai bloqueado por arquivo, permissão negada
-ou arquivo inexistente em leitura/remoção, não devem derrubar o processo nativo.
-Use o valor de retorno para decidir o fluxo de erro.
+ou arquivo inexistente em leitura/remoção, não derrubam o processo nativo. Use
+`std.error` para inspecionar o código e o contexto da falha.
 
-#### `fs_exists(path: string) -> bool`
+#### `fs_exists(path: string) -> Result<bool, Error>`
 
 ```spectra
-if std.fs.fs_exists("config.txt") {
-    let cfg = std.fs.fs_read("config.txt")
+let existe = fs.fs_exists("config.txt")
+if let Result::Ok(true) = existe {
+    let cfg = fs.fs_read("config.txt")
 }
 ```
 
-#### `fs_remove(path: string) -> bool`
+`fs_exists` retorna `Ok(false)` quando o caminho não existe; erros de metadata
+que não sejam ausência retornam `Err`.
+
+#### `fs_remove(path: string) -> Result<bool, Error>`
 
 ```spectra
-let removido = std.fs.fs_remove("temp.txt")
+let removido = fs.fs_remove("temp.txt")
+```
+
+
+#### `create_dir_all(path: string) -> Result<bool, Error>`
+
+Cria o diretório e todos os pais que faltarem. Retorna `Ok(true)` em sucesso.
+
+```spectra
+let criado = fs.create_dir_all("target/artefatos/2026/agosto")
+```
+
+#### `remove_dir(path: string) -> Result<bool, Error>`
+
+Remove um diretório **vazio**. Diretórios com conteúdo produzem `Err`
+(`ErrorCode::Io`); use `fs_remove` para arquivos individuais.
+
+```spectra
+let removido = fs.remove_dir("target/artefatos/2026/agosto")
+```
+
+#### `rename(from: string, to: string) -> Result<bool, Error>`
+
+Move (ou renomeia) arquivos e diretórios.
+
+```spectra
+let movido = fs.rename("rascunho.txt", "final.txt")
+```
+
+#### `copy(from: string, to: string) -> Result<int, Error>`
+
+Copia o arquivo e retorna `Ok(bytes_copiados)`.
+
+```spectra
+let bytes = fs.copy("entrada.bin", "backup.bin")
+```
+
+#### `read_dir(path: string) -> Result<List<string>, Error>`
+
+Lista os **nomes** das entradas do diretório (não caminhos completos), em
+ordem determinística (ordenação lexicográfica dos nomes).
+
+```spectra
+let listagem = fs.read_dir("target/artefatos")
+if let Result::Ok(nomes) = listagem {
+    for nome in nomes {
+        io.println(nome)
+    }
+}
 ```
 
 ---
+
+## 8.1. std.error — Erros estruturados / Structured Errors
+
+```spectra
+import std.error as error
+from std.error import ErrorCode
+```
+
+`Error` é o payload estruturado usado pelo caminho `Err` de `std.fs`. O
+`ErrorCode` é um enum fechado: `InvalidArgument = 0`, `NotFound = 1`,
+`PermissionDenied = 2`, `Io = 3`, `Internal = 4` e `Unsupported = 5`.
+
+```spectra
+let falha = error.new(
+    ErrorCode::NotFound,
+    "arquivo não encontrado",
+    "fs_read",
+    "dados.txt",
+    "meu_modulo",
+    false
+)
+let codigo = error.code(falha)
+let operacao = error.operation(falha)
+```
+
+Além de `code`, o módulo expõe `message`, `operation`, `context`, `origin` e
+`retryable`. A representação é runtime-owned; programas devem transportar o
+valor e tratá-lo como dado de erro, sem depender do layout interno.
 
 ## 9. std.env — Ambiente / Environment
 
 ```spectra
 import std.env
+import std.option
 ```
 
-#### `env_get(key: string) -> string`
+#### `env_get(key: string) -> Option<string>` (beta)
 
-**PT-BR:** Obtém uma variável de ambiente. Retorna `""` se não definida.  
-**EN-US:** Gets an environment variable. Returns `""` if not set.
+**PT-BR:** Obtém uma variável de ambiente sem confundir ausência com string vazia.
+**EN-US:** Gets an environment variable without confusing absence with an empty string.
 
 ```spectra
-let home = std.env.env_get("HOME")
-let path = std.env.env_get("PATH")
+let maybe_home = std.env.env_get("HOME")
+let maybe_path = std.env.env_get("PATH")
 ```
+
+The explicit `env_get_option(key: string) -> Option<string>` alias remains
+available.
 
 #### `env_set(key: string, value: string) -> bool`
 
@@ -1294,10 +1489,10 @@ let argc = std.env.env_args_count()
 println(f"Argumentos: {argc}")
 ```
 
-#### `env_arg(index: int) -> string`
+#### `env_arg(index: int) -> Option<string>`
 
-**PT-BR:** Retorna o argumento na posição `index`. Retorna `""` se fora dos limites.  
-**EN-US:** Returns the argument at position `index`. Returns `""` if out of bounds.
+**PT-BR:** Retorna o argumento na posição `index`, ou `None` se fora dos limites.  
+**EN-US:** Returns the argument at position `index`, or `None` when out of bounds.
 
 ```spectra
 let arg0 = std.env.env_arg(0)
@@ -1308,11 +1503,13 @@ let arg1 = std.env.env_arg(1)
 // Processando todos os argumentos / Processing all arguments
 let n = std.env.env_args_count()
 for i in 0..n {
-    println(f"arg[{i}] = {std.env.env_arg(i)}")
+    let arg = std.env.env_arg(i)
+    if std.option.is_some(arg) {
+        println(f"arg[{i}] = {std.option.option_unwrap(arg)}")
+    }
 }
 ```
 
----
 
 ## 10. std.option — Operações em Option / Option Operations
 
@@ -1336,7 +1533,7 @@ let vazio = std.option.is_none(nada)
     // true
 ```
 
-#### `option_unwrap(opt: unknown) -> unknown`
+#### `option_unwrap<T>(opt: Option<T>) -> T`
 
 **PT-BR:** Extrai o valor de `Some`. Retorna erro de runtime controlado se for `None`.
 **EN-US:** Extracts the value from `Some`. Returns a controlled runtime error if `None`.
@@ -1347,7 +1544,7 @@ let val = std.option.option_unwrap(Option::Some(42))
 // std.option.option_unwrap(Option::None);  // erro de runtime controlado
 ```
 
-#### `option_unwrap_or(opt: unknown, default: unknown) -> unknown`
+#### `option_unwrap_or<T>(opt: Option<T>, default: T) -> T`
 
 **PT-BR:** Extrai o valor ou retorna o padrão se `None`.  
 **EN-US:** Extracts the value or returns the default if `None`.
@@ -1357,6 +1554,16 @@ let val = std.option.option_unwrap_or(Option::Some(42), 0)
    // 42
 let def = std.option.option_unwrap_or(Option::None, 99)
       // 99
+```
+
+#### `option_map<T, U>(opt: Option<T>, map: func(T) returns U) -> Option<U>` (beta)
+
+Aplica a função apenas em `Some` e preserva `None`, sem usar valor sentinela
+para representar a ausência.
+
+```spectra
+let mapped = std.option.option_map(Option::Some(4), |value: int| value + 1)
+// mapped contém Some(5)
 ```
 
 ---
@@ -1383,7 +1590,7 @@ let err = std.result.is_err(e)
     // true
 ```
 
-#### `result_unwrap(res: unknown) -> unknown`
+#### `result_unwrap<T, E>(res: Result<T, E>) -> T`
 
 **PT-BR:** Extrai o valor de `Ok`. Retorna erro de runtime controlado se for `Err`.
 **EN-US:** Extracts the value from `Ok`. Returns a controlled runtime error if `Err`.
@@ -1393,14 +1600,14 @@ let val = std.result.result_unwrap(Result::Ok(42))
     // 42
 ```
 
-#### `result_unwrap_or(res: unknown, default: unknown) -> unknown`
+#### `result_unwrap_or<T, E>(res: Result<T, E>, default: T) -> T`
 
 ```spectra
 let val = std.result.result_unwrap_or(Result::Err("e"), 0)
    // 0
 ```
 
-#### `result_unwrap_err(res: unknown) -> unknown`
+#### `result_unwrap_err<T, E>(res: Result<T, E>) -> E`
 
 **PT-BR:** Extrai o valor de `Err`. Retorna erro de runtime controlado se for `Ok`.
 **EN-US:** Extracts the value from `Err`. Returns a controlled runtime error if `Ok`.
@@ -1408,6 +1615,19 @@ let val = std.result.result_unwrap_or(Result::Err("e"), 0)
 ```spectra
 let msg = std.result.result_unwrap_err(Result::Err("algo errado"))
    // "algo errado"
+```
+
+#### `result_map<T, E, U>` e `result_map_err<T, E, F>` (beta)
+
+`result_map` transforma somente `Ok`; `result_map_err` transforma somente
+`Err`. A variante oposta é preservada com seu payload.
+
+```spectra
+let ok = std.result.result_map(Result::Ok(10), |value: int| value * 2)
+let err = std.result.result_map_err(
+    Result::Err("bad"),
+    |message: string| message + " input"
+)
 ```
 
 ---

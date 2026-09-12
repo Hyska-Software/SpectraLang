@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,10 +26,11 @@ def require(condition: bool, message: str) -> None:
         fail(message)
 
 
-def run_command(args: list[str]) -> str:
+def run_command(args: list[str], env: dict[str, str] | None = None) -> str:
     completed = subprocess.run(
         args,
         cwd=ROOT,
+        env=env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -67,6 +69,7 @@ def validate_tls_surface() -> None:
         require(term in cargo, f"Cargo.toml missing {term}")
 
     tls = read("packages/spectra-api/src/tls.rs")
+    client = read("packages/spectra-api/src/client_async.rs")
     for term in [
         "pub enum TlsErrorKind",
         "pub struct TlsError",
@@ -92,6 +95,14 @@ def validate_tls_surface() -> None:
     ]:
         require(term in tls, f"missing TLS implementation term {term}")
 
+    for term in [
+        "send_once_nonblocking_tls",
+        "ClientConnection::new",
+        "flush_tls_socket",
+        "with_webpki_roots",
+    ]:
+        require(term in client, f"missing task-aware HTTPS bridge term {term}")
+
     for test in [
         "self_signed_https_server_and_client_round_trip",
         "known_external_endpoint_validates_chain",
@@ -100,6 +111,10 @@ def validate_tls_surface() -> None:
         "local_client_rejects_untrusted_self_signed_chain",
     ]:
         require(test in tls, f"missing R-2207 regression test {test}")
+    require(
+        "client_nonblocking_request_supports_validated_https" in read("packages/spectra-api/src/client_tests.rs"),
+        "missing nonblocking HTTPS client regression test",
+    )
 
 
 def validate_planning() -> None:
@@ -157,22 +172,45 @@ def validate_runner() -> None:
 
 def main() -> None:
     cargo = cargo_cmd()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--require-external", action="store_true")
+    parser.add_argument("--external-url", default=None)
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="use Cargo offline for a pre-populated cache; release lanes remain online by default",
+    )
+    args = parser.parse_args()
     validate_tls_surface()
-    run_command([cargo, "test", "-q", "-p", "spectra-api", "tls", "--offline"])
-    if os.environ.get("SPECTRA_RUN_EXTERNAL_TLS") == "1":
-        run_command(
-            [
-                cargo,
-                "test",
-                "-q",
-                "-p",
-                "spectra-api",
-                "tls::tests::known_external_endpoint_validates_chain",
-                "--offline",
-                "--",
-                "--ignored",
-            ]
-        )
+    tls_test = [cargo, "test", "-q", "-p", "spectra-api", "tls"]
+    if args.offline:
+        tls_test.append("--offline")
+    run_command(tls_test)
+    run_command([cargo, "test", "-q", "-p", "spectra-api", "client"])
+    external_url = args.external_url or os.environ.get("SPECTRA_TLS_EXTERNAL_URL")
+    if args.require_external and not external_url:
+        fail("external TLS endpoint is required; set --external-url or SPECTRA_TLS_EXTERNAL_URL")
+    if external_url:
+        parsed = urlsplit(external_url)
+        require(parsed.scheme == "https" and parsed.hostname, "external TLS endpoint must be an https URL")
+        env = os.environ.copy()
+        env["SPECTRA_TLS_EXTERNAL_HOST"] = parsed.hostname
+        env["SPECTRA_TLS_EXTERNAL_PORT"] = str(parsed.port or 443)
+        env["SPECTRA_TLS_EXTERNAL_PATH"] = parsed.path or "/"
+        external_test = [
+            cargo,
+            "test",
+            "-q",
+            "-p",
+            "spectra-api",
+            "tls::tests::known_external_endpoint_validates_chain",
+        ]
+        if args.offline:
+            external_test.append("--offline")
+        external_test.extend(["--", "--ignored"])
+        run_command(external_test, env)
     validate_planning()
     validate_runner()
     print("validated R-2207 TLS via rustls")

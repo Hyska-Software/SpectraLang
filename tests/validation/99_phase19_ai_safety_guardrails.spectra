@@ -1,6 +1,7 @@
 module phase19_ai_safety_guardrails
 
 import std.serve as serve
+import std.tensor as tensor
 import std.string as str
 
 public func main() returns int {
@@ -38,6 +39,11 @@ public func main() returns int {
         }
     } else {
         return 4
+    }
+    let weights = tensor.full2_f(1, 1, 3.0)
+    let biases = tensor.full_f(1, 0.0)
+    if serve.server_register_model_linear(server, weights, biases, 0) != 1 {
+        return 5
     }
     serve.server_warmup(server)
 

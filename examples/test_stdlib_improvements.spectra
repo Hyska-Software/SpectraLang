@@ -6,6 +6,7 @@ import std.string
 import std.char
 import std.time
 import std.collections
+import std.option as option
 
 public func main() returns int {
     // ── std.math novas funções ────────────────────────────────────────────────
@@ -57,9 +58,13 @@ public func main() returns int {
     // 4
     println(n)
     let first = list_get(parts, 0)
-    // ponteiro para "a"
+    // Some("a")
     let last = list_get(parts, 3)
-    // ponteiro para "d"
+    // Some("d")
+    if option.is_none(first) or option.is_none(last) {
+        list_free(parts)
+        return 1
+    }
     list_free(parts)
 
     // ── std.char novas funções ────────────────────────────────────────────────

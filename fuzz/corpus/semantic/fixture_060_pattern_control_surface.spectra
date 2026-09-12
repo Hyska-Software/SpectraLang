@@ -1,0 +1,51 @@
+// Teste 60: match, if let, while let e enum struct-style
+module pattern_control_surface
+
+enum Counter {
+    Running { current: int },
+    Done,
+}
+
+func next_state(value: int) returns Counter {
+    if value > 0 {
+        return Counter::Running { current: value }
+    }
+    return Counter::Done
+}
+
+func drain(start: int) returns int {
+    let cursor = start
+    let sum    = 0
+
+    while let Counter::Running { current } = next_state(cursor) {
+        sum = sum + current
+        cursor = cursor - 1
+    }
+
+    return sum
+}
+
+public func main() returns int {
+    let total       = drain(4)
+    let description = match total {
+        when 10 then "ok",
+        otherwise then "bad"
+    }
+
+    if let Counter::Running { current } = next_state(1) {
+        if current != 1 {
+            return current
+        }
+    } else {
+        return-1
+    }
+
+    match description {
+        when "ok" then {}
+        otherwise then {
+            return 1
+        }
+    }
+
+    return 0
+}

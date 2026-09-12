@@ -1,0 +1,33 @@
+module api_oauth
+
+import std.string as str
+
+from std.api.oauth import OAuthClient, authorization_url, client_new, client_set_revocation_url
+
+public func main() returns int {
+    let client: OAuthClient = client_new(
+        "spectra-oauth-client",
+        "client-secret",
+        "http://127.0.0.1:41890/authorize",
+        "http://127.0.0.1:41890/token",
+        "http://127.0.0.1:41890/callback",
+        "openid profile",
+    )
+    let authorization = authorization_url(client, "fixture-state")
+    if str.contains(authorization, "response_type=code") != true {
+        return 10
+    }
+    if str.contains(authorization, "code_challenge_method=S256") != true {
+        return 11
+    }
+    if str.contains(authorization, "code_challenge=") != true {
+        return 12
+    }
+    if str.contains(authorization, "state=fixture-state") != true {
+        return 13
+    }
+    if client_set_revocation_url(client, "http://127.0.0.1:41890/revoke") != true {
+        return 14
+    }
+    return 0
+}

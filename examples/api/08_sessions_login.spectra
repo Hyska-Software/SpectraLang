@@ -1,0 +1,32 @@
+module sessions_login
+
+from std.api.session import SessionStore, Session, memory_store, create, lookup, id, value, is_valid, revoke
+from std.api.http import Response, response_status
+
+public func main() returns int {
+    let store: SessionStore = memory_store()
+    let sess: Session = create(store, "user42", 3600, 3600, true)
+    if is_valid(sess) != true {
+        return 1
+    }
+    let sid: string = id(sess)
+    if sid == "" {
+        return 2
+    }
+    let looked: Session = lookup(store, sid)
+    if is_valid(looked) != true {
+        return 3
+    }
+    if value(looked) != "user42" {
+        return 4
+    }
+    let revoked: bool = revoke(store, sid)
+    if revoked != true {
+        return 5
+    }
+    let after: Session = lookup(store, sid)
+    if is_valid(after) == true {
+        return 6
+    }
+    return 0
+}

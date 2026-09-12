@@ -1,0 +1,6 @@
+module stability_array_element_type_mismatch
+
+public func main() returns int {
+    let values = [1, "not an int"]
+    return 0
+}

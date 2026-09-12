@@ -1,0 +1,23 @@
+// Tiny markdown subset: headings, paragraphs, bold, links.
+module md
+
+import std.string as s
+import std.convert as c
+
+public func heading(level: int, text: string) returns string {
+    let tag = s.concat(s.concat("<h", c.int_to_string(level)), ">")
+    let close = s.concat(s.concat("</h", c.int_to_string(level)), ">")
+    return s.concat(s.concat(tag, text), close)
+}
+
+public func para(text: string) returns string {
+    return s.concat(s.concat("<p>", text), "</p>")
+}
+
+public func bold(text: string) returns string {
+    return s.concat(s.concat("<strong>", text), "</strong>")
+}
+
+public func link(label: string, url: string) returns string {
+    return s.concat(s.concat(s.concat(s.concat("<a href=\"", url), "\">"), label), "</a>")
+}

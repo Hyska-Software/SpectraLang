@@ -1,0 +1,11 @@
+module bug_hunt_v2_invalid_json
+
+#[derive(Deserialize)]
+record Profile {
+    id: int,
+}
+
+public func main() returns int {
+    let field = Profile::json_error_field("{invalid")
+    return 0
+}

@@ -77,7 +77,7 @@ pub fn analyze_document(
     package_name: Option<String>,
 ) -> DocumentAnalysis {
     let mut loader = ModuleLoader::new();
-    let parse_outcome = loader.parse_module(filename, source, &options.experimental_features);
+    let parse_outcome = loader.parse_module(filename, source);
 
     let mut analysis = DocumentAnalysis::default();
 
@@ -103,6 +103,7 @@ pub fn analyze_document(
     };
 
     let mut semantic = SemanticAnalyzer::new_with_registry(registry, package_name);
+    semantic.set_current_module_name(Some(module.name.clone()));
     let semantic_errors = semantic.analyze_module(&mut module);
     analysis.symbols = semantic.symbol_resolutions.clone();
     analysis.definitions = build_definition_index(&module);
@@ -125,8 +126,22 @@ pub fn type_to_string(ty: &Type) -> String {
     match ty {
         Type::Int => "int".to_string(),
         Type::Float => "float".to_string(),
-        Type::ExactInt { signed, width } => format!("{}{}", if *signed { "i" } else { "u" }, match width { crate::ast::IntWidth::I8 => "8", crate::ast::IntWidth::I16 => "16", crate::ast::IntWidth::I32 => "32", crate::ast::IntWidth::I64 => "64", crate::ast::IntWidth::Isize => "size", crate::ast::IntWidth::Usize => "size" }),
-        Type::ExactFloat { width } => match width { crate::ast::FloatWidth::F32 => "f32".to_string(), crate::ast::FloatWidth::F64 => "f64".to_string() },
+        Type::ExactInt { signed, width } => format!(
+            "{}{}",
+            if *signed { "i" } else { "u" },
+            match width {
+                crate::ast::IntWidth::I8 => "8",
+                crate::ast::IntWidth::I16 => "16",
+                crate::ast::IntWidth::I32 => "32",
+                crate::ast::IntWidth::I64 => "64",
+                crate::ast::IntWidth::Isize => "size",
+                crate::ast::IntWidth::Usize => "size",
+            }
+        ),
+        Type::ExactFloat { width } => match width {
+            crate::ast::FloatWidth::F32 => "f32".to_string(),
+            crate::ast::FloatWidth::F64 => "f64".to_string(),
+        },
         Type::Bool => "bool".to_string(),
         Type::String => "string".to_string(),
         Type::Char => "char".to_string(),
@@ -146,6 +161,14 @@ pub fn type_to_string(ty: &Type) -> String {
         ),
         Type::Struct { name } => name.clone(),
         Type::Enum { name } => name.clone(),
+        Type::Applied { name, args } => format!(
+            "{}<{}>",
+            name,
+            args.iter()
+                .map(type_to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         Type::TypeParameter { name } => name.clone(),
         Type::SelfType => "Self".to_string(),
         Type::Fn {
@@ -391,7 +414,11 @@ fn format_function(function: &Function) -> String {
         .as_ref()
         .map(format_type_annotation)
         .unwrap_or_else(|| "unit".to_string());
-    let prefix = if function.is_async { "async func" } else { "func" };
+    let prefix = if function.is_async {
+        "async func"
+    } else {
+        "func"
+    };
     format!(
         "{} {}({}) returns {}",
         prefix, function.name, params, return_type
@@ -410,7 +437,11 @@ fn format_method(type_name: &str, method: &Method) -> String {
         .as_ref()
         .map(format_type_annotation)
         .unwrap_or_else(|| "unit".to_string());
-    let prefix = if method.is_async { "async func" } else { "func" };
+    let prefix = if method.is_async {
+        "async func"
+    } else {
+        "func"
+    };
     format!(
         "{} {}::{}({}) returns {}",
         prefix, type_name, method.name, params, return_type
@@ -546,7 +577,7 @@ fn hints_from_statement(
 ) {
     match &stmt.kind {
         StatementKind::Let(let_stmt) if let_stmt.ty.is_none() => {
-            if let crate::ast::Pattern::Identifier(name) = &let_stmt.pattern {
+            if let crate::ast::Pattern::Identifier(name, _) = &let_stmt.pattern {
                 if let Some(info) = analysis.symbols.get(&let_stmt.span) {
                     let ty_str = type_to_string(&info.ty);
                     if ty_str != "unknown" {

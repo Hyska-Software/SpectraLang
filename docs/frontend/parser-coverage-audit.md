@@ -37,7 +37,10 @@ _Branch: devlop_
 
 ### Impl Blocks
 - Inherent impls parse method lists with receiver variants and typed parameters.
-- `impl Type` assumes a simple identifier; qualified paths (`impl module::Type`) and generic type arguments (`impl Type<T>`) are unsupported.
+- `impl Type` accepts simple identifiers, qualified paths (`impl module::Type`),
+  and generic type arguments (`impl Par<T>`) since R-211; trait impls accept
+  `impl Trait<Args> for Type` and the generic clause `impl<T: Bound> Trait for Type`
+  since R-213.
 
 ### Statements & Control Flow
 - Control-flow constructs implemented: `while`, `do { } while`, `for name in`, `loop`, `switch`, `break`, `continue`, `if let`, `while let`.

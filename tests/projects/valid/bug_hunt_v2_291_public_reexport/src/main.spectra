@@ -1,0 +1,14 @@
+module main
+
+import facade
+
+public func main() returns int {
+    let badge = Badge { code: 42 }
+    if answer() != 42 {
+        return 1
+    }
+    if badge.code != 42 {
+        return 2
+    }
+    return 0
+}

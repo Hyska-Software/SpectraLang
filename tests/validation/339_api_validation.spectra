@@ -1,0 +1,90 @@
+module api_validation
+
+import std.string as str
+
+from std.api.form import Form, parse as form_parse
+from std.api.http import Response, response_header, response_status
+from std.api.validation import ValidationResult, ValidationSchema, error_code, field, max_length, min_length, range, regex, result_code, result_count, result_field, result_message, result_ok, result_problem_json, result_response, schema, validate_form, validate_json
+
+public func main() returns int {
+    let s0: ValidationSchema = schema()
+    let s1: ValidationSchema = field(s0, "name", 1, true)
+    let s2: ValidationSchema = min_length(s1, "name", 3)
+    let s3: ValidationSchema = max_length(s2, "name", 12)
+    let s4: ValidationSchema = regex(s3, "name", "^[A-Za-z]+$")
+    let s5: ValidationSchema = field(s4, "age", 2, true)
+    let s6: ValidationSchema = range(s5, "age", 18, 120)
+    let validation_schema: ValidationSchema = field(s6, "active", 3, false)
+
+    let valid_json: ValidationResult = validate_json(
+        validation_schema,
+        "{\"name\":\"Ada\",\"age\":37,\"active\":true}",
+    )
+    if result_ok(valid_json) != true {
+        return 10
+    }
+    if result_count(valid_json) != 0 {
+        return 11
+    }
+
+    let missing: ValidationResult = validate_json(validation_schema, "{\"age\":37}")
+    if result_ok(missing) != false {
+        return 20
+    }
+    if result_code(missing, 0) != "required" {
+        return 21
+    }
+    if result_field(missing, 0) != "name" {
+        return 22
+    }
+
+    let too_short: ValidationResult = validate_json(validation_schema, "{\"name\":\"Al\",\"age\":37}")
+    if result_code(too_short, 0) != "min_length" {
+        return 30
+    }
+
+    let too_long: ValidationResult = validate_json(validation_schema, "{\"name\":\"AlexandertheGreat\",\"age\":37}")
+    if result_code(too_long, 0) != "max_length" {
+        return 31
+    }
+
+    let bad_pattern: ValidationResult = validate_json(validation_schema, "{\"name\":\"A1a\",\"age\":37}")
+    if result_code(bad_pattern, 0) != "regex" {
+        return 32
+    }
+
+    let bad_range: ValidationResult = validate_json(validation_schema, "{\"name\":\"Ada\",\"age\":12}")
+    if result_code(bad_range, 0) != "min" {
+        return 33
+    }
+
+    let bad_type: ValidationResult = validate_json(validation_schema, "{\"name\":\"Ada\",\"age\":37,\"active\":\"yes\"}")
+    if result_code(bad_type, 0) != "type" {
+        return 34
+    }
+
+    let problem = result_problem_json(bad_type)
+    if str.contains(problem, "https://spectra.dev/problems/validation") != true {
+        return 40
+    }
+    if str.contains(result_message(bad_type, 0), "boolean") != true {
+        return 41
+    }
+    let problem_response: Response = result_response(bad_type)
+    if response_status(problem_response) != 422 {
+        return 42
+    }
+    if response_header(problem_response, "content-type") != "application/problem+json" {
+        return 43
+    }
+
+    let form: Form = form_parse("name=Ada&age=37&active=on")
+    let valid_form: ValidationResult = validate_form(validation_schema, form)
+    if result_ok(valid_form) != true {
+        return 50
+    }
+    if error_code() != 0 {
+        return 51
+    }
+    return 0
+}

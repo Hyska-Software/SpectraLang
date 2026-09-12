@@ -1,5 +1,7 @@
 # AGENTS.md
 
+### use kaomoji in conversations to make it more fun NOT IN CODE
+
 ## Purpose
 
 This file defines repository-specific instructions for coding agents working in SpectraLang.
@@ -67,6 +69,8 @@ Interpretation rules for roadmap or planning work:
 - `docs/roadmap-backlog.md` is the canonical human-readable execution backlog.
 - `docs/production-ai-implementation-plan.md` is the canonical long-form strategic implementation plan.
 - If older docs conflict with the three files above, update the older docs or explicitly note the conflict.
+
+### Always write comments in English.
 
 ---
 

@@ -1,0 +1,15 @@
+// Negative regression: a line break BEFORE an infix operator ends the
+// expression instead of silently continuing it (P015).
+//
+// `let a = b` must terminate at the line break; the `- 1` on the next line
+// may NOT be absorbed as `b - 1`. This file must FAIL TO COMPILE with the
+// parser diagnostic P015 ("a line break before an infix operator ends the
+// expression").
+module newline_leading_operator
+
+func main() returns int {
+    let b = 2
+    let a = b
+    - 1
+    return a
+}

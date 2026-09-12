@@ -1,0 +1,81 @@
+module validation_json_roundtrip
+
+from std.api.json import validate, kind, parse, value_kind, value_len, value_get, value_at, value_text, value_number_bits, value_bool, value_free, stringify
+
+public func main() returns int {
+    let text = "{\"name\":\"Ada\",\"age\":36,\"active\":true,\"tags\":[\"a\",\"b\"]}"
+
+    if validate(text) != true {
+        return 1
+    }
+    if kind(text) != 6 {
+        return 2
+    }
+
+    let root = parse(text)
+    if root == 0 {
+        return 3
+    }
+    if value_kind(root) != 6 {
+        return 4
+    }
+    if value_len(root) != 4 {
+        return 5
+    }
+
+    let name = value_get(root, "name")
+    if name == 0 or value_text(name) != "Ada" {
+        return 6
+    }
+    if value_bool(name) != -1 or value_text(root) != "" {
+        return 7
+    }
+
+    let age = value_get(root, "age")
+    if age == 0 or value_number_bits(age) == 0 {
+        return 8
+    }
+    let active = value_get(root, "active")
+    if active == 0 or value_bool(active) != 1 {
+        return 9
+    }
+
+    let tags = value_get(root, "tags")
+    if tags == 0 or value_kind(tags) != 5 or value_len(tags) != 2 {
+        return 10
+    }
+    let second = value_at(tags, 1)
+    if second == 0 or value_text(second) != "b" {
+        return 11
+    }
+    if value_at(tags, 2) != 0 or value_get(tags, "a") != 0 {
+        return 12
+    }
+
+    let encoded = stringify(root)
+    if encoded == "" {
+        return 13
+    }
+    let reparsed = parse(encoded)
+    if reparsed == 0 or value_len(reparsed) != 4 {
+        return 14
+    }
+    if value_text(value_get(reparsed, "name")) != "Ada" {
+        return 15
+    }
+
+    if parse("{\"broken\":") != 0 {
+        return 16
+    }
+    if value_kind(0) != 0 or value_len(0) != 0 {
+        return 17
+    }
+
+    value_free(reparsed)
+    value_free(root)
+    if value_kind(root) != 0 {
+        return 18
+    }
+
+    return 0
+}

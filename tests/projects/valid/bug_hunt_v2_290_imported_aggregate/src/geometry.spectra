@@ -1,0 +1,16 @@
+module geometry
+
+public record Point {
+    public x: int,
+    public y: int,
+}
+
+impl Point {
+    public func magnitude(&self) returns int {
+        self.x + self.y
+    }
+}
+
+public func sum(point: Point) returns int {
+    point.x + point.y
+}

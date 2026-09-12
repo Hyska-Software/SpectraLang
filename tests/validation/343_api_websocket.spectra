@@ -1,0 +1,29 @@
+// R-2401 regression: the RFC 6455 server surface is visible to Spectra code
+// and its listener configuration crosses the host-call boundary.
+module api_websocket
+
+from std.api.routing import Route, Router, get, router_new
+from std.api.websocket import WebSocketServer, server_new, server_listen, server_local_port, server_route, server_set_max_message_bytes, server_set_per_message_deflate
+
+public func main() returns int {
+    let server: WebSocketServer = server_new()
+    if server_set_per_message_deflate(server, true) != true {
+        return 10
+    }
+    if server_set_max_message_bytes(server, 1048576) != true {
+        return 20
+    }
+    if server_listen(server, 0) != true {
+        return 30
+    }
+    if server_local_port(server) <= 0 {
+        return 40
+    }
+    let router: Router = router_new()
+    let route: Route = get(router, "/socket")
+    let routed_server: WebSocketServer = server_new()
+    if server_route(routed_server, route) != true {
+        return 50
+    }
+    return 0
+}

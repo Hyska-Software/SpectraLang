@@ -1,0 +1,69 @@
+module bug_hunt_v2_299_filesystem_roundtrip
+
+import std.fs as fs
+import std.error as error
+import std.string as text
+
+public func main() returns int {
+    let path = "target/bug-hunt-v2/fs/roundtrip.txt"
+    let write_result = fs.fs_write(path, "alpha")
+    if let Result::Ok(wrote) = write_result {
+        if wrote != true {
+            return 1
+        }
+    } else {
+        return 1
+    }
+    let append_result = fs.fs_append(path, "-beta")
+    if let Result::Ok(appended) = append_result {
+        if appended != true {
+            return 2
+        }
+    } else {
+        return 2
+    }
+    let exists_result = fs.fs_exists(path)
+    if let Result::Ok(exists) = exists_result {
+        if exists != true {
+            return 3
+        }
+    } else {
+        return 3
+    }
+    let read_result = fs.fs_read(path)
+    if let Result::Ok(contents) = read_result {
+        if contents != "alpha-beta" {
+            return 4
+        }
+        if text.len(contents) != 10 {
+            return 5
+        }
+    } else {
+        return 4
+    }
+    let remove_result = fs.fs_remove(path)
+    if let Result::Ok(removed) = remove_result {
+        if removed != true {
+            return 6
+        }
+    } else {
+        return 6
+    }
+    let missing_result = fs.fs_exists(path)
+    if let Result::Ok(exists_after_remove) = missing_result {
+        if exists_after_remove != false {
+            return 7
+        }
+    } else {
+        return 7
+    }
+    let invalid_read = fs.fs_read("")
+    if let Result::Err(read_error) = invalid_read {
+        if error.code(read_error) != 0 {
+            return 8
+        }
+    } else {
+        return 8
+    }
+    return 0
+}

@@ -1,0 +1,49 @@
+// R-262 regression: the same trait method must agree across direct, UFCS,
+// default-method, and dynamic receivers.
+module r262_ufcs_receiver_matrix
+
+trait Measure {
+    func value(&self) returns int
+
+    func plus(&self, amount: int) returns int {
+        self.value() + amount
+    }
+}
+
+record Counter {
+    public current: int,
+}
+
+impl Measure for Counter {
+    func value(&self) returns int {
+        self.current
+    }
+}
+
+public func main() returns int {
+    let counter = Counter { current: 40 }
+    let direct = counter.value()
+    let ufcs = Measure::value(counter)
+    let direct_default = counter.plus(2)
+    let ufcs_default = Measure::plus(counter, 3)
+
+    let dynamic: dyn Measure = counter as dyn Measure
+    let dynamic_value = dynamic.value()
+    let dynamic_default = dynamic.plus(4)
+    let dynamic_ufcs = Measure::value(dynamic)
+    let dynamic_ufcs_default = Measure::plus(dynamic, 5)
+
+    if direct != 40 or ufcs != 40 {
+        return 1
+    }
+    if direct_default != 42 or ufcs_default != 43 {
+        return 2
+    }
+    if dynamic_value != 40 or dynamic_default != 44 {
+        return 3
+    }
+    if dynamic_ufcs != 40 or dynamic_ufcs_default != 45 {
+        return 4
+    }
+    return 0
+}

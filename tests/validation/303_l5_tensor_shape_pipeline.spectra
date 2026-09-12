@@ -1,0 +1,21 @@
+module bug_hunt_v2_303_tensor_shape_pipeline
+
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    let grid = tensor.full2(2, 3, 0)
+    tensor.set2(grid, 0, 1, 4)
+    tensor.set2(grid, 1, 2, 5)
+    if tensor.rows(grid) != 2 or tensor.cols(grid) != 3 {
+        return 1
+    }
+    if tensor.get2(grid, 0, 1) != 4 or tensor.get2(grid, 1, 2) != 5 {
+        return 2
+    }
+    if tensor.sum(grid) != 9 {
+        return 3
+    }
+    tensor.free_all()
+    return 0
+}

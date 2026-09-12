@@ -1,0 +1,7 @@
+module lint_warning_narrowing_cast
+
+public func main() returns int {
+    let big: i64 = 100
+    let small: i8 = big as i8
+    return small as int
+}

@@ -10,7 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def read(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
+    source = ROOT / path
+    if source.suffix == ".rs":
+        return "\n".join(
+            sibling.read_text(encoding="utf-8")
+            for sibling in sorted(source.parent.rglob("*.rs"))
+        )
+    return source.read_text(encoding="utf-8")
 
 
 def fail(message: str) -> None:
@@ -72,7 +78,7 @@ def validate_implementation() -> None:
     )
 
     lib = read("packages/spectra-api/src/lib.rs")
-    runtime = read("runtime/src/api/mod.rs")
+    runtime = read("packages/spectra-api/src/host_calls.rs")
     midend = read("midend/src/lowering.rs")
     builtins = read("compiler/src/semantic/builtin_modules.rs")
     semantic = read("compiler/src/semantic/mod.rs")

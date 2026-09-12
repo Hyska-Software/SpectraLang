@@ -1,0 +1,21 @@
+module stability_static_mutation
+
+static VALUE: int = 10
+
+func increment() returns int {
+    VALUE = VALUE + 5
+    return VALUE
+}
+
+public func main() returns int {
+    let first = increment()
+    let second = increment()
+    if first != 15 {
+        return 1
+    }
+    if second != 20 {
+        return 2
+    }
+    return 0
+}
+

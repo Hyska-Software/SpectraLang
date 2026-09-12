@@ -1,0 +1,35 @@
+module bug_hunt_v2_286_mutable_receiver_chain
+
+record Counter {
+    public value: int,
+}
+
+impl Counter {
+    public func increment(&mut self, amount: int) {
+        self.value = self.value + amount
+    }
+
+    public func current(&self) returns int {
+        self.value
+    }
+}
+
+func bump(counter: Counter) returns Counter {
+    counter.increment(2)
+    counter.increment(3)
+    counter
+}
+
+public func main() returns int {
+    let counter = Counter { value: 10 }
+    counter.increment(5)
+    let updated = bump(counter)
+
+    if updated.current() != 20 {
+        return 1
+    }
+    if updated.value != 20 {
+        return 2
+    }
+    return 0
+}

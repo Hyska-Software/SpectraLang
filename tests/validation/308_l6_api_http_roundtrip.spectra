@@ -1,0 +1,32 @@
+module bug_hunt_v2_308_api_http_roundtrip
+
+from std.api.http import Request, Response, method_get, method_post, method_allows_body, method_name, request, request_method, request_path, response, response_status, status_created, status_class, header, header_name, header_value
+
+func create_response(req: Request) returns Response {
+    let method = request_method(req)
+    if method_allows_body(method) {
+        return response(status_created())
+    }
+    return response(status_created())
+}
+
+public func main() returns int {
+    let get = method_get()
+    let post = method_post()
+    if method_name(post) != "POST" or get != 1 or post != 3 {
+        return 1
+    }
+    let req = request(post, "/users")
+    if request_path(req) != "/users" {
+        return 2
+    }
+    let res = create_response(req)
+    if response_status(res) != 201 or status_class(response_status(res)) != 2 {
+        return 3
+    }
+    let content_type = header("Content-Type", "application/json")
+    if header_name(content_type) != "Content-Type" or header_value(content_type) != "application/json" {
+        return 4
+    }
+    return 0
+}

@@ -1,0 +1,25 @@
+module bug_hunt_v2_312_optimization_control_flow
+
+func checksum(limit: int) returns int {
+    let total = 0
+    let i = 0
+    while i < limit {
+        if i % 2 == 0 {
+            total = total + i
+        } else {
+            total = total - i
+        }
+        i = i + 1
+    }
+    return total
+}
+
+public func main() returns int {
+    if checksum(10) != -5 {
+        return 1
+    }
+    if checksum(1) != 0 or checksum(0) != 0 {
+        return 2
+    }
+    return 0
+}

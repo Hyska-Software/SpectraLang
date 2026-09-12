@@ -31,6 +31,12 @@ impl fmt::Display for LoopValidationError {
     }
 }
 
+impl Default for LoopStructureValidation {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LoopStructureValidation {
     pub fn new() -> Self {
         Self { errors: Vec::new() }
@@ -96,6 +102,7 @@ impl LoopStructureValidation {
     }
 
     fn strongly_connected_components(successors: &[Vec<usize>]) -> Vec<Vec<usize>> {
+        #[allow(clippy::too_many_arguments)]
         fn strongconnect(
             v: usize,
             index: &mut usize,
@@ -166,7 +173,7 @@ impl LoopStructureValidation {
             return true;
         }
         if let Some(&idx) = component.first() {
-            return successors[idx].iter().any(|&succ| succ == idx);
+            return successors[idx].contains(&idx);
         }
         false
     }
@@ -184,10 +191,9 @@ impl LoopStructureValidation {
     }
 
     fn component_has_return(component: &[usize], blocks: &[BasicBlock]) -> bool {
-        component.iter().any(|&idx| match blocks[idx].terminator {
-            Some(Terminator::Return { .. }) => true,
-            _ => false,
-        })
+        component
+            .iter()
+            .any(|&idx| matches!(blocks[idx].terminator, Some(Terminator::Return { .. })))
     }
 
     fn select_header(component: &[usize], blocks: &[BasicBlock]) -> usize {

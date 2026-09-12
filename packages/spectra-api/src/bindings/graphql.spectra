@@ -1,0 +1,9 @@
+// Public Spectra surface for the GraphQL transport.
+//
+// Schemas, responses, and subscriptions use integer handles. Resolver and
+// subscription callbacks are existing closure handles; this binding adds no
+// fake callback constructors. Native function declarations are supplied by
+// the compiler's std.api.graphql module and target the spectra.api.graphql
+// host namespace.
+
+module std.api.graphql

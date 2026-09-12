@@ -1,0 +1,56 @@
+// Integer aggregate helpers over fixed-size arrays.
+module stats
+
+public func sum_of(values: [int], n: int) returns int {
+    let total = 0
+    let i = 0
+    while i < n {
+        total = total + values[i]
+        i = i + 1
+    }
+    return total
+}
+
+public func min_of(values: [int], n: int) returns int {
+    let best = values[0]
+    let i = 1
+    while i < n {
+        if values[i] < best {
+            best = values[i]
+        }
+        i = i + 1
+    }
+    return best
+}
+
+public func max_of(values: [int], n: int) returns int {
+    let best = values[0]
+    let i = 1
+    while i < n {
+        if values[i] > best {
+            best = values[i]
+        }
+        i = i + 1
+    }
+    return best
+}
+
+// In-place descending bubble sort. Returns the swap count.
+public func sort_desc(values: [int], n: int) returns int {
+    let swaps = 0
+    let i = 0
+    while i < n {
+        let j = 0
+        while j < n - i - 1 {
+            if values[j] < values[j + 1] {
+                let tmp = values[j]
+                values[j] = values[j + 1]
+                values[j + 1] = tmp
+                swaps = swaps + 1
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return swaps
+}

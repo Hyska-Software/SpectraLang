@@ -1,0 +1,57 @@
+// R-264 regression: concrete substitutions for two trait parameters must be
+// applied independently to method signatures and UFCS calls.
+module r264_generic_trait_substitution
+
+trait PairView<T, U> {
+    func first(&self) returns T
+    func second(&self) returns U
+}
+
+record IntText {
+    public number: int,
+    public text: string,
+}
+
+impl PairView<int, string> for IntText {
+    func first(&self) returns int {
+        self.number
+    }
+
+    func second(&self) returns string {
+        self.text
+    }
+}
+
+record TextFlag {
+    public text: string,
+    public flag: bool,
+}
+
+impl PairView<string, bool> for TextFlag {
+    func first(&self) returns string {
+        self.text
+    }
+
+    func second(&self) returns bool {
+        self.flag
+    }
+}
+
+public func main() returns int {
+    let int_text = IntText { number: 7, text: "seven" }
+    let text_flag = TextFlag { text: "ready", flag: true }
+
+    if int_text.first() != 7 or int_text.second() != "seven" {
+        return 1
+    }
+    if PairView::first(int_text) != 7 or PairView::second(int_text) != "seven" {
+        return 2
+    }
+    if text_flag.first() != "ready" or text_flag.second() != true {
+        return 3
+    }
+    if PairView::first(text_flag) != "ready" or PairView::second(text_flag) != true {
+        return 4
+    }
+    return 0
+}

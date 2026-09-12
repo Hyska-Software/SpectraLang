@@ -1,0 +1,12 @@
+module stability_static_aot
+
+static VALUE: int = 10
+
+public func main() returns int {
+    VALUE = VALUE + 32
+    if VALUE != 42 {
+        return 1
+    }
+    return 0
+}
+

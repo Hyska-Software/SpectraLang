@@ -5,8 +5,67 @@ use crate::ir::{Instruction, InstructionKind, Module, Terminator, Value};
 /// Performs structural verification of the IR and returns a list of problems if any were found.
 pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
+    let global_names: HashSet<&str> = module
+        .globals
+        .iter()
+        .map(|global| global.name.as_str())
+        .collect();
+    let function_names: HashSet<&str> = module
+        .functions
+        .iter()
+        .map(|function| function.name.as_str())
+        .chain(
+            module
+                .external_functions
+                .iter()
+                .map(|function| function.name.as_str()),
+        )
+        .collect();
+
+    for external in &module.external_functions {
+        if type_contains_unknown(&external.return_type)
+            || external.params.iter().any(type_contains_unknown)
+        {
+            errors.push(format!(
+                "External function '{}' contains an unresolved IR type",
+                external.name
+            ));
+        }
+    }
+
+    for global in &module.globals {
+        if type_contains_unknown(&global.ty) {
+            errors.push(format!(
+                "Global '{}' contains an unresolved IR type",
+                global.name
+            ));
+        }
+    }
 
     for function in &module.functions {
+        let mut unresolved_function_types = Vec::new();
+        if type_contains_unknown(&function.return_type) {
+            unresolved_function_types.push(format!("return ({:?})", function.return_type));
+        }
+        for param in &function.params {
+            if type_contains_unknown(&param.ty) {
+                unresolved_function_types
+                    .push(format!("parameter '{}' ({:?})", param.name, param.ty));
+            }
+        }
+        for local in &function.locals {
+            if type_contains_unknown(&local.ty) {
+                unresolved_function_types.push(format!("local '{}' ({:?})", local.name, local.ty));
+            }
+        }
+        if !unresolved_function_types.is_empty() {
+            errors.push(format!(
+                "Function '{}' contains an unresolved IR type: {}",
+                function.name,
+                unresolved_function_types.join(", ")
+            ));
+        }
+
         if function.blocks.is_empty() {
             errors.push(format!(
                 "Function '{}' has no basic blocks after lowering",
@@ -22,10 +81,20 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
         for block in &function.blocks {
             for instruction in &block.instructions {
                 if let Some(result) = instruction_result(instruction) {
-                    if !defined_values.insert(result.id) {
+                    if !defined_values.insert(result.id)
+                        && !matches!(instruction.kind, InstructionKind::FrameLoad { .. })
+                    {
                         errors.push(format!(
                             "Function '{}' defines value {} more than once",
                             function.name, result.id
+                        ));
+                    }
+                }
+                if let InstructionKind::CoroutinePollChild { status, .. } = &instruction.kind {
+                    if !defined_values.insert(status.id) {
+                        errors.push(format!(
+                            "Function '{}' defines value {} more than once",
+                            function.name, status.id
                         ));
                     }
                 }
@@ -126,6 +195,41 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
             }
 
             for instruction in &block.instructions {
+                match &instruction.kind {
+                    InstructionKind::GlobalAddr { name, .. }
+                        if !global_names.contains(name.as_str()) =>
+                    {
+                        errors.push(format!(
+                            "Function '{}', block '{}' references unknown global '{}'",
+                            function.name, block.label, name
+                        ));
+                    }
+                    InstructionKind::Call {
+                        function: callee, ..
+                    } if !function_names.contains(callee.as_str()) => {
+                        errors.push(format!(
+                            "Function '{}', block '{}' calls unknown function '{}'",
+                            function.name, block.label, callee
+                        ));
+                    }
+                    InstructionKind::FuncAddr {
+                        function: callee, ..
+                    } if !function_names.contains(callee.as_str()) => {
+                        errors.push(format!(
+                            "Function '{}', block '{}' takes address of unknown function '{}'",
+                            function.name, block.label, callee
+                        ));
+                    }
+                    _ => {}
+                }
+
+                if let Some(unresolved) = instruction_unresolved_type(instruction) {
+                    errors.push(format!(
+                        "Function '{}', block '{}' contains unresolved IR type in {}",
+                        function.name, block.label, unresolved
+                    ));
+                }
+
                 for operand in instruction_operands(instruction) {
                     check_value_defined(
                         &mut errors,
@@ -180,6 +284,81 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
     }
 }
 
+fn type_contains_unknown(ty: &crate::ir::Type) -> bool {
+    use crate::ir::Type;
+
+    match ty {
+        Type::Unknown => true,
+        Type::Pointer(inner) | Type::Task { output: inner } => type_contains_unknown(inner),
+        Type::Array { element_type, .. } => type_contains_unknown(element_type),
+        Type::Tuple { elements } => elements.iter().any(type_contains_unknown),
+        Type::Struct { fields, .. } => fields.iter().any(|(_, field)| type_contains_unknown(field)),
+        Type::Enum { variants, .. } => variants.iter().any(|(_, payload)| {
+            payload
+                .as_ref()
+                .is_some_and(|types| types.iter().any(type_contains_unknown))
+        }),
+        Type::Generic {
+            args,
+            representation,
+            ..
+        } => args.iter().any(type_contains_unknown) || type_contains_unknown(representation),
+        Type::Function {
+            params,
+            return_type,
+        } => params.iter().any(type_contains_unknown) || type_contains_unknown(return_type),
+        Type::Tensor { dtype, .. } => type_contains_unknown(dtype),
+        Type::Void
+        | Type::Int
+        | Type::Float
+        | Type::ExactInt { .. }
+        | Type::ExactFloat { .. }
+        | Type::Bool
+        | Type::String
+        | Type::Char
+        | Type::Range
+        | Type::DynTrait { .. } => false,
+    }
+}
+
+fn instruction_unresolved_type(instruction: &Instruction) -> Option<String> {
+    use crate::ir::InstructionKind;
+
+    let type_is_unresolved = |ty: &crate::ir::Type| type_contains_unknown(ty);
+    match &instruction.kind {
+        InstructionKind::Alloca { ty, .. }
+        | InstructionKind::GlobalAddr { ty, .. }
+        | InstructionKind::Load { ty, .. }
+        | InstructionKind::GetElementPtr {
+            element_type: ty, ..
+        }
+        | InstructionKind::ConstIntTyped { ty, .. }
+        | InstructionKind::ConstFloatTyped { ty, .. } => {
+            type_is_unresolved(ty).then(|| "memory or constant instruction".to_string())
+        }
+        InstructionKind::HostCall {
+            host, result_type, ..
+        } => result_type
+            .as_ref()
+            .filter(|ty| type_is_unresolved(ty))
+            .map(|ty| format!("host call result '{}' ({ty:?})", host)),
+        InstructionKind::CallIndirect {
+            signature_params,
+            signature_return,
+            ..
+        } => (signature_params.iter().any(type_is_unresolved)
+            || type_is_unresolved(signature_return))
+        .then(|| "indirect call signature".to_string()),
+        InstructionKind::AsyncReady { output_type, .. } => {
+            type_is_unresolved(output_type).then(|| "async result".to_string())
+        }
+        InstructionKind::Cast { from_ty, to_ty, .. } => {
+            (type_is_unresolved(from_ty) || type_is_unresolved(to_ty)).then(|| "cast".to_string())
+        }
+        _ => None,
+    }
+}
+
 fn check_value_defined(
     errors: &mut Vec<String>,
     function_name: &str,
@@ -212,8 +391,11 @@ fn instruction_result(instruction: &Instruction) -> Option<Value> {
         | InstructionKind::Or { result, .. }
         | InstructionKind::Not { result, .. }
         | InstructionKind::Alloca { result, .. }
+        | InstructionKind::GlobalAddr { result, .. }
+        | InstructionKind::ManualAlloc { result, .. }
         | InstructionKind::Load { result, .. }
         | InstructionKind::GetElementPtr { result, .. }
+        | InstructionKind::FieldPtr { result, .. }
         | InstructionKind::FuncAddr { result, .. }
         | InstructionKind::AsyncReady { result, .. }
         | InstructionKind::Phi { result, .. }
@@ -228,14 +410,28 @@ fn instruction_result(instruction: &Instruction) -> Option<Value> {
         | InstructionKind::MakeDynFatPtr { result, .. }
         | InstructionKind::LoadDynDataPtr { result, .. }
         | InstructionKind::LoadDynVtablePtr { result, .. }
-        | InstructionKind::LoadVtableSlot { result, .. } => Some(*result),
-        InstructionKind::AutodiffStep { result, .. } => *result,
-        InstructionKind::Call { result, .. }
+        | InstructionKind::LoadVtableSlot { result, .. }
+        | InstructionKind::FrameAlloc { result, .. }
+        | InstructionKind::FrameLoad { result, .. }
+        | InstructionKind::StateLoad { result, .. }
+        | InstructionKind::CoroutineCreate { result, .. } => Some(*result),
+        InstructionKind::AutodiffStep { result, .. }
+        | InstructionKind::Call { result, .. }
         | InstructionKind::HostCall { result, .. }
-        | InstructionKind::CallIndirect { result, .. } => *result,
+        | InstructionKind::CallIndirect { result, .. } => result.as_ref().copied(),
+        InstructionKind::CoroutinePollChild { result, .. } => *result,
+        InstructionKind::Await { result, .. } => Some(*result),
         InstructionKind::Store { .. }
-        | InstructionKind::AsyncSuspend { .. }
-        | InstructionKind::AsyncResume { .. } => None,
+        | InstructionKind::EscapeManualAlloc { .. }
+        | InstructionKind::FrameStore { .. }
+        | InstructionKind::StateStore { .. }
+        | InstructionKind::CoroutineSubscribe { .. }
+        | InstructionKind::CoroutineWake { .. }
+        | InstructionKind::CoroutineSuspend { .. }
+        | InstructionKind::CoroutineComplete { .. }
+        | InstructionKind::CoroutineError { .. }
+        | InstructionKind::CoroutineCancelled { .. }
+        | InstructionKind::CoroutinePollReturn { .. } => None,
     }
 }
 
@@ -270,10 +466,10 @@ fn instruction_operands(instruction: &Instruction) -> Vec<Value> {
             vtable_ptr: operand,
             ..
         }
-        | InstructionKind::AsyncSuspend { task: operand, .. }
-        | InstructionKind::AsyncResume { task: operand, .. } => vec![*operand],
+        | InstructionKind::EscapeManualAlloc { ptr: operand, .. } => vec![*operand],
         InstructionKind::Store { ptr, value } => vec![*ptr, *value],
         InstructionKind::GetElementPtr { ptr, index, .. } => vec![*ptr, *index],
+        InstructionKind::FieldPtr { ptr, .. } => vec![*ptr],
         InstructionKind::Call { args, .. } | InstructionKind::HostCall { args, .. } => args.clone(),
         InstructionKind::CallIndirect { fn_ptr, args, .. } => {
             let mut operands = Vec::with_capacity(args.len() + 1);
@@ -288,7 +484,23 @@ fn instruction_operands(instruction: &Instruction) -> Vec<Value> {
             vtable_ptr,
             ..
         } => vec![*data_ptr, *vtable_ptr],
+        InstructionKind::Await { task, .. } => vec![*task],
+        InstructionKind::FrameAlloc { .. } | InstructionKind::StateLoad { .. } => Vec::new(),
+        InstructionKind::FrameStore { frame, value, .. } => vec![*frame, *value],
+        InstructionKind::FrameLoad { frame, .. } => vec![*frame],
+        InstructionKind::StateStore { frame, .. } => vec![*frame],
+        InstructionKind::CoroutineCreate { frame, .. } => vec![*frame],
+        InstructionKind::CoroutinePollChild { task, .. } => vec![*task],
+        InstructionKind::CoroutineSubscribe { task, parent } => vec![*task, *parent],
+        InstructionKind::CoroutineWake { task }
+        | InstructionKind::CoroutineSuspend { task, .. }
+        | InstructionKind::CoroutineComplete { task, .. }
+        | InstructionKind::CoroutineError { task, .. }
+        | InstructionKind::CoroutineCancelled { task } => vec![*task],
+        InstructionKind::CoroutinePollReturn { status } => vec![*status],
         InstructionKind::Alloca { .. }
+        | InstructionKind::GlobalAddr { .. }
+        | InstructionKind::ManualAlloc { .. }
         | InstructionKind::FuncAddr { .. }
         | InstructionKind::ConstInt { .. }
         | InstructionKind::ConstIntTyped { .. }
@@ -296,7 +508,12 @@ fn instruction_operands(instruction: &Instruction) -> Vec<Value> {
         | InstructionKind::ConstFloatTyped { .. }
         | InstructionKind::ConstBool { .. }
         | InstructionKind::ConstString { .. } => Vec::new(),
-        InstructionKind::AutodiffStep { upstream, inputs, targets, .. } => {
+        InstructionKind::AutodiffStep {
+            upstream,
+            inputs,
+            targets,
+            ..
+        } => {
             let mut operands = Vec::new();
             if let Some(value) = upstream {
                 operands.push(*value);
@@ -401,6 +618,47 @@ mod tests {
         assert!(result
             .iter()
             .any(|error| error.contains("uses undefined value 13")));
+    }
+
+    #[test]
+    fn rejects_unresolved_ir_types_before_backend() {
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("unknown", Vec::new(), Type::Unknown);
+        let entry = function.add_block("entry");
+
+        let mut builder = IRBuilder::new();
+        builder.set_current_function(0);
+        builder.set_current_block(entry);
+        builder.build_return(&mut function, None);
+        module.add_function(function);
+
+        let errors = verify_module(&module).expect_err("unknown IR type must be rejected");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("contains an unresolved IR type")));
+    }
+
+    #[test]
+    fn rejects_unknown_global_and_function_references() {
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("main", Vec::new(), Type::Void);
+        let entry = function.add_block("entry");
+
+        let mut builder = IRBuilder::new();
+        builder.set_current_function(0);
+        builder.set_current_block(entry);
+        builder.build_global_addr(&mut function, "MISSING".to_string(), Type::Int);
+        builder.build_call(&mut function, "missing".to_string(), Vec::new(), false);
+        builder.build_return(&mut function, None);
+        module.add_function(function);
+
+        let errors = verify_module(&module).expect_err("unknown symbols must fail verification");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("references unknown global 'MISSING'")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("calls unknown function 'missing'")));
     }
 
     #[test]

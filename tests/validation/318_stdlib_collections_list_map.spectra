@@ -1,0 +1,93 @@
+module stdlib_collections_list_map
+
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let values = collections.list_new()
+    collections.list_push(values, 3)
+    collections.list_push(values, 1)
+    collections.list_push(values, 2)
+
+    if collections.list_len(values) != 3 {
+        return 1
+    }
+    let first = collections.list_get(values, 0)
+    if option.is_none(first) or option.option_unwrap(first) != 3 {
+        return 2
+    }
+    let missing = collections.list_get(values, 99)
+    if option.is_some(missing) {
+        return 2
+    }
+    if collections.list_contains(values, 1) != true or collections.list_contains(values, 9) != false {
+        return 3
+    }
+    collections.list_set(values, 1, 10)
+    collections.list_insert_at(values, 1, 5)
+    let inserted = collections.list_get(values, 1)
+    if option.is_none(inserted) or option.option_unwrap(inserted) != 5 or collections.list_len(values) != 4 {
+        return 4
+    }
+    let removed = collections.list_remove_at(values, 1)
+    if option.is_none(removed) or option.option_unwrap(removed) != 5 {
+        return 5
+    }
+    let front = collections.list_pop_front(values)
+    let back = collections.list_pop(values)
+    if option.is_none(front) or option.option_unwrap(front) != 3 or option.is_none(back) or option.option_unwrap(back) != 2 {
+        return 6
+    }
+    if collections.list_index_of(values, 10) != 0 {
+        return 7
+    }
+    collections.list_push(values, 7)
+    collections.list_push(values, 4)
+    collections.list_sort(values)
+    let sorted_first = collections.list_get(values, 0)
+    let sorted_third = collections.list_get(values, 2)
+    if option.is_none(sorted_first) or option.option_unwrap(sorted_first) != 4 or option.is_none(sorted_third) or option.option_unwrap(sorted_third) != 10 {
+        return 8
+    }
+    collections.list_clear(values)
+    let empty_pop = collections.list_pop(values)
+    if collections.list_len(values) != 0 or option.is_some(empty_pop) {
+        return 9
+    }
+    collections.list_free(values)
+
+    let map = collections.map_new()
+    if collections.map_len(map) != 0 {
+        return 10
+    }
+    collections.map_set(map, 0, 0)
+    collections.map_set(map, 7, 14)
+    collections.map_set(map, 7, 21)
+    if collections.map_len(map) != 2 {
+        return 11
+    }
+    if collections.map_contains(map, 0) != true or collections.map_contains(map, 8) != false {
+        return 12
+    }
+    let map_zero = collections.map_get(map, 0)
+    let map_seven = collections.map_get(map, 7)
+    if option.is_none(map_zero) or option.option_unwrap(map_zero) != 0 or option.is_none(map_seven) or option.option_unwrap(map_seven) != 21 {
+        return 13
+    }
+    let map_removed = collections.map_remove(map, 7)
+    if option.is_none(map_removed) or option.option_unwrap(map_removed) != 21 or collections.map_len(map) != 1 {
+        return 14
+    }
+    collections.map_clear(map)
+    if collections.map_len(map) != 0 {
+        return 15
+    }
+    collections.map_free(map)
+
+    let pending_a = collections.list_new()
+    let pending_b = collections.list_new()
+    if collections.list_free_all() != 2 {
+        return 16
+    }
+    return 0
+}

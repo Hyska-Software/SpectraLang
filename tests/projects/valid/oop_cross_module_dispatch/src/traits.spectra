@@ -1,0 +1,21 @@
+module traits
+
+import model
+
+public trait Valued {
+    func value(&self) returns int
+}
+
+impl Valued for Account {
+    func value(&self) returns int {
+        self.total()
+    }
+}
+
+public func evaluate<T: Valued>(item: T) returns int {
+    item.value()
+}
+
+public func evaluate_runtime(item: Account) returns int {
+    item.value()
+}

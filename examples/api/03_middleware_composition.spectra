@@ -1,0 +1,203 @@
+module middleware_composition_api
+
+import std.string as str
+
+from std.api.http import Request, Response, method_get, method_options, request, request_with_header, response_body_len, response_header, response_status
+from std.api.handler import text
+from std.api.cors import CorsPolicy, allow_method, allow_origin, middleware as cors_middleware, policy as cors_policy
+from std.api.middleware import MiddlewareChain, MiddlewareHandle, MiddlewareTrace, chain_len, chain_new, execute_sync, last_trace, logging_len, logging_line, logging_request_id, register_compression, register_logging, register_rate_limit, register_security_headers, security_headers_configure, security_headers_route, trace_len, trace_short_circuited, use_sync
+
+const ORIGIN: string = "https://app.example"
+const PAYLOAD: string = "middleware composition keeps every short-circuit response observable and protected"
+
+func with_origin_and_encoding(req: Request) returns Request {
+    let with_origin = request_with_header(req, "Origin", ORIGIN)
+    return request_with_header(with_origin, "Accept-Encoding", "gzip")
+}
+
+func expect_header(response: Response, name: string, expected: string, code: int) returns int {
+    if str.contains(response_header(response, name), expected) != true {
+        return code
+    }
+    return 0
+}
+
+func expect_composed_response(response: Response, expected_status: int, expected_csp: string, code: int) returns int {
+    if response_status(response) != expected_status {
+        return code
+    }
+    if expect_header(response, "Content-Security-Policy", expected_csp, code + 1) != 0 {
+        return code + 1
+    }
+    if expect_header(response, "X-Content-Type-Options", "nosniff", code + 2) != 0 {
+        return code + 2
+    }
+    if expect_header(response, "Access-Control-Allow-Origin", ORIGIN, code + 3) != 0 {
+        return code + 3
+    }
+    if expect_header(response, "Content-Encoding", "gzip", code + 4) != 0 {
+        return code + 4
+    }
+    if response_body_len(response) <= 0 {
+        return code + 5
+    }
+    return 0
+}
+
+func assert_order_trace(trace: MiddlewareTrace, expected_short_circuit: bool, code: int) returns int {
+    if trace_short_circuited(trace) != expected_short_circuit {
+        return code
+    }
+    if trace_len(trace) != 0 {
+        return code + 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    let cors0: CorsPolicy = cors_policy()
+    let cors1: CorsPolicy = allow_origin(cors0, ORIGIN)
+    let cors: MiddlewareHandle = cors_middleware(allow_method(cors1, method_get()))
+
+    let logging: MiddlewareHandle = register_logging("text")
+    let security: MiddlewareHandle = register_security_headers()
+    if security_headers_configure(
+        security,
+        "default-src 'self'",
+        "geolocation=(), microphone=(), camera=()",
+        false,
+        false,
+        false,
+    ) != true {
+        return 1
+    }
+    if security_headers_route(
+        security,
+        "/api",
+        "default-src https://api.example",
+        "geolocation=(self)",
+    ) != true {
+        return 2
+    }
+    if security_headers_route(
+        security,
+        "/api/admin",
+        "default-src 'none'",
+        "camera=()",
+    ) != true {
+        return 3
+    }
+
+    let compression: MiddlewareHandle = register_compression(1)
+    let limiter: MiddlewareHandle = register_rate_limit(
+        "sliding_window",
+        1,
+        60000,
+        "route",
+        false,
+    )
+
+    // The documented order is logging -> security headers -> CORS ->
+    // compression -> rate limit. Logging and security are outer entries so
+    // their response hooks still observe short-circuit responses; compression
+    // is before rate limiting so a 429 response is also encoded.
+    let chain: MiddlewareChain = use_sync(
+        use_sync(
+            use_sync(
+                use_sync(
+                    use_sync(chain_new(), logging),
+                    security,
+                ),
+                cors,
+            ),
+            compression,
+        ),
+        limiter,
+    )
+    if chain_len(chain) != 5 {
+        return 10
+    }
+
+    let admin_request: Request = with_origin_and_encoding(
+        request(method_get(), "/api/admin/users?active=true"),
+    )
+    let first: Response = execute_sync(chain, admin_request, text(PAYLOAD))
+    let first_check = expect_composed_response(first, 200, "default-src 'none'", 20)
+    if first_check != 0 {
+        return first_check
+    }
+    if expect_header(first, "Vary", "Origin", 26) != 0 or expect_header(first, "Vary", "Accept-Encoding", 27) != 0 {
+        return 26
+    }
+    if logging_len(logging) != 1 {
+        return 28
+    }
+    let first_id: string = logging_request_id(logging, 0)
+    if str.starts_with(first_id, "req-") != true or str.contains(logging_line(logging, 0), "status=200") != true {
+        return 29
+    }
+    if assert_order_trace(last_trace(), false, 30) != 0 {
+        return 30
+    }
+
+    // The rate limiter short-circuits, but every earlier response hook still
+    // runs. This simultaneously proves the order and the per-route policy.
+    let denied: Response = execute_sync(chain, admin_request, text(PAYLOAD))
+    let denied_check = expect_composed_response(denied, 429, "default-src 'none'", 40)
+    if denied_check != 0 {
+        return denied_check
+    }
+    if response_header(denied, "Retry-After") == "" {
+        return 46
+    }
+    if logging_len(logging) != 2 or str.contains(logging_line(logging, 1), "status=429") != true {
+        return 47
+    }
+    let second_id: string = logging_request_id(logging, 1)
+    if second_id == first_id {
+        return 48
+    }
+    if assert_order_trace(last_trace(), true, 49) != 0 {
+        return 49
+    }
+
+    // Route-scoped limiting and the longest security-header prefix are both
+    // independently observable on a sibling route.
+    let public_request: Request = with_origin_and_encoding(request(method_get(), "/api/public"))
+    let public_response: Response = execute_sync(chain, public_request, text(PAYLOAD))
+    let public_check = expect_composed_response(public_response, 200, "default-src https://api.example", 50)
+    if public_check != 0 {
+        return public_check
+    }
+    if logging_len(logging) != 3 {
+        return 56
+    }
+
+    let preflight_base: Request = request(method_options(), "/api/admin/users")
+    let preflight_origin = request_with_header(preflight_base, "Origin", ORIGIN)
+    let preflight: Request = request_with_header(
+        preflight_origin,
+        "Access-Control-Request-Method",
+        "GET",
+    )
+    let preflight_response: Response = execute_sync(chain, preflight, text("not reached"))
+    if response_status(preflight_response) != 204 {
+        return 60
+    }
+    if expect_header(preflight_response, "Access-Control-Allow-Origin", ORIGIN, 61) != 0 {
+        return 61
+    }
+    if expect_header(preflight_response, "Content-Security-Policy", "default-src 'none'", 62) != 0 {
+        return 62
+    }
+    if response_header(preflight_response, "Content-Encoding") != "" {
+        return 63
+    }
+    if logging_len(logging) != 4 or str.contains(logging_line(logging, 3), "status=204") != true {
+        return 64
+    }
+    if assert_order_trace(last_trace(), true, 65) != 0 {
+        return 65
+    }
+    return 0
+}

@@ -1,0 +1,48 @@
+// R-274 regression: exact-width scalar fields must retain their ABI widths
+// when stored in an aggregate and accessed through a trait method.
+module r274_exact_width_aggregate_boundary
+
+trait WidthReport {
+    func checksum(&self) returns int
+}
+
+record Widths {
+    public signed8: i8,
+    public signed16: i16,
+    public unsigned8: u8,
+    public unsigned16: u16,
+    public narrow: f32,
+    public wide: f64,
+}
+
+impl WidthReport for Widths {
+    func checksum(&self) returns int {
+        self.signed8 as int +
+            self.signed16 as int +
+            self.unsigned8 as int +
+            self.unsigned16 as int
+    }
+}
+
+public func main() returns int {
+    let widths = Widths {
+        signed8: -12,
+        signed16: 300,
+        unsigned8: 250,
+        unsigned16: 600,
+        narrow: 1.25,
+        wide: 2.5,
+    }
+
+    if widths.narrow as f64 != 1.25 or widths.wide != 2.5 {
+        return 1
+    }
+    if widths.checksum() != 1138 {
+        return 2
+    }
+    let dynamic: dyn WidthReport = widths as dyn WidthReport
+    if dynamic.checksum() != 1138 {
+        return 3
+    }
+    return 0
+}

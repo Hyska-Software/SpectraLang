@@ -1,0 +1,15 @@
+module stdlib_io_input
+
+from std.io import input, read_line
+
+public func main() returns int {
+    let first = read_line()
+    let second = input("prompt> ")
+    if first != "first-line" {
+        return 1
+    }
+    if second != "second-line" {
+        return 2
+    }
+    return 0
+}

@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	const iters = 50
+	const iters = 500
 	total := 0
 	for k := 0; k < iters; k++ {
 		var b strings.Builder
@@ -19,7 +19,7 @@ func main() {
 		}
 		total += b.Len()
 	}
-	if total != 10000 {
+	if total != 100000 {
 		fmt.Fprintf(os.Stderr, "unexpected: %d\n", total)
 		os.Exit(1)
 	}

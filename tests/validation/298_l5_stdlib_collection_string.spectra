@@ -1,0 +1,22 @@
+module bug_hunt_v2_298_stdlib_collection_string
+
+import std.collections
+import std.math as math
+import std.string as text
+
+public func main() returns int {
+    let values = list_new()
+    list_push(values, math.abs(-3))
+    list_push(values, text.len("spectra"))
+    list_push(values, 32)
+
+    let doubled = list_map(values, | value: int | value * 2)
+    let total = list_reduce(doubled, 0, | acc: int, value: int | acc + value)
+
+    if total != 84 {
+        return 1
+    }
+    list_free(values)
+    list_free(doubled)
+    return 0
+}

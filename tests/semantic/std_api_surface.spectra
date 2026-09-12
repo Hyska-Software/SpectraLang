@@ -1,14 +1,14 @@
 module std_api_surface
 
+from std.api.errors import last_code
 from std.api.http import method_name, method_allows_body, request_new, request_method, response_new, response_status, status_class
 from std.api.json import validate, kind
-from std.api.tls import client_config, config_mode
-from std.api.routing import router_new, route_count
 from std.api.query import parse, len
+from std.api.routing import router_new, route_count
+from std.api.tls import client_config, config_mode
 import std.api.form as api_form
-import std.api.multipart as multipart
 import std.api.handler as api_handler
-from std.api.errors import last_code
+import std.api.multipart as multipart
 
 public func main() returns int {
     let request = request_new(1)
@@ -35,5 +35,13 @@ public func main() returns int {
     let handled_status = response_status(handled)
     let error_code = last_code()
 
-    return response_class + json_kind + tls_mode + routes + query_len + form_len + upload_parts + handled_status + error_code
+    return response_class +
+        json_kind +
+        tls_mode +
+        routes +
+        query_len +
+        form_len +
+        upload_parts +
+        handled_status +
+        error_code
 }

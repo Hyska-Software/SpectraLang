@@ -11,6 +11,13 @@ use super::Parser;
 
 impl Parser {
     pub(super) fn parse_statement(&mut self) -> Result<Statement, ()> {
+        self.enter_parse_depth()?;
+        let result = self.parse_statement_inner();
+        self.exit_parse_depth();
+        result
+    }
+
+    fn parse_statement_inner(&mut self) -> Result<Statement, ()> {
         let start_span = self.current().span;
 
         // Check for `if let` before falling into the general match
@@ -117,7 +124,15 @@ impl Parser {
                             (crate::ast::LValue::FieldAccess { object, field }, expr.span)
                         }
                         _ => {
-                            self.error("Invalid assignment target");
+                            self.push_error_coded(
+                                "P018",
+                                "Invalid assignment target",
+                                expr.span,
+                                Some(
+                                    "Only variables (`x`), index accesses (`a[i]`) and field accesses (`obj.field`) can appear on the left of `=`.".to_string(),
+                                ),
+                                None,
+                            );
                             return Err(());
                         }
                     };
@@ -138,10 +153,13 @@ impl Parser {
                     let requires_terminator = !matches!(
                         expr.kind,
                         crate::ast::ExpressionKind::If { .. }
+                            | crate::ast::ExpressionKind::Unless { .. }
                     ) && !self.check_symbol('}');
 
                     if requires_terminator {
-                        self.consume_statement_terminator("Expected a line break after expression")?;
+                        self.consume_statement_terminator(
+                            "Expected a line break after expression",
+                        )?;
                     }
 
                     StatementKind::Expression(expr)
@@ -297,8 +315,26 @@ impl Parser {
 
         if self.check_keyword(Keyword::In) {
             self.advance();
+        } else if matches!(&self.current().kind, TokenKind::Identifier(name) if name == "of") {
+            // `for x of y` is TypeScript/JS surface. Spectra iterates with
+            // `for x in y`, so emit a coded diagnostic pointing at `in`.
+            let span = self.current().span;
+            self.push_error_coded(
+                "P016",
+                "`of` is not a Spectra keyword; iteration uses `in`",
+                span,
+                Some("Write `for x in collection { ... }` instead of `for x of ...`.".to_string()),
+                None,
+            );
+            return Err(());
         } else {
-            self.error("Expected 'in' after iterator variable");
+            self.push_error_coded(
+                "P017",
+                "Expected `in` after the iterator variable",
+                self.current().span,
+                Some("Loops iterate with `for x in iterable { ... }`.".to_string()),
+                None,
+            );
             return Err(());
         }
 

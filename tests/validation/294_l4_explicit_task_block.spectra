@@ -1,0 +1,17 @@
+module bug_hunt_v2_294_explicit_task_block
+
+async func ready(value: int) returns int {
+    return value
+}
+
+public func main() returns int {
+    let task: Task<int> = async {
+        let base = await ready(40)
+        base + 2
+    }
+    let result = block_on(task)
+    if result != 42 {
+        return 1
+    }
+    return 0
+}

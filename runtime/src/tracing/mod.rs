@@ -1,8 +1,21 @@
 //! Opt-in W3C tracing with a bounded OTLP/HTTP exporter.
+//!
+//! Endpoints may be plain `http://` or TLS-protected `https://`. HTTPS uses
+//! rustls with the Mozilla webpki root store by default; a custom CA bundle
+//! (self-signed or private PKI) can be supplied per exporter through
+//! or globally via the `SPECTRA_OTLP_CA_PEM` environment variable. The
+//! per-config value takes precedence over the environment variable.
 
+use crate::handles::{HandleId, HandleKind, HandleTable};
+use rustls::pki_types::{pem::PemObject, CertificateDer, ServerName};
+#[cfg(test)]
+use rustls::ServerConnection;
+use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::fs;
 use std::io::{Read, Write};
+#[cfg(test)]
+use std::net::TcpListener;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
@@ -82,6 +95,10 @@ pub struct TraceConfig {
     pub queue_capacity: usize,
     pub flush_interval: Duration,
     pub shutdown_timeout: Duration,
+    /// Optional custom CA bundle for HTTPS export: inline PEM text or a path
+    /// to a PEM file. `None` falls back to `SPECTRA_OTLP_CA_PEM`, then the
+    /// webpki root store.
+    pub ca_pem: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -129,25 +146,36 @@ struct ExporterHandle {
     timeout: Duration,
 }
 
-#[derive(Default)]
 struct State {
-    configs: HashMap<u64, TraceConfig>,
-    spans: HashMap<u64, Span>,
+    configs: HandleTable<TraceConfig>,
+    spans: HandleTable<Span>,
     last_error: Option<String>,
     active_config: Option<u64>,
     exporter: Option<ExporterHandle>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            configs: HandleTable::new(HandleKind::TracingConfig),
+            spans: HandleTable::new(HandleKind::TracingSpan),
+            last_error: None,
+            active_config: None,
+            exporter: None,
+        }
+    }
 }
 
 fn state() -> &'static Mutex<State> {
     static STATE: OnceLock<Mutex<State>> = OnceLock::new();
     STATE.get_or_init(|| Mutex::new(State::default()))
 }
-fn next_id() -> u64 {
+fn fallback_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 fn new_context(parent: Option<&TraceContext>) -> TraceContext {
-    let n = next_id();
+    let n = fallback_id();
     let mut trace_id = [0u8; 16];
     let mut span_id = [0u8; 8];
     if let Some(parent) = parent {
@@ -175,14 +203,15 @@ pub fn config_new(endpoint: &str, service_name: &str) -> Result<u64, &'static st
     if endpoint.is_empty()
         || service_name.is_empty()
         || service_name.len() > MAX_NAME
-        || !endpoint.starts_with("http://")
+        || !(endpoint.starts_with("http://") || endpoint.starts_with("https://"))
     {
         return Err("E2701");
     }
-    let id = next_id();
-    state().lock().unwrap().configs.insert(
-        id,
-        TraceConfig {
+    let id = state()
+        .lock()
+        .unwrap()
+        .configs
+        .insert(TraceConfig {
             endpoint: endpoint.to_string(),
             service_name: service_name.to_string(),
             sample_rate: 1.0,
@@ -190,33 +219,36 @@ pub fn config_new(endpoint: &str, service_name: &str) -> Result<u64, &'static st
             queue_capacity: 4096,
             flush_interval: DEFAULT_FLUSH_INTERVAL,
             shutdown_timeout: DEFAULT_SHUTDOWN_TIMEOUT,
-        },
-    );
+            ca_pem: None,
+        })
+        .raw() as u64;
     Ok(id)
 }
 pub fn config_set_sample_rate(id: u64, rate: f64) -> Result<(), &'static str> {
     if !(0.0..=1.0).contains(&rate) {
         return Err("E2701");
     }
+    let handle = HandleId::from_raw(id as i64).map_err(|_| "E2701")?;
     state()
         .lock()
         .unwrap()
         .configs
-        .get_mut(&id)
+        .get_mut(handle)
         .map(|c| c.sample_rate = rate)
-        .ok_or("E2701")
+        .map_err(|_| "E2701")
 }
 pub fn config_set_batch_size(id: u64, size: usize) -> Result<(), &'static str> {
     if size == 0 || size > 65536 {
         return Err("E2701");
     }
+    let handle = HandleId::from_raw(id as i64).map_err(|_| "E2701")?;
     state()
         .lock()
         .unwrap()
         .configs
-        .get_mut(&id)
+        .get_mut(handle)
         .map(|c| c.batch_size = size)
-        .ok_or("E2701")
+        .map_err(|_| "E2701")
 }
 pub fn config_start(id: u64) -> Result<(), &'static str> {
     let config = {
@@ -224,7 +256,8 @@ pub fn config_start(id: u64) -> Result<(), &'static str> {
         if s.active_config.is_some() || s.exporter.is_some() {
             return Err("E2701");
         }
-        let config = s.configs.get(&id).cloned().ok_or("E2701")?;
+        let handle = HandleId::from_raw(id as i64).map_err(|_| "E2701")?;
+        let config = s.configs.get(handle).map_err(|_| "E2701")?.clone();
         s.active_config = Some(id);
         config
     };
@@ -267,7 +300,8 @@ pub fn config_shutdown(id: u64) -> Result<(), &'static str> {
         .sender
         .send(WorkerCommand::Shutdown(ack_tx))
         .map_err(|_| "E2707");
-    let shutdown_result = send_result.and_then(|_| ack_rx.recv_timeout(exporter.timeout).map_err(|_| "E2707"));
+    let shutdown_result: Result<(), &'static str> =
+        send_result.and_then(|_| ack_rx.recv_timeout(exporter.timeout).map_err(|_| "E2707")?);
     let join_result = exporter
         .join
         .take()
@@ -285,8 +319,7 @@ pub fn config_shutdown(id: u64) -> Result<(), &'static str> {
             .into(),
         );
     }
-    shutdown_result
-        .and(join_result)
+    shutdown_result.and(join_result)
 }
 
 pub fn span_start(name: &str, kind: SpanKind) -> Result<u64, &'static str> {
@@ -306,10 +339,9 @@ pub fn span_start_with_parent(
         return Err("E2704");
     }
     let context = new_context(parent.as_ref());
-    let id = next_id();
-    s.spans.insert(
-        id,
-        Span {
+    let id = s
+        .spans
+        .insert(Span {
             context: context.clone(),
             parent,
             name: name.to_string(),
@@ -318,8 +350,8 @@ pub fn span_start_with_parent(
             status: SpanStatus::Unset,
             started: Instant::now(),
             start_unix_nanos: unix_nanos(),
-        },
-    );
+        })
+        .raw() as u64;
     if let Some(exporter) = &s.exporter {
         exporter.stats.created.fetch_add(1, Ordering::Relaxed);
     }
@@ -340,7 +372,8 @@ fn set_attribute(id: u64, key: &str, value: AttributeValue) -> Result<(), &'stat
         return Err("E2701");
     }
     let mut s = state().lock().unwrap();
-    let span = s.spans.get_mut(&id).ok_or("E2703")?;
+    let handle = HandleId::from_raw(id as i64).map_err(|_| "E2703")?;
+    let span = s.spans.get_mut(handle).map_err(|_| "E2703")?;
     if let Some(existing) = span.attributes.iter_mut().find(|(name, _)| name == key) {
         existing.1 = value;
         return Ok(());
@@ -362,9 +395,10 @@ pub fn span_set_attribute_bool(id: u64, key: &str, value: bool) -> Result<(), &'
 }
 pub fn span_set_status(id: u64, status: SpanStatus) -> Result<(), &'static str> {
     let mut s = state().lock().unwrap();
+    let handle = HandleId::from_raw(id as i64).map_err(|_| "E2703")?;
     s.spans
-        .get_mut(&id)
-        .ok_or("E2703")
+        .get_mut(handle)
+        .map_err(|_| "E2703")
         .map(|span| span.status = status)
 }
 pub fn span_end(id: u64) -> Result<(), &'static str> {
@@ -373,7 +407,8 @@ pub fn span_end(id: u64) -> Result<(), &'static str> {
     }
     let span = {
         let mut s = state().lock().unwrap();
-        s.spans.remove(&id).ok_or("E2703")?
+        let handle = HandleId::from_raw(id as i64).map_err(|_| "E2703")?;
+        s.spans.remove(handle).map_err(|_| "E2703")?
     };
     let result = {
         let s = state().lock().unwrap();
@@ -429,13 +464,14 @@ pub fn current() -> Option<u64> {
     SPAN_STACK.with(|stack| stack.borrow().last().copied())
 }
 pub fn context(id: u64) -> Result<TraceContext, &'static str> {
+    let handle = HandleId::from_raw(id as i64).map_err(|_| "E2703")?;
     state()
         .lock()
         .unwrap()
         .spans
-        .get(&id)
+        .get(handle)
+        .map_err(|_| "E2703")
         .map(|s| s.context.clone())
-        .ok_or("E2703")
 }
 pub fn inject(id: u64) -> Result<String, &'static str> {
     Ok(context(id)?.traceparent())
@@ -485,16 +521,20 @@ pub fn stats() -> Option<(u64, u64, u64, u64, u64, bool)> {
         )
     })
 }
+/// # Safety
+///
+/// The returned pointer is owned by the runtime allocation table and must be
+/// treated as an opaque Spectra string handle. Callers must not dereference,
+/// resize, or free it except through the runtime allocation APIs.
 pub unsafe fn alloc_string(value: &str) -> i64 {
     use crate::ffi::spectra_rt_manual_alloc;
-    let raw = spectra_rt_manual_alloc((value.len() + 1) * std::mem::size_of::<i64>()) as *mut i64;
+    let bytes = value.as_bytes();
+    let raw = spectra_rt_manual_alloc(bytes.len() + 1);
     if raw.is_null() {
         return 0;
     }
-    for (i, byte) in value.bytes().enumerate() {
-        *raw.add(i) = i64::from(byte);
-    }
-    *raw.add(value.len()) = 0;
+    std::ptr::copy_nonoverlapping(bytes.as_ptr(), raw, bytes.len());
+    *raw.add(bytes.len()) = 0;
     raw as i64
 }
 
@@ -569,7 +609,7 @@ fn export_batch(
     let payload = encode_otlp(&config.service_name, batch);
     let mut sent = false;
     for attempt in 0..MAX_RETRIES {
-        match send_otlp(&config.endpoint, &payload) {
+        match send_otlp(&config.endpoint, config.ca_pem.as_deref(), &payload) {
             Ok(()) => {
                 sent = true;
                 break;
@@ -596,20 +636,53 @@ fn export_batch(
 struct SendError {
     transient: bool,
 }
-fn send_otlp(endpoint: &str, body: &[u8]) -> Result<(), SendError> {
-    let url = endpoint
-        .strip_prefix("http://")
-        .ok_or(SendError { transient: false })?;
+fn send_otlp(endpoint: &str, ca_pem: Option<&str>, body: &[u8]) -> Result<(), SendError> {
+    let (tls, url) = if let Some(url) = endpoint.strip_prefix("https://") {
+        (true, url)
+    } else if let Some(url) = endpoint.strip_prefix("http://") {
+        (false, url)
+    } else {
+        return Err(SendError { transient: false });
+    };
     let (authority, path) = url.split_once('/').unwrap_or((url, "v1/traces"));
     let mut addrs = authority
         .to_socket_addrs()
         .map_err(|_| SendError { transient: false })?;
     let addr = addrs.next().ok_or(SendError { transient: false })?;
     let timeout = Duration::from_secs(5);
-    let mut stream =
+    let stream =
         TcpStream::connect_timeout(&addr, timeout).map_err(|_| SendError { transient: true })?;
     let _ = stream.set_read_timeout(Some(timeout));
     let _ = stream.set_write_timeout(Some(timeout));
+    let status = if tls {
+        let config = tls_client_config(ca_pem).map_err(|_| SendError { transient: false })?;
+        let server_name = tls_server_name(authority).map_err(|_| SendError { transient: false })?;
+        let connection = ClientConnection::new(config, server_name)
+            .map_err(|_| SendError { transient: true })?;
+        let mut stream = StreamOwned::new(connection, stream);
+        exchange_otlp(&mut stream, authority, path, body)?
+    } else {
+        let mut stream = stream;
+        exchange_otlp(&mut stream, authority, path, body)?
+    };
+    if (200..300).contains(&status) {
+        Ok(())
+    } else {
+        Err(SendError {
+            transient: status >= 500,
+        })
+    }
+}
+
+/// Writes the hand-rolled HTTP/1.1 OTLP POST and parses the response status.
+/// `Err` carries whether the failure is worth retrying; never panics — this
+/// runs on the telemetry worker thread.
+fn exchange_otlp<S: Read + Write>(
+    stream: &mut S,
+    authority: &str,
+    path: &str,
+    body: &[u8],
+) -> Result<u16, SendError> {
     let request = format!("POST /{} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/x-protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", path, authority, body.len());
     stream
         .write_all(request.as_bytes())
@@ -618,23 +691,70 @@ fn send_otlp(endpoint: &str, body: &[u8]) -> Result<(), SendError> {
         .write_all(body)
         .map_err(|_| SendError { transient: true })?;
     let mut response = Vec::new();
-    stream
-        .read_to_end(&mut response)
-        .map_err(|_| SendError { transient: true })?;
-    let status = response
+    match stream.read_to_end(&mut response) {
+        Ok(_) => {}
+        // Some peers close TCP without a TLS close_notify after `Connection:
+        // close`; keep the response when one already arrived intact.
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof && !response.is_empty() => {
+        }
+        Err(_) => return Err(SendError { transient: true }),
+    }
+    parse_status_line(&response).ok_or(SendError { transient: true })
+}
+
+fn parse_status_line(response: &[u8]) -> Option<u16> {
+    response
         .split(|byte| *byte == b' ')
         .nth(1)
         .and_then(|part| std::str::from_utf8(part).ok())
         .and_then(|part| part.split_whitespace().next())
         .and_then(|code| code.parse::<u16>().ok())
-        .ok_or(SendError { transient: true })?;
-    if (200..300).contains(&status) {
-        Ok(())
-    } else {
-        Err(SendError {
-            transient: status >= 500,
-        })
+}
+
+/// Builds the rustls client config for OTLP export: custom CA bundle when one
+/// is configured (per-exporter or via `SPECTRA_OTLP_CA_PEM`), otherwise the
+/// webpki root store. Configuration errors are permanent (non-retryable).
+fn tls_client_config(ca_pem: Option<&str>) -> Result<std::sync::Arc<ClientConfig>, ()> {
+    let mut roots = RootCertStore::empty();
+    let source = ca_pem.map(str::to_string).or_else(|| {
+        std::env::var("SPECTRA_OTLP_CA_PEM")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+    });
+    match source {
+        Some(source) => {
+            let pem = match fs::read_to_string(&source) {
+                Ok(contents) => contents,
+                Err(_) => source.clone(),
+            };
+            let mut added = 0usize;
+            for cert in CertificateDer::pem_slice_iter(pem.as_bytes()) {
+                let cert = cert.map_err(|_| ())?;
+                if roots.add(cert).is_ok() {
+                    added += 1;
+                }
+            }
+            if added == 0 {
+                return Err(());
+            }
+        }
+        None => roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned()),
     }
+    let config = ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    Ok(std::sync::Arc::new(config))
+}
+
+/// Strips the port from an authority and builds a TLS server name; IP
+/// literals are supported by rustls' `ServerName`.
+fn tls_server_name(authority: &str) -> Result<ServerName<'static>, ()> {
+    let host = match authority.rsplit_once(':') {
+        Some((host, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => host,
+        _ => authority,
+    };
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    ServerName::try_from(host.to_string()).map_err(|_| ())
 }
 
 fn encode_otlp(service: &str, spans: &[Span]) -> Vec<u8> {
@@ -706,7 +826,7 @@ fn resource_attribute(out: &mut Vec<u8>, key: &str, value: &str) {
     field_message(out, 1, &kv);
 }
 fn field_varint(out: &mut Vec<u8>, field: u32, value: u64) {
-    put_varint(out, ((field as u64) << 3) | 0);
+    put_varint(out, (field as u64) << 3);
     put_varint(out, value);
 }
 fn field_fixed64(out: &mut Vec<u8>, field: u32, value: u64) {
@@ -764,6 +884,18 @@ pub fn end_external_span(id: u64, success: bool) -> Result<(), &'static str> {
         },
     )?;
     span_end(id)
+}
+
+#[cfg(test)]
+fn http_content_length(headers: &[u8]) -> usize {
+    String::from_utf8_lossy(headers)
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())?
+        })
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -849,14 +981,127 @@ mod tests {
         let failed = config_new("http://127.0.0.1:1/v1/traces", "shutdown-failure").unwrap();
         config_start(failed).unwrap();
         let span = span_start("failed.export", SpanKind::Internal).unwrap();
-        span_end(span).unwrap();
+        assert_eq!(span_end(span), Ok(()));
         let failed_result = config_shutdown(failed);
-        assert!(failed_result == Err("E2706") || failed_result == Err("E2707"));
+        assert!(
+            failed_result == Err("E2706") || failed_result == Err("E2707"),
+            "unexpected shutdown result: {failed_result:?}"
+        );
         assert_eq!(config_shutdown(failed), Err("E2701"));
 
         let recovered = config_new("http://127.0.0.1:1/v1/traces", "shutdown-recovery").unwrap();
         config_start(recovered).unwrap();
         let recovery_result = config_shutdown(recovered);
         assert!(recovery_result.is_ok() || recovery_result == Err("E2706"));
+    }
+
+    #[test]
+    fn https_exporter_delivers_to_local_tls_server() {
+        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let certified =
+            rcgen::generate_simple_self_signed(vec!["localhost".into(), "127.0.0.1".into()])
+                .expect("self-signed certificate");
+        let cert_der = certified.cert.der().to_vec();
+        let key_der = certified.key_pair.serialize_der();
+        let server_crypto = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![CertificateDer::from(cert_der.clone())],
+                rustls::pki_types::PrivatePkcs8KeyDer::from(key_der).into(),
+            )
+            .expect("server TLS config");
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("ephemeral TLS listener");
+        let addr = listener.local_addr().expect("listener address");
+        let server = thread::spawn(move || -> std::io::Result<Vec<u8>> {
+            let (tcp, _) = listener.accept()?;
+            tcp.set_read_timeout(Some(Duration::from_secs(10)))?;
+            let connection = ServerConnection::new(std::sync::Arc::new(server_crypto))
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
+            let mut stream = StreamOwned::new(connection, tcp);
+            let mut request = Vec::new();
+            let mut buf = [0u8; 4096];
+            loop {
+                let read = stream.read(&mut buf)?;
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buf[..read]);
+                if let Some(headers_end) = request
+                    .windows(4)
+                    .position(|window| window == b"\r\n\r\n")
+                    .map(|index| index + 4)
+                {
+                    let content_length = http_content_length(&request[..headers_end]);
+                    if request.len() >= headers_end + content_length {
+                        break;
+                    }
+                }
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")?;
+            stream.flush()?;
+            stream.conn.send_close_notify();
+            stream.flush()?;
+            Ok(request)
+        });
+
+        std::env::set_var("SPECTRA_OTLP_CA_PEM", certified.cert.pem());
+        let id = config_new(&format!("https://{addr}/v1/traces"), "tls-test").unwrap();
+        config_start(id).unwrap();
+        let span = span_start("tls.export", SpanKind::Internal).unwrap();
+        span_set_attribute(span, "transport", "https").unwrap();
+        span_end(span).unwrap();
+        assert_eq!(flush(), Ok(1), "TLS export must succeed");
+        let (_, _, exported, dropped, _, _) = stats().expect("exporter alive before shutdown");
+        assert_eq!(exported, 1, "span must export over TLS");
+        assert_eq!(dropped, 0);
+        assert_eq!(config_shutdown(id), Ok(()));
+        std::env::remove_var("SPECTRA_OTLP_CA_PEM");
+
+        let request = server.join().expect("TLS server thread").expect("exchange");
+        assert!(
+            String::from_utf8_lossy(&request).starts_with("POST /v1/traces HTTP/1.1"),
+            "unexpected request over TLS: {:?}",
+            String::from_utf8_lossy(&request)
+        );
+    }
+
+    #[test]
+    fn https_exporter_to_dead_endpoint_drops_without_panic() {
+        // Exercises the real TLS export path against a closed loopback port
+        // without the worker channel, whose 5s ack timeout races with the
+        // (preserved) connect retries on hosts that drop instead of refusing.
+        let config = TraceConfig {
+            endpoint: "https://127.0.0.1:1/v1/traces".to_string(),
+            service_name: "dead-tls".to_string(),
+            sample_rate: 1.0,
+            batch_size: 256,
+            queue_capacity: 4096,
+            flush_interval: DEFAULT_FLUSH_INTERVAL,
+            shutdown_timeout: DEFAULT_SHUTDOWN_TIMEOUT,
+            ca_pem: None,
+        };
+        let stats = ExportStats::default();
+        let pending = AtomicU64::new(1);
+        let mut batch = vec![Span {
+            context: new_context(None),
+            parent: None,
+            name: "dead.tls".to_string(),
+            kind: SpanKind::Internal,
+            attributes: Vec::new(),
+            status: SpanStatus::Unset,
+            started: Instant::now(),
+            start_unix_nanos: unix_nanos(),
+        }];
+
+        let result = export_batch(&config, &mut batch, &stats, &pending);
+
+        assert_eq!(result, Err("E2706"));
+        assert_eq!(batch.len(), 0, "failed batches must be cleared");
+        assert_eq!(pending.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.exported.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.failed.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.dropped.load(Ordering::Relaxed), 1);
     }
 }

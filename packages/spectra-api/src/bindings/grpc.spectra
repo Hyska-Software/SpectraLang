@@ -1,0 +1,8 @@
+// Public Spectra surface for the gRPC transport.
+//
+// Protocol objects and streams use integer handles. Binary protobuf and
+// metadata values cross the ABI as base64 strings. Native function
+// declarations are supplied by the compiler's std.api.grpc module and target
+// the spectra.api.grpc host namespace.
+
+module std.api.grpc

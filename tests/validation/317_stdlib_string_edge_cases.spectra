@@ -1,0 +1,91 @@
+module stdlib_string_edge_cases
+
+import std.collections as collections
+import std.string as string
+
+public func main() returns int {
+    if string.len("Spectra") != 7 {
+        return 1
+    }
+    if string.contains("SpectraLang", "Lang") != true {
+        return 2
+    }
+    if string.to_upper("Spectra") != "SPECTRA" {
+        return 3
+    }
+    if string.to_lower("LANG") != "lang" {
+        return 4
+    }
+    if string.trim("  core  ") != "core" {
+        return 5
+    }
+    if string.starts_with("SpectraLang", "Spectra") != true {
+        return 6
+    }
+    if string.ends_with("main.spectra", ".spectra") != true {
+        return 7
+    }
+    if string.eq(string.concat("Spectra", "Lang"), "SpectraLang") != true {
+        return 8
+    }
+    if string.repeat_str("ab", 3) != "ababab" {
+        return 9
+    }
+
+    let builder = string.builder_new(16)
+    string.builder_push(builder, "Spectra")
+    string.builder_push(builder, "Lang")
+    if string.builder_len(builder) != 11 {
+        return 10
+    }
+    if string.builder_finish(builder) != "SpectraLang" {
+        return 11
+    }
+    string.builder_free(builder)
+
+    if string.char_at("hello", 1) != 101 {
+        return 12
+    }
+    if string.char_at("hello", 99) != -1 {
+        return 13
+    }
+    if string.substring("SpectraLang", 7, 11) != "Lang" {
+        return 14
+    }
+    if string.replace("a-b-c", "-", "/") != "a/b/c" {
+        return 15
+    }
+    if string.index_of("SpectraLang", "Lang") != 7 {
+        return 16
+    }
+    if string.index_of("SpectraLang", "missing") != -1 {
+        return 17
+    }
+    if string.split_first("name:alice:30", ":") != "name" {
+        return 18
+    }
+    if string.split_last("name:alice:30", ":") != "30" {
+        return 19
+    }
+    if string.count_occurrences("banana", "a") != 3 {
+        return 20
+    }
+    if string.is_empty("") != true or string.is_empty("x") != false {
+        return 21
+    }
+    let parts = string.split_by("a,b,c", ",")
+    if collections.list_len(parts) != 3 {
+        return 22
+    }
+    collections.list_free(parts)
+    if string.pad_left("42", 5, 48) != "00042" {
+        return 23
+    }
+    if string.pad_right("42", 5, 48) != "42000" {
+        return 24
+    }
+    if string.reverse_str("Spectra") != "artcepS" {
+        return 25
+    }
+    return 0
+}

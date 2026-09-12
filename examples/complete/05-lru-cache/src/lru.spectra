@@ -1,0 +1,50 @@
+// Fixed-capacity LRU recency index over int keys. The caller owns the
+// `std.collections` map (map handles cannot cross module boundaries);
+// this module owns the front-first recency array and eviction decisions.
+// Every function returns an int (void functions cannot take arrays).
+module lru
+
+// Moves `key` to the front of `order[0..size]`. Returns size unchanged,
+// or -1 when `key` is absent.
+public func touch(order: [int], size: int, key: int) returns int {
+    let pos = 0
+    while pos < size {
+        if order[pos] == key {
+            break
+        }
+        pos = pos + 1
+    }
+    if pos == size {
+        return -1
+    }
+    while pos > 0 {
+        order[pos] = order[pos - 1]
+        pos = pos - 1
+    }
+    order[0] = key
+    return size
+}
+
+// Inserts a fresh `key` at the front. Caller guarantees size < cap.
+// Returns the new size.
+public func insert_fresh(order: [int], size: int, key: int) returns int {
+    let i = size
+    while i > 0 {
+        order[i] = order[i - 1]
+        i = i - 1
+    }
+    order[0] = key
+    return size + 1
+}
+
+// Inserts `key` at the front of a full array. Returns the evicted key.
+public func evict_and_insert(order: [int], size: int, key: int, cap: int) returns int {
+    let victim = order[cap - 1]
+    let j = cap - 1
+    while j > 0 {
+        order[j] = order[j - 1]
+        j = j - 1
+    }
+    order[0] = key
+    return victim
+}

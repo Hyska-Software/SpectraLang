@@ -11,7 +11,27 @@ remains fast and does not require `cargo-fuzz`.
 - `pipeline`: runs the production compilation pipeline with the no-op backend.
 - `lowering`: lowers parseable AST modules into midend IR.
 
-## Running
+All targets reject non-UTF-8 input and sources larger than 16 KiB
+(`-max_len=16384` in CI matches this cap).
+
+## Corpus
+
+`corpus/<target>/` holds committed seed inputs so every run starts from real,
+varied coverage instead of an empty corpus:
+
+- `parser/`: 33 seeds — fixture-derived modules plus malformed stress cases
+  (unterminated f-strings, deep nesting, unicode/control characters, operator
+  and delimiter soup, numeric/char edge cases).
+- `semantic/`, `lowering/`: 33 seeds each — parseable fixtures plus
+  semantically dubious modules (unknown types, duplicate definitions,
+  non-exhaustive matches) that survive parsing and reach these stages.
+- `pipeline/`: 53 seeds — the union of the above.
+
+Seeds are small (< 1.1 KiB each) and valid UTF-8; new crash artifacts should be
+minimized with `cargo fuzz tmin` and checked in here as regression seeds after
+converting them into tests where practical.
+
+## Running with cargo-fuzz
 
 Install once:
 
@@ -28,5 +48,75 @@ cargo fuzz run pipeline
 cargo fuzz run lowering
 ```
 
-Crash artifacts should be minimized with `cargo fuzz tmin` and converted into
-checked-in regression tests before closing the bug.
+Each command automatically picks up its seed directory from
+`corpus/<target>/`. Crash artifacts land in `fuzz/artifacts/` (or the path
+given via `-artifact_prefix=`).
+
+## Building without cargo-fuzz
+
+Targets are split on `cfg(fuzzing)`, which cargo-fuzz defines automatically:
+
+- Under cargo-fuzz, `libfuzzer_sys::fuzz_target!` drives each target.
+- With plain cargo (`--cfg fuzzing` absent), each binary exposes a replay
+  `main` that feeds files passed as arguments through the same `run` body.
+  This is what keeps `cargo check -p spectralang-fuzz` green on any machine:
+
+```powershell
+cargo check -p spectralang-fuzz   # from this directory
+```
+
+You can also replay a whole corpus without cargo-fuzz, which doubles as a
+deterministic smoke test over all committed seeds:
+
+```powershell
+cargo build -p spectralang-fuzz --bins
+target\debug\parser corpus\parser
+target\debug\semantic corpus\semantic
+target\debug\pipeline corpus\pipeline
+target\debug\lowering corpus\lowering
+```
+
+A non-zero exit means a seed crashed or could not be read.
+
+## CI smoke job
+
+`.github/workflows/fuzz-smoke.yml` runs a short libFuzzer session per target
+on GitHub-hosted `ubuntu-latest` for pushes to `main`/`master`/`ai/**`,
+pull requests, and manual dispatch:
+
+- nightly toolchain + `cargo-fuzz` via `taiki-e/install-action`
+- 60 s per target (`-max_total_time=60 -max_len=16384 -rss_limit_mb=2560`)
+- crashes fail the job (no continue-on-error); crash artifacts are uploaded
+  from `artifacts/*` when the job fails
+
+Crash triage: reproduce locally with
+`cargo fuzz run <target> fuzz/artifacts/<crash-file>`, minimize, add a
+regression seed to `corpus/<target>/`, fix the compiler bug, and add a
+checked-in regression test before closing the issue.
+
+## Nightly fuzzing
+
+`.github/workflows/fuzz-nightly.yml` runs on a schedule (`0 3 * * *` UTC) and
+via manual dispatch, one matrix job per target:
+
+- 10 min per target (`-max_total_time=600`, same `-max_len=16384` /
+  `-rss_limit_mb=2560` caps as the smoke job)
+- crash artifacts uploaded from `artifacts/*` when a target fails
+  (retention 30 days)
+- after every run (success or failure), the corpus is minimized with
+  `cargo fuzz cmin` and the updated `corpus/<target>/` is uploaded as an
+  artifact `fuzz-corpus-<target>` (retention 7 days)
+
+The corpus folds back into the repo automatically. After every successful
+nightly run, the `merge-corpus` job downloads the `fuzz-corpus-<target>`
+artifacts, merges them into `corpus/<target>/` (deduplicated by SHA-256
+content hash against the committed seeds), and opens an automated pull
+request on branch `fuzz/corpus-update` (`fuzz: refresh nightly corpus`,
+labeled `fuzz` / `corpus`).
+
+The cycle is: nightly runs → corpus PR is opened → a human reviews and
+approves the merge. When reviewing, skim the diff for oversized or sensitive
+inputs; crash-derived regression seeds still go through manual triage
+(reproduce with `cargo fuzz run <target> fuzz/artifacts/<crash-file>`,
+minimize with `cargo fuzz tmin`, add the seed here, fix the bug, and add a
+checked-in regression test).

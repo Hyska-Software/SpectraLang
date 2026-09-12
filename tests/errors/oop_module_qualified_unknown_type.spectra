@@ -1,0 +1,12 @@
+// R-NEG-11: a module-qualified inherent impl must reject an unknown target.
+module rneg_oop_module_qualified_unknown_type
+
+impl missing::Foreign {
+    public func value(&self) returns int {
+        1
+    }
+}
+
+public func main() returns int {
+    return 0
+}

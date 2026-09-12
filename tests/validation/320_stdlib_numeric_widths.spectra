@@ -1,0 +1,93 @@
+module stdlib_numeric_widths
+
+import std.numeric as numeric
+
+public func main() returns int {
+    let i8_value: i8 = 120
+    if numeric.wrapping_add_i8(i8_value, 20 as i8) as int != -116 {
+        return 1
+    }
+    if numeric.wrapping_sub_i8(-120 as i8, 20 as i8) as int != 116 {
+        return 2
+    }
+    if numeric.wrapping_mul_i8(20 as i8, 7 as i8) as int != -116 {
+        return 3
+    }
+
+    if numeric.wrapping_add_i16(30000 as i16, 10000 as i16) as int != -25536 {
+        return 4
+    }
+    if numeric.wrapping_sub_i16(-30000 as i16, 10000 as i16) as int != 25536 {
+        return 5
+    }
+    if numeric.wrapping_mul_i16(200 as i16, 200 as i16) as int != -25536 {
+        return 6
+    }
+
+    if numeric.wrapping_add_i32(2000000000 as i32, 1000000000 as i32) as int != -1294967296 {
+        return 7
+    }
+    if numeric.wrapping_sub_i32(-2000000000 as i32, 1000000000 as i32) as int != 1294967296 {
+        return 8
+    }
+    if numeric.wrapping_mul_i32(50000 as i32, 50000 as i32) as int != -1794967296 {
+        return 9
+    }
+
+    if numeric.wrapping_add_i64(9000000000 as i64, 1 as i64) as int != 9000000001 {
+        return 10
+    }
+    if numeric.wrapping_sub_i64(9000000000 as i64, 1 as i64) as int != 8999999999 {
+        return 11
+    }
+    if numeric.wrapping_mul_i64(30000 as i64, 30000 as i64) as int != 900000000 {
+        return 12
+    }
+
+    if numeric.wrapping_add_u8(250 as u8, 10 as u8) as int != 4 {
+        return 13
+    }
+    if numeric.wrapping_sub_u8(3 as u8, 10 as u8) as int != 249 {
+        return 14
+    }
+    if numeric.wrapping_mul_u8(20 as u8, 20 as u8) as int != 144 {
+        return 15
+    }
+
+    if numeric.wrapping_add_u16(65530 as u16, 10 as u16) as int != 4 {
+        return 16
+    }
+    if numeric.wrapping_sub_u16(3 as u16, 10 as u16) as int != 65529 {
+        return 17
+    }
+    if numeric.wrapping_mul_u16(300 as u16, 300 as u16) as int != 24464 {
+        return 18
+    }
+
+    if numeric.wrapping_add_u32(4294967290 as u32, 10 as u32) as int != 4 {
+        return 19
+    }
+    if numeric.wrapping_sub_u32(3 as u32, 10 as u32) as int != 4294967289 {
+        return 20
+    }
+    if numeric.wrapping_mul_u32(70000 as u32, 70000 as u32) as int != 605032704 {
+        return 21
+    }
+
+    if numeric.wrapping_add_u64(9000000000 as u64, 1 as u64) as int != 9000000001 {
+        return 22
+    }
+    if numeric.wrapping_sub_u64(9000000000 as u64, 1 as u64) as int != 8999999999 {
+        return 23
+    }
+    if numeric.wrapping_mul_u64(30000 as u64, 30000 as u64) as int != 900000000 {
+        return 24
+    }
+
+    let wide: f64 = 1.25
+    let narrow: f32 = numeric.checked_f32(wide)
+    if narrow as f64 != 1.25 {
+        return 25
+    }
+    return 0
+}

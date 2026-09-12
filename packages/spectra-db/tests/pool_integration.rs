@@ -257,7 +257,10 @@ fn async_waiters_are_fifo_and_cancellation_does_not_leak() {
 fn wait_for_waiters<F: ConnectionFactory>(pool: &ConnectionPool<F>, expected: usize) {
     let deadline = std::time::Instant::now() + Duration::from_secs(1);
     while pool.metrics().waiters < expected {
-        assert!(std::time::Instant::now() < deadline, "waiter did not register");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "waiter did not register"
+        );
         thread::yield_now();
     }
 }

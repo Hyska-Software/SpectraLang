@@ -1,0 +1,13 @@
+[package]
+name = "spectra-contract"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+
+[build-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"

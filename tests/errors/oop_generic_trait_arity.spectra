@@ -1,0 +1,20 @@
+// R-NEG-03: trait implementation arity must match the declaration.
+module rneg_oop_generic_trait_arity
+
+trait ValueOf<T> {
+    func value(&self) returns T
+}
+
+record Value {
+    public number: int,
+}
+
+impl ValueOf<int, string> for Value {
+    func value(&self) returns int {
+        self.number
+    }
+}
+
+public func main() returns int {
+    return 0
+}

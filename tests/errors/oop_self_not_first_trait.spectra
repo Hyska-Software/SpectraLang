@@ -1,0 +1,20 @@
+// R-NEG-10: self must remain the first receiver parameter in trait methods.
+module rneg_oop_self_not_first_trait
+
+trait Describe {
+    func describe(prefix: string, &self) returns string
+}
+
+record Item {
+    public value: int,
+}
+
+impl Describe for Item {
+    func describe(prefix: string, &self) returns string {
+        prefix
+    }
+}
+
+public func main() returns int {
+    return 0
+}

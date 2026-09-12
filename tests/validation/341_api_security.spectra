@@ -1,0 +1,73 @@
+module api_security
+
+from std.api.http import Request, Response, method_get, method_post, request, request_with_header, response_new, response_status
+from std.api.handler import text
+from std.api.middleware import MiddlewareChain, MiddlewareHandle, chain_new, execute_sync, use_sync
+from std.api.security import CsrfPolicy, SsrfPolicy, csrf_allow_origin, csrf_middleware, csrf_origin_count, csrf_policy, ssrf_allow_private_networks, ssrf_allows, ssrf_policy
+from std.api.server import Server, new as server_new, set_idle_timeout, set_max_body_bytes, set_read_timeout
+
+public func main() returns int {
+    let csrf0: CsrfPolicy = csrf_policy()
+    let csrf1: CsrfPolicy = csrf_allow_origin(csrf0, "https://app.example")
+    if csrf_origin_count(csrf1) != 1 {
+        return 10
+    }
+
+    let csrf: MiddlewareHandle = csrf_middleware(csrf1)
+    let chain: MiddlewareChain = use_sync(chain_new(), csrf)
+    let denied_request: Request = request_with_header(
+        request(method_post(), "/transfer"),
+        "Origin",
+        "https://evil.example",
+    )
+    let denied: Response = execute_sync(chain, denied_request, text("terminal"))
+    if response_status(denied) != 403 {
+        return 20
+    }
+
+    let allowed_request: Request = request_with_header(
+        request(method_post(), "/transfer"),
+        "Origin",
+        "https://app.example",
+    )
+    let allowed: Response = execute_sync(chain, allowed_request, response_new(201))
+    if response_status(allowed) != 201 {
+        return 21
+    }
+
+    let safe_request: Request = request_with_header(
+        request(method_get(), "/transfer"),
+        "Origin",
+        "https://evil.example",
+    )
+    if response_status(execute_sync(chain, safe_request, response_new(200))) != 200 {
+        return 22
+    }
+
+    let ssrf0: SsrfPolicy = ssrf_policy()
+    if ssrf_allows(ssrf0, "127.0.0.1") != false {
+        return 30
+    }
+    if ssrf_allows(ssrf0, "169.254.169.254") != false {
+        return 31
+    }
+    if ssrf_allows(ssrf0, "8.8.8.8") != true {
+        return 32
+    }
+    let local_ssrf: SsrfPolicy = ssrf_allow_private_networks(ssrf0, true)
+    if ssrf_allows(local_ssrf, "127.0.0.1") != true {
+        return 33
+    }
+
+    let server: Server = server_new()
+    if set_max_body_bytes(server, 1024) != true {
+        return 40
+    }
+    if set_read_timeout(server, 25) != true {
+        return 41
+    }
+    if set_idle_timeout(server, 100) != true {
+        return 42
+    }
+    return 0
+}

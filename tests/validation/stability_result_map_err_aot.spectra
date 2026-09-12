@@ -1,0 +1,11 @@
+module stability_result_map_err_aot
+
+import std.result as result
+
+public func main() returns int {
+    let mapped = result.result_map_err(Result::Err(7), |value: int| value + 1)
+    if result.result_unwrap_err(mapped) != 8 {
+        return 1
+    }
+    return 0
+}

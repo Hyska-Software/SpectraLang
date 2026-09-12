@@ -1,0 +1,37 @@
+module bug_hunt_v2_309_api_middleware_composition
+
+import std.string as str
+from std.api.http import method_get, request, response_status
+from std.api.handler import text, status
+from std.api.middleware import MiddlewareChain, MiddlewareHandle, MiddlewareTrace, chain_new, chain_len, register_sync, register_sync_short_circuit, use_sync, execute_sync, last_trace, trace_len, trace_event, trace_short_circuited
+
+func event_contains(trace: MiddlewareTrace, index: int, expected: string) returns int {
+    if str.contains(trace_event(trace, index), expected) {
+        return 0
+    }
+    return 1
+}
+
+public func main() returns int {
+    let first: MiddlewareHandle = register_sync("first:request", "first:response")
+    let limit: MiddlewareHandle = register_sync_short_circuit("limit:request", "limit:response", status(429))
+    let chain: MiddlewareChain = use_sync(use_sync(chain_new(), first), limit)
+    if chain_len(chain) != 2 {
+        return 1
+    }
+    let response = execute_sync(chain, request(method_get(), "/limited"), text("terminal"))
+    if response_status(response) != 429 {
+        return 2
+    }
+    let trace = last_trace()
+    if trace_len(trace) != 4 or trace_short_circuited(trace) != true {
+        return 3
+    }
+    if event_contains(trace, 0, "first:request") != 0 or event_contains(trace, 1, "limit:request") != 0 {
+        return 4
+    }
+    if event_contains(trace, 2, "limit:response") != 0 or event_contains(trace, 3, "first:response") != 0 {
+        return 5
+    }
+    return 0
+}

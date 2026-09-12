@@ -1,0 +1,25 @@
+module bug_hunt_v2_307_ml_dataset_tensor
+
+import std.tensor as tensor
+import std.ml as ml
+
+public func main() returns int {
+    tensor.free_all()
+    let dataset = ml.dataset_from_csv("tests/fixtures/r1701/tabular.csv", 2, 1)
+    if ml.dataset_len(dataset) != 4 {
+        return 1
+    }
+    let filtered = ml.dataset_filter_label_min(ml.dataset_map_features(dataset, 2.0, 0.0), 1.0)
+    if ml.dataset_len(filtered) != 2 {
+        return 2
+    }
+    let loader = ml.dataloader_new(filtered, 1, 123)
+    if ml.dataloader_batch_count(loader) != 2 {
+        return 3
+    }
+    if tensor.len(ml.dataloader_batch_features(loader, 0)) != 2 {
+        return 4
+    }
+    tensor.free_all()
+    return 0
+}

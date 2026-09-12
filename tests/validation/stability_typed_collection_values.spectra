@@ -1,0 +1,44 @@
+module stability_typed_collection_values
+
+import std.collections as collections
+import std.option as option
+import std.string as strings
+from std.collections import List, Map, Set
+
+public func main() returns int {
+    let words: Set<string> = collections.set_new()
+    let inserted_word = strings.concat("al", "pha")
+    let lookup_word = strings.concat("al", "pha")
+    if not collections.set_insert(words, inserted_word) {
+        return 1
+    }
+    if collections.set_insert(words, lookup_word) {
+        return 2
+    }
+    if collections.set_len(words) != 1 or not collections.set_contains(words, lookup_word) {
+        return 3
+    }
+
+    let word_list: List<string> = collections.list_new()
+    collections.list_push(word_list, inserted_word)
+    if not collections.list_contains(word_list, lookup_word) or collections.list_index_of(word_list, lookup_word) != 0 {
+        return 4
+    }
+
+    let scores: Map<string, int> = collections.map_new()
+    let inserted_key = strings.concat("ke", "y")
+    let lookup_key = strings.concat("ke", "y")
+    collections.map_set(scores, inserted_key, 42)
+    if not collections.map_contains(scores, lookup_key) {
+        return 5
+    }
+    let score = collections.map_get(scores, lookup_key)
+    if option.is_none(score) or option.option_unwrap(score) != 42 {
+        return 6
+    }
+
+    collections.set_free(words)
+    collections.list_free(word_list)
+    collections.map_free(scores)
+    return 0
+}

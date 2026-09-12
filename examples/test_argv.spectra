@@ -1,5 +1,6 @@
 module test_argv
 import std.env
+import std.option as option
 import std.io
 import std.convert
 
@@ -7,7 +8,11 @@ func main() {
     let count = env_args_count()
     let i     = 0
     while i < count {
-        println(env_arg(i))
+        let value = env_arg(i)
+        if option.is_some(value) {
+            let text: string = option.option_unwrap(value)
+            println(text)
+        }
         i = i + 1
     }
 }

@@ -1,0 +1,43 @@
+module bug_hunt_v2_285_drop_return_move
+
+record Token {
+    public id: int,
+    public active: bool,
+}
+
+impl Drop for Token {
+    func drop(&mut self) {
+        self.active = false
+    }
+}
+
+impl Token {
+    public func deactivate(&mut self) {
+        self.active = false
+    }
+}
+
+func make_token(id: int) returns Token {
+    let token = Token { id: id, active: true }
+    return token
+}
+
+public func main() returns int {
+    let returned = make_token(7)
+    if returned.id != 7 or not returned.active {
+        return 1
+    }
+
+    {
+        let local = make_token(8)
+        local.deactivate()
+        if local.active {
+            return 2
+        }
+    }
+
+    if returned.id != 7 {
+        return 3
+    }
+    return 0
+}

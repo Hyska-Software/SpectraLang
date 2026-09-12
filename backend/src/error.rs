@@ -92,6 +92,13 @@ impl BackendCodegenError {
         )
     }
 
+    pub(crate) fn unsupported_type(ty: impl fmt::Debug) -> Self {
+        Self::new(
+            BackendErrorKind::UnsupportedType,
+            format!("Unresolved or unsupported IR type {:?}", ty),
+        )
+    }
+
     pub(crate) fn unsupported_execution_return_type(ty: impl fmt::Debug) -> Self {
         Self::new(
             BackendErrorKind::UnsupportedExecutionReturnType,

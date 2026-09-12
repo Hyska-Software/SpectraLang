@@ -1,0 +1,22 @@
+// Store roundtrip: each todo persists as one JSON document string.
+// The store itself is the array of documents held by the caller;
+// no filesystem dependency, same semantics as a line-delimited file.
+module store
+
+import todo
+
+// Persistence lives in `todo` (save/load) because JSON derive codegen is
+// module-local; this module only compares decoded values.
+
+public func same(left: Todo, right: Todo) returns bool {
+    if left.id != right.id {
+        return false
+    }
+    if left.title != right.title {
+        return false
+    }
+    if left.done != right.done {
+        return false
+    }
+    return true
+}

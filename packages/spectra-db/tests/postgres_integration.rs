@@ -1,9 +1,9 @@
+use sha2::{Digest, Sha256};
 use spectra_db::postgres::{
     open_pool, PostgresConfig, PostgresConnection, PostgresOperationCancellation, PostgresValue,
 };
-use spectra_db::PoolConfig;
 use spectra_db::query::{Dialect, PostgresDialect};
-use sha2::{Digest, Sha256};
+use spectra_db::PoolConfig;
 use std::env;
 use std::future::Future;
 use std::io::Write;
@@ -14,7 +14,9 @@ use std::thread;
 use std::time::Duration;
 
 fn noop_waker() -> Waker {
-    unsafe fn clone(_: *const ()) -> RawWaker { RawWaker::new(std::ptr::null(), &VTABLE) }
+    unsafe fn clone(_: *const ()) -> RawWaker {
+        RawWaker::new(std::ptr::null(), &VTABLE)
+    }
     unsafe fn wake(_: *const ()) {}
     unsafe fn wake_by_ref(_: *const ()) {}
     unsafe fn drop(_: *const ()) {}
@@ -99,7 +101,12 @@ fn real_postgres_transactions_copy_and_notify_when_configured() {
     assert_eq!(count.rows.len(), 1);
 
     let rows = (3..=1026)
-        .map(|id| vec![PostgresValue::Int64(id), PostgresValue::Text(format!("copy-{id}"))])
+        .map(|id| {
+            vec![
+                PostgresValue::Int64(id),
+                PostgresValue::Text(format!("copy-{id}")),
+            ]
+        })
         .collect::<Vec<_>>();
     let copied = connection
         .copy_in_rows("COPY spectra_r2505_copy (id, name) FROM STDIN", rows)
@@ -134,7 +141,16 @@ fn real_postgres_pool_and_async_bridge_when_configured() {
         return;
     };
     let config = PostgresConfig::from_url(&url).unwrap();
-    let pool = Arc::new(open_pool(config, PoolConfig { max_size: 4, ..PoolConfig::default() }).unwrap());
+    let pool = Arc::new(
+        open_pool(
+            config,
+            PoolConfig {
+                max_size: 4,
+                ..PoolConfig::default()
+            },
+        )
+        .unwrap(),
+    );
     let lease = pool.acquire_blocking().unwrap();
     lease.connection().unwrap().health_check().unwrap();
     lease.release().unwrap();

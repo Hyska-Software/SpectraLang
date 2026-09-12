@@ -58,7 +58,7 @@ public func main() returns int {
     }
 
     let threshold    = 8
-    let filtered     = list_filter(mapped, | x: int | x / threshold)
+    let filtered     = list_filter(mapped, | x: int | x >= threshold)
     let filtered_sum = list_reduce(filtered, 0, | acc: int, x: int | acc + x)
     if filtered_sum != 20 {
         return filtered_sum

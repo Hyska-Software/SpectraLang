@@ -1,0 +1,47 @@
+module distributed_dataset_trains
+
+import std.ml as ml
+import std.tensor as tensor
+from std.api.json import parse, value_get, value_number_bits
+
+func last_loss_bits(session: int) returns int {
+    let summary = ml.distributed_summary(session)
+    let root = parse(summary)
+    let field = value_get(root, "last_loss")
+    return value_number_bits(field)
+}
+
+public func main() returns int {
+    // Real caller dataset: y = x over 8 samples (identity line through the
+    // origin), trained with data-parallel workers over dataset shards.
+    let xs = tensor.arange(0, 8, 1)
+    let ys = tensor.arange(0, 8, 1)
+    let ds = ml.dataset_from_tensors(xs, ys, 8)
+
+    let short = ml.distributed_train_dataset_multithread(
+        ds, "target/r360-short", 2, 1, 0.05, 7
+    )
+    let long = ml.distributed_train_dataset_multithread(
+        ds, "target/r360-long", 2, 100, 0.05, 7
+    )
+
+    // Global and per-worker steps advance on the real dataset.
+    if ml.distributed_global_step(short) != 1 {
+        return 1
+    }
+    if ml.distributed_global_step(long) != 100 {
+        return 2
+    }
+    if ml.distributed_worker_step_count(long, 0) != 100 {
+        return 3
+    }
+    if ml.distributed_worker_step_count(long, 1) != 100 {
+        return 4
+    }
+    // The loss decreases with training: last_loss is a non-negative MSE,
+    // so f64 bit order matches value order.
+    if last_loss_bits(short) <= last_loss_bits(long) {
+        return 5
+    }
+    return 0
+}

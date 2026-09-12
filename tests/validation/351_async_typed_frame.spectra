@@ -1,0 +1,20 @@
+module async_typed_frame
+
+async func ready(value: float) returns float {
+    return value
+}
+
+async func combine() returns float {
+    let left = await ready(1.5)
+    let right = await ready(2.5)
+    return left + right
+}
+
+public func main() returns int {
+    let task = combine()
+    let value = block_on(task)
+    if value == 4.0 {
+        return 0
+    }
+    return 1
+}

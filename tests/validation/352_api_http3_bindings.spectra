@@ -1,0 +1,12 @@
+module api_http3_bindings
+
+from std.api.http3 import client_config_new, handle_drop
+
+public func main() returns int {
+    let config = client_config_new("")
+    let released = handle_drop(config)
+    if released {
+        return 0
+    }
+    return 1
+}

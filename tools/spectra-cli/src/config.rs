@@ -84,21 +84,18 @@ impl std::error::Error for ConfigError {}
 /// Try to load a `spectra.toml` from `dir`.
 /// Returns `None` when no file is found, `Err` on parse/IO errors.
 pub fn try_load_config(dir: &Path) -> Result<Option<ProjectConfig>, ConfigError> {
-    // Accept both `spectra.toml` (preferred) and the legacy `Spectra.toml`.
-    let candidates = [dir.join("spectra.toml"), dir.join("Spectra.toml")];
-    for candidate in &candidates {
-        if candidate.exists() {
-            let text = fs::read_to_string(candidate).map_err(ConfigError::Io)?;
-            let config: ProjectConfig = toml::from_str(&text).map_err(ConfigError::Parse)?;
-            config
-                .release
-                .validate()
-                .map_err(|message| ConfigError::Release {
-                    path: candidate.clone(),
-                    message,
-                })?;
-            return Ok(Some(config));
-        }
+    let candidate = dir.join("spectra.toml");
+    if candidate.exists() {
+        let text = fs::read_to_string(&candidate).map_err(ConfigError::Io)?;
+        let config: ProjectConfig = toml::from_str(&text).map_err(ConfigError::Parse)?;
+        config
+            .release
+            .validate()
+            .map_err(|message| ConfigError::Release {
+                path: candidate.clone(),
+                message,
+            })?;
+        return Ok(Some(config));
     }
     Ok(None)
 }

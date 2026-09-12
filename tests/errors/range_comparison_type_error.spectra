@@ -1,0 +1,14 @@
+// Regression P011: range precedence.
+//
+// `1..2 == x` used to leave the trailing `==` orphaned and fail with a
+// parser error (P011 / "Expected a line break"). The range now binds at the
+// lowest expression precedence and the comparison attaches to it:
+// `(1..2) == x`. This file must still FAIL TO COMPILE, but the expected
+// error CHANGED FROM A SYNTAX ERROR TO A SEMANTIC TYPE MISMATCH
+// ("Type mismatch in equality comparison: Range and bool").
+module range_eq
+
+func main() returns int {
+    let result = 1..2 == true
+    return 0
+}

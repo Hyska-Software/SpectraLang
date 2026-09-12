@@ -1,0 +1,38 @@
+module bug_hunt_v2_288_aot_dyn_aggregate
+
+trait Measure {
+    func value(&self) returns int
+}
+
+record Boxed {
+    public value: int,
+}
+
+impl Measure for Boxed {
+    func value(&self) returns int {
+        self.value
+    }
+}
+
+record Envelope {
+    public prefix: char,
+    public measure: dyn Measure,
+    public enabled: bool,
+}
+
+func make_envelope(value: int) returns Envelope {
+    let boxed = Boxed { value: value }
+    let dynamic: dyn Measure = boxed as dyn Measure
+    Envelope { prefix: 'M', measure: dynamic, enabled: true }
+}
+
+public func main() returns int {
+    let envelope = make_envelope(42)
+    if envelope.prefix != 'M' or not envelope.enabled {
+        return 1
+    }
+    if envelope.measure.value() != 42 {
+        return 2
+    }
+    return 0
+}

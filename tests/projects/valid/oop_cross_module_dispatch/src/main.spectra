@@ -1,0 +1,29 @@
+module main
+
+import model
+import traits
+
+public func main() returns int {
+    let account = open(40, 2)
+    if account.total() != 42 {
+        return 1
+    }
+
+    let updated = account.with_fee(3)
+    if updated.total() != 45 {
+        return 2
+    }
+    if evaluate_runtime(updated) != 45 {
+        return 3
+    }
+
+    if evaluate(updated) != 45 {
+        return 4
+    }
+
+    let dynamic: dyn Valued = updated as dyn Valued
+    if dynamic.value() != 45 {
+        return 5
+    }
+    return 0
+}

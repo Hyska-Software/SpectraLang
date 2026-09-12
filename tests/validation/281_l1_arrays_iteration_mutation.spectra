@@ -1,0 +1,26 @@
+module bug_hunt_v2_281_arrays_iteration_mutation
+
+public func main() returns int {
+    let values = [2, 4, 6, 8]
+    let weighted = 0
+    let index = 0
+
+    while index < 4 {
+        weighted = weighted + values[index] * (index + 1)
+        index = index + 1
+    }
+
+    values[2] = 7
+    let total = 0
+    for item in values {
+        total = total + item
+    }
+
+    if weighted != 60 {
+        return 1
+    }
+    if total != 21 {
+        return 2
+    }
+    return 0
+}

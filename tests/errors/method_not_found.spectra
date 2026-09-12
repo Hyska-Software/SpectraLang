@@ -1,5 +1,5 @@
 // Test: Method call validation - should fail with error
-// Expected: Semantic error - method not found
+// Expected: Semantic error - method not found (code: E017)
 module method_error_test
 
 func create_value() returns int {

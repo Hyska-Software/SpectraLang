@@ -8,7 +8,6 @@
     { "include": "#characters" },
     { "include": "#numbers" },
     { "include": "#std_api" },
-    { "include": "#legacy_syntax" },
     { "include": "#keywords" },
     { "include": "#types" },
     { "include": "#operators" }
@@ -139,18 +138,6 @@
             "1": { "name": "keyword.declaration.impl.spectra" },
             "2": { "name": "entity.name.type.spectra" }
           }
-        }
-      ]
-    },
-    "legacy_syntax": {
-      "patterns": [
-        {
-          "name": "invalid.deprecated.spectra",
-          "match": "\\b(?:fn|struct|pub|elif|elseif|unless|of)\\b"
-        },
-        {
-          "name": "invalid.deprecated.spectra",
-          "match": "->|=>|;"
         }
       ]
     },

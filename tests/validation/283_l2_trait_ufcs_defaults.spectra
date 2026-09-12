@@ -1,0 +1,40 @@
+module bug_hunt_v2_283_trait_ufcs_defaults
+
+trait Score {
+    func score(&self) returns int
+
+    func plus(&self, amount: int) returns int {
+        self.score() + amount
+    }
+}
+
+record Ranked {
+    public value: int,
+}
+
+impl Score for Ranked {
+    func score(&self) returns int {
+        self.value
+    }
+}
+
+func evaluate<T: Score>(item: T) returns int {
+    item.plus(2)
+}
+
+public func main() returns int {
+    let ranked = Ranked { value: 40 }
+    if ranked.score() != 40 {
+        return 1
+    }
+    if Score::score(ranked) != 40 {
+        return 2
+    }
+    if ranked.plus(3) != 43 {
+        return 3
+    }
+    if evaluate(ranked) != 42 {
+        return 4
+    }
+    return 0
+}

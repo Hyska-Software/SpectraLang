@@ -1,0 +1,19 @@
+module bug_hunt_v2_311_aot_nested_aggregate
+
+record Packet {
+    id: int,
+    payload: string,
+    enabled: bool,
+}
+
+func make_packet(id: int, payload: string, enabled: bool) returns Packet {
+    return Packet { id: id, payload: payload, enabled: enabled }
+}
+
+public func main() returns int {
+    let packet = make_packet(17, "aot", true)
+    if packet.id != 17 or packet.payload != "aot" or packet.enabled != true {
+        return 1
+    }
+    return 0
+}

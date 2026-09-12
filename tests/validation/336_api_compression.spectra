@@ -1,0 +1,59 @@
+module api_compression
+
+from std.api.http import Request, Response, method_get, request, request_with_header, response_body_len, response_header, response_status
+from std.api.handler import text
+from std.api.middleware import MiddlewareChain, MiddlewareHandle, chain_new, execute_sync, register_compression, use_sync
+
+func exercise_encoding(base: Request, accept_encoding: string, expected: string, code: int) returns int {
+    let compression: MiddlewareHandle = register_compression(1)
+    let chain: MiddlewareChain = use_sync(chain_new(), compression)
+    let current = request_with_header(base, "Accept-Encoding", accept_encoding)
+    let response: Response = execute_sync(chain, current, text("Spectra compression fixture payload"))
+    if response_status(response) != 200 {
+        return code
+    }
+    if response_header(response, "Content-Encoding") != expected {
+        return code + 1
+    }
+    if response_header(response, "Vary") != "Accept-Encoding" {
+        return code + 2
+    }
+    if response_body_len(response) <= 0 {
+        return code + 3
+    }
+    return 0
+}
+
+func exercise_threshold(base: Request) returns int {
+    let compression: MiddlewareHandle = register_compression(1000)
+    let chain: MiddlewareChain = use_sync(chain_new(), compression)
+    let current = request_with_header(base, "Accept-Encoding", "gzip, br")
+    let response: Response = execute_sync(chain, current, text("small"))
+    if response_status(response) != 200 {
+        return 50
+    }
+    if response_header(response, "Content-Encoding") != "" {
+        return 51
+    }
+    if response_header(response, "Vary") != "Accept-Encoding" {
+        return 52
+    }
+    return 0
+}
+
+public func main() returns int {
+    let base = request(method_get(), "/compressed")
+    let br = exercise_encoding(base, "br;q=1, gzip;q=0.5", "br", 10)
+    if br != 0 {
+        return br
+    }
+    let gzip = exercise_encoding(base, "gzip;q=1, br;q=0.5", "gzip", 20)
+    if gzip != 0 {
+        return gzip
+    }
+    let deflate = exercise_encoding(base, "deflate;q=1, gzip;q=0.5, br;q=0", "deflate", 30)
+    if deflate != 0 {
+        return deflate
+    }
+    return exercise_threshold(base)
+}

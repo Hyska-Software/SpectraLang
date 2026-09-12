@@ -1,0 +1,27 @@
+module bug_hunt_v2_313_hostcall_batching
+
+import std.math as math
+import std.tensor as tensor
+
+func grouped_scalars(a: int, b: int, c: int, x: float) returns int {
+    let first = math.abs(a)
+    let second = math.max(b, c)
+    let third = math.abs_f(x)
+    let nan = math.is_nan_f(third)
+    if first != 7 or second != 9 or third != 3.5 or nan != false {
+        return 1
+    }
+    return first + second
+}
+
+public func main() returns int {
+    if grouped_scalars(-7, 3, 9, -3.5) != 16 {
+        return 1
+    }
+    tensor.set_grad_enabled(false)
+    tensor.set_grad_enabled(true)
+    if math.min(16, 9) != 9 {
+        return 2
+    }
+    return 0
+}

@@ -1,13 +1,10 @@
 use spectra_compiler::{
     analyze_modules, CompilationOptions, CompilationPipeline, CompilerError, Lexer, Parser,
 };
-use std::collections::HashSet;
 
 fn parse_module(source: &str) -> spectra_compiler::Module {
     let tokens = Lexer::new(source).tokenize().expect("lexer should succeed");
-    Parser::new(tokens, HashSet::new())
-        .parse()
-        .expect("parser should succeed")
+    Parser::new(tokens).parse().expect("parser should succeed")
 }
 
 #[test]
@@ -36,6 +33,36 @@ fn frontend_and_semantic_accepts_valid_program() {
         result.is_ok(),
         "semantic analysis should succeed: {result:?}"
     );
+}
+
+#[test]
+fn type_aliases_are_available_to_signatures_and_bodies() {
+    let source = r#"
+        module aliases
+
+        type Pair = (int, string)
+        const BASE: int = 40 + 2
+
+        func make_pair() returns Pair {
+            (BASE, "spectra")
+        }
+
+        public func main() returns int {
+            let pair: Pair = make_pair()
+            if pair.0 != 42 {
+                return 1
+            }
+            if pair.1 != "spectra" {
+                return 2
+            }
+            return 0
+        }
+    "#;
+
+    let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
+    pipeline
+        .compile(source, "type_aliases.spectra")
+        .expect("type aliases should resolve before function analysis and lowering");
 }
 
 #[test]
@@ -260,4 +287,101 @@ fn generic_return_type_parameter_cannot_satisfy_concrete_return() {
                 && semantic.message.contains("expected string")
                 && semantic.message.contains("found T")
     ));
+}
+
+#[test]
+fn json_derived_static_error_field_keeps_string_type_without_annotation() {
+    let source = r#"
+        module json_type_flow
+
+        #[derive(Serialize, Deserialize)]
+        record Profile {
+            id: int,
+            name: string,
+        }
+
+        public func main() returns int {
+            let field = Profile::json_error_field("{\"id\":7,\"name\":\"Ada\"}")
+            if field != "" {
+                return 1
+            }
+            return 0
+        }
+    "#;
+
+    let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
+    pipeline
+        .compile(source, "json_derived_static_error_field.spectra")
+        .expect("derived JSON static method should infer string through the full pipeline");
+}
+
+#[test]
+fn analyze_modules_rejects_mutual_import_cycle_with_e028() {
+    let source_a = r#"
+        module cycle_a
+
+        import cycle_b
+
+        public func from_a() returns int {
+            return 1
+        }
+    "#;
+    let source_b = r#"
+        module cycle_b
+
+        import cycle_a
+
+        public func from_b() returns int {
+            return 2
+        }
+    "#;
+
+    let mut module_a = parse_module(source_a);
+    let mut module_b = parse_module(source_b);
+    let mut modules = vec![&mut module_a, &mut module_b];
+
+    let errors = analyze_modules(modules.as_mut_slice())
+        .expect_err("mutual imports must be rejected as a circular import");
+    assert_eq!(
+        errors.len(),
+        1,
+        "expected a single non-cascading circular-import diagnostic: {errors:?}"
+    );
+    assert!(
+        matches!(
+            &errors[0],
+            error
+                if error.code.as_deref() == Some("E028")
+                    && error.message.contains("cycle_a -> cycle_b -> cycle_a")
+        ),
+        "expected coded E028 listing the full cycle: {errors:?}"
+    );
+}
+
+#[test]
+fn analyze_modules_reports_self_import_as_circular_without_processing() {
+    let source = r#"
+        module loopback
+
+        import loopback
+
+        public func main() returns int {
+            return 0
+        }
+    "#;
+
+    let mut module = parse_module(source);
+    let mut modules = vec![&mut module];
+
+    let errors = analyze_modules(modules.as_mut_slice())
+        .expect_err("a self-import must be rejected as a circular import");
+    assert!(
+        matches!(
+            &errors[0],
+            error
+                if error.code.as_deref() == Some("E028")
+                    && error.message.contains("loopback -> loopback")
+        ),
+        "expected coded E028 for the self-import: {errors:?}"
+    );
 }

@@ -52,10 +52,14 @@ public func main() returns int {
     } else {
         return 1
     }
-    let manifest_text = fs.fs_read(manifest_a)
-    if str.contains(manifest_text, "spectra.ml.experiment.v1") {
-        let ok_manifest = 1
-        if ok_manifest != 1 {
+    let manifest_result = fs.fs_read(manifest_a)
+    if let Result::Ok(manifest_text) = manifest_result {
+        if str.contains(manifest_text, "spectra.ml.experiment.v1") {
+            let ok_manifest = 1
+            if ok_manifest != 1 {
+                return 2
+            }
+        } else {
             return 2
         }
     } else {

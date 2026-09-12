@@ -205,9 +205,34 @@ pub fn detect_linker() -> Option<LinkerKind> {
 pub fn link_executable(
     obj_path: &Path,
     runtime_lib_path: &Path,
+    api_lib_path: Option<&Path>,
     output_path: &Path,
     native_debug: bool,
 ) -> Result<(), String> {
+    link_executable_many(
+        std::slice::from_ref(&obj_path.to_path_buf()),
+        runtime_lib_path,
+        api_lib_path,
+        output_path,
+        native_debug,
+    )
+}
+
+/// Links multiple relocatable Spectra objects with the runtime library.
+///
+/// Project AOT keeps one object per source module so cross-module symbols are
+/// resolved by the native linker instead of being silently dropped by a
+/// single-file compilation path.
+pub fn link_executable_many(
+    obj_paths: &[PathBuf],
+    runtime_lib_path: &Path,
+    api_lib_path: Option<&Path>,
+    output_path: &Path,
+    native_debug: bool,
+) -> Result<(), String> {
+    if obj_paths.is_empty() {
+        return Err("No object files were provided to the linker.".to_string());
+    }
     let linker = detect_linker().ok_or_else(|| {
         "No linker found. Install a C compiler (gcc, clang, or MSVC) or set the CC \
          environment variable to the path of your linker."
@@ -215,17 +240,30 @@ pub fn link_executable(
     })?;
 
     match &linker {
-        LinkerKind::Msvc(link_exe) => {
-            link_with_msvc(link_exe, obj_path, runtime_lib_path, output_path, native_debug)
-        }
-        LinkerKind::Cc(cc) => link_with_cc(cc, obj_path, runtime_lib_path, output_path, native_debug),
+        LinkerKind::Msvc(link_exe) => link_with_msvc(
+            link_exe,
+            obj_paths,
+            runtime_lib_path,
+            api_lib_path,
+            output_path,
+            native_debug,
+        ),
+        LinkerKind::Cc(cc) => link_with_cc(
+            cc,
+            obj_paths,
+            runtime_lib_path,
+            api_lib_path,
+            output_path,
+            native_debug,
+        ),
     }
 }
 
 fn link_with_cc(
     cc: &Path,
-    obj_path: &Path,
+    obj_paths: &[PathBuf],
     runtime_lib_path: &Path,
+    api_lib_path: Option<&Path>,
     output_path: &Path,
     native_debug: bool,
 ) -> Result<(), String> {
@@ -244,11 +282,30 @@ fn link_with_cc(
         .unwrap_or("spectra_runtime");
 
     let mut cmd = Command::new(cc);
-    cmd.arg(obj_path)
-        .arg(format!("-L{}", runtime_lib_dir.display()))
-        .arg(format!("-l{}", lib_stem))
-        .arg("-o")
-        .arg(output_path);
+    cmd.args(obj_paths);
+    // The API static archive is built with spectra-runtime as a dependency and
+    // therefore already contains the runtime objects needed by the AOT shim.
+    // Passing both archives makes static linkers see duplicate Rust symbols.
+    if api_lib_path.is_none() {
+        cmd.arg(format!("-L{}", runtime_lib_dir.display()))
+            .arg(format!("-l{}", lib_stem));
+    }
+    cmd.arg("-o").arg(output_path);
+    if let Some(api_lib_path) = api_lib_path {
+        let api_lib_dir = api_lib_path.parent().ok_or_else(|| {
+            format!(
+                "Cannot determine parent directory of '{}'",
+                api_lib_path.display()
+            )
+        })?;
+        let api_lib_stem = api_lib_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.trim_start_matches("lib"))
+            .unwrap_or("spectra_api");
+        cmd.arg(format!("-L{}", api_lib_dir.display()))
+            .arg(format!("-l{}", api_lib_stem));
+    }
     if native_debug {
         cmd.arg("-g");
     }
@@ -264,15 +321,25 @@ fn link_with_cc(
 
 fn link_with_msvc(
     link_exe: &Path,
-    obj_path: &Path,
+    obj_paths: &[PathBuf],
     runtime_lib_path: &Path,
+    api_lib_path: Option<&Path>,
     output_path: &Path,
     native_debug: bool,
 ) -> Result<(), String> {
     let link_name = link_exe.display().to_string();
     let mut cmd = Command::new(link_exe);
-    cmd.arg(obj_path)
-        .arg(runtime_lib_path)
+    cmd.args(obj_paths);
+    // `spectra-api` is a staticlib that embeds its spectra-runtime dependency.
+    // When API registration is requested it is the sole runtime archive; adding
+    // the standalone runtime archive as well produces LNK2005 duplicate symbols.
+    if api_lib_path.is_none() {
+        cmd.arg(runtime_lib_path);
+    }
+    if let Some(api_lib_path) = api_lib_path {
+        cmd.arg(api_lib_path);
+    }
+    cmd
         // Standard Windows system libraries (same set Rust uses).
         .args([
             "ws2_32.lib",

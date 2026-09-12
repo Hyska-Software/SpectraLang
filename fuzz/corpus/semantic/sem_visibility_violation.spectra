@@ -1,0 +1,6 @@
+module sem_visibility_violation
+record Hidden { private secret: int }
+public func main() returns int {
+    let h = Hidden { secret: 1 }
+    return h.secret
+}

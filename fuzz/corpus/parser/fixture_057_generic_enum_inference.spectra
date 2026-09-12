@@ -1,0 +1,47 @@
+// Test: Generic enum inference for constructor expressions
+// Expected: Compile successfully
+
+module generic_enum_inference
+
+enum Option<T> {
+    Some(T),
+    None
+}
+
+enum Result<T, E> {
+    Ok(T),
+    Err(E)
+}
+
+record Wrapper<T> {
+    value: T,
+}
+
+func unwrap_nested() returns int {
+    let wrapped = Option::Some(Option::Some(5))
+    match wrapped {
+        when Option::Some(inner) then match inner {
+            when Option::Some(value) then value,
+            when Option::None then 0
+        },
+        when Option::None then 0
+    }
+}
+
+func handle_result() returns string {
+    let response = Result::Err("timeout")
+    match response {
+        when Result::Ok(_) then "ok",
+        when Result::Err(msg) then msg
+    }
+}
+
+func build_wrapper() returns int {
+    let boxed = Wrapper { value: 12 }
+    boxed.value
+}
+
+func main() returns int {
+    let _status = handle_result()
+    unwrap_nested() + build_wrapper()
+}

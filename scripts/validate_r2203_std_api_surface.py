@@ -93,11 +93,10 @@ REQUIRED_FUNCTIONS = [
     "std.api.client.timeout_ms",
     "std.api.json.validate",
     "std.api.json.kind",
-    "std.api.json.encode",
-    "std.api.json.decode",
+    "std.api.json.parse",
+    "std.api.json.stringify",
     "std.api.tls.config_new",
     "std.api.tls.config_mode",
-    "std.api.tls.server_config",
     "std.api.tls.client_config",
     "std.api.routing.router",
     "std.api.routing.router_new",
@@ -189,6 +188,8 @@ REQUIRED_FUNCTIONS = [
     "std.api.handler.last_error_message",
     "std.api.handler.register_sync",
     "std.api.handler.register_async",
+    "std.api.handler.register_sync_callback",
+    "std.api.handler.register_async_callback",
     "std.api.handler.dispatch_sync",
     "std.api.handler.dispatch_async",
     "std.api.cors.policy",
@@ -240,7 +241,13 @@ REQUIRED_TYPES = [
 
 
 def read(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
+    source = ROOT / path
+    if source.suffix == ".rs":
+        return "\n".join(
+            sibling.read_text(encoding="utf-8")
+            for sibling in sorted(source.parent.rglob("*.rs"))
+        )
+    return source.read_text(encoding="utf-8")
 
 
 def fail(message: str) -> None:

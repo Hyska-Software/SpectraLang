@@ -3,15 +3,13 @@ use spectra_compiler::ast::{
     TypeAnnotationKind,
 };
 use spectra_compiler::{CompilationOptions, CompilationPipeline, CompilerError, Lexer, Parser};
-use std::collections::HashSet;
+
 use std::fs;
 use std::path::Path;
 
 fn parse(source: &str) -> Module {
     let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
-    Parser::new(tokens, HashSet::new())
-        .parse()
-        .expect("parsing should pass")
+    Parser::new(tokens).parse().expect("parsing should pass")
 }
 
 fn assert_snapshot(name: &str, actual: &str) {
@@ -54,7 +52,10 @@ fn type_annotation_inner(ty: &TypeAnnotation) -> String {
                 .map(type_annotation_inner)
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("func({params}) returns {}", type_annotation_inner(return_type))
+            format!(
+                "func({params}) returns {}",
+                type_annotation_inner(return_type)
+            )
         }
         TypeAnnotationKind::Generic { name, type_args } => {
             let args = type_args
@@ -129,8 +130,8 @@ fn expression(expr: &Expression) -> String {
 
 fn pattern(pattern: &Pattern) -> String {
     match pattern {
-        Pattern::Identifier(name) => format!("bind({name})"),
-        Pattern::Wildcard => "_".to_string(),
+        Pattern::Identifier(name, _) => format!("bind({name})"),
+        Pattern::Wildcard(_) => "_".to_string(),
         other => format!("{other:?}"),
     }
 }
@@ -203,7 +204,11 @@ fn ast_snapshot(module: &Module) -> String {
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                let prefix = if function.is_async { "async func" } else { "func" };
+                let prefix = if function.is_async {
+                    "async func"
+                } else {
+                    "func"
+                };
                 out.push_str(&format!(
                     "{} {:?} {}({params}) returns {}\n",
                     prefix,

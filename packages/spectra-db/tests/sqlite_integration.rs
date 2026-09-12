@@ -4,17 +4,24 @@ use spectra_db::sqlite::{
 };
 use spectra_db::{ConnectionPool, PoolConfig};
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+/// Same coarse-tick collision-proofing as migrations_integration.rs.
+static DATABASE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn database_path(name: &str) -> std::path::PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("spectralang-{name}-{nonce}.sqlite"))
+    let sequence = DATABASE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "spectralang-{name}-{nonce}-{}-{sequence}.sqlite",
+        std::process::id()
+    ))
 }
 
 fn connection(name: &str) -> (SqliteConnection, std::path::PathBuf) {

@@ -1,0 +1,20 @@
+// Page rendering and index generation.
+module site
+
+import std.string as s
+import md
+
+public func render_page(title: string, body: string) returns string {
+    let head = s.concat(s.concat("<html><head><title>", title), "</title></head><body>")
+    let tail = "</body></html>"
+    return s.concat(s.concat(head, body), tail)
+}
+
+public func index_entry(slug: string, title: string) returns string {
+    return s.concat(s.concat(s.concat("<li><a href=\"", slug), ".html\">"), s.concat(title, "</a></li>"))
+}
+
+// Renders the index list for exactly 3 entries.
+public func render_index(e0: string, e1: string, e2: string) returns string {
+    return s.concat(s.concat(s.concat(s.concat("<html><body><ul>", e0), e1), e2), "</ul></body></html>")
+}

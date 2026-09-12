@@ -1,9 +1,20 @@
-# Spectra Runtime Standard Library (Alpha)
+# Spectra Runtime Standard Library
 
 The Spectra runtime ships a minimal host-driven standard library implemented as registered host
 functions. The functions are grouped by namespace and can be installed by calling
-`spectra_runtime::register_standard_library()` (or invoking `spectra_rt_std_register` once it is
+`spectra_runtime::register()` (or invoking `spectra_rt_std_register` once it is
 gated through the CLI).
+
+The maturity contract is split by surface: scalar core helpers and the
+certified exact-width numeric ABI are stable, while typed collection accessors
+and `Option`/`Result` transformations remain beta until their complete
+cross-target evidence is available. The public collection names that can miss (`list_get`,
+`list_pop`, `list_pop_front`, `list_remove_at`, `map_get`, and `map_remove`)
+return tagged `Option<T>` values.
+The public `std.env.env_get` and `std.env.env_arg` calls use the same
+absence-safe `Option<string>` contract; empty-string environment values remain
+distinguishable from missing values.
+The public `std.fs` calls return tagged `Result<T, Error>` values.
 
 All host calls use the shared [`SpectraHostCallContext`](host-call-conventions.md) contract and the
 status codes defined in `runtime::ffi` (`HOST_STATUS_*`). Arguments and results are encoded as
@@ -15,8 +26,8 @@ R-2901 adds explicit exact-width scalar representations. Host-call slots remain
 canonical 64-bit values, while the compiler/backend materialize `i8`/`i16`/
 `i32`/`i64` and `f32`/`f64` values with their declared width. Signed values are
 sign-extended and unsigned values must be zero-extended at the ABI boundary.
-The feature remains in progress until all checked narrowing and C interop
-validation gates pass.
+The checked narrowing, AOT/interop, and C ABI validation gates for this scalar
+matrix pass in R-2901. Scalar forms outside this matrix remain deferred.
 
 ## math namespace
 
@@ -35,10 +46,11 @@ validation gates pass.
 
 ## collections namespace
 
-Spectra exposes list operations backed by runtime-managed vectors. Lists are represented by opaque
-handles (integers) that map to manual allocations tracked by the runtime. Failing to free a list will
-keep the allocation alive until `spectra.std.collections.list_free_all` is invoked or the process
-terminates.
+Spectra exposes typed `List<T>` operations at the source boundary. The runtime
+ABI currently transports each list as an opaque generational handle backed by a
+runtime-managed vector. The handle representation is an implementation/ABI
+detail; stale or invalid handles are rejected through the host status channel.
+A process-wide cleanup remains available for shutdown and test isolation.
 
 | Host call | Description | Arguments | Results |
 |-----------|-------------|-----------|---------|
@@ -48,6 +60,54 @@ terminates.
 | `spectra.std.collections.list_clear` | Removes all elements from the list without releasing the handle. | `handle` | `0` |
 | `spectra.std.collections.list_free` | Drops the list allocation associated with the handle. | `handle` | `0` when `results` provided |
 | `spectra.std.collections.list_free_all` | Drops every list managed by the runtime. | *(none)* | number of freed lists |
+| `spectra.std.collections.list_get` / `list_pop` / `list_pop_front` / `list_remove_at` | Absence-safe reads/removals for the public `std.collections` surface. | list handle, optional index | tagged `Option<T>` payload |
+| `spectra.std.collections.set_new` / `set_insert` / `set_contains` / `set_remove` | Creates and mutates an insertion-ordered typed set. | handle, optional value | handle or bool |
+| `spectra.std.collections.set_len` / `set_get` / `set_clear` / `set_free` | Reads, clears, and releases a set. | handle, optional index/value | length, tagged `Option<T>`, or `0` |
+| `spectra.std.collections.list_iter` / `set_iter` / `map_iter` | Creates deterministic snapshot iterators for collections. Map iteration yields keys. | collection handle | iterator handle |
+| `spectra.std.collections.iterator_next` / `iterator_remaining` / `iterator_free` | Consumes, inspects, and releases an `Iterator<T>`. | iterator handle | tagged `Option<T>`, length, or `0` |
+| `spectra.std.range.iter` | Adapts an integer range to the common iterator protocol. | range handle | `Iterator<int>` handle |
+
+The explicit `_option` names remain aliases for the absence-safe operations:
+`list_get_option`, `list_pop_option`, `list_pop_front_option`,
+`list_remove_at_option`, `map_get_option`, and `map_remove_option`. They allocate
+a small tagged payload and report invalid handles through the host status
+channel.
+
+## fs namespace
+
+The source-level filesystem contract is typed even though the host ABI still
+uses 64-bit slots. `Ok` carries the operation payload and `Err` carries an
+`Error` record from `std.error`.
+
+| Host call | Description | Arguments | Results |
+|-----------|-------------|-----------|---------|
+| `spectra.std.fs.fs_read` | Reads a UTF-8 file. | path | `Result<string, Error>` |
+| `spectra.std.fs.fs_write` | Replaces file contents and creates missing parents when possible. | path, content | `Result<bool, Error>` |
+| `spectra.std.fs.fs_append` | Appends file contents and creates missing parents when possible. | path, content | `Result<bool, Error>` |
+| `spectra.std.fs.fs_exists` | Checks metadata existence; a missing path is `Ok(false)`. | path | `Result<bool, Error>` |
+| `spectra.std.fs.fs_remove` | Removes a file. | path | `Result<bool, Error>` |
+
+Invalid paths and I/O failures are represented by `ErrorCode` values rather
+than an empty string or `false`. The runtime maps `InvalidArgument`, `NotFound`,
+`PermissionDenied`, `Io`, `Internal`, and `Unsupported` into the structured
+error record.
+
+## error namespace
+
+`std.error` owns the structured error record shared by typed standard-library
+operations. Its public accessors are `code`, `message`, `operation`, `context`,
+`origin`, and `retryable`; `new` constructs a record from the closed
+`ErrorCode` enum. Invalid host arguments still use `HOST_STATUS_INVALID_ARGUMENT`
+at the ABI boundary and are not converted into a fabricated success payload.
+
+## env namespace
+
+| Host call | Description | Arguments | Results |
+|-----------|-------------|-----------|---------|
+| `spectra.std.env.env_get` / `env_get_option` | Read an environment variable without conflating absence and an empty value. | key | tagged `Option<string>` |
+| `spectra.std.env.env_set` | Set an environment variable. | key, value | bool |
+| `spectra.std.env.env_args_count` | Count forwarded process arguments. | none | integer count |
+| `spectra.std.env.env_arg` / `env_arg_option` | Read a process argument by index. | index | tagged `Option<string>` |
 
 ## time namespace
 
@@ -58,7 +118,7 @@ ABI; invalid handles return `HOST_STATUS_INVALID_ARGUMENT`.
 | Host call | Description | Arguments | Results |
 |-----------|-------------|-----------|---------|
 | `spectra.std.time.time_now_millis` / `time_now_secs` | Unix wall-clock timestamp from `SystemTime`. | none | milliseconds or seconds since Unix epoch |
-| `spectra.std.time.sleep_ms` | Backwards-compatible blocking sleep in milliseconds. | `ms` | `0` when a result slot is provided |
+| `spectra.std.time.sleep_ms` | Blocking sleep in milliseconds. | `ms` | `0` when a result slot is provided |
 | `spectra.std.time.monotonic_millis` / `monotonic_nanos` | Monotonic elapsed time since runtime start. | none | elapsed milliseconds or nanoseconds |
 | `spectra.std.time.duration_ms` / `duration_secs` | Create a non-negative duration handle. | milliseconds or seconds | duration handle |
 | `spectra.std.time.duration_millis` / `duration_secs_value` | Read a duration handle. | duration handle | milliseconds or whole seconds |

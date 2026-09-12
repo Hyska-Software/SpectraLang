@@ -1,7 +1,9 @@
+use crate::handles::ApiHandleTable;
 use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
 };
+use spectra_runtime::handles::HandleKind;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
@@ -136,10 +138,8 @@ impl fmt::Display for MultipartError {
 impl std::error::Error for MultipartError {}
 
 struct MultipartStore {
-    next_multipart: SpectraHostValue,
-    next_part: SpectraHostValue,
-    multiparts: HashMap<SpectraHostValue, Multipart>,
-    parts: HashMap<SpectraHostValue, MultipartPart>,
+    multiparts: ApiHandleTable<Multipart>,
+    parts: ApiHandleTable<MultipartPart>,
     last_error_code: SpectraHostValue,
     last_error_message: String,
 }
@@ -147,27 +147,19 @@ struct MultipartStore {
 impl MultipartStore {
     fn new() -> Self {
         Self {
-            next_multipart: 1,
-            next_part: 1,
-            multiparts: HashMap::new(),
-            parts: HashMap::new(),
+            multiparts: ApiHandleTable::new(HandleKind::ApiMultipart),
+            parts: ApiHandleTable::new(HandleKind::ApiMultipartPart),
             last_error_code: 0,
             last_error_message: String::new(),
         }
     }
 
     fn multipart_handle(&mut self, multipart: Multipart) -> SpectraHostValue {
-        let handle = self.next_multipart;
-        self.next_multipart = self.next_multipart.saturating_add(1).max(1);
-        self.multiparts.insert(handle, multipart);
-        handle
+        self.multiparts.insert(multipart)
     }
 
     fn part_handle(&mut self, part: MultipartPart) -> SpectraHostValue {
-        let handle = self.next_part;
-        self.next_part = self.next_part.saturating_add(1).max(1);
-        self.parts.insert(handle, part);
-        handle
+        self.parts.insert(part)
     }
 
     fn clear_error(&mut self) {

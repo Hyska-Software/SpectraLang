@@ -1,0 +1,19 @@
+module main
+
+from state import COUNTER, increment
+
+public func main() returns int {
+    let before = COUNTER
+    let after = increment()
+    if before != 41 {
+        return 1
+    }
+    if after != 42 {
+        return 2
+    }
+    if COUNTER != 42 {
+        return 3
+    }
+    return 0
+}
+

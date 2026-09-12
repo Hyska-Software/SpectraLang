@@ -1,0 +1,4 @@
+module sem_recursive_alias
+type A = B
+type B = A
+record Node { public next: Node }

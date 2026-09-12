@@ -1,10 +1,7 @@
-#![no_main]
-
-use libfuzzer_sys::fuzz_target;
 use spectra_compiler::{analyze_modules, Lexer, Parser};
 use std::collections::HashSet;
 
-fuzz_target!(|data: &[u8]| {
+fn run(data: &[u8]) {
     let Ok(source) = std::str::from_utf8(data) else {
         return;
     };
@@ -19,4 +16,14 @@ fuzz_target!(|data: &[u8]| {
     };
     let mut modules = vec![&mut module];
     let _ = analyze_modules(modules.as_mut_slice());
+}
+
+#[cfg(fuzzing)]
+libfuzzer_sys::fuzz_target!(|data: &[u8]| {
+    run(data);
 });
+
+#[cfg(not(fuzzing))]
+fn main() {
+    spectralang_fuzz::replay_main(run);
+}

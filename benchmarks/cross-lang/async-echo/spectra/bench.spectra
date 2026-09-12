@@ -1,14 +1,14 @@
 // Phase 31: async-echo (Spectra)
 // Contract: fanout_fanin_real_concurrency.v2.
-// Spawn 10 runtime tasks before joining any of them. Repeated iters=1000
-// times. Total: 10_000 tasks, with observable fan-out/fan-in.
+// Spawn 10 runtime tasks before joining any of them. Repeated iters=10000
+// times. Total: 100_000 tasks, with observable fan-out/fan-in.
 
 module bench_async_echo
 
 import std.concurrent as concurrent
 
 public func main() returns int {
-    let iters = 1000
+    let iters = 10000
     let total = 0
     let i     = 0
     while i < iters {
@@ -20,7 +20,7 @@ public func main() returns int {
         total = total + local
         i = i + 1
     }
-    if total == 55000 {
+    if total == 550000 {
         return 0
     }
     return 1

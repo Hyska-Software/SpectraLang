@@ -1,0 +1,38 @@
+module bug_hunt_v2_305_ml_training_composition
+
+import std.tensor as tensor
+import std.ml as ml
+
+func train_step(features: int, target: int, weight: int, bias: int) returns int {
+    let prediction = ml.linear(features, weight, bias)
+    let loss = ml.mse_loss(prediction, target)
+    tensor.backward(loss)
+    ml.sgd_step(weight, 0.05)
+    ml.sgd_step(bias, 0.05)
+    tensor.zero_grad(weight)
+    tensor.zero_grad(bias)
+    return 0
+}
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled(true)
+    let features = tensor.reshape(tensor.full_f(4, 1.0), 4, 1)
+    let target = tensor.full_f(4, 2.0)
+    let weight = tensor.reshape(tensor.requires_grad(tensor.full_f(1, 0.0), true), 1, 1)
+    let bias = tensor.requires_grad(tensor.full_f(1, 0.0), true)
+
+    let step = 0
+    while step < 5 {
+        train_step(features, target, weight, bias)
+        step = step + 1
+    }
+    tensor.set_grad_enabled(false)
+    let final_loss = ml.mse_loss(ml.linear(features, weight, bias), target)
+    if tensor.len(final_loss) != 1 {
+        return 1
+    }
+    tensor.free_all()
+    tensor.set_grad_enabled(true)
+    return 0
+}

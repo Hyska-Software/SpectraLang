@@ -1,0 +1,17 @@
+// R-NEG-13: generic enum matches must still be exhaustive after substitution.
+module rneg_pattern_generic_non_exhaustive
+
+enum Maybe<T> {
+    Some(T),
+    None,
+}
+
+func score(value: Maybe<int>) returns int {
+    return match value {
+        when Maybe::Some(number) then number
+    }
+}
+
+public func main() returns int {
+    return score(Maybe::Some(7))
+}

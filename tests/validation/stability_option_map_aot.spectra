@@ -1,0 +1,11 @@
+module stability_option_map_aot
+
+import std.option as option
+
+public func main() returns int {
+    let mapped = option.option_map(Option::Some(41), |value: int| value + 1)
+    if option.option_unwrap(mapped) != 42 {
+        return 1
+    }
+    return 0
+}

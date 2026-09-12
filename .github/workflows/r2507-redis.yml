@@ -2,6 +2,13 @@ name: R-2507 Redis driver
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "packages/spectra-db/**"
+      - "packages/spectra-api/src/db.rs"
+      - "tests/validation/196_redis_driver.spectra"
+      - "scripts/validate_r2507_redis.py"
+      - ".github/workflows/r2507-redis.yml"
   push:
     paths:
       - "packages/spectra-db/**"
@@ -43,3 +50,14 @@ jobs:
         with:
           name: r2507-redis
           path: target/r2507-redis/
+      - name: Verify certifying report
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("target/r2507-redis/report.json").read_text())
+          assert report["schema"] == "spectralang.r2507_redis.v1"
+          assert report["status"] == "passed"
+          assert not report["failures"]
+          assert report["security"]["secret_not_in_report"]
+          PY

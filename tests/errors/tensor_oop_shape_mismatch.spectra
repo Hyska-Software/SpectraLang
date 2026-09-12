@@ -1,0 +1,23 @@
+// R-NEG-14: an OOP tensor method must preserve static shape checking.
+module rneg_tensor_oop_shape_mismatch
+
+import std.tensor as tensor
+
+record Linear {
+    public weight: Tensor<float, rank2, dim2, dim2, row_major, cpu>,
+}
+
+impl Linear {
+    public func apply(&self, input: Tensor<float, rank2, dim2, dim3, row_major, cpu>) returns int {
+        let result = tensor.matmul(input, self.weight)
+        return tensor.len(result)
+    }
+}
+
+public func main() returns int {
+    let model = Linear {
+        weight: [[1.0, 0.0], [0.0, 1.0]],
+    }
+    let input: Tensor<float, rank2, dim2, dim3, row_major, cpu> = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    return model.apply(input)
+}

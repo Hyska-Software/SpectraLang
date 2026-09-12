@@ -6,14 +6,14 @@
 
 mod error;
 mod metrics;
-mod pool;
-pub mod sqlite;
-pub mod query;
 pub mod migrations;
+mod pool;
 pub mod postgres;
+pub mod query;
 pub mod redis;
+pub mod sqlite;
 
 pub use error::{PoolError, PoolResult};
 pub use metrics::PoolMetrics;
 pub use pool::{ConnectionFactory, ConnectionPool, PoolConfig, PooledConnection};
-pub use query::{CompiledQuery, Dialect, Query, QueryError, PostgresDialect, SqliteDialect};
+pub use query::{CompiledQuery, Dialect, PostgresDialect, Query, QueryError, SqliteDialect};

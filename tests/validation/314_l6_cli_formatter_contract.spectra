@@ -1,0 +1,11 @@
+module bug_hunt_v2_314_cli_formatter_contract
+
+import std.string as str
+
+public func main() returns int {
+    let message = str.concat("spectra", "lang")
+    if message != "spectralang" {
+        return 1
+    }
+    return 0
+}

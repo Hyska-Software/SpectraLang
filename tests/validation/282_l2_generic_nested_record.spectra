@@ -1,0 +1,34 @@
+module bug_hunt_v2_282_generic_nested_record
+
+record Pair<T, U> {
+    public first: T,
+    public second: U,
+}
+
+impl Pair<T, U> {
+    public func first_value(&self) returns T {
+        self.first
+    }
+
+    public func second_value(&self) returns U {
+        self.second
+    }
+}
+
+record Envelope<T, U> {
+    public payload: Pair<T, U>,
+    public marker: char,
+}
+
+public func main() returns int {
+    let pair = Pair<int, string> { first: 7, second: "seven" }
+    let envelope = Envelope<int, string> { payload: pair, marker: 'P' }
+
+    if pair.first_value() != 7 or pair.second_value() != "seven" {
+        return 1
+    }
+    if envelope.marker != 'P' or envelope.payload.first != 7 {
+        return 2
+    }
+    return 0
+}

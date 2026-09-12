@@ -1,0 +1,2 @@
+module m
+public func main() { let msg = f"Hello {name } 

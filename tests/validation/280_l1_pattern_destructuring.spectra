@@ -1,0 +1,38 @@
+module bug_hunt_v2_280_pattern_destructuring
+
+record Point {
+    public x: int,
+    public y: int,
+}
+
+enum Signal {
+    Data(int),
+    Named { value: int },
+    Plus,
+    Minus,
+}
+
+func score(signal: Signal) returns int {
+    return match signal {
+        when Signal::Data(value) then value * 2,
+        when Signal::Named { value } then value + 1,
+        when Signal::Plus | Signal::Minus then 10
+    }
+}
+
+public func main() returns int {
+    let pair = (4, 6)
+    let(left, right) = pair
+    let point = Point { x: left, y: right }
+    let Point { x, y: renamed_y } = point
+
+    let total = score(Signal::Data(x)) +
+        score(Signal::Named { value: renamed_y }) +
+        score(Signal::Plus) +
+        score(Signal::Minus)
+
+    if total != 35 {
+        return total
+    }
+    return 0
+}

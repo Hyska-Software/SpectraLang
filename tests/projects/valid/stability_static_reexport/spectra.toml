@@ -1,0 +1,5 @@
+[project]
+name = "stability_static_reexport"
+version = "0.1.0"
+entry = "src/main.spectra"
+src_dirs = ["src"]

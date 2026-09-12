@@ -1,0 +1,54 @@
+module stability_typed_collections
+
+import std.collections as collections
+import std.option as option
+from std.collections import List, Map
+
+public func main() returns int {
+    let values: List<int> = collections.list_new()
+    collections.list_push(values, 11)
+    let value = collections.list_get(values, 0)
+    if option.is_none(value) or option.option_unwrap(value) != 11 {
+        return 1
+    }
+
+    let values_again: List<int> = collections.list_map(values, |value: int| value + 1)
+    let value_again = collections.list_get(values_again, 0)
+    if option.is_none(value_again) or option.option_unwrap(value_again) != 12 {
+        return 2
+    }
+
+    let numbers: Map<int, int> = collections.map_new()
+    collections.map_set(numbers, 5, 25)
+    let number = collections.map_get(numbers, 5)
+    if option.is_none(number) or option.option_unwrap(number) != 25 {
+        return 3
+    }
+
+    let words: List<string> = collections.list_new()
+    collections.list_push(words, "spectra")
+    let first_word = collections.list_get(words, 0)
+    if option.is_none(first_word) or option.option_unwrap(first_word) != "spectra" {
+        return 4
+    }
+    for word in words {
+        if word != "spectra" {
+            return 6
+        }
+    }
+
+    let labels: Map<string, string> = collections.map_new()
+    let label_key = "name"
+    collections.map_set(labels, label_key, "stable")
+    let label = collections.map_get(labels, label_key)
+    if option.is_none(label) or option.option_unwrap(label) != "stable" {
+        return 5
+    }
+
+    collections.list_free(values)
+    collections.list_free(values_again)
+    collections.list_free(words)
+    collections.map_free(numbers)
+    collections.map_free(labels)
+    return 0
+}

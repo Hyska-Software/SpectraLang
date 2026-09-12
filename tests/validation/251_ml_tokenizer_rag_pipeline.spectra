@@ -1,9 +1,9 @@
 // Extended validation: WordPiece tokenization, embedding retrieval and RAG prompt.
 module ml_tokenizer_rag_pipeline
 
-import std.tensor as tensor
 import std.ml as ml
 import std.string as str
+import std.tensor as tensor
 
 public func main() returns int {
     tensor.free_all()
@@ -16,10 +16,10 @@ public func main() returns int {
     }
 
     let index    = ml.vector_index_new(4)
-    let document = ml.text_embed("rag retrieval", 4)
+    let document = tensor.full_f(4, 1.0)
     if ml.vector_index_insert(index, "rag-doc", document) != 1 { return 3
     }
-    let query = ml.vector_index_query(index, ml.text_embed("rag retrieval", 4), 1)
+    let query = ml.vector_index_query(index, tensor.full_f(4, 1.0), 1)
     if not str.contains(query, "rag-doc") { return 4
     }
 

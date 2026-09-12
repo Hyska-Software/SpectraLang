@@ -1,0 +1,3 @@
+module state
+
+public static COUNTER: int = 9

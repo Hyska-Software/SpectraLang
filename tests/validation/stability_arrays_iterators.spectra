@@ -1,0 +1,53 @@
+module stability_arrays_iterators
+
+import std.collections as collections
+
+public func main() returns int {
+    let values: array<int> = [2, 4, 6, 8]
+    values[1] = 5
+
+    let array_sum = 0
+    for value in values {
+        array_sum = array_sum + value
+    }
+    if array_sum != 21 {
+        return 1
+    }
+
+    let range_sum = 0
+    for value in 1 ..= 4 {
+        range_sum = range_sum + value
+    }
+    if range_sum != 10 {
+        return 2
+    }
+
+    let nested = [[1, 2], [3, 4]]
+    if nested[1][0] != 3 {
+        return 3
+    }
+
+    let values_list = collections.list_new()
+    collections.list_push(values_list, 3)
+    collections.list_push(values_list, 4)
+    let list_sum = 0
+    for value in values_list {
+        list_sum = list_sum + value
+    }
+    collections.list_free(values_list)
+    if list_sum != 7 {
+        return 4
+    }
+
+    let break_sum = 0
+    for value in values {
+        if value > 5 {
+            break
+        }
+        break_sum = break_sum + value
+    }
+    if break_sum != 7 {
+        return 5
+    }
+    return 0
+}

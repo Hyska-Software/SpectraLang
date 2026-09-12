@@ -1,0 +1,20 @@
+// R-NEG-02: a concrete generic trait substitution must reject a wrong input.
+module rneg_oop_generic_trait_parameter_mismatch
+
+trait Transformer<T> {
+    func transform(&self, value: T) returns int
+}
+
+record BrokenTransformer {
+    public bias: int,
+}
+
+impl Transformer<int> for BrokenTransformer {
+    func transform(&self, value: string) returns int {
+        self.bias
+    }
+}
+
+public func main() returns int {
+    return 0
+}

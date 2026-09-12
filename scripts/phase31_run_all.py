@@ -102,7 +102,7 @@ def host_preflight() -> dict[str, Any]:
                 "(Get-Counter '\\Processor(_Total)\\% Processor Time' "
                 "-SampleInterval 1 -MaxSamples 2).CounterSamples[-1].CookedValue",
             ],
-            capture_output=True, text=True, check=False, timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=10,
         )
         try:
             load_pct = float(load.stdout.strip().replace(",", "."))
@@ -110,7 +110,7 @@ def host_preflight() -> dict[str, Any]:
             load_pct = None
         processes = subprocess.run(
             ["tasklist", "/fo", "csv", "/nh"],
-            capture_output=True, text=True, check=False, timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=10,
         )
         for line in processes.stdout.splitlines():
             image = line.split(",", 1)[0].strip('"').lower()
@@ -138,7 +138,7 @@ def build_go(scenario: str) -> pathlib.Path:
     out = BUILD_DIR / scenario / "go" / "bench"
     out.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["go", "build", "-ldflags=-s -w", "-o", str(out), str(src)]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     if proc.returncode != 0:
         raise RuntimeError(f"go build failed for {scenario}:\n{proc.stderr}")
     return out
@@ -150,7 +150,7 @@ def build_rust(scenario: str) -> pathlib.Path:
     out = BUILD_DIR / scenario / "rust" / "bench"
     out.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["rustc", "-O", "-o", str(out), str(src)]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     if proc.returncode != 0:
         raise RuntimeError(f"rustc failed for {scenario}:\n{proc.stderr}")
     return out
@@ -171,7 +171,7 @@ def time_subprocess(
     start = time.perf_counter_ns()
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=cwd, check=False,
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=cwd, check=False,
             timeout=timeout_s, env=env,
         )
     except subprocess.TimeoutExpired:
@@ -870,8 +870,7 @@ def main() -> int:
         "git_revision": subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
             check=False,
         ).stdout.strip() or "unknown",
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -892,12 +891,12 @@ def main() -> int:
         },
         "runtimes": {
             "go": subprocess.run(
-                ["go", "version"], capture_output=True, text=True, check=False
+                ["go", "version"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
             ).stdout.strip()
             if find_tool("go")
             else "missing",
             "rust": subprocess.run(
-                ["rustc", "--version"], capture_output=True, text=True, check=False
+                ["rustc", "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
             ).stdout.strip()
             if find_tool("rustc")
             else "missing",

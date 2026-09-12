@@ -1,0 +1,44 @@
+// R-271 candidate: stdlib calls must not corrupt aggregate fields or suppress
+// lifecycle behavior when records cross nested scopes.
+module r271_stdlib_aggregate_lifecycle
+
+import std.io
+import std.string as str
+import std.collections
+
+record Entry {
+    public id: int,
+    public name: string,
+}
+
+impl Entry {
+    public func score(&self) returns int {
+        self.id + str.len(self.name)
+    }
+}
+
+impl Drop for Entry {
+    func drop(&mut self) {
+        println(f"[R-271 drop] {self.id}:{self.name}")
+    }
+}
+
+public func main() returns int {
+    let total = 0
+    {
+        let first = Entry { id: 10, name: "alpha" }
+        let second = Entry { id: 20, name: "beta" }
+        total = first.score() + second.score()
+    }
+
+    let values = list_new()
+    list_push(values, total)
+    list_push(values, str.len("stdlib"))
+    let checksum = list_reduce(values, 0, | acc: int, value: int | acc + value)
+    list_free(values)
+
+    if checksum != 45 {
+        return checksum
+    }
+    return 0
+}

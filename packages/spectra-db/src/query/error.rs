@@ -11,7 +11,6 @@ pub enum QueryError {
     NegativeLimit,
     NegativeOffset,
     InvalidParameter(String),
-    UnsupportedOperation(&'static str),
 }
 
 impl QueryError {
@@ -26,7 +25,6 @@ impl QueryError {
             Self::NegativeLimit => "DB2502_NEGATIVE_LIMIT",
             Self::NegativeOffset => "DB2502_NEGATIVE_OFFSET",
             Self::InvalidParameter(_) => "DB2502_INVALID_PARAMETER",
-            Self::UnsupportedOperation(_) => "DB2502_UNSUPPORTED_OPERATION",
         }
     }
 }
@@ -51,9 +49,6 @@ impl fmt::Display for QueryError {
             Self::NegativeLimit => write!(f, "{}: limit cannot be negative", self.code()),
             Self::NegativeOffset => write!(f, "{}: offset cannot be negative", self.code()),
             Self::InvalidParameter(message) => write!(f, "{}: {message}", self.code()),
-            Self::UnsupportedOperation(operation) => {
-                write!(f, "{}: unsupported operation {operation}", self.code())
-            }
         }
     }
 }

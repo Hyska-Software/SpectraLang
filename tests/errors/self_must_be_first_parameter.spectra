@@ -1,0 +1,27 @@
+// Test: self must be the first parameter of a method (R-209)
+// Expected: Semantic error - self after other parameters (code: E024)
+module r209_self_first
+
+record Counter {
+    count: int
+}
+
+impl Counter {
+    func increment(by: int, self) returns int {
+        self.count + by
+    }
+}
+
+trait Describe {
+    func describe(label: string, &self) returns string
+}
+
+impl Describe for Counter {
+    func describe(label: string, &self) returns string {
+        label
+    }
+}
+
+func main() returns int {
+    0
+}

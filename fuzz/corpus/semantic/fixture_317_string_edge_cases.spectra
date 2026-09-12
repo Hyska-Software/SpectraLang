@@ -1,0 +1,43 @@
+module stdlib_string_edge_cases
+
+import std.collections as collections
+import std.string as string
+
+public func main() returns int {
+    if string.len("Spectra") != 7 {
+        return 1
+    }
+    if string.contains("SpectraLang", "Lang") != true {
+        return 2
+    }
+    if string.to_upper("Spectra") != "SPECTRA" {
+        return 3
+    }
+    if string.to_lower("LANG") != "lang" {
+        return 4
+    }
+    if string.trim("  core  ") != "core" {
+        return 5
+    }
+    if string.starts_with("SpectraLang", "Spectra") != true {
+        return 6
+    }
+    if string.ends_with("main.spectra", ".spectra") != true {
+        return 7
+    }
+    if string.eq(string.concat("Spectra", "Lang"), "SpectraLang") != true {
+        return 8
+    }
+    if string.repeat_str("ab", 3) != "ababab" {
+        return 9
+    }
+
+    let builder = string.builder_new(16)
+    string.builder_push(builder, "Spectra")
+    string.builder_push(builder, "Lang")
+    if string.builder_len(builder) != 11 {
+        return 10
+    }
+    if string.builder_finish(builder) != "SpectraLang" {
+        return 11
+    }

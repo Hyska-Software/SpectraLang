@@ -1,10 +1,17 @@
 module ml_phase18_onnx_import_export
 
+import std.collections as collections
 import std.ml as ml
 import std.string as str
+import std.tensor as tensor
 
 public func main() returns int {
-    let linear = ml.onnx_export("target/r1801/linear.onnx", "linear")
+    let linear_weight  = tensor.reshape(tensor.full_f(6, 0.5), 2, 3)
+    let linear_bias    = tensor.full_f(3, 0.1)
+    let linear_weights = collections.list_new()
+    collections.list_push(linear_weights, linear_weight)
+    collections.list_push(linear_weights, linear_bias)
+    let linear = ml.onnx_export_weights("target/r1801/linear.onnx", "linear", linear_weights)
     if ml.onnx_validate(linear) != 1 {
         return 1
     }
@@ -18,20 +25,40 @@ public func main() returns int {
         return 2
     }
 
-    let conv          = ml.onnx_export("target/r1801/conv.onnx", "conv")
-    let activation    = ml.onnx_export("target/r1801/activation.onnx", "activation")
-    let normalization = ml.onnx_export("target/r1801/normalization.onnx", "normalization")
-    let transformer   = ml.onnx_export("target/r1801/transformer.onnx", "transformer")
-
-    if ml.onnx_validate(conv) != 1 {
-        return 3
-    }
+    let empty_weights = collections.list_new()
+    let activation = ml.onnx_export_weights(
+        "target/r1801/activation.onnx",
+        "activation",
+        empty_weights,
+    )
     if ml.onnx_validate(activation) != 1 {
         return 4
     }
+
+    let norm_scale   = tensor.full_f(8, 1.0)
+    let norm_bias    = tensor.full_f(8, 0.0)
+    let norm_weights = collections.list_new()
+    collections.list_push(norm_weights, norm_scale)
+    collections.list_push(norm_weights, norm_bias)
+    let normalization = ml.onnx_export_weights(
+        "target/r1801/normalization.onnx",
+        "normalization",
+        norm_weights,
+    )
     if ml.onnx_validate(normalization) != 1 {
         return 5
     }
+
+    let trans_scale   = tensor.full_f(8, 1.0)
+    let trans_bias    = tensor.full_f(8, 0.0)
+    let trans_weights = collections.list_new()
+    collections.list_push(trans_weights, trans_scale)
+    collections.list_push(trans_weights, trans_bias)
+    let transformer = ml.onnx_export_weights(
+        "target/r1801/transformer.onnx",
+        "transformer",
+        trans_weights,
+    )
     if ml.onnx_validate(transformer) != 1 {
         return 6
     }

@@ -1,0 +1,105 @@
+module stability_set_iterator
+
+import std.collections as collections
+import std.option as option
+import std.range as range
+from std.collections import Iterator, Map, Set
+
+public func main() returns int {
+    let values: Set<int> = collections.set_new()
+    if collections.set_insert(values, 4) != true {
+        return 1
+    }
+    if collections.set_insert(values, 4) != false {
+        return 2
+    }
+    collections.set_insert(values, 7)
+    if collections.set_len(values) != 2 or not collections.set_contains(values, 7) {
+        return 3
+    }
+
+    let missing = collections.set_get(values, 99)
+    if option.is_some(missing) {
+        return 4
+    }
+
+    let set_iterator: Iterator<int> = collections.set_iter(values)
+    let first = collections.iterator_next(set_iterator)
+    let second = collections.iterator_next(set_iterator)
+    if option.is_none(first) or option.is_none(second) {
+        return 5
+    }
+    if collections.iterator_remaining(set_iterator) != 0 {
+        return 6
+    }
+    collections.iterator_free(set_iterator)
+
+    let loop_set: Set<int> = collections.set_new()
+    collections.set_insert(loop_set, 2)
+    collections.set_insert(loop_set, 3)
+    let set_sum = 0
+    for item in loop_set {
+        set_sum = set_sum + item
+    }
+    if set_sum != 5 {
+        return 10
+    }
+
+    let list = collections.list_new()
+    collections.list_push(list, 9)
+    collections.list_push(list, 10)
+    let list_iterator: Iterator<int> = collections.list_iter(list)
+    let list_first = collections.iterator_next(list_iterator)
+    if option.is_none(list_first) or option.option_unwrap(list_first) != 9 {
+        return 7
+    }
+    collections.iterator_free(list_iterator)
+
+    let explicit_iterator: Iterator<int> = collections.list_iter(list)
+    let iterator_sum = 0
+    for item in explicit_iterator {
+        iterator_sum = iterator_sum + item
+    }
+    if iterator_sum != 19 {
+        return 11
+    }
+    collections.iterator_free(explicit_iterator)
+
+    let numbers: Map<int, int> = collections.map_new()
+    collections.map_set(numbers, 8, 64)
+    let map_iterator: Iterator<int> = collections.map_iter(numbers)
+    let map_key = collections.iterator_next(map_iterator)
+    if option.is_none(map_key) or option.option_unwrap(map_key) != 8 {
+        return 8
+    }
+    collections.iterator_free(map_iterator)
+
+    let map_loop_sum = 0
+    for key in numbers {
+        map_loop_sum = map_loop_sum + key
+    }
+    if map_loop_sum != 8 {
+        return 12
+    }
+
+    let explicit_range = range.create(3, 5, true)
+    let range_iterator: Iterator<int> = range.iter(explicit_range)
+    let range_sum = 0
+    for value in range_iterator {
+        range_sum = range_sum + value
+    }
+    if range_sum != 12 {
+        return 13
+    }
+    collections.iterator_free(range_iterator)
+
+    if collections.set_remove(values, 4) != true or collections.set_contains(values, 4) {
+        return 9
+    }
+    collections.set_clear(values)
+    collections.set_free(values)
+    collections.set_free(loop_set)
+    collections.list_free(list)
+    collections.map_free(numbers)
+    return 0
+}

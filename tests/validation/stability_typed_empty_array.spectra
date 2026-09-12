@@ -1,0 +1,9 @@
+module stability_typed_empty_array
+
+public func main() returns int {
+    let values: array<int> = []
+    let nested: array<array<string>> = []
+    let _keep = values
+    let _keep_nested = nested
+    return 0
+}

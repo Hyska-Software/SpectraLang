@@ -1,34 +1,42 @@
 module runtime_host_status_hardening
 
+import std.collections as collections
+import std.error as error
 import std.fs as fs
-import std.collections
+import std.option as option
 
 public func main() returns int {
-    if fs.fs_read("") != "" {
+    let invalid_read = fs.fs_read("")
+    if let Result::Err(read_error) = invalid_read {
+        if error.code(read_error) != 0 {
+            return 1
+        }
+    } else {
         return 1
     }
-    if fs.fs_exists("") {
+    let invalid_exists = fs.fs_exists("")
+    if let Result::Err(exists_error) = invalid_exists {
+        if error.code(exists_error) != 0 {
+            return 2
+        }
+    } else {
         return 2
     }
 
-    if list_get(999999, 0) != -1 {
+    let values = collections.list_new()
+    if option.is_some(collections.list_get(values, -1)) {
         return 3
     }
-    if list_pop(999999) != -1 {
+    if option.is_some(collections.list_get(values, 0)) {
         return 4
     }
-    if list_remove_at(999999, 0) != -1 {
+    if option.is_some(collections.list_pop(values)) {
         return 5
     }
-
-    let values = list_new()
-    if list_get(values, -1) != -1 {
+    if option.is_some(collections.list_remove_at(values, 0)) {
         return 6
     }
-    if list_get(values, 0) != -1 {
-        return 7
-    }
-    list_free(values)
+    collections.list_free(values)
 
     return 0
 }

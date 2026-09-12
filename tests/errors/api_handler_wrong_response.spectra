@@ -1,0 +1,22 @@
+// R-NEG-15: an API handler implementation must honor the Response return ABI.
+module rneg_api_handler_wrong_response
+
+from std.api.http import Request, method_get, request
+from std.api.handler import Handler
+
+record BrokenHandler {
+    public code: int,
+}
+
+impl Handler for BrokenHandler {
+    func call(&self, request: Request) returns int {
+        self.code
+    }
+}
+
+public func main() returns int {
+    let handler = BrokenHandler { code: 500 }
+    let req = request(method_get(), "/broken")
+    let value = handler.call(req)
+    return value
+}

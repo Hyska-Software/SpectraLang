@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 spectra-compiler = { path = "../compiler" }
+spectra-contract = { path = "../packages/spectra-contract" }
 
 [lib]
 name = "spectra_midend"

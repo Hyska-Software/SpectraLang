@@ -1,0 +1,12 @@
+module stability_static_dynamic_initializer
+
+func runtime_value() returns int {
+    return 7
+}
+
+static INVALID: int = runtime_value()
+
+public func main() returns int {
+    return 0
+}
+

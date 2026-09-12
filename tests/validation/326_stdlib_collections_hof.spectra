@@ -1,0 +1,41 @@
+module stdlib_collections_hof
+
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let values = collections.list_new()
+    collections.list_push(values, 1)
+    collections.list_push(values, 2)
+    collections.list_push(values, 3)
+    collections.list_push(values, 4)
+
+    let doubled = collections.list_map(values, | value: int | value * 2)
+    let doubled_third = collections.list_get(doubled, 2)
+    if collections.list_len(doubled) != 4 or option.is_none(doubled_third) or option.option_unwrap(doubled_third) != 6 {
+        return 1
+    }
+
+    let evens = collections.list_filter(values, | value: int | value % 2 == 0)
+    let evens_first = collections.list_get(evens, 0)
+    if collections.list_len(evens) != 2 or option.is_none(evens_first) or option.option_unwrap(evens_first) != 2 {
+        return 2
+    }
+
+    let total = collections.list_reduce(doubled, 0, | acc: int, value: int | acc + value)
+    if total != 20 {
+        return 3
+    }
+
+    collections.list_sort_by(values, | left: int, right: int | right - left)
+    let sorted_first = collections.list_get(values, 0)
+    let sorted_last = collections.list_get(values, 3)
+    if option.is_none(sorted_first) or option.option_unwrap(sorted_first) != 4 or option.is_none(sorted_last) or option.option_unwrap(sorted_last) != 1 {
+        return 4
+    }
+
+    collections.list_free(values)
+    collections.list_free(doubled)
+    collections.list_free(evens)
+    return 0
+}

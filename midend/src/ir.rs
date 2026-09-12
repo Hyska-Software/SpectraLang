@@ -29,20 +29,19 @@ pub struct LocalDebugInfo {
 pub struct Module {
     pub name: String,
     pub functions: Vec<Function>,
+    /// Function declarations supplied by another source module. These are
+    /// emitted as native linker imports by AOT code generation and are not
+    /// lowered as bodies in this module.
+    pub external_functions: Vec<ExternalFunction>,
     pub globals: Vec<Global>,
-    /// vtable definitions for dyn Trait dispatch
-    pub vtables: Vec<VTableDef>,
     pub source_file: Option<String>,
 }
 
-/// A vtable that maps a concrete type's methods for a trait.
-/// Emitted as a read-only data section of function-pointer slots.
 #[derive(Debug, Clone)]
-pub struct VTableDef {
-    /// Symbol name: `__vtable_TypeName_TraitName`
+pub struct ExternalFunction {
     pub name: String,
-    /// Ordered function names (IR function names) for each slot.
-    pub methods: Vec<String>,
+    pub params: Vec<Type>,
+    pub return_type: Type,
 }
 
 /// Global variable
@@ -55,7 +54,11 @@ pub struct Global {
     pub initializer: Option<Constant>,
 }
 
-/// Function in IR
+/// Function in IR.
+///
+/// Async functions are represented by a public ramp and a generated poll
+/// function. `async_layout` is present on both functions: it is the machine
+/// readable contract shared with the backend and runtime.
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
@@ -66,6 +69,47 @@ pub struct Function {
     pub next_block_id: usize,
     pub source_span: Option<SourceSpan>,
     pub locals: Vec<LocalDebugInfo>,
+    pub async_layout: Option<AsyncCoroutineLayout>,
+    /// Generated poll/drop functions are opaque to ordinary CFG rewrites.
+    pub suspension_barrier: bool,
+}
+
+/// Stable frame slot assigned by async lowering.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AsyncFrameSlot {
+    pub id: usize,
+    pub name: String,
+    pub ty: Type,
+}
+
+/// A resume point. State zero is the entry state; every await gets one
+/// additional stable state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AsyncState {
+    pub id: usize,
+    pub resume_block: usize,
+    pub await_slot: Option<usize>,
+}
+
+/// ABI metadata for a stackless coroutine.
+///
+/// Poll parameters are always exactly `(frame_ptr:i64, task_id:i64,
+/// poll_ctx:i64)`, and the return value is an i64 status:
+/// `0 = Pending`, `1 = Ready`, `2 = Failed`, `3 = Cancelled`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AsyncCoroutineLayout {
+    pub poll_name: String,
+    pub drop_name: String,
+    pub output_type: Type,
+    pub frame_slots: Vec<AsyncFrameSlot>,
+    /// Source SSA values restored from the frame at poll entry.
+    pub source_slots: Vec<AsyncFrameSlot>,
+    pub states: Vec<AsyncState>,
+    pub poll_params: Vec<Type>,
+    pub status_pending: i64,
+    pub status_ready: i64,
+    pub status_failed: i64,
+    pub status_cancelled: i64,
 }
 
 /// Function parameter
@@ -175,6 +219,23 @@ pub enum InstructionKind {
         result: Value,
         ty: Type,
     },
+    /// Address of a module-level mutable global.
+    GlobalAddr {
+        result: Value,
+        name: String,
+        ty: Type,
+    },
+    /// Runtime manual heap allocation (tracked, frame-scoped). Used for values
+    /// that must outlive the current frame, such as dyn Trait vtables (R-210).
+    ManualAlloc {
+        result: Value,
+        size: i64,
+    },
+    /// Escapes a manual allocation to the base frame so it survives
+    /// `frame_exit` of the current function (R-210).
+    EscapeManualAlloc {
+        ptr: Value,
+    },
     Load {
         result: Value,
         ptr: Value,
@@ -190,12 +251,26 @@ pub enum InstructionKind {
         index: Value,
         element_type: Type,
     },
+    /// Pointer arithmetic with a constant byte offset for aggregate fields.
+    /// Used for struct/tuple/enum fields whose layout requires padding and
+    /// cumulative offsets (see `crate::layout`).
+    FieldPtr {
+        result: Value,
+        ptr: Value,
+        offset: i64,
+    },
 
     // Function calls
     Call {
         result: Option<Value>,
         function: String,
         args: Vec<Value>,
+        /// True when this direct self-call sits in tail position: the only
+        /// remaining action of its block is returning this call's result.
+        /// The backend fuses it (plus the trailing `Return`) into a native
+        /// Cranelift tail call. Only *self*-recursion is marked; cross-function
+        /// tail calls are out of scope.
+        is_tail: bool,
     },
     // Host function invocation
     HostCall {
@@ -231,23 +306,85 @@ pub enum InstructionKind {
         /// Return type of the callee signature.
         signature_return: Box<Type>,
     },
-    /// Async suspend boundary before polling or registering a task.
-    AsyncSuspend {
+    /// Source-level await marker. Async lowering consumes this marker when
+    /// constructing the poll state machine; it must not reach the backend.
+    Await {
+        result: Value,
+        task: Value,
+        output_type: Type,
+    },
+    /// Allocate the opaque coroutine frame and initialize its state to zero.
+    FrameAlloc {
+        result: Value,
+        layout: String,
+        slot_count: usize,
+    },
+    FrameStore {
+        frame: Value,
+        slot: usize,
+        value: Value,
+    },
+    FrameLoad {
+        result: Value,
+        frame: Value,
+        slot: usize,
+        ty: Type,
+    },
+    StateLoad {
+        result: Value,
+        frame: Value,
+    },
+    StateStore {
+        frame: Value,
+        state: usize,
+    },
+    /// Construct a task without evaluating the poll body.
+    CoroutineCreate {
+        result: Value,
+        frame: Value,
+        poll: String,
+        drop: String,
+        output_type: Type,
+    },
+    /// Poll a child exactly once for this invocation of the parent poll.
+    CoroutinePollChild {
+        status: Value,
+        result: Option<Value>,
+        task: Value,
+        output_type: Type,
+    },
+    CoroutineSubscribe {
+        task: Value,
+        parent: Value,
+    },
+    CoroutineWake {
+        task: Value,
+    },
+    CoroutineSuspend {
         task: Value,
         state: usize,
     },
-    /// Async resume boundary after a task is ready.
-    AsyncResume {
+    CoroutineComplete {
         task: Value,
-        state: usize,
+        value: Option<Value>,
     },
-    /// Produce a ready task handle from a completed async result.
+    CoroutineError {
+        task: Value,
+        error: Option<Value>,
+    },
+    CoroutineCancelled {
+        task: Value,
+    },
+    /// Internal marker used by pass barriers and diagnostics. The actual ABI
+    /// return remains an ordinary i64 `Return` terminator.
+    CoroutinePollReturn {
+        status: Value,
+    },
     AsyncReady {
         result: Value,
         value: Option<Value>,
         output_type: Type,
     },
-
     // PHI node for SSA
     Phi {
         result: Value,
@@ -285,8 +422,8 @@ pub enum InstructionKind {
     },
     /// String literal value. Codegen resolves this to a stable pointer
     /// (global data section in AOT, heap-allocated immutable buffer in
-    /// JIT). Length is always known at compile time and the bytes are
-    /// stored null-terminated, one byte per `i64` slot.
+    /// JIT). Length is always known at compile time and the bytes are stored
+    /// packed UTF-8, terminated by a single NUL byte (`len + 1` bytes).
     ConstString {
         result: Value,
         value: String,
@@ -353,6 +490,13 @@ pub struct Value {
 /// IR Type system
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
+    /// A type that could not be resolved by semantic analysis or lowering.
+    ///
+    /// This is deliberately not a backend representation.  It exists so the
+    /// midend can preserve the distinction between a real unit value (`Void`)
+    /// and an unresolved value.  Verification must reject modules containing
+    /// this variant before any backend is invoked.
+    Unknown,
     Void,
     Int,
     Float,
@@ -381,6 +525,15 @@ pub enum Type {
     Enum {
         name: String,
         variants: Vec<(String, Option<Vec<Type>>)>, // (name, data_types)
+    },
+    /// A concrete generic application whose arguments remain explicit in IR.
+    /// `representation` is the ABI/layout form used by existing lowering and
+    /// backend code while the application is migrated away from name-only
+    /// mangling.
+    Generic {
+        name: String,
+        args: Vec<Type>,
+        representation: Box<Type>,
     },
     Function {
         params: Vec<Type>,
@@ -439,8 +592,8 @@ impl Module {
         Self {
             name: name.into(),
             functions: Vec::new(),
+            external_functions: Vec::new(),
             globals: Vec::new(),
-            vtables: Vec::new(),
             source_file: None,
         }
     }
@@ -462,10 +615,12 @@ impl Function {
             params,
             return_type,
             blocks: Vec::new(),
-            next_value_id: param_count, // Start after parameters
+            next_value_id: param_count,
             next_block_id: 0,
             source_span: None,
             locals: Vec::new(),
+            async_layout: None,
+            suspension_barrier: false,
         }
     }
 
@@ -501,7 +656,11 @@ impl Function {
 impl BasicBlock {
     pub fn add_instruction(&mut self, kind: InstructionKind) -> usize {
         let id = self.instructions.len();
-        self.instructions.push(Instruction { id, kind, source_span: None });
+        self.instructions.push(Instruction {
+            id,
+            kind,
+            source_span: None,
+        });
         id
     }
 
@@ -512,7 +671,10 @@ impl BasicBlock {
 
 impl Type {
     pub fn is_numeric(&self) -> bool {
-        matches!(self, Type::Int | Type::Float | Type::ExactInt { .. } | Type::ExactFloat { .. })
+        matches!(
+            self,
+            Type::Int | Type::Float | Type::ExactInt { .. } | Type::ExactFloat { .. }
+        )
     }
 
     pub fn is_integer(&self) -> bool {

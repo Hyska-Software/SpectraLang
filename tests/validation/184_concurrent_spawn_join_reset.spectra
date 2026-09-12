@@ -5,7 +5,7 @@ import std.concurrent as concurrent
 
 public func main() returns int {
     concurrent.reset()
-    let value = concurrent.task_join(concurrent.task_spawn(7))
+    let value = concurrent.task_join(concurrent.task_spawn_fn( | value: int | { value}, 7))
     if value != 7 or concurrent.stats_tasks_spawned() != 1 {
         return 1
     }

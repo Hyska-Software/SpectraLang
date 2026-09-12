@@ -1,0 +1,51 @@
+module stdlib_char_range
+
+import std.char as char
+import std.range as range
+
+public func main() returns int {
+    if char.is_alpha(65) != true or char.is_alpha(33) != false {
+        return 1
+    }
+    if char.is_digit_char(48) != true or char.is_digit_char(65) != false {
+        return 2
+    }
+    if char.is_whitespace_char(32) != true or char.is_whitespace_char(65) != false {
+        return 3
+    }
+    if char.is_upper_char(65) != true or char.is_upper_char(97) != false {
+        return 4
+    }
+    if char.is_lower_char(97) != true or char.is_lower_char(65) != false {
+        return 5
+    }
+    if char.to_upper_char(97) != 65 or char.to_lower_char(65) != 97 {
+        return 6
+    }
+    if char.is_alphanumeric(233) != true or char.is_alphanumeric(32) != false {
+        return 7
+    }
+
+    let exclusive = range.create(2, 5, false)
+    if range.len(exclusive) != 3 or range.start(exclusive) != 2 {
+        return 8
+    }
+    if range.end(exclusive) != 5 or range.is_inclusive(exclusive) != false {
+        return 9
+    }
+    if range.at(exclusive, 0) != 2 or range.at(exclusive, 2) != 4 {
+        return 10
+    }
+
+    let inclusive = range.create(2, 5, true)
+    if range.len(inclusive) != 4 or range.at(inclusive, 3) != 5 {
+        return 11
+    }
+    if range.is_inclusive(inclusive) != true {
+        return 12
+    }
+    if range.eq(exclusive, exclusive) != true or range.eq(exclusive, inclusive) != false {
+        return 13
+    }
+    return 0
+}

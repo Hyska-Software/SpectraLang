@@ -1,0 +1,64 @@
+module stability_typed_option_accessors
+
+import std.collections as collections
+import std.env as env
+import std.option as option
+from std.collections import List, Map
+
+public func main() returns int {
+    let values: List<int> = collections.list_new()
+    collections.list_push(values, 7)
+
+    let hit = collections.list_get_option(values, 0)
+    if option.is_none(hit) {
+        return 1
+    }
+    if option.option_unwrap(hit) != 7 {
+        return 2
+    }
+
+    let miss = collections.list_get_option(values, 99)
+    if option.is_some(miss) {
+        return 3
+    }
+
+    let numbers: Map<int, int> = collections.map_new()
+    collections.map_set(numbers, 5, 42)
+    let map_hit = collections.map_get_option(numbers, 5)
+    if option.is_none(map_hit) {
+        return 4
+    }
+    if option.option_unwrap(map_hit) != 42 {
+        return 5
+    }
+
+    let map_miss = collections.map_get_option(numbers, 99)
+    if option.is_some(map_miss) {
+        return 6
+    }
+
+    let removed = collections.map_remove_option(numbers, 5)
+    if option.is_none(removed) {
+        return 7
+    }
+    if option.option_unwrap(removed) != 42 {
+        return 8
+    }
+
+    let popped = collections.list_pop_option(values)
+    if option.is_none(popped) {
+        return 9
+    }
+    if option.option_unwrap(popped) != 7 {
+        return 10
+    }
+
+    let absent = env.env_get_option("__SPECTRA_STABILITY_MISSING_ENV__")
+    if option.is_some(absent) {
+        return 11
+    }
+
+    collections.list_free(values)
+    collections.map_free(numbers)
+    return 0
+}

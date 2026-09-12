@@ -1,0 +1,44 @@
+// R-263 regression: a multi-parameter generic record must preserve both
+// specialized field types through nested aggregates and method returns.
+module r263_generic_struct_multiarg
+
+record Pair<T, U> {
+    public first: T,
+    public second: U,
+}
+
+impl Pair<T, U> {
+    public func first_value(&self) returns T {
+        self.first
+    }
+
+    public func second_value(&self) returns U {
+        self.second
+    }
+
+    public func swapped(&self) returns Pair<U, T> {
+        Pair<U, T> { first: self.second, second: self.first }
+    }
+}
+
+record Envelope<T, U> {
+    public payload: Pair<T, U>,
+    public marker: char,
+}
+
+public func main() returns int {
+    let pair = Pair<int, string> { first: 7, second: "seven" }
+    let swapped = pair.swapped()
+    let envelope = Envelope<int, string> { payload: pair, marker: 'P' }
+
+    if pair.first_value() != 7 or pair.second_value() != "seven" {
+        return 1
+    }
+    if swapped.first != "seven" or swapped.second != 7 {
+        return 2
+    }
+    if envelope.marker != 'P' or envelope.payload.first != 7 {
+        return 3
+    }
+    return 0
+}

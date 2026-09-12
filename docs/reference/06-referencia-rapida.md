@@ -395,10 +395,14 @@ genericos     = "<" IDENT (":" IDENT ("+" IDENT)*)? ("," ...)* ">" ;
 | `std.string` | `len`, `contains`, `to_upper`, `to_lower`, `trim`, `substring`, `replace`, `split_first`, `split_last`, `index_of`, `concat`, `is_empty`, `reverse_str`, `pad_left`, `pad_right` |
 | `std.math` | `abs`, `min`, `max`, `clamp`, `sign`, `gcd`, `lcm`, `sqrt_f`, `pow_f`, `floor_f`, `ceil_f`, `round_f`, `sin_f`, `cos_f`, `tan_f`, `log_f`, `pi`, `e_const` |
 | `std.convert` | `int_to_string`, `float_to_string`, `bool_to_string`, `string_to_int`, `string_to_float`, `int_to_float`, `float_to_int`, `string_to_int_or`, `bool_to_int` |
-| `std.collections` | `list_new`, `list_push`, `list_pop`, `list_len`, `list_get`, `list_set`, `list_sort`, `list_contains`, `list_index_of`, `list_free` |
+| `std.collections` | `list_new`, `list_push`, `list_len`, `list_get`/`list_pop`/`list_remove_at` (`Option<T>`), `list_set`, `list_sort`, `list_contains`, `list_index_of`, `list_free` |
+| `std.compat.collections` | `list_get`, `list_pop`, `list_pop_front`, `list_remove_at`, `map_get`, `map_remove` com sentinelas legados |
 | `std.random` | `random_seed`, `random_int`, `random_float`, `random_bool` |
-| `std.fs` | `fs_read`, `fs_write`, `fs_append`, `fs_exists`, `fs_remove` |
-| `std.env` | `env_get`, `env_set`, `env_args_count`, `env_arg` |
+| `std.fs` | `fs_read`, `fs_write`, `fs_append`, `fs_exists`, `fs_remove` retornando `Result<T, Error>` |
+| `std.compat.fs` | Adaptadores legados de FS com sentinelas explícitos |
+| `std.error` | `new`, `code`, `message`, `operation`, `context`, `origin`, `retryable` |
+| `std.env` | `env_get`/`env_arg` (`Option<string>`), `env_set`, `env_args_count` |
+| `std.compat.env` | `env_get`, `env_arg` com sentinela `""` legado |
 | `std.option` | `is_some`, `is_none`, `option_unwrap`, `option_unwrap_or` |
 | `std.result` | `is_ok`, `is_err`, `result_unwrap`, `result_unwrap_or`, `result_unwrap_err` |
 | `std.char` | `is_alpha`, `is_digit_char`, `is_whitespace_char`, `is_alphanumeric`, `to_upper_char`, `to_lower_char` |
@@ -452,13 +456,6 @@ spectralang <comando> [flags] <arquivo>...
 | `--deny <rule>` | Eleva uma regra a erro | Escalate a lint rule to error |
 | `--json` | Emite diagnósticos em JSON | Emit diagnostics as JSON |
 
-### Flags Experimentais / Experimental Flags
-
-| Flag | Descrição PT-BR | Description EN-US |
-|------|-----------------|-------------------|
-| `--enable-experimental <feature>` | Compatibilidade com scripts antigos; sem gates ativos | Compatibility no-op; no active gates |
-
-> **Features experimentais disponíveis / Available experimental features:** nenhuma no momento / none currently.
 
 ### Regras de Lint Disponíveis / Available Lint Rules
 

@@ -1,0 +1,71 @@
+module api_cookie
+
+from std.api.http import Cookie, Response, cookie_error_code, cookie_header, cookie_is_expired, cookie_max_age, cookie_path, cookie_secure, cookie_same_site, cookie_sign, cookie_value, cookie_verify, cookie_with_options, response_header, response_new, response_with_cookie
+
+public func main() returns int {
+    let cookie: Cookie = cookie_with_options(
+        "session",
+        "abc123",
+        "/account",
+        "example.com",
+        3600,
+        true,
+        true,
+        1,
+    )
+    if cookie_path(cookie) != "/account" {
+        return 10
+    }
+    if cookie_max_age(cookie) != 3600 {
+        return 11
+    }
+    if cookie_secure(cookie) != true {
+        return 12
+    }
+    if cookie_same_site(cookie) != 1 {
+        return 13
+    }
+    if cookie_value(cookie) != "abc123" {
+        return 14
+    }
+    let header = cookie_header(cookie)
+    if header == "" {
+        return 15
+    }
+    let signed: Cookie = cookie_sign(cookie, "fixture-secret")
+    if cookie_verify(signed, "fixture-secret") != true {
+        return 16
+    }
+    if cookie_verify(signed, "wrong-secret") != false {
+        return 17
+    }
+    if cookie_error_code() != 2 {
+        return 18
+    }
+    let response: Response = response_new(200)
+    let response_with_session = response_with_cookie(response, signed)
+    if response_header(response_with_session, "Set-Cookie") == "" {
+        return 19
+    }
+    let expired: Cookie = cookie_with_options(
+        "session",
+        "abc123",
+        "",
+        "",
+        0,
+        true,
+        true,
+        2,
+    )
+    if cookie_is_expired(expired) != true {
+        return 20
+    }
+    let expired_signed: Cookie = cookie_sign(expired, "fixture-secret")
+    if cookie_verify(expired_signed, "fixture-secret") != false {
+        return 21
+    }
+    if cookie_error_code() != 3 {
+        return 22
+    }
+    return 0
+}

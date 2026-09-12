@@ -1,0 +1,3 @@
+module sem_self_in_static
+record R { public x: int }
+static S: int = self.x

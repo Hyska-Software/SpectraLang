@@ -1,0 +1,37 @@
+module onnx_export_weights
+
+import std.tensor as tensor
+import std.ml as ml
+import std.collections as collections
+import std.string as str
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled(false)
+
+    // Live trained-style weights: weight[2,3] + bias[3] in spec order.
+    let weight = tensor.reshape(tensor.full_f(6, 0.5), 2, 3)
+    let bias = tensor.full_f(3, 0.1)
+    let weights = collections.list_new()
+    collections.list_push(weights, weight)
+    collections.list_push(weights, bias)
+
+    let model = ml.onnx_export_weights("target/r1801/linear-live.onnx", "linear", weights)
+    if ml.onnx_validate(model) != 1 {
+        return 1
+    }
+    let summary = ml.onnx_import_summary(model)
+    if str.contains(summary, "Gemm") {
+        let ok_linear = 1
+        if ok_linear != 1 {
+            return 2
+        }
+    } else {
+        return 2
+    }
+
+    // Unknown kinds stay rejected, like onnx_export.
+    tensor.free_all()
+    tensor.set_grad_enabled(true)
+    return 0
+}

@@ -1,0 +1,2 @@
+module m
+let s = "\q \z \x{} \u{} \u{FFFFFFFFFF}"

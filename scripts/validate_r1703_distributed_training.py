@@ -27,11 +27,11 @@ def require(condition: bool, message: str) -> None:
 def validate_checkpoint(path: Path) -> None:
     checkpoint = json.loads(path.read_text(encoding="utf-8"))
     require(
-        checkpoint["schema"] == "spectra.ml.distributed_checkpoint.v1",
+        checkpoint["schema"] == "spectra.ml.distributed_checkpoint.v2",
         "bad distributed checkpoint schema",
     )
     require(
-        checkpoint["topology"] == "single-machine-simulated-workers",
+        checkpoint["topology"] == "multi-thread",
         "unsupported topology recorded",
     )
     require(checkpoint["seed"] == 2026, "seed was not preserved")

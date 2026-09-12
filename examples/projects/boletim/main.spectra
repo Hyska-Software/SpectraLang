@@ -2,6 +2,7 @@ module boletim_main
 
 import std.io
 import std.collections
+from std.collections import List
 import notas
 import aluno
 import turma
@@ -13,7 +14,7 @@ public func main() returns int {
     println("")
 
     // Lista de medias para o relatorio da turma
-    let medias = list_new()
+    let medias: List<int> = list_new()
 
     println("=== ALUNOS DA TURMA 3A ===")
     println("")

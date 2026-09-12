@@ -1,0 +1,30 @@
+module stdlib_random
+
+import std.random as random
+
+public func main() returns int {
+    random.random_seed(12345)
+    let first = random.random_int(10, 20)
+    if first < 10 or first >= 20 {
+        return 1
+    }
+
+    random.random_seed(12345)
+    if random.random_int(10, 20) != first {
+        return 2
+    }
+    if random.random_int(7, 7) != 7 or random.random_int(9, 3) != 9 {
+        return 3
+    }
+
+    let fraction = random.random_float()
+    if fraction < 0.0 or fraction >= 1.0 {
+        return 4
+    }
+
+    let flag = random.random_bool()
+    if flag != true and flag != false {
+        return 5
+    }
+    return 0
+}

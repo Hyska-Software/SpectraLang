@@ -1,0 +1,23 @@
+// R-NEG-04: a generic trait cannot become a dyn value without an explicit
+// object-safe concrete substitution.
+module rneg_oop_dyn_generic_trait
+
+trait ValueOf<T> {
+    func value(&self) returns T
+}
+
+record Value {
+    public number: int,
+}
+
+impl ValueOf<int> for Value {
+    func value(&self) returns int {
+        self.number
+    }
+}
+
+public func main() returns int {
+    let value = Value { number: 7 }
+    let dynamic: dyn ValueOf = value as dyn ValueOf
+    return dynamic.value()
+}

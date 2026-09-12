@@ -1,0 +1,18 @@
+module bug_hunt_v2_300_json_derive_roundtrip
+
+#[derive(Serialize, Deserialize)]
+record Profile {
+    #[json(rename = "user_id")]
+    id: int,
+    name: string,
+    #[json(optional)]
+    nickname: string,
+}
+
+public func main() returns int {
+    let error_field = Profile::json_error_field("{\"user_id\":7,\"name\":\"Ada\"}")
+    if error_field != "" {
+        return 1
+    }
+    return 0
+}

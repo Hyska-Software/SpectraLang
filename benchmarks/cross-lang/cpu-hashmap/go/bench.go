@@ -9,7 +9,7 @@ import (
 
 func main() {
 	const n = 200
-	const iters = 30
+	const iters = 300
 	acc := 0
 	for it := 0; it < iters; it++ {
 		m := make(map[int]int, n)

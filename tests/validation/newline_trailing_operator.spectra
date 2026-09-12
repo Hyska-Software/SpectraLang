@@ -1,0 +1,26 @@
+// Regression: newline terminates an expression unless the previous line ends
+// with an explicit continuation (operator, comma, `=`, or open delimiter).
+//
+// Trailing-operator continuation is the supported multiline style: each
+// continued line ENDS with the operator that joins it to the next operand.
+// This file must COMPILE successfully and return 0 on success.
+module newline_trailing_operator
+
+func total() returns int {
+    let sum = 1 +
+        2 +
+        3 +
+        4
+    let scaled = sum *
+        10
+    let combined = scaled +
+        sum
+    if combined != 60 {
+        return 1
+    }
+    return 0
+}
+
+func main() returns int {
+    return total()
+}

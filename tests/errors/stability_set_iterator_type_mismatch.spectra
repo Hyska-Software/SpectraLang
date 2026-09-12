@@ -1,0 +1,14 @@
+module stability_set_iterator_type_mismatch
+
+import std.collections as collections
+from std.collections import Iterator, List, Set
+
+public func main() returns int {
+    let values: Set<int> = collections.set_new()
+    collections.set_insert(values, "not an int")
+
+    let words: List<string> = collections.list_new()
+    let numbers: Iterator<int> = collections.list_iter(words)
+    collections.iterator_free(numbers)
+    return 0
+}

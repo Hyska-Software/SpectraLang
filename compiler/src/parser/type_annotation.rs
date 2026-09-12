@@ -48,16 +48,16 @@ impl Parser {
             }
             self.consume_symbol(')', "Expected ')' after function parameter types")?;
             let return_type = if self.check_keyword(Keyword::Returns) {
-                    self.advance(); // consume 'returns'
-                    self.parse_type_annotation()?
-                } else {
-                    TypeAnnotation {
-                        kind: TypeAnnotationKind::Simple {
-                            segments: vec!["unit".to_string()],
-                        },
-                        span: start_span,
-                    }
-                };
+                self.advance(); // consume 'returns'
+                self.parse_type_annotation()?
+            } else {
+                TypeAnnotation {
+                    kind: TypeAnnotationKind::Simple {
+                        segments: vec!["unit".to_string()],
+                    },
+                    span: start_span,
+                }
+            };
             let end_span = self
                 .tokens
                 .get(self.position.saturating_sub(1))
@@ -240,6 +240,7 @@ impl Parser {
                             | TokenKind::Symbol(')')    // end of parameter list / tuple
                             | TokenKind::Keyword(Keyword::Returns) // function return type
                             | TokenKind::Symbol('[') // array index after type
+                            | TokenKind::Symbol('>') // nested generic closing delimiter
                         );
                     }
                 }

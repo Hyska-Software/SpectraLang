@@ -76,27 +76,51 @@ pub extern "C" fn spectra_interop_add_i64(lhs: i64, rhs: i64) -> i64 {
 }
 
 #[no_mangle]
-pub extern "C" fn spectra_interop_identity_i8(value: i8) -> i8 { value }
+pub extern "C" fn spectra_interop_identity_i8(value: i8) -> i8 {
+    value
+}
 #[no_mangle]
-pub extern "C" fn spectra_interop_identity_u8(value: u8) -> u8 { value }
+pub extern "C" fn spectra_interop_identity_u8(value: u8) -> u8 {
+    value
+}
 #[no_mangle]
-pub extern "C" fn spectra_interop_identity_i16(value: i16) -> i16 { value }
+pub extern "C" fn spectra_interop_identity_i16(value: i16) -> i16 {
+    value
+}
 #[no_mangle]
-pub extern "C" fn spectra_interop_identity_u16(value: u16) -> u16 { value }
+pub extern "C" fn spectra_interop_identity_u16(value: u16) -> u16 {
+    value
+}
 #[no_mangle]
-pub extern "C" fn spectra_interop_identity_i32(value: i32) -> i32 { value }
+pub extern "C" fn spectra_interop_identity_i32(value: i32) -> i32 {
+    value
+}
 #[no_mangle]
-pub extern "C" fn spectra_interop_identity_u32(value: u32) -> u32 { value }
+pub extern "C" fn spectra_interop_identity_u32(value: u32) -> u32 {
+    value
+}
 #[no_mangle]
-pub extern "C" fn spectra_interop_identity_i64(value: i64) -> i64 { value }
+pub extern "C" fn spectra_interop_identity_i64(value: i64) -> i64 {
+    value
+}
 #[no_mangle]
-pub extern "C" fn spectra_interop_identity_u64(value: u64) -> u64 { value }
+pub extern "C" fn spectra_interop_identity_u64(value: u64) -> u64 {
+    value
+}
 #[no_mangle]
-pub extern "C" fn spectra_interop_identity_f32(value: f32) -> f32 { value }
+pub extern "C" fn spectra_interop_identity_f32(value: f32) -> f32 {
+    value
+}
 #[no_mangle]
-pub extern "C" fn spectra_interop_identity_f64(value: f64) -> f64 { value }
+pub extern "C" fn spectra_interop_identity_f64(value: f64) -> f64 {
+    value
+}
 
 #[no_mangle]
+/// # Safety
+///
+/// `out` must be either null (which is rejected) or a valid, writable pointer
+/// to an `i8` for the duration of the call.
 pub unsafe extern "C" fn spectra_interop_checked_i64_to_i8(value: i64, out: *mut i8) -> i32 {
     if out.is_null() || value < i8::MIN as i64 || value > i8::MAX as i64 {
         return SPECTRA_INTEROP_INVALID_ARGUMENT;
@@ -106,14 +130,27 @@ pub unsafe extern "C" fn spectra_interop_checked_i64_to_i8(value: i64, out: *mut
 }
 
 #[no_mangle]
+/// # Safety
+///
+/// When `len` is non-zero, `data` must be non-null, properly aligned, and
+/// point to `len` readable `f64` values for the duration of the call. A null
+/// pointer is accepted only with `len == 0`.
 pub unsafe extern "C" fn spectra_interop_tensor_f64_sum(data: *const f64, len: usize) -> f64 {
-    if data.is_null() && len != 0 {
+    if data.is_null() {
+        if len == 0 {
+            return 0.0;
+        }
         return f64::NAN;
     }
     slice::from_raw_parts(data, len).iter().sum()
 }
 
 #[no_mangle]
+/// # Safety
+///
+/// `path` must point to `path_len` readable bytes containing UTF-8, and when
+/// `len` is non-zero `data` must point to `len` readable, properly aligned
+/// `f64` values. A null `data` pointer is accepted only with `len == 0`.
 pub unsafe extern "C" fn spectra_interop_npy_write_f64(
     path: *const c_char,
     path_len: usize,
@@ -126,7 +163,11 @@ pub unsafe extern "C" fn spectra_interop_npy_write_f64(
     if data.is_null() && len != 0 {
         return SPECTRA_INTEROP_INVALID_ARGUMENT;
     }
-    let values = slice::from_raw_parts(data, len);
+    let values = if len == 0 {
+        &[]
+    } else {
+        slice::from_raw_parts(data, len)
+    };
     match write_npy_f64(Path::new(&path), values) {
         Ok(()) => SPECTRA_INTEROP_OK,
         Err(InteropError::Io(_)) => SPECTRA_INTEROP_IO_ERROR,
@@ -135,6 +176,10 @@ pub unsafe extern "C" fn spectra_interop_npy_write_f64(
 }
 
 #[no_mangle]
+/// # Safety
+///
+/// `path` must point to `path_len` readable bytes containing UTF-8 for the
+/// duration of the call.
 pub unsafe extern "C" fn spectra_interop_npy_read_f64(
     path: *const c_char,
     path_len: usize,
@@ -149,6 +194,11 @@ pub unsafe extern "C" fn spectra_interop_npy_read_f64(
 }
 
 #[no_mangle]
+/// # Safety
+///
+/// `array` must be an array previously returned by this library and not have
+/// been freed already. Its pointer, length, and allocation must remain valid
+/// until this call takes ownership of it.
 pub unsafe extern "C" fn spectra_interop_f64_array_free(array: SpectraF64Array) {
     if array.data.is_null() {
         return;
@@ -185,7 +235,7 @@ pub fn write_npy_f64(path: &Path, values: &[f64]) -> Result<(), InteropError> {
     let newline_len = 1usize;
     let padding = (16 - ((prelude_len + header.len() + newline_len) % 16)) % 16;
     let mut padded_header = header;
-    padded_header.extend(std::iter::repeat(' ').take(padding));
+    padded_header.extend(std::iter::repeat_n(' ', padding));
     padded_header.push('\n');
     if padded_header.len() > u16::MAX as usize {
         return Err(InteropError::Format("npy header too large".to_string()));
@@ -285,7 +335,10 @@ mod tests {
         assert_eq!(spectra_interop_identity_i32(-70_000), -70_000);
         assert_eq!(spectra_interop_identity_u32(4_000_000_000), 4_000_000_000);
         assert_eq!(spectra_interop_identity_i64(-9_000_000_000), -9_000_000_000);
-        assert_eq!(spectra_interop_identity_u64(9_000_000_000_000_000_000), 9_000_000_000_000_000_000);
+        assert_eq!(
+            spectra_interop_identity_u64(9_000_000_000_000_000_000),
+            9_000_000_000_000_000_000
+        );
         assert_eq!(spectra_interop_identity_f32(1.25), 1.25);
         assert_eq!(spectra_interop_identity_f64(1.0 / 3.0), 1.0 / 3.0);
     }
@@ -293,9 +346,15 @@ mod tests {
     #[test]
     fn exact_width_c_abi_rejects_checked_narrowing() {
         let mut output = 0_i8;
-        assert_eq!(unsafe { spectra_interop_checked_i64_to_i8(127, &mut output) }, SPECTRA_INTEROP_OK);
+        assert_eq!(
+            unsafe { spectra_interop_checked_i64_to_i8(127, &mut output) },
+            SPECTRA_INTEROP_OK
+        );
         assert_eq!(output, 127);
-        assert_eq!(unsafe { spectra_interop_checked_i64_to_i8(128, &mut output) }, SPECTRA_INTEROP_INVALID_ARGUMENT);
+        assert_eq!(
+            unsafe { spectra_interop_checked_i64_to_i8(128, &mut output) },
+            SPECTRA_INTEROP_INVALID_ARGUMENT
+        );
     }
 
     #[test]

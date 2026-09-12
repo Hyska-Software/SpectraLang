@@ -1,0 +1,25 @@
+module api_protocol_bindings
+
+from std.api.grpc import message_from_base64, message_to_base64, message_len, message_free
+from std.api.graphql import schema_new, schema_field_json, schema_finish, execute, response_data_json, response_status, response_drop, schema_drop
+
+public func main() returns int {
+    let message = message_from_base64("AAECAw==")
+    let message_length = message_len(message)
+    let round_trip = message_to_base64(message)
+    let message_released = message_free(message)
+
+    let builder = schema_new()
+    let field_added = schema_field_json(builder, 0, "hello", "String", "\"world\"")
+    let schema = schema_finish(builder)
+    let response = execute(schema, "{ hello }", "{}")
+    let data = response_data_json(response)
+    let status = response_status(response)
+    let response_released = response_drop(response)
+    let schema_released = schema_drop(schema)
+
+    if message_length == 4 and round_trip == "AAECAw==" and message_released and field_added and status == 200 and data == "{\"hello\":\"world\"}" and response_released and schema_released {
+        return 0
+    }
+    return 1
+}

@@ -1,0 +1,5 @@
+[project]
+name = "stability_private_static"
+version = "0.1.0"
+entry = "src/main.spectra"
+src_dirs = ["src"]

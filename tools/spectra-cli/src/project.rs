@@ -294,14 +294,12 @@ fn collect_sources(
             let child_path = entry.path();
             collect_sources(&child_path, origin, out)?;
         }
-    } else if metadata.is_file() {
-        if is_source_file(path) {
-            let normalized = normalize_path(path).map_err(|error| ProjectError::Io {
-                path: path.to_path_buf(),
-                error,
-            })?;
-            out.entry(normalized).or_insert_with(|| origin.clone());
-        }
+    } else if metadata.is_file() && is_source_file(path) {
+        let normalized = normalize_path(path).map_err(|error| ProjectError::Io {
+            path: path.to_path_buf(),
+            error,
+        })?;
+        out.entry(normalized).or_insert_with(|| origin.clone());
     }
 
     Ok(())
@@ -318,7 +316,7 @@ fn is_source_file(path: &Path) -> bool {
 fn should_skip_directory(path: &Path) -> bool {
     match path.file_name().and_then(|name| name.to_str()) {
         Some(name) if name.starts_with('.') => true,
-        Some(name) if matches!(name, "target" | "build" | "dist" | "out") => true,
+        Some("target" | "build" | "dist" | "out") => true,
         _ => false,
     }
 }
@@ -354,12 +352,8 @@ fn extract_imports(source: &str) -> Vec<String> {
     for line in source.lines() {
         let trimmed = line.trim();
 
-        // Strip the public visibility prefix used by re-exports. The canonical
-        // form is `public from path import name`; the legacy `pub` spelling is
-        // intentionally still recognized here so project diagnostics can point
-        // at the parser's migration error instead of mis-ordering modules.
+        // The canonical form is `public from path import name`.
         let trimmed = trimmed.strip_prefix("public ").unwrap_or(trimmed);
-        let trimmed = trimmed.strip_prefix("pub ").unwrap_or(trimmed);
 
         if let Some(rest) = trimmed.strip_prefix("from ") {
             // `from path.to.module import name, other as alias`
@@ -579,11 +573,7 @@ mod tests {
     #[test]
     fn package_origins_are_preserved_and_order_is_dependency_first() {
         let temp = TempProject::new("origins");
-        let app = temp.source(
-            "app",
-            "main.spectra",
-            "module app.main\nimport lib.core\n",
-        );
+        let app = temp.source("app", "main.spectra", "module app.main\nimport lib.core\n");
         let lib = temp.source("lib", "core.spectra", "module lib.core\n");
 
         let plan = ProjectPlan::build_with_sources(vec![app, lib]).expect("build plan");
@@ -611,9 +601,13 @@ mod tests {
             "module app.support\npublic func answer() returns int {\n return 42\n}\n",
         );
 
-        let plan = ProjectPlan::build_with_sources(vec![app, prelude, support])
-            .expect("build plan");
-        let names: Vec<_> = plan.modules().iter().map(|module| module.name.as_str()).collect();
+        let plan =
+            ProjectPlan::build_with_sources(vec![app, prelude, support]).expect("build plan");
+        let names: Vec<_> = plan
+            .modules()
+            .iter()
+            .map(|module| module.name.as_str())
+            .collect();
         assert_eq!(names, vec!["app.support", "app.prelude", "app.main"]);
     }
 

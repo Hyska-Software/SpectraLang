@@ -35,6 +35,11 @@ public func main() returns int {
     }
 
     let server = serve.server_new(2)
+    let scale_weight = tensor.reshape(tensor.full_f(1, 2.0), 1, 1)
+    let scale_bias = tensor.full_f(1, 0.0)
+    if serve.server_register_model_linear(server, scale_weight, scale_bias, 0) != 1 {
+        return 2
+    }
     serve.server_set_model_version(server, "composition-v1")
     serve.server_set_fallback(server, -1)
     serve.server_set_input_policy(server, 0, 100)

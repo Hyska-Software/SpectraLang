@@ -1,0 +1,56 @@
+module bug_hunt_v2_279_control_flow_composition
+
+func classify(value: int) returns int {
+    switch value {
+        case 0: {
+            return 10
+        }
+        case 1: {
+            return 20
+        }
+        else: {
+            return 30
+        }
+    }
+}
+
+func accumulated(limit: int) returns int {
+    let total = 0
+    let index = 0
+    loop {
+        index = index + 1
+        if index == 2 {
+            continue
+        }
+        if index > limit {
+            break
+        }
+        total = total + index
+    }
+
+    let count = 0
+    do {
+        count = count + 1
+    } while count < 3
+
+    if not count == 3 {
+        return -1
+    }
+    return total
+}
+
+public func main() returns int {
+    if classify(0) != 10 {
+        return 1
+    }
+    if classify(1) != 20 {
+        return 2
+    }
+    if classify(9) != 30 {
+        return 3
+    }
+    if accumulated(5) != 13 {
+        return 4
+    }
+    return 0
+}

@@ -1,0 +1,13 @@
+module access
+
+internal func internal_score(value: int) returns int {
+    value + 2
+}
+
+func hidden_score(value: int) returns int {
+    value + 99
+}
+
+public func exported_score(value: int) returns int {
+    internal_score(value)
+}

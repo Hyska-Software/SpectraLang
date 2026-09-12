@@ -5,7 +5,9 @@ pub const DEFAULT_COMPATIBILITY_LEVEL: &str = "spectralang-0.1";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum ReleaseChannel {
+    #[default]
     Nightly,
     Beta,
     Stable,
@@ -18,12 +20,6 @@ impl ReleaseChannel {
             ReleaseChannel::Beta => "beta",
             ReleaseChannel::Stable => "stable",
         }
-    }
-}
-
-impl Default for ReleaseChannel {
-    fn default() -> Self {
-        Self::Nightly
     }
 }
 

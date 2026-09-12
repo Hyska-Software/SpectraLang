@@ -1,0 +1,47 @@
+module bug_hunt_v2_310_sqlite_transaction_roundtrip
+
+from std.api.db.sqlite import SqliteConnection, SqliteStatement, open, close, prepare, bind_int, bind_text, step, column_int, column_text, finalize, begin, commit, rollback
+
+public func main() returns int {
+    let database: SqliteConnection = open("target/bug-hunt-v2.sqlite")
+    let schema: SqliteStatement = prepare(database, "CREATE TABLE IF NOT EXISTS items(id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+    if step(schema) != 2 or finalize(schema) != true {
+        return 1
+    }
+    let cleanup: SqliteStatement = prepare(database, "DELETE FROM items")
+    if step(cleanup) != 2 or finalize(cleanup) != true {
+        return 2
+    }
+    if begin(database) != true {
+        return 3
+    }
+    let insert: SqliteStatement = prepare(database, "INSERT INTO items(id,name) VALUES(?1,?2)")
+    if bind_int(insert, 0, 1) != true or bind_text(insert, 1, "spectra") != true or step(insert) != 2 {
+        return 4
+    }
+    if finalize(insert) != true or commit(database) != true {
+        return 5
+    }
+    let query: SqliteStatement = prepare(database, "SELECT id,name FROM items WHERE id=?1")
+    if bind_int(query, 0, 1) != true or step(query) != 1 {
+        return 6
+    }
+    if column_int(query, 0) != 1 or column_text(query, 1) != "spectra" {
+        return 7
+    }
+    if finalize(query) != true {
+        return 8
+    }
+    if begin(database) != true {
+        return 9
+    }
+    let rollback_statement: SqliteStatement = prepare(database, "INSERT INTO items(id,name) VALUES(?1,?2)")
+    bind_int(rollback_statement, 0, 2)
+    bind_text(rollback_statement, 1, "discarded")
+    step(rollback_statement)
+    finalize(rollback_statement)
+    if rollback(database) != true or close(database) != true {
+        return 10
+    }
+    return 0
+}

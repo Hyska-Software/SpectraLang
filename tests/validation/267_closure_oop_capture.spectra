@@ -1,0 +1,38 @@
+// R-267 candidate: closures may capture an OOP aggregate and call its
+// inherent method without losing the captured fields.
+module r267_closure_oop_capture
+
+record Bias {
+    public offset: int,
+    public scale: int,
+}
+
+impl Bias {
+    public func apply(&self, value: int) returns int {
+        value * self.scale + self.offset
+    }
+}
+
+func apply_once(value: int, transform: func(int) returns int) returns int {
+    transform(value)
+}
+
+func make_transform(bias: Bias) returns func(int) returns int {
+    | value: int | bias.apply(value)
+}
+
+public func main() returns int {
+    let bias = Bias { offset: 3, scale: 4 }
+    if bias.apply(5) != 23 {
+        return 1
+    }
+
+    let transform = make_transform(bias)
+    if transform(5) != 23 {
+        return 2
+    }
+    if apply_once(6, transform) != 27 {
+        return 3
+    }
+    return 0
+}

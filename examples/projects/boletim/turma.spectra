@@ -2,27 +2,29 @@ module turma
 
 import std.io
 import std.collections
+import std.option as option
+from std.collections import List
 import notas
 
 // Calcula a media aritmetica de uma lista de medias
-public func media_da_turma(medias: int) returns int {
+public func media_da_turma(medias: List<int>) returns int {
     let n = list_len(medias)
     if n == 0 { return 0
     }
-    let total = list_reduce(medias, 0, | acc, x | acc + x)
+    let total = list_reduce(medias, 0, | acc: int, x: int | acc + x)
     return total / n
 }
 
 // Conta quantos alunos foram aprovados (media >= 60)
-public func contar_aprovados(medias: int) returns int {
-    let aprovados = list_filter(medias, | x | x >= 60)
+public func contar_aprovados(medias: List<int>) returns int {
+    let aprovados = list_filter(medias, | x: int | x >= 60)
     let n         = list_len(aprovados)
     list_free(aprovados)
     return n
 }
 
 // Imprime a distribuicao de alunos por faixa de conceito
-func distribuicao_conceitos(medias: int) {
+func distribuicao_conceitos(medias: List<int>) {
     let n     = list_len(medias)
     let cnt_a = 0
     let cnt_b = 0
@@ -31,16 +33,19 @@ func distribuicao_conceitos(medias: int) {
     let cnt_f = 0
     let i     = 0
     while i < n {
-        let m = list_get(medias, i)
-        if m >= 90 { cnt_a = cnt_a + 1
-        }
-        else if m >= 75 { cnt_b = cnt_b + 1
-        }
-        else if m >= 60 { cnt_c = cnt_c + 1
-        }
-        else if m >= 50 { cnt_d = cnt_d + 1
-        }
-        else { cnt_f = cnt_f + 1
+        let maybe_m = list_get(medias, i)
+        if option.is_some(maybe_m) {
+            let m = option.option_unwrap(maybe_m)
+            if m >= 90 { cnt_a = cnt_a + 1
+            }
+            else if m >= 75 { cnt_b = cnt_b + 1
+            }
+            else if m >= 60 { cnt_c = cnt_c + 1
+            }
+            else if m >= 50 { cnt_d = cnt_d + 1
+            }
+            else { cnt_f = cnt_f + 1
+            }
         }
         i = i + 1
     }
@@ -52,7 +57,7 @@ func distribuicao_conceitos(medias: int) {
 }
 
 // Exibe o relatorio completo da turma
-public func relatorio_turma(nome_turma: string, medias: int) {
+public func relatorio_turma(nome_turma: string, medias: List<int>) {
     let n      = list_len(medias)
     let mt     = media_da_turma(medias)
     let aprov  = contar_aprovados(medias)

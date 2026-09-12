@@ -167,7 +167,6 @@ The SpectraLang CLI (`spectralang`) provides the following commands and options:
 | `--lint` | Ativa verificações de lint | Enable lint checks |
 | `--allow <rule>` | Permite (suprime) uma regra de lint | Allow (suppress) a lint rule |
 | `--deny <rule>` | Eleva uma regra de lint a erro | Escalate a lint rule to error |
-| `--enable-experimental <feature>` | Compatibilidade com scripts antigos; sem gates ativos | Compatibility no-op; no active experimental syntax gates |
 
 ### Exemplos de Uso / Usage Examples
 
@@ -387,7 +386,7 @@ spectralang run saudacao.spectra
 
 ```
 projeto/                   # Raiz do projeto / Project root
-├── Spectra.toml           # Manifesto do projeto / Project manifest
+├── spectra.toml           # Manifesto do projeto / Project manifest
 ├── src/
 │   ├── main.spectra       # module main / public func main() returns int { ... }
 │   ├── utils.spectra      # module utils

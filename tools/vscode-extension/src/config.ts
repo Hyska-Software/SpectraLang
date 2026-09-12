@@ -61,14 +61,6 @@ export function getServerPath(context: vscode.ExtensionContext): string {
     return workspaceBinary;
   }
 
-  const legacyCandidates = [
-    path.resolve(context.extensionPath, '..', '..', 'target', 'debug', executable),
-    path.resolve(context.extensionPath, '..', '..', 'target', 'release', executable),
-  ];
-  const legacy = existingPath(legacyCandidates);
-  if (legacy) {
-    return legacy;
-  }
 
   return 'spectra-lsp';
 }
@@ -86,36 +78,41 @@ export function getCliPath(): string {
     return configured;
   }
 
-  const executable = getExecutableName('spectra-cli');
+  // The crate ships the binary as `spectralang(.exe)`.
+  const executables = [
+    getExecutableName('spectralang'),
+  ];
 
-  // Priority 1: bundled inside the extension (server/<platform>-<arch>/spectra-cli)
+  // Search tiers, in priority order.
+  const searchDirs: string[] = [];
+
+  // Priority 1: bundled inside the extension (server/<platform>-<arch>/)
   if (_extensionPath) {
     const platformDir = getPlatformDir();
-    const bundledCandidates = [
-      // Multi-platform VSIX layout
-      path.resolve(_extensionPath, 'server', platformDir, executable),
-      // Legacy / dev layout
-      path.resolve(_extensionPath, 'server', executable),
-      path.resolve(_extensionPath, 'bin', executable),
-    ];
-    const bundled = existingPath(bundledCandidates);
-    if (bundled) {
-      return bundled;
+    searchDirs.push(
+      path.resolve(_extensionPath, 'server', platformDir), // multi-platform VSIX layout
+      path.resolve(_extensionPath, 'server'),              // dev layout
+      path.resolve(_extensionPath, 'bin'),
+    );
+  }
+
+  // Priority 2: workspace builds (target/debug or target/release)
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    searchDirs.push(
+      path.resolve(folder.uri.fsPath, 'target', 'debug'),
+      path.resolve(folder.uri.fsPath, 'target', 'release'),
+    );
+  }
+
+  for (const dir of searchDirs) {
+    const found = existingPath(executables.map((executable) => path.resolve(dir, executable)));
+    if (found) {
+      return found;
     }
   }
 
-  // Priority 2: workspace binary (target/debug or target/release)
-  const workspaceCandidates = (vscode.workspace.workspaceFolders ?? []).flatMap((folder) => [
-    path.resolve(folder.uri.fsPath, 'target', 'debug', executable),
-    path.resolve(folder.uri.fsPath, 'target', 'release', executable),
-  ]);
-  const workspaceBinary = existingPath(workspaceCandidates);
-  if (workspaceBinary) {
-    return workspaceBinary;
-  }
-
-  // Fallback: expect it to be on PATH.
-  return executable;
+  // Fallback: expect the modern binary on PATH.
+  return executables[0];
 }
 
 export function lintOnSaveEnabled(): boolean {

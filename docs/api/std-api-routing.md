@@ -74,6 +74,20 @@ let duplicate = get(routes, "/users/me")
 let message = last_conflict()
 ```
 
+## OpenAPI Export
+
+- `routes_set_request_schema(router, method, path_template, json_schema)`
+  stores a JSON request-body schema hint for a registered route and returns
+  `true` when stored (`false` when no registered route matches). The template
+  may be written exactly as registered or in plain OpenAPI form
+  (`/users/{id:int}` or `/users/{id}`). An invalid JSON string is a typed
+  error surfaced through `last_conflict`.
+- `routes_export_openapi(router, title, version)` emits an OpenAPI 3.1
+  document. When a route carries a schema hint, its operation embeds it
+  verbatim as
+  `requestBody.content["application/json"].schema`; routes without a hint
+  omit `requestBody`.
+
 ## Validation
 
 R-2211 is validated by:

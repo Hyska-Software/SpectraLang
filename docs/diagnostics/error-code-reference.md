@@ -34,9 +34,13 @@ The following set is the current stable Phase 1 table for high-frequency diagnos
 | `P001` | parser | expected keyword | insert the missing keyword or fix item order |
 | `P002` | parser | expected or synthesized symbol | insert the required delimiter such as `)`, `}`, or `:` |
 | `P003` | parser | expected identifier | provide a valid identifier in the current grammar slot |
-| `P004` | parser | future experimental feature disabled | rerun with the documented feature gate once an active experimental feature exists |
 | `P005` | parser | misplaced or incomplete `async` syntax | use `async func` in declaration position, `async { ... }`, or `async |...| ...` |
 | `P006` | parser | `await` outside async context | move the expression into `async func`, `async { ... }`, or an async closure |
+| `P011` | parser | statement not terminated by a line break | end the statement with a line break or close the surrounding block |
+| `P012` | parser | semicolon used as statement terminator | remove the `;` and end the statement with a line break |
+| `P013` | parser | nesting too deep | reduce nesting of expressions, statements, blocks, or patterns (parser recursion guard) |
+| `P014` | parser | chained comparison (`a < b < c`) | combine conditions explicitly with `and`, e.g. `a < b and b < c` |
+| `P015` | parser | line break before an infix operator ends the expression | move the operator to the end of the previous line, or wrap the operands in parentheses |
 | `P999` | parser | generic syntax failure | inspect nearby syntax; parser context and hint should narrow the issue |
 | `E001` | semantic | undefined variable or function | declare/import the symbol or fix the name |
 | `E002` | semantic | argument count mismatch | pass the expected number of arguments |
@@ -51,6 +55,60 @@ The following set is the current stable Phase 1 table for high-frequency diagnos
 | `E011` | semantic | unknown qualified module member | use an exported member from the module or import alias; inspect the candidate export list |
 
 This satisfies the Phase 1 acceptance target of at least 20 high-frequency diagnostics with actionable remediation guidance.
+
+## Phase 2 OOP Diagnostics (R-208)
+
+The following codes are the stable object-oriented/trait diagnostic range for
+records, traits, impl blocks, and `dyn` casts.
+
+| Code | Phase | Meaning | Expected hint/action |
+| --- | --- | --- | --- |
+| `E012` | semantic | trait used as an `impl` target is not defined | declare or import the trait before the impl block |
+| `E013` | semantic | method is already defined for the same type | remove the duplicate method or give it a distinct name |
+| `E014` | semantic | method declares more than one `self` parameter | keep exactly one `self` receiver |
+| `E015` | semantic | parent trait of a trait declaration is not defined | declare the parent trait before the child trait |
+| `E016` | semantic | required trait method is not implemented | implement the method (or rely on its default implementation) in the `impl Trait for Type` block |
+| `E017` | semantic | method not found for the receiver type | call an existing method or add an impl block with that method |
+| `E018` | semantic | `self`-taking method called as a static/associated function (or vice versa) | call it on a value (`value.method(...)`) or as `Type::method(...)` per the signature |
+| `E019` | semantic | struct literal is missing a required field | provide a value for every field of the record |
+| `E020` | semantic | struct literal field has an unknown name or wrong type | use the declared field names and types of the record |
+| `E021` | semantic | struct used in a literal or field access is not defined | declare or import the record before using it |
+| `E022` | semantic | invalid `as dyn Trait` cast: type does not implement the trait | implement the trait for the concrete type before casting |
+| `E023` | semantic | trait impl signature mismatch (parameter count/types or return type) | match the exact signature declared by the trait |
+| `E024` | semantic | `self` receiver appears after other parameters | move the `self` receiver to the first parameter position |
+| `E025` | semantic | impl type arguments do not match the target type's type parameters | use the type parameters declared by the generic record, in order |
+| `E027` | semantic | module-qualified inherent impl target cannot be resolved | import or declare the module and use an exported struct or enum as the `impl module::Type` target |
+
+## Module, Exhaustiveness, and Receiver Diagnostics (E028-E033)
+
+The following codes cover module resolution, duplicate declarations,
+`match` exhaustiveness, and method receiver validation.
+
+| Code | Phase | Meaning | Expected hint/action |
+| --- | --- | --- | --- |
+| `E028` | semantic | circular import detected (including a module importing itself) | break the cycle by removing or restructuring one of the imports in the reported chain |
+| `E029` | semantic | user (non-stdlib) module does not exist | check the spelling of the module path; the module must be declared as a source file in the same project or package |
+| `E030` | semantic | duplicate declaration (struct/enum already defined, or duplicated struct field / enum variant) | remove the duplicate declaration, rename it, or drop the repeated field/variant |
+| `E031` | semantic | `match` expression is not exhaustive (missing enum variants or missing wildcard bindings for payload variants) | add patterns for the listed `Enum::Variant` arms or a wildcard arm with payload bindings |
+| `E032` | semantic | method receiver mismatch (receiver type differs from the declared `self` type, or a `self`-less method called on a value) | convert or borrow the receiver to match the signature, or call it as `Type::method(...)` |
+| `E033` | semantic | unknown standard library module in an import | use one of the registered stdlib modules; the diagnostic includes a did-you-mean suggestion when close |
+
+## Resource Lifecycle Diagnostics (E034)
+
+Flow-sensitive, function-local use-after-free tracking. A binding released by
+a resource-free call (`free`, `tensor.free(x)`, `list_free`, `map_free`,
+`set_free`, `iterator_free`, `value_free`, `notification_free`,
+`artifact_free`, `builder_free`) or covered by an arena-wide release
+(`free_all`/`tensor.free_all()`, `list_free_all`, `map_free_all`,
+`set_free_all`) is marked freed; any later read emits the coded diagnostic.
+Reassignment or rebinding revives the binding; conditional branches merge
+conservatively (freed only when every arm ends freed). The compatibility
+sentinel readers (`list_get`, `map_get`, `value_kind`) intentionally accept
+released handles and do not count as uses.
+
+| Code | Phase | Meaning | Expected hint/action |
+| --- | --- | --- | --- |
+| `E034` | semantic | use after free: a binding released by a resource-free call is read afterwards | reassign or recreate the handle before using it again; the hint points at the line of the freeing call |
 
 ## Phase 21 Async Diagnostics
 

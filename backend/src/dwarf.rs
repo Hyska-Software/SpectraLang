@@ -13,7 +13,11 @@ use gimli::write::{
 };
 use gimli::{constants, Encoding, Format, LineEncoding, LittleEndian};
 
+use crate::aot::NativeValueLocation;
 use crate::debug::CodeViewFunction;
+use std::collections::{HashMap, HashSet};
+
+use spectra_midend::ir::{FloatWidth, IntWidth, Type as IRType};
 
 pub type DwarfSection = (String, Vec<u8>);
 
@@ -22,7 +26,11 @@ pub fn sections_for_functions(
     source: &str,
     functions: &[CodeViewFunction],
 ) -> Result<Vec<DwarfSection>, String> {
-    let encoding = Encoding { format: Format::Dwarf32, version: 4, address_size: 8 };
+    let encoding = Encoding {
+        format: Format::Dwarf32,
+        version: 4,
+        address_size: 8,
+    };
     let file_name = std::path::Path::new(source_file)
         .file_name()
         .and_then(|name| name.to_str())
@@ -36,18 +44,23 @@ pub fn sections_for_functions(
         None,
     );
     let directory = line_program.default_directory();
-    let file = line_program.add_file(LineString::String(file_name.as_bytes().to_vec()), directory, None);
+    let file = line_program.add_file(
+        LineString::String(file_name.as_bytes().to_vec()),
+        directory,
+        None,
+    );
+    let source_line_count = source.lines().count().max(1) as u32;
     for function in functions {
         line_program.begin_sequence(Some(Address::Constant(function.offset as u64)));
-        let line_count = source.lines().count().max(1) as u32;
-        for line in 0..line_count {
-            line_program.set_address(Address::Constant(
-                function.offset as u64
-                    + (function.size.saturating_sub(1) as u64 * line as u64)
-                        / line_count.saturating_sub(1).max(1) as u64,
-            ));
+        // Real, span-derived rows when codegen captured them; otherwise the
+        // sequence stays empty (see `debug::line_table_rows`): no line
+        // information instead of invented rows.
+        for (relative, line) in
+            crate::debug::line_table_rows(function.size, source_line_count, &function.line_rows)
+        {
+            line_program.set_address(Address::Constant(function.offset as u64 + relative as u64));
             line_program.row().file = file;
-            line_program.row().line = line as u64 + 1;
+            line_program.row().line = line as u64;
             line_program.generate_row();
         }
         line_program.end_sequence(function.offset as u64 + function.size.max(1) as u64);
@@ -56,11 +69,30 @@ pub fn sections_for_functions(
     let mut dwarf = DwarfUnit::new(encoding);
     dwarf.unit.line_program = line_program;
     let root = dwarf.unit.root();
-    dwarf.unit.get_mut(root).set(constants::DW_AT_name, AttributeValue::String(file_name.as_bytes().to_vec()));
-    dwarf.unit.get_mut(root).set(constants::DW_AT_comp_dir, AttributeValue::String(Vec::new()));
-    dwarf.unit.get_mut(root).set(constants::DW_AT_producer, AttributeValue::String(b"SpectraLang".to_vec()));
-    dwarf.unit.get_mut(root).set(constants::DW_AT_language, AttributeValue::Language(constants::DW_LANG_Rust));
-    dwarf.unit.get_mut(root).set(constants::DW_AT_stmt_list, AttributeValue::LineProgramRef);
+    dwarf.unit.get_mut(root).set(
+        constants::DW_AT_name,
+        AttributeValue::String(file_name.as_bytes().to_vec()),
+    );
+    dwarf.unit.get_mut(root).set(
+        constants::DW_AT_comp_dir,
+        AttributeValue::String(Vec::new()),
+    );
+    dwarf.unit.get_mut(root).set(
+        constants::DW_AT_producer,
+        AttributeValue::String(b"SpectraLang".to_vec()),
+    );
+    dwarf.unit.get_mut(root).set(
+        constants::DW_AT_language,
+        AttributeValue::Language(constants::DW_LANG_Rust),
+    );
+    dwarf
+        .unit
+        .get_mut(root)
+        .set(constants::DW_AT_stmt_list, AttributeValue::LineProgramRef);
+    // Interned type DIEs, shared across every function in the unit. The key
+    // is the debug-format rendering of the IR type.
+    let mut type_cache: HashMap<String, gimli::write::UnitEntryId> = HashMap::new();
+    let mut in_progress: HashSet<String> = HashSet::new();
 
     for function in functions {
         let subprogram = dwarf.unit.add(root, constants::DW_TAG_subprogram);
@@ -74,19 +106,56 @@ pub fn sections_for_functions(
         );
         dwarf.unit.get_mut(subprogram).set(
             constants::DW_AT_high_pc,
-            AttributeValue::Address(Address::Constant((function.offset + function.size.max(1)) as u64)),
+            AttributeValue::Address(Address::Constant(
+                (function.offset + function.size.max(1)) as u64,
+            )),
         );
         let ranges = dwarf.unit.ranges.add(RangeList(vec![Range::StartLength {
             begin: Address::Constant(function.offset as u64),
             length: function.size.max(1) as u64,
         }]));
-        dwarf.unit.get_mut(subprogram).set(constants::DW_AT_ranges, AttributeValue::RangeListRef(ranges));
-        dwarf.unit.get_mut(subprogram).set(constants::DW_AT_decl_file, AttributeValue::FileIndex(Some(file)));
-        dwarf.unit.get_mut(subprogram).set(constants::DW_AT_decl_line, AttributeValue::Udata(1));
+        dwarf.unit.get_mut(subprogram).set(
+            constants::DW_AT_ranges,
+            AttributeValue::RangeListRef(ranges),
+        );
+        dwarf.unit.get_mut(subprogram).set(
+            constants::DW_AT_decl_file,
+            AttributeValue::FileIndex(Some(file)),
+        );
+        dwarf
+            .unit
+            .get_mut(subprogram)
+            .set(constants::DW_AT_decl_line, AttributeValue::Udata(1));
+
+        // The frame base is the canonical CFA of the call frame. Cranelift's
+        // value-label pass reports local offsets as CFA-relative, so
+        // `DW_OP_fbreg` expressions below resolve against this base exactly
+        // like the CodeView `S_DEFRANGE_FRAMEPOINTER_REL` records do.
+        let mut frame_base = Expression::new();
+        frame_base.op(constants::DW_OP_call_frame_cfa);
+        dwarf.unit.get_mut(subprogram).set(
+            constants::DW_AT_frame_base,
+            AttributeValue::Exprloc(frame_base),
+        );
+        if let Some(return_type) = &function.return_type {
+            if !matches!(return_type, IRType::Void | IRType::Unknown) {
+                let type_die = intern_type_die(
+                    &mut dwarf.unit,
+                    return_type,
+                    &mut type_cache,
+                    &mut in_progress,
+                );
+                dwarf
+                    .unit
+                    .get_mut(subprogram)
+                    .set(constants::DW_AT_type, AttributeValue::UnitRef(type_die));
+            }
+        }
 
         // A location is emitted only for a compiler-proven stack/register
-        // mapping.  The current CodeView compatibility path does not provide
-        // that proof, so no fabricated DW_OP_fbreg location is emitted here.
+        // mapping. Ranges that do not cover the complete function are left
+        // absent until a DWARF location-list entry can represent their exact
+        // lifetime; emitting a function-wide expression would be false.
         for (local_index, local_name) in function.locals.iter().enumerate() {
             let local = dwarf.unit.add(subprogram, constants::DW_TAG_variable);
             dwarf.unit.get_mut(local).set(
@@ -97,12 +166,54 @@ pub fn sections_for_functions(
                 constants::DW_AT_decl_file,
                 AttributeValue::FileIndex(Some(file)),
             );
-            dwarf.unit.get_mut(local).set(constants::DW_AT_decl_line, AttributeValue::Udata(1));
-            if let Some(Some(offset)) = function.local_offsets.get(local_index) {
-                dwarf.unit.get_mut(local).set(
-                    constants::DW_AT_location,
-                    AttributeValue::Exprloc(_location_expression(*offset)),
-                );
+            dwarf
+                .unit
+                .get_mut(local)
+                .set(constants::DW_AT_decl_line, AttributeValue::Udata(1));
+            if let Some(local_type) = function.local_types.get(local_index) {
+                if !matches!(local_type, IRType::Void | IRType::Unknown) {
+                    let type_die = intern_type_die(
+                        &mut dwarf.unit,
+                        local_type,
+                        &mut type_cache,
+                        &mut in_progress,
+                    );
+                    dwarf
+                        .unit
+                        .get_mut(local)
+                        .set(constants::DW_AT_type, AttributeValue::UnitRef(type_die));
+                }
+            }
+            let complete_range = function
+                .local_locations
+                .get(local_index)
+                .and_then(|ranges| {
+                    ranges
+                        .iter()
+                        .find(|range| range.start == 0 && range.end >= function.size.max(1))
+                });
+            if let Some(range) = complete_range {
+                let expression = match range.location {
+                    NativeValueLocation::CfaOffset(offset) => Some(_location_expression(offset)),
+                    NativeValueLocation::Register(hw_enc) => _register_expression(hw_enc),
+                };
+                if let Some(expression) = expression {
+                    dwarf.unit.get_mut(local).set(
+                        constants::DW_AT_location,
+                        AttributeValue::Exprloc(expression),
+                    );
+                }
+            } else if function
+                .local_locations
+                .get(local_index)
+                .is_none_or(Vec::is_empty)
+            {
+                if let Some(Some(offset)) = function.local_offsets.get(local_index) {
+                    dwarf.unit.get_mut(local).set(
+                        constants::DW_AT_location,
+                        AttributeValue::Exprloc(_location_expression(*offset)),
+                    );
+                }
             }
         }
     }
@@ -110,14 +221,18 @@ pub fn sections_for_functions(
     let mut write_dwarf = Dwarf::new();
     write_dwarf.units.add(dwarf.unit);
     let mut sections = Sections::new(EndianVec::new(LittleEndian));
-    write_dwarf.write(&mut sections).map_err(|error| format!("DWARF write failed: {error:?}"))?;
+    write_dwarf
+        .write(&mut sections)
+        .map_err(|error| format!("DWARF write failed: {error:?}"))?;
     let mut output = Vec::new();
-    sections.for_each(|id, data| {
-        if !data.slice().is_empty() {
-            output.push((format!("{}", id.name()), data.slice().to_vec()));
-        }
-        Ok::<(), ()>(())
-    }).map_err(|error| format!("DWARF section extraction failed: {error:?}"))?;
+    sections
+        .for_each(|id, data| {
+            if !data.slice().is_empty() {
+                output.push((id.name().to_string(), data.slice().to_vec()));
+            }
+            Ok::<(), ()>(())
+        })
+        .map_err(|error| format!("DWARF section extraction failed: {error:?}"))?;
     Ok(output)
 }
 
@@ -128,10 +243,181 @@ fn _location_expression(offset: i64) -> Expression {
     expression
 }
 
+fn _register_expression(hw_enc: u8) -> Option<Expression> {
+    // Cranelift's x86-64 hardware order is RAX, RCX, RDX, RBX, RSP, RBP,
+    // RSI, RDI, R8..R15. DWARF orders the first eight as RAX, RDX, RCX,
+    // RBX, RSI, RDI, RBP, RSP.
+    const DWARF_REGISTERS: [u16; 16] = [0, 2, 1, 3, 7, 6, 4, 5, 8, 9, 10, 11, 12, 13, 14, 15];
+    let register = *DWARF_REGISTERS.get(hw_enc as usize)?;
+    let mut expression = Expression::new();
+    expression.op_reg(gimli::Register(register));
+    Some(expression)
+}
+
+/// Create (or reuse) the DIE describing one IR type.
+///
+/// Primitive types become `DW_TAG_base_type` entries. A `Struct` whose fields
+/// are known in the IR becomes a complete `DW_TAG_structure_type` (byte size
+/// and one `DW_TAG_member` child per field, with byte offsets from the
+/// mid-end layout module — the same offsets the CodeView `LF_MEMBER` records
+/// use); every other aggregate keeps the declaration-only form behind a
+/// `DW_TAG_pointer_type`, mirroring the backend's pointer representation.
+///
+/// `in_progress` guards self-referential types: while a struct definition is
+/// being built, a re-entry of the same type falls back to the declaration-only
+/// form; the debugger links both by name.
+fn intern_type_die(
+    unit: &mut gimli::write::Unit,
+    ty: &IRType,
+    cache: &mut HashMap<String, gimli::write::UnitEntryId>,
+    in_progress: &mut HashSet<String>,
+) -> gimli::write::UnitEntryId {
+    let key = format!("{ty:?}");
+    if let Some(&existing) = cache.get(&key) {
+        return existing;
+    }
+    let id = match ty {
+        IRType::Generic { representation, .. } => {
+            intern_type_die(unit, representation, cache, in_progress)
+        }
+        IRType::Pointer(inner) => {
+            let pointee = intern_type_die(unit, inner, cache, in_progress);
+            let pointer = unit.add(unit.root(), constants::DW_TAG_pointer_type);
+            unit.get_mut(pointer)
+                .set(constants::DW_AT_type, AttributeValue::UnitRef(pointee));
+            pointer
+        }
+        IRType::Array { element_type, .. } => {
+            // Arrays lower to raw element pointers on this target.
+            let element = intern_type_die(unit, element_type, cache, in_progress);
+            let pointer = unit.add(unit.root(), constants::DW_TAG_pointer_type);
+            unit.get_mut(pointer)
+                .set(constants::DW_AT_type, AttributeValue::UnitRef(element));
+            pointer
+        }
+        primitive @ (IRType::Int
+        | IRType::Float
+        | IRType::ExactInt { .. }
+        | IRType::ExactFloat { .. }
+        | IRType::Bool
+        | IRType::Char) => {
+            let entry = unit.add(unit.root(), constants::DW_TAG_base_type);
+            let Some((name, byte_size, encoding)) = primitive_base_type(primitive) else {
+                unreachable!("primitive match arm guarantees a base-type mapping");
+            };
+            unit.get_mut(entry)
+                .set(constants::DW_AT_name, AttributeValue::String(name));
+            unit.get_mut(entry)
+                .set(constants::DW_AT_byte_size, AttributeValue::Udata(byte_size));
+            unit.get_mut(entry).set(
+                constants::DW_AT_encoding,
+                AttributeValue::Encoding(encoding),
+            );
+            entry
+        }
+        IRType::Struct { name, fields } if !fields.is_empty() && !in_progress.contains(&key) => {
+            in_progress.insert(key.clone());
+            let layout = spectra_midend::layout::layout_of(fields.iter().map(|(_, ty)| ty));
+            let structure = unit.add(unit.root(), constants::DW_TAG_structure_type);
+            unit.get_mut(structure).set(
+                constants::DW_AT_name,
+                AttributeValue::String(name.clone().into_bytes()),
+            );
+            unit.get_mut(structure).set(
+                constants::DW_AT_byte_size,
+                AttributeValue::Udata(layout.size as u64),
+            );
+            for ((field_name, field_ty), &offset) in fields.iter().zip(&layout.offsets) {
+                let member_type = intern_type_die(unit, field_ty, cache, in_progress);
+                let member = unit.add(structure, constants::DW_TAG_member);
+                unit.get_mut(member).set(
+                    constants::DW_AT_name,
+                    AttributeValue::String(field_name.clone().into_bytes()),
+                );
+                unit.get_mut(member)
+                    .set(constants::DW_AT_type, AttributeValue::UnitRef(member_type));
+                unit.get_mut(member).set(
+                    constants::DW_AT_data_member_location,
+                    AttributeValue::Udata(offset as u64),
+                );
+            }
+            in_progress.remove(&key);
+            // Locals of aggregate types hold pointers at the ABI level.
+            let pointer = unit.add(unit.root(), constants::DW_TAG_pointer_type);
+            unit.get_mut(pointer)
+                .set(constants::DW_AT_type, AttributeValue::UnitRef(structure));
+            pointer
+        }
+        aggregate => {
+            // Declaration-only: full member layout is not available in the IR.
+            let name = crate::debug::aggregate_udt_name(aggregate);
+            let structure = unit.add(unit.root(), constants::DW_TAG_structure_type);
+            unit.get_mut(structure).set(
+                constants::DW_AT_name,
+                AttributeValue::String(name.into_bytes()),
+            );
+            unit.get_mut(structure)
+                .set(constants::DW_AT_declaration, AttributeValue::Flag(true));
+            let pointer = unit.add(unit.root(), constants::DW_TAG_pointer_type);
+            unit.get_mut(pointer)
+                .set(constants::DW_AT_type, AttributeValue::UnitRef(structure));
+            pointer
+        }
+    };
+    cache.insert(key, id);
+    id
+}
+
+/// Fixed DWARF base-type description for primitive IR types, or `None` for
+/// types that need a structured DIE (aggregates, pointers).
+pub(crate) fn primitive_base_type(ty: &IRType) -> Option<(Vec<u8>, u64, constants::DwAte)> {
+    match ty {
+        IRType::Int => Some((b"int".to_vec(), 8, constants::DW_ATE_signed)),
+        IRType::Float => Some((b"double".to_vec(), 8, constants::DW_ATE_float)),
+        IRType::ExactInt { signed, width } => {
+            let size = match width {
+                IntWidth::I8 => 1u64,
+                IntWidth::I16 => 2,
+                IntWidth::I32 => 4,
+                IntWidth::I64 | IntWidth::Isize | IntWidth::Usize => 8,
+            };
+            let name: &[u8] = match (*signed, width) {
+                (true, IntWidth::I8) => b"i8",
+                (true, IntWidth::I16) => b"i16",
+                (true, IntWidth::I32) => b"i32",
+                (true, IntWidth::I64) => b"i64",
+                (true, IntWidth::Isize) => b"isize",
+                (false, IntWidth::I8) => b"u8",
+                (false, IntWidth::I16) => b"u16",
+                (false, IntWidth::I32) => b"u32",
+                (false, IntWidth::I64) => b"u64",
+                (false, IntWidth::Usize) => b"usize",
+                _ => b"isize",
+            };
+            Some((
+                name.to_vec(),
+                size,
+                if *signed {
+                    constants::DW_ATE_signed
+                } else {
+                    constants::DW_ATE_unsigned
+                },
+            ))
+        }
+        IRType::ExactFloat { width } => match width {
+            FloatWidth::F32 => Some((b"f32".to_vec(), 4, constants::DW_ATE_float)),
+            FloatWidth::F64 => Some((b"f64".to_vec(), 8, constants::DW_ATE_float)),
+        },
+        IRType::Bool => Some((b"bool".to_vec(), 1, constants::DW_ATE_boolean)),
+        IRType::Char => Some((b"char".to_vec(), 4, constants::DW_ATE_UTF)),
+        _ => None,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::sections_for_functions;
     use crate::debug::CodeViewFunction;
+    use spectra_midend::ir::{FloatWidth, Type};
 
     #[test]
     fn emits_structural_dwarf_sections_for_real_ranges() {
@@ -142,11 +428,153 @@ mod tests {
             section: 1,
             locals: vec!["debug_value".to_string()],
             local_offsets: vec![Some(-8)],
+            local_locations: vec![Vec::new()],
+            frame_size: 0,
+            local_types: Vec::new(),
+            return_type: None,
+            line_rows: Vec::new(),
         }];
         let sections = sections_for_functions("fixture.spectra", "fn helper() {}", &functions)
             .expect("DWARF writer should accept a valid unit");
-        assert!(sections.iter().any(|(name, data)| name == ".debug_info" && !data.is_empty()));
-        assert!(sections.iter().any(|(name, data)| name == ".debug_line" && !data.is_empty()));
-        assert!(sections.iter().any(|(name, data)| name == ".debug_abbrev" && !data.is_empty()));
+        assert!(sections
+            .iter()
+            .any(|(name, data)| name == ".debug_info" && !data.is_empty()));
+        assert!(sections
+            .iter()
+            .any(|(name, data)| name == ".debug_line" && !data.is_empty()));
+        assert!(sections
+            .iter()
+            .any(|(name, data)| name == ".debug_abbrev" && !data.is_empty()));
+    }
+
+    #[test]
+    fn typed_locals_produce_named_type_dies() {
+        let functions = vec![CodeViewFunction {
+            name: "typed".to_string(),
+            offset: 0,
+            size: 16,
+            section: 1,
+            locals: vec!["ratio".to_string(), "label".to_string()],
+            local_offsets: vec![Some(-8), Some(-16)],
+            local_locations: vec![Vec::new(); 2],
+            frame_size: 16,
+            local_types: vec![
+                Type::ExactFloat {
+                    width: FloatWidth::F64,
+                },
+                Type::String,
+            ],
+            return_type: None,
+            line_rows: Vec::new(),
+        }];
+        let sections = sections_for_functions("fixture.spectra", "fn typed() {}", &functions)
+            .expect("DWARF writer should accept a valid unit");
+        // The declaration-only structure DIE for the string local keeps the
+        // real aggregate name and the base-type DIE keeps its primitive name.
+        let debug_info = &sections
+            .iter()
+            .find(|(name, _)| name == ".debug_info")
+            .expect("DWARF unit must emit .debug_info")
+            .1;
+        assert!(debug_info.windows(14).any(|w| w == b"spectra_string"));
+        assert!(debug_info.windows(3).any(|w| w == b"f64"));
+    }
+
+    #[test]
+    fn struct_local_emits_dwarf_members_with_layout_offsets() {
+        use gimli::{constants, read, LittleEndian};
+
+        let point = Type::Struct {
+            name: "Point".to_string(),
+            fields: vec![
+                ("x".to_string(), Type::Int),
+                ("y".to_string(), Type::Float),
+                (
+                    "z".to_string(),
+                    Type::ExactInt {
+                        signed: true,
+                        width: spectra_midend::ir::IntWidth::I32,
+                    },
+                ),
+            ],
+        };
+        let functions = vec![CodeViewFunction {
+            name: "typed".to_string(),
+            offset: 0,
+            size: 16,
+            section: 1,
+            locals: vec!["origin".to_string()],
+            local_offsets: vec![Some(-8)],
+            local_locations: vec![Vec::new(); 1],
+            frame_size: 8,
+            local_types: vec![point],
+            return_type: None,
+            line_rows: Vec::new(),
+        }];
+        let sections = sections_for_functions("fixture.spectra", "fn typed() {}", &functions)
+            .expect("DWARF writer should accept a valid unit");
+        let section = |name: &str| {
+            &sections
+                .iter()
+                .find(|(section, _)| section == name)
+                .expect("required DWARF section")
+                .1
+        };
+        let info = read::DebugInfo::new(section(".debug_info"), LittleEndian);
+        let abbrev = read::DebugAbbrev::new(section(".debug_abbrev"), LittleEndian);
+        let mut units = info.units();
+        let unit = units.next().expect("one compilation unit").unwrap();
+
+        type Entry<'a> = gimli::read::DebuggingInformationEntry<
+            gimli::read::EndianSlice<'a, LittleEndian>,
+            usize,
+        >;
+        fn die_name(entry: &Entry<'_>) -> Option<String> {
+            match entry.attr_value(constants::DW_AT_name)? {
+                gimli::read::AttributeValue::String(bytes) => {
+                    Some(String::from_utf8_lossy(bytes.slice()).into_owned())
+                }
+                _ => None,
+            }
+        }
+        fn uint_attr(entry: &Entry<'_>, attr: constants::DwAt) -> Option<u64> {
+            entry.attr_value(attr)?.udata_value()
+        }
+
+        // Locate the defining structure DIE for Point and validate members.
+        let abbrevs = unit.abbreviations(&abbrev).expect("parse abbreviations");
+        let mut entries = unit.entries(&abbrevs);
+        let mut structure_offset = None;
+        while let Some(entry) = entries.next_dfs().expect("DIE tree walk") {
+            if entry.tag() == constants::DW_TAG_structure_type
+                && die_name(entry).as_deref() == Some("Point")
+                && uint_attr(entry, constants::DW_AT_byte_size) == Some(24)
+            {
+                structure_offset = Some(entry.offset());
+                break;
+            }
+        }
+        let structure_offset = structure_offset.expect("defining DW_TAG_structure_type for Point");
+        let mut tree = unit
+            .entries_tree(&abbrevs, Some(structure_offset))
+            .expect("structure DIE tree");
+        let structure_node = tree.root().expect("structure root node");
+        let mut members: Vec<(String, u64)> = Vec::new();
+        let mut children = structure_node.children();
+        while let Some(child) = children.next().expect("member DIE") {
+            let entry = child.entry();
+            assert_eq!(entry.tag(), constants::DW_TAG_member);
+            let location = uint_attr(entry, constants::DW_AT_data_member_location)
+                .expect("member must carry a data member location");
+            members.push((die_name(entry).expect("member name"), location));
+
+            // Each member's type resolves to the stored-representation DIE.
+            let type_ref = match entry.attr_value(constants::DW_AT_type) {
+                Some(gimli::read::AttributeValue::UnitRef(offset)) => offset,
+                other => panic!("unexpected DW_AT_type: {other:?}"),
+            };
+            let member_type = unit.entry(&abbrevs, type_ref).unwrap();
+            assert_eq!(member_type.tag(), constants::DW_TAG_base_type);
+        }
     }
 }

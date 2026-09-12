@@ -1,6 +1,6 @@
 # Language Feature Maturity Policy
 
-Updated: 2026-06-16
+Updated: 2026-08-19
 Roadmap item: `R-106`, `R-118`, `R-2102`, `R-2103`, `R-2104`, `R-2105`, `R-2106`, `R-2107`, `R-2108`
 
 This file is the source of truth for language maturity labels. Documentation, examples, and CLI behavior must match this policy exactly.
@@ -28,11 +28,13 @@ This file is the source of truth for language maturity labels. Documentation, ex
 - generics in the currently validated surface
 - `dyn Trait` in the currently validated surface
 - primitives, tuples, function types
-- numeric aliases over the current canonical ABI:
-  - `i8`, `i16`, `i32`, `i64`, `isize`
-  - `u8`, `u16`, `u32`, `u64`, `usize`
-  - `f16`, `bf16`, `f32`, `f64`
+- canonical `int`, `float`, `bool`, `char`, and `string` primitives
+- exact-width scalar integers and floats (`i8` through `usize`, `f32`/`f64`)
+  with checked casts, explicit wrapping operations, JIT/AOT storage, and the
+  certified C ABI boundary
 - top-level `const` evaluation for primitive literal/arithmetic/logical expressions
+- module-level mutable `static` globals with constant initialization, typed
+  visibility/imports, mutation, and local/cross-module JIT/AOT equivalence
 - control flow:
   - `if`, `else if`, `else`
   - `if not`
@@ -132,8 +134,16 @@ This file is the source of truth for language maturity labels. Documentation, ex
 
 ### Beta
 
-- class syntax footprint
-- `static` item surface
+- typed `List<T>`/`Map<K,V>` collections, including higher-order operations;
+  legacy sentinel accessors remain available only under `std.compat.collections`
+- absence-safe `std.env.env_get`/`env_arg` returning `Option<string>`; legacy
+  empty-string environment adapters remain available only under `std.compat.env`
+- typed `std.fs` operations returning `Result<T, Error>`; the historical
+  string/bool sentinel adapter remains available only under `std.compat.fs`
+- `Option<T>`/`Result<T,E>` constructors, predicates, `map`, `map_err`, and
+  `unwrap_or`; structured `Error` propagation is implemented for the current
+  filesystem slice, while full STD/API propagation and release certification
+  remain pending
 - mutable/reference closure captures beyond the current by-value capture contract
 - async/await execution baseline: `async func`, `async { ... }`, `Task<T>`,
   `await`, deterministic ready/poll/result/cancel host calls, and explicit
@@ -173,19 +183,14 @@ These are usable where covered, but still not treated as fully production-harden
 
 ### Experimental
 
-there are currently no active experimental syntax gates. `spectralang --list-experimental` must report an empty set.
-
-CLI compatibility contract:
-
-- `--enable-experimental <feature>` remains accepted as a no-op for older scripts
-- new experimental syntax must not be added without documenting the exact feature name here and returning it from `spectralang --list-experimental`
-- parser diagnostics for future disabled experimental syntax must emit a feature-gate error with code `P004`
+There are currently no active experimental syntax gates. `spectralang --list-experimental` reports an empty set, and `--enable-experimental <feature>` is accepted only as a compatibility no-op for older scripts.
 
 ### Deferred
 
+- `class` declarations, inheritance, `override`, `super`, class layout and ABI
 - Unicode identifiers
 - advanced numeric literal syntax beyond current decimal forms
-- exact-width numeric storage and overflow semantics beyond current canonical ABI
+- scalar exact-width forms outside the certified `i8`–`usize`/`f32`–`f64` matrix
 - closure captures with environment objects
 - `repeat/until`
 - `foreach`
@@ -206,5 +211,5 @@ When a feature changes maturity:
 1. update this file
 2. update the user-facing reference docs
 3. update examples if their required invocation changes
-4. update CLI help or `--list-experimental` if the change affects experimental gating
+4. update CLI help if the change affects invocation
 5. add or adjust tests in `tests/validation`, `tests/errors`, `tests/cli`, or `examples`

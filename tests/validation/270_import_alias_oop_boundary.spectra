@@ -1,0 +1,36 @@
+// R-270 candidate: an aliased stdlib import must remain resolvable from an
+// inherent method and from a caller across the OOP boundary.
+module r270_import_alias_oop_boundary
+
+import std.string as str
+
+record Document {
+    public body: string,
+}
+
+impl Document {
+    public func contains_marker(&self, marker: string) returns bool {
+        str.contains(self.body, marker)
+    }
+
+    public func marker_score(&self, marker: string) returns int {
+        if self.contains_marker(marker) {
+            return str.len(marker)
+        }
+        return 0
+    }
+}
+
+public func main() returns int {
+    let document = Document { body: "spectra:oop:alias" }
+    if document.contains_marker("oop") != true {
+        return 1
+    }
+    if document.marker_score("alias") != 5 {
+        return 2
+    }
+    if document.contains_marker("missing") != false {
+        return 3
+    }
+    return 0
+}

@@ -1,0 +1,54 @@
+// R-212: UFCS Trait::method(obj, args) for user-defined traits.
+module r212_ufcs
+
+import std.io
+
+trait Display {
+    func render(&self) returns string
+    func render_uppercase(&self) returns string {
+        self.render() + "!"
+    }
+}
+
+record Widget {
+    public label: string,
+}
+
+impl Display for Widget {
+    func render(&self) returns string {
+        f"<{self.label}>"
+    }
+}
+
+record Gadget {
+    public size: int,
+}
+
+impl Display for Gadget {
+    func render(&self) returns string {
+        f"[{self.size}]"
+    }
+}
+
+func main() returns int {
+    let w = Widget { label: "btn" }
+    let a = Display::render(w)
+    let b = Display::render_uppercase(w)
+
+    let g = Gadget { size: 7 }
+    let c = Display::render(g)
+
+    println(a)
+    println(b)
+    println(c)
+
+    let d: dyn Display = g as dyn Display
+    let e = Display::render(d)
+
+    if a == "<btn>" && b == "<btn>!" && c == "[7]" && e == "[7]" {
+        println("R-212 UFCS ok")
+        return 42
+    }
+    return 0
+}
+

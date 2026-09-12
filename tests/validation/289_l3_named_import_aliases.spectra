@@ -1,0 +1,21 @@
+module bug_hunt_v2_289_named_import_aliases
+
+from std.math import abs as distance, max as upper
+from std.string import len as length, to_lower as lower
+
+public func main() returns int {
+    let value = distance(-40)
+    let bounded = upper(value, 42)
+    let word = lower("SPECTRA")
+
+    if bounded != 42 {
+        return 1
+    }
+    if length(word) != 7 {
+        return 2
+    }
+    if word != "spectra" {
+        return 3
+    }
+    return 0
+}

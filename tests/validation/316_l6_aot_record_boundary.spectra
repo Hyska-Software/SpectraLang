@@ -1,0 +1,19 @@
+module bug_hunt_v2_316_aot_record_boundary
+
+record Envelope {
+    code: int,
+    text: string,
+}
+
+func envelope() returns Envelope {
+    let prefix = "ok"
+    return Envelope { code: 204, text: prefix }
+}
+
+public func main() returns int {
+    let value = envelope()
+    if value.code != 204 or value.text != "ok" {
+        return 1
+    }
+    return 0
+}

@@ -71,7 +71,7 @@ def validate_aot_debug_map(binary: Path, repo_root: Path) -> None:
     require(normalized_path(debug_map["source"]["path"]) == fixture.resolve(), "source path mismatch")
     require(debug_map["entrypoint"]["function"] == "main", "entrypoint function missing")
     require(debug_map["entrypoint"]["exported_symbol"] == "main", "object symbol strategy missing")
-    require(debug_map["entrypoint"]["source_line"] == 3, "entrypoint line mismatch")
+    require(debug_map["entrypoint"]["source_line"] == 5, "entrypoint line mismatch")
     require(debug_map["entrypoint"]["source_column"] > 0, "entrypoint column missing")
     require("gdb" in debug_map["native_debuggers"], "gdb strategy missing")
     require("lldb" in debug_map["native_debuggers"], "lldb strategy missing")

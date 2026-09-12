@@ -1,0 +1,5 @@
+[project]
+name = "oop_cross_module_dispatch"
+version = "0.1.0"
+entry = "src/main.spectra"
+src_dirs = ["src"]

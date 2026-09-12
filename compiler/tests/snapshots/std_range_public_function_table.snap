@@ -7,3 +7,4 @@ func std.range.eq: func(Range, Range) returns bool
 func std.range.start: func(Range) returns int
 func std.range.end: func(Range) returns int
 func std.range.is_inclusive: func(Range) returns bool
+func std.range.iter: func(Range) returns Iterator<int>

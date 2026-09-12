@@ -1,0 +1,27 @@
+// A5: constant tensor producers inside `diff` must not disturb gradients.
+// `full_f` is a registered leaf (no tensor inputs); skipping it during
+// adjoint propagation is correct, and the parameter gradient must be exact.
+module diff_constant_producer
+
+import std.tensor as tensor
+import std.ml as ml
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled(true)
+
+    let w0 = tensor.full_f(2, 2.0)
+    let w  = tensor.requires_grad(w0, true)
+    let c  = tensor.full_f(2, 3.0)
+    let loss = diff {
+        tensor.sum_t(tensor.mul(w, c))
+    }
+    if tensor.len(loss) != 1 {
+        return 1
+    }
+    // d(sum(w * 3)) / dw = [3, 3]; the constant contributes no gradient.
+    if tensor.sum_f(tensor.grad(w)) as int != 6 {
+        return 2
+    }
+    return 0
+}

@@ -1,0 +1,75 @@
+// R-210: dyn Trait values must outlive the scope that created them.
+// The vtable is allocated on the runtime manual heap and escaped to the
+// base frame, so a dyn stored in a record and used after the creating
+// scope ends does not dangle.
+module r210_static_vtables
+
+import std.io
+
+trait Shape {
+    func area(&self) returns int
+    func kind(&self) returns string
+}
+
+record Circle {
+    public radius: int,
+}
+
+impl Shape for Circle {
+    func area(&self) returns int {
+        3 * self.radius * self.radius
+    }
+    func kind(&self) returns string {
+        "circle"
+    }
+}
+
+record Square {
+    public side: int,
+}
+
+impl Shape for Square {
+    func area(&self) returns int {
+        self.side * self.side
+    }
+    func kind(&self) returns string {
+        "square"
+    }
+}
+
+record Holder {
+    public shape: dyn Shape,
+}
+
+impl Holder {
+    public func describe(&self) returns string {
+        f"[{self.shape.kind()} area={self.shape.area()}]"
+    }
+}
+
+func make_circle() returns Holder {
+    // dyn is created inside this function's scope and stored in the record.
+    let c = Circle { radius: 4 }
+    let d: dyn Shape = c as dyn Shape
+    Holder { shape: d }
+}
+
+public func main() returns int {
+    let holder = make_circle()
+    println(holder.describe())
+
+    {
+        // A block-local dyn escapes its block and is used afterwards.
+        let s = Square { side: 6 }
+        let d: dyn Shape = s as dyn Shape
+        holder.shape = d
+    }
+    println(holder.describe())
+
+    if holder.shape.area() == 36 {
+        println("R-210 vtable lifetime ok")
+        return 42
+    }
+    return 0
+}
+

@@ -1,0 +1,6 @@
+module hybrid_method_chain
+public func main() returns int {
+    let s = "a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z"
+    let n = s.split(",").map(|part| part.trim()).filter(|p| p.len() > 0).count().to_string().len()
+    return n
+}

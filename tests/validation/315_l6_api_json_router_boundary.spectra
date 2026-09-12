@@ -1,0 +1,29 @@
+module bug_hunt_v2_315_api_json_router_boundary
+
+import std.string as str
+from std.api.http import method_get, method_post
+from std.api.routing import Router, Route, RouteMatch, router, route_count, route_id, get, post, route_match, match_route_id, match_param_int
+from std.api.handler import json, register_sync, dispatch_sync
+from std.api.http import request, response_status
+
+public func main() returns int {
+    let routes: Router = router()
+    let users: Route = get(routes, "/users")
+    let user: Route = post(routes, "/users/{id}")
+    if route_count(routes) != 2 or route_id(users) == 0 or route_id(user) == 0 {
+        return 1
+    }
+    let route_hit: RouteMatch = route_match(routes, method_post(), "/users/42")
+    if match_route_id(route_hit) != route_id(user) or match_param_int(route_hit, "id") != 42 {
+        return 2
+    }
+    let response = json("{\"ok\":true}")
+    let handle = register_sync(route_id(users), response)
+    if response_status(dispatch_sync(handle, request(method_get(), "/users"))) != 200 {
+        return 3
+    }
+    if str.contains("{\"ok\":true}", "ok") != true {
+        return 4
+    }
+    return 0
+}

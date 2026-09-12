@@ -1,7 +1,9 @@
+use crate::handles::ApiHandleTable;
 use crate::{alloc_spectra_string, read_args, read_spectra_string, write_result};
 use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT,
 };
+use spectra_runtime::handles::HandleKind;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::sync::{Mutex, OnceLock};
@@ -23,6 +25,10 @@ impl Query {
 
     pub fn len(&self) -> usize {
         self.values.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
     }
 
     pub fn has(&self, key: &str) -> bool {
@@ -290,12 +296,9 @@ impl QueryBinding {
 }
 
 struct QueryStore {
-    next_query: SpectraHostValue,
-    next_schema: SpectraHostValue,
-    next_binding: SpectraHostValue,
-    queries: HashMap<SpectraHostValue, Query>,
-    schemas: HashMap<SpectraHostValue, QuerySchema>,
-    bindings: HashMap<SpectraHostValue, QueryBinding>,
+    queries: ApiHandleTable<Query>,
+    schemas: ApiHandleTable<QuerySchema>,
+    bindings: ApiHandleTable<QueryBinding>,
     last_error_code: SpectraHostValue,
     last_error_message: String,
 }
@@ -303,36 +306,24 @@ struct QueryStore {
 impl QueryStore {
     fn new() -> Self {
         Self {
-            next_query: 1,
-            next_schema: 1,
-            next_binding: 1,
-            queries: HashMap::new(),
-            schemas: HashMap::new(),
-            bindings: HashMap::new(),
+            queries: ApiHandleTable::new(HandleKind::ApiQuery),
+            schemas: ApiHandleTable::new(HandleKind::ApiQuerySchema),
+            bindings: ApiHandleTable::new(HandleKind::ApiQueryBinding),
             last_error_code: 0,
             last_error_message: String::new(),
         }
     }
 
     fn query_handle(&mut self, query: Query) -> SpectraHostValue {
-        let handle = self.next_query;
-        self.next_query = self.next_query.saturating_add(1).max(1);
-        self.queries.insert(handle, query);
-        handle
+        self.queries.insert(query)
     }
 
     fn schema_handle(&mut self, schema: QuerySchema) -> SpectraHostValue {
-        let handle = self.next_schema;
-        self.next_schema = self.next_schema.saturating_add(1).max(1);
-        self.schemas.insert(handle, schema);
-        handle
+        self.schemas.insert(schema)
     }
 
     fn binding_handle(&mut self, binding: QueryBinding) -> SpectraHostValue {
-        let handle = self.next_binding;
-        self.next_binding = self.next_binding.saturating_add(1).max(1);
-        self.bindings.insert(handle, binding);
-        handle
+        self.bindings.insert(binding)
     }
 
     fn clear_error(&mut self) {

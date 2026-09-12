@@ -1,8 +1,8 @@
 module phase19_model_monitoring
 
 import std.serve as serve
+import std.tensor as tensor
 import std.string as str
-
 public func main() returns int {
     serve.reset()
 
@@ -13,6 +13,13 @@ public func main() returns int {
             return 1
         }
     } else {
+        return 1
+    }
+    // Real linear model W=[[2]], b=[0], relu: request x infers to 2*x so the
+    // original result assertions (10->20, 20->40, 110->220, 120->240) hold.
+    let weights = tensor.full2_f(1, 1, 2.0)
+    let biases = tensor.full_f(1, 0.0)
+    if serve.server_register_model_linear(reference_server, weights, biases, 0) != 1 {
         return 1
     }
     serve.server_warmup(reference_server)
@@ -45,7 +52,6 @@ public func main() returns int {
     } else {
         return 6
     }
-
     let reference = serve.server_distribution_summary(reference_server)
     if str.contains(reference, "spectra.serve.distribution_summary.v1") {
         let ok_reference = 1
@@ -57,6 +63,9 @@ public func main() returns int {
     }
 
     let live_server = serve.server_new(2)
+    if serve.server_register_model_linear(live_server, weights, biases, 0) != 1 {
+        return 8
+    }
     serve.server_warmup(live_server)
     let live_a = serve.server_enqueue(live_server, 110)
     let live_b = serve.server_enqueue(live_server, 120)

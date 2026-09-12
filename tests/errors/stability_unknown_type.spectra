@@ -1,0 +1,7 @@
+module stability_unknown_type
+
+public func main() returns int {
+    let value: MissingType = 1
+    return value
+}
+

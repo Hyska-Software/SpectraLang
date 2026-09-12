@@ -146,7 +146,7 @@ impl CompilationPipeline<NoopBackend> {
         };
         Self {
             options,
-            backend: NoopBackend::default(),
+            backend: NoopBackend,
             module_loader: ModuleLoader::new(),
             registry,
             package_name: None,
@@ -181,9 +181,7 @@ where
         let mut metrics = collect_metrics.then_some(CompilationMetrics::default());
 
         // Phases 1 & 2: Lexical Analysis + Parsing (with incremental cache)
-        let parse_outcome =
-            self.module_loader
-                .parse_module(filename, source, &self.options.experimental_features);
+        let parse_outcome = self.module_loader.parse_module(filename, source);
 
         let parse_outcome = parse_outcome.map_err(|error| match error {
             ModuleParseError::Lexical(errors) => errors
@@ -214,6 +212,7 @@ where
             Arc::clone(&self.registry),
             self.package_name.clone(),
         );
+        semantic.set_current_module_name(Some(ast.name.clone()));
         let semantic_start = collect_metrics.then(Instant::now);
         let semantic_errors = semantic.analyze_module(&mut ast);
         if let (Some(metrics), Some(start)) = (metrics.as_mut(), semantic_start) {
@@ -223,7 +222,7 @@ where
         if !semantic_errors.is_empty() {
             return Err(semantic_errors
                 .into_iter()
-                .map(|e| CompilerError::Semantic(e))
+                .map(CompilerError::Semantic)
                 .collect());
         }
 
@@ -247,6 +246,12 @@ where
                     "lint rule '{}' escalated to error",
                     diagnostic.rule.code()
                 ));
+
+                // BEGIN narrowing-cast stable code hook (CastLint)
+                if let Some(code) = diagnostic.rule.stable_error_code() {
+                    error = error.with_code(code);
+                }
+                // END narrowing-cast stable code hook (CastLint)
 
                 if let Some(note) = &diagnostic.note {
                     error = error.with_hint(note.clone());

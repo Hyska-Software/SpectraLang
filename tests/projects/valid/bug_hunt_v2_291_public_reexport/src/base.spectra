@@ -1,0 +1,9 @@
+module base
+
+public record Badge {
+    public code: int,
+}
+
+public func answer() returns int {
+    42
+}

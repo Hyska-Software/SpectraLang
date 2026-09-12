@@ -15,6 +15,7 @@ import std.string
 import std.convert
 import std.random
 import std.env
+import std.option as option
 
 // ─── Utilidades de formatacao ────────────────────────────────────────────────
 
@@ -120,7 +121,11 @@ public func main() returns int {
     let argc = env_args_count()
     if argc > 1 {
         let nome = env_arg(1)
-        println(f"  Ola, {nome}! Bem-vindo ao SpectraLab.")
+        if option.is_some(nome) {
+            println(f"  Ola, {option.option_unwrap(nome)}! Bem-vindo ao SpectraLab.")
+        } else {
+            println("  Ola! Bem-vindo ao SpectraLab.")
+        }
     } else {
         println("  Ola! Bem-vindo ao SpectraLab.")
         println("  (dica: passe seu nome como argumento)")

@@ -1,0 +1,46 @@
+// R-261 regression: inherited trait methods and default methods must occupy a
+// coherent vtable when the child trait is used through dyn dispatch.
+module r261_vtable_inheritance_defaults
+
+trait Base {
+    func base(&self) returns int
+}
+
+trait Extended: Base {
+    func extended(&self) returns int {
+        return self.base() + 1
+    }
+
+    func label(&self) returns string {
+        return "extended"
+    }
+}
+
+record Item {
+    public value: int,
+}
+
+impl Extended for Item {
+    func base(&self) returns int {
+        return self.value
+    }
+}
+
+public func main() returns int {
+    let item = Item { value: 40 }
+    if item.base() != 40 or item.extended() != 41 or item.label() != "extended" {
+        return 1
+    }
+
+    let dynamic: dyn Extended = item as dyn Extended
+    if dynamic.base() != 40 {
+        return 2
+    }
+    if dynamic.extended() != 41 {
+        return 3
+    }
+    if dynamic.label() != "extended" {
+        return 4
+    }
+    return 0
+}

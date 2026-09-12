@@ -35,6 +35,12 @@ def require_contains(path: Path, needles: list[str]) -> None:
     text = path.read_text(encoding="utf-8")
     missing = [needle for needle in needles if needle not in text]
     if missing:
+        stage_text = "\n".join(
+            source.read_text(encoding="utf-8")
+            for source in sorted(path.parent.rglob("*.rs"))
+        )
+        missing = [needle for needle in missing if needle not in stage_text]
+    if missing:
         for needle in missing:
             print(f"[R-2108] missing marker in {path}: {needle}", file=sys.stderr)
         raise SystemExit(1)
@@ -94,8 +100,11 @@ def main() -> int:
         "fn drive_stream(dyn Stream stream) -> Task<int>",
         "fn drive_worker(dyn AsyncWorker worker) -> Task<int>",
         "call_indirect",
-        "async.suspend",
-        "hostcall spectra.async.task.result",
+        # Real suspension (no eager blocking wait): child polling and the
+        # generated poll/dispatch state machine replace task.result markers.
+        "poll.child",
+        "coroutine.dispatch",
+        "__poll",
     ]:
         if needle not in ir:
             print(ir)

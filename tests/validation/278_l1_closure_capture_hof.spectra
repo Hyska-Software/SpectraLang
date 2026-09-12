@@ -1,0 +1,23 @@
+module bug_hunt_v2_278_closure_capture_hof
+
+func apply(value: int, transform: func(int) returns int) returns int {
+    transform(value)
+}
+
+func make_offset(offset: int) returns func(int) returns int {
+    | value: int | value + offset
+}
+
+public func main() returns int {
+    let add_three = make_offset(3)
+    let double: func(int) returns int = | value: int | value * 2
+    let composed = | value: int | add_three(double(value))
+
+    if apply(4, add_three) != 7 {
+        return 1
+    }
+    if apply(5, composed) != 13 {
+        return 2
+    }
+    return 0
+}

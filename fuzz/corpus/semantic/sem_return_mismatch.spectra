@@ -1,0 +1,5 @@
+module sem_return_mismatch
+func f(flag: bool) returns int {
+    if flag { return "yes" }
+    return [1, 2, 3]
+}

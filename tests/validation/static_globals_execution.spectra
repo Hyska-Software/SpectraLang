@@ -1,0 +1,14 @@
+module static_globals_execution
+
+static COUNTER: int = 41
+
+func bump() returns int {
+    COUNTER = COUNTER + 1
+    COUNTER
+}
+
+public func main() returns int {
+    let first = bump()
+    let second = bump()
+    second - first - 1
+}

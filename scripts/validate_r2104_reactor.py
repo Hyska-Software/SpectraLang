@@ -30,6 +30,12 @@ def require_contains(path: Path, needles: list[str]) -> None:
     text = path.read_text(encoding="utf-8")
     missing = [needle for needle in needles if needle not in text]
     if missing:
+        stage_text = "\n".join(
+            source.read_text(encoding="utf-8")
+            for source in sorted(path.parent.rglob("*.rs"))
+        )
+        missing = [needle for needle in missing if needle not in stage_text]
+    if missing:
         for needle in missing:
             print(f"[R-2104] missing marker in {path}: {needle}", file=sys.stderr)
         raise SystemExit(1)
@@ -42,13 +48,29 @@ def main() -> int:
             "Linux selects the `epoll` backend label.",
             "Windows selects the `IOCP` backend label.",
             "macOS and the BSD family select the `kqueue` backend label.",
+            'target_os = "freebsd"',
+            'target_os = "openbsd"',
+            'target_os = "netbsd"',
+            'target_os = "dragonfly"',
             "`mio::Poll` maps to the platform readiness backend",
             "pub enum EventKind",
             "TaskWake",
             "Timer",
             "Io",
+            "register_source",
+            "deregister_source",
+            "bsd_kqueue_backend_is_selected",
+            "real_tcp_listener_readiness_reaches_the_shared_queue",
             "linux_epoll_backend_handles_10k_suspended_task_wakeups",
             "10_000",
+        ],
+    )
+    require_contains(
+        ROOT / ".github" / "workflows" / "r2104-freebsd-kqueue.yml",
+        [
+            "vmactions/freebsd-vm@v1",
+            "cargo test -q -p spectra-runtime reactor -- --nocapture",
+            "async_stdlib_host_calls_cover_fs_tcp_udp_channels_and_cancellation",
         ],
     )
     require_contains(

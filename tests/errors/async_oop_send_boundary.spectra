@@ -1,0 +1,27 @@
+// R-NEG-12: an OOP value without a Send contract cannot cross an async task
+// boundary as `dyn Worker + Send`.
+module rneg_async_oop_send_boundary
+
+trait Worker {
+    async func run(&self) returns int
+}
+
+record NonSend {
+    public value: int,
+}
+
+impl Worker for NonSend {
+    async func run(&self) returns int {
+        return self.value
+    }
+}
+
+async func bad() returns int {
+    let local = NonSend { value: 9 }
+    let worker = local as dyn Worker + Send
+    return await worker.run()
+}
+
+public func main() returns int {
+    return 0
+}

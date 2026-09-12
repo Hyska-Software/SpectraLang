@@ -1,15 +1,16 @@
 module stdlib_contract_audit
 
-import std.math as math
-import std.string as string
-import std.fs as fs
-import std.time as time
-import std.range
-import std.tensor as tensor
-import std.ml as ml
-import std.serve as serve
-import std.concurrent as concurrent
 from std.api.http import method_get, status_ok
+import std.concurrent as concurrent
+import std.error as error
+import std.fs as fs
+import std.math as math
+import std.ml as ml
+import std.range
+import std.serve as serve
+import std.string as string
+import std.tensor as tensor
+import std.time as time
 
 public func main() returns int {
     if math.abs(-7) != 7 {
@@ -18,18 +19,39 @@ public func main() returns int {
     if string.eq(string.concat("spectra", "lang"), "spectralang") != true {
         return 2
     }
-    let path = "target/r3007-stdlib-contract/probe.txt"
-    if fs.fs_write(path, "stdlib-contract") {
+    let path         = "target/r3007-stdlib-contract/probe.txt"
+    let write_result = fs.fs_write(path, "stdlib-contract")
+    if let Result::Ok(wrote) = write_result {
+        if wrote != true {
+            return 3
+        }
     } else {
         return 3
     }
-    if fs.fs_exists(path) {
+    let exists_result = fs.fs_exists(path)
+    if let Result::Ok(exists) = exists_result {
+        if exists != true {
+            return 4
+        }
     } else {
         return 4
     }
-    if fs.fs_remove(path) {
+    let remove_result = fs.fs_remove(path)
+    if let Result::Ok(removed) = remove_result {
+        if removed != true {
+            return 5
+        }
     } else {
         return 5
+    }
+
+    let invalid_read = fs.fs_read("")
+    if let Result::Err(fs_error) = invalid_read {
+        if error.code(fs_error) != 0 {
+            return 16
+        }
+    } else {
+        return 16
     }
 
     let r = create(2, 5, false)
@@ -56,6 +78,11 @@ public func main() returns int {
 
     serve.reset()
     let server  = serve.server_new(3)
+    let weights = tensor.full2_f(1, 1, 3.0)
+    let biases  = tensor.full_f(1, 0.0)
+    if serve.server_register_model_linear(server, weights, biases, 0) != 1 {
+        return 11
+    }
     let request = serve.server_enqueue(server, 10)
     serve.server_warmup(server)
     if serve.server_process_batch(server, 1) != 1 {
@@ -66,7 +93,7 @@ public func main() returns int {
     }
 
     concurrent.reset()
-    let task = concurrent.task_spawn(42)
+    let task = concurrent.task_spawn_fn( | value: int | { value}, 42)
     if concurrent.task_join(task) != 42 {
         return 14
     }

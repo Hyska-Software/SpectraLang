@@ -1,0 +1,32 @@
+// Todo item model: create, complete, and query pending state.
+module todo
+
+#[derive(Serialize, Deserialize)]
+public record Todo {
+    public id: int,
+    public title: string,
+    public done: bool,
+}
+
+public func make(id: int, title: string) returns Todo {
+    return Todo { id: id, title: title, done: false }
+}
+
+public func complete(item: Todo) returns Todo {
+    return Todo { id: item.id, title: item.title, done: true }
+}
+
+public func save(item: Todo) returns string {
+    return item.to_json()
+}
+
+public func load(raw: string) returns Todo {
+    return Todo::from_json(raw)
+}
+
+public func is_pending(item: Todo) returns bool {
+    if item.done {
+        return false
+    }
+    return true
+}

@@ -2,9 +2,16 @@ module onnx_boundary
 
 import std.ml as ml
 import std.string as str
+import std.tensor as tensor
+import std.collections as collections
 
 public func validate_onnx_boundary() returns int {
-    let exported = ml.onnx_export("target/r2008/integrated-model.onnx", "linear")
+    let weight = tensor.reshape(tensor.full_f(6, 0.5), 2, 3)
+    let bias = tensor.full_f(3, 0.1)
+    let weights = collections.list_new()
+    collections.list_push(weights, weight)
+    collections.list_push(weights, bias)
+    let exported = ml.onnx_export_weights("target/r2008/integrated-model.onnx", "linear", weights)
     if ml.onnx_validate(exported) != 1 {
         return 1
     }

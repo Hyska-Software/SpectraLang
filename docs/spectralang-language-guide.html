@@ -506,7 +506,7 @@ target\debug\spectralang.exe --version</code></pre>
         <ol>
           <li>Install Rust with the stable toolchain and ensure <code>cargo</code> is on <code>PATH</code>.</li>
           <li>From the repository root, build <code>spectra-cli</code> and use <code>target/debug/spectralang.exe</code> on Windows.</li>
-          <li>Run <code>spectralang --help</code>, <code>spectralang --list-experimental</code>, and a small <code>check</code> command.</li>
+          <li>Run <code>spectralang --help</code> and a small <code>check</code> command.</li>
           <li>Keep the compiler, standard library, examples, and tests from the same checkout when validating a language change.</li>
         </ol>
         <a class="back-to-top" href="#top">Back to top</a>
@@ -1103,8 +1103,6 @@ spectralang package test --offline --locked --root .</code></pre>
               <tr><td><code>bench</code></td><td>Run benchmark targets; <code>--bench-json</code> emits machine-readable results.</td></tr>
               <tr><td><code>--dump-ast</code>, <code>--dump-ir</code></td><td>Inspect frontend or midend representations while debugging a compiler behavior.</td></tr>
               <tr><td><code>-O0</code> through <code>-O3</code></td><td>Choose optimization level; <code>-O0</code> is useful for diagnosis.</td></tr>
-              <tr><td><code>--enable-experimental</code></td><td>Compatibility no-op in this release; there are no active experimental syntax gates.</td></tr>
-              <tr><td><code>--list-experimental</code></td><td>Reports the active experimental list, which is empty under the current policy.</td></tr>
             </tbody>
           </table>
         </div>
@@ -1115,7 +1113,6 @@ spectralang package test --offline --locked --root .</code></pre>
         <div class="code-shell" data-spectra-code data-kind="command">
           <div class="code-head"><span>Documentation and project gates</span><button class="copy-button" type="button" data-copy-target="tooling-command">Copy</button></div>
           <pre id="tooling-command"><code class="command">python scripts\validate_language_guide.py --root .
-python scripts\validate_feature_maturity.py --root .
 git diff --check
 .\run_tests.ps1</code></pre>
         </div>
@@ -1132,9 +1129,9 @@ git diff --check
             <thead><tr><th>Status</th><th>Current surface</th><th>Guidance</th></tr></thead>
             <tbody>
               <tr><td><span class="status stable">stable</span></td><td>Modules and imports; visibility; functions and methods; records, enums, traits, impl, generics and <code>dyn Trait</code>; primitive, tuple, array, function, and numeric types; control flow and patterns; qualified standard library; tensor/autodiff/device baseline; <code>std.ml</code>; package manager; Python/Rust/C ABI and <code>.npy</code> interop baseline; tooling, concurrency, local serving, AI examples, ONNX/transformer/RAG/evaluation/guardrail/monitoring contracts.</td><td>Use normally, while still checking the exact operation and target.</td></tr>
-              <tr><td><span class="status beta">beta</span></td><td>Class footprint and static members; mutable or reference closure captures; async/await execution, reactor, structured concurrency, streams, async standard library, async trait objects and formal <code>Send</code>/<code>Sync</code> diagnostics; first-class tensor language beyond the handle API; native debug stepping; future HTTP/gRPC serving work.</td><td>Use with a fixture, platform check, and an explicit product decision.</td></tr>
-              <tr><td><span class="status experimental">experimental</span></td><td>None in version 0.2.7. The experimental CLI switches remain compatibility interfaces until a future feature is documented and gated.</td><td>Do not invent an experimental syntax gate.</td></tr>
-              <tr><td><span class="status deferred">deferred</span></td><td>Unicode identifiers; advanced numeric literals; exact-width storage and overflow policy; repeat/foreach/goto/yield; raw strings; production tensor syntax and static-shape language; native GPU backends beyond optional <code>wgpu</code>; formats beyond current <code>.npy</code>; hosted registry/auth/provenance/range solving; async test macros.</td><td>Do not document as available current syntax.</td></tr>
+              <tr><td><span class="status beta">beta</span></td><td>Exact-width numeric aliases and overflow/narrowing semantics; typed <code>List&lt;T&gt;</code>/<code>Map&lt;K,V&gt;</code> collections and absence-safe <code>Option</code> accessors; <code>Option</code>/<code>Result</code> higher-order transformations; mutable or reference closure captures; async/await execution, reactor, structured concurrency, streams, async standard library, async trait objects and formal <code>Send</code>/<code>Sync</code> diagnostics; first-class tensor language beyond the handle API; native debug stepping; future HTTP/gRPC serving work.</td><td>Use with a fixture, platform check, and an explicit product decision.</td></tr>
+              <tr><td><span class="status experimental">experimental</span></td><td>None. There is no experimental gating mechanism.</td><td>Do not invent an experimental syntax gate.</td></tr>
+              <tr><td><span class="status deferred">deferred</span></td><td><code>class</code> declarations, inheritance, <code>override</code>/<code>super</code> and class ABI; Unicode identifiers; advanced numeric literals; repeat/foreach/goto/yield; raw strings; production tensor syntax and static-shape language; native GPU backends beyond optional <code>wgpu</code>; formats beyond current <code>.npy</code>; hosted registry/auth/provenance/range solving; async test macros.</td><td>Do not document as available current syntax.</td></tr>
             </tbody>
           </table>
         </div>

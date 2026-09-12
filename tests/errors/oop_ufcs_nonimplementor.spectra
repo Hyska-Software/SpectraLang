@@ -1,0 +1,16 @@
+// R-NEG-06: UFCS must reject a receiver that does not implement the trait.
+module rneg_oop_ufcs_nonimplementor
+
+trait Display {
+    func render(&self) returns string
+}
+
+record Widget {
+    public label: string,
+}
+
+public func main() returns int {
+    let widget = Widget { label: "button" }
+    let value = Display::render(widget)
+    return 0
+}

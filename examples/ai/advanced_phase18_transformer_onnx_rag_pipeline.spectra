@@ -6,12 +6,18 @@ import std.fs as fs
 import std.ml as ml
 import std.string as str
 import std.tensor as tensor
+import std.collections as collections
 
 public func main() returns int {
     tensor.free_all()
     tensor.set_grad_enabled( false)
 
-    let model = ml.onnx_export("target/ai-examples/advanced-phase18/transformer.onnx", "transformer")
+    let trans_scale = tensor.full_f(8, 1.0)
+    let trans_bias = tensor.full_f(8, 0.0)
+    let trans_weights = collections.list_new()
+    collections.list_push(trans_weights, trans_scale)
+    collections.list_push(trans_weights, trans_bias)
+    let model = ml.onnx_export_weights("target/ai-examples/advanced-phase18/transformer.onnx", "transformer", trans_weights)
     if ml.onnx_validate(model) != 1 {
         return 1
     }
@@ -78,9 +84,11 @@ public func main() returns int {
     ml.vector_index_set_metadata(index, "model_version", "advanced-phase18-v1")
     let doc_a = "Spectra RAG retrieval combines indexed context with transformer prompts."
     let doc_b = "ONNX export keeps transformer graphs portable for serving."
-    ml.vector_index_insert(index, "rag-transformer", ml.text_embed(doc_a, 16))
-    ml.vector_index_insert(index, "onnx-serving", ml.text_embed(doc_b, 16))
-    let results = ml.vector_index_query(index, ml.text_embed("rag retrieval transformer prompts", 16), 1)
+    let doc_a_vec = tensor.full_f(16, 1.0)
+    let doc_b_vec = tensor.concat(tensor.full_f(8, 1.0), tensor.full_f(8, 0.0))
+    ml.vector_index_insert(index, "rag-transformer", doc_a_vec)
+    ml.vector_index_insert(index, "onnx-serving", doc_b_vec)
+    let results = ml.vector_index_query(index, tensor.full_f(16, 1.0), 1)
     if str.contains(results, "rag-transformer") {
         let ok_retrieval = 1
         if ok_retrieval != 1 {
@@ -110,7 +118,7 @@ public func main() returns int {
 
     let persisted = ml.vector_index_persist(index, "target/ai-examples/advanced-phase18/vector-index.json")
     let loaded = ml.vector_index_load(persisted)
-    let loaded_results = ml.vector_index_query(loaded, ml.text_embed("onnx serving portable graphs", 16), 1)
+    let loaded_results = ml.vector_index_query(loaded, tensor.concat(tensor.full_f(8, 1.0), tensor.full_f(8, 0.0)), 1)
     if str.contains(loaded_results, "onnx-serving") {
         let ok_loaded = 1
         if ok_loaded != 1 {

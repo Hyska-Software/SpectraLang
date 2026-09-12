@@ -1,0 +1,32 @@
+// R-273 regression: an async API handler implemented by a record must preserve
+// the Response task contract through a dynamic trait call.
+module r273_api_handler_async_trait
+
+from std.api.http import Request, Response, method_get, request, response_status
+from std.api.handler import AsyncHandler, into_status_response
+
+record StatusHandler {
+    public status_code: int,
+}
+
+impl AsyncHandler for StatusHandler {
+    async func call(&self, request: Request) returns Response {
+        return into_status_response(self.status_code)
+    }
+}
+
+async func drive_dynamic(handler: dyn AsyncHandler, req: Request) returns int {
+    let response = await handler.call(req)
+    return response_status(response)
+}
+
+public func main() returns int {
+    let handler = StatusHandler { status_code: 202 }
+    let req = request(method_get(), "/async")
+    let dynamic: dyn AsyncHandler = handler as dyn AsyncHandler
+    if block_on(drive_dynamic(dynamic, req)) != 202 {
+        return 1
+    }
+
+    return 0
+}

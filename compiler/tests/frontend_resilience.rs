@@ -1,5 +1,4 @@
 use spectra_compiler::{CompilationOptions, CompilationPipeline, CompilerError, Lexer, Parser};
-use std::collections::HashSet;
 
 #[test]
 fn malformed_frontend_inputs_do_not_panic() {
@@ -13,11 +12,9 @@ fn malformed_frontend_inputs_do_not_panic() {
     ];
 
     for source in corpus {
-        let _ = Lexer::new(source).tokenize().and_then(|tokens| {
-            Parser::new(tokens, HashSet::new())
-                .parse()
-                .map_err(|_| Vec::new())
-        });
+        let _ = Lexer::new(source)
+            .tokenize()
+            .and_then(|tokens| Parser::new(tokens).parse().map_err(|_| Vec::new()));
     }
 }
 
@@ -54,7 +51,7 @@ fn promoted_control_flow_constructs_parse_without_feature_flags() {
     "#;
 
     let tokens = Lexer::new(source).tokenize().expect("lexer should succeed");
-    Parser::new(tokens, HashSet::new())
+    Parser::new(tokens)
         .parse()
         .expect("promoted control-flow constructs should be stable syntax");
 }
@@ -74,10 +71,7 @@ fn lexical_errors_expose_stable_codes() {
 #[test]
 fn pipeline_handles_malformed_inputs_without_internal_errors() {
     let corpus = [
-        (
-            "broken_import.spectra",
-            "module demo\nfrom std.io import",
-        ),
+        ("broken_import.spectra", "module demo\nfrom std.io import"),
         (
             "broken_return.spectra",
             "module demo\nfunc main() returns int { return }",

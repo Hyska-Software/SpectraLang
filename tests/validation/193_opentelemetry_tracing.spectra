@@ -2,6 +2,7 @@ module opentelemetry_tracing
 
 from std.api.trace import TraceConfig, TraceSpan, config_new, config_start, config_shutdown, span_start, span_set_attribute, span_set_attribute_int, span_set_attribute_bool, span_set_status, span_end, flush
 import std.fs as fs
+import std.error as error
 from std.api.db.sqlite import SqliteConnection, SqliteStatement, open, close, prepare, step, finalize
 
 public func main() returns int {
@@ -20,14 +21,37 @@ public func main() returns int {
     }
 
     let trace_file = "target/r2701-tracing-fixture.txt"
-    if fs.fs_write(trace_file, "traced filesystem operation") {
+    let write_result = fs.fs_write(trace_file, "traced filesystem operation")
+    if let Result::Ok(wrote) = write_result {
+        if wrote != true {
+            return 21
+        }
     } else {
         return 21
     }
-    fs.fs_read(trace_file)
-    if fs.fs_remove(trace_file) {
+    let read_result = fs.fs_read(trace_file)
+    if let Result::Ok(content) = read_result {
+        if content != "traced filesystem operation" {
+            return 22
+        }
+    } else {
+        return 22
+    }
+    let remove_result = fs.fs_remove(trace_file)
+    if let Result::Ok(removed) = remove_result {
+        if removed != true {
+            return 23
+        }
     } else {
         return 23
+    }
+    let invalid_read = fs.fs_read("")
+    if let Result::Err(fs_error) = invalid_read {
+        if error.code(fs_error) != 0 {
+            return 27
+        }
+    } else {
+        return 27
     }
 
     let database: SqliteConnection = open("target/r2701-tracing-fixture.sqlite")

@@ -1,0 +1,72 @@
+// R-260 regression: a dyn Trait fat pointer embedded in a padded aggregate
+// must keep both data and vtable pointers valid across function/block escapes.
+module r260_dyn_aggregate_overwrite
+
+import std.io
+
+trait Shape {
+    func area(&self) returns int
+    func kind(&self) returns string
+}
+
+record Circle {
+    public radius: int,
+}
+
+impl Shape for Circle {
+    func area(&self) returns int {
+        return self.radius * self.radius
+    }
+
+    func kind(&self) returns string {
+        return "circle"
+    }
+}
+
+record Square {
+    public side: int,
+}
+
+impl Shape for Square {
+    func area(&self) returns int {
+        return self.side * self.side
+    }
+
+    func kind(&self) returns string {
+        return "square"
+    }
+}
+
+record Holder {
+    public prefix: char,
+    public shape: dyn Shape,
+    public suffix: bool,
+}
+
+func make_holder() returns Holder {
+    let circle = Circle { radius: 4 }
+    let shape: dyn Shape = circle as dyn Shape
+    return Holder { prefix: 'C', shape: shape, suffix: true }
+}
+
+public func main() returns int {
+    let holder = make_holder()
+    if holder.prefix != 'C' or holder.suffix != true {
+        return 1
+    }
+    if holder.shape.kind() != "circle" or holder.shape.area() != 16 {
+        return 2
+    }
+
+    {
+        let square = Square { side: 6 }
+        let shape: dyn Shape = square as dyn Shape
+        holder.shape = shape
+    }
+
+    if holder.shape.kind() != "square" or holder.shape.area() != 36 {
+        return 3
+    }
+    println(holder.shape.kind())
+    return 0
+}

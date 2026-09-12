@@ -1,0 +1,74 @@
+module stdlib_time
+
+import std.time as time
+
+public func main() returns int {
+    let epoch_millis = time.time_now_millis()
+    let epoch_secs = time.time_now_secs()
+    if epoch_millis < 0 or epoch_secs < 0 {
+        return 1
+    }
+    if epoch_millis / 1000 < epoch_secs or epoch_secs < epoch_millis / 1000 - 1 {
+        return 2
+    }
+
+    let monotonic_ms = time.monotonic_millis()
+    let monotonic_ns = time.monotonic_nanos()
+    if monotonic_ms < 0 or monotonic_ns < 0 {
+        return 3
+    }
+    time.sleep_ms(0)
+    if time.monotonic_millis() < monotonic_ms {
+        return 4
+    }
+
+    let half_second = time.duration_ms(500)
+    let two_seconds = time.duration_secs(2)
+    if time.duration_millis(half_second) != 500 or time.duration_secs_value(half_second) != 0 {
+        return 5
+    }
+    if time.duration_millis(two_seconds) != 2000 or time.duration_secs_value(two_seconds) != 2 {
+        return 6
+    }
+    let sum = time.duration_add(half_second, two_seconds)
+    let difference = time.duration_sub(sum, half_second)
+    if time.duration_millis(sum) != 2500 or time.duration_millis(difference) != 2000 {
+        return 7
+    }
+
+    let instant = time.instant_now()
+    time.sleep_ms(1)
+    if time.instant_elapsed_ms(instant) < 0 or time.instant_has_elapsed(instant) != true {
+        return 8
+    }
+    let deadline = time.instant_add(instant, half_second)
+    if time.instant_has_elapsed(deadline) != false {
+        return 9
+    }
+    time.sleep(time.duration_ms(0))
+
+    let epoch = time.unix_to_utc(0)
+    if time.utc_year(epoch) != 1970 or time.utc_month(epoch) != 1 or time.utc_day(epoch) != 1 {
+        return 10
+    }
+    if time.utc_hour(epoch) != 0 or time.utc_minute(epoch) != 0 or time.utc_second(epoch) != 0 {
+        return 11
+    }
+
+    let leap_day = time.unix_to_utc(1582934400)
+    if time.utc_year(leap_day) != 2020 or time.utc_month(leap_day) != 2 or time.utc_day(leap_day) != 29 {
+        return 12
+    }
+    if time.utc_hour(leap_day) != 0 or time.utc_minute(leap_day) != 0 or time.utc_second(leap_day) != 0 {
+        return 13
+    }
+
+    let end_of_year = time.unix_to_utc(1609459199)
+    if time.utc_year(end_of_year) != 2020 or time.utc_month(end_of_year) != 12 or time.utc_day(end_of_year) != 31 {
+        return 14
+    }
+    if time.utc_hour(end_of_year) != 23 or time.utc_minute(end_of_year) != 59 or time.utc_second(end_of_year) != 59 {
+        return 15
+    }
+    return 0
+}

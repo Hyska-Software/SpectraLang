@@ -1,0 +1,7 @@
+module main
+
+from state import SECRET
+
+public func main() returns int {
+    return SECRET
+}

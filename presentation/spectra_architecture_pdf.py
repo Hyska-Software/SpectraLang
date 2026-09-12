@@ -372,10 +372,11 @@ pub fn main() -> int {
     f += slide(7, "Diferencial 3: async/await + reactor de plataforma")
     f += [Paragraph(
         "Async é conceito de <b>primeira classe na IR</b> "
-        "(<font name='Courier'>AsyncSuspend/Resume/Ready</font>, "
-        "<font name='Courier'>Type::Task</font>), rebaixado para uma máquina de "
-        "estados SSA. O runtime usa <font name='Courier'>mio</font> mapeando para "
-        "<b>epoll</b> (Linux) / <b>IOCP</b> (Windows) / <b>kqueue</b> (macOS).", style_body)]
+        "(<font name='Courier'>AsyncReady</font>, "
+        "<font name='Courier'>Type::Task</font>); a espera usa o reactor "
+        "(<font name='Courier'>mio</font> → <b>epoll</b> (Linux) / "
+        "<b>IOCP</b> (Windows) / <b>kqueue</b> (macOS)) via host call "
+        "<font name='Courier'>spectra.async.task.wait</font>.", style_body)]
     f += code(
         """async fn add_one() -> int {
     let value = await ready_value();   // await prefixado

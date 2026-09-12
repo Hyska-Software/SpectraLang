@@ -48,6 +48,16 @@ fn format_function(output: &mut String, function: &Function) -> std::fmt::Result
         params,
         fmt_type(&function.return_type)
     )?;
+    if let Some(layout) = &function.async_layout {
+        writeln!(
+            output,
+            "    coroutine layout poll={} drop={} states={} slots={} abi=(i64,i64,i64)->i64",
+            layout.poll_name,
+            layout.drop_name,
+            layout.states.len(),
+            layout.frame_slots.len()
+        )?;
+    }
 
     for block in &function.blocks {
         format_block(output, block)?;
@@ -171,6 +181,12 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
             InstructionKind::Alloca { result, ty } => {
                 format!("{} = alloca {}", fmt_value(*result), fmt_type(ty))
             }
+            InstructionKind::GlobalAddr { result, name, ty } => format!(
+                "{} = global_addr {} : {}",
+                fmt_value(*result),
+                name,
+                fmt_type(ty)
+            ),
             InstructionKind::Load { result, ptr, ty } => {
                 format!(
                     "{} = load({}) {}",
@@ -194,10 +210,27 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                 fmt_value(*index),
                 fmt_type(element_type)
             ),
+            InstructionKind::FieldPtr {
+                result,
+                ptr,
+                offset,
+            } => format!(
+                "{} = field_ptr {}, {}",
+                fmt_value(*result),
+                fmt_value(*ptr),
+                offset
+            ),
+            InstructionKind::ManualAlloc { result, size } => {
+                format!("{} = manual_alloc {}", fmt_value(*result), size)
+            }
+            InstructionKind::EscapeManualAlloc { ptr } => {
+                format!("escape_manual_alloc {}", fmt_value(*ptr))
+            }
             InstructionKind::Call {
                 result,
                 function,
                 args,
+                ..
             } => {
                 let arg_list = args
                     .iter()
@@ -237,9 +270,24 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                 let upstream = upstream
                     .map(fmt_value)
                     .unwrap_or_else(|| "seed".to_string());
-                let inputs = inputs.iter().map(|v| fmt_value(*v)).collect::<Vec<_>>().join(", ");
-                let targets = targets.iter().map(|v| fmt_value(*v)).collect::<Vec<_>>().join(", ");
-                let text = format!("autodiff.{} output={} upstream={} inputs=[{}] targets=[{}]", operation, fmt_value(*output), upstream, inputs, targets);
+                let inputs = inputs
+                    .iter()
+                    .map(|v| fmt_value(*v))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let targets = targets
+                    .iter()
+                    .map(|v| fmt_value(*v))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let text = format!(
+                    "autodiff.{} output={} upstream={} inputs=[{}] targets=[{}]",
+                    operation,
+                    fmt_value(*output),
+                    upstream,
+                    inputs,
+                    targets
+                );
                 match result {
                     Some(value) => format!("{} = {}", fmt_value(*value), text),
                     None => text,
@@ -283,12 +331,6 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                     None => format!("call_indirect {}({})", fmt_value(*fn_ptr), arg_list),
                 }
             }
-            InstructionKind::AsyncSuspend { task, state } => {
-                format!("async.suspend state{} {}", state, fmt_value(*task))
-            }
-            InstructionKind::AsyncResume { task, state } => {
-                format!("async.resume state{} {}", state, fmt_value(*task))
-            }
             InstructionKind::AsyncReady {
                 result,
                 value,
@@ -306,13 +348,23 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                 format!("{} = const.int {}", fmt_value(*result), value)
             }
             InstructionKind::ConstIntTyped { result, value, ty } => {
-                format!("{} = const.int<{}> {}", fmt_value(*result), fmt_type(ty), value)
+                format!(
+                    "{} = const.int<{}> {}",
+                    fmt_value(*result),
+                    fmt_type(ty),
+                    value
+                )
             }
             InstructionKind::ConstFloat { result, value } => {
                 format!("{} = const.float {}", fmt_value(*result), value)
             }
             InstructionKind::ConstFloatTyped { result, value, ty } => {
-                format!("{} = const.float<{}> {}", fmt_value(*result), fmt_type(ty), value)
+                format!(
+                    "{} = const.float<{}> {}",
+                    fmt_value(*result),
+                    fmt_type(ty),
+                    value
+                )
             }
             InstructionKind::ConstBool { result, value } => {
                 format!("{} = const.bool {}", fmt_value(*result), value)
@@ -373,6 +425,103 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                     fmt_value(*vtable_ptr)
                 )
             }
+            InstructionKind::Await {
+                result,
+                task,
+                output_type,
+            } => format!(
+                "{} = await<{}> {}",
+                fmt_value(*result),
+                fmt_type(output_type),
+                fmt_value(*task)
+            ),
+            InstructionKind::FrameAlloc {
+                result,
+                layout,
+                slot_count,
+            } => format!(
+                "{} = frame.alloc {} slots={} ",
+                fmt_value(*result),
+                layout,
+                slot_count
+            ),
+            InstructionKind::FrameStore { frame, slot, value } => format!(
+                "frame.store {}[{}] <- {}",
+                fmt_value(*frame),
+                slot,
+                fmt_value(*value)
+            ),
+            InstructionKind::FrameLoad {
+                result,
+                frame,
+                slot,
+                ty,
+            } => format!(
+                "{} = frame.load {}[{}]:{}",
+                fmt_value(*result),
+                fmt_value(*frame),
+                slot,
+                fmt_type(ty)
+            ),
+            InstructionKind::StateLoad { result, frame } => {
+                format!("{} = state.load {}", fmt_value(*result), fmt_value(*frame))
+            }
+            InstructionKind::StateStore { frame, state } => {
+                format!("state.store {} <- {}", fmt_value(*frame), state)
+            }
+            InstructionKind::CoroutineCreate {
+                result,
+                frame,
+                poll,
+                drop,
+                output_type,
+            } => format!(
+                "{} = coroutine.create {} poll={} drop={} : Task<{}>",
+                fmt_value(*result),
+                fmt_value(*frame),
+                poll,
+                drop,
+                fmt_type(output_type)
+            ),
+            InstructionKind::CoroutinePollChild {
+                status,
+                result,
+                task,
+                output_type,
+            } => format!(
+                "poll.child status={} result={} task={} : {}",
+                fmt_value(*status),
+                result.map(fmt_value).unwrap_or_else(|| "unit".into()),
+                fmt_value(*task),
+                fmt_type(output_type)
+            ),
+            InstructionKind::CoroutineSubscribe { task, parent } => format!(
+                "coroutine.subscribe {} <- {}",
+                fmt_value(*parent),
+                fmt_value(*task)
+            ),
+            InstructionKind::CoroutineWake { task } => {
+                format!("coroutine.wake {}", fmt_value(*task))
+            }
+            InstructionKind::CoroutineSuspend { task, state } => {
+                format!("coroutine.suspend {} state={}", fmt_value(*task), state)
+            }
+            InstructionKind::CoroutineComplete { task, value } => format!(
+                "coroutine.complete {} {}",
+                fmt_value(*task),
+                value.map(fmt_value).unwrap_or_else(|| "unit".into())
+            ),
+            InstructionKind::CoroutineError { task, error } => format!(
+                "coroutine.error {} {}",
+                fmt_value(*task),
+                error.map(fmt_value).unwrap_or_else(|| "unknown".into())
+            ),
+            InstructionKind::CoroutineCancelled { task } => {
+                format!("coroutine.cancelled {}", fmt_value(*task))
+            }
+            InstructionKind::CoroutinePollReturn { status } => {
+                format!("coroutine.return {}", fmt_value(*status))
+            }
         };
 
         writeln!(output, "      {}", text)?;
@@ -422,35 +571,51 @@ fn format_terminator(term: &Terminator) -> String {
 
 fn fmt_type(ty: &Type) -> String {
     match ty {
+        Type::Unknown => "unknown".to_string(),
         Type::Void => "void".to_string(),
         Type::Int => "int".to_string(),
         Type::Float => "float".to_string(),
-        Type::ExactInt { signed, width } => format!("{}{}", if *signed { "i" } else { "u" }, match width { crate::ir::IntWidth::I8 => "8", crate::ir::IntWidth::I16 => "16", crate::ir::IntWidth::I32 => "32", crate::ir::IntWidth::I64 => "64", crate::ir::IntWidth::Isize | crate::ir::IntWidth::Usize => "size" }),
-        Type::ExactFloat { width } => match width { crate::ir::FloatWidth::F32 => "f32".to_string(), crate::ir::FloatWidth::F64 => "f64".to_string() },
+        Type::ExactInt { signed, width } => format!(
+            "{}{}",
+            if *signed { "i" } else { "u" },
+            match width {
+                crate::ir::IntWidth::I8 => "8",
+                crate::ir::IntWidth::I16 => "16",
+                crate::ir::IntWidth::I32 => "32",
+                crate::ir::IntWidth::I64 => "64",
+                crate::ir::IntWidth::Isize | crate::ir::IntWidth::Usize => "size",
+            }
+        ),
+        Type::ExactFloat { width } => match width {
+            crate::ir::FloatWidth::F32 => "f32".to_string(),
+            crate::ir::FloatWidth::F64 => "f64".to_string(),
+        },
         Type::Bool => "bool".to_string(),
         Type::String => "string".to_string(),
         Type::Char => "char".to_string(),
         Type::Pointer(inner) => format!("*{}", fmt_type(inner)),
         Type::Array { element_type, size } => format!("[{} x {}]", size, fmt_type(element_type)),
         Type::Tuple { elements } => {
-            let elems = elements
-                .iter()
-                .map(|ty| fmt_type(ty))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let elems = elements.iter().map(fmt_type).collect::<Vec<_>>().join(", ");
             format!("({})", elems)
         }
         Type::Struct { name, .. } => format!("struct {}", name),
         Type::Enum { name, .. } => format!("enum {}", name),
+        Type::Generic {
+            name,
+            args,
+            representation,
+        } => format!(
+            "{}<{}> [{}]",
+            name,
+            args.iter().map(fmt_type).collect::<Vec<_>>().join(", "),
+            fmt_type(representation)
+        ),
         Type::Function {
             params,
             return_type,
         } => {
-            let params = params
-                .iter()
-                .map(|ty| fmt_type(ty))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let params = params.iter().map(fmt_type).collect::<Vec<_>>().join(", ");
             format!("fn({}) -> {}", params, fmt_type(return_type))
         }
         Type::Task { output } => format!("Task<{}>", fmt_type(output)),

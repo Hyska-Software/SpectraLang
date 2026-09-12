@@ -1,0 +1,39 @@
+module bug_hunt_v2_284_dyn_trait_auto_traits
+
+trait Measure {
+    func value(&self) returns int
+
+    func plus(&self, amount: int) returns int {
+        self.value() + amount
+    }
+}
+
+record Counter {
+    public current: int,
+}
+
+impl Measure for Counter {
+    func value(&self) returns int {
+        self.current
+    }
+}
+
+func inspect(worker: dyn Measure + Send + Sync) returns int {
+    worker.plus(2)
+}
+
+public func main() returns int {
+    let counter = Counter { current: 40 }
+    let dynamic: dyn Measure + Send + Sync = counter as dyn Measure + Send + Sync
+
+    if dynamic.value() != 40 {
+        return 1
+    }
+    if dynamic.plus(1) != 41 {
+        return 2
+    }
+    if inspect(dynamic) != 42 {
+        return 3
+    }
+    return 0
+}

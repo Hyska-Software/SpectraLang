@@ -1,0 +1,35 @@
+module stability_structured_errors
+
+import std.error as error
+from std.error import ErrorCode
+
+public func main() returns int {
+    let created = error.new(
+        ErrorCode::Io,
+        "disk is unavailable",
+        "fs_read",
+        "target/data.txt",
+        "stability_structured_errors",
+        true
+    )
+
+    if error.code(created) != 3 {
+        return 1
+    }
+    if error.message(created) != "disk is unavailable" {
+        return 2
+    }
+    if error.operation(created) != "fs_read" {
+        return 3
+    }
+    if error.context(created) != "target/data.txt" {
+        return 4
+    }
+    if error.origin(created) != "stability_structured_errors" {
+        return 5
+    }
+    if error.retryable(created) != true {
+        return 6
+    }
+    return 0
+}

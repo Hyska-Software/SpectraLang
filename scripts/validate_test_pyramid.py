@@ -12,7 +12,7 @@ REQUIRED_FILES = [
     "compiler/tests/snapshots/semantic_diagnostic.snap",
     "midend/tests/ir_snapshot_tests.rs",
     "midend/tests/snapshots/lowering_ir.snap",
-    "backend/src/codegen.rs",
+    "backend/src/codegen_tests.rs",
     "tools/spectra-cli/tests/integration_tests.rs",
     "fuzz/Cargo.toml",
     "fuzz/fuzz_targets/parser.rs",
@@ -32,9 +32,9 @@ def main() -> int:
         if not (root / rel).is_file():
             errors.append(f"missing required test pyramid file: {rel}")
 
-    backend = (root / "backend/src/codegen.rs").read_text(encoding="utf-8")
+    backend = (root / "backend/src/codegen_tests.rs").read_text(encoding="utf-8")
     if "#[test]" not in backend:
-        errors.append("backend/src/codegen.rs has no stage-local tests")
+        errors.append("backend/src/codegen_tests.rs has no stage-local tests")
 
     fuzz_manifest = (root / "fuzz/Cargo.toml").read_text(encoding="utf-8")
     for target in ("parser", "semantic", "pipeline", "lowering"):

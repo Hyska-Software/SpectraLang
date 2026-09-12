@@ -1,0 +1,70 @@
+// 03-csv-analytics: parses 8 CSV rows (1 malformed), aggregates scores,
+// sorts, and reports the top scorer.
+module main
+
+import std.io
+import std.convert as c
+import csv
+import stats
+
+public func main() returns int {
+    let rows = ["1,ana,95", "2,bob,82", "3,cia,91", "4,dan,77", "5,eva,88", "6,fin,99", "7,gia,73", "bad,row"]
+    let names = ["", "", "", "", "", "", ""]
+    let scores = [0, 0, 0, 0, 0, 0, 0]
+    let valid = 0
+    let bad = 0
+    let r = 0
+    while r < 8 {
+        let score = parse_score(rows[r])
+        if score == -1 {
+            bad = bad + 1
+        } else {
+            scores[valid] = score
+            names[valid] = field_at(rows[r], 1)
+            valid = valid + 1
+        }
+        r = r + 1
+    }
+    if valid != 7 {
+        return 1
+    }
+    if bad != 1 {
+        return 2
+    }
+    // 95+82+91+77+88+99+73 = 605.
+    let total = sum_of(scores, 7)
+    if total != 605 {
+        return 3
+    }
+    if total / 7 != 86 {
+        return 4
+    }
+    if min_of(scores, 7) != 73 {
+        return 5
+    }
+    if max_of(scores, 7) != 99 {
+        return 6
+    }
+    sort_desc(scores, 7)
+    if scores[0] != 99 {
+        return 7
+    }
+    if scores[6] != 73 {
+        return 8
+    }
+    // Top scorer name resolves from the max score.
+    let top = ""
+    let k = 0
+    while k < 7 {
+        if parse_score(rows[k]) == 99 {
+            top = field_at(rows[k], 1)
+        }
+        k = k + 1
+    }
+    if top != "fin" {
+        return 9
+    }
+
+    println(f"CSV ok rows={c.int_to_string(valid)} sum={c.int_to_string(total)} top={top}")
+    return 0
+}

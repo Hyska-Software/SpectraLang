@@ -158,7 +158,7 @@
         "spectra.cliPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the Spectra CLI executable. When empty, uses the bundled spectra-cli binary (server/spectra-cli.exe) or falls back to workspace builds and PATH."
+          "description": "Path to the Spectra CLI executable. When empty, resolves the bundled spectralang binary (server/<platform>/spectralang.exe), then workspace builds, then PATH."
         },
         "spectra.lintOnSave": {
           "type": "boolean",
@@ -177,6 +177,7 @@
     "clean": "rimraf dist",
     "compile": "tsc -p ./",
     "test:syntax": "node ./validate-syntax-assets.mjs",
+    "test:config": "node ./validate-cli-resolution.mjs",
     "watch": "tsc -watch -p ./",
     "prepublishOnly": "npm run compile",
     "package-vsix": "npm run compile && vsce package"

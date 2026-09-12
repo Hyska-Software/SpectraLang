@@ -4,18 +4,20 @@ from std.api.db.redis import RedisConnection, open, close, get, set, delete, exp
 
 public func main() returns int {
     let url: string                 = "__SPECTRA_REDIS_URL__"
+    let fixture_key: string         = "spectra:r2507:fixture:__SPECTRA_REDIS_RUN_ID__"
+    let counter_key: string         = "spectra:r2507:counter:__SPECTRA_REDIS_RUN_ID__"
     let connection: RedisConnection = open(url)
-    if set(connection, "spectra:r2507:fixture", "value") != true { return 11
+    if set(connection, fixture_key, "value") != true { return 11
     }
-    if get(connection, "spectra:r2507:fixture") != "value" { return 12
+    if get(connection, fixture_key) != "value" { return 12
     }
-    if exists(connection, "spectra:r2507:fixture") != true { return 13
+    if exists(connection, fixture_key) != true { return 13
     }
-    if expire(connection, "spectra:r2507:fixture", 30) != true { return 14
+    if expire(connection, fixture_key, 30) != true { return 14
     }
-    if delete(connection, "spectra:r2507:fixture") != true { return 15
+    if delete(connection, fixture_key) != true { return 15
     }
-    if incr(connection, "spectra:r2507:counter", 2) != 2 { return 16
+    if incr(connection, counter_key, 2) != 2 { return 16
     }
     if close(connection) != true { return 17
     }

@@ -1,0 +1,8 @@
+module stability_option_result_type_mismatch
+
+public func main() returns int {
+    let some: Option<int> = Option::Some(42)
+    let wrong_option: Option<string> = some
+    let wrong_result: Result<int, string> = Result::Err(7)
+    return 0
+}

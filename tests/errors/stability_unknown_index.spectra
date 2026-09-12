@@ -1,0 +1,7 @@
+module stability_unknown_index
+
+public func main() returns int {
+    let values: array<int> = [1, 2, 3]
+    let missing = unresolved_index()
+    return values[missing]
+}

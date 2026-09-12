@@ -9,20 +9,23 @@ from pathlib import Path
 
 
 REQUIRED_SOURCE_MARKERS = {
-    "compiler/src/parser/expression.rs": [
+    # These stages are intentionally decomposed into multiple Rust modules.
+    # Validate the stage boundary rather than pinning the contract to the old
+    # pre-decomposition monolith files.
+    "compiler/src/parser": [
         "Pattern::Tuple",
         "Pattern::Struct",
         "Pattern::EnumVariant",
         "Pattern::Or",
     ],
-    "compiler/src/semantic/mod.rs": [
+    "compiler/src/semantic": [
         "Pattern::Tuple",
         "Pattern::Struct",
         "Pattern::EnumVariant",
         "Pattern::Or",
         "check_match_exhaustiveness",
     ],
-    "midend/src/lowering.rs": [
+    "midend/src": [
         "Pattern::Tuple",
         "Pattern::Struct",
         "Pattern::EnumVariant",
@@ -69,13 +72,14 @@ def main() -> int:
 
     for rel, markers in REQUIRED_SOURCE_MARKERS.items():
         path = root / rel
-        if not path.is_file():
-            errors.append(f"missing source file: {rel}")
+        if not path.is_dir():
+            errors.append(f"missing source directory: {rel}")
             continue
-        text = path.read_text(encoding="utf-8")
+        source_files = sorted(path.rglob("*.rs"))
+        text = "\n".join(file.read_text(encoding="utf-8") for file in source_files)
         for marker in markers:
             if marker not in text:
-                errors.append(f"{rel} missing marker: {marker}")
+                errors.append(f"{rel}/** missing marker: {marker}")
 
     for rel in POSITIVE_TESTS:
         path = root / rel

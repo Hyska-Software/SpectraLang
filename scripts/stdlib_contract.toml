@@ -1,9 +1,14 @@
 schema = "spectralang.r3007_stdlib_contract.v1"
 contract_version = "r3007/v1"
 binary_default = "target/debug/spectralang.exe"
+catalog = "packages/spectra-contract/catalog/stdlib.toml"
+catalog_policy = "derived-during-migration"
 docs = [
   "docs/reference/05-stdlib.md",
+  "docs/reference/06-referencia-rapida.md",
   "docs/runtime/standard-library.md",
+  "docs/AI-AGENT-REFERENCE.md",
+  "docs/language-feature-maturity.md",
   "docs/api/README.md",
   "docs/api/api-conformance-v0.md",
   "docs/api/std-api-http-types.md",
@@ -22,12 +27,15 @@ docs = [
   "docs/api/std-api-sqlite.md",
   "docs/api/std-api-redis.md",
   "docs/api/std-api-health.md",
+  "docs/api/std-api-session.md",
+  "docs/api/std-api-websocket.md",
+  "docs/api/std-api-sse.md",
   "docs/concurrency-serving.md",
 ]
 
 [sources]
 semantic = ["compiler/src/semantic/builtin_modules.rs"]
-runtime = ["runtime/src/stdlib/mod.rs"]
+runtime = ["runtime/src/stdlib"]
 api_runtime = ["packages/spectra-api/src"]
 lowering = ["midend/src/lowering.rs"]
 backend = ["backend/src/codegen.rs"]
@@ -43,7 +51,7 @@ documentation = "docs"
 [[probe]]
 id = "std-core"
 path = "tests/validation/185_stdlib_contract_audit.spectra"
-covers = ["std.io.*", "std.math.*", "std.string.*", "std.convert.*", "std.random.*", "std.collections.*", "std.fs.*", "std.env.*", "std.option.*", "std.result.*", "std.char.*", "std.time.*", "std.range.*"]
+covers = ["std.io.*", "std.math.*", "std.string.*", "std.convert.*", "std.random.*", "std.collections.*", "std.fs.*", "std.compat.fs.*", "std.env.*", "std.compat.env.*", "std.option.*", "std.result.*", "std.error.*", "std.char.*", "std.time.*", "std.range.*"]
 
 [[probe]]
 id = "api-trace"
@@ -71,6 +79,26 @@ covers = ["std.api.db.redis.*"]
 id = "api-health"
 path = "tests/validation/197_health_checks.spectra"
 covers = ["std.api.health.*"]
+
+[[probe]]
+id = "api-session"
+path = "tests/validation/342_api_session.spectra"
+covers = ["std.api.session.*"]
+
+[[probe]]
+id = "api-websocket"
+path = "tests/validation/343_api_websocket.spectra"
+covers = ["std.api.websocket.*"]
+
+[[probe]]
+id = "api-websocket-client"
+path = "tests/validation/344_api_websocket_client.spectra"
+covers = ["std.api.websocket.client_*", "std.api.websocket.connection_*", "std.api.websocket.message_*"]
+
+[[probe]]
+id = "api-sse"
+path = "tests/validation/345_api_sse.spectra"
+covers = ["std.api.sse.*"]
 
 [[probe]]
 id = "tensor-kernels"
@@ -144,6 +172,25 @@ kind = "external"
 command = ["python", "scripts/validate_r2220_api_conformance_v0.py"]
 covers = ["std.api.*"]
 
+[[probe]]
+id = "api-protocol-bindings"
+path = "tests/validation/350_api_protocol_bindings.spectra"
+covers = ["std.api.grpc.*", "std.api.graphql.*"]
+
+[[probe]]
+id = "api-grpc-service"
+path = "tests/validation/361_grpc_service_roundtrip.spectra"
+covers = ["std.api.grpc.service_create", "std.api.grpc.service_handle_method", "std.api.grpc.service_free"]
+
+[[probe]]
+id = "api-http3-bindings"
+path = "tests/validation/352_api_http3_bindings.spectra"
+covers = ["std.api.http3.*"]
+[[probe]]
+id = "api-json-derive"
+path = "tests/validation/357_json_derive_roundtrip.spectra"
+covers = ["std.api.json.quote_string", "std.api.json.quote_char", "std.api.json.encode_number", "std.api.json.decode_field", "std.api.json.typed_error_field"]
+
 [[follow_up]]
 prefix = "std.tensor.diff"
 owner = "ml"
@@ -201,7 +248,7 @@ reason = "ML artifact, tokenizer, embedding, vector-index, and distributed surfa
 prefix = "std.serve"
 owner = "ml"
 roadmap = "R-3001"
-reason = "Serving remains an in-process deterministic baseline until external network serving is implemented."
+reason = "Serving dispatches through a real embedded localhost listener (POST /infer, GET /metrics) to dense/ONNX forward passes; bounded concurrency, TLS/auth, and API observability traces remain R-3001 follow-ups."
 
 [[follow_up]]
 prefix = "std.api"
@@ -220,6 +267,12 @@ prefix = "std.io"
 owner = "runtime"
 roadmap = "R-2003"
 reason = "IO host status and lowering discrepancies belong to the base stdlib hardening track."
+
+[[follow_up]]
+prefix = "std.collections.iterator_from_values"
+owner = "midend"
+roadmap = "R-2902"
+reason = "Compiler-only array materialization adapter for Iterator<T>; intentionally absent from the source semantic exports."
 
 [[namespace]]
 prefix = "std.io"
@@ -270,10 +323,37 @@ classification = "production"
 roadmap = "R-1203"
 
 [[namespace]]
+prefix = "std.compat.fs"
+owner = "runtime"
+classification = "baseline"
+roadmap = "R-2003"
+reason = "Filesystem sentinel behavior is retained only as an explicit migration adapter and is not the stable authority."
+
+[[namespace]]
+prefix = "std.error"
+owner = "runtime"
+classification = "production"
+roadmap = "R-1204"
+
+[[namespace]]
+prefix = "std.compat.collections"
+owner = "runtime"
+classification = "baseline"
+roadmap = "R-2003"
+reason = "Legacy integer sentinel collection accessors remain available only for migration compatibility."
+
+[[namespace]]
 prefix = "std.env"
 owner = "runtime"
 classification = "production"
 roadmap = "R-2003"
+
+[[namespace]]
+prefix = "std.compat.env"
+owner = "runtime"
+classification = "baseline"
+roadmap = "R-2003"
+reason = "Legacy empty-string environment adapters remain available only for migration compatibility."
 
 [[namespace]]
 prefix = "std.option"
@@ -334,9 +414,9 @@ roadmap = "R-2107"
 [[namespace]]
 prefix = "std.serve"
 owner = "runtime"
-classification = "simulation"
+classification = "incomplete"
 roadmap = "R-3001"
-reason = "The current server is an in-process deterministic queue and scalar model demonstration, not a networked serving runtime."
+reason = "Embedded 127.0.0.1-only HTTP/1.1 listener with POST /infer and GET /metrics dispatching to real dense/ONNX forward passes; sequential connections, no TLS/auth/back-pressure, and no API observability traces keep it below production."
 
 [[namespace]]
 prefix = "std.api.trace"
@@ -354,15 +434,10 @@ reason = "The std.api surface is covered by its dedicated API conformance valida
 
 [[rule]]
 prefix = "std.ml.distributed_"
-classification = "simulation"
+classification = "incomplete"
 roadmap = "R-3002"
-reason = "Distributed training currently coordinates simulated workers in one process."
+reason = "Real per-worker forward/backward plus mean-ALLREDUCE over OS-thread and TCP-loopback transports with multi-process proofs; legacy single-process session hosts remain alongside, and GPU collectives, elastic membership, and rendezvous docs are outstanding."
 
-[[rule]]
-prefix = "std.ml.text_embed"
-classification = "baseline"
-roadmap = "R-3005"
-reason = "text_embed currently produces deterministic hash embeddings rather than model-backed embeddings."
 
 [[rule]]
 prefix = "std.ml.tokenizer_wordpiece"
@@ -405,6 +480,12 @@ prefix = "std.ml.vector_index"
 classification = "production"
 roadmap = "R-3006"
 reason = "Uses deterministic HNSW search and persists only through the versioned R-3003 Artifact Container v1 with checksums, metadata, atomic replacement, and CLI evidence."
+
+[[rule]]
+prefix = "std.ml.rag_evaluate_answer"
+classification = "baseline"
+roadmap = "R-3008"
+reason = "Returns token-overlap F1 scaled to permille 0..1000 (answer_overlap_score semantics shared with ml.metrics_generation); model-graded judging is tracked as follow-up work."
 
 [[rule]]
 prefix = "std.tensor.device_available"
@@ -459,3 +540,98 @@ prefix = "std.api.health."
 classification = "production"
 roadmap = "R-2510"
 reason = "R-2510 validates startup controls and the reserved health routes through a real TCP server, including required-check recovery, timeout, SQLite SELECT 1, JSON validation and worker shutdown."
+[[follow_up]]
+prefix = "std.tensor"
+owner = "numerics"
+roadmap = "R-2904"
+reason = "Low-level runtime tensor host helpers that are not part of the public semantic module remain ABI-only; the typed Tensor IR and public tensor operations are covered by their dedicated contract entries."
+
+[[follow_up]]
+prefix = "std.numeric"
+owner = "runtime"
+roadmap = "R-2901"
+reason = "Numeric ABI compatibility helpers without public semantic exports remain internal runtime entry points; exact-width public casts are tracked by the production numeric gate."
+
+[[follow_up]]
+prefix = "std.collections"
+owner = "runtime"
+roadmap = "R-2003"
+reason = "Collection iterator and handle helpers absent from the public semantic surface remain internal ABI adapters; public collection operations are validated separately."
+
+[[follow_up]]
+prefix = "std.string"
+owner = "runtime"
+roadmap = "R-2003"
+reason = "Internal string ABI helpers without a public semantic declaration remain compatibility entry points rather than user-facing functions."
+
+[[follow_up]]
+prefix = "std.math"
+owner = "runtime"
+roadmap = "R-2003"
+reason = "Internal math ABI helpers are retained for runtime lowering compatibility; the public math surface is covered by the stdlib probes."
+
+[[follow_up]]
+prefix = "std.time"
+owner = "runtime"
+roadmap = "R-2015"
+reason = "Runtime-only time helpers are ABI compatibility entry points; the typed public time surface is covered by the R-2015 gate."
+
+[[follow_up]]
+prefix = "std.compat"
+owner = "runtime"
+roadmap = "R-2003"
+reason = "Compatibility-only runtime exports have no public semantic module by design and must not be mistaken for missing user-facing implementations."
+
+[[follow_up]]
+prefix = "std.convert"
+owner = "runtime"
+roadmap = "R-2003"
+reason = "Conversion ABI helpers without public semantic declarations remain internal compatibility paths; public conversion functions use the typed surface."
+
+[[follow_up]]
+prefix = "std.fs"
+owner = "runtime"
+roadmap = "R-1203"
+reason = "Low-level filesystem ABI helpers not exported semantically remain internal paths; public filesystem safety and I/O are covered by R-1203."
+
+[[follow_up]]
+prefix = "std.char"
+owner = "runtime"
+roadmap = "R-2003"
+reason = "Character ABI helpers without semantic exports remain internal runtime compatibility functions."
+
+[[follow_up]]
+prefix = "std.range"
+owner = "midend"
+roadmap = "R-2902"
+reason = "Range lowering adapters without public semantic declarations remain compiler/runtime bridge functions; public range behavior is covered by R-2902."
+
+[[follow_up]]
+prefix = "std.error"
+owner = "runtime"
+roadmap = "R-1204"
+reason = "Internal error-handle ABI helpers remain behind the typed error surface validated by R-1204."
+
+[[follow_up]]
+prefix = "std.result"
+owner = "runtime"
+roadmap = "R-1204"
+reason = "Internal result-handle ABI helpers remain behind the typed Result surface validated by R-1204."
+
+[[follow_up]]
+prefix = "std.env"
+owner = "runtime"
+roadmap = "R-2003"
+reason = "Environment ABI helpers without public semantic declarations remain internal runtime paths."
+
+[[follow_up]]
+prefix = "std.option"
+owner = "runtime"
+roadmap = "R-1204"
+reason = "Internal option-handle ABI helpers remain behind the typed Option surface validated by R-1204."
+
+[[follow_up]]
+prefix = "std.random"
+owner = "runtime"
+roadmap = "R-2003"
+reason = "Randomness ABI helpers without public semantic declarations remain internal runtime paths; public random functions are covered by the stdlib probes."

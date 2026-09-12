@@ -1,0 +1,70 @@
+module api_errors
+
+from std.api.errors import ApiError, code, exception_middleware, internal_error, last_code, last_message, message, new as new_error, response as error_response, status as error_status
+from std.api.http import Request, Response, method_get, request, response_header, response_new, response_status
+from std.api.middleware import MiddlewareChain, MiddlewareHandle, chain_len, chain_new, execute_sync, use_sync
+
+public func main() returns int {
+    let public_error: ApiError = new_error(404, "not_found", "user does not exist")
+    if error_status(public_error) != 404 {
+        return 10
+    }
+    if code(public_error) != "not_found" {
+        return 11
+    }
+    if message(public_error) != "user does not exist" {
+        return 12
+    }
+    let public_response: Response = error_response(public_error)
+    if response_status(public_response) != 404 {
+        return 13
+    }
+    if response_header(public_response, "content-type") != "application/problem+json" {
+        return 14
+    }
+    if response_header(public_response, "content-type") == "text/plain" {
+        return 15
+    }
+
+    let internal_failure: ApiError = internal_error("database", "password=secret")
+    if error_status(internal_failure) != 500 {
+        return 20
+    }
+    if code(internal_failure) != "internal_error" {
+        return 21
+    }
+    if message(internal_failure) != "internal server error" {
+        return 22
+    }
+    if last_code() != 0 {
+        return 23
+    }
+    if last_message() != "" {
+        return 24
+    }
+    let internal_response: Response = error_response(internal_failure)
+    if response_status(internal_response) != 500 {
+        return 25
+    }
+    if response_header(internal_response, "content-type") != "application/problem+json" {
+        return 26
+    }
+
+    let exception: MiddlewareHandle = exception_middleware(
+        503,
+        "maintenance",
+        "service temporarily unavailable",
+    )
+    let base: MiddlewareChain = chain_new()
+    let route_chain: MiddlewareChain = use_sync(base, exception)
+    if chain_len(route_chain) != 1 {
+        return 30
+    }
+    let route_request: Request = request(method_get(), "/custom-route")
+    let terminal: Response = response_new(200)
+    let route_response: Response = execute_sync(route_chain, route_request, terminal)
+    if response_status(route_response) != 200 {
+        return 31
+    }
+    return 0
+}

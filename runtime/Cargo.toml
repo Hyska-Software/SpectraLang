@@ -8,15 +8,32 @@ crate-type = ["staticlib", "rlib"]
 
 [features]
 default = []
+# Opt-in integration hook only: no BLAS dependency is linked and no kernel
+# call site consumes this flag today. Strategy reporting lives in
+# `TensorKernelStrategy` (runtime/src/stdlib/tensor_helpers_kernels.rs) and
+# reflects the real dispatch path (GPU, AVX2/NEON SIMD, or scalar).
 blas = []
 gpu = ["dep:bytemuck", "dep:pollster", "dep:wgpu"]
+# Real ONNX inference via the `ort` bindings (official onnxruntime Rust
+# crate). Mirrors the `gpu` policy: opt-in, because `download-binaries`
+# fetches prebuilt onnxruntime shared libraries from the network at build
+# time. Build with `--features onnx` to enable the
+# `spectra.std.ml.onnx_session_*` / `spectra.std.ml.onnx_run` hosts.
+onnx = ["dep:ort"]
 
 [dependencies]
 bytemuck = { version = "1.16", optional = true }
 getrandom = "0.3"
 half = "2.4"
-mio = { version = "0.8", features = ["os-poll"] }
+mio = { version = "0.8", features = ["os-poll", "net"] }
 pollster = { version = "0.3", optional = true }
+ort = { version = "2.0.0-rc.13", optional = true }
 serde_json = "1.0"
+spectra-contract = { path = "../packages/spectra-contract" }
 sha2 = "0.10"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "0.26"
 wgpu = { version = "0.20", optional = true }
+
+[dev-dependencies]
+rcgen = "0.13"

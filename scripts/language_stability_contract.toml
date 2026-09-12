@@ -1,0 +1,91 @@
+schema = "spectralang.language_stability.v1"
+contract_version = "stable-core/v1"
+source_policy = "docs/language-feature-maturity.md"
+
+[statuses]
+allowed = ["stable", "beta", "experimental", "deferred", "reserved", "unsupported"]
+
+[[feature]]
+id = "core.modules"
+name = "modules and imports"
+status = "stable"
+owner = "frontend"
+positive_fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[feature]]
+id = "core.class"
+name = "class declarations"
+status = "reserved"
+owner = "frontend"
+negative_fixture = "tests/errors/class_declaration_reserved.spectra"
+diagnostic_code = "P007"
+reason = "Trait-first struct/impl/trait model is stable; class layout, inheritance and ABI are not part of the contract."
+
+[[feature]]
+id = "core.static"
+name = "module static"
+status = "stable"
+owner = "semantic"
+positive_fixture = "tests/validation/stability_static_mutation.spectra"
+negative_fixture = "tests/errors/stability_static_dynamic_initializer.spectra"
+project_fixture = "tests/projects/valid/stability_static_cross_module"
+reason = "Scalar mutable statics have constant initialization, typed visibility/import checks, local and cross-module JIT/AOT evidence, and no implicit task-sharing synchronization contract."
+
+[[feature]]
+id = "core.exact_width"
+name = "exact-width numeric semantics"
+status = "stable"
+owner = "numerics"
+positive_fixture = "tests/validation/189_exact_width_numeric_semantics.spectra"
+negative_fixture = "tests/errors/exact_width_overflow.spectra"
+reason = "Checked casts, wrapping operations, JIT/AOT aggregate storage, host ABI behavior, and the required C interoperability gate are certified by R-2901."
+
+[[feature]]
+id = "core.numeric_literals"
+name = "numeric literal forms"
+status = "stable"
+owner = "frontend"
+positive_fixture = "tests/validation/stability_numeric_literal_forms.spectra"
+reason = "Hexadecimal, octal, binary, underscore-separated decimal and scientific notation literals are certified by lexer tests and an executable JIT fixture; malformed separators and missing exponent digits yield coded lexical diagnostics."
+
+[[feature]]
+id = "core.arrays"
+name = "typed arrays and indexing"
+status = "beta"
+owner = "midend"
+positive_fixture = "tests/validation/281_l1_arrays_iteration_mutation.spectra"
+
+[[feature]]
+id = "core.iterators"
+name = "Iterator<T> protocol"
+status = "beta"
+owner = "midend"
+reason = "Range and selected collection paths exist, but one typed iterator protocol is not yet the only lowering path."
+
+[[feature]]
+id = "std.collections"
+name = "typed collections"
+status = "beta"
+owner = "runtime"
+positive_fixture = "tests/validation/stability_typed_collections.spectra"
+
+[[feature]]
+id = "std.option_result"
+name = "Option<T> and Result<T,E>"
+status = "beta"
+owner = "semantic"
+positive_fixture = "tests/validation/stability_option_result_map.spectra"
+
+[[feature]]
+id = "core.async"
+name = "async/await and async standard library"
+status = "beta"
+owner = "runtime"
+positive_fixture = "tests/validation/126_async_stdlib_surface.spectra"
+
+[[feature]]
+id = "std.api.external"
+name = "external database, OTLP and TLS certification"
+status = "beta"
+owner = "tooling"
+reason = "Local probes are real where configured, but release evidence requires PostgreSQL 16, Redis 7, a real OTLP collector and external TLS endpoint."

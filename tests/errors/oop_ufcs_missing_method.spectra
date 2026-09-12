@@ -1,0 +1,22 @@
+// R-NEG-05: UFCS must reject a method that is not declared by the trait.
+module rneg_oop_ufcs_missing_method
+
+trait Display {
+    func render(&self) returns string
+}
+
+record Widget {
+    public label: string,
+}
+
+impl Display for Widget {
+    func render(&self) returns string {
+        self.label
+    }
+}
+
+public func main() returns int {
+    let widget = Widget { label: "button" }
+    let value = Display::missing(widget)
+    return 0
+}

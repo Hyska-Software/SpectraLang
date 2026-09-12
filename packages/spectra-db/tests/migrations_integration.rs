@@ -2,7 +2,14 @@ use spectra_db::migrations::{discover, SqliteMigrator};
 use spectra_db::sqlite::{SqliteConnection, SqliteStatement, SqliteValue, StepResult};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+/// Process-wide fixture sequence. Wall-clock nanos alone can repeat within a
+/// single coarse timer tick when tests run on parallel threads, handing two
+/// fixtures the same directory and mixing their migration files (observed as
+/// spurious DB2503_NAME_MISMATCH). pid + sequence makes collisions impossible.
+static FIXTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture {
     root: PathBuf,
@@ -13,11 +20,13 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = std::env::temp_dir().join(format!(
-            "spectra-r2503-{}",
+            "spectra-r2503-{}-{}-{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            std::process::id(),
+            FIXTURE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
         let migrations = root.join("migrations");
         fs::create_dir_all(&migrations).unwrap();

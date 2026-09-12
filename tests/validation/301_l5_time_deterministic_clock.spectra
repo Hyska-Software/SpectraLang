@@ -1,0 +1,21 @@
+module bug_hunt_v2_301_time_deterministic_clock
+
+import std.time
+
+public func main() returns int {
+    let epoch = unix_to_utc(0)
+    if utc_year(epoch) != 1970 or utc_month(epoch) != 1 or utc_day(epoch) != 1 {
+        return 1
+    }
+
+    let before = monotonic_millis()
+    let combined = duration_add(duration_ms(5), duration_secs(1))
+    if duration_millis(combined) != 1005 {
+        return 2
+    }
+    sleep_ms(1)
+    if monotonic_millis() < before {
+        return 3
+    }
+    return 0
+}

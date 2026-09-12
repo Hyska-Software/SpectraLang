@@ -51,6 +51,8 @@ claim success with partial CORS headers.
 Credentialed wildcard policies echo the concrete request origin and add
 `Vary: Origin`, because browsers reject `Access-Control-Allow-Origin: *` when
 credentials are allowed. Non-credentialed permissive policies emit `*`.
+When another middleware already contributed a `Vary` dimension, CORS appends
+`Origin` instead of replacing it.
 
 ## Validation
 

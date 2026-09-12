@@ -26,6 +26,7 @@ pub(crate) struct HostCallSiteRecord {
 /// Interns a JIT host-call name and allocates exactly one cache slot for it.
 /// Both allocations are owned by the code generator and therefore outlive
 /// every generated function that embeds their addresses.
+#[allow(clippy::vec_box)]
 pub(crate) fn intern_jit_host_call_site(
     host_call_sites: &mut HashMap<String, HostCallSiteRecord>,
     host_name_storage: &mut Vec<Box<[u8]>>,
@@ -73,8 +74,12 @@ pub(crate) struct HostCallLoweringContext<'a> {
     pub(crate) bindings: &'a RuntimeBindings,
     pub(crate) host_call_sites: &'a HashMap<String, HostCallSiteRecord>,
     pub(crate) string_literal_data: &'a mut HashMap<String, StringLiteralRecord>,
-    pub(crate) string_literal_storage: &'a mut Vec<Box<[i64]>>,
+    pub(crate) string_literal_storage: &'a mut Vec<Box<[u8]>>,
     pub(crate) batch_stats: &'a mut HostCallBatchStats,
+    /// Finalized JIT function addresses that belong to an earlier module in
+    /// the same project build.  AOT lowering leaves this unset because all
+    /// functions are resolved by the object linker.
+    pub(crate) finalized_function_ptrs: Option<&'a HashMap<String, i64>>,
 }
 
 impl HostCallLoweringContext<'_> {
@@ -99,6 +104,7 @@ pub(crate) fn register_jit_runtime_symbols(builder: &mut JITBuilder) {
 }
 
 /// Declares every runtime import using the runtime-owned ABI catalog.
+#[allow(clippy::result_large_err)]
 pub(crate) fn declare_runtime_bindings<M: Module>(
     module: &mut M,
 ) -> Result<RuntimeBindings, ModuleError> {

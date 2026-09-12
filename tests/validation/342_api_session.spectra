@@ -1,0 +1,46 @@
+module api_session
+
+from std.api.session import SessionStore, Session, create, created_at_ms, error_code, error_message, expires_at_ms, id, is_valid, lookup, memory_store, revoke, store_kind, value
+
+public func main() returns int {
+    let store: SessionStore = memory_store()
+    if store_kind(store) != "memory" {
+        return 10
+    }
+
+    let created: Session = create(store, "user-42", 60000, 300000, true)
+    let session_id: string = id(created)
+    if session_id == "" {
+        return 20
+    }
+    if value(created) != "user-42" {
+        return 21
+    }
+    if created_at_ms(created) <= 0 or expires_at_ms(created) <= created_at_ms(created) {
+        return 22
+    }
+    if is_valid(created) != true {
+        return 23
+    }
+
+    let looked_up: Session = lookup(store, session_id)
+    if value(looked_up) != "user-42" or is_valid(looked_up) != true {
+        return 30
+    }
+
+    if revoke(store, session_id) != true {
+        return 40
+    }
+    if is_valid(looked_up) != false {
+        return 41
+    }
+
+    let missing: Session = lookup(store, session_id)
+    if error_code() != 5 {
+        return 50
+    }
+    if error_message() == "" {
+        return 51
+    }
+    return 0
+}

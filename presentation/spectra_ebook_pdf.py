@@ -2082,16 +2082,15 @@ def build_content():
     chap(19, "Async/Await -- Concorrencia de Primeira Classe")
 
     p("SpectraLang trata programacao assincrona como um conceito nativo da "
-      "linguagem, nao como uma biblioteca adicionada depois. Instrucoes como "
-      "<font name='Consolas'>AsyncSuspend / AsyncResume / AsyncReady</font> "
+      "linguagem, nao como uma biblioteca adicionada depois. A instrucao "
+      "<font name='Consolas'>AsyncReady</font> "
       "e o tipo <font name='Consolas'>Task&lt;T&gt;</font> existem no nivel "
-      "da representacao intermediaria SSA. O compilador rebaixa async/await "
-      "para uma maquina de estados finita, eliminando a necessidade de "
-      "callbacks, promises ou futures como conceitos de runtime visiveis ao "
-      "programador. Quando voce escreve <font name='Consolas'>await</font>, "
-      "esta instruindo o compilador a gerar um ponto de suspensao na maquina "
-      "de estados -- o codigo apos o await vira um callback implicitamente, "
-      "mas voce o escreve como se fosse codigo sequencial normal.")
+      "da representacao intermediaria SSA. O compilador rebaixa cada "
+      "<font name='Consolas'>await</font> para um host call de espera "
+      "(<font name='Consolas'>spectra.async.task.wait</font>) que estaciona a "
+      "lane atual no reactor da plataforma ate a tarefa terminar -- sem spin "
+      "de CPU, sem callbacks, promises ou futures visiveis ao programador. O "
+      "codigo continua sendo escrito como se fosse codigo sequencial normal.")
 
     p("O runtime de SpectraLang usa <font name='Consolas'>mio</font> sobre "
       "uma fila de prioridade, mapeando para <b>epoll</b> (Linux), "
@@ -2451,9 +2450,8 @@ def build_content():
       "Switch, Unreachable</font>. Instrucoes cobrem aritmetica, memoria, "
       "chamadas, PHI, constantes tipadas, Cast, e operacoes especificas de "
       "linguagem como <font name='Consolas'>AutodiffStep</font> (no nativo de "
-      "autodiff reverso) e <font name='Consolas'>AsyncSuspend, AsyncResume, "
-      "AsyncReady</font>. Genericos sao monomorfizados com name mangling e "
-      "teto de 512 especializacoes.")
+      "autodiff reverso) e <font name='Consolas'>AsyncReady</font>. Genericos "
+      "sao monomorfizados com name mangling e teto de 512 especializacoes.")
 
     sec("Otimizacao")
     p("O mid-end implementa passes de otimizacao via o trait "

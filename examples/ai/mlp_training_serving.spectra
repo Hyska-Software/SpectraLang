@@ -21,8 +21,10 @@ public func main() returns int {
     serve.reset()
 
     let model_handle = ml.module_new()
-    let x            = tensor.reshape(tensor.full_f(4, 1.0), 4, 1)
-    let target       = tensor.full_f(4, 2.0)
+    // Ranged regression inputs let the optimizer learn the true slope and
+    // intercept of f(x) = 2x instead of a degenerate constant-only solution.
+    let x: Tensor<float, rank2, dim4, dim1, row_major, cpu> = [[1.0], [2.0], [3.0], [4.0]]
+    let target: Tensor<float, rank1, dim4, row_major, cpu>  = [2.0, 4.0, 6.0, 8.0]
     let weight       = tensor.reshape(tensor.requires_grad(tensor.full_f(1, 0.0), true), 1, 1)
     let bias         = tensor.requires_grad(tensor.full_f(1, 0.0), true)
 
@@ -38,12 +40,14 @@ public func main() returns int {
         return 2
     }
 
-    train_step(x, target, weight, bias)
-    train_step(x, target, weight, bias)
-    train_step(x, target, weight, bias)
-    train_step(x, target, weight, bias)
-    train_step(x, target, weight, bias)
-    train_step(x, target, weight, bias)
+    // Train until convergence: the slow bias eigenmode decays as ~0.97^n,
+    // so a few hundred full-batch steps settle w -> 2 and b -> 0 tightly
+    // enough that the served REAL weights reproduce y(21) = 42 below.
+    let steps = 0
+    while steps < 200 {
+        train_step(x, target, weight, bias)
+        steps = steps + 1
+    }
 
     let final_prediction = ml.linear(x, weight, bias)
     if tensor.len(final_prediction) != 4 {
@@ -53,6 +57,9 @@ public func main() returns int {
     let server = serve.server_new(2)
     serve.server_warmup(server)
     let request = serve.server_enqueue(server, 21)
+    if serve.server_register_model_linear(server, weight, bias, 0) != 1 {
+        return 6
+    }
     if serve.server_process_batch(server, 1) != 1 {
         return 4
     }

@@ -1,0 +1,21 @@
+// R-NEG-09: an impl must provide every required non-default trait method.
+module rneg_oop_missing_trait_method
+
+trait Inspect {
+    func value(&self) returns int
+    func label(&self) returns string
+}
+
+record Item {
+    public value: int,
+}
+
+impl Inspect for Item {
+    func value(&self) returns int {
+        self.value
+    }
+}
+
+public func main() returns int {
+    return 0
+}

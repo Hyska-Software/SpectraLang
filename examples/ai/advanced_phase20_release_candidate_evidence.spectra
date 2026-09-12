@@ -7,13 +7,24 @@ import std.ml as ml
 import std.serve as serve
 import std.string as str
 import std.tensor as tensor
+import std.collections as collections
 
 public func main() returns int {
     tensor.free_all()
     tensor.reset_stats()
     serve.reset()
 
-    let model = ml.onnx_export("target/ai-examples/advanced-phase20/candidate.onnx", "linear")
+    // ServeReal requires an explicitly registered model on every server:
+    // y = relu(2*x + 0), so 10 -> 20 and 12 -> 24 exactly as asserted below.
+    let model_weight = tensor.full2_f(1, 1, 2.0)
+    let model_biases = tensor.full_f(1, 0.0)
+
+    let export_weight = tensor.reshape(tensor.full_f(6, 0.5), 2, 3)
+    let export_bias = tensor.full_f(3, 0.1)
+    let export_weights = collections.list_new()
+    collections.list_push(export_weights, export_weight)
+    collections.list_push(export_weights, export_bias)
+    let model = ml.onnx_export_weights("target/ai-examples/advanced-phase20/candidate.onnx", "linear", export_weights)
     if ml.onnx_validate(model) != 1 {
         return 1
     }
@@ -58,6 +69,9 @@ public func main() returns int {
     let reference = serve.server_new(2)
     serve.server_set_model_version(reference, "release-candidate-local")
     serve.server_warmup(reference)
+    if serve.server_register_model_linear(reference, model_weight, model_biases, 0) != 1 {
+        return 10
+    }
     let ref_req = serve.server_enqueue(reference, 10)
     serve.server_process_batch(reference, 1)
     if serve.server_result(reference, ref_req) != 20 {
@@ -70,6 +84,9 @@ public func main() returns int {
     serve.server_set_fallback(live, -1)
     serve.server_set_input_policy(live, 0, 100)
     serve.server_warmup(live)
+    if serve.server_register_model_linear(live, model_weight, model_biases, 0) != 1 {
+        return 11
+    }
     let live_req = serve.server_enqueue(live, 12)
     serve.server_process_batch(live, 1)
     if serve.server_result(live, live_req) != 24 {
@@ -108,7 +125,7 @@ public func main() returns int {
 
     let index = ml.vector_index_new(8)
     ml.vector_index_set_metadata(index, "model_version", "advanced-phase20-v1")
-    ml.vector_index_insert(index, "release-evidence", ml.text_embed("release candidate conformance evidence", 8))
+    ml.vector_index_insert(index, "release-evidence", tensor.full_f(8, 1.0))
     let persisted = ml.vector_index_persist(index, "target/ai-examples/advanced-phase20/vector-index.json")
     if str.contains(persisted, "vector-index.json") {
         let ok_index = 1

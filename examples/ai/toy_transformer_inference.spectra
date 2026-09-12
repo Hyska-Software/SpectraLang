@@ -11,6 +11,10 @@ public func main() returns int {
     tensor.set_grad_enabled( false)
     serve.reset()
 
+    // ServeReal requires an explicitly registered model: y = relu(3*x + 0),
+    // so request 14 -> 42 exactly as asserted below.
+    let model_weight = tensor.full2_f(1, 1, 3.0)
+    let model_biases = tensor.full_f(1, 0.0)
     let token_ids       = tensor.arange(0, 2, 1)
     let embedding_table = tensor.reshape(tensor.full_f(8, 1.0), 4, 2)
     let embedded        = ml.embedding_lookup(embedding_table, token_ids)
@@ -55,6 +59,9 @@ public func main() returns int {
 
     let server = serve.server_new(3)
     serve.server_warmup(server)
+    if serve.server_register_model_linear(server, model_weight, model_biases, 0) != 1 {
+        return 9
+    }
     let request = serve.server_enqueue(server, 14)
     serve.server_process_batch(server, 1)
     if serve.server_result(server, request) != 42 {

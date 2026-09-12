@@ -1,5 +1,7 @@
 module runtime_nonzero
 
+// func main decoy: a substring search would report line 3 for the entry
+// point, but the compiler-proven definition span must win.
 public func main() returns int {
     return 7
 }

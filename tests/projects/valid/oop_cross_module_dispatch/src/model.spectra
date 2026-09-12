@@ -1,0 +1,20 @@
+module model
+
+public record Account {
+    public principal: int,
+    public fee: int,
+}
+
+impl Account {
+    public func total(&self) returns int {
+        self.principal + self.fee
+    }
+
+    public func with_fee(&self, extra: int) returns Account {
+        Account { principal: self.principal, fee: self.fee + extra }
+    }
+}
+
+public func open(principal: int, fee: int) returns Account {
+    Account { principal: principal, fee: fee }
+}

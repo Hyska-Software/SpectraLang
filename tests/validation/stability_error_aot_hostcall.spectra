@@ -1,0 +1,16 @@
+module stability_error_aot_hostcall
+
+import std.error as error
+from std.error import ErrorCode
+
+public func main() returns int {
+    let created = error.new(
+        ErrorCode::Io,
+        "aot error",
+        "test",
+        "context",
+        "fixture",
+        false
+    )
+    return 0
+}

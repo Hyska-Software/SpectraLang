@@ -6,7 +6,7 @@ import java.util.Map;
 public class Bench {
     public static void main(String[] args) {
         final int n = 200;
-        final int iters = 30;
+        final int iters = 300;
         long acc = 0L;
         for (int it = 0; it < iters; it++) {
             Map<Integer, Integer> m = new HashMap<>(n);

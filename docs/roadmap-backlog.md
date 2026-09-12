@@ -2164,7 +2164,7 @@ remain tracked under `R-913`.
 
 ### Production Boundary
 
-- Native DWARF/PDB emission is not claimed. The production-supported strategy for this item is native symbol debugging plus the checked-in Spectra source sidecar until backend-native debug sections are added as a future roadmap item.
+- Native DWARF (Unix) / PDB-CodeView (Windows) sections are emitted (see R-2903), but the production-supported strategy for this item remains native symbol debugging plus the checked-in Spectra source sidecar: there is no `spectralang debug` subcommand. The native sections are honest but partial — line tables carry only compiler-proven rows and untyped locals carry the explicit unknown-type marker — so native source stepping is not claimed.
 
 ## R-1003 Profiling and Benchmark Tooling
 
@@ -4020,8 +4020,10 @@ blocks to a state-machine SSA that integrates with the runtime scheduler.
   and rejected outside async contexts with parser diagnostic `P006`.
 - Semantic analysis models `Task<T>` and requires `await` operands to be
   `Task<T>`.
-- Async functions, methods, and async blocks lower to `Task<T>` handles with
-  explicit `async.suspend`, `async.resume`, and `async.ready` IR markers.
+- Async functions, methods, and async blocks lower to `Task<T>` handles;
+  each `await` emits the `spectra.async.task.wait` host call followed by
+  `async.ready`/`spectra.async.task.result` (ADR 0015; no suspend/resume
+  IR markers).
 - Runtime host calls `spectra.async.task.ready`, `.poll`, `.result`,
   `.cancel`, and `.is_cancelled` provide the deterministic task baseline used
   by lowering; platform reactor work remains in `R-2104`.
@@ -4500,16 +4502,22 @@ that `std.api.*` will dispatch into.
 
 - Added the `packages/spectra-api` Rust crate and the `spectra.api` package
   manifest at `packages/spectra-api/spectra.toml`.
-- Added 277 public `spectra.api.*` host calls covering the Phase 22, R-2301, and R-2302 registration
+- Added 557 public `spectra.api.*` host calls covering the Phase 22, R-2301, R-2302, R-2303, R-2304, R-2305, R-2306, R-2307, R-2308, R-2309, R-2312, R-2313, R-2314, R-2316, R-2317, R-2311, R-2401, R-2402, R-2403, HTTP/3 over QUIC, gRPC over HTTP/2, GraphQL registration, JSON derive lowering supports (quote_string, quote_char, encode_number, decode_field, typed_error_field), language-backed gRPC services (service_create, service_handle_method, service_free), and client TLS pinning (client.set_tls_config, tls.config_add_root)
   surface for version metadata, HTTP method/status/header helpers, request and
   response handles, server/client handles, JSON classification, TLS config
-  handles, routing handles, and error metadata.
+  handles, routing handles, error metadata, and sync/async handler callback
+  registration; `spectra.api.client.request` is registered as the real
+  `Task<Response>` bridge.
 - Host calls are registered in the existing runtime host-call registry through
   `spectra_api::register()`, and the crate exports
   `spectra_api_register_host_calls` for native integration.
-- Added `runtime/src/api/mod.rs` as the runtime-side namespace contract for the
-  required 211-name `spectra.api.*` namespace; the package registry may expose
-  additional public calls beyond that runtime-required subset.
+- The required 557-name `spectra.api.*` namespace lives in the canonical `packages/spectra-api/src/host_calls.rs` registry (`runtime/src/api/mod.rs` was removed as a stale duplicate).
+- Added stable `request_body` and `request_with_body` bridges so handlers and
+  clients can read and construct UTF-8 request payloads through `std.api.http`.
+- Added `std.api.session` with a shared backend contract, cryptographically
+  random opaque IDs, bounded in-memory storage, Redis persistence through the
+  existing real driver, sliding TTL capped by a maximum lifetime, lookup
+  validity checks, explicit revocation, and typed error reporting.
 - Wired `spectra_api::register()` into the CLI runtime setup paths after
   `spectra_runtime::register_standard_library()`.
 - Added unit coverage in `cargo test -p spectra-api` for host-call uniqueness,
@@ -4652,7 +4660,9 @@ body limits, response writer, and per-connection timeouts.
 
 - Added a nonblocking HTTP/1.1 server in
   `packages/spectra-api/src/server.rs` using the `R-2204` parser for request
-  framing and response serialization.
+  framing and response serialization. Listener and connection readiness now
+  runs through `mio::Poll`, with platform-specific readiness selected by the
+  `mio` backend and dynamic writable interest for pending responses.
 - Added public server API types: `ServerConfig`, `ServerResponse`,
   `ServerStats`, `ServerError`, `Handler`, and `HttpServer`.
 - Implemented accept-loop connection state, keep-alive handling, response
@@ -4695,6 +4705,8 @@ configurable timeouts, and structured responses.
   method semantics.
 - Timeouts, connection failures, and protocol errors are reported as
   typed errors.
+- `spectra.api.client.request` returns a real `Task<Response>` and uses
+  `mio` readiness with cooperative cancellation.
 - Tests cover redirect chains, large bodies, and explicit timeout.
 - `cargo test -p spectra-api` covers `HttpClient`, `ClientConfig`,
   `ClientRequest`, `ClientResponse`, `ClientError`, redirects, pool reuse,
@@ -4714,11 +4726,16 @@ configurable timeouts, and structured responses.
   connection pooling with idle expiry, configurable timeout, configurable
   redirect limit, large response bodies, and typed timeout/connection/protocol
   errors.
+- Added the registered `spectra.api.client.request` host call. It owns a real
+  `HttpClient` handle, performs connect/write/read through `mio::net` readiness,
+  returns a runtime `Task<Response>`, propagates trace context, and observes
+  cancellation at every readiness wait.
 - Implemented redirect handling for 301, 302, 303, 307, and 308, including
   POST-to-GET conversion for 301/302/303 and method/body preservation for
   307/308.
 - Preserved existing Phase 22 host calls `spectra.api.client.new` and
-  `spectra.api.client.timeout_ms`.
+  `spectra.api.client.timeout_ms`, and added the previously missing
+  `spectra.api.client.request` implementation.
 - Added crate tests for all public methods, arbitrary bodies, pool reuse,
   redirect method semantics, redirect limit, large bodies, explicit timeout,
   connection failure, and protocol error.
@@ -4727,8 +4744,8 @@ configurable timeouts, and structured responses.
 
 ### Boundary
 
-- `R-2206` implements plain HTTP/1.1 over TCP. HTTPS, certificate validation,
-  SNI, and ALPN remain owned by `R-2207`.
+- `R-2206` owns the HTTP/1.1 client contract and the runtime task bridge;
+  HTTPS certificate validation, SNI, and ALPN remain owned by `R-2207`.
 
 ## R-2207 TLS via rustls (HTTPS Server and Client)
 
@@ -4747,8 +4764,9 @@ Implemented in `packages/spectra-api/src/tls.rs` with `TlsServerConfig`,
 `TlsClientConfig`, `HttpsResponse`, `HttpsServerExchange`, and typed
 `TlsErrorKind`/`TlsError` reporting. Server and client configs accept DER
 certificate chains, client configs can use explicit roots or `webpki-roots`,
-SNI is supplied through `ServerName`, and ALPN defaults to `http/1.1` until
-HTTP/2 support lands.
+SNI is supplied through `ServerName`, and the default ALPN list advertises
+`http/1.1` alongside `h2`; the HTTP/1.1 path keeps its existing preference and
+the native HTTP/2 listener requires an actual `h2` selection.
 
 ### Acceptance
 
@@ -4760,6 +4778,9 @@ HTTP/2 support lands.
   negotiation selects `http/1.1`.
 - TLS handshake failures are reported as typed errors with the underlying
   cause via `TlsErrorKind` and `TlsError`.
+- The task-aware client bridge performs a nonblocking validated HTTPS
+  round-trip with explicit roots, SNI, ALPN, and the same cooperative
+  cancellation boundary used by plain HTTP.
 - `cargo test -p spectra-api tls --offline` passes.
 - `cargo test -p spectra-api tls::tests::known_external_endpoint_validates_chain --offline -- --ignored`
   passes.
@@ -5077,7 +5098,11 @@ router calls to produce a `Response`.
 - The trait supports `async func` and synchronous handlers.
 - Handlers can return any value that implements `IntoResponse`.
 - Errors thrown by handlers flow through the unified error middleware.
-- Tests cover both handler shapes and trait object dispatch.
+- `register_sync_callback` and `register_async_callback` transport user
+  `Request -> Response` and `Request -> Task<Response>` closures through the
+  runtime closure ABI.
+- Tests cover both handler shapes, trait object dispatch, callback dispatch,
+  and the callback fixture `tests/validation/330_api_handler_callbacks.spectra`.
 
 ### Completed Implementation Notes
 
@@ -5094,11 +5119,18 @@ router calls to produce a `Response`.
 - Added response helper host calls for text, JSON, bytes, status-only
   responses, header decoration, typed handler errors, and deterministic
   sync/async handler handle dispatch.
+- Added real `register_sync_callback` and `register_async_callback` bridges;
+  server routing now invokes user callbacks through the closure ABI and the
+  callback closure allocations are promoted to the runtime base frame before
+  registration so server-owned handlers remain valid after the registering
+  function returns.
+  mio loop cooperatively polls async `Task<Response>` results.
 - Registered `spectra.api.handler.*` host calls through `packages/spectra-api`,
   `runtime/src/api/mod.rs`, semantic builtins, midend lowering, and the public
   API snapshot.
 - Documented the public surface in `docs/api/std-api-handler.md`.
 - Added `tests/validation/139_api_handler_response_return.spectra` and
+  `tests/validation/330_api_handler_callbacks.spectra` and
   `scripts/validate_r2215_handler_response.py`.
 
 ## R-2216 Server Lifecycle, Listen, Serve, and Graceful Shutdown
@@ -5127,8 +5159,13 @@ and clean teardown of in-flight requests.
 - Resources (sockets, listener wakeups, and active connection state) are
   released on shutdown and post-shutdown active connection count returns to
   zero.
-- Tests cover host-call listen/serve routing, signal handling, drain,
-  cancellation, and `tests/validation/147_api_server_lifecycle.spectra`.
+- `serve` invokes registered sync callbacks directly and keeps registered async
+  callback tasks pending in the mio event loop until completion, timeout,
+  disconnect, or cancellation.
+- Tests cover host-call listen/serve routing, callback execution, signal
+  handling, drain, cancellation, and
+  `tests/validation/147_api_server_lifecycle.spectra` plus
+  `tests/validation/330_api_handler_callbacks.spectra`.
 - `scripts/validate_r2216_server_lifecycle.py` passes and is wired into
   `run_tests.ps1`.
 
@@ -5142,11 +5179,15 @@ and clean teardown of in-flight requests.
   requests drain within the configured grace period, idle keep-alive
   connections close as drained, and unfinished connections are cancelled
   after the deadline.
+- Integrated callback routing: synchronous user handlers execute during route
+  dispatch; asynchronous user handlers hold connection state until their task
+  completes, times out, disconnects, or is cancelled during shutdown.
 - Wired `spectra.api.server.listen`, `serve`, `local_port`, `signal`, and
   `stats` into the host-call registry, runtime contract, midend lowering,
   semantic builtin surface, and std.api public snapshot.
 - Added `docs/api/std-api-server-lifecycle.md`,
   `tests/validation/147_api_server_lifecycle.spectra`, and
+  `tests/validation/330_api_handler_callbacks.spectra`, and
   `scripts/validate_r2216_server_lifecycle.py`.
 
 ## R-2217 spectra.api Package Published to Local Registry
@@ -5373,10 +5414,16 @@ block with documented behavior.
   fields.
 - Log format is configurable (JSON for production, text for development).
 - Tests assert the log line contents and the request ID propagation.
+- The native middleware stores the rendered line at response completion and
+  exposes `logging_len`, `logging_line`, and `logging_request_id` through
+  `std.api.middleware`.
+- `tests/validation/331_api_structured_logging.spectra` covers JSON, text,
+  unique IDs, and short-circuit responses.
+- `scripts/validate_r2303_structured_logging.py` is wired into `run_tests.ps1`.
 
 ## R-2304 Rate Limiting (Token Bucket and Sliding Window)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5390,10 +5437,16 @@ block with documented behavior.
   another tenant's budget).
 - Configuration is hot-reloadable in dev mode.
 - Tests cover token bucket, sliding window, and per-tenant isolation.
+- The native middleware supports global, route, tenant, user, route-tenant,
+  and route-user keys and emits `Retry-After`, `X-RateLimit-Limit`, and
+  `X-RateLimit-Remaining` on rejection.
+- `tests/validation/332_api_rate_limiting.spectra` covers both algorithms,
+  tenant/user isolation, `429`, and the development-only update path.
+- `scripts/validate_r2304_rate_limiting.py` is wired into `run_tests.ps1`.
 
 ## R-2305 Response Compression (gzip, brotli, deflate)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `medium`
@@ -5405,10 +5458,14 @@ block with documented behavior.
 - Small responses below the threshold are not compressed.
 - The `Content-Encoding` and `Vary` headers are set correctly.
 - Tests cover each encoding and the threshold behavior.
+- `tests/validation/336_api_compression.spectra` covers Brotli, gzip, deflate,
+  q-values, `Vary`, and threshold behavior.
+- `scripts/validate_r2305_compression.py` passes and is wired into
+  `run_tests.ps1`.
 
 ## R-2306 Security Headers Middleware
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `low`
@@ -5420,10 +5477,14 @@ block with documented behavior.
 - CSP and Permissions-Policy are configurable per route.
 - HSTS preload and `includeSubDomains` are honored when configured.
 - Tests assert each header is present and correctly configured.
+- `tests/validation/334_api_security_headers.spectra` covers defaults, longest
+  route precedence, HSTS flags, and invalid flag combinations.
+- `scripts/validate_r2306_security_headers.py` passes and is wired into
+  `run_tests.ps1`.
 
 ## R-2307 API Key Authentication
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `medium`
@@ -5435,10 +5496,15 @@ block with documented behavior.
 - Expired or revoked keys are rejected with `401` and a structured error.
 - The middleware can be combined with rate limiting per key.
 - Tests cover valid, invalid, expired, and revoked keys.
+- Header and query sources support default and explicit names; structured
+  `401` responses never echo the credential.
+- `tests/validation/333_api_key_auth.spectra` covers valid, missing, unknown,
+  expired, revoked, query, and API-key rate-limit paths.
+- `scripts/validate_r2307_api_key.py` is wired into `run_tests.ps1`.
 
 ## R-2308 JWT (HS256, RS256, ES256)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5451,11 +5517,23 @@ block with documented behavior.
   tokens.
 - The verifier is constant-time for signature comparison.
 - Tests cover happy path, expiry, wrong issuer, and tampered payload.
+- `tests/validation/335_api_jwt.spectra` covers the public HS256 surface and
+  deterministic claim checks.
+- Native tests cover RS256 and ES256 signing and verification.
+- `scripts/validate_r2308_jwt.py` passes and is wired into `run_tests.ps1`.
+
+### Follow-up
+
+- Only `HS256`, `RS256`, and `ES256` are supported. `HS384`, `HS512`, and
+  `EdDSA` are honest `INVALID_ARGUMENT` rejections (`sign`) / `false`
+  (`verify`), documented in `docs/api/std-api-jwt.md`. Additional algorithms
+  are future work, not silently accepted subsets.
 
 ## R-2309 OAuth2 Client (Authorization Code + PKCE + Refresh)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
+
 - Owner: `web`
 - Risk: `high`
 - Dependencies: `R-2308`
@@ -5467,10 +5545,16 @@ block with documented behavior.
 - PKCE is generated and verified end-to-end.
 - Refresh tokens are exchanged for new access tokens.
 - Tests cover happy path, refresh, and revocation.
+- `tests/validation/337_api_oauth.spectra` covers the public PKCE
+  authorization URL surface.
+- Native tests use a local HTTP authorization server to verify the PKCE
+  challenge, code exchange, refresh rotation, state mismatch, and revocation.
+- `scripts/validate_r2309_oauth.py` passes and is wired into
+  `run_tests.ps1`.
 
 ## R-2310 OAuth2 Resource Server and Token Introspection
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P2`
 - Owner: `web`
 - Risk: `medium`
@@ -5485,7 +5569,7 @@ block with documented behavior.
 
 ## R-2311 Session Management
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `medium`
@@ -5499,10 +5583,14 @@ block with documented behavior.
   lifetime.
 - Explicit logout invalidates the session immediately.
 - Tests cover creation, lookup, expiry, sliding, and invalidation.
+- `std.api.session` exposes opaque random IDs, typed store/session handles,
+  backend errors, and memory/Redis constructors.
+- `tests/validation/342_api_session.spectra` and
+  `scripts/validate_r2311_session.py` pass.
 
 ## R-2312 Cookie API (Secure, httpOnly, SameSite, Signed)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `low`
@@ -5510,15 +5598,25 @@ block with documented behavior.
 
 ### Acceptance
 
-- Cookies can be set with the documented attributes and read back as a
-  typed value.
-- Signed cookies are verified with constant-time comparison.
-- Invalid signatures or expired cookies are rejected with a typed error.
-- Tests cover each attribute and the signature verification paths.
+- Cookies can be created with Path, Domain, Max-Age, Secure, HttpOnly, and
+  SameSite (Lax/Strict/None) attributes, read back through typed getters, and
+  serialized as one or more `Set-Cookie` response headers.
+- Signed cookies use HMAC-SHA256 and constant-time verification.
+- Invalid signatures and expired cookies are rejected through the typed
+  `cookie_error_code`/`cookie_error_message` surface.
+- Native tests cover attributes, serialization, signing, tampering, expiry,
+  and the `SameSite=None` + Secure rule.
+- `tests/validation/338_api_cookie.spectra` covers the language surface and
+  `scripts/validate_r2312_cookie.py` is wired into `run_tests.ps1`.
+
+Implementation evidence: `packages/spectra-api/src/http_types.rs` now owns the
+typed cookie model and HMAC verification; `response_with_cookie` preserves
+multiple `Set-Cookie` headers. The package HTTP tests, compiler snapshot, CLI
+fixture check/run, and the dedicated validator pass.
 
 ## R-2313 Request Validation (Constraints, RFC 7807)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5526,16 +5624,32 @@ block with documented behavior.
 
 ### Acceptance
 
-- Field-level constraints (required, length, range, regex) are applied to
-  validated structs.
-- Failed validation returns a `422` with an RFC 7807 body listing the
-  offending fields.
-- The validation framework composes with the JSON derive.
-- Tests cover each constraint and the response shape.
+- Field-level required, length, numeric range, and regex constraints validate
+  JSON and Form wire-name payloads.
+- Failed validation returns HTTP `422` with an RFC 7807
+  `application/problem+json` body containing field, code, and message entries.
+- `validate_json` and `validate_form` expose typed results and a deterministic
+  response mapping without mutating the schema.
+- Native tests cover each constraint and the response shape;
+  `tests/validation/339_api_validation.spectra` and
+  `scripts/validate_r2313_validation.py` pass and the validator is wired into
+  `run_tests.ps1`.
+
+### Implementação concluída
+
+`packages/spectra-api/src/validation.rs` adiciona schemas imutáveis por
+handles, campos obrigatórios, limites de tamanho, faixa numérica e regex para
+JSON e `std.api.form.Form`. Os resultados acumulam todos os problemas com
+`field`, `code` e `message`, serializam RFC 7807 e produzem `422
+application/problem+json` para entradas inválidas. O módulo foi conectado ao
+compilador semântico, lowering, catálogo, snapshot público e ao runtime com
+17 host calls, além dos handles `ApiValidationSchema` e `ApiValidationResult`.
+Os testes nativos, snapshot, fixture 339, build/check/run do CLI e
+`scripts/validate_r2313_validation.py` são os gates de aceitação.
 
 ## R-2314 Unified Error Handling and Exception Middleware
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5543,17 +5657,32 @@ block with documented behavior.
 
 ### Acceptance
 
-- The public `api.Error` type maps to HTTP status codes and bodies
-  deterministically.
-- Internal errors are logged with full detail and produce sanitized
-  public responses.
-- The middleware can be customized per route.
-- Tests cover the default mapping, the custom mapping, and the
-  sanitization.
+- The public `std.api.errors.ApiError` type maps status, code, and message to
+  deterministic RFC 7807 `application/problem+json` responses.
+- `internal_error` and exception middleware log full internal details while
+  returning only sanitized public status/code/message fields.
+- `exception_middleware` can be configured independently on each route's
+  `MiddlewareChain` and recovers sync/async middleware failures.
+- Native tests cover default mapping, custom per-chain mapping, full-detail
+  logging, and sanitization; `tests/validation/340_api_errors.spectra` and
+  `scripts/validate_r2314_errors.py` pass and the validator is wired into
+  `run_tests.ps1`.
+
+### Implementação concluída
+
+`packages/spectra-api/src/errors.rs` agora implementa o handle `ApiError`,
+normalização determinística de status/código/mensagem, resposta RFC 7807 e
+registro de detalhes internos. O middleware de exceção é configurável por
+cadeia/rota e intercepta falhas tanto no fluxo síncrono quanto no assíncrono;
+os detalhes completos permanecem no log e não entram no corpo público.
+O contrato semântico, lowering, catálogo, snapshot e runtime foram
+sincronizados, com o handle `ApiError` e sete host calls adicionais. Os testes
+nativos, fixture 340, snapshot, build/check/run e
+`scripts/validate_r2314_errors.py` são os gates de aceitação.
 
 ## R-2315 HTTPS Hardening (HSTS Preload, OCSP Stapling)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `medium`
@@ -5568,9 +5697,23 @@ block with documented behavior.
 - Certificate rotation is supported without server restart.
 - Tests cover the HSTS header, OCSP stapling, and hot rotation.
 
+### Implementation
+
+- `TlsServerConfig::with_ocsp_response` uses rustls
+  `with_single_cert_with_ocsp` so the configured DER response is sent during
+  the certificate handshake.
+- `TlsCertificateStore` swaps an `Arc<ServerConfig>` under `RwLock`; the
+  rotating listener selects the current configuration per accepted connection,
+  keeping the TCP listener alive while future handshakes use the new chain.
+- HSTS preload and `includeSubDomains` remain covered by the R-2306 security
+  headers middleware and `tests/validation/334_api_security_headers.spectra`.
+- Native TLS tests cover the stapled response and two handshakes across a
+  certificate rotation; `scripts/validate_r2315_https_hardening.py` is wired
+  into `run_tests.ps1`.
+
 ## R-2316 Threat Mitigations (CSRF, SSRF, Body Size, Timeouts)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5584,10 +5727,29 @@ block with documented behavior.
   addresses by default.
 - Body size limits are enforced before the body is fully read.
 - Request timeouts cut off slow clients without affecting other requests.
+- `std.api.security` exposes immutable CSRF/SSRF policies; the HTTP client
+  validates resolved addresses before opening synchronous, asynchronous, or
+  HTTPS sockets; and `std.api.server` exposes body and timeout configuration.
+- Native security/client/server tests, `tests/validation/341_api_security.spectra`,
+  and `scripts/validate_r2316_security.py` pass and the validator is wired into
+  `run_tests.ps1`.
+
+### Implementação concluída
+
+`packages/spectra-api/src/security.rs` implementa a allowlist CSRF para métodos
+state-changing e a política SSRF que bloqueia loopback, redes privadas,
+link-local, multicast, unspecified e IPv6 unique-local por padrão. A resolução
+DNS é validada antes do socket e o mesmo conjunto de endereços validados é
+usado pelo cliente síncrono e pelo cliente assíncrono/TLS. O parser HTTP já
+rejeita `Content-Length` acima do limite antes de ler o corpo completo e mede
+corpos chunked incrementalmente; os setters públicos expõem o limite e os
+timeouts de leitura/idle do servidor. O contrato semântico, lowering, handles,
+catálogo, snapshot e runtime foram sincronizados, com o fixture 341 e o gate
+dedicado registrados no runner.
 
 ## R-2317 API Example: Authenticated REST API (JWT)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `ecosystem`
 - Risk: `low`
@@ -5599,9 +5761,25 @@ block with documented behavior.
 - The example issues, validates, and rejects JWTs end-to-end.
 - The example uses the unified error middleware and validation framework.
 
+### Implementation and evidence (2026-08-19)
+
+Complete. `examples/api/02_jwt_auth_crud.spectra` issues deterministic HS256
+tokens, rejects tampered and malformed bearer credentials, routes authenticated
+list/create/read/update/delete callbacks, validates the real UTF-8 request body,
+and returns unified Problem Details responses for authentication and validation
+failures. The missing public request-body bridge was added as
+`std.api.http.request_body` and `request_with_body`, with the HTTP fixture,
+catalog, snapshot, package/runtime contracts, and docs synchronized. The
+example starts and stops a real local server through the normal CLI path.
+
+Evidence: `cargo test -p spectra-api --lib --offline`,
+`cargo test -p spectra-runtime --lib --offline`, CLI compile/run for the
+example and HTTP body fixture, and `scripts/validate_r2317_jwt_auth_crud_example.py`
+pass. The dedicated validator is registered as Group 8.71 in `run_tests.ps1`.
+
 ## R-2318 API Example: Middleware Composition
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `ecosystem`
 - Risk: `low`
@@ -5614,6 +5792,23 @@ block with documented behavior.
 - The example demonstrates per-route configuration of the rate limit and
   security headers.
 
+### Implementation and evidence (2026-08-19)
+
+Complete. The example composes structured logging, security headers, CORS,
+compression, and a route-scoped sliding-window limiter in the documented order.
+It proves that successful, `429`, and CORS preflight responses retain the
+expected security/CORS headers, that compression reaches the rate-limit
+short-circuit, that request IDs are unique, and that `/api/admin` overrides
+`/api` while sibling routes have independent budgets. During integration a
+real CORS bug was fixed: `Vary: Origin` now merges with an existing
+`Vary: Accept-Encoding` dimension instead of replacing it, with native
+regression coverage.
+
+Evidence: focused CORS and middleware native tests, CLI compile/run for
+`examples/api/03_middleware_composition.spectra`, and
+`scripts/validate_r2318_middleware_composition_example.py` pass. The gate is
+registered as Group 8.72 in `run_tests.ps1`.
+
 ---
 
 # Phase 24: Advanced API Features
@@ -5623,7 +5818,7 @@ negotiation, and other production API features.
 
 ## R-2401 WebSocket Server (RFC 6455)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5639,9 +5834,31 @@ negotiation, and other production API features.
 - Tests cover handshake, fragmented messages, ping/pong, and a 10k
   concurrent connections soak.
 
+### Completed so far (2026-08-19)
+
+The native `packages/spectra-api/src/websocket.rs` module now implements the
+RFC 6455 handshake, strict frame validation, masking direction, fragmented
+text/binary messages, automatic pong, close validation, configurable message
+limits, and negotiated `permessage-deflate`. The typed `std.api.websocket`
+surface is wired through semantic analysis, lowering, runtime handle kinds,
+and 18 host calls, including `server_route` for GET-route upgrades through the
+real `std.api.server` mio loop. `tests/validation/343_api_websocket.spectra`
+passes through the normal CLI path; the routed integration test and the real
+10k concurrent-connection soak both pass, and
+`scripts/validate_r2401_websocket.py` is the reproducible evidence gate.
+
+### Completion evidence
+
+The dedicated listener remains available, while `server_route` attaches a
+`Route` created by `std.api.routing.get` to the HTTP router. A routed handshake
+is consumed by the HTTP server, queued to `server_accept`, and preserves bytes
+received with the request. The focused native tests, routed integration test,
+CLI fixture, compiler snapshot, and `r2401_routed_websocket_10k_concurrent_connections_soak`
+passed on 2026-08-20. The gate is registered in `run_tests.ps1`.
+
 ## R-2402 WebSocket Client
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `web`
 - Risk: `high`
@@ -5655,9 +5872,31 @@ negotiation, and other production API features.
 - Reconnect with backoff is supported when configured.
 - Tests cover handshake, frame round-trip, and reconnect.
 
+### Completed so far (2026-08-19)
+
+`WebSocketClient` now performs real `ws://` and `wss://` handshakes with a fresh
+nonce, validates the `101` response and `Sec-WebSocket-Accept`, reuses the RFC
+6455 codec for masked client frames, applies default-deny SSRF policy after DNS
+resolution, uses the project `rustls` configuration and WebPKI roots for
+secure endpoints, supports per-message deflate, bounded reconnect with
+cancellation, and typed async host calls. Native tests cover text/binary
+round-trip, a TLS round-trip with an explicit trust root, and a retry after a
+failed first handshake. Fixture 344 validates the configuration surface
+through the CLI (`tests/validation/344_api_websocket_client.spectra`). The
+ignored interoperability test also passes text and binary round-trips against
+`wss://testserver.host/ws/no-subprotocol/echo` on 2026-08-20.
+
+### Completion evidence
+
+The external echo-server certification is reproducible with
+`python scripts/validate_r2402_websocket_client.py --require-external
+--external-url wss://testserver.host/ws/no-subprotocol/echo`; the normal gate
+keeps the recorded endpoint in the planning/docs contract and reruns the
+external test only when `--require-external` is requested.
+
 ## R-2403 Server-Sent Events (SSE)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `medium`
@@ -5670,10 +5909,35 @@ negotiation, and other production API features.
   connection alive.
 - The `Last-Event-ID` header is honored for resume on the server.
 - Tests cover streaming, heartbeat, and resume.
+- The typed `std.api.sse` surface is wired through semantic analysis, lowering,
+  runtime handles, and 20 registered host calls.
+- `std.api.sse.server_response` is served by the normal routed
+  `std.api.server` lifecycle.
+
+### Completed so far (2026-08-19)
+
+Added a dedicated `std.api.sse` transport with HTTP/1.1
+`text/event-stream` handshakes, bounded event serialization, multiline data,
+`retry` reconnection hints, automatic flushed heartbeats, a bounded replay log,
+and `Last-Event-ID` resume. The typed surface is wired through semantic
+analysis, lowering, runtime handle kinds, and 20 host calls. Native tests cover
+streaming, heartbeat, event formatting, and resume; fixture
+`tests/validation/345_api_sse.spectra` and
+`scripts/validate_r2403_sse.py` provide the CLI/contract gate. The new
+`server_response` binding connects the same bounded event/replay state to a
+routed `std.api.server` response; the native integration test exercises the
+real HTTP loop, handshake, publication, heartbeat scheduling, and shutdown.
+
+### Completion note
+
+R-2403 is complete. The routed response is kept out of the finite
+`ServerResponse` serializer: the HTTP loop owns the connection, applies a
+bounded pending queue, probes disconnects, and drains events and heartbeats
+without blocking the server.
 
 ## R-2404 HTTP/2 Server (h2, ALPN, HPACK)
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `high`
@@ -5687,9 +5951,26 @@ negotiation, and other production API features.
 - HPACK encoding round-trips with the configured client.
 - Tests cover ALPN negotiation, multiplexing, and HPACK.
 
+### Completed (2026-08-19)
+
+`packages/spectra-api/src/http2.rs` now provides a real native HTTP/2 server
+over the `h2` state machine. It bounds concurrent streams, decoded header
+lists, request bodies, and graceful shutdown; releases stream flow-control
+capacity while consuming request data; and filters HTTP/1-only connection
+headers from encoded responses. The default rustls configuration advertises
+`http/1.1` and `h2`, while the HTTP/2 listener requires an actual `h2` ALPN
+selection before starting the protocol handshake.
+
+Native tests cover multiplexed HPACK header round-trips, default ALPN contents,
+and a rustls `h2` negotiation with a complete request/response exchange.
+`scripts/validate_r2404_http2.py` is the reproducible evidence gate and is
+registered as Group 8.78 in `run_tests.ps1`. The implementation is transport
+level; the existing `std.api.server` callback/router contract remains the
+HTTP/1.1 surface until an HTTP/2-aware callback adapter is specified.
+
 ## R-2405 HTTP/2 Client
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `high`
@@ -5699,13 +5980,37 @@ negotiation, and other production API features.
 
 - The client connects to a known external h2 endpoint and round-trips
   requests.
+- HTTPS uses rustls with explicit `h2` ALPN negotiation and configurable trust
+  roots.
 - Multiple concurrent requests on a single connection are multiplexed.
+- Request and response bodies use bounded h2 flow control and configured
+  limits; resolved addresses are checked against the default SSRF policy before
+  connect.
 - Server push is accepted and exposed through a callback.
-- Tests cover multiplexing and server push.
+- Native tests cover multiplexing, HTTPS/ALPN, flow-controlled requests, and
+  server push.
+- `scripts/validate_r2405_http2_client.py` passes and is wired into
+  `run_tests.ps1`.
+- The ignored interoperability test passed against
+  `https://nghttp2.org` on 2026-08-20 with
+  PowerShell `$env:SPECTRA_HTTP2_EXTERNAL_URL = "https://nghttp2.org"` followed
+  by `cargo test -q -p spectra-api --lib
+  http2::tests::known_external_http2_endpoint_round_trips --offline --
+  --ignored --test-threads=1`.
+
+The native `Http2Client` now supports `http://` and `https://`, connection
+reuse, bounded request/response flow control, default SSRF blocking, explicit
+rustls trust roots, h2-only ALPN for secure connections, and a server-push
+callback. The public transport remains deliberately separate from the
+HTTP/1.1 `std.api.client.request` language contract until a typed HTTP/2
+client surface and a concurrent routed callback adapter are specified.
+R-2405 is `complete`; the external round-trip was certified in addition to the
+local native evidence. The external command remains an appropriate release
+revalidation gate because public endpoint behavior can change.
 
 ## R-2406 HTTP/3 and QUIC
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P3`
 - Owner: `web`
 - Risk: `high`
@@ -5715,10 +6020,22 @@ negotiation, and other production API features.
 
 - The decision is documented: include HTTP/3 only when a stable Rust QUIC
   implementation is available.
-- If implemented, the server and client negotiate HTTP/3 over QUIC and
-  exchange a request/response.
-- If deferred, the rationale and the re-evaluation date are documented in
-  the ADR.
+- HTTP/1.1 and HTTP/2 remain the stable protocol surfaces while HTTP/3 is
+  localhost-only (productionization continues under R-2422).
+- If deferred, the rationale, entry criteria, and the 2026-11-30 re-evaluation
+  date are documented in ADR 0014, with the FakeToReal-17 supersession note.
+- `scripts/validate_r2406_http3_decision.py` passes and is wired into
+  `run_tests.ps1`.
+
+R-2406 is complete as a scope decision, not as an HTTP/3 implementation.
+UPDATE (FakeToReal-17): a localhost-validated quinn 0.11.11 + h3 transport has
+since landed (server/bind, client connect/request, ALPN `h3`, 28
+`spectra.api.http3` hosts, loopback round-trip tests in
+`packages/spectra-api/src/http3.rs`). ADR 0014 is superseded-partial: criterion
+1 (maintained QUIC stack) is met; criteria 2 (two independent peers), 3
+(Linux/Windows/macOS/BSD matrix including migration), and 5 (HTTP/2-relative
+perf budget) are unmet; criterion 4 (Task/Stream mapping) is partial. Full
+production readiness is tracked by R-2422.
 
 ## R-2407 API Versioning (Path, Header, Query)
 
@@ -5910,9 +6227,9 @@ negotiation, and other production API features.
 - The file layer supports JSON and TOML.
 - Hot reload is supported in dev mode with a documented notification.
 
-## R-2419 gRPC Server and Client (Protobuf, Async Streams)
+## R-2419 gRPC Server and Client (Opaque Bytes, Async Streams)
 
-- Status: `not_started`
+- Status: `in_progress`
 - Priority: `P2`
 - Owner: `web`
 - Risk: `high`
@@ -5920,10 +6237,17 @@ negotiation, and other production API features.
 
 ### Acceptance
 
-- A `.proto` file compiles to a typed Spectra service.
-- Unary and streaming RPCs are supported on the server and the client.
+- Opaque-bytes unary and streaming RPCs work on the server and the client
+  (done: `packages/spectra-api/src/grpc.rs`, all four cardinalities).
+- TLS transport option exists for server bind and client connect (done:
+  `server_bind_tls`, `client_connect_tls`).
+- Compressed (flag-1) frames are rejected with a typed error, never misparsed
+  (done: `InvalidCompressedFlag`, server status 12 UNIMPLEMENTED).
 - Deadlines and cancellation are honored.
+- A `.proto` file compiles to a typed Spectra service (outstanding: `prost`
+  is not wired to a codec).
 - Tests cover each RPC style and a metadata propagation case.
+- `docs/api/std-api-grpc.md` documents the transport and the codegen boundary.
 
 ## R-2420 WebSocket Example: Real-Time Dashboard
 
@@ -5953,6 +6277,48 @@ negotiation, and other production API features.
 - `examples/api/05_openapi_swagger.spectra` builds and runs.
 - The example serves `/openapi.json` and `/docs` (Swagger UI).
 - The example wires the generated document into the UI.
+
+## R-2422 HTTP/3 Productionization (Interop, Matrix, Migration, Budget)
+
+- Status: `not_started`
+- Priority: `P3`
+- Owner: `web`
+- Risk: `high`
+- Dependencies: `R-2406`
+
+### Acceptance
+
+- HTTP/3 request/response interop fixtures pass against at least two
+  independent peers.
+- CI evidence covers Linux, Windows, macOS, and the BSD/kqueue path including
+  cancellation, shutdown, flow control, and connection migration.
+- The transport is mapped to the Phase 21 `Task<T>`/`Stream<T>` model and the
+  `spectra.api` TLS, SSRF, timeout, and observability contracts.
+- A documented resource and performance budget compares the HTTP/3 transport
+  with the HTTP/2 implementation.
+- `docs/api/std-api-http3.md` records production readiness once all of the
+  above land.
+
+## R-2423 GraphQL Dynamic Schema, Guards, and Subscriptions
+
+- Status: `in_progress`
+- Priority: `P2`
+- Owner: `web`
+- Risk: `medium`
+- Dependencies: `R-2107`
+
+### Acceptance
+
+- Dynamic schema build, field resolution, and JSON execute work over the host
+  ABI (done: `packages/spectra-api/src/graphql.rs`).
+- Opt-in `max_depth`, `max_complexity`, and introspection guards are enforced
+  at finish (done: defaults unlimited/unlimited/on).
+- Push-backed subscriptions deliver across polls over the existing ABI (done:
+  channel-fed `PullBatches`).
+- `docs/api/std-api-graphql.md` documents the builder, guards, and
+  subscription contract.
+- Conformance fixtures cover guard rejection and multi-poll subscription
+  delivery.
 
 ---
 
@@ -7096,7 +7462,7 @@ production-complete.
 
 ## R-3001 Networked ML Serving Runtime
 
-- Status: `not_started`
+- Status: `in_progress`
 - Priority: `P0`
 - Owner: `runtime`
 - Risk: `high`
@@ -7108,6 +7474,20 @@ production-complete.
   runtime integrated with async I/O, observability, and `spectra.api`.
 - Replace the scalar `input * model` demonstration path with dispatch to a
   loaded `std.ml` model/tensor artifact.
+
+### Completed so far
+
+- Embedded 127.0.0.1-only HTTP/1.1 listener (`runtime/src/stdlib/serve_http.rs`):
+  `POST /infer` dispatches to real dense/ONNX forward passes, `GET /metrics`
+  returns the monitoring snapshot; 404/405/503 semantics; ephemeral-port bind.
+- `tests/validation/355_serving_http_inference.spectra` serves a model from a
+  fresh process and validates inference values over the network.
+
+### Remaining before completion
+
+- Bounded concurrency, back-pressure, and structured errors (connections are
+  sequential with a 5 s per-phase deadline).
+- TLS/auth and traces/metrics through the API observability surface.
 
 ### Acceptance
 
@@ -7121,7 +7501,7 @@ production-complete.
 
 ## R-3002 Distributed Training Real Transport
 
-- Status: `not_started`
+- Status: `in_progress`
 - Priority: `P0`
 - Owner: `ml`
 - Risk: `high`
@@ -7131,6 +7511,22 @@ production-complete.
 
 - Replace deterministic single-process simulated workers with real
   multi-process or networked distributed training transport.
+
+### Completed so far
+
+- Real per-worker forward/backward plus shape-checked mean-ALLREDUCE over two
+  transports (`runtime/src/stdlib/ml_distributed_tcp.rs`): OS-thread barrier
+  runner and TCP-loopback coordinator (framed HELLO/ASSIGN/GRADIENTS/ACK/DONE
+  rendezvous), with a two-OS-process proof in Rust.
+- `tests/validation/356_distributed_train_tcp.spectra` exercises the TCP path
+  with two workers from Spectra.
+
+### Remaining before completion
+
+- Failure/timeout/metric-emission coverage at the fixture level and documented
+  rendezvous configuration (dataset sharding, worker identity, retry policy).
+- Removal or explicit legacy-marking of the single-process simulated-worker
+  hosts that remain alongside the real `train_*` entry points.
 
 ### Acceptance
 
@@ -7272,6 +7668,9 @@ consumes a validated rank-2 embedding tensor. `tokenizer_encode`,
 `tokenizer_decode`, and `embedding_lookup` are production when used with those
 loaded handles. The legacy inline tokenizer and hash `text_embed` remain
 compatibility baselines and never serve as silent fallbacks.
+(2026-09-09: no host-alias mechanism exists in
+`runtime/src/stdlib/registration.rs`, so `text_embed` keeps its demoted
+name behind the `deprecated-text-embed` lint instead of a rename.)
 
 Fixtures are versioned under `tests/fixtures/r3005/`; the executable contract
 is `tests/validation/187_ml_tokenization_embedding_artifacts.spectra`, and
@@ -7373,6 +7772,34 @@ gate is `scripts/validate_r3006_vector_index.py` and its report is written to
   probe coverage, all 411 production claims have passing evidence, and the 58
   remaining source divergences are explicitly assigned to owner and roadmap
   follow-ups rather than hidden by the audit.
+
+## R-3008 Model-Graded Answer Judge Scorer
+
+- Status: `not_started`
+- Priority: `P2`
+- Owner: `ml`
+- Risk: `medium`
+- Dependencies: `R-3003`
+
+### Scope
+
+- Add a model-graded (NLI/judge-model) answer scorer alongside the
+  token-overlap `rag_evaluate_answer` baseline. `rag_evaluate_answer` keeps
+  its symbol and its token-overlap F1 permille (`0..1000`) contract — the
+  same `answer_overlap_score` semantics as `ml.metrics_generation` — so
+  existing callers pass unchanged.
+- Do not stub the judge: land it only with a documented model, prompt,
+  calibration, and determinism analysis.
+
+### Acceptance
+
+- A judge scorer evaluates answer correctness beyond token overlap with a
+  documented model, prompt, and calibration.
+- `rag_evaluate_answer` keeps its token-overlap F1 permille contract and
+  existing callers pass unchanged.
+- Judge verdicts are deterministic for fixed model, prompt, and seed, with
+  disagreement-vs-overlap analysis.
+- Fixtures exercise judge scoring through CLI and runtime paths.
 
 ---
 
@@ -8895,3 +9322,778 @@ Placeholder até `R-3103` consolidar profiling:
 - Async: gap ≤ 2.0x vs Go
 
 Números em `optimization-plan.md` (R-3103) substituem esses placeholders.
+
+---
+
+## R-207 Struct Layout with Padding and Cumulative Offsets
+
+- Status: `complete`
+- Priority: `P0`
+- Owner: `backend`
+- Risk: `high`
+- Dependencies: `-`
+
+A análise de POO encontrou um crash real: `examples/test_oop_drop.spectra`
+termina com ACCESS VIOLATION (0xC0000005) ao sair do primeiro escopo. A causa
+raiz é o layout de records: `offset = index_do_campo x tamanho_do_campo`
+(`backend/src/codegen.rs:1871-1875`) com `bool` de 1 byte (`codegen.rs:3426`).
+Em `record Buffer { name: string, size: int, is_open: bool }`, `is_open`
+(índice 2) ocupa o offset 2, dentro do ponteiro da string `name` (offsets 0-7),
+corrompendo o ponteiro e causando o segfault no `drop()`.
+
+### Scope
+
+- introduzir uma função de layout compartilhada (offsets cumulativos com
+  alinhamento natural por campo e total alinhado a 8 bytes) usada pelo
+  lowering e pelo backend (alloca e `type_size_bytes`)
+- `GetElementPtr` passa a carregar offset em bytes; ajustar os passes de
+  verification, inlining, DCE e fusion que casam o campo `index`
+- corrigir o crash do Drop e adicionar regressão de execução com campos
+  bool/char após campos de 8 bytes
+- validar que a suíte existente continua passando
+
+### Acceptance
+
+- layout compartilhado e consistente entre midend e backend
+- `examples/test_oop_drop.spectra` executa com exit 0
+- regressão em `tests/validation/` (escrita, leitura e drop com campos mistos)
+- gate `run_tests.ps1 -Phase phase2_r207_struct_layout` via
+  `scripts/validate_r207_struct_layout.py`
+
+## R-208 Stable OOP Diagnostic Codes
+
+- Status: `complete`
+- Priority: `P1`
+- Owner: `frontend`
+- Risk: `low`
+- Dependencies: `-`
+
+A maioria dos erros de POO (método não encontrado, trait não definido, método
+de trait não implementado, trait pai não definido, assinatura errada, self
+múltiplo, erros de struct literal e campo, cast dyn inválido, método com self
+chamado como estático) é emitida apenas com mensagem, sem código estável.
+
+### Scope
+
+- atribuir códigos `E###` estáveis a cada site de erro POO no parser e no
+  semântico
+- documentar os códigos em `docs/diagnostics/error-code-reference.md`
+- atualizar fixtures `tests/errors/` para assertar códigos via `check --json`
+
+### Acceptance
+
+- códigos estáveis emitidos de forma consistente
+- documentação atualizada
+- `scripts/validate_r208_oop_diagnostics.py` + gate `phase2_r208_oop_diagnostics`
+
+## R-209 Self-First-Parameter Validation
+
+- Status: `complete`
+- Priority: `P1`
+- Owner: `semantic`
+- Risk: `low`
+- Dependencies: `R-208`
+
+O semântico só valida "mais de um self"; um receiver em posição posterior ao
+primeiro parâmetro passa sem diagnóstico.
+
+### Scope
+
+- rejeitar receivers em qualquer posição que não seja o primeiro parâmetro
+  em impls inherent, declarações de trait e trait impls
+- emitir código estável (depende de R-208)
+
+### Acceptance
+
+- `func f(x: int, self)` rejeitado com diagnóstico estável
+- regressões negativas em `tests/errors/`
+- `scripts/validate_r209_self_first_parameter.py` + gate `phase2_r209_self_first_parameter`
+
+## R-210 Static Vtables for dyn Trait Objects
+
+- Status: `complete`
+- Priority: `P2`
+- Owner: `midend`
+- Risk: `high`
+- Dependencies: `-`
+
+`Module.vtables`/`VTableDef` (`midend/src/ir.rs:34-46`) são código morto; as
+vtables reais são alocadas na pilha a cada cast (`lowering.rs:7347-7373`),
+tornando perigoso um objeto `dyn` escapar do escopo criador.
+
+### Scope
+
+- construir e consumir `Module.vtables`/`VTableDef` no lowering e no backend
+- emitir vtables como dados de módulo (JIT e AOT) em vez de stack alloca
+- regressão de `dyn` armazenado em record e retornado de função, usado após
+  o fim do escopo criador, sem dangling
+
+### Acceptance
+
+- infraestrutura morta usada ou removida
+- `dyn` sobrevive ao escopo criador sem dangling em JIT e AOT
+- `scripts/validate_r210_static_vtables.py` + gate `phase2_r210_static_vtables`
+
+## R-211 Generic Impl Blocks
+
+- Status: `complete`
+- Priority: `P1`
+- Owner: `semantic`
+- Risk: `medium`
+- Dependencies: `-`
+
+`impl Type<T>` genérico e `impl module::Type` não são aceitos pelo parser
+(`docs/frontend/parser-coverage-audit.md:40`).
+
+### Scope
+
+- parser aceita `impl Par<T>` (com bounds) e `impl module::Type`
+- semântico vincula type params do impl em assinaturas e corpos; `self`
+  resolve para a instanciação genérica
+- lowering emite e resolve métodos monomorfizados
+
+### Acceptance
+
+- parse, check e run de regressões em `tests/validation/`
+- docs/reference/03-tipos-compostos.md atualizado
+- `scripts/validate_r211_generic_impls.py` + gate `phase2_r211_generic_impls`
+
+## R-212 UFCS for User Traits
+
+- Status: `complete`
+- Priority: `P2`
+- Owner: `midend`
+- Risk: `medium`
+- Dependencies: `-`
+
+`Trait::method(obj)` (UFCS) só existe para caminhos de stdlib
+(`lowering.rs:6874-6887`); traits de usuário não são resolvíveis dessa forma.
+
+### Scope
+
+- resolver `Trait::method(obj, args)` contra traits do escopo com validação
+  de assinatura
+- lowering para `TypeName_method` (concreto), métodos default e slots de
+  vtable (dyn)
+- diagnósticos para trait/impl ausentes e assinaturas incompatíveis
+
+### Acceptance
+
+- regressões em `tests/validation/` e `tests/errors/` (concreto, dyn, default)
+- docs/reference/03-tipos-compostos.md documenta UFCS
+- `scripts/validate_r212_ufcs.py` + gate `phase2_r212_ufcs`
+
+## R-213 Generic Trait Impls
+
+- Status: `complete`
+- Priority: `P2`
+- Owner: `midend`
+- Risk: `high`
+- Dependencies: `R-211`
+
+Traits genéricos (`trait Container<T>`) e impls genéricos de trait
+(`impl Container<int> for Type`, `impl<T: Bound> Trait<T> for Type`) não
+existem.
+
+### Scope
+
+- traits com parâmetros de tipo usáveis em assinaturas e corpos de métodos
+- impls concretos e genéricos com bounds, dispatch estático via monomorfização
+- regra de object safety: `dyn` de trait genérico só com T fixo
+
+### Acceptance
+
+- regressões de sucesso e erro em `tests/validation/` e `tests/errors/`
+- docs/reference/03-tipos-compostos.md documenta traits genéricos
+- `scripts/validate_r213_generic_trait_impls.py` + gate `phase2_r213_generic_trait_impls`
+
+## R-214 OOP Aggregate ABI and Dynamic Fat-Pointer Safety
+
+- Status: `complete`
+- Priority: `P0`
+- Owner: `backend`
+- Risk: `high`
+- Dependencies: `R-207`, `R-210`
+
+Harden scalar-width coercion, nested aggregate layout, dynamic fat pointers,
+and JIT/AOT field access so mixed records and dyn values preserve their ABI
+contract.
+
+### Acceptance
+
+- mixed scalar and nested aggregate records pass check/run without verifier failures or incorrect comparisons
+- aggregate literals, assignments, defaults, and equality coerce exact scalar values to declared field types
+- `MakeDynFatPtr` preserves the data/vtable pair and dyn UFCS forwards receiver data
+- regressions `258`, `260`, and `274` pass in `tests/validation/`
+- `scripts/validate_language_bug_hunt.py` validates the aggregate/dyn matrix
+
+## R-215 Aggregate Drop Glue and Return Ownership
+
+- Status: `complete`
+- Priority: `P0`
+- Owner: `midend`
+- Risk: `high`
+- Dependencies: `R-207`, `R-210`
+
+Emit recursive Drop and manual-allocation escape handling for nested aggregates,
+returns, implicit block values, methods, and closures without duplicate destruction.
+
+### Acceptance
+
+- nested droppable fields are destroyed exactly once and moved return values are excluded from the source scope
+- returned aggregate values recursively escape owned manual allocations
+- explicit and implicit return paths share the ownership rules
+- regression `259` passes three consecutive runs with all lifetime markers
+- `scripts/validate_language_bug_hunt.py` repeats and checks the lifetime case
+
+## R-216 Generic Aggregate and Trait Substitution
+
+- Status: `complete`
+- Priority: `P1`
+- Owner: `semantic`
+- Risk: `high`
+- Dependencies: `R-211`, `R-213`
+
+Propagate concrete type arguments through multi-parameter generic records,
+nested fields, generic enum constructors/patterns, and UFCS trait signatures.
+
+### Acceptance
+
+- generic record field lookup and nested construction resolve all concrete arguments in declaration order
+- generic enum unit, tuple, and named-field constructors infer one specialized enum type
+- UFCS and concrete trait calls substitute independent concrete arguments
+- regressions `263`, `264`, and `268` pass in `tests/validation/`
+- `scripts/validate_language_bug_hunt.py` validates generic substitution
+
+## R-217 Generic Method Monomorphization Across Modules
+
+- Status: `complete`
+- Priority: `P1`
+- Owner: `midend`
+- Risk: `high`
+- Dependencies: `R-211`, `R-213`
+
+Carry imported generic templates into lowering and resolve concrete cross-module
+calls without losing specialization or return types.
+
+### Acceptance
+
+- imported generic templates are retained in the AST/semantic registry and registered before lowering
+- cross-module generic calls lower to concrete symbols
+- `tests/projects/valid/oop_cross_module_dispatch` passes check and run
+- `scripts/validate_language_bug_hunt.py` validates the project path
+
+## R-218 Inherited Trait Vtable Slots and UFCS Dispatch
+
+- Status: `complete`
+- Priority: `P0`
+- Owner: `midend`
+- Risk: `high`
+- Dependencies: `R-210`, `R-212`
+
+Construct parent-first inherited trait metadata and route concrete, default,
+UFCS, and dyn calls through the same vtable slot ordering.
+
+### Acceptance
+
+- inherited methods precede child methods and overrides retain the inherited slot
+- default and explicit methods work through concrete and dyn receivers
+- UFCS forwards receiver data for concrete and dyn values
+- regressions `261` and `262` pass in `tests/validation/`
+- `scripts/validate_language_bug_hunt.py` validates the vtable/UFCS matrix
+
+## R-219 Cross-Module Trait Registry and Qualified-Target Diagnostics
+
+- Status: `complete`
+- Priority: `P0`
+- Owner: `semantic`
+- Risk: `high`
+- Dependencies: `R-211`, `R-213`, `R-218`
+
+Export/import trait declarations, trait implementations, and generic templates
+across modules, while rejecting unresolved module-qualified inherent impl
+targets with stable `E027` diagnostics.
+
+### Acceptance
+
+- module exports carry generic templates, trait declarations, and impl metadata
+- imported traits reconstruct method order/signatures for downstream vtables
+- `impl missing::Foreign` is rejected with `E027` and an actionable hint
+- `tests/errors/oop_module_qualified_unknown_type.spectra` asserts `E027` and the valid cross-module project passes
+- `E027` is documented and checked by `scripts/validate_language_bug_hunt.py`
+
+## R-2113 Async API Trait Objects Preserve Task Response Types
+
+- Status: `complete`
+- Priority: `P0`
+- Owner: `web`
+- Risk: `high`
+- Dependencies: `R-2108`, `R-2203`
+
+Register async API handler contracts so dynamic `AsyncHandler` calls lower as
+`Task<Response>` and `await` remains type-correct through the public API.
+
+### Acceptance
+
+- `AsyncHandler` and related API traits expose stable Request/Response signatures to semantic analysis and lowering
+- dynamic async handler calls return `Task<Response>` and await successfully
+- regression `273` passes through the normal CLI path
+- `scripts/validate_language_bug_hunt.py` validates the async API contract
+
+# Phase 32: Agent Platform
+
+The native agent-first surface of SpectraLang. `std.agent` gives Spectra
+programs a governed way to call models, expose tools, remember context,
+enforce capabilities at the host-call dispatch point, journal every side
+effect for replay, and be evaluated as a regression suite, while the
+compiler gains a machine-readable view of what a project exposes.
+
+Phase 32 refuses three things on purpose: a second native staticlib, a
+second new attribute, and effect annotations. Native surface is aggregated
+into the existing `spectra-api` registration, tools are one attribute over
+the existing JSON derive, and effects are derived from the IR.
+
+Detailed task breakdown, file anchors and decisions:
+`docs/agent-platform-roadmap.yaml`.
+
+## R-3201 ADR and Invariants for Agent Governance
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `runtime`
+- Risk: `medium`
+- Dependencies: none
+
+Fix the architecture before code: single dispatch hook, fast-path exclusion, denial channel, run context and catalog-driven surface.
+
+Prevent the two failure modes that would be expensive later: a policy that can be bypassed, and a surface that must be edited in four places.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3201)
+
+### Acceptance
+
+- Three ADRs exist, are Accepted, and each records rationale plus consequence.
+- The fast-path invariant test exists and fails when a fast host call is temporarily reclassified into an effect namespace.
+- scripts/validate_r3201_agent_platform_adr.py checks the ADRs, the invariant test, and the phase_32 registration in roadmap.toml.
+
+## R-3202 spectralang surface --json
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `tooling`
+- Risk: `medium`
+- Dependencies: `R-3201`
+
+Emit the project and builtin public surface as machine-readable JSON with a token budget.
+
+A coding agent must answer 'what does this project expose' in one call instead of reading every file, and must be able to fit the answer into a context window.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3202)
+
+### Acceptance
+
+- surface --json on a real project lists every public module, function and type with stable ordering.
+- Output is byte-identical across runs; --tokens trims deterministically and reports what was trimmed.
+- Unknown module or missing project root fails with exit 64/65 and a JSON diagnostic, not a panic.
+- scripts/validate_r3202_surface_json.py passes and is registered in run_tests.ps1.
+
+## R-3203 spectralang impact --json
+
+- Status: `not_started`
+- Priority: `P1`
+- Owner: `tooling`
+- Risk: `medium`
+- Dependencies: `R-3201`
+
+Answer 'what breaks if I change this symbol' from the call graph, not from text search.
+
+Impact analysis is the single most valuable signal for a coding agent editing an unfamiliar project, and text search systematically misses indirect callers.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3203)
+
+### Acceptance
+
+- impact --json returns the full caller set for a changed function, including cross-module callers.
+- Field-level impact returns the functions that read or construct the type.
+- Unresolved dynamic sites are reported, not silently omitted.
+- scripts/validate_r3203_impact_json.py passes and is registered in run_tests.ps1.
+
+## R-3204 Diagnostics with Repair Information
+
+- Status: `not_started`
+- Priority: `P1`
+- Owner: `frontend`
+- Risk: `medium`
+- Dependencies: none
+
+Add expected, actual and fix to the JSON diagnostic contract and expose explain --json.
+
+Repair efficiency dominates one-shot generation quality in agent workflows; a diagnostic that states the fix removes an entire investigation round trip.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3204)
+
+### Acceptance
+
+- check --json on a type mismatch emits expected, actual and fix.
+- explain --json returns the documented description for every code in the reference file.
+- SARIF output remains schema-valid with and without fixes.
+- scripts/validate_r3204_diagnostics_repair.py passes and is registered in run_tests.ps1.
+
+## R-3205 Version-Matched Language Reference from the CLI
+
+- Status: `not_started`
+- Priority: `P2`
+- Owner: `tooling`
+- Risk: `low`
+- Dependencies: none
+
+spectralang docs --json serves the reference of the installed binary, not of the repository.
+
+Training-data scarcity is the largest single handicap of a young language; shipping the reference inside the binary removes the stale-knowledge failure mode.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3205)
+
+### Acceptance
+
+- docs --json reports the version and hash of the embedded reference.
+- --section returns a strict subset of the full output.
+- Changing the reference file changes the reported hash after rebuild.
+- scripts/validate_r3205_embedded_docs.py passes and is registered in run_tests.ps1.
+
+## R-3206 Extended Contract Catalog Schema
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `ecosystem`
+- Risk: `high`
+- Dependencies: `R-3201`
+
+Add the fields the catalog needs to generate the midend lowering tables and the Rust host-call table.
+
+Until this lands, every agent function costs eight to ten hand edits across four files, which is the dominant risk of building the library at all.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3206)
+
+### Acceptance
+
+- Catalog parses with the extended schema; existing entries gained the new fields with no semantic change.
+- The auditor rejects a function entry missing ir_return, returns_value or rust_symbol.
+- scripts/validate_r3206_catalog_schema.py passes and is registered in run_tests.ps1.
+
+## R-3207 Generate Midend Lowering Tables from the Catalog
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `midend`
+- Risk: `high`
+- Dependencies: `R-3206`
+
+Replace the hand-written lowering tables with checked-in generated files plus a staleness check.
+
+Removes one of the four copies. The remaining manual work is the semantic signature and the Rust implementation, which are the two things a human must write anyway.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3207)
+
+### Acceptance
+
+- The seven lowering files are generated; a manual edit makes --check fail.
+- All existing contract_drift tests pass unchanged.
+- Full validation suite unchanged: no fixture regresses.
+- scripts/validate_r3207_lowering_generation.py passes and is registered in run_tests.ps1.
+
+## R-3208 Generate HOST_CALLS and Remove the Manual Count
+
+- Status: `not_started`
+- Priority: `P1`
+- Owner: `web`
+- Risk: `medium`
+- Dependencies: `R-3206`
+
+Generate the Rust host-call table from the catalog and derive its size instead of hardcoding it.
+
+Removes the second copy; the count assertion at api_tests.rs:93-95 becomes computed, eliminating a recurring manual edit that silently rots.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3208)
+
+### Acceptance
+
+- The host-call table is generated; the count assertion is computed.
+- spectra_api_host_call_count() matches HOST_CALLS.len() in both feature configurations.
+- validate_r2202_spectra_api_hostcalls.py still passes.
+- scripts/validate_r3208_hostcall_generation.py passes and is registered in run_tests.ps1.
+
+## R-3209 std.agent Namespace and packages/spectra-agent Crate
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `runtime`
+- Risk: `high`
+- Dependencies: `R-3207`, `R-3208`
+
+Land the namespace and the crate with exactly one function, proving every layer end to end before scaling.
+
+The cost of a native module lives in the seam between compiler, midend, runtime and catalog. This item measures that cost once so the remaining twelve functions are mechanical.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3209)
+
+### Acceptance
+
+- `import std.agent` resolves, token_count type-checks, lowers, and returns the same value in JIT and AOT.
+- Adding a second function afterwards requires the documented three-edit path, evidenced in the PR description.
+- Contract catalog, snapshot and probe are consistent; validate_r3007 passes with --require-catalog.
+- scripts/validate_r3209_agent_namespace.py passes and is registered in run_tests.ps1.
+
+## R-3210 agent_tool Attribute and Derived JSON Schema
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `semantic`
+- Risk: `high`
+- Dependencies: `R-3209`
+
+One function attribute that turns a public function into a model-callable tool, with name, schema, effects and capabilities derived.
+
+A tool declaration that a human writes once and a model consumes must not be able to lie. Everything derivable is derived; only the description is authored.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3210)
+
+### Acceptance
+
+- A public async function with the attribute appears in surface --json with derived name, input_schema, effects and capabilities.
+- Each rejection case produces a stable code and a hint; fixtures exist under tests/errors/.
+- fmt is idempotent on attributed functions; LSP does not flag the attribute.
+- scripts/validate_r3210_agent_tool.py passes and is registered in run_tests.ps1.
+
+## R-3211 Model Gateway, Run and Provider Abstraction
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `web`
+- Risk: `high`
+- Dependencies: `R-3209`
+
+AgentSpec, Run, ask, ask_stream, ask_json, embed, agent_start and agent_end over the existing HTTP client.
+
+The only thing a real agent needs from a language is a governed way to talk to a model and a place to record what happened. Everything else is composition.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3211)
+
+### Acceptance
+
+- An agent that calls ask twice and ends cleanly reports tokens and cost consistent with the mock provider.
+- ask_json rejects a schema-violating response with a typed error even when the provider claims compliance.
+- Run lifecycle misuse (double end, use after end, unknown run) returns typed errors.
+- scripts/validate_r3211_model_gateway.py passes and is registered in run_tests.ps1.
+
+## R-3212 Agent Memory over std.ml
+
+- Status: `not_started`
+- Priority: `P1`
+- Owner: `ml`
+- Risk: `medium`
+- Dependencies: `R-3211`
+
+remember and recall as a thin, provenance-carrying layer over the existing vector index and RAG toolkit.
+
+Long-running agents need memory that survives a restart and can be audited. The storage primitive already exists and is validated; building a second one would be waste.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3212)
+
+### Acceptance
+
+- Memory survives persist and load across processes.
+- Recall returns identical ordering for identical inputs.
+- Every recalled entry can report its origin and the run that wrote it.
+- scripts/validate_r3212_agent_memory.py passes and is registered in run_tests.ps1.
+
+## R-3213 Run Context and Propagation
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `runtime`
+- Risk: `high`
+- Dependencies: `R-3209`
+
+An active-run context that the runtime can consult on every dispatch, with explicit propagation and fail-closed behavior for detached work.
+
+Enforcement without a reliable notion of the current run is theater. This item is the precondition for R-3214.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3213)
+
+### Acceptance
+
+- A tool invoked by a run sees the run; a host call inside it is attributable to that run.
+- Work spawned by a run carries the context; detached work does not and is rejected without a grant.
+- No ABI change: the repr(C) call context is untouched.
+- scripts/validate_r3213_run_context.py passes and is registered in run_tests.ps1.
+
+## R-3214 Capability Enforcement at the Dispatch Point
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `runtime`
+- Risk: `high`
+- Dependencies: `R-3213`, `R-3206`
+
+One policy decision, applied at every generic dispatch entrypoint, with a dedicated denial path and no fast-path hole.
+
+This is the only capability in this roadmap that a competitor cannot match by adding a library: the language controls every effect, so the boundary can be total while a run is active.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3214)
+
+### Acceptance
+
+- A host call outside the grant fails, through all four generic entrypoints, including the cached and batch paths.
+- The fast-path invariant test from R-3201 still passes and would fail if a fast call were effect-bearing.
+- authorize() reports the same decision the dispatch enforces.
+- Programs without an active run behave exactly as before.
+- scripts/validate_r3214_capability_enforcement.py passes and is registered in run_tests.ps1.
+
+## R-3215 Capability Vocabulary Validated by the Compiler
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `semantic`
+- Risk: `medium`
+- Dependencies: `R-3214`, `R-3206`
+
+Capability strings are validated against the registered host-call namespaces, with did-you-mean, instead of being free-form strings.
+
+The most common failure of permission systems is a grant that matches nothing and nobody notices. The compiler can catch it at build time because the compiler already depends on the catalog.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3215)
+
+### Acceptance
+
+- An unknown capability fails compilation with a near-match suggestion.
+- A scoped capability on a host call without an extractor fails with its own code.
+- The generated capability reference matches the catalog.
+- scripts/validate_r3215_capability_vocabulary.py passes and is registered in run_tests.ps1.
+
+## R-3216 Budget, Accounting and Cooperative Cancellation
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `runtime`
+- Risk: `medium`
+- Dependencies: `R-3213`
+
+Hard ceilings on tokens, cost, wall time and tool calls, enforced by cancelling the run.
+
+An agent loop without a ceiling is a financial incident waiting to happen. This is a default, not an option.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3216)
+
+### Acceptance
+
+- No run exceeds a declared ceiling; the report states which ceiling was hit.
+- Cancellation propagates to in-flight model calls and tool executions.
+- Accounting matches the mock provider's reported usage exactly.
+- scripts/validate_r3216_agent_budget.py passes and is registered in run_tests.ps1.
+
+## R-3217 Journal, Replay, Approval and Tracing
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `runtime`
+- Risk: `high`
+- Dependencies: `R-3213`, `R-3211`
+
+Every side effect recorded once, replayable without repeating effects, with human approval and OpenTelemetry GenAI spans.
+
+Durability is what makes an agent operable: a crash resumes instead of restarting, and a behavior can be reproduced instead of argued about.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3217)
+
+### Acceptance
+
+- Killing the process mid-run and resuming completes the run without duplicating any effect, proven by a counting test server.
+- A replayed run produces identical tool ordering and outputs.
+- Approval decisions survive replay and are attributed.
+- Spans validate against the pinned conventions version; content is absent unless opted in.
+- scripts/validate_r3217_agent_journal.py passes and is registered in run_tests.ps1.
+
+## R-3218 std.agent.mcp Client and Server
+
+- Status: `not_started`
+- Priority: `P1`
+- Owner: `web`
+- Risk: `medium`
+- Dependencies: `R-3211`, `R-3214`
+
+Consume and expose Model Context Protocol tools over HTTP transport, with untrusted-description handling.
+
+MCP is where the tool ecosystem already lives. Exposing Spectra functions as MCP tools makes a Spectra service usable by any agent, and consuming MCP tools removes the need to reimplement integrations.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3218)
+
+### Acceptance
+
+- A Spectra agent calls a remote MCP tool through the governed dispatch path and the journal records it.
+- A Spectra project exposes its tools over MCP and a third-party client can call them.
+- Untrusted descriptions never influence control flow: covered by a fixture that feeds a hostile description.
+- scripts/validate_r3218_mcp.py passes and is registered in run_tests.ps1.
+
+## R-3219 std.agent.protocol: A2A and ACP Exposure
+
+- Status: `not_started`
+- Priority: `P2`
+- Owner: `web`
+- Risk: `medium`
+- Dependencies: `R-3217`, `R-3218`
+
+Expose a Spectra agent as an A2A server and as an ACP agent, reusing the approval primitive for permission requests.
+
+Interop is an adapter, not an architecture. It lands last because the primitives it needs, run, journal and approval, already exist by then.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3219)
+
+### Acceptance
+
+- A remote A2A client can delegate a task and observe completion or failure with a stable reason.
+- ACP permission denial aborts the action and is journaled.
+- Neither adapter bypasses the capability dispatch path.
+- scripts/validate_r3219_agent_protocols.py passes and is registered in run_tests.ps1.
+
+## R-3220 Evaluation Harness and spectralang agent eval
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `tooling`
+- Risk: `medium`
+- Dependencies: `R-3217`, `R-3203`
+
+Agent behavior measured as regression, with deterministic graders, judge graders and pass@k.
+
+Governance is tested deterministically; behavior is evaluated statistically. Mixing them produces suites that fail on model variance and pass by luck.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3220)
+
+### Acceptance
+
+- agent eval runs a suite, reports pass@1 and pass^k, and fails the build on regression against the recorded baseline.
+- Judge-based grading is opt-in and never runs in the default CI path.
+- Governance assertions are covered by deterministic tests, not by evals.
+- scripts/validate_r3220_agent_eval.py passes and is registered in run_tests.ps1.
+
+## R-3221 Agent Platform Integration, Conformance and Release
+
+- Status: `not_started`
+- Priority: `P0`
+- Owner: `ecosystem`
+- Risk: `high`
+- Dependencies: `R-3210`, `R-3211`, `R-3212`, `R-3214`, `R-3215`, `R-3216`, `R-3217`, `R-3218`, `R-3219`, `R-3220`
+
+Prove the platform works with the rest of the language, document it, publish it and gate the release.
+
+A library that is not integrated with the formatter, LSP, package flow, docs and conformance suite is a prototype, not a product.
+
+- Detailed tasks: `docs/agent-platform-roadmap.yaml` (R-3221)
+
+### Acceptance
+
+- The package is publishable to the local registry and consumable by another project through the normal package flow.
+- Formatter, LSP, lint and REPL handle the new attribute and namespace without special cases.
+- Conformance suite passes and its report is required by the release gate.
+- The integrated project runs in JIT and AOT, including interruption and resume.
+- scripts/validate_r3221_agent_package.py, scripts/validate_r3221_agent_conformance.py and scripts/validate_r3221_integrated_agent_service.py pass and are registered in run_tests.ps1.

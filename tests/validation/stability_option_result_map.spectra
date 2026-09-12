@@ -1,0 +1,40 @@
+module stability_option_result_map
+
+import std.option as option
+import std.result as result
+
+public func main() returns int {
+    let some = Option::Some(4)
+    let mapped_option = option.option_map(some, |value: int| value + 1)
+    if option.is_none(mapped_option) {
+        return 1
+    }
+    if option.option_unwrap(mapped_option) != 5 {
+        return 2
+    }
+
+    let none = Option::None
+    let mapped_none = option.option_map(none, |value: int| value + 1)
+    if option.is_some(mapped_none) {
+        return 3
+    }
+
+    let ok = Result::Ok(10)
+    let mapped_ok = result.result_map(ok, |value: int| value * 2)
+    if result.result_unwrap(mapped_ok) != 20 {
+        return 4
+    }
+
+    let err = Result::Err("bad")
+    let mapped_err = result.result_map(err, |value: int| value * 2)
+    if result.is_err(mapped_err) != true {
+        return 5
+    }
+
+    let mapped_error = result.result_map_err(err, |message: string| message + " input")
+    if result.result_unwrap_err(mapped_error) != "bad input" {
+        return 6
+    }
+
+    return 0
+}

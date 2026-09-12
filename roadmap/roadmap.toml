@@ -1,6 +1,6 @@
 version = 1
 title = "SpectraLang Production AI Roadmap"
-updated_at = "2026-06-25"
+updated_at = "2026-09-11"
 status_scale = ["not_started", "in_progress", "blocked", "complete"]
 priority_scale = ["P0", "P1", "P2", "P3"]
 
@@ -2224,9 +2224,9 @@ dependencies = ["R-2201"]
 summary = "Add a new workspace crate `spectra-api` that hosts the Rust implementation of HTTP parsing, server, client, JSON, TLS, and registers the host calls that `std.api.*` will dispatch into."
 acceptance = [
   "`packages/spectra-api` compiles in the workspace and links against the existing `spectra-runtime` crate",
-  "277 public `spectra.api.*` host calls are registered through the runtime host-call registry by `spectra_api::register()`, including the runtime's 211-name required namespace",
+  "557 public `spectra.api.*` host calls are registered through the runtime host-call registry by `spectra_api::register()`, with the 557-name required namespace in the canonical `packages/spectra-api/src/host_calls.rs` registry, the real `spectra.api.client.request` task bridge, sync/async handler callback bridges, JSON derive lowering supports (quote_string, quote_char, encode_number, decode_field, typed_error_field), language-backed gRPC services (service_create, service_handle_method, service_free), client TLS pinning (client.set_tls_config, tls.config_add_root), structured request logging, token-bucket/sliding-window rate limiting, API-key authentication, response compression, security headers, JWT signing/verification, OAuth2 authorization-code, PKCE, refresh, and revocation flows, the typed HMAC-signed cookie API, request validation with RFC 7807 responses, unified errors with exception middleware, default-deny CSRF/SSRF threat mitigations with configurable body limits and timeouts, stable request-body construction/reading, …",
   "`cargo test -p spectra-api` covers the registered host functions and registry behavior",
-  "`runtime/src/api/mod.rs` records the required host-call namespace contract",
+  "`packages/spectra-api/src/host_calls.rs` records the required host-call namespace contract",
   "`scripts/validate_r2202_spectra_api_hostcalls.py` verifies host call naming, registration count, CLI integration, package metadata, and planning sync",
   "`run_tests.ps1` runs the R-2202 validator"
 ]
@@ -2301,6 +2301,7 @@ acceptance = [
   "the client supports GET, POST, PUT, PATCH, DELETE, and HEAD with arbitrary bodies",
   "Redirect chains (up to the configured limit) are followed with the right method semantics",
   "Timeouts, connection failures, and protocol errors are reported as typed errors",
+  "`spectra.api.client.request` returns a real runtime `Task<Response>` and uses mio readiness with cooperative cancellation",
   "tests cover redirect chains, large bodies, and explicit timeout",
   "`cargo test -p spectra-api` covers `HttpClient`, `ClientConfig`, `ClientRequest`, `ClientResponse`, `ClientError`, redirects, pool reuse, large bodies, and timeout behavior",
   "`scripts/validate_r2206_http1_client.py` passes and is wired into `run_tests.ps1`"
@@ -2321,6 +2322,7 @@ acceptance = [
   "an HTTPS client connects to a known external test endpoint with `webpki-roots` and validates the chain",
   "ALPN advertises `http/1.1` on client and server configs, and local negotiation selects `http/1.1`",
   "TLS handshake failures are reported as typed errors with the underlying cause via `TlsErrorKind` and `TlsError`",
+  "the task-aware client bridge performs a nonblocking validated HTTPS round-trip with explicit roots, SNI, ALPN, and cooperative cancellation",
   "`cargo test -p spectra-api tls --offline` passes",
   "`cargo test -p spectra-api tls::tests::known_external_endpoint_validates_chain --offline -- --ignored` passes",
   "`scripts/validate_r2207_tls_rustls.py` passes and is wired into `run_tests.ps1`"
@@ -2482,8 +2484,9 @@ acceptance = [
   "`std.api.handler` exports `Handler`, `AsyncHandler`, and `IntoResponse` traits plus handler/error handle types",
   "the trait surface supports `async func` and synchronous handlers over `Request -> Response`",
   "handlers can return values that implement `IntoResponse`, including native `Response`, text, bytes, unit, handler errors, and `Result<T, HandlerError>` in `spectra-api`",
+  "`register_sync_callback` and `register_async_callback` transport user `Request -> Response` and `Request -> Task<Response>` closures through the runtime closure ABI",
   "`HandlerError` flows through `error_response` and `last_error_message` so R-2301/R-2314 unified error middleware can consume typed handler failures",
-  "tests cover synchronous handlers, async handlers, `IntoResponse`, handler handle dispatch, and error-to-response conversion in `tests/validation/139_api_handler_response_return.spectra`",
+  "tests cover synchronous handlers, async handlers, `IntoResponse`, handler handle dispatch, callback dispatch, and error-to-response conversion in `tests/validation/139_api_handler_response_return.spectra` and `tests/validation/330_api_handler_callbacks.spectra`",
   "`cargo test -p spectra-api handler --offline`, `cargo test -p spectra-compiler --offline`, and `cargo test -p spectra-midend --offline` pass",
   "`scripts/validate_r2215_handler_response.py` passes and is wired into `run_tests.ps1`"
 ]
@@ -2503,7 +2506,8 @@ acceptance = [
   "a server can be started on a configured port and shut down deterministically on SIGINT/SIGTERM",
   "in-flight requests are given a configurable drain timeout before forced cancellation, with drained and cancelled connections reflected in lifecycle stats",
   "resources (sockets, listener wakeups, and active connection state) are released on shutdown and post-shutdown active connection count returns to zero",
-  "tests cover host-call listen/serve routing, signal handling, drain, cancellation, and `tests/validation/147_api_server_lifecycle.spectra`",
+  "`serve` invokes registered sync callbacks directly and keeps registered async callback tasks pending in the mio event loop until completion, timeout, disconnect, or cancellation",
+  "tests cover host-call listen/serve routing, callback execution, signal handling, drain, cancellation, and `tests/validation/147_api_server_lifecycle.spectra` plus `tests/validation/330_api_handler_callbacks.spectra`",
   "`scripts/validate_r2216_server_lifecycle.py` passes and is wired into `run_tests.ps1`"
 ]
 
@@ -2618,7 +2622,7 @@ title = "Structured Logging and Request ID Tracing"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "in_progress"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2301"]
 summary = "Provide a structured logging middleware that emits a request ID, method, path, status, latency, and a configurable log format (JSON or text)."
@@ -2626,7 +2630,10 @@ acceptance = [
   "every request gets a unique request ID that flows through the log lines",
   "the middleware emits one log line per request with the documented fields",
   "log format is configurable (JSON for production, text for development)",
-  "tests assert the log line contents and the request ID propagation"
+  "tests assert the log line contents and the request ID propagation",
+  "the native middleware exposes logging_len, logging_line, and logging_request_id for the language surface",
+  "tests/validation/331_api_structured_logging.spectra covers JSON, text, unique IDs, and short-circuit responses",
+  "scripts/validate_r2303_structured_logging.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]
@@ -2635,7 +2642,7 @@ title = "Rate Limiting (Token Bucket and Sliding Window)"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2301"]
 summary = "Add a rate-limiting middleware supporting token bucket and sliding window, configurable per route, per tenant, and per user."
@@ -2643,7 +2650,9 @@ acceptance = [
   "the middleware enforces the configured limit and returns `429` when exceeded",
   "per-tenant and per-user limits are isolated (one tenant cannot exhaust another tenant's budget)",
   "configuration is hot-reloadable in dev mode",
-  "tests cover token bucket, sliding window, and per-tenant isolation"
+  "tests cover token bucket, sliding window, and per-tenant isolation",
+  "the middleware supports route, tenant, user, and combined route scopes with standard retry and remaining headers",
+  "tests/validation/332_api_rate_limiting.spectra and scripts/validate_r2304_rate_limiting.py pass"
 ]
 
 [[items]]
@@ -2652,7 +2661,7 @@ title = "Response Compression (gzip, brotli, deflate)"
 phase = "phase_23"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2301"]
 summary = "Add a compression middleware that negotiates gzip, brotli, and deflate based on the `Accept-Encoding` header."
@@ -2660,7 +2669,9 @@ acceptance = [
   "the middleware negotiates the best supported encoding from the request",
   "small responses below the threshold are not compressed",
   "the `Content-Encoding` and `Vary` headers are set correctly",
-  "tests cover each encoding and the threshold behavior"
+  "tests cover each encoding and the threshold behavior",
+  "tests/validation/336_api_compression.spectra covers Brotli, gzip, deflate, q-values, `Vary`, and the threshold",
+  "scripts/validate_r2305_compression.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]
@@ -2669,7 +2680,7 @@ title = "Security Headers Middleware"
 phase = "phase_23"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "low"
 dependencies = ["R-2301"]
 summary = "Add a security headers middleware that sets CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy."
@@ -2677,7 +2688,9 @@ acceptance = [
   "the middleware applies the configured header policy on every response",
   "CSP and Permissions-Policy are configurable per route",
   "HSTS preload and includeSubDomains are honored when configured",
-  "tests assert each header is present and correctly configured"
+  "tests assert each header is present and correctly configured",
+  "tests/validation/334_api_security_headers.spectra covers defaults, route precedence, HSTS, and invalid flag combinations",
+  "scripts/validate_r2306_security_headers.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]
@@ -2686,7 +2699,7 @@ title = "API Key Authentication"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2301"]
 summary = "Add an API key auth middleware that validates keys from a header, a query parameter, or a revocation list."
@@ -2694,7 +2707,9 @@ acceptance = [
   "the middleware extracts the key from the configured source",
   "expired or revoked keys are rejected with `401` and a structured error",
   "the middleware can be combined with rate limiting per key",
-  "tests cover valid, invalid, expired, and revoked keys"
+  "tests cover valid, invalid, expired, and revoked keys",
+  "header and query sources support default and explicit names, without echoing secrets",
+  "tests/validation/333_api_key_auth.spectra and scripts/validate_r2307_api_key.py pass"
 ]
 
 [[items]]
@@ -2703,7 +2718,7 @@ title = "JWT (HS256, RS256, ES256)"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2202"]
 summary = "Implement JWT signing and verification for HS256, RS256, and ES256, with claims validation (exp, nbf, iss, aud, sub, jti)."
@@ -2711,7 +2726,10 @@ acceptance = [
   "tokens can be signed and verified with each documented algorithm",
   "claims validation rejects expired, not-yet-valid, and wrong-issuer tokens",
   "the verifier is constant-time for signature comparison",
-  "tests cover happy path, expiry, wrong issuer, and tampered payload"
+  "tests cover happy path, expiry, wrong issuer, and tampered payload",
+  "tests/validation/335_api_jwt.spectra covers the public HS256 surface and deterministic claim checks",
+  "native tests cover RS256 and ES256 signing and verification",
+  "scripts/validate_r2308_jwt.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]
@@ -2720,7 +2738,7 @@ title = "OAuth2 Client (Authorization Code + PKCE + Refresh)"
 phase = "phase_23"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2308"]
 summary = "Add an OAuth2 client that supports the authorization code flow with PKCE and refresh tokens."
@@ -2728,7 +2746,10 @@ acceptance = [
   "the client follows the authorization code flow and exchanges the code for tokens",
   "PKCE is generated and verified end-to-end",
   "refresh tokens are exchanged for new access tokens",
-  "tests cover happy path, refresh, and revocation"
+  "tests cover happy path, refresh, and revocation",
+  "tests/validation/337_api_oauth.spectra covers the public PKCE authorization URL surface",
+  "native tests use a local HTTP authorization server to verify the PKCE challenge, code exchange, refresh rotation, state mismatch, and revocation",
+  "scripts/validate_r2309_oauth.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]
@@ -2737,7 +2758,7 @@ title = "OAuth2 Resource Server and Token Introspection"
 phase = "phase_23"
 owner = "web"
 priority = "P2"
-status = "not_started"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2308"]
 summary = "Add an OAuth2 resource server that accepts bearer tokens, validates them locally, and falls back to introspection for opaque tokens."
@@ -2754,7 +2775,7 @@ title = "Session Management"
 phase = "phase_23"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2312"]
 summary = "Add server-side session management with a configurable store, configurable TTL, sliding expiration, and forced invalidation."
@@ -2762,7 +2783,9 @@ acceptance = [
   "sessions are stored in a pluggable store (memory, Redis) with a defined interface",
   "sliding expiration extends the session on activity up to a maximum lifetime",
   "explicit logout invalidates the session immediately",
-  "tests cover creation, lookup, expiry, sliding, and invalidation"
+  "tests cover creation, lookup, expiry, sliding, and invalidation",
+  "`std.api.session` exposes opaque random IDs, typed store/session handles, backend errors, and memory/Redis constructors",
+  "`tests/validation/342_api_session.spectra` and `scripts/validate_r2311_session.py` pass"
 ]
 
 [[items]]
@@ -2771,15 +2794,16 @@ title = "Cookie API (Secure, httpOnly, SameSite, Signed)"
 phase = "phase_23"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "low"
 dependencies = ["R-2210"]
 summary = "Provide a typed cookie API supporting Secure, HttpOnly, SameSite (Lax/Strict/None), and signed cookies with HMAC verification."
 acceptance = [
-  "cookies can be set with the documented attributes and read back as a typed value",
-  "signed cookies are verified with constant-time comparison",
-  "invalid signatures or expired cookies are rejected with a typed error",
-  "tests cover each attribute and the signature verification paths"
+  "cookies can be created with Path, Domain, Max-Age, Secure, HttpOnly, and SameSite (Lax/Strict/None) attributes, serialized as one or more `Set-Cookie` response headers, and read back through typed getters",
+  "signed cookies use HMAC-SHA256 verification through a constant-time cryptographic comparison",
+  "invalid signatures or expired cookies are rejected through the typed `cookie_error_code`/`cookie_error_message` surface",
+  "native tests cover each attribute, Set-Cookie serialization, signature verification, tampering, expiration, and the SameSite=None Secure requirement",
+  "`tests/validation/338_api_cookie.spectra` covers the public language surface and `scripts/validate_r2312_cookie.py` passes and is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2788,15 +2812,15 @@ title = "Request Validation (Constraints, RFC 7807)"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2209"]
 summary = "Add a request validation framework that produces RFC 7807 Problem Details responses for failed validation."
 acceptance = [
-  "field-level constraints (required, length, range, regex) are applied to validated structs",
-  "failed validation returns a `422` with an RFC 7807 body listing the offending fields",
-  "the validation framework composes with the JSON derive",
-  "tests cover each constraint and the response shape"
+  "field-level required, length, numeric range, and regex constraints validate JSON and Form wire-name payloads",
+  "failed validation returns HTTP `422` with an RFC 7807 `application/problem+json` body containing field, code, and message entries",
+  "`validate_json` and `validate_form` expose typed validation results and a deterministic response mapping without mutating the schema",
+  "native tests cover each constraint and the response shape; `tests/validation/339_api_validation.spectra` and `scripts/validate_r2313_validation.py` pass and the validator is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2805,15 +2829,15 @@ title = "Unified Error Handling and Exception Middleware"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2301"]
 summary = "Define a unified error type for the API surface, a default `IntoResponse` mapping, and an exception middleware that converts internal errors to safe public responses."
 acceptance = [
-  "the public `api.Error` type maps to HTTP status codes and bodies deterministically",
-  "internal errors are logged with full detail and produce sanitized public responses",
-  "the middleware can be customized per route",
-  "tests cover the default mapping, the custom mapping, and the sanitization"
+  "the public `std.api.errors.ApiError` type maps status, code, and message to deterministic RFC 7807 `application/problem+json` responses",
+  "`internal_error` and exception middleware log full internal details while returning only sanitized public status/code/message fields",
+  "`exception_middleware` can be configured independently on each route's `MiddlewareChain` and recovers sync/async middleware failures",
+  "native tests cover default mapping, custom per-chain mapping, full-detail logging, and sanitization; `tests/validation/340_api_errors.spectra` and `scripts/validate_r2314_errors.py` pass and the validator is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2822,7 +2846,7 @@ title = "HTTPS Hardening (HSTS Preload, OCSP Stapling)"
 phase = "phase_23"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2207"]
 summary = "Add HSTS preload, OCSP stapling, and automatic certificate rotation support to the HTTPS server."
@@ -2830,7 +2854,9 @@ acceptance = [
   "the server emits `Strict-Transport-Security: max-age=...; preload; includeSubDomains` when configured",
   "OCSP responses are stapled to the TLS handshake when available",
   "certificate rotation is supported without server restart",
-  "tests cover the HSTS header, OCSP stapling, and hot rotation"
+  "tests cover the HSTS header, OCSP stapling, and hot rotation",
+  "`packages/spectra-api/src/tls.rs` uses rustls `with_single_cert_with_ocsp`, `TlsCertificateStore`, and a rotating listener path; `cargo test -p spectra-api --lib tls` passes",
+  "`tests/validation/334_api_security_headers.spectra` and `scripts/validate_r2315_https_hardening.py` pass and the validator is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2839,7 +2865,7 @@ title = "Threat Mitigations (CSRF, SSRF, Body Size, Timeouts)"
 phase = "phase_23"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2301"]
 summary = "Add default-on and configurable mitigations for CSRF, SSRF, request body size, and request timeouts."
@@ -2847,7 +2873,9 @@ acceptance = [
   "CSRF protection validates the `Origin` header against an allowlist for state-changing methods",
   "SSRF protection blocks requests to private IP ranges and link-local addresses by default",
   "body size limits are enforced before the body is fully read",
-  "request timeouts cut off slow clients without affecting other requests"
+  "request timeouts cut off slow clients without affecting other requests",
+  "`std.api.security` exposes immutable CSRF/SSRF policies, the HTTP client applies SSRF validation before sync/async socket creation, and `std.api.server` exposes body/timeout configuration",
+  "native security/client/server tests plus `tests/validation/341_api_security.spectra` and `scripts/validate_r2316_security.py` pass, and the validator is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2856,14 +2884,16 @@ title = "API Example: Authenticated REST API (JWT)"
 phase = "phase_23"
 owner = "ecosystem"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "low"
 dependencies = ["R-2308", "R-2219"]
 summary = "Provide a runnable example that wires JWT authentication, request validation, and error handling into a CRUD API."
 acceptance = [
-  "`examples/api/02_jwt_auth_crud.spectra` builds and runs",
-  "the example issues, validates, and rejects JWTs end-to-end",
-  "the example uses the unified error middleware and validation framework"
+  "`examples/api/02_jwt_auth_crud.spectra` builds and runs through the normal CLI",
+  "the example issues, validates, and rejects JWTs end-to-end for list/create/read/update/delete routes",
+  "the example uses the unified error middleware and validation framework against the real UTF-8 request body",
+  "`std.api.http.request_body` and `request_with_body` are registered in the package/runtime contracts and covered by `tests/validation/134_http_core_types.spectra`",
+  "`scripts/validate_r2317_jwt_auth_crud_example.py` passes and is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2872,14 +2902,16 @@ title = "API Example: Middleware Composition"
 phase = "phase_23"
 owner = "ecosystem"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "low"
 dependencies = ["R-2302", "R-2303", "R-2304", "R-2306"]
 summary = "Provide a runnable example that composes CORS, logging, rate limiting, security headers, and request ID tracing in the documented order."
 acceptance = [
-  "`examples/api/03_middleware_composition.spectra` builds and runs",
-  "the example asserts the middleware order matches the documentation",
-  "the example demonstrates per-route configuration of the rate limit and security headers"
+  "`examples/api/03_middleware_composition.spectra` builds and runs through the normal CLI",
+  "the example asserts the middleware order documented as logging -> security headers -> CORS -> compression -> rate limit using successful and short-circuit responses",
+  "the example demonstrates per-route configuration of the rate limit and longest-prefix security headers",
+  "CORS and compression preserve both `Vary: Origin` and `Vary: Accept-Encoding` dimensions",
+  "`scripts/validate_r2318_middleware_composition_example.py` passes and is wired into `run_tests.ps1`"
 ]
 
 [[items]]
@@ -2888,7 +2920,7 @@ title = "WebSocket Server (RFC 6455)"
 phase = "phase_24"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2210", "R-2215"]
 summary = "Implement a WebSocket server compatible with RFC 6455: handshake, fragmented messages, ping/pong, and per-message deflate."
@@ -2896,7 +2928,10 @@ acceptance = [
   "the server completes the RFC 6455 handshake and upgrades the connection",
   "fragmented messages are reassembled and ping/pong are handled",
   "per-message deflate is supported and negotiated via the extension header",
-  "tests cover handshake, fragmented messages, ping/pong, and a 10k concurrent connections soak"
+  "tests cover handshake, fragmented messages, ping/pong, and a 10k concurrent connections soak",
+  "the typed std.api.websocket surface is wired through semantic analysis, lowering, runtime handles, and 18 registered host calls, including GET-route upgrades through std.api.server",
+  "tests/validation/343_api_websocket.spectra and scripts/validate_r2401_websocket.py pass",
+  "the HTTP-router upgrade integration and real 10k concurrent connections soak pass through the routed WebSocket server test"
 ]
 
 [[items]]
@@ -2905,7 +2940,7 @@ title = "WebSocket Client"
 phase = "phase_24"
 owner = "web"
 priority = "P0"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2401"]
 summary = "Implement a WebSocket client that performs the handshake, sends and receives text/binary frames, and supports per-message deflate."
@@ -2913,7 +2948,11 @@ acceptance = [
   "the client connects to a known external test echo server and round-trips messages",
   "the client supports text and binary frames and ping/pong",
   "reconnect with backoff is supported when configured",
-  "tests cover handshake, frame round-trip, and reconnect"
+  "tests cover handshake, frame round-trip, and reconnect",
+  "the typed std.api.websocket client surface is wired through semantic analysis, lowering, runtime handles, and registered host calls",
+  "tests/validation/344_api_websocket_client.spectra and the focused native client tests pass",
+  "wss:// TLS support is implemented and covered by a native rustls round-trip",
+  "external echo-server certification passes against wss://testserver.host/ws/no-subprotocol/echo and is reproducible with scripts/validate_r2402_websocket_client.py --require-external"
 ]
 
 [[items]]
@@ -2922,7 +2961,7 @@ title = "Server-Sent Events (SSE)"
 phase = "phase_24"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "medium"
 dependencies = ["R-2210"]
 summary = "Implement a server-sent events response type that streams events to the client, with heartbeat, last-event-id, and automatic reconnection hints."
@@ -2930,7 +2969,10 @@ acceptance = [
   "the SSE response streams events in the documented format",
   "heartbeats are emitted at the configured interval to keep the connection alive",
   "the `Last-Event-ID` header is honored for resume on the server",
-  "tests cover streaming, heartbeat, and resume"
+  "tests cover streaming, heartbeat, and resume",
+  "the typed `std.api.sse` surface is wired through semantic analysis, lowering, runtime handles, and 20 registered host calls",
+  "tests/validation/345_api_sse.spectra and scripts/validate_r2403_sse.py pass",
+  "`std.api.sse.server_response` returns a streaming response that is served by the normal routed `std.api.server` lifecycle"
 ]
 
 [[items]]
@@ -2939,7 +2981,7 @@ title = "HTTP/2 Server (h2, ALPN, HPACK)"
 phase = "phase_24"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2205", "R-2207"]
 summary = "Add HTTP/2 support to the server: ALPN negotiation, HPACK header compression, stream multiplexing, and flow control."
@@ -2947,7 +2989,9 @@ acceptance = [
   "ALPN advertises `h2` alongside `http/1.1`",
   "the server multiplexes streams on a single connection without head-of-line blocking",
   "HPACK encoding round-trips with the configured client",
-  "tests cover ALPN negotiation, multiplexing, and HPACK"
+  "tests cover ALPN negotiation, multiplexing, and HPACK",
+  "the native transport enforces HTTP/2 ALPN selection, bounded flow control, request body/header limits, and graceful shutdown",
+  "scripts/validate_r2404_http2.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]
@@ -2956,15 +3000,20 @@ title = "HTTP/2 Client"
 phase = "phase_24"
 owner = "web"
 priority = "P1"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2404", "R-2206"]
-summary = "Add HTTP/2 support to the client: connection reuse, stream prioritization, and server push reception."
+summary = "Add a bounded native HTTP/2 client with connection reuse, flow-controlled streams, TLS/ALPN, SSRF policy, and server-push reception."
 acceptance = [
   "the client connects to a known external h2 endpoint and round-trips requests",
+  "HTTPS uses rustls with explicit h2 ALPN negotiation and configurable trust roots",
   "multiple concurrent requests on a single connection are multiplexed",
+  "request and response bodies use bounded h2 flow control and configured limits",
+  "resolved addresses are checked against the default SSRF policy before connect",
   "server push is accepted and exposed through a callback",
-  "tests cover multiplexing and server push"
+  "native tests cover multiplexing, HTTPS/ALPN, flow-controlled requests, and server push",
+  "scripts/validate_r2405_http2_client.py passes and is wired into run_tests.ps1",
+  "the ignored interoperability test passes against the recorded external h2 endpoint"
 ]
 
 [[items]]
@@ -2973,14 +3022,15 @@ title = "HTTP/3 and QUIC"
 phase = "phase_24"
 owner = "web"
 priority = "P3"
-status = "not_started"
+status = "complete"
 risk = "high"
 dependencies = ["R-2404"]
-summary = "Optionally add HTTP/3 over QUIC for low-latency and connection-migration use cases."
+summary = "Record the production decision to defer HTTP/3/QUIC until a maintained implementation and cross-platform interoperability evidence are available. UPDATE (FakeToReal-17): a localhost-validated quinn+h3 transport has since landed (28 spectra.api.http3 hosts); the deferral decision is superseded-partial, productionization continues under R-2422."
 acceptance = [
   "the decision is documented: include HTTP/3 only when a stable Rust QUIC implementation is available",
-  "if implemented, the server and client negotiate HTTP/3 over QUIC and exchange a request/response",
-  "if deferred, the rationale and the re-evaluation date are documented in the ADR"
+  "HTTP/1.1 and HTTP/2 remain the stable protocol surfaces while HTTP/3 is localhost-only (productionization: R-2422)",
+  "if deferred, the rationale, entry criteria, and the 2026-11-30 re-evaluation date are documented in ADR 0014 (supersession recorded)",
+  "scripts/validate_r2406_http3_decision.py passes and is wired into run_tests.ps1"
 ]
 
 [[items]]
@@ -3189,19 +3239,22 @@ acceptance = [
 
 [[items]]
 id = "R-2419"
-title = "gRPC Server and Client (Protobuf, Async Streams)"
+title = "gRPC Server and Client (Opaque Bytes, Async Streams)"
 phase = "phase_24"
 owner = "web"
 priority = "P2"
-status = "not_started"
+status = "in_progress"
 risk = "high"
 dependencies = ["R-2107", "R-2404"]
-summary = "Add gRPC support: protobuf codec, unary, server streaming, client streaming, and bidirectional streaming over HTTP/2."
+summary = "Land the opaque-bytes gRPC transport over HTTP/2 (unary plus all streaming cardinalities, TLS option, typed rejections); `.proto` codegen to typed Spectra services remains outstanding."
 acceptance = [
-  "a `.proto` file compiles to a typed Spectra service",
-  "unary and streaming RPCs are supported on the server and the client",
+  "opaque-bytes unary and streaming RPCs work on the server and the client (done: packages/spectra-api/src/grpc.rs, 4 cardinalities)",
+  "TLS transport option exists for server bind and client connect (done: server_bind_tls, client_connect_tls)",
+  "compressed (flag-1) frames are rejected with a typed error, never misparsed (done: InvalidCompressedFlag, status 12 UNIMPLEMENTED)",
   "deadlines and cancellation are honored",
-  "tests cover each RPC style and a metadata propagation case"
+  "a `.proto` file compiles to a typed Spectra service (outstanding: prost is not wired to a codec)",
+  "tests cover each RPC style and a metadata propagation case",
+  "docs/api/std-api-grpc.md documents the transport and the codegen boundary"
 ]
 
 [[items]]
@@ -3234,6 +3287,41 @@ acceptance = [
   "`examples/api/05_openapi_swagger.spectra` builds and runs",
   "the example serves `/openapi.json` and `/docs` (Swagger UI)",
   "the example wires the generated document into the UI"
+]
+[[items]]
+id = "R-2422"
+title = "HTTP/3 Productionization (Interop, Matrix, Migration, Budget)"
+phase = "phase_24"
+owner = "web"
+priority = "P3"
+status = "not_started"
+risk = "high"
+dependencies = ["R-2406"]
+summary = "Take the localhost-validated HTTP/3-over-QUIC transport (quinn + h3, ALPN h3, 28 spectra.api.http3 hosts) to production: independent peer interop, 4-platform matrix, migration/cancellation coverage, Task/Stream mapping, and an HTTP/2-relative performance budget."
+acceptance = [
+  "HTTP/3 request/response interop fixtures pass against at least two independent peers",
+  "CI evidence covers Linux, Windows, macOS, and the BSD/kqueue path including cancellation, shutdown, flow control, and connection migration",
+  "the transport is mapped to the Phase 21 Task<T>/Stream<T> model and the spectra.api TLS, SSRF, timeout, and observability contracts",
+  "a documented resource and performance budget compares the HTTP/3 transport with the HTTP/2 implementation",
+  "docs/api/std-api-http3.md records production readiness once all of the above land"
+]
+
+[[items]]
+id = "R-2423"
+title = "GraphQL Dynamic Schema, Guards, and Subscriptions"
+phase = "phase_24"
+owner = "web"
+priority = "P2"
+status = "in_progress"
+risk = "medium"
+dependencies = ["R-2107"]
+summary = "Productize the async-graphql dynamic-schema transport: schema builder plus execute over JSON, opt-in depth/cost/introspection guards, and channel-fed push subscriptions over the existing host ABI."
+acceptance = [
+  "dynamic schema build, field resolution, and JSON execute work over the host ABI (done: packages/spectra-api/src/graphql.rs)",
+  "opt-in max_depth, max_complexity, and introspection guards are enforced at finish (done: defaults unlimited/unlimited/on)",
+  "push-backed subscriptions deliver across polls over the existing ABI (done: channel-fed PullBatches)",
+  "docs/api/std-api-graphql.md documents the builder, guards, and subscription contract",
+  "conformance fixtures cover guard rejection and multi-poll subscription delivery"
 ]
 
 [[items]]
@@ -4071,16 +4159,16 @@ title = "Networked ML Serving Runtime"
 phase = "phase_30"
 owner = "runtime"
 priority = "P0"
-status = "not_started"
+status = "in_progress"
 risk = "high"
 dependencies = ["R-2216", "R-2401", "R-2419", "R-2701"]
-summary = "Turn local `std.serve` model serving into a real networked serving runtime integrated with async I/O, observability, and `spectra.api`."
+summary = "Turn local `std.serve` model serving into a real networked serving runtime integrated with async I/O, observability, and `spectra.api`. Landed so far: embedded localhost HTTP/1.1 listener with real dense/ONNX forward-pass dispatch; outstanding: bounded concurrency, back-pressure, TLS/auth, API observability traces."
 acceptance = [
-  "model serving exposes a real HTTP or gRPC endpoint with request parsing, response serialization, lifecycle, and graceful shutdown",
-  "the endpoint dispatches to a loaded `std.ml` model/tensor artifact rather than the scalar demonstration transform",
-  "serving supports bounded concurrency, back-pressure, timeout handling, and structured errors",
-  "serving emits traces and metrics through the API observability surface",
-  "an executable fixture serves a model from a fresh process and validates inference over the network"
+  "model serving exposes a real HTTP or gRPC endpoint with request parsing, response serialization, lifecycle, and graceful shutdown (done: embedded 127.0.0.1 listener, POST /infer, GET /metrics, 404/405/503 semantics)",
+  "the endpoint dispatches to a loaded `std.ml` model/tensor artifact rather than the scalar demonstration transform (done: serve_forward_linear_f64 plus ONNX delegation)",
+  "serving supports bounded concurrency, back-pressure, timeout handling, and structured errors (outstanding: sequential connections, 5 s per-phase deadline only)",
+  "serving emits traces and metrics through the API observability surface (outstanding: local JSON snapshot only)",
+  "an executable fixture serves a model from a fresh process and validates inference over the network (done: tests/validation/355_serving_http_inference.spectra)"
 ]
 
 [[items]]
@@ -4089,15 +4177,15 @@ title = "Distributed Training Real Transport"
 phase = "phase_30"
 owner = "ml"
 priority = "P0"
-status = "not_started"
+status = "in_progress"
 risk = "high"
 dependencies = ["R-1703", "R-2107", "R-2701"]
-summary = "Replace deterministic single-process simulated workers with real multi-process or networked distributed training transport."
+summary = "Replace deterministic single-process simulated workers with real multi-process or networked distributed training transport. Landed so far: real per-worker forward/backward plus mean-ALLREDUCE over OS-thread and TCP-loopback transports with multi-process proofs; outstanding: failure/timeout/metric coverage and rendezvous docs."
 acceptance = [
-  "distributed training can launch at least two worker processes that communicate over a real transport",
-  "gradient exchange supports deterministic all-reduce or parameter-server semantics with failure reporting",
-  "dataset sharding, worker identity, retry policy, and rendezvous configuration are documented",
-  "tests cover successful training, worker failure, timeout, and metric emission"
+  "distributed training can launch at least two worker processes that communicate over a real transport (done: TCP-loopback coordinator plus OS-thread runner, two-OS-process proof in Rust)",
+  "gradient exchange supports deterministic all-reduce or parameter-server semantics with failure reporting (done: shape-checked mean ALLREDUCE; failure reporting partial: typed WorkerLost/Auth bounds)",
+  "dataset sharding, worker identity, retry policy, and rendezvous configuration are documented (outstanding: env-knob docs only)",
+  "tests cover successful training, worker failure, timeout, and metric emission (partial: success plus fault unit tests; executable fixture tests/validation/356_distributed_train_tcp.spectra covers the success path)"
 ]
 
 [[items]]
@@ -4192,6 +4280,23 @@ acceptance = [
   "the inventory distinguishes semantic modules/types/functions, registered host calls, explicit/generic/API lowering, and backend special paths",
   "every production symbol is covered by a passing declared probe or dedicated external conformance validator",
   "all remaining source divergences have owner, roadmap ID, and follow-up evidence in the report"
+]
+
+[[items]]
+id = "R-3008"
+title = "Model-Graded Answer Judge Scorer"
+phase = "phase_30"
+owner = "ml"
+priority = "P2"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3003"]
+summary = "Add a model-graded (NLI/judge-model) answer scorer alongside the token-overlap rag_evaluate_answer baseline, without changing the existing symbol or its 0..1000 scaling."
+acceptance = [
+  "a judge scorer evaluates answer correctness beyond token overlap with documented model, prompt, and calibration",
+  "rag_evaluate_answer keeps its token-overlap F1 permille contract and existing callers pass unchanged",
+  "judge verdicts are deterministic for fixed model, prompt, and seed, with disagreement-vs-overlap analysis",
+  "fixtures exercise judge scoring through CLI and runtime paths"
 ]
 
 [[phases]]
@@ -4808,4 +4913,622 @@ acceptance = [
   "baseline.json remains byte-for-byte unchanged and historical R-3131/R-3132 evidence remains preserved and explicitly historical",
   "the focused gate run_tests.ps1 -Phase phase31_r3133_async_echo executes unit tests, roadmap/report validation, evidence generation, and git diff --check",
   "R-3103 is complete; R-3104 may be in_progress or complete only after its own backend codegen and baseline gates pass"
+]
+
+[[items]]
+id = "R-207"
+title = "Struct Layout with Padding and Cumulative Offsets"
+phase = "phase_2"
+owner = "backend"
+priority = "P0"
+status = "complete"
+risk = "high"
+dependencies = []
+summary = "Fix record field layout so offsets are cumulative with alignment instead of index times field size; this fixes the Drop ACCESS_VIOLATION caused by 1-byte fields (bool/char) overlapping preceding 8-byte fields such as string pointers."
+acceptance = [
+  "a shared layout function computes cumulative field offsets with natural alignment and a total size aligned to 8 bytes, used consistently by lowering and backend (alloca and type_size_bytes)",
+  "GetElementPtr carries byte offsets; verification, inlining, DCE, and fusion passes are updated accordingly",
+  "examples/test_oop_drop.spectra executes to completion with exit 0 (no ACCESS_VIOLATION)",
+  "a tests/validation regression covers structs mixing bool/char fields after 8-byte fields with write, read, and drop execution",
+  "the existing validation suite still passes unchanged except for the fixed crash",
+  "scripts/validate_r207_struct_layout.py and run_tests.ps1 -Phase phase2_r207_struct_layout gate the item"
+]
+
+[[items]]
+id = "R-208"
+title = "Stable OOP Diagnostic Codes"
+phase = "phase_2"
+owner = "frontend"
+priority = "P1"
+status = "complete"
+risk = "low"
+dependencies = []
+summary = "Assign stable E### diagnostic codes to object-oriented error sites (method not found, trait not defined, trait method not implemented, parent trait not defined, wrong signature, multiple self, struct/field/literal errors, invalid dyn casts, self-method-called-static) so tools can key on codes instead of messages."
+acceptance = [
+  "stable codes exist for the documented OOP error sites and are emitted consistently by parser and semantic analysis",
+  "docs/diagnostics/error-code-reference.md documents every new code",
+  "existing tests/errors fixtures for OOP assert their codes via check --json",
+  "scripts/validate_r208_oop_diagnostics.py and run_tests.ps1 -Phase phase2_r208_oop_diagnostics gate the item"
+]
+
+[[items]]
+id = "R-209"
+title = "Self-First-Parameter Validation"
+phase = "phase_2"
+owner = "semantic"
+priority = "P1"
+status = "complete"
+risk = "low"
+dependencies = ["R-208"]
+summary = "Reject methods and trait signatures where a self receiver appears in any position other than the first parameter, with a stable diagnostic code."
+acceptance = [
+  "func f(x: int, self) and similar receiver misplacements are rejected with a stable semantic diagnostic code",
+  "receivers after the first parameter are rejected in inherent impls, trait declarations, and trait impls",
+  "negative regressions exist in tests/errors asserting the new code",
+  "scripts/validate_r209_self_first_parameter.py and run_tests.ps1 -Phase phase2_r209_self_first_parameter gate the item"
+]
+
+[[items]]
+id = "R-210"
+title = "Static Vtables for dyn Trait Objects"
+phase = "phase_2"
+owner = "midend"
+priority = "P2"
+status = "complete"
+risk = "high"
+dependencies = []
+summary = "Wire the dead Module.vtables/VTableDef IR infrastructure so vtables are emitted as module-level read-only data instead of per-cast stack allocations, allowing dyn trait objects to outlive the scope that created them."
+acceptance = [
+  "Module.vtables and VTableDef are constructed and consumed by lowering and backend; the dead infrastructure is either used or removed",
+  "coerce-to-dyn references a module-level vtable instead of a stack alloca",
+  "dyn values stored in records and used after the creating scope ends, and returned from functions, do not dangle",
+  "JIT and AOT codegen both support static vtables",
+  "tests/validation regression covers dyn outliving its creating scope",
+  "scripts/validate_r210_static_vtables.py and run_tests.ps1 -Phase phase2_r210_static_vtables gate the item"
+]
+
+[[items]]
+id = "R-211"
+title = "Generic Impl Blocks"
+phase = "phase_2"
+owner = "semantic"
+priority = "P1"
+status = "complete"
+risk = "medium"
+dependencies = []
+summary = "Support impl blocks with type parameters (impl Par<T>) including bounds, and module-qualified impl targets (impl module::Type), from parser through semantic binding to lowering and monomorphized method calls."
+acceptance = [
+  "parser accepts impl Par<T> (with optional bounds) and impl module::Type",
+  "semantic binds impl type parameters in method signatures and bodies; self resolves to the generic instantiation",
+  "lowering emits and resolves monomorphized methods for generic impl instantiations",
+  "parse, check, and run regressions exist in tests/validation",
+  "docs/reference/03-tipos-compostos.md documents the supported syntax",
+  "scripts/validate_r211_generic_impls.py and run_tests.ps1 -Phase phase2_r211_generic_impls gate the item"
+]
+
+[[items]]
+id = "R-212"
+title = "UFCS for User Traits"
+phase = "phase_2"
+owner = "midend"
+priority = "P2"
+status = "complete"
+risk = "medium"
+dependencies = []
+summary = "Support Trait::method(obj, args) universal function call syntax for user-defined traits on concrete and dyn types, including default trait methods, with targeted diagnostics when the trait or impl is missing."
+acceptance = [
+  "Trait::method(obj, args) resolves user traits in scope and validates signatures against the trait contract",
+  "lowering routes UFCS calls to TypeName_method for concrete types, to default-method copies, and to vtable slots for dyn types",
+  "errors are emitted for unknown traits, missing impls, and signature mismatches",
+  "tests/validation and tests/errors regressions cover concrete, dyn, and default-method UFCS",
+  "docs/reference/03-tipos-compostos.md documents UFCS",
+  "scripts/validate_r212_ufcs.py and run_tests.ps1 -Phase phase2_r212_ufcs gate the item"
+]
+
+[[items]]
+id = "R-213"
+title = "Generic Trait Impls"
+phase = "phase_2"
+owner = "midend"
+priority = "P2"
+status = "complete"
+risk = "high"
+dependencies = ["R-211"]
+summary = "Support generic traits (trait Container<T>), concrete trait impls (impl Container<int> for Type), and bounded generic trait impls (impl<T: Bound> Trait<T> for Type) with static dispatch via monomorphization and an object-safety rule for dyn of generic traits."
+acceptance = [
+  "generic traits declare type parameters usable in method signatures and bodies",
+  "impl Container<int> for Type and impl<T: Bound> Trait<T> for Type are parsed, bound, and monomorphized",
+  "calls resolve through bounds and concrete impls with static dispatch",
+  "dyn of a generic trait is rejected unless the trait type parameter is fixed, with a targeted diagnostic",
+  "tests/validation and tests/errors regressions cover the supported and rejected cases",
+  "docs/reference/03-tipos-compostos.md documents generic traits",
+  "scripts/validate_r213_generic_trait_impls.py and run_tests.ps1 -Phase phase2_r213_generic_trait_impls gate the item"
+]
+
+[[items]]
+id = "R-214"
+title = "OOP Aggregate ABI and Dynamic Fat-Pointer Safety"
+phase = "phase_2"
+owner = "backend"
+priority = "P0"
+status = "complete"
+risk = "high"
+dependencies = ["R-207", "R-210"]
+summary = "Harden scalar-width coercion, nested aggregate layout, dynamic fat pointers, and JIT/AOT field access so mixed records and dyn values preserve their ABI contract."
+acceptance = [
+  "mixed bool/char/exact-width/float records and nested records pass check and run without verifier failures or incorrect field comparisons",
+  "aggregate literals, assignments, default values, and equality coerce exact scalar values to their declared field types",
+  "MakeDynFatPtr materializes a stable data/vtable pair with manual-frame escape semantics and UFCS dyn calls forward the receiver data",
+  "tests/validation/258_oop_layout_permutations.spectra, tests/validation/260_oop_dyn_aggregate_overwrite.spectra, and tests/validation/274_exact_width_aggregate_boundary.spectra pass",
+  "scripts/validate_language_bug_hunt.py validates the JIT-facing aggregate and dyn matrix"
+]
+
+[[items]]
+id = "R-215"
+title = "Aggregate Drop Glue and Return Ownership"
+phase = "phase_2"
+owner = "midend"
+priority = "P0"
+status = "complete"
+risk = "high"
+dependencies = ["R-207", "R-210"]
+summary = "Emit recursive Drop and manual-allocation escape handling for nested aggregates, returns, implicit block values, methods, and closures without duplicate destruction."
+acceptance = [
+  "nested droppable fields are destroyed exactly once at scope exit while moved return values are excluded from the source scope",
+  "returned structs, tuples, arrays, enums, and dyn aggregates recursively escape owned manual allocations before the caller observes them",
+  "function, method, lambda, explicit return, and implicit block-expression paths share the ownership rules",
+  "tests/validation/259_oop_drop_nested_lifetimes.spectra passes three consecutive runs with all lifetime markers",
+  "scripts/validate_language_bug_hunt.py repeats the lifetime regression and checks its markers"
+]
+
+[[items]]
+id = "R-216"
+title = "Generic Aggregate and Trait Substitution"
+phase = "phase_2"
+owner = "semantic"
+priority = "P1"
+status = "complete"
+risk = "high"
+dependencies = ["R-211", "R-213"]
+summary = "Propagate concrete type arguments through multi-parameter generic records, nested fields, generic enum constructors/patterns, and UFCS trait method signatures."
+acceptance = [
+  "generic record field lookup and nested aggregate construction resolve all concrete type arguments in declaration order",
+  "generic enum unit, tuple, and named-field constructors infer the same specialized enum type as the expected parameter",
+  "UFCS and concrete trait calls substitute independent concrete arguments into parameter and return types",
+  "tests/validation/263_oop_generic_struct_multiarg.spectra, tests/validation/264_oop_generic_trait_substitution.spectra, and tests/validation/268_pattern_generic_enum_oop.spectra pass",
+  "scripts/validate_language_bug_hunt.py validates the generic substitution matrix"
+]
+
+[[items]]
+id = "R-217"
+title = "Generic Method Monomorphization Across Modules"
+phase = "phase_2"
+owner = "midend"
+priority = "P1"
+status = "complete"
+risk = "high"
+dependencies = ["R-211", "R-213"]
+summary = "Carry imported generic function and method templates into lowering and resolve concrete cross-module calls without losing specialization or return types."
+acceptance = [
+  "imported generic function templates are retained in the AST/semantic registry and registered before module lowering",
+  "cross-module generic method calls lower to concrete symbols and preserve their specialized return types",
+  "the valid multi-file project exercises generic evaluation, inherent methods, and a dyn cast through the normal CLI path",
+  "tests/projects/valid/oop_cross_module_dispatch passes check and run with the original source contract",
+  "scripts/validate_language_bug_hunt.py validates the project and promoted generic regressions"
+]
+
+[[items]]
+id = "R-218"
+title = "Inherited Trait Vtable Slots and UFCS Dispatch"
+phase = "phase_2"
+owner = "midend"
+priority = "P0"
+status = "complete"
+risk = "high"
+dependencies = ["R-210", "R-212"]
+summary = "Construct parent-first inherited trait metadata and route concrete, default, UFCS, and dyn calls through the same vtable slot ordering."
+acceptance = [
+  "inherited parent methods precede child methods in trait metadata and overrides occupy the inherited slot",
+  "default methods and explicit methods are both available through concrete and dyn receivers",
+  "UFCS calls pass the receiver data correctly for concrete and dyn values",
+  "tests/validation/261_oop_vtable_inheritance_defaults.spectra and tests/validation/262_oop_ufcs_receiver_matrix.spectra pass",
+  "scripts/validate_language_bug_hunt.py validates the inherited-vtable and UFCS matrix"
+]
+
+[[items]]
+id = "R-219"
+title = "Cross-Module Trait Registry and Qualified-Target Diagnostics"
+phase = "phase_2"
+owner = "semantic"
+priority = "P0"
+status = "complete"
+risk = "high"
+dependencies = ["R-211", "R-213", "R-218"]
+summary = "Export and import trait declarations, trait implementations, and generic templates across modules, while rejecting unresolved module-qualified inherent impl targets with stable E027 diagnostics."
+acceptance = [
+  "module exports include generic function templates, trait declarations, and trait implementation metadata needed by downstream semantic and midend passes",
+  "imported traits reconstruct method order/signatures for downstream vtable construction and imported impls participate in dyn cast validation",
+  "impl missing::Foreign is rejected with E027 and an actionable hint instead of silently compiling",
+  "tests/errors/oop_module_qualified_unknown_type.spectra asserts E027 and tests/projects/valid/oop_cross_module_dispatch passes",
+  "docs/diagnostics/error-code-reference.md documents E027 and scripts/validate_language_bug_hunt.py checks it through the JSON contract"
+]
+
+[[items]]
+id = "R-2113"
+title = "Async API Trait Objects Preserve Task Response Types"
+phase = "phase_21"
+owner = "web"
+priority = "P0"
+status = "complete"
+risk = "high"
+dependencies = ["R-2108", "R-2203"]
+summary = "Register the async API handler contracts so dynamic AsyncHandler calls lower as Task<Response> and await remains type-correct through the public API surface."
+acceptance = [
+  "AsyncHandler and related API traits expose stable Request/Response method signatures to semantic analysis and lowering",
+  "a dynamic async handler call returns Task<Response> and can be awaited without an internal Int/Task mismatch",
+  "tests/validation/273_api_handler_async_trait.spectra passes check and run through the normal CLI path",
+  "scripts/validate_language_bug_hunt.py validates the async API trait regression"
+]
+
+[[phases]]
+id = "phase_32"
+name = "Agent Platform"
+goal = "Deliver `std.agent` as a production native surface: a governed model and tool runtime with capability enforcement at the host-call dispatch point, durable journaled runs, agent evaluation, and protocol interoperability, without adding a second native package, a second attribute, or any effect annotation."
+
+[[items]]
+id = "R-3201"
+title = "ADR and Invariants for Agent Governance"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "medium"
+dependencies = []
+summary = "Fix the architecture before code: single dispatch hook, fast-path exclusion, denial channel, run context and catalog-driven surface."
+acceptance = [
+  "Three ADRs exist, are Accepted, and each records rationale plus consequence.",
+  "The fast-path invariant test exists and fails when a fast host call is temporarily reclassified into an effect namespace.",
+  "scripts/validate_r3201_agent_platform_adr.py checks the ADRs, the invariant test, and the phase_32 registration in roadmap.toml.",
+]
+
+[[items]]
+id = "R-3202"
+title = "spectralang surface --json"
+phase = "phase_32"
+owner = "tooling"
+priority = "P0"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3201"]
+summary = "Emit the project and builtin public surface as machine-readable JSON with a token budget."
+acceptance = [
+  "surface --json on a real project lists every public module, function and type with stable ordering.",
+  "Output is byte-identical across runs; --tokens trims deterministically and reports what was trimmed.",
+  "Unknown module or missing project root fails with exit 64/65 and a JSON diagnostic, not a panic.",
+  "scripts/validate_r3202_surface_json.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3203"
+title = "spectralang impact --json"
+phase = "phase_32"
+owner = "tooling"
+priority = "P1"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3201"]
+summary = "Answer 'what breaks if I change this symbol' from the call graph, not from text search."
+acceptance = [
+  "impact --json returns the full caller set for a changed function, including cross-module callers.",
+  "Field-level impact returns the functions that read or construct the type.",
+  "Unresolved dynamic sites are reported, not silently omitted.",
+  "scripts/validate_r3203_impact_json.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3204"
+title = "Diagnostics with Repair Information"
+phase = "phase_32"
+owner = "frontend"
+priority = "P1"
+status = "not_started"
+risk = "medium"
+dependencies = []
+summary = "Add expected, actual and fix to the JSON diagnostic contract and expose explain --json."
+acceptance = [
+  "check --json on a type mismatch emits expected, actual and fix.",
+  "explain --json returns the documented description for every code in the reference file.",
+  "SARIF output remains schema-valid with and without fixes.",
+  "scripts/validate_r3204_diagnostics_repair.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3205"
+title = "Version-Matched Language Reference from the CLI"
+phase = "phase_32"
+owner = "tooling"
+priority = "P2"
+status = "not_started"
+risk = "low"
+dependencies = []
+summary = "spectralang docs --json serves the reference of the installed binary, not of the repository."
+acceptance = [
+  "docs --json reports the version and hash of the embedded reference.",
+  "--section returns a strict subset of the full output.",
+  "Changing the reference file changes the reported hash after rebuild.",
+  "scripts/validate_r3205_embedded_docs.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3206"
+title = "Extended Contract Catalog Schema"
+phase = "phase_32"
+owner = "ecosystem"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3201"]
+summary = "Add the fields the catalog needs to generate the midend lowering tables and the Rust host-call table."
+acceptance = [
+  "Catalog parses with the extended schema; existing entries gained the new fields with no semantic change.",
+  "The auditor rejects a function entry missing ir_return, returns_value or rust_symbol.",
+  "scripts/validate_r3206_catalog_schema.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3207"
+title = "Generate Midend Lowering Tables from the Catalog"
+phase = "phase_32"
+owner = "midend"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3206"]
+summary = "Replace the hand-written lowering tables with checked-in generated files plus a staleness check."
+acceptance = [
+  "The seven lowering files are generated; a manual edit makes --check fail.",
+  "All existing contract_drift tests pass unchanged.",
+  "Full validation suite unchanged: no fixture regresses.",
+  "scripts/validate_r3207_lowering_generation.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3208"
+title = "Generate HOST_CALLS and Remove the Manual Count"
+phase = "phase_32"
+owner = "web"
+priority = "P1"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3206"]
+summary = "Generate the Rust host-call table from the catalog and derive its size instead of hardcoding it."
+acceptance = [
+  "The host-call table is generated; the count assertion is computed.",
+  "spectra_api_host_call_count() matches HOST_CALLS.len() in both feature configurations.",
+  "validate_r2202_spectra_api_hostcalls.py still passes.",
+  "scripts/validate_r3208_hostcall_generation.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3209"
+title = "std.agent Namespace and packages/spectra-agent Crate"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3207", "R-3208"]
+summary = "Land the namespace and the crate with exactly one function, proving every layer end to end before scaling."
+acceptance = [
+  "`import std.agent` resolves, token_count type-checks, lowers, and returns the same value in JIT and AOT.",
+  "Adding a second function afterwards requires the documented three-edit path, evidenced in the PR description.",
+  "Contract catalog, snapshot and probe are consistent; validate_r3007 passes with --require-catalog.",
+  "scripts/validate_r3209_agent_namespace.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3210"
+title = "agent_tool Attribute and Derived JSON Schema"
+phase = "phase_32"
+owner = "semantic"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3209"]
+summary = "One function attribute that turns a public function into a model-callable tool, with name, schema, effects and capabilities derived."
+acceptance = [
+  "A public async function with the attribute appears in surface --json with derived name, input_schema, effects and capabilities.",
+  "Each rejection case produces a stable code and a hint; fixtures exist under tests/errors/.",
+  "fmt is idempotent on attributed functions; LSP does not flag the attribute.",
+  "scripts/validate_r3210_agent_tool.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3211"
+title = "Model Gateway, Run and Provider Abstraction"
+phase = "phase_32"
+owner = "web"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3209"]
+summary = "AgentSpec, Run, ask, ask_stream, ask_json, embed, agent_start and agent_end over the existing HTTP client."
+acceptance = [
+  "An agent that calls ask twice and ends cleanly reports tokens and cost consistent with the mock provider.",
+  "ask_json rejects a schema-violating response with a typed error even when the provider claims compliance.",
+  "Run lifecycle misuse (double end, use after end, unknown run) returns typed errors.",
+  "scripts/validate_r3211_model_gateway.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3212"
+title = "Agent Memory over std.ml"
+phase = "phase_32"
+owner = "ml"
+priority = "P1"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3211"]
+summary = "remember and recall as a thin, provenance-carrying layer over the existing vector index and RAG toolkit."
+acceptance = [
+  "Memory survives persist and load across processes.",
+  "Recall returns identical ordering for identical inputs.",
+  "Every recalled entry can report its origin and the run that wrote it.",
+  "scripts/validate_r3212_agent_memory.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3213"
+title = "Run Context and Propagation"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3209"]
+summary = "An active-run context that the runtime can consult on every dispatch, with explicit propagation and fail-closed behavior for detached work."
+acceptance = [
+  "A tool invoked by a run sees the run; a host call inside it is attributable to that run.",
+  "Work spawned by a run carries the context; detached work does not and is rejected without a grant.",
+  "No ABI change: the repr(C) call context is untouched.",
+  "scripts/validate_r3213_run_context.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3214"
+title = "Capability Enforcement at the Dispatch Point"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3213", "R-3206"]
+summary = "One policy decision, applied at every generic dispatch entrypoint, with a dedicated denial path and no fast-path hole."
+acceptance = [
+  "A host call outside the grant fails, through all four generic entrypoints, including the cached and batch paths.",
+  "The fast-path invariant test from R-3201 still passes and would fail if a fast call were effect-bearing.",
+  "authorize() reports the same decision the dispatch enforces.",
+  "Programs without an active run behave exactly as before.",
+  "scripts/validate_r3214_capability_enforcement.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3215"
+title = "Capability Vocabulary Validated by the Compiler"
+phase = "phase_32"
+owner = "semantic"
+priority = "P0"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3214", "R-3206"]
+summary = "Capability strings are validated against the registered host-call namespaces, with did-you-mean, instead of being free-form strings."
+acceptance = [
+  "An unknown capability fails compilation with a near-match suggestion.",
+  "A scoped capability on a host call without an extractor fails with its own code.",
+  "The generated capability reference matches the catalog.",
+  "scripts/validate_r3215_capability_vocabulary.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3216"
+title = "Budget, Accounting and Cooperative Cancellation"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3213"]
+summary = "Hard ceilings on tokens, cost, wall time and tool calls, enforced by cancelling the run."
+acceptance = [
+  "No run exceeds a declared ceiling; the report states which ceiling was hit.",
+  "Cancellation propagates to in-flight model calls and tool executions.",
+  "Accounting matches the mock provider's reported usage exactly.",
+  "scripts/validate_r3216_agent_budget.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3217"
+title = "Journal, Replay, Approval and Tracing"
+phase = "phase_32"
+owner = "runtime"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3213", "R-3211"]
+summary = "Every side effect recorded once, replayable without repeating effects, with human approval and OpenTelemetry GenAI spans."
+acceptance = [
+  "Killing the process mid-run and resuming completes the run without duplicating any effect, proven by a counting test server.",
+  "A replayed run produces identical tool ordering and outputs.",
+  "Approval decisions survive replay and are attributed.",
+  "Spans validate against the pinned conventions version; content is absent unless opted in.",
+  "scripts/validate_r3217_agent_journal.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3218"
+title = "std.agent.mcp Client and Server"
+phase = "phase_32"
+owner = "web"
+priority = "P1"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3211", "R-3214"]
+summary = "Consume and expose Model Context Protocol tools over HTTP transport, with untrusted-description handling."
+acceptance = [
+  "A Spectra agent calls a remote MCP tool through the governed dispatch path and the journal records it.",
+  "A Spectra project exposes its tools over MCP and a third-party client can call them.",
+  "Untrusted descriptions never influence control flow: covered by a fixture that feeds a hostile description.",
+  "scripts/validate_r3218_mcp.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3219"
+title = "std.agent.protocol: A2A and ACP Exposure"
+phase = "phase_32"
+owner = "web"
+priority = "P2"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3217", "R-3218"]
+summary = "Expose a Spectra agent as an A2A server and as an ACP agent, reusing the approval primitive for permission requests."
+acceptance = [
+  "A remote A2A client can delegate a task and observe completion or failure with a stable reason.",
+  "ACP permission denial aborts the action and is journaled.",
+  "Neither adapter bypasses the capability dispatch path.",
+  "scripts/validate_r3219_agent_protocols.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3220"
+title = "Evaluation Harness and spectralang agent eval"
+phase = "phase_32"
+owner = "tooling"
+priority = "P0"
+status = "not_started"
+risk = "medium"
+dependencies = ["R-3217", "R-3203"]
+summary = "Agent behavior measured as regression, with deterministic graders, judge graders and pass@k."
+acceptance = [
+  "agent eval runs a suite, reports pass@1 and pass^k, and fails the build on regression against the recorded baseline.",
+  "Judge-based grading is opt-in and never runs in the default CI path.",
+  "Governance assertions are covered by deterministic tests, not by evals.",
+  "scripts/validate_r3220_agent_eval.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3221"
+title = "Agent Platform Integration, Conformance and Release"
+phase = "phase_32"
+owner = "ecosystem"
+priority = "P0"
+status = "not_started"
+risk = "high"
+dependencies = ["R-3210", "R-3211", "R-3212", "R-3214", "R-3215", "R-3216", "R-3217", "R-3218", "R-3219", "R-3220"]
+summary = "Prove the platform works with the rest of the language, document it, publish it and gate the release."
+acceptance = [
+  "The package is publishable to the local registry and consumable by another project through the normal package flow.",
+  "Formatter, LSP, lint and REPL handle the new attribute and namespace without special cases.",
+  "Conformance suite passes and its report is required by the release gate.",
+  "The integrated project runs in JIT and AOT, including interruption and resume.",
+  "scripts/validate_r3221_agent_package.py, scripts/validate_r3221_agent_conformance.py and scripts/validate_r3221_integrated_agent_service.py pass and are registered in run_tests.ps1.",
 ]

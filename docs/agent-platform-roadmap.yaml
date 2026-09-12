@@ -1,0 +1,1523 @@
+schema: spectralang.agent-platform-roadmap.v1
+version: 1
+updated_at: "2026-09-11"
+roadmap_phase: phase_32
+roadmap_phase_name: "Agent Platform"
+status_scale: [not_started, in_progress, blocked, complete]
+priority_scale: [P0, P1, P2, P3]
+risk_scale: [low, medium, high]
+
+purpose: |
+  Executable engineering roadmap for `std.agent`, the native agent-first surface of
+  SpectraLang: model calls, tools, memory, capability governance, durability, evals and
+  agent protocols. Every item reflects the code as it exists today and names the exact
+  files to change. This file is the detailed specification; `roadmap/roadmap.toml` and
+  `docs/roadmap-backlog.md` carry the same items in their canonical formats.
+
+production_definition: |
+  An item is complete only when the feature runs through the normal CLI path (JIT and
+  `--emit-exe` where runtime behavior is involved), has checked-in validation evidence,
+  is documented, and does not regress the existing stdlib contract gates. Partial work
+  stays `in_progress` with the remaining criteria visible.
+
+# ---------------------------------------------------------------------------
+# CONTEXT — verified state of the repository at roadmap authoring time
+# ---------------------------------------------------------------------------
+
+context:
+
+  verified_state:
+    - claim: "Every external effect goes through a named host call"
+      evidence: "runtime/src/ffi_host_registry.rs:226 (register_host_function), runtime/src/ffi_lifecycle.rs:280 (spectra_rt_host_invoke)"
+    - claim: "The language has no FFI, no extern declaration and no subprocess"
+      evidence: "compiler/src/token.rs:5 (Keyword enum); packages/spectra-api/src/bindings/http.spectra:50-52 states native declarations live in the compiler until package-level extern syntax exists"
+    - claim: "The IR carries the host call name for every external effect"
+      evidence: "midend/src/ir.rs:276-280 (InstructionKind::HostCall)"
+    - claim: "Host calls are classified fast vs generic at compile time, and the fast path bypasses the registry"
+      evidence: "runtime/src/abi.rs:439-501 (FastHostCall::ALL, 28 entries), runtime/src/abi.rs:624-629 (resolve_host_call), backend/src/codegen_instruction_host.rs:24"
+    - claim: "Generic dispatch runs through four entrypoints with catch_unwind boundaries"
+      evidence: "runtime/src/ffi_lifecycle.rs:280, :344, :311, :387; runtime/src/ffi_host_registry.rs:162-208"
+    - claim: "SpectraHostCallContext has 5 fields and no run, capability, taint or error channel"
+      evidence: "runtime/src/ffi_core.rs:327-340"
+    - claim: "Host call failure is fatal: any non-zero status becomes spectra_rt_panic and exit 101"
+      evidence: "backend/src/codegen_instruction_host.rs:615-653; runtime/src/panic.rs:63-68"
+    - claim: "Only four host status codes exist"
+      evidence: "runtime/src/ffi_core.rs:320-323"
+    - claim: "Structured recoverable errors already exist as a value shape"
+      evidence: "runtime/src/stdlib/error.rs:20-25 (6-word layout), runtime/src/stdlib/error.rs:52-81 (alloc_error), runtime/src/stdlib/fs.rs:50-83 (failure construction pattern)"
+    - claim: "The only thread-local execution context is the tracing stack, with an explicit propagation helper"
+      evidence: "runtime/src/tracing/mod.rs:197-200, :492-494"
+    - claim: "Generic handle infrastructure is generational and already carries 109 kinds"
+      evidence: "runtime/src/handles/mod.rs:13-124, :336-490"
+    - claim: "Async, Task, Stream, reactor, cancellation and a worker pool exist and are used by std.api"
+      evidence: "midend/src/lowering_async.rs:17-83, runtime/src/stdlib/registration.rs:865-955, runtime/src/reactor/mod.rs:550-553"
+    - claim: "Embeddings, vector index, RAG and local generation already exist and are validated"
+      evidence: "runtime/src/stdlib/registration.rs:802-806, :1028-1066; scripts/validate_r1803_rag_toolkit.py"
+    - claim: "HTTP client with TLS, pooling and SSRF policy exists in the api package"
+      evidence: "packages/spectra-api/src/client_core.rs:454, packages/spectra-api/src/lib.rs:23-58"
+    - claim: "Compiler builtin tables are the source of truth; the contract catalog is generated from them"
+      evidence: "compiler/src/bin/dump_stdlib_contract.rs:11-24, scripts/generate_stdlib_catalog.py:1-10"
+    - claim: "Attributes on functions are parsed and stored but never validated"
+      evidence: "compiler/src/ast/mod.rs:222, compiler/src/semantic/semantic_module_analysis.rs:253 (_ => {}), tools/spectra-cli/src/cli_package.rs:182-197"
+    - claim: "Unknown attributes are rejected only on records and enums"
+      evidence: "compiler/src/semantic/semantic_json.rs:57-64"
+    - claim: "The JSON derive already produces to_json/from_json with field options"
+      evidence: "compiler/src/semantic/semantic_json.rs:138, :244; midend/src/lowering_json_derive.rs:67-122; tests/validation/363_json_derive_exact_bytes.spectra"
+    - claim: "A JSON snapshot of the builtin surface already exists"
+      evidence: "compiler/src/semantic/builtin_contract.rs:15-19, :154-232; compiler/src/bin/dump_stdlib_contract.rs:11-24"
+    - claim: "The project ModuleRegistry is not reachable after semantic analysis"
+      evidence: "compiler/src/pipeline.rs:113-120, :134"
+    - claim: "A direct-call graph already exists inside the inlining pass"
+      evidence: "midend/src/passes/function_inlining.rs:33, :76-77"
+    - claim: "JSON diagnostics carry severity, code, message, phase, hint, range and related only"
+      evidence: "tools/spectra-cli/src/cli_diagnostics.rs:394-437"
+    - claim: "One native package is linked today, through a single C symbol"
+      evidence: "tools/spectra-cli/src/runtime_lib.rs:41, :69-72, :151-152; backend/src/aot.rs:764-775; packages/spectra-api/src/api_registration.rs:14"
+    - claim: "Linking two staticlibs duplicates Rust symbols, so a second native package is not free"
+      evidence: "tools/spectra-cli/src/linker.rs:288-289"
+    - claim: "stdlib_contract.toml requires a probe per production namespace"
+      evidence: "scripts/stdlib_contract.toml:51-192; scripts/validate_r3007_stdlib_contract.py:353-497, :572-716"
+    - claim: "Four hand-maintained copies of the native surface are held together by tests"
+      evidence: "packages/spectra-api/tests/contract_drift.rs:23-45, :75-110, :114-142, :166-215"
+    - claim: "Highest existing roadmap id is R-3133 and highest phase is phase_31"
+      evidence: "roadmap/roadmap.toml"
+    - claim: "Highest validation fixture number is 363"
+      evidence: "tests/validation/"
+
+  hard_constraints:
+    - "No second staticlib and no second C registration symbol in this workstream. `spectra.agent` ships as an rlib aggregated by the existing `spectra-api` registration path."
+    - "No new attribute beyond `#[agent_tool]`. A second attribute means the design is wrong."
+    - "No effect annotations. Effects are derived from the IR."
+    - "No serde in `midend` or `backend`. JSON is assembled in the CLI, which already depends on serde_json."
+    - "Capability policy lives only in the generic dispatch path. The fast path stays out of scope, guarded by an invariant test."
+    - "Existing programs must keep working unchanged. Enforcement applies only while a run is active."
+    - "Comments in English. Every item ships a `scripts/validate_r32NN_*.py` validator registered in `run_tests.ps1`."
+
+  ownership_note: |
+    Items are assigned to existing owner groups. The `web` group owns the model gateway
+    and protocol adapters because they sit on `std.api`. A dedicated `agents` owner group
+    can be introduced later, following the precedent of `web` and `db`, if this workstream
+    grows beyond phase 32; introducing it now would require an AGENTS.md ownership change
+    that is out of scope for this roadmap.
+
+  decisions:
+    - id: D1
+      decision: "`spectra.agent` is an rlib crate `packages/spectra-agent`, depended on by `packages/spectra-api`, registered by the existing `spectra_api::register()`."
+      rationale: "Each staticlib embeds spectra-runtime (tools/spectra-cli/src/linker.rs:288-289) and only one C symbol exists (packages/spectra-api/src/api_registration.rs:14). A second staticlib would require generalizing find_api_lib, is_api_archive_name, validate_api_required_symbols, link_executable_many, AotOptions and the AOT shim, with symbol duplication risk."
+      consequence: "No change to linker.rs, runtime_lib.rs, aot.rs, compiler_integration_core.rs:548-549 or cli_bench.rs:3-4."
+    - id: D2
+      decision: "Capability enforcement applies to the generic dispatch path only."
+      rationale: "The 28 FastHostCall entries are concurrent/string/map/tensor/ml operations with no external effect, and several return raw values rather than a status, so they cannot report denial."
+      consequence: "An invariant test must fail if any fast host call ever falls under an effect-bearing namespace."
+    - id: D3
+      decision: "Policy is evaluated by a single extracted function `dispatch_generic(name, func_ptr, args, arg_len, results, result_len) -> i32`."
+      rationale: "invoke_host_function receives only a function pointer (runtime/src/ffi_host_registry.rs:162-186); the cached path never consults the registry on a hit (runtime/src/ffi_host_registry.rs:78-101)."
+      consequence: "Policy runs on cache hit and on every batch item."
+    - id: D4
+      decision: "Denial is `HOST_STATUS_DENIED` plus a dedicated runtime symbol for the fatal path, and `authorize()` for callers that want to handle it."
+      rationale: "The lowering turns any non-zero status into a fatal trap (backend/src/codegen_instruction_host.rs:615-653) and there is no typed error channel; recoverable errors already work as values (runtime/src/stdlib/fs.rs:50-83)."
+      consequence: "Two paths, one enforcement decision, no silent partial handling."
+    - id: D5
+      decision: "Active run is a stacking thread-local mirroring the tracing context, propagated explicitly to worker threads."
+      rationale: "No ABI change to the repr(C) call context; precedent exists at runtime/src/tracing/mod.rs:197-200 and :492-494."
+      consequence: "Detached work started inside a run requires its own capability, converting a propagation gap into a fail-closed default."
+    - id: D6
+      decision: "One new attribute: `#[agent_tool(\"description\")]`. JSON Schema comes from the existing Serialize derive."
+      rationale: "Attributes on functions have no validation path today, so the first one is expensive and must be the last."
+      consequence: "Tool name, input schema, effects and required capabilities are all derived."
+    - id: D7
+      decision: "`surface`, `impact`, `explain` and `docs` are CLI commands."
+      rationale: "The midend and backend do not depend on serde; the ModuleRegistry is a private field of CompilationPipeline."
+      consequence: "The compiler gains one accessor and one serializable snapshot; no new dependency anywhere."
+    - id: D8
+      decision: "The contract catalog gains the fields needed to generate the midend lowering tables and the Rust host-call table."
+      rationale: "The catalog already carries effects, abi, error_model, maturity, owner, docs and fixture, and the generator already parses lowering sources with regex (scripts/validate_r3007_stdlib_contract.py:248-268)."
+      consequence: "Migration must be extract, regenerate, diff-empty before the manual tables are deleted."
+
+  invariants:
+    - id: I1
+      statement: "No host call that touches the outside world is in the fast path."
+      pinned_by: "Completeness test next to runtime/src/abi.rs:666-678, asserting that no name in FastHostCall::ALL matches the effect namespaces (std.api.*, std.fs.*, std.agent.*)."
+    - id: I2
+      statement: "Every effect executed inside a run was authorized by that run's capability set."
+      pinned_by: "Negative fixture: a tool attempting an effect absent from `allow` fails, including through the cached and batch dispatch paths."
+    - id: I3
+      statement: "No effect is executed twice across a journal replay."
+      pinned_by: "Interrupt-and-resume fixture with a counting test server."
+    - id: I4
+      statement: "Adding a native function does not require editing the same surface in four places."
+      pinned_by: "Generator `--check` modes failing on stale files plus contract_drift tests."
+    - id: I5
+      statement: "A program without an active run behaves exactly as before this workstream."
+      pinned_by: "Existing validation suite unchanged plus a dedicated regression fixture."
+    - id: I6
+      statement: "Tool metadata exposed to a model is derived, never hand-declared, except the description string."
+      pinned_by: "surface --json comparing derived fields against the compiler view of the same function."
+
+  out_of_scope:
+    - "Effect rows in the type system."
+    - "`extern` native declarations in packages."
+    - "Macros or a general attribute system beyond `#[agent_tool]`."
+    - "Subprocess execution and MCP over stdio."
+    - "Compiler changes that alter existing language semantics."
+    - "A general agent framework API beyond the 13 functions of the surface."
+
+# ---------------------------------------------------------------------------
+# SEQUENCING
+# ---------------------------------------------------------------------------
+
+waves:
+  - id: W0
+    goal: "Decisions and surface legibility; nothing depends on the library design yet."
+    items: [R-3201, R-3202, R-3203, R-3204, R-3205]
+    parallel_safe: true
+  - id: W1
+    goal: "Single source of truth for the native surface, so every later module costs three edits instead of ten."
+    items: [R-3206, R-3207, R-3208]
+    parallel_safe: [R-3207, R-3208]
+  - id: W2
+    goal: "Namespace, crate and the first end-to-end function through all layers."
+    items: [R-3209]
+    parallel_safe: false
+  - id: W3
+    goal: "Core library surface."
+    items: [R-3210, R-3211, R-3212]
+    parallel_safe: true
+  - id: W4
+    goal: "Governance: run context, enforcement, policy vocabulary, budget, durability."
+    items: [R-3213, R-3214, R-3215, R-3216, R-3217]
+    parallel_safe: [R-3216, R-3217]
+  - id: W5
+    goal: "Interoperability, evaluation and production certification."
+    items: [R-3218, R-3219, R-3220, R-3221]
+    parallel_safe: [R-3218, R-3219, R-3220]
+
+# ---------------------------------------------------------------------------
+# ITEMS
+# ---------------------------------------------------------------------------
+
+items:
+
+  # =========================== W0 — Surface ================================
+
+  - id: R-3201
+    title: "ADR and Invariants for Agent Governance"
+    owner: runtime
+    priority: P0
+    risk: medium
+    status: not_started
+    dependencies: []
+    wave: W0
+    summary: "Fix the architecture before code: single dispatch hook, fast-path exclusion, denial channel, run context and catalog-driven surface."
+    production_intent: "Prevent the two failure modes that would be expensive later: a policy that can be bypassed, and a surface that must be edited in four places."
+    tasks:
+      - id: R-3201-T1
+        title: "Write ADR 0016: capability enforcement model"
+        files:
+          - path: docs/adr/0016-agent-capability-enforcement.md
+            action: create
+        steps:
+          - "Record D2, D3, D4 and D5 with the exact dispatch entrypoints (ffi_lifecycle.rs:280, :311, :344, :387) and the extracted dispatch_generic signature."
+          - "State the fast-path exclusion and its completeness test explicitly, including why fast calls cannot report denial."
+          - "Define the denial contract: HOST_STATUS_DENIED, the runtime symbol, the structured message format, and the authorize() pre-check."
+          - "Define semantics for nested runs and for detached work inside a run."
+        evidence:
+          - "docs/adr/0016-agent-capability-enforcement.md exists with Status: Accepted"
+      - id: R-3201-T2
+        title: "Write ADR 0017: agent surface ownership and catalog-driven generation"
+        files:
+          - path: docs/adr/0017-agent-surface-generation.md
+            action: create
+        steps:
+          - "Record D1 (rlib aggregation, one staticlib, one C symbol) with the linker rationale."
+          - "Record D8 and the three-step migration: extract, regenerate, diff-empty, then delete manual tables."
+          - "List the catalog fields to be added: params, returns, ir_return, returns_value, rust_symbol, cfg_feature."
+          - "Record that std.agent is a `std` package namespace owned by the `runtime` group, mirroring ADR 0011 for std.api."
+        evidence:
+          - "docs/adr/0017-agent-surface-generation.md exists with Status: Accepted"
+      - id: R-3201-T3
+        title: "Write ADR 0018: run, journal and evaluation contract"
+        files:
+          - path: docs/adr/0018-agent-run-contract.md
+            action: create
+        steps:
+          - "Define Run as a handle (new HandleKind entries) with lifecycle, budget and journal identity."
+          - "Define the journal record shape and the replay algorithm, including idempotency keys and approval caching."
+          - "Define the span mapping to the OpenTelemetry GenAI conventions and pin the schema version."
+          - "Define what an eval is allowed to assert versus what a deterministic test must cover."
+        evidence:
+          - "docs/adr/0018-agent-run-contract.md exists with Status: Accepted"
+      - id: R-3201-T4
+        title: "Land the fast-path invariant test"
+        files:
+          - path: runtime/src/abi.rs
+            action: extend "add effect-namespace assertion near the existing completeness test at :666-678"
+          - path: runtime/src/ffi_tests.rs
+            action: extend "add the fixture that walks FastHostCall::ALL"
+        steps:
+          - "Classify every FastHostCall name against the effect namespace list; fail on any match."
+          - "Fail if a new FastHostCall variant is added without classification (exhaustive match over FastHostCall)."
+        evidence:
+          - "cargo test -p spectra-runtime fast_host_call_effect_namespace"
+    acceptance:
+      - "Three ADRs exist, are Accepted, and each records rationale plus consequence."
+      - "The fast-path invariant test exists and fails when a fast host call is temporarily reclassified into an effect namespace."
+      - "scripts/validate_r3201_agent_platform_adr.py checks the ADRs, the invariant test, and the phase_32 registration in roadmap.toml."
+    validation: "python scripts/validate_r3201_agent_platform_adr.py"
+    integration: "Registered in run_tests.ps1; roadmap.toml phase_32 and items present."
+
+  - id: R-3202
+    title: "spectralang surface --json"
+    owner: tooling
+    priority: P0
+    risk: medium
+    status: not_started
+    dependencies: [R-3201]
+    wave: W0
+    summary: "Emit the project and builtin public surface as machine-readable JSON with a token budget."
+    production_intent: "A coding agent must answer 'what does this project expose' in one call instead of reading every file, and must be able to fit the answer into a context window."
+    tasks:
+      - id: R-3202-T1
+        title: "Expose the project module registry"
+        files:
+          - path: compiler/src/pipeline.rs
+            action: extend "add pub fn registry(&self) -> Arc<RwLock<ModuleRegistry>>; include the snapshot in CompilationResult at :113-120"
+          - path: compiler/src/semantic/module_registry.rs
+            action: reuse "ModuleExports, ExportedFunction, ExportedType, iter_modules"
+        steps:
+          - "Return the registry by Arc clone, not by move, so the pipeline stays reusable."
+          - "Do not change analyze_module signatures; the CLI reads the registry after compilation."
+        evidence:
+          - "cargo test -p spectra-compiler"
+      - id: R-3202-T2
+        title: "Build the serializable surface snapshot"
+        files:
+          - path: compiler/src/semantic/surface.rs
+            action: create "SurfaceSnapshot, SurfaceModule, SurfaceFunction, SurfaceType with serde::Serialize"
+          - path: compiler/src/semantic/builtin_contract.rs
+            action: reuse "BuiltinContractSymbol shape at :15-19 and builtin_contract_symbols at :154-232"
+        steps:
+          - "Mirror the existing builtin snapshot shape so `surface` is one format for stdlib and project alike."
+          - "Include for each function: path, signature, module, effects (from the host call names reachable in the body), and required capabilities."
+          - "Leave effects and capabilities nullable in this item; R-3214 and R-3215 fill them."
+        evidence:
+          - "cargo test -p spectra-compiler surface_snapshot"
+      - id: R-3202-T3
+        title: "Add the CLI command"
+        files:
+          - path: tools/spectra-cli/src/cli_surface.rs
+            action: create
+          - path: tools/spectra-cli/src/cli_parse_core.rs
+            action: extend "dispatch arm near :103-113 and route in execute_action at :30"
+          - path: tools/spectra-cli/src/cli_parse_options.rs
+            action: extend "parser in the style of parse_release_info_invocation at :468-499"
+          - path: tools/spectra-cli/src/main.rs
+            action: extend "options struct, CliAction variant, include! at :252-263"
+        steps:
+          - "Flags: --json, --tokens N, --package NAME, --include-builtins."
+          - "Trimming order under a token budget: drop doc fields, then non-exported types, then private members; never drop a type referenced by an included function."
+          - "Exit codes follow the existing contract: 0 success, 65 compile failure, 64 usage, 74 IO."
+        evidence:
+          - "spectralang surface --json tests/projects/valid/integrated_api_platform"
+      - id: R-3202-T4
+        title: "Token-budget determinism"
+        files:
+          - path: tools/spectra-cli/src/cli_surface.rs
+            action: extend
+        steps:
+          - "Ordering must be stable (module path, then symbol path) so two runs produce byte-identical output."
+          - "Report the applied trim in a `trimmed` field so a caller can tell that the payload is partial."
+        evidence:
+          - "Two consecutive runs produce identical bytes; a fixture with --tokens forces trimming and reports it"
+    acceptance:
+      - "surface --json on a real project lists every public module, function and type with stable ordering."
+      - "Output is byte-identical across runs; --tokens trims deterministically and reports what was trimmed."
+      - "Unknown module or missing project root fails with exit 64/65 and a JSON diagnostic, not a panic."
+      - "scripts/validate_r3202_surface_json.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3202_surface_json.py"
+
+  - id: R-3203
+    title: "spectralang impact --json"
+    owner: tooling
+    priority: P1
+    risk: medium
+    status: not_started
+    dependencies: [R-3201]
+    wave: W0
+    summary: "Answer 'what breaks if I change this symbol' from the call graph, not from text search."
+    production_intent: "Impact analysis is the single most valuable signal for a coding agent editing an unfamiliar project, and text search systematically misses indirect callers."
+    tasks:
+      - id: R-3203-T1
+        title: "Promote the call graph out of the inlining pass"
+        files:
+          - path: midend/src/passes/function_inlining.rs
+            action: extract "collect_direct_calls at :33, :76-77 into a shared module"
+          - path: midend/src/callgraph.rs
+            action: create
+            detail: 'public API: pub fn direct_calls(module: &IRModule) -> HashMap<String, HashSet<String>>'
+        steps:
+          - "Keep the existing pass behavior identical; the pass must call the shared function."
+          - "Expose only the query the CLI needs; do not expose the pass internals."
+        evidence:
+          - "cargo test -p spectra-midend"
+      - id: R-3203-T2
+        title: "Reverse index: symbol to callers, fields to functions"
+        files:
+          - path: midend/src/callgraph.rs
+            action: extend "reverse_callers, field_readers, field_writers"
+        steps:
+          - "Type members: map field access and struct literal construction to the functions that touch them."
+          - "Record dynamic dispatch as a separate bucket rather than guessing targets."
+        evidence:
+          - "cargo test -p spectra-midend impact_reverse_index"
+      - id: R-3203-T3
+        title: "CLI command and output contract"
+        files:
+          - path: tools/spectra-cli/src/cli_impact.rs
+            action: create
+          - path: tools/spectra-cli/src/cli_parse_core.rs
+            action: extend "dispatch and routing"
+          - path: tools/spectra-cli/src/main.rs
+            action: extend "options struct, CliAction variant, include!"
+        steps:
+          - "Accept a symbol path of the form Module::function or Type.field."
+          - "Output fields: symbol, affected_functions, affected_types, affected_schemas, dynamic_dispatch, fixtures, eval_cases."
+          - "fixtures come from the contract catalog; eval_cases from the eval directory when it exists."
+        evidence:
+          - "spectralang impact --json Cobranca.amount on a fixture project"
+      - id: R-3203-T4
+        title: "Honesty about coverage"
+        files:
+          - path: tools/spectra-cli/src/cli_impact.rs
+            action: extend
+        steps:
+          - "When the graph cannot resolve a call (dyn dispatch, imported generic template), set dynamic_dispatch true and list the unresolved sites."
+          - "Never report an empty affected list as complete when dynamic_dispatch is true."
+        evidence:
+          - "Fixture with a dyn call reports dynamic_dispatch true and names the site"
+    acceptance:
+      - "impact --json returns the full caller set for a changed function, including cross-module callers."
+      - "Field-level impact returns the functions that read or construct the type."
+      - "Unresolved dynamic sites are reported, not silently omitted."
+      - "scripts/validate_r3203_impact_json.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3203_impact_json.py"
+
+  - id: R-3204
+    title: "Diagnostics with Repair Information"
+    owner: frontend
+    priority: P1
+    risk: medium
+    status: not_started
+    dependencies: []
+    wave: W0
+    summary: "Add expected, actual and fix to the JSON diagnostic contract and expose explain --json."
+    production_intent: "Repair efficiency dominates one-shot generation quality in agent workflows; a diagnostic that states the fix removes an entire investigation round trip."
+    tasks:
+      - id: R-3204-T1
+        title: "Extend the diagnostic data model"
+        files:
+          - path: compiler/src/error.rs
+            action: extend "add expected, actual and fix to CompilerError with a builder that defaults to None"
+          - path: tools/spectra-cli/src/cli_diagnostics.rs
+            action: extend "JsonDiagnostic at :394-437 and span_error_to_json at :316-340"
+        steps:
+          - "All three fields are optional; absence must not change existing output shape for other codes."
+          - "Keep SARIF output valid: map fix into a SARIF fix object only when present, otherwise emit no fixes array."
+        evidence:
+          - "cargo test -p spectra-cli diagnostics_tests"
+      - id: R-3204-T2
+        title: "Populate the five highest-value codes"
+        files:
+          - path: compiler/src/semantic
+            action: extend "E0311 type mismatch, E033 unknown stdlib module, E028 self-import, E029 missing module, unsupported attribute"
+        steps:
+          - "For type mismatch: expected and actual are textual types; fix is a concrete suggestion among ?, if let, explicit cast."
+          - "For unknown module: fix is the did-you-mean candidate already computed by the Levenshtein path."
+          - "Do not attempt to populate every code in this item; the set grows by observed need."
+        evidence:
+          - "tests/validation fixtures for each of the five codes assert the fields in JSON"
+      - id: R-3204-T3
+        title: "explain --json"
+        files:
+          - path: tools/spectra-cli/src/cli_explain.rs
+            action: create
+          - path: tools/spectra-cli/src/cli_parse_core.rs
+            action: extend "dispatch and routing"
+          - path: tools/spectra-cli/src/main.rs
+            action: extend "options struct, CliAction variant, include!"
+        steps:
+          - "Input: an error code. Output: description, common causes, fix patterns, and the documented reference entry."
+          - "Source the descriptions from docs/diagnostics/error-code-reference.md so the CLI and docs cannot drift."
+          - "Unknown code fails with exit 64 and a JSON diagnostic listing near matches."
+        evidence:
+          - "spectralang explain --json E0311"
+      - id: R-3204-T4
+        title: "Documentation and drift guard"
+        files:
+          - path: docs/diagnostics/error-code-reference.md
+            action: extend
+        steps:
+          - "Every code emitted with fix information must be documented; a test asserts the set equality."
+        evidence:
+          - "scripts/validate_r3204_diagnostics_repair.py asserts documented == emitted-with-fix"
+    acceptance:
+      - "check --json on a type mismatch emits expected, actual and fix."
+      - "explain --json returns the documented description for every code in the reference file."
+      - "SARIF output remains schema-valid with and without fixes."
+      - "scripts/validate_r3204_diagnostics_repair.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3204_diagnostics_repair.py"
+
+  - id: R-3205
+    title: "Version-Matched Language Reference from the CLI"
+    owner: tooling
+    priority: P2
+    risk: low
+    status: not_started
+    dependencies: []
+    wave: W0
+    summary: "spectralang docs --json serves the reference of the installed binary, not of the repository."
+    production_intent: "Training-data scarcity is the largest single handicap of a young language; shipping the reference inside the binary removes the stale-knowledge failure mode."
+    tasks:
+      - id: R-3205-T1
+        title: "Embed the reference at build time"
+        files:
+          - path: tools/spectra-cli/build.rs
+            action: extend "already exists; embed docs/AI-AGENT-REFERENCE.md and the compiler version"
+        steps:
+          - "Emit the embedded text plus version and sha256 as build-time constants."
+          - "rerun-if-changed on the reference file so a stale binary is impossible."
+        evidence:
+          - "cargo build -p spectra-cli && spectralang docs --json"
+      - id: R-3205-T2
+        title: "Emit structured sections"
+        files:
+          - path: tools/spectra-cli/src/cli_docs.rs
+            action: create
+        steps:
+          - "Output: version, reference_sha256, sections with heading and body, and a symbols index."
+          - "Support --section NAME to fetch one section, keeping the common case cheap in tokens."
+        evidence:
+          - "spectralang docs --json --section stdlib"
+    acceptance:
+      - "docs --json reports the version and hash of the embedded reference."
+      - "--section returns a strict subset of the full output."
+      - "Changing the reference file changes the reported hash after rebuild."
+      - "scripts/validate_r3205_embedded_docs.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3205_embedded_docs.py"
+
+  # ================== W1 — Single source of truth ==========================
+
+  - id: R-3206
+    title: "Extended Contract Catalog Schema"
+    owner: ecosystem
+    priority: P0
+    risk: high
+    status: not_started
+    dependencies: [R-3201]
+    wave: W1
+    summary: "Add the fields the catalog needs to generate the midend lowering tables and the Rust host-call table."
+    production_intent: "Until this lands, every agent function costs eight to ten hand edits across four files, which is the dominant risk of building the library at all."
+    tasks:
+      - id: R-3206-T1
+        title: "Extend the typed schema"
+        files:
+          - path: packages/spectra-contract/src/lib.rs
+            action: extend "CatalogEntry at :13-37"
+        steps:
+          - "Add params (list of name and type), returns (type), ir_return (IR descriptor), returns_value (bool), rust_symbol (string), cfg_feature (optional string)."
+          - "Keep every new field optional during migration so the checked-in catalog keeps parsing."
+          - "Extend the integrity tests at :60-99 to require the new fields for kind=function once migration completes."
+        evidence:
+          - "cargo test -p spectra-contract"
+      - id: R-3206-T2
+        title: "Populate from the current sources"
+        files:
+          - path: scripts/generate_stdlib_catalog.py
+            action: extend "generation at :146-249"
+          - path: scripts/validate_r3007_stdlib_contract.py
+            action: reuse "lowering_inventory at :248-268 already extracts lowering entries by regex"
+        steps:
+          - "Extract ir_return and returns_value from the existing lowering tables."
+          - "Extract rust_symbol from packages/spectra-api/src/host_calls.rs entries."
+          - "Extract cfg_feature from the cfg attributes around the affected host call entries."
+          - "Emit the new fields into the catalog."
+        evidence:
+          - "python scripts/generate_stdlib_catalog.py && git diff --stat packages/spectra-contract/catalog/stdlib.toml"
+      - id: R-3206-T3
+        title: "Auditor coverage"
+        files:
+          - path: scripts/validate_r3007_stdlib_contract.py
+            action: extend "validate_manifest at :353-497"
+        steps:
+          - "Reject a function entry missing any new required field."
+          - "Reject an ir_return that does not match the module-level type grammar."
+        evidence:
+          - "python scripts/validate_r3007_stdlib_contract.py --require-catalog"
+    acceptance:
+      - "Catalog parses with the extended schema; existing entries gained the new fields with no semantic change."
+      - "The auditor rejects a function entry missing ir_return, returns_value or rust_symbol."
+      - "scripts/validate_r3206_catalog_schema.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3206_catalog_schema.py"
+
+  - id: R-3207
+    title: "Generate Midend Lowering Tables from the Catalog"
+    owner: midend
+    priority: P0
+    risk: high
+    status: not_started
+    dependencies: [R-3206]
+    wave: W1
+    summary: "Replace the hand-written lowering tables with checked-in generated files plus a staleness check."
+    production_intent: "Removes one of the four copies. The remaining manual work is the semantic signature and the Rust implementation, which are the two things a human must write anyway."
+    tasks:
+      - id: R-3207-T1
+        title: "Generator with idempotence proof"
+        files:
+          - path: scripts/generate_lowering_tables.py
+            action: create
+        steps:
+          - "Step 1: generate from the current hand-written tables and require a byte-identical result."
+          - "Step 2: switch the source to the catalog and require a byte-identical result again."
+          - "Emit a header comment in each generated file forbidding manual edits, naming the generator and the check command."
+        evidence:
+          - "python scripts/generate_lowering_tables.py --check"
+      - id: R-3207-T2
+        title: "Switch the consumed tables"
+        files:
+          - path: midend/src/lowering_std_api.rs
+            action: replace "hand-written match with a generated include at :3-815, keeping std_api_host_call_target at :813-815"
+          - path: midend/src/lowering_std_host_math_io_error.rs
+            action: replace
+          - path: midend/src/lowering_std_host_collections_string.rs
+            action: replace
+          - path: midend/src/lowering_std_host_fs_env_result.rs
+            action: replace
+          - path: midend/src/lowering_std_host_convert_time.rs
+            action: replace
+          - path: midend/src/lowering_std_host_numeric.rs
+            action: replace
+          - path: midend/src/lowering_std_host_tensor_ml.rs
+            action: replace
+        steps:
+          - "Keep the public entry points byte-identical so lowering_std_host.rs:3-37 needs no change."
+          - "Preserve the special-case construction for Option, Result and Tensor returns; the catalog carries the descriptor that selects it."
+        evidence:
+          - "cargo test -p spectra-midend && cargo test -p spectra-compiler"
+      - id: R-3207-T3
+        title: "Drift guard in the crate test suite"
+        files:
+          - path: packages/spectra-api/tests/contract_drift.rs
+            action: extend
+            detail: 'add a seventh test: generated files are not stale'
+        steps:
+          - "The test shells out to the generator in --check mode and fails with a diff hint."
+        evidence:
+          - "cargo test -p spectra-api --test contract_drift"
+    acceptance:
+      - "The seven lowering files are generated; a manual edit makes --check fail."
+      - "All existing contract_drift tests pass unchanged."
+      - "Full validation suite unchanged: no fixture regresses."
+      - "scripts/validate_r3207_lowering_generation.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3207_lowering_generation.py"
+
+  - id: R-3208
+    title: "Generate HOST_CALLS and Remove the Manual Count"
+    owner: web
+    priority: P1
+    risk: medium
+    status: not_started
+    dependencies: [R-3206]
+    wave: W1
+    summary: "Generate the Rust host-call table from the catalog and derive its size instead of hardcoding it."
+    production_intent: "Removes the second copy; the count assertion at api_tests.rs:93-95 becomes computed, eliminating a recurring manual edit that silently rots."
+    tasks:
+      - id: R-3208-T1
+        title: "Generator for the host-call table"
+        files:
+          - path: scripts/generate_host_calls.py
+            action: create
+        steps:
+          - "Emit one HostCallSpec per catalog function entry that has a rust_symbol, honoring cfg_feature by emitting cfg-conditional entries."
+          - "Keep the file checked in, matching the TOML entry order, with a forbidden-to-edit header."
+        evidence:
+          - "python scripts/generate_host_calls.py --check"
+      - id: R-3208-T2
+        title: "Switch the crate and fix the count assertion"
+        files:
+          - path: packages/spectra-api/src/host_calls.rs
+            action: replace "table at :7 with the generated include, keeping HostCallSpec at :2"
+          - path: packages/spectra-api/src/api_tests.rs
+            action: extend "derive the expected count from HOST_CALLS.len() at :93-95"
+        steps:
+          - "Assert only that the registration count equals HOST_CALLS.len() and that registration returns the number inserted."
+          - "Remove the literal 557 and 529."
+        evidence:
+          - "cargo test -p spectra-api"
+    acceptance:
+      - "The host-call table is generated; the count assertion is computed."
+      - "spectra_api_host_call_count() matches HOST_CALLS.len() in both feature configurations."
+      - "validate_r2202_spectra_api_hostcalls.py still passes."
+      - "scripts/validate_r3208_hostcall_generation.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3208_hostcall_generation.py"
+
+  # ============ W2 — Namespace, crate and first end-to-end function ========
+
+  - id: R-3209
+    title: "std.agent Namespace and packages/spectra-agent Crate"
+    owner: runtime
+    priority: P0
+    risk: high
+    status: not_started
+    dependencies: [R-3207, R-3208]
+    wave: W2
+    summary: "Land the namespace and the crate with exactly one function, proving every layer end to end before scaling."
+    production_intent: "The cost of a native module lives in the seam between compiler, midend, runtime and catalog. This item measures that cost once so the remaining twelve functions are mechanical."
+    tasks:
+      - id: R-3209-T1
+        title: "rlib crate and aggregated registration"
+        files:
+          - path: Cargo.toml
+            action: extend "add packages/spectra-agent to members"
+          - path: packages/spectra-agent/Cargo.toml
+            action: create "crate-type rlib, dependency on spectra-runtime"
+          - path: packages/spectra-agent/src/lib.rs
+            action: create "pub fn register() -> usize"
+          - path: packages/spectra-api/Cargo.toml
+            action: extend "add spectra-agent dependency"
+          - path: packages/spectra-api/src/api_registration.rs
+            action: extend "register() at :1-11 calls spectra_agent::register()"
+        steps:
+          - "Follow decision D1: no staticlib, no new C symbol, no linker change."
+          - "Registration order: runtime, then agent, then api, so later modules can depend on earlier ones conceptually."
+        evidence:
+          - "cargo test -p spectra-agent && cargo test -p spectra-api"
+      - id: R-3209-T2
+        title: "Compiler namespace and typed module"
+        files:
+          - path: compiler/src/semantic/builtin_std_core.rs
+            action: extend "new make_std_agent in the shape of make_std_math at :70-75"
+          - path: compiler/src/semantic/builtin_api_core.rs
+            action: extend "register_module at :10-31"
+          - path: compiler/src/semantic/semantic_init.rs
+            action: extend "BUILTIN_MODULES at :4-39"
+          - path: compiler/src/semantic/builtin_contract.rs
+            action: extend "public tables at :269-347 and the snapshot"
+          - path: compiler/tests/snapshots/std_api_public_function_table.snap
+            action: extend
+        steps:
+          - "First function: token_count(text: string) returns int."
+          - "Set stdlib_path to std.agent and package_name to std."
+        evidence:
+          - "cargo test -p spectra-compiler"
+      - id: R-3209-T3
+        title: "Midend path and host implementation"
+        files:
+          - path: packages/spectra-contract/catalog/stdlib.toml
+            action: regenerate
+          - path: midend/src/lowering_std_agent.rs
+            action: generate "new table, produced by the generator from R-3207"
+          - path: midend/src/lowering_std_host.rs
+            action: extend "new match arm for [std, agent, function] at :32-36"
+          - path: packages/spectra-agent/src/token.rs
+            action: create "token_count implementation"
+        steps:
+          - "Implement token_count over the existing tokenizer path (std.ml tokenizer) rather than a second tokenizer."
+        evidence:
+          - "cargo test -p spectra-midend"
+      - id: R-3209-T4
+        title: "Contract governance for the new namespace"
+        files:
+          - path: scripts/stdlib_contract.toml
+            action: extend "namespace entry with owner, classification and a probe; probe section per :51-192"
+          - path: tests/validation/364_agent_surface.spectra
+            action: create
+        steps:
+          - "The probe fixture calls token_count and asserts a deterministic value."
+          - "Classification production requires the probe per validate_r3007 behaviour."
+        evidence:
+          - "python scripts/validate_r3007_stdlib_contract.py --require-catalog"
+      - id: R-3209-T5
+        title: "JIT and AOT execution of the new namespace"
+        files:
+          - path: tests/validation/364_agent_surface.spectra
+            action: extend
+        steps:
+          - "Run through `spectralang run` and through `spectralang --emit-exe` to prove both registration paths."
+        evidence:
+          - "spectralang run tests/validation/364_agent_surface.spectra; spectralang --emit-exe target/agent-surface && target/agent-surface"
+    acceptance:
+      - "`import std.agent` resolves, token_count type-checks, lowers, and returns the same value in JIT and AOT."
+      - "Adding a second function afterwards requires the documented three-edit path, evidenced in the PR description."
+      - "Contract catalog, snapshot and probe are consistent; validate_r3007 passes with --require-catalog."
+      - "scripts/validate_r3209_agent_namespace.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3209_agent_namespace.py"
+
+  # ========================== W3 — Core library ============================
+
+  - id: R-3210
+    title: "agent_tool Attribute and Derived JSON Schema"
+    owner: semantic
+    priority: P0
+    risk: high
+    status: not_started
+    dependencies: [R-3209]
+    wave: W3
+    summary: "One function attribute that turns a public function into a model-callable tool, with name, schema, effects and capabilities derived."
+    production_intent: "A tool declaration that a human writes once and a model consumes must not be able to lie. Everything derivable is derived; only the description is authored."
+    tasks:
+      - id: R-3210-T1
+        title: "Semantic validation point for function attributes"
+        files:
+          - path: compiler/src/semantic/semantic_agent.rs
+            action: create "validate_function_attributes"
+          - path: compiler/src/semantic/semantic_module_analysis.rs
+            action: extend "call from the Item::Function arm, which today falls into _ => {} at :253"
+        steps:
+          - "Accept exactly one attribute name in this release: agent_tool."
+          - "Reject: non-public function, generic function, dyn parameter, missing run parameter, run not as the first parameter, non-string argument, wrong arity."
+          - "Store the descriptor in an analyzer map analogous to json_struct_derives at semantic_json.rs:176."
+          - "Report a stable E-code for each rejection with an actionable hint."
+        evidence:
+          - "cargo test -p spectra-compiler && tests/errors fixtures for each rejection"
+      - id: R-3210-T2
+        title: "json_schema as an associated function of the existing derive"
+        files:
+          - path: compiler/src/semantic/semantic_json.rs
+            action: extend "register_json_derived_methods at :244"
+          - path: midend/src/lowering_json_derive.rs
+            action: extend "reuse JsonFieldSchema built at :67-122; emit the schema without revalidating, per the contract at :8-12"
+        steps:
+          - "The schema mirrors the exact field names and optionality already used by to_json, so the two can never disagree."
+          - "A record without the derive used as a tool parameter is a compile error naming the missing derive."
+        evidence:
+          - "cargo test -p spectra-midend json_schema_matches_encoder"
+      - id: R-3210-T3
+        title: "Tool descriptor exposure"
+        files:
+          - path: compiler/src/semantic/builtin_contract.rs
+            action: extend "surface snapshot includes tools"
+          - path: tools/spectra-cli/src/cli_surface.rs
+            action: extend "emit a tools array"
+        steps:
+          - "Fields: name, description, input_schema, effects, capabilities, module."
+          - "Effects and capabilities are empty in this item; R-3214 completes them from the IR."
+        evidence:
+          - "spectralang surface --json --tools on a fixture project"
+      - id: R-3210-T4
+        title: "Formatter and LSP integration"
+        files:
+          - path: tools/spectra-cli/src/formatter*
+            action: extend "attribute printing already exists for records; add fixture coverage for function attributes"
+          - path: tools/spectra-lsp/src
+            action: extend "do not emit unknown-attribute diagnostics for agent_tool"
+        steps:
+          - "fmt --check must be stable on a file containing the attribute (idempotent formatting)."
+          - "LSP completion offers agent_tool on public async func declarations."
+        evidence:
+          - "spectralang fmt --check --stdin with an attributed function; LSP completion fixture"
+    acceptance:
+      - "A public async function with the attribute appears in surface --json with derived name, input_schema, effects and capabilities."
+      - "Each rejection case produces a stable code and a hint; fixtures exist under tests/errors/."
+      - "fmt is idempotent on attributed functions; LSP does not flag the attribute."
+      - "scripts/validate_r3210_agent_tool.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3210_agent_tool.py"
+
+  - id: R-3211
+    title: "Model Gateway, Run and Provider Abstraction"
+    owner: web
+    priority: P0
+    risk: high
+    status: not_started
+    dependencies: [R-3209]
+    wave: W3
+    summary: "AgentSpec, Run, ask, ask_stream, ask_json, embed, agent_start and agent_end over the existing HTTP client."
+    production_intent: "The only thing a real agent needs from a language is a governed way to talk to a model and a place to record what happened. Everything else is composition."
+    tasks:
+      - id: R-3211-T1
+        title: "Run handle and lifecycle"
+        files:
+          - path: runtime/src/handles/mod.rs
+            action: extend "add HandleKind variants AgentRun, AgentTool, AgentRunReport to the enum at :13-124 and its from_raw"
+          - path: packages/spectra-agent/src/run.rs
+            action: create
+        steps:
+          - "agent_start validates the spec, allocates the handle, and returns Result<Run, Error>."
+          - "agent_end frees the handle and returns Report with steps, tool_calls, tokens, cost_micros and elapsed_ms."
+          - "Double end on the same run returns a typed error, not a panic."
+        evidence:
+          - "cargo test -p spectra-agent run_lifecycle"
+      - id: R-3211-T2
+        title: "Provider abstraction"
+        files:
+          - path: packages/spectra-agent/src/provider/mod.rs
+            action: create "Provider trait, ProviderRequest, ProviderResponse, Usage, ProviderError"
+          - path: packages/spectra-agent/src/provider/openai_compatible.rs
+            action: create
+          - path: packages/spectra-agent/src/provider/local.rs
+            action: create "bridges to std.ml.generate/generate_ex"
+        steps:
+          - "Transport uses the existing client (packages/spectra-api/src/client_core.rs) so TLS, pooling and SSRF policy apply unchanged."
+          - "Every provider response maps into the same Usage shape so budget accounting is provider-independent."
+          - "Retries are bounded and only for idempotent requests; a retried request is recorded in the journal once."
+        evidence:
+          - "cargo test -p spectra-agent provider_conformance against a local mock server"
+      - id: R-3211-T3
+        title: "Library functions on the public surface"
+        files:
+          - path: compiler/src/semantic/builtin_std_core.rs
+            action: extend "make_std_agent gains the functions"
+          - path: packages/spectra-contract/catalog/stdlib.toml
+            action: regenerate
+          - path: packages/spectra-agent/src/lib.rs
+            action: extend "host call implementations"
+        steps:
+          - "Functions: agent_start, agent_end, ask, ask_stream, ask_json, embed."
+          - "ask_json validates the response against the schema in the client, independently of provider-side constrained decoding."
+          - "Every failure returns Result with the std.error shape so existing match and if let patterns work."
+        evidence:
+          - "tests/validation/365_agent_model_surface.spectra"
+      - id: R-3211-T4
+        title: "Determinism controls"
+        files:
+          - path: packages/spectra-agent/src/provider/mod.rs
+            action: extend "sampling parameters including seed where the provider supports it"
+        steps:
+          - "Record the effective request parameters in the journal so a replay is attributable."
+          - "Fail closed when a provider silently ignores the requested seed and the run declared deterministic mode."
+        evidence:
+          - "cargo test -p spectra-agent deterministic_mode_rejects_seedless_provider"
+    acceptance:
+      - "An agent that calls ask twice and ends cleanly reports tokens and cost consistent with the mock provider."
+      - "ask_json rejects a schema-violating response with a typed error even when the provider claims compliance."
+      - "Run lifecycle misuse (double end, use after end, unknown run) returns typed errors."
+      - "scripts/validate_r3211_model_gateway.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3211_model_gateway.py"
+
+  - id: R-3212
+    title: "Agent Memory over std.ml"
+    owner: ml
+    priority: P1
+    risk: medium
+    status: not_started
+    dependencies: [R-3211]
+    wave: W3
+    summary: "remember and recall as a thin, provenance-carrying layer over the existing vector index and RAG toolkit."
+    production_intent: "Long-running agents need memory that survives a restart and can be audited. The storage primitive already exists and is validated; building a second one would be waste."
+    tasks:
+      - id: R-3212-T1
+        title: "Memory tiers recorded per run"
+        files:
+          - path: packages/spectra-agent/src/memory.rs
+            action: create
+          - path: runtime/src/stdlib/registration.rs
+            action: reuse "vector index hosts at :804-806"
+        steps:
+          - "Tier is an enum value in the API: episodic, semantic, procedural."
+          - "Each entry records origin, run identity, timestamp and the goal, so a recall can be explained."
+          - "Persistence reuses the existing vector_index_persist/load artifact format."
+        evidence:
+          - "cargo test -p spectra-agent memory_roundtrip_and_provenance"
+      - id: R-3212-T2
+        title: "Recall with deterministic ordering"
+        files:
+          - path: packages/spectra-agent/src/memory.rs
+            action: extend
+        steps:
+          - "Break score ties by insertion order so recall is reproducible."
+          - "Cap the returned payload by tokens, not only by top_k."
+        evidence:
+          - "cargo test -p spectra-agent recall_is_deterministic"
+      - id: R-3212-T3
+        title: "Public surface and fixture"
+        files:
+          - path: compiler/src/semantic/builtin_std_core.rs
+            action: extend
+          - path: tests/validation/366_agent_memory.spectra
+            action: create
+        steps:
+          - "Functions: remember(run, text), recall(run, query, top_k)."
+        evidence:
+          - "spectralang run tests/validation/366_agent_memory.spectra"
+    acceptance:
+      - "Memory survives persist and load across processes."
+      - "Recall returns identical ordering for identical inputs."
+      - "Every recalled entry can report its origin and the run that wrote it."
+      - "scripts/validate_r3212_agent_memory.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3212_agent_memory.py"
+
+  # ========================= W4 — Governance ===============================
+
+  - id: R-3213
+    title: "Run Context and Propagation"
+    owner: runtime
+    priority: P0
+    risk: high
+    status: not_started
+    dependencies: [R-3209]
+    wave: W4
+    summary: "An active-run context that the runtime can consult on every dispatch, with explicit propagation and fail-closed behavior for detached work."
+    production_intent: "Enforcement without a reliable notion of the current run is theater. This item is the precondition for R-3214."
+    tasks:
+      - id: R-3213-T1
+        title: "Stacking run context"
+        files:
+          - path: runtime/src/agent/run_context.rs
+            action: create "mirror the pattern at runtime/src/tracing/mod.rs:197-200"
+          - path: runtime/src/lib.rs
+            action: extend "module declaration"
+        steps:
+          - "Stack of run identifiers, push and pop, with a guard type for scope exit."
+          - "Nested runs push; a nested run sees only its own and its parent's chain, and inherits the intersection of capabilities."
+          - "A pop on an empty stack is a programming error and must be reported, not ignored."
+        evidence:
+          - "cargo test -p spectra-runtime run_context_stack"
+      - id: R-3213-T2
+        title: "Propagation to worker threads"
+        files:
+          - path: runtime/src/stdlib/concurrent_core.rs
+            action: extend "spawn path at :562-584 carries the context, following runtime/src/tracing/mod.rs:492-494"
+          - path: runtime/src/reactor/mod.rs
+            action: extend "coroutine resumption restores the context"
+        steps:
+          - "Capture at spawn time, restore inside the worker, clear on completion."
+          - "Do not propagate into tasks explicitly marked detached; those run without a run context."
+        evidence:
+          - "cargo test -p spectra-runtime run_context_propagates_to_worker"
+      - id: R-3213-T3
+        title: "Fail-closed policy for detached work"
+        files:
+          - path: runtime/src/agent/run_context.rs
+            action: extend
+        steps:
+          - "Inside a run, spawning detached work requires its own capability grant; without it the spawn returns a typed error."
+          - "This converts a context propagation gap into a visible failure instead of a silent bypass."
+        evidence:
+          - "cargo test -p spectra-runtime detached_work_requires_capability"
+    acceptance:
+      - "A tool invoked by a run sees the run; a host call inside it is attributable to that run."
+      - "Work spawned by a run carries the context; detached work does not and is rejected without a grant."
+      - "No ABI change: the repr(C) call context is untouched."
+      - "scripts/validate_r3213_run_context.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3213_run_context.py"
+
+  - id: R-3214
+    title: "Capability Enforcement at the Dispatch Point"
+    owner: runtime
+    priority: P0
+    risk: high
+    status: not_started
+    dependencies: [R-3213, R-3206]
+    wave: W4
+    summary: "One policy decision, applied at every generic dispatch entrypoint, with a dedicated denial path and no fast-path hole."
+    production_intent: "This is the only capability in this roadmap that a competitor cannot match by adding a library: the language controls every effect, so the boundary can be total while a run is active."
+    tasks:
+      - id: R-3214-T1
+        title: "Extract the single dispatch function"
+        files:
+          - path: runtime/src/ffi_host_registry.rs
+            action: extend "add dispatch_generic(name, func_ptr, args, arg_len, results, result_len) -> i32 wrapping invoke_host_function at :162-186"
+          - path: runtime/src/ffi_lifecycle.rs
+            action: extend "route :280, :344, :311/:332 and :387/:413 through dispatch_generic"
+        steps:
+          - "Policy must run on cache hit: the cached path at :311 resolves without consulting the registry."
+          - "Batch path: evaluate per item at :413 and return a status, never panic inside the outer catch_unwind at :397."
+          - "The two non-cached entrypoints stay routed through the same function so a direct symbol call is not a hole."
+        evidence:
+          - "cargo test -p spectra-runtime dispatch_policy_all_entrypoints"
+      - id: R-3214-T2
+        title: "Denial channel"
+        files:
+          - path: runtime/src/ffi_core.rs
+            action: extend "add HOST_STATUS_DENIED to the four existing codes at :320-323"
+          - path: runtime/src/panic.rs
+            action: extend "add a structured capability denial entry point beside spectra_rt_panic at :63-68"
+          - path: runtime/src/abi.rs
+            action: extend "register the new symbol in the RuntimeImport catalog at :70-119 and bump COUNT at :124"
+          - path: backend/src/codegen_instruction_host.rs
+            action: extend "branch on the new status at :615-653"
+        steps:
+          - "Denial message format: host call name, run goal, the capability that would have allowed it, and the allowed set."
+          - "Never include secrets, payloads or headers in the denial message."
+        evidence:
+          - "cargo test -p spectra-backend denial_branch; fixture asserting exit 101 and the message shape"
+      - id: R-3214-T3
+        title: "Policy evaluation and authorize()"
+        files:
+          - path: packages/spectra-agent/src/policy.rs
+            action: create "capability parsing, matching, scope predicates"
+          - path: packages/spectra-agent/src/lib.rs
+            action: extend "authorize(run, host) -> Result<bool, Error>"
+        steps:
+          - "Namespace match first; scoped predicate only where the host call registers an extractor (URL host, path prefix, table name)."
+          - "Extractors are registered next to the host call, not inferred."
+          - "authorize() lets an author handle denial gracefully; the dispatch decision remains the enforcement."
+        evidence:
+          - "cargo test -p spectra-agent policy_matching"
+      - id: R-3214-T4
+        title: "Effects and capabilities in the surface output"
+        files:
+          - path: compiler/src/semantic/surface.rs
+            action: extend "fill effects and required capabilities from reachable host calls"
+          - path: tools/spectra-cli/src/cli_surface.rs
+            action: extend
+        steps:
+          - "Effects come from the IR, not from source annotations."
+          - "A tool whose effects exceed the run's grant at startup fails at agent_start, not on the first call."
+        evidence:
+          - "spectralang surface --json emits effects and capabilities per tool"
+    acceptance:
+      - "A host call outside the grant fails, through all four generic entrypoints, including the cached and batch paths."
+      - "The fast-path invariant test from R-3201 still passes and would fail if a fast call were effect-bearing."
+      - "authorize() reports the same decision the dispatch enforces."
+      - "Programs without an active run behave exactly as before."
+      - "scripts/validate_r3214_capability_enforcement.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3214_capability_enforcement.py"
+
+  - id: R-3215
+    title: "Capability Vocabulary Validated by the Compiler"
+    owner: semantic
+    priority: P0
+    risk: medium
+    status: not_started
+    dependencies: [R-3214, R-3206]
+    wave: W4
+    summary: "Capability strings are validated against the registered host-call namespaces, with did-you-mean, instead of being free-form strings."
+    production_intent: "The most common failure of permission systems is a grant that matches nothing and nobody notices. The compiler can catch it at build time because the compiler already depends on the catalog."
+    tasks:
+      - id: R-3215-T1
+        title: "Validation of the allow list"
+        files:
+          - path: compiler/src/semantic/semantic_agent.rs
+            action: extend
+          - path: compiler/src/semantic/semantic_item_import.rs
+            action: reuse "Levenshtein did-you-mean at :85-100"
+        steps:
+          - "Validate each capability against catalog paths (compiler already depends on spectra-contract at compiler/Cargo.toml:8)."
+          - "Reject scoped syntax for host calls that register no extractor."
+          - "Emit E0461 for unknown capability and E0462 for unsupported scope, both documented."
+        evidence:
+          - "tests/errors fixtures for both codes"
+      - id: R-3215-T2
+        title: "Documentation and drift guard"
+        files:
+          - path: docs/diagnostics/error-code-reference.md
+            action: extend
+          - path: docs/agent-platform.md
+            action: create "capability reference generated from the catalog"
+        steps:
+          - "The capability reference is generated, never hand-written; a check script fails on drift."
+        evidence:
+          - "python scripts/generate_capability_reference.py --check"
+    acceptance:
+      - "An unknown capability fails compilation with a near-match suggestion."
+      - "A scoped capability on a host call without an extractor fails with its own code."
+      - "The generated capability reference matches the catalog."
+      - "scripts/validate_r3215_capability_vocabulary.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3215_capability_vocabulary.py"
+
+  - id: R-3216
+    title: "Budget, Accounting and Cooperative Cancellation"
+    owner: runtime
+    priority: P0
+    risk: medium
+    status: not_started
+    dependencies: [R-3213]
+    wave: W4
+    summary: "Hard ceilings on tokens, cost, wall time and tool calls, enforced by cancelling the run."
+    production_intent: "An agent loop without a ceiling is a financial incident waiting to happen. This is a default, not an option."
+    tasks:
+      - id: R-3216-T1
+        title: "Accounting"
+        files:
+          - path: packages/spectra-agent/src/budget.rs
+            action: create
+        steps:
+          - "Accumulate tokens and cost per provider response and per tool call; expose budget_remaining(run)."
+          - "Cost uses a checked-in price table with an explicit unknown-model policy that fails closed in production mode."
+        evidence:
+          - "cargo test -p spectra-agent budget_accounting"
+      - id: R-3216-T2
+        title: "Cooperative cancellation"
+        files:
+          - path: packages/spectra-agent/src/budget.rs
+            action: extend
+          - path: runtime/src/stdlib/async_task_stream.rs
+            action: reuse "existing cancellation entry points"
+        steps:
+          - "Crossing a ceiling marks the run cancelled, cancels in-flight tasks, and makes subsequent calls on that run return a typed error."
+          - "Cancellation is cooperative: no thread is killed; long operations observe the flag at their await points."
+        evidence:
+          - "cargo test -p spectra-agent budget_cancels_run"
+      - id: R-3216-T3
+        title: "Report integration"
+        files:
+          - path: packages/spectra-agent/src/run.rs
+            action: extend "Report carries the reason for termination"
+        steps:
+          - "Report distinguishes completed, budget_exceeded, cancelled_by_approval, failed."
+        evidence:
+          - "tests/validation/367_agent_budget.spectra"
+    acceptance:
+      - "No run exceeds a declared ceiling; the report states which ceiling was hit."
+      - "Cancellation propagates to in-flight model calls and tool executions."
+      - "Accounting matches the mock provider's reported usage exactly."
+      - "scripts/validate_r3216_agent_budget.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3216_agent_budget.py"
+
+  - id: R-3217
+    title: "Journal, Replay, Approval and Tracing"
+    owner: runtime
+    priority: P0
+    risk: high
+    status: not_started
+    dependencies: [R-3213, R-3211]
+    wave: W4
+    summary: "Every side effect recorded once, replayable without repeating effects, with human approval and OpenTelemetry GenAI spans."
+    production_intent: "Durability is what makes an agent operable: a crash resumes instead of restarting, and a behavior can be reproduced instead of argued about."
+    tasks:
+      - id: R-3217-T1
+        title: "Journal format and writer"
+        files:
+          - path: packages/spectra-agent/src/journal.rs
+            action: create
+        steps:
+          - "Append-only records with run id, step sequence, kind, input digest, output digest, idempotency key, seed, usage and timestamp."
+          - "Store digests rather than payloads by default; payload capture is opt-in and never captures credentials."
+          - "Flush before returning from any effect-bearing call, so a crash cannot lose a completed effect."
+        evidence:
+          - "cargo test -p spectra-agent journal_append_and_read"
+      - id: R-3217-T2
+        title: "Replay algorithm"
+        files:
+          - path: packages/spectra-agent/src/replay.rs
+            action: create
+        steps:
+          - "Replay reads the journal and returns recorded outputs for matching step keys instead of executing the effect."
+          - "A step whose key is absent executes normally and appends, so partial journals resume forward."
+          - "Idempotency keys are derived from run, step and input digest, so a retry after a crash collides instead of duplicating."
+        evidence:
+          - "cargo test -p spectra-agent replay_does_not_repeat_effects with a counting mock"
+      - id: R-3217-T3
+        title: "Human approval"
+        files:
+          - path: packages/spectra-agent/src/approval.rs
+            action: create
+        steps:
+          - "approve(run, action) asks a registered approver; the default approver denies when no UI is attached."
+          - "Decisions are journaled, so replay never asks twice."
+          - "Approval records who decided and when, without storing sensitive context."
+        evidence:
+          - "cargo test -p spectra-agent approval_default_denies"
+      - id: R-3217-T4
+        title: "OpenTelemetry GenAI spans"
+        files:
+          - path: packages/spectra-agent/src/trace.rs
+            action: create
+          - path: packages/spectra-api/src/trace.rs
+            action: reuse
+        steps:
+          - "Spans: invoke_agent, plan, execute_tool, chat with model name; attributes gen_ai.agent.name, gen_ai.conversation.id."
+          - "Content capture is opt-in and off by default."
+          - "Pin the conventions version and record it on the span."
+        evidence:
+          - "cargo test -p spectra-agent span_mapping_conformance"
+    acceptance:
+      - "Killing the process mid-run and resuming completes the run without duplicating any effect, proven by a counting test server."
+      - "A replayed run produces identical tool ordering and outputs."
+      - "Approval decisions survive replay and are attributed."
+      - "Spans validate against the pinned conventions version; content is absent unless opted in."
+      - "scripts/validate_r3217_agent_journal.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3217_agent_journal.py"
+
+  # ==================== W5 — Interop, evals, production ===================
+
+  - id: R-3218
+    title: "std.agent.mcp Client and Server"
+    owner: web
+    priority: P1
+    risk: medium
+    status: not_started
+    dependencies: [R-3211, R-3214]
+    wave: W5
+    summary: "Consume and expose Model Context Protocol tools over HTTP transport, with untrusted-description handling."
+    production_intent: "MCP is where the tool ecosystem already lives. Exposing Spectra functions as MCP tools makes a Spectra service usable by any agent, and consuming MCP tools removes the need to reimplement integrations."
+    tasks:
+      - id: R-3218-T1
+        title: "Client over HTTP"
+        files:
+          - path: packages/spectra-agent/src/mcp/client.rs
+            action: create
+        steps:
+          - "Implements tools/list and tools/call over the streamable HTTP transport using the existing client."
+          - "Tool descriptions and schemas from a remote server are treated as untrusted data, never as instructions."
+          - "Each remote tool maps to a capability derived from its server identity, so a grant is per server."
+        evidence:
+          - "cargo test -p spectra-agent mcp_client_against_local_server"
+      - id: R-3218-T2
+        title: "Server exposing Spectra tools"
+        files:
+          - path: packages/spectra-agent/src/mcp/server.rs
+            action: create
+        steps:
+          - "Serves tools/list and tools/call from the agent_tool descriptors of the running project."
+          - "inputSchema is the derived schema, not a hand-written string."
+          - "Calls run inside a run with a capability set supplied by the host configuration."
+        evidence:
+          - "tests/validation/368_agent_mcp_server.spectra plus a client round trip"
+      - id: R-3218-T3
+        title: "Transport limitation recorded"
+        files:
+          - path: docs/agent-platform.md
+            action: extend
+        steps:
+          - "Document that stdio transport requires subprocess support, which the language does not have, and that HTTP is the supported path."
+        evidence:
+          - "Documented limitation present; a follow-up item is referenced rather than implied"
+    acceptance:
+      - "A Spectra agent calls a remote MCP tool through the governed dispatch path and the journal records it."
+      - "A Spectra project exposes its tools over MCP and a third-party client can call them."
+      - "Untrusted descriptions never influence control flow: covered by a fixture that feeds a hostile description."
+      - "scripts/validate_r3218_mcp.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3218_mcp.py"
+
+  - id: R-3219
+    title: "std.agent.protocol: A2A and ACP Exposure"
+    owner: web
+    priority: P2
+    risk: medium
+    status: not_started
+    dependencies: [R-3217, R-3218]
+    wave: W5
+    summary: "Expose a Spectra agent as an A2A server and as an ACP agent, reusing the approval primitive for permission requests."
+    production_intent: "Interop is an adapter, not an architecture. It lands last because the primitives it needs, run, journal and approval, already exist by then."
+    tasks:
+      - id: R-3219-T1
+        title: "A2A agent card and task lifecycle"
+        files:
+          - path: packages/spectra-agent/src/protocol/a2a.rs
+            action: create
+        steps:
+          - "Generate the agent card from a description record plus the derived tool list."
+          - "Map long-running tasks to journaled runs so a client can poll a task and resume after restart."
+        evidence:
+          - "cargo test -p spectra-agent a2a_card_and_task"
+      - id: R-3219-T2
+        title: "ACP permission bridge"
+        files:
+          - path: packages/spectra-agent/src/protocol/acp.rs
+            action: create
+        steps:
+          - "session/request_permission maps to approve(run, action); allow-once and allow-always map to journaled decisions."
+          - "Advertise only capabilities actually implemented."
+        evidence:
+          - "cargo test -p spectra-agent acp_permission_mapping"
+    acceptance:
+      - "A remote A2A client can delegate a task and observe completion or failure with a stable reason."
+      - "ACP permission denial aborts the action and is journaled."
+      - "Neither adapter bypasses the capability dispatch path."
+      - "scripts/validate_r3219_agent_protocols.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3219_agent_protocols.py"
+
+  - id: R-3220
+    title: "Evaluation Harness and spectralang agent eval"
+    owner: tooling
+    priority: P0
+    risk: medium
+    status: not_started
+    dependencies: [R-3217, R-3203]
+    wave: W5
+    summary: "Agent behavior measured as regression, with deterministic graders, judge graders and pass@k."
+    production_intent: "Governance is tested deterministically; behavior is evaluated statistically. Mixing them produces suites that fail on model variance and pass by luck."
+    tasks:
+      - id: R-3220-T1
+        title: "Case format and runner"
+        files:
+          - path: packages/spectra-agent/src/eval/mod.rs
+            action: create
+        steps:
+          - "Case format: input, expectations (approval required, refusal expected, tool subset, output schema), grader list, repeat count."
+          - "Runner executes each case in a fresh run against the configured provider, recording the journal."
+        evidence:
+          - "cargo test -p spectra-agent eval_runner"
+      - id: R-3220-T2
+        title: "Graders"
+        files:
+          - path: packages/spectra-agent/src/eval/graders.rs
+            action: create
+        steps:
+          - "Deterministic graders: schema conformance, tool-set constraint, approval presence, budget respected."
+          - "Judge grader is explicit about using a model call, is off by default, and its prompt is checked in."
+        evidence:
+          - "cargo test -p spectra-agent graders"
+      - id: R-3220-T3
+        title: "CLI and CI gate"
+        files:
+          - path: tools/spectra-cli/src/cli_agent_eval.rs
+            action: create
+          - path: tools/spectra-cli/src/cli_parse_core.rs
+            action: extend "dispatch, routing and subcommand help"
+          - path: tools/spectra-cli/src/main.rs
+            action: extend
+        steps:
+          - "spectralang agent eval --json [--suite PATH] [--repeat N] emits case results, pass@1 and pass^k, plus cost."
+          - "Exit 65 on regression against a checked-in baseline; exit 0 when no baseline exists yet and a baseline is being written."
+        evidence:
+          - "spectralang agent eval --json on the example suite"
+      - id: R-3220-T4
+        title: "Example suite and baseline"
+        files:
+          - path: examples/agent/evals/*.json
+            action: create
+          - path: tests/validation/369_agent_eval_harness.spectra
+            action: create
+        steps:
+          - "Ship a small suite that exercises approval, refusal, budget and schema conformance against the local provider."
+        evidence:
+          - "spectralang agent eval --json --suite examples/agent/evals"
+    acceptance:
+      - "agent eval runs a suite, reports pass@1 and pass^k, and fails the build on regression against the recorded baseline."
+      - "Judge-based grading is opt-in and never runs in the default CI path."
+      - "Governance assertions are covered by deterministic tests, not by evals."
+      - "scripts/validate_r3220_agent_eval.py passes and is registered in run_tests.ps1."
+    validation: "python scripts/validate_r3220_agent_eval.py"
+
+  - id: R-3221
+    title: "Agent Platform Integration, Conformance and Release"
+    owner: ecosystem
+    priority: P0
+    risk: high
+    status: not_started
+    dependencies: [R-3210, R-3211, R-3212, R-3214, R-3215, R-3216, R-3217, R-3218, R-3219, R-3220]
+    wave: W5
+    summary: "Prove the platform works with the rest of the language, document it, publish it and gate the release."
+    production_intent: "A library that is not integrated with the formatter, LSP, package flow, docs and conformance suite is a prototype, not a product."
+    tasks:
+      - id: R-3221-T1
+        title: "Package distribution"
+        files:
+          - path: packages/spectra-agent/spectra.toml
+            action: create "manifest in the shape of packages/spectra-api/spectra.toml"
+          - path: packages/spectra-agent/src/bindings/*.spectra
+            action: create "module std.agent declarations mirroring packages/spectra-api/src/bindings"
+        steps:
+          - "Declare the package name, entry and src_dirs; keep dependencies empty."
+          - "Bindings declare records and document that native declarations live in the compiler until extern syntax exists."
+          - "Publish to the local registry following the R-2217 flow and validate with the registry validator pattern."
+        evidence:
+          - "python scripts/validate_r3221_agent_package.py"
+      - id: R-3221-T2
+        title: "Language tooling integration"
+        files:
+          - path: tools/spectra-lsp/src
+            action: extend "the attribute and the namespace complete correctly; no false unknown-symbol diagnostics"
+          - path: tools/spectra-cli/src/formatter*
+            action: extend "idempotent formatting of attributed functions"
+          - path: tests/validation
+            action: extend "formatting and lint fixtures"
+        steps:
+          - "fmt --check passes on every example; LSP diagnostics clean on the integration project."
+        evidence:
+          - "spectralang fmt --check examples/agent; LSP smoke test"
+      - id: R-3221-T3
+        title: "Documentation set"
+        files:
+          - path: docs/agent-platform.md
+            action: create "concept, surface reference, capability reference, security model"
+          - path: docs/api/README.md
+            action: extend "link the agent reference beside the api reference"
+          - path: docs/book/11-agents.md
+            action: create "chapter following the style of docs/book/09-hello-http.md"
+          - path: docs/AI-AGENT-REFERENCE.md
+            action: extend "agent surface section"
+        steps:
+          - "Document what is promised and what is not, including the injection scope and the stdout/stdio limitation."
+        evidence:
+          - "docs exist and are referenced from the AI agent reference"
+      - id: R-3221-T4
+        title: "Runnable examples"
+        files:
+          - path: examples/agent/01-tool-and-run
+            action: create
+          - path: examples/agent/02-approval-and-budget
+            action: create
+          - path: examples/agent/03-mcp-and-memory
+            action: create
+          - path: examples/agent/04-durable-replay
+            action: create
+        steps:
+          - "Each example runs end to end through the normal CLI, with a mock provider so no credentials are required."
+        evidence:
+          - "each example runs via spectralang run and via --emit-exe"
+      - id: R-3221-T5
+        title: "Conformance suite v1"
+        files:
+          - path: packages/spectra-agent/tests/conformance.rs
+            action: create
+          - path: scripts/validate_r3221_agent_conformance.py
+            action: create
+        steps:
+          - "Cover: capability denial on all four dispatch entrypoints; fast-path invariant; journal replay without duplicate effects; budget cancellation; approval default deny; surface determinism; MCP round trip; example projects."
+          - "Record the result report under target/ and require it in the release gate."
+        evidence:
+          - "python scripts/validate_r3221_agent_conformance.py"
+      - id: R-3221-T6
+        title: "Integrated project gate"
+        files:
+          - path: tests/projects/valid/integrated_agent_service
+            action: create "multi-module project using std.agent plus std.api"
+        steps:
+          - "A service that exposes an HTTP endpoint, runs an agent with a budget, requires approval for one action, journals the run, and is exercised by a test that interrupts and resumes."
+          - "Runs in both JIT and AOT."
+        evidence:
+          - "spectralang run tests/projects/valid/integrated_agent_service; spectralang package test --root <same>"
+    acceptance:
+      - "The package is publishable to the local registry and consumable by another project through the normal package flow."
+      - "Formatter, LSP, lint and REPL handle the new attribute and namespace without special cases."
+      - "Conformance suite passes and its report is required by the release gate."
+      - "The integrated project runs in JIT and AOT, including interruption and resume."
+      - "scripts/validate_r3221_agent_package.py, scripts/validate_r3221_agent_conformance.py and scripts/validate_r3221_integrated_agent_service.py pass and are registered in run_tests.ps1."
+    validation: "python scripts/validate_r3221_agent_package.py && python scripts/validate_r3221_agent_conformance.py && python scripts/validate_r3221_integrated_agent_service.py"
+
+# ---------------------------------------------------------------------------
+# CROSS-CUTTING
+# ---------------------------------------------------------------------------
+
+cross_cutting:
+
+  validation_convention:
+    - "Each item ships scripts/validate_r32NN_<slug>.py in the style of the existing ~150 validators: require/fail helpers, roadmap registration check, fixture execution, and a JSON report under target/."
+    - "Each validator is registered in run_tests.ps1; planning validators assert the roadmap block matches the expected phase, owner and status."
+    - "Each runtime-facing item adds a fixture under tests/validation/ starting at 364, and each error-facing item adds a fixture under tests/errors/."
+    - "Items touching the host-call surface add or extend a probe in scripts/stdlib_contract.toml."
+
+  governance_touchpoints:
+    - "roadmap/roadmap.toml: phase_32 plus one item per R-32NN with owner, priority, risk, dependencies, summary and acceptance."
+    - "docs/roadmap-backlog.md: Phase 32 section with the same items in human-readable form."
+    - "docs/production-ai-implementation-plan.md: agent platform vision chapter and phase summary."
+    - "packages/spectra-api/tests/contract_drift.rs: extended for generated artifacts (R-3207, R-3208)."
+    - "compiler/tests/snapshots/std_api_public_function_table.snap: updated whenever the public surface changes."
+    - "scripts/stdlib_contract.toml: std.agent namespace, probe and any follow-up declarations."
+
+  runtime_risk_register:
+    - risk: "Policy bypass through the fast path"
+      mitigation: "Invariant test from R-3201, plus fast calls cannot express denial by construction."
+    - risk: "Run context lost across worker threads"
+      mitigation: "Fail-closed default for detached work in R-3213."
+    - risk: "ABI change breaking AOT silently"
+      mitigation: "Every item touching runtime/src/abi.rs must run a real --emit-exe project, not only JIT."
+    - risk: "Catalog migration breaking the contract auditor"
+      mitigation: "Three-step migration with a diff-empty gate at each step in R-3207."
+    - risk: "Attribute surface growing beyond one attribute"
+      mitigation: "Recorded as a non-goal; a second attribute requires revising ADR 0017 first."
+    - risk: "Durability implemented as best-effort writing"
+      mitigation: "Flush-before-return and a crash test that kills the process mid-effect."
+    - risk: "Eval suite flaky under model variance"
+      mitigation: "Deterministic graders in CI; judge grading opt-in only."
+
+  definition_of_done_for_the_workstream:
+    - "Every R-32NN item is complete with its validator registered and passing."
+    - "The fast-path invariant and capability enforcement tests exist and are enforced by CI."
+    - "Adding a native function to std.agent costs the documented three edits, proven by a recorded before/after count."
+    - "The integrated agent service project runs in JIT and AOT, survives interruption, and stays inside its budget."
+    - "Documentation, examples and package publishing are complete, and the AI agent reference points to the new surface."
+    - "The capability reference is generated from the catalog and cannot drift."

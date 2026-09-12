@@ -1,0 +1,43 @@
+// Teste 63: destructuring em let e OR-patterns em match
+module destructuring_and_or_patterns
+
+record Point {
+    public x: int,
+    public y: int,
+}
+
+enum Token {
+    Number(int),
+    Plus,
+    Minus,
+    Named { value: int },
+}
+
+func token_weight(token: Token) returns int {
+    return match token {
+        when Token::Number(value) then value,
+        when Token::Named { value } then value,
+        when Token::Plus | Token::Minus then 1
+    }
+}
+
+public func main() returns int {
+    let pair = (10, 20)
+    let(left, right) = pair
+
+    let point                    = Point { x: left, y: right }
+    let Point { x, y: renamed_y} = point
+
+    let number = Token::Number(7)
+    let named  = Token::Named { value: 5 }
+    let plus   = Token::Plus
+    let minus  = Token::Minus
+
+    let total = x + renamed_y + token_weight(number) + token_weight(named) + token_weight(plus) + token_weight(minus)
+
+    if total != 44 {
+        return total
+    }
+
+    return 0
+}

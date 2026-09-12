@@ -195,6 +195,14 @@ public func main() {
 }
 ```
 
+### Estreitamento Explícito / Explicit Narrowing
+
+**PT-BR:**
+Estreitamentos via `as` para inteiros de largura exata (`i8`/`u8`/`i16`/...) são **verificados em tempo de execução**: valores fora da faixa falham ruidosamente (`E2903: value is outside <tipo> range`) em vez de truncar ou embrulhar. Isso vale também para `char as <inteiro>`, que valida o codepoint Unicode — `'€' as u8` falha, `'ÿ' as u8` resulta em `255`, `'A' as u8` resulta em `65`. Alargamentos (`char` → `int`) são exatos e nunca falham.
+
+**EN-US:**
+Narrowing via `as` to exact-width integers (`i8`/`u8`/`i16`/...) is **runtime-checked**: out-of-range values fail loudly (`E2903: value is outside <type> range`) instead of truncating or wrapping. This also covers `char as <integer>`, which validates the Unicode codepoint — `'€' as u8` fails, `'ÿ' as u8` yields `255`, `'A' as u8` yields `65`. Widenings (`char` → `int`) are exact and never fail.
+
 ---
 
 ## 4. Literais / Literals

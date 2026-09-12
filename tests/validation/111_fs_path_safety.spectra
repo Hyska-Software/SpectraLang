@@ -1,46 +1,91 @@
 module fs_path_safety
 
 import std.fs as fs
+import std.error as error
 
 public func main() returns int {
     let artifact = "target/r1203-fs-path-safety/nested/run/artifact.txt"
 
-    if fs.fs_write(artifact, "first") {
+    let first_write = fs.fs_write(artifact, "first")
+    if let Result::Ok(wrote) = first_write {
+        if wrote != true {
+            return 1
+        }
     } else {
         return 1
     }
-    if fs.fs_exists(artifact) {
+    let first_exists = fs.fs_exists(artifact)
+    if let Result::Ok(exists) = first_exists {
+        if exists != true {
+            return 2
+        }
     } else {
         return 2
     }
-    if fs.fs_append(artifact, "-second") {
+    let append = fs.fs_append(artifact, "-second")
+    if let Result::Ok(appended) = append {
+        if appended != true {
+            return 4
+        }
     } else {
         return 4
     }
 
-    if fs.fs_write(artifact, "overwrite") {
+    let overwrite = fs.fs_write(artifact, "overwrite")
+    if let Result::Ok(wrote) = overwrite {
+        if wrote != true {
+            return 6
+        }
     } else {
         return 6
     }
 
     let blocker = "target/r1203-fs-path-safety/blocker"
     fs.fs_remove(blocker)
-    if fs.fs_write(blocker, "not-a-directory") {
+    let blocker_write = fs.fs_write(blocker, "not-a-directory")
+    if let Result::Ok(wrote) = blocker_write {
+        if wrote != true {
+            return 8
+        }
     } else {
         return 8
     }
 
     let blocked_child = "target/r1203-fs-path-safety/blocker/child.txt"
-    if fs.fs_write(blocked_child, "bad") {
+    let blocked_write = fs.fs_write(blocked_child, "bad")
+    if let Result::Err(write_error) = blocked_write {
+        if error.code(write_error) == 0 {
+            return 9
+        }
+    } else {
         return 9
     }
-    if fs.fs_append(blocked_child, "bad") {
+    let blocked_append = fs.fs_append(blocked_child, "bad")
+    if let Result::Err(append_error) = blocked_append {
+        if error.code(append_error) == 0 {
+            return 10
+        }
+    } else {
         return 10
     }
-    if fs.fs_exists(blocked_child) {
-        return 11
+    let blocked_exists = fs.fs_exists(blocked_child)
+    if let Result::Ok(exists) = blocked_exists {
+        if exists == true {
+            return 11
+        }
+    } else {
+        if let Result::Err(exists_error) = blocked_exists {
+            if error.code(exists_error) == 0 {
+                return 11
+            }
+        }
     }
-    if fs.fs_write("", "bad") {
+    let empty_write = fs.fs_write("", "bad")
+    if let Result::Err(empty_error) = empty_write {
+        if error.code(empty_error) != 0 {
+            return 12
+        }
+    } else {
         return 12
     }
 

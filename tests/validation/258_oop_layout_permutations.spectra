@@ -1,0 +1,73 @@
+// R-258 regression: every scalar width must keep a distinct cumulative offset
+// when embedded in a record and when the record is nested in another record.
+module r258_layout_permutations
+
+record Mixed {
+    public flag: bool,
+    public code: char,
+    public narrow: f32,
+    public wide: f64,
+    public count: int,
+    public label: string,
+}
+
+impl Mixed {
+    public func checksum(&self) returns int {
+        let result = 0
+        if self.flag {
+            result = result + 1
+        }
+        if self.code == 'Z' {
+            result = result + 10
+        }
+        if self.narrow == 1.25 {
+            result = result + 100
+        }
+        if self.wide == 2.5 {
+            result = result + 1000
+        }
+        if self.count == 42 {
+            result = result + 10000
+        }
+        if self.label == "mixed" {
+            result = result + 100000
+        }
+        return result
+    }
+}
+
+record Nested {
+    public prefix: char,
+    public value: Mixed,
+    public suffix: bool,
+}
+
+public func main() returns int {
+    let value = Mixed {
+        flag: true,
+        code: 'Z',
+        narrow: 1.25,
+        wide: 2.5,
+        count: 42,
+        label: "mixed",
+    }
+
+    value.flag = false
+    value.flag = true
+    value.code = 'Z'
+    value.count = 42
+
+    let nested = Nested {
+        prefix: 'A',
+        value: value,
+        suffix: false,
+    }
+
+    if nested.prefix != 'A' or nested.suffix != false {
+        return 1
+    }
+    if nested.value.checksum() != 111111 {
+        return 2
+    }
+    return 0
+}

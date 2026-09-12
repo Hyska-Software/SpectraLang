@@ -1,0 +1,77 @@
+module stdlib_math_convert
+
+import std.convert as convert
+import std.math as math
+
+public func main() returns int {
+    if math.abs(-7) != 7 or math.min(3, 9) != 3 or math.max(3, 9) != 9 {
+        return 1
+    }
+    if math.clamp(-1, 0, 10) != 0 or math.clamp(11, 0, 10) != 10 or math.clamp(5, 0, 10) != 5 {
+        return 2
+    }
+    if math.sign(-4) != -1 or math.sign(0) != 0 or math.sign(4) != 1 {
+        return 3
+    }
+    if math.gcd(84, 30) != 6 or math.lcm(4, 6) != 12 {
+        return 4
+    }
+    if math.abs_f(-3.5) != 3.5 or math.sqrt_f(16.0) != 4.0 {
+        return 5
+    }
+    if math.pow_f(2.0, 10.0) != 1024.0 {
+        return 6
+    }
+    if math.floor_f(3.7) != 3.0 or math.ceil_f(-1.2) != -1.0 or math.round_f(3.5) != 4.0 {
+        return 7
+    }
+    if math.sin_f(0.0) != 0.0 or math.cos_f(0.0) != 1.0 or math.tan_f(0.0) != 0.0 {
+        return 8
+    }
+    let pi = math.pi()
+    let e = math.e_const()
+    if pi < 3.14 or pi > 3.15 or e < 2.71 or e > 2.72 {
+        return 9
+    }
+    if math.log2_f(8.0) != 3.0 or math.log10_f(1000.0) != 3.0 {
+        return 10
+    }
+    if math.log_f(e) < 0.99 or math.log_f(e) > 1.01 {
+        return 11
+    }
+    if math.atan2_f(1.0, 1.0) < 0.78 or math.atan2_f(1.0, 1.0) > 0.79 {
+        return 12
+    }
+    if math.is_nan_f(0.0 / 0.0) != true or math.is_infinite_f(1.0 / 0.0) != true {
+        return 13
+    }
+
+    if convert.int_to_string(-42) != "-42" {
+        return 14
+    }
+    if convert.float_to_string(3.5) != "3.5" or convert.bool_to_string(true) != "true" {
+        return 15
+    }
+    if convert.string_to_int("123") != 123 or convert.string_to_int("bad") != 0 {
+        return 16
+    }
+    if convert.string_to_float("3.5") != 3.5 or convert.string_to_float("bad") != 0.0 {
+        return 17
+    }
+    if convert.int_to_float(7) != 7.0 or convert.float_to_int(-3.7) != -3 {
+        return 18
+    }
+    if convert.string_to_int_or("bad", -1) != -1 or convert.string_to_int_or("9", -1) != 9 {
+        return 19
+    }
+    if convert.string_to_float_or("bad", -1.5) != -1.5 {
+        return 20
+    }
+    if convert.string_to_bool("TRUE") != true or convert.string_to_bool("1") != false {
+        return 21
+    }
+    if convert.bool_to_int(true) != 1 or convert.bool_to_int(false) != 0 {
+        return 22
+    }
+    return 0
+}

@@ -1,0 +1,17 @@
+// R-NEG-07: an inherent impl must provide the record's complete type arity.
+module rneg_oop_inherent_impl_wrong_arity
+
+record Pair<T, U> {
+    public first: T,
+    public second: U,
+}
+
+impl Pair<T> {
+    public func first_value(&self) returns T {
+        self.first
+    }
+}
+
+public func main() returns int {
+    return 0
+}

@@ -1,0 +1,69 @@
+// R-207 regression: struct layout with padding and cumulative offsets.
+// Mixed-size fields (string/int are 8 bytes, char is 4, bool is 1) must not
+// overlap; drop glue must run for block scopes.
+module r207_layout
+
+import std.io
+
+record Mixed {
+    public name: string,
+    public size: int,
+    public flag: bool,
+    public code: char,
+    public score: float,
+}
+
+impl Mixed {
+    public func new(name: string, size: int, flag: bool, code: char, score: float) returns Mixed {
+        Mixed { name: name, size: size, flag: flag, code: code, score: score }
+    }
+
+    public func describe(&self) returns string {
+        f"[{self.name}] size={self.size} flag={self.flag} code={self.code} score={self.score}"
+    }
+}
+
+impl Drop for Mixed {
+    func drop(&mut self) {
+        println(f"[R-207 drop] {self.name} ({self.size})")
+    }
+}
+
+record Outer {
+    public inner: Mixed,
+    public tag: char,
+    public ok: bool,
+}
+
+impl Outer {
+    public func make() returns Outer {
+        let m = Mixed::new("inner", 7, true, 'Z', 1.5)
+        Outer { inner: m, tag: 'Q', ok: false }
+    }
+
+    public func summary(&self) returns string {
+        f"[{self.inner.name}/{self.tag}/{self.ok}]"
+    }
+}
+
+public func main() returns int {
+    println("=== R-207 layout ===")
+    {
+        let m = Mixed::new("buffer", 1024, true, 'A', 2.25)
+        println(m.describe())
+        m.flag = false
+        m.code = 'B'
+        m.size = 2048
+        println(m.describe())
+    }
+
+    println("=== R-207 nested ===")
+    {
+        let o = Outer::make()
+        println(o.summary())
+    }
+
+    println("=== R-207 done ===")
+    return 0
+}
+

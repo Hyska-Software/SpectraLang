@@ -98,6 +98,7 @@ def main() -> int:
 
         negative_expectations = {
             "autodiff_unsupported_operation.spectra": "E3004",
+            "autodiff_loop_carried_value.spectra": "E3004",
             "autodiff_integer_tensor.spectra": "E3006",
             "autodiff_invalid_device.spectra": "E3010",
             "autodiff_shape_mismatch.spectra": "E2908",

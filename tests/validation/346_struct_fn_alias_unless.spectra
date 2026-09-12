@@ -1,0 +1,40 @@
+// Regression 346: canonical surface and unless.
+//
+// - `record` declares aggregate types.
+// - `func` declares functions.
+// - `unless <cond> { } else { }` parses and executes both branches
+//   (semantics = `if` with the condition negated).
+//
+// Returns 0 only when every construct behaves correctly; any deviation
+// produces a non-zero exit code.
+module alias_regression
+
+record Point {
+    x: int,
+    y: int,
+}
+
+func scale(p: Point, factor: int) returns int {
+    return p.x * factor
+}
+
+func branch(value: bool, acc: int) returns int {
+    unless value {
+        return acc + 1
+    } else {
+        return acc + 2
+    }
+}
+
+func main() returns int {
+    let origin = Point { x: 3, y: 4 }
+    let scaled = scale(origin, 10)
+
+    // then branch taken (scaled == 30): acc + 2
+    let through_then = branch(scaled == 30, 0)
+    // else branch taken (scaled != 31): acc + 1
+    let through_else = branch(scaled == 31, through_then)
+
+    // scaled(30) - through_else(3) * 10 == 0
+    return scaled - through_else * 10
+}

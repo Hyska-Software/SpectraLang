@@ -17,7 +17,7 @@ Key flags:
 - `--stdout`: format a single on-disk file and write the result to standard output rather than editing the file in place.
 - `--explain[=json]`: show diffs for any file that would change. Text output is default; `json` produces a machine-readable payload and implies `--check`.
 - `--stats`: print a JSON summary of the formatter run (processed, changed, cache hit metrics) after normal output.
-- `--config <path>`: load formatter settings from an explicit `Spectra.toml` file, useful when editors work on scratch copies outside the project tree.
+- `--config <path>`: load formatter settings from an explicit `spectra.toml` file, useful when editors work on scratch copies outside the project tree.
 
 ## Explain Output
 
@@ -80,13 +80,13 @@ Append `--stats` to any formatter invocation to receive a standalone JSON summar
 }
 ```
 
-The `mode` indicates whether the formatter ran in `check` (verification) or `write` (in-place updates) mode. `updated` reports how many files were rewritten on disk (always `0` when `--check` is active) while the cache counters expose configuration lookups resolved from `Spectra.toml` manifests.
+The `mode` indicates whether the formatter ran in `check` (verification) or `write` (in-place updates) mode. `updated` reports how many files were rewritten on disk (always `0` when `--check` is active) while the cache counters expose configuration lookups resolved from `spectra.toml` manifests.
 
 When `--stats` and `--explain=json` are used together, the CLI prints the explain payload first and then emits the stats object on a new line so downstream tooling can parse each document independently.
 
 ## Configuration
 
-Formatter settings live under the `[formatter]` table inside `Spectra.toml`. The CLI searches from each formatted file up to the filesystem root and uses the nearest manifest it finds. The search order is skipped when `--config` is supplied.
+Formatter settings live under the `[formatter]` table inside `spectra.toml`. The CLI searches from each formatted file up to the filesystem root and uses the nearest manifest it finds. The search order is skipped when `--config` is supplied.
 
 Supported keys:
 
@@ -97,7 +97,7 @@ Supported keys:
 
 Unknown keys produce a usage error so typos are caught early.
 
-### Example `Spectra.toml`
+### Example `spectra.toml`
 
 ```toml
 [package]

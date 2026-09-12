@@ -49,6 +49,147 @@ public func main() returns int {
     if tensor.rank(tensor.grad(weight)) != 2 {
         return tensor.rank(tensor.grad(weight))
     }
+    let tx0 = tensor.full_f(1, 0.5)
+    let tx  = tensor.requires_grad(tx0, true)
+    let tloss = diff {
+        tensor.sum_t(tensor.tanh_f(tx))
+    }
+    if tensor.len(tloss) != 1 {
+        return 20 + tensor.len(tloss)
+    }
+    // d(tanh(0.5)) = 1 - tanh(0.5)^2 ~= 0.7864; scaled exact check.
+    if (tensor.sum_f(tensor.grad(tx)) * 1000.0) as int != 786 {
+        return 21
+    }
+
+    let sx0 = tensor.full_f(1, 4.0)
+    let sx  = tensor.requires_grad(sx0, true)
+    let sloss = diff {
+        tensor.sum_t(tensor.sqrt_f(sx))
+    }
+    if tensor.len(sloss) != 1 {
+        return 22 + tensor.len(sloss)
+    }
+    // d(sqrt(4.0)) = 0.25 exactly.
+    if (tensor.sum_f(tensor.grad(sx)) * 1000.0) as int != 250 {
+        return 23
+    }
+
+    let px0 = tensor.full_f(1, 0.25)
+    let px  = tensor.requires_grad(px0, true)
+    let pt  = tensor.full_f(1, 0.0)
+    let bloss = diff {
+        ml.bce_loss(px, pt)
+    }
+    if tensor.len(bloss) != 1 {
+        return 24 + tensor.len(bloss)
+    }
+    // d(BCE(0.25, 0)) = (0.25 - 0) / (0.25 * 0.75) ~= 1.3333.
+    if (tensor.sum_f(tensor.grad(px)) * 1000.0) as int != 1333 {
+        return 25
+    }
+
+    let cx0 = tensor.full_f(4, 1.0)
+    let ck0 = tensor.full_f(1, 0.5)
+    let cb0 = tensor.full_f(1, 0.1)
+    let ck  = tensor.requires_grad(ck0, true)
+    let cb  = tensor.requires_grad(cb0, true)
+    let closs = diff {
+        tensor.sum_t(ml.conv2d(cx0, ck, cb, 1, 1, 2, 2, 1, 1, 1))
+    }
+    if tensor.len(closs) != 1 {
+        return 26 + tensor.len(closs)
+    }
+    // 1x1 kernel over four ones: kernel grad sums the inputs (4.0),
+    // bias grad counts the four outputs (4.0).
+    if tensor.sum_f(tensor.grad(ck)) as int != 4 {
+        return 27
+    }
+    if tensor.sum_f(tensor.grad(cb)) as int != 4 {
+        return 28
+    }
+
+    let mx0 = tensor.full_f(4, 2.0)
+    let mx  = tensor.requires_grad(mx0, true)
+    let mloss = diff {
+        tensor.sum_t(ml.max_pool2d(mx, 1, 1, 2, 2, 2, 2))
+    }
+    if tensor.len(mloss) != 1 {
+        return 29 + tensor.len(mloss)
+    }
+    // Uniform 2x2 window: the whole gradient lands on the first maximum.
+    if tensor.sum_f(tensor.grad(mx)) as int != 1 {
+        return 30
+    }
+    if tensor.get_f(tensor.grad(mx), 0) as int != 1 {
+        return 31
+    }
+
+    let dx0 = tensor.full_f(4, 2.0)
+    let dx  = tensor.requires_grad(dx0, true)
+    let dloss = diff {
+        tensor.sum_t(ml.dropout(dx, 0.5, true))
+    }
+    if tensor.len(dloss) != 1 {
+        return 32 + tensor.len(dloss)
+    }
+    // Stochastic values: only the gradient shape is asserted here; exact
+    // mask agreement is covered by the native runtime gradient checks.
+    if tensor.len(tensor.grad(dx)) != 4 {
+        return 33
+    }
+
+    let cx1 = tensor.requires_grad(tensor.full_f(3, 1.0), true)
+    let cx2 = tensor.requires_grad(tensor.full_f(2, 2.0), true)
+    let catloss = diff {
+        tensor.sum_t(tensor.concat(cx1, cx2))
+    }
+    if tensor.len(catloss) != 1 {
+        return 34 + tensor.len(catloss)
+    }
+    if tensor.sum_f(tensor.grad(cx1)) as int != 3 {
+        return 35
+    }
+    if tensor.sum_f(tensor.grad(cx2)) as int != 2 {
+        return 36
+    }
+
+    let st1 = tensor.requires_grad(tensor.full_f(2, 1.0), true)
+    let st2 = tensor.requires_grad(tensor.full_f(2, 3.0), true)
+    let stloss = diff {
+        tensor.sum_t(tensor.stack(st1, st2))
+    }
+    if tensor.len(stloss) != 1 {
+        return 37 + tensor.len(stloss)
+    }
+    if tensor.sum_f(tensor.grad(st1)) as int != 2 {
+        return 38
+    }
+    if tensor.sum_f(tensor.grad(st2)) as int != 2 {
+        return 39
+    }
+
+    let sl0 = tensor.requires_grad(tensor.full_f(5, 2.0), true)
+    let slloss = diff {
+        tensor.sum_t(tensor.slice(sl0, 1, 4))
+    }
+    if tensor.len(slloss) != 1 {
+        return 40 + tensor.len(slloss)
+    }
+    if tensor.sum_f(tensor.grad(sl0)) as int != 3 {
+        return 41
+    }
+
+    let pm0 = tensor.requires_grad(tensor.reshape(tensor.full_f(6, 1.0), 2, 3), true)
+    let pmloss = diff {
+        tensor.sum_t(tensor.permute(pm0, 0, 1))
+    }
+    if tensor.len(pmloss) != 1 {
+        return 42 + tensor.len(pmloss)
+    }
+    if tensor.sum_f(tensor.grad(pm0)) as int != 6 {
+        return 43
+    }
 
     tensor.free_all()
     return 0

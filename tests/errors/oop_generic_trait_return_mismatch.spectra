@@ -1,0 +1,20 @@
+// R-NEG-01: a concrete generic trait substitution must reject a wrong return.
+module rneg_oop_generic_trait_return_mismatch
+
+trait ValueOf<T> {
+    func value(&self) returns T
+}
+
+record Broken {
+    public value: int,
+}
+
+impl ValueOf<int> for Broken {
+    func value(&self) returns string {
+        "not an int"
+    }
+}
+
+public func main() returns int {
+    return 0
+}

@@ -1,0 +1,13 @@
+module free_then_reassign_ok
+
+import std.tensor as tensor
+
+public func main() returns int {
+    let handle = tensor.arange(1, 4, 1)
+    tensor.free(handle)
+    handle = tensor.arange(1, 4, 1)
+    let rank = tensor.rank(handle)
+    tensor.free(handle)
+    tensor.free_all()
+    return rank
+}

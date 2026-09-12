@@ -1,0 +1,30 @@
+module bug_hunt_v2_296_stream_dyn_poll
+
+record CounterStream {
+    public current: int,
+}
+
+impl Stream for CounterStream {
+    async func next(&self) returns int {
+        self.current + 2
+    }
+
+    func cancel(&self) returns int {
+        0
+    }
+}
+
+async func consume(stream: dyn Stream) returns int {
+    let first = await stream.next()
+    let second = await stream.next()
+    first + second
+}
+
+public func main() returns int {
+    let source = CounterStream { current: 20 }
+    let dynamic: dyn Stream = source as dyn Stream
+    if block_on(consume(dynamic)) != 44 {
+        return 1
+    }
+    return 0
+}

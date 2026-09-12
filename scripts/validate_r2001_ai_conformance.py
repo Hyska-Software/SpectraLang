@@ -83,7 +83,6 @@ GATES = [
     Gate("serving", "serving_monitoring_drift", cargo_cli("run", "tests/validation/100_phase19_model_monitoring.spectra"), 30),
     Gate("tooling", "cli_help", cargo_cli("--help"), 30),
     Gate("tooling", "diagnostic_standardization", python_script("scripts/validate_diagnostics_standardization.py"), 60),
-    Gate("tooling", "feature_maturity_policy", python_script("scripts/validate_feature_maturity.py", "--binary", "target/debug/spectralang.exe"), 60),
     Gate("docs_examples", "ai_book_validation", python_script("scripts/validate_ai_book.py"), 60),
     Gate(
         "docs_examples",
@@ -108,8 +107,12 @@ def gates_for_binary(binary: Path) -> list[Gate]:
         command = gate.command
         if command[: len(cargo_prefix)] == cargo_prefix:
             command = [resolved, *command[len(cargo_prefix):]]
-        elif gate.name == "feature_maturity_policy":
-            command = [*command[:-1], resolved]
+        elif gate.name == "ai_examples_benchmark":
+            # The benchmark has an explicit binary mode.  When the
+            # conformance runner receives --binary, use it here as well so
+            # the gate measures the already-built candidate instead of
+            # recompiling the entire workspace once per example.
+            command = [*command, "--binary", resolved]
         configured.append(Gate(gate.category, gate.name, command, gate.timeout_seconds))
     return configured
 

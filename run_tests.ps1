@@ -20,14 +20,9 @@ param(
 $binary = (Resolve-Path ".\target\debug\spectralang.exe").Path
 $phase31BinaryPath = (Join-Path (Get-Location).Path "target\release\spectralang.exe")
 $timeoutSeconds = 10
+$runtimeErrorTimeoutSeconds = 30
 $hostCommandTimeoutSeconds = 300
 $env:PATH = "C:\Users\estev\.cargo\bin;" + $env:PATH
-$experimentalFlags = @(
-    "--enable-experimental", "switch",
-    "--enable-experimental", "if not",
-    "--enable-experimental", "do-while",
-    "--enable-experimental", "loop"
-)
 
 if (-not (Test-Path $binary)) {
     Write-Host "Binario nao encontrado. Compilando..." -ForegroundColor Yellow
@@ -36,6 +31,25 @@ if (-not (Test-Path $binary)) {
         Write-Host "ERRO: Falha ao compilar o compilador." -ForegroundColor Red
         exit 1
     }
+}
+
+if ($Phase -contains "stability_release") {
+    Write-Host "--- SpectraLang required stability release gate ---" -ForegroundColor Yellow
+    $stabilityArguments = @(
+        "scripts\validate_stability_release.py",
+        "--binary", $binary,
+        "--required",
+        "--report", "target\stability\release-report.json",
+        "--markdown", "target\stability\release-report.md"
+    )
+    if ($env:SPECTRA_POSTGRES_VERSION_PROBE_DOCKER_CONTAINER) {
+        $stabilityArguments += @(
+            "--postgres-version-probe-docker-container",
+            $env:SPECTRA_POSTGRES_VERSION_PROBE_DOCKER_CONTAINER
+        )
+    }
+    & python @stabilityArguments
+    exit $LASTEXITCODE
 }
 
 Write-Host "========================================" -ForegroundColor Cyan
@@ -49,6 +63,133 @@ $totalInfo    = 0
 $totalSkipped = 0
 $results      = @()
 $runPhase31Gpu = $Phase -contains "phase31_gpu"
+
+if ($Phase -contains "language_bug_hunt_v2") {
+    Write-Host "--- SpectraLang executable language bug-hunt v2 ---" -ForegroundColor Yellow
+    & python scripts\validate_language_bug_hunt_v2.py --binary $binary
+    $validatorExit = $LASTEXITCODE
+    if ($validatorExit -ne 0) {
+        Write-Host "Language bug-hunt v2 gate blocked (validator=$validatorExit)." -ForegroundColor Red
+        exit $validatorExit
+    }
+    Write-Host "Language bug-hunt v2 gate passed." -ForegroundColor Green
+    exit 0
+}
+
+if ($Phase -contains "stdlib_core_bug_hunt") {
+    Write-Host "--- SpectraLang core stdlib executable bug-hunt ---" -ForegroundColor Yellow
+    & python scripts\validate_stdlib_core_bug_hunt.py --binary $binary
+    $validatorExit = $LASTEXITCODE
+    & git diff --check -- `
+        backend/src/codegen.rs `
+        midend/src/lowering.rs `
+        midend/tests/lowering_tests.rs `
+        scripts/validate_stdlib_core_bug_hunt.py `
+        docs/goals/spectralang-stdlib-core-bug-hunt/GOAL.md `
+        docs/goals/spectralang-stdlib-core-bug-hunt/PLAN.md `
+        docs/goals/spectralang-stdlib-core-bug-hunt/FINDINGS.md `
+        run_tests.ps1
+    $diffExit = $LASTEXITCODE
+    if ($validatorExit -ne 0 -or $diffExit -ne 0) {
+        Write-Host "Core stdlib bug-hunt gate blocked (validator=$validatorExit, diff-check=$diffExit)." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "Core stdlib bug-hunt gate passed." -ForegroundColor Green
+    exit 0
+}
+
+if ($Phase -contains "phase2_r213_generic_trait_impls") {
+    Write-Host "--- R-213 generic traits gate ---" -ForegroundColor Yellow
+    & python scripts\validate_r213_generic_trait_impls.py --binary $binary
+    $validatorExit = $LASTEXITCODE
+    & git diff --check -- compiler/src/ast/mod.rs compiler/src/parser/item.rs compiler/src/semantic/mod.rs tests/validation/257_oop_generic_traits.spectra scripts/validate_r213_generic_trait_impls.py docs/diagnostics/error-code-reference.md docs/reference/03-tipos-compostos.md
+    $diffExit = $LASTEXITCODE
+    if ($validatorExit -ne 0 -or $diffExit -ne 0) {
+        Write-Host "R-213 focused gate blocked (validator=$validatorExit, diff-check=$diffExit)." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "R-213 focused gate passed." -ForegroundColor Green
+    exit 0
+}
+if ($Phase -contains "phase2_r212_ufcs") {
+    Write-Host "--- R-212 UFCS gate ---" -ForegroundColor Yellow
+    & python scripts\validate_r212_ufcs.py --binary $binary
+    $validatorExit = $LASTEXITCODE
+    & git diff --check -- compiler/src/semantic/mod.rs midend/src/lowering.rs tests/validation/256_oop_ufcs.spectra scripts/validate_r212_ufcs.py docs/reference/03-tipos-compostos.md
+    $diffExit = $LASTEXITCODE
+    if ($validatorExit -ne 0 -or $diffExit -ne 0) {
+        Write-Host "R-212 focused gate blocked (validator=$validatorExit, diff-check=$diffExit)." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "R-212 focused gate passed." -ForegroundColor Green
+    exit 0
+}
+if ($Phase -contains "phase2_r210_static_vtables") {
+    Write-Host "--- R-210 dyn vtable lifetime gate ---" -ForegroundColor Yellow
+    & python scripts\validate_r210_static_vtables.py --binary $binary
+    $validatorExit = $LASTEXITCODE
+    & git diff --check -- midend/src/ir.rs midend/src/lowering.rs backend/src/codegen.rs runtime/src/ffi.rs tests/validation/255_oop_dyn_vtable_lifetime.spectra scripts/validate_r210_static_vtables.py
+    $diffExit = $LASTEXITCODE
+    if ($validatorExit -ne 0 -or $diffExit -ne 0) {
+        Write-Host "R-210 focused gate blocked (validator=$validatorExit, diff-check=$diffExit)." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "R-210 focused gate passed." -ForegroundColor Green
+    exit 0
+}
+if ($Phase -contains "phase2_r211_generic_impls") {
+    Write-Host "--- R-211 generic impl blocks gate ---" -ForegroundColor Yellow
+    & python scripts\validate_r211_generic_impls.py --binary $binary
+    $validatorExit = $LASTEXITCODE
+    & git diff --check -- compiler/src/parser/item.rs compiler/src/semantic/mod.rs midend/src/lowering.rs tests/validation/254_oop_generic_impls.spectra scripts/validate_r211_generic_impls.py
+    $diffExit = $LASTEXITCODE
+    if ($validatorExit -ne 0 -or $diffExit -ne 0) {
+        Write-Host "R-211 focused gate blocked (validator=$validatorExit, diff-check=$diffExit)." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "R-211 focused gate passed." -ForegroundColor Green
+    exit 0
+}
+if ($Phase -contains "phase2_r209_self_first_parameter") {
+    Write-Host "--- R-209 self-first-parameter validation gate ---" -ForegroundColor Yellow
+    & python scripts\validate_r209_self_first_parameter.py --binary $binary
+    $validatorExit = $LASTEXITCODE
+    & git diff --check -- compiler/src/semantic/mod.rs docs/diagnostics/error-code-reference.md scripts/validate_r209_self_first_parameter.py tests/errors/self_must_be_first_parameter.spectra
+    $diffExit = $LASTEXITCODE
+    if ($validatorExit -ne 0 -or $diffExit -ne 0) {
+        Write-Host "R-209 focused gate blocked (validator=$validatorExit, diff-check=$diffExit)." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "R-209 focused gate passed." -ForegroundColor Green
+    exit 0
+}
+if ($Phase -contains "phase2_r208_oop_diagnostics") {
+    Write-Host "--- R-208 stable OOP diagnostic codes gate ---" -ForegroundColor Yellow
+    & python scripts\validate_r208_oop_diagnostics.py --binary $binary
+    $validatorExit = $LASTEXITCODE
+    & git diff --check -- compiler/src/semantic/mod.rs docs/diagnostics/error-code-reference.md scripts/validate_r208_oop_diagnostics.py
+    $diffExit = $LASTEXITCODE
+    if ($validatorExit -ne 0 -or $diffExit -ne 0) {
+        Write-Host "R-208 focused gate blocked (validator=$validatorExit, diff-check=$diffExit)." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "R-208 focused gate passed." -ForegroundColor Green
+    exit 0
+}
+
+if ($Phase -contains "phase2_r207_struct_layout") {
+    Write-Host "--- R-207 struct layout and drop semantics gate ---" -ForegroundColor Yellow
+    & python scripts\validate_r207_struct_layout.py --binary $binary
+    $validatorExit = $LASTEXITCODE
+    & git diff --check -- backend/src/codegen.rs midend/src/layout.rs midend/src/lowering.rs midend/src/ir.rs runtime/src/ffi.rs tests/validation/253_oop_struct_layout_drop.spectra scripts/validate_r207_struct_layout.py
+    $diffExit = $LASTEXITCODE
+    if ($validatorExit -ne 0 -or $diffExit -ne 0) {
+        Write-Host "R-207 focused gate blocked (validator=$validatorExit, diff-check=$diffExit)." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "R-207 focused gate passed." -ForegroundColor Green
+    exit 0
+}
 
 if ($Phase -contains "phase27_tracing") {
     & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "scripts\run_phase27_tracing.ps1") -Binary $binary
@@ -287,11 +428,11 @@ Add-Content -LiteralPath "TEST_RESULTS.txt" -Value ("phase27-opentelemetry-traci
 # Funcao auxiliar: compila um arquivo .spectra com timeout e retorna o resultado
 # ---------------------------------------------------------------------------
 function Invoke-SpectraFile([string]$filePath) {
-    return Invoke-SpectraCommand -commandArgs @("compile", $filePath) -workingDir (Get-Location).Path -includeExperimental $true
+    return Invoke-SpectraCommand -commandArgs @("compile", $filePath) -workingDir (Get-Location).Path
 }
 
-function Invoke-SpectraCommand([string[]]$commandArgs, [string]$workingDir, [bool]$includeExperimental = $false, [string]$stdinText = $null) {
-    $fullArgs = if ($includeExperimental) { $commandArgs + $experimentalFlags } else { $commandArgs }
+function Invoke-SpectraCommand([string[]]$commandArgs, [string]$workingDir, [string]$stdinText = $null, [int]$timeoutSecondsOverride = $timeoutSeconds) {
+    $fullArgs = $commandArgs
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $binary
@@ -322,7 +463,7 @@ function Invoke-SpectraCommand([string[]]$commandArgs, [string]$workingDir, [boo
             $proc.StandardInput.Write($stdinText)
             $proc.StandardInput.Close()
         }
-        if (-not $proc.WaitForExit($timeoutSeconds * 1000)) {
+        if (-not $proc.WaitForExit($timeoutSecondsOverride * 1000)) {
             $timedOut = $true
             try { $proc.Kill($true) } catch { $proc.Kill() }
             $proc.WaitForExit()
@@ -343,9 +484,11 @@ function Invoke-SpectraCommand([string[]]$commandArgs, [string]$workingDir, [boo
 }
 
 function Get-FirstError([string]$output) {
-    $line = ($output -split "`n" | Where-Object { $_ -match "error\[|error:|Error:" } | Select-Object -First 1)
+    $ansiPattern = [string][char]27 + '\[[0-9;]*[A-Za-z]'
+    $plainOutput = [regex]::Replace($output, $ansiPattern, '')
+    $line = ($plainOutput -split "`n" | Where-Object { $_ -match "error\[|error:|Error:" } | Select-Object -First 1)
     if (-not $line) {
-        $line = ($output -split "`n" | Where-Object { $_ -match "Expected|Undefined|not defined" } | Select-Object -First 1)
+        $line = ($plainOutput -split "`n" | Where-Object { $_ -match "Expected|Undefined|not defined" } | Select-Object -First 1)
     }
     if ($line) {
         return $line.Trim().Substring(0, [Math]::Min(80, $line.Trim().Length))
@@ -397,7 +540,7 @@ if (Test-Path $projectDir) {
 
     foreach ($project in $projects) {
         Write-Host "  $($project.Name)" -NoNewline
-        $r = Invoke-SpectraCommand -commandArgs @("compile", $project.FullName) -workingDir (Get-Location).Path -includeExperimental $true
+        $r = Invoke-SpectraCommand -commandArgs @("compile", $project.FullName) -workingDir (Get-Location).Path
 
         if ($r.TimedOut) {
             Write-Host " TIMEOUT" -ForegroundColor Red
@@ -426,7 +569,9 @@ if (Test-Path $errorDir) {
     $runtimeErrorFixtures = @(
         "exact_width_float_nonfinite.spectra",
         "exact_width_invalid_cast.spectra",
-        "exact_width_runtime_overflow.spectra"
+        "exact_width_runtime_overflow.spectra",
+        "integer_division_by_zero.spectra",
+        "json_malformed_rejects.spectra"
     )
     Write-Host ""
     Write-Host "--- $errorDir ($($files.Count) testes: devem falhar) ---" -ForegroundColor Yellow
@@ -435,7 +580,7 @@ if (Test-Path $errorDir) {
         Write-Host "  $($file.Name)" -NoNewline
         $expectsRuntimeFailure = $runtimeErrorFixtures -contains $file.Name
         $r = if ($expectsRuntimeFailure) {
-            Invoke-SpectraCommand -commandArgs @("run", $file.FullName) -workingDir (Get-Location).Path -includeExperimental $true
+            Invoke-SpectraCommand -commandArgs @("run", $file.FullName) -workingDir (Get-Location).Path -timeoutSecondsOverride $runtimeErrorTimeoutSeconds
         } else {
             Invoke-SpectraFile $file.FullName
         }
@@ -501,13 +646,6 @@ $cliTests = @(
         UseStdin = $false
     }
     [PSCustomObject]@{
-        Nome = "list_experimental"
-        Args = @("--list-experimental")
-        ExpectExit = 0
-        Contains = "none"
-        UseStdin = $false
-    }
-    [PSCustomObject]@{
         Nome = "check_valid_file"
         Args = @("check", "tests\validation\60_pattern_control_surface.spectra")
         ExpectExit = 0
@@ -563,6 +701,36 @@ $cliTests = @(
         Contains = "shadowing"
         UseStdin = $false
     }
+    # BEGIN narrowing-cast lint rows (CastLint)
+    [PSCustomObject]@{
+        Nome = "lint_warn_narrowing_cast"
+        Args = @("lint", "tests\cli\lint_warning_narrowing_cast.spectra")
+        ExpectExit = 0
+        Contains = "narrowing-cast"
+        UseStdin = $false
+    }
+    [PSCustomObject]@{
+        Nome = "compile_warn_narrowing_cast_does_not_block"
+        Args = @("compile", "tests\cli\lint_warning_narrowing_cast.spectra")
+        ExpectExit = 0
+        Contains = ""
+        UseStdin = $false
+    }
+    [PSCustomObject]@{
+        Nome = "lint_deny_narrowing_cast"
+        Args = @("lint", "--deny", "narrowing-cast", "tests\cli\lint_warning_narrowing_cast.spectra")
+        ExpectExit = 65
+        Contains = "narrowing-cast"
+        UseStdin = $false
+    }
+    [PSCustomObject]@{
+        Nome = "compile_deny_narrowing_cast_escalates_e035"
+        Args = @("compile", "--deny", "narrowing-cast", "--json", "tests\cli\lint_warning_narrowing_cast.spectra")
+        ExpectExit = 65
+        Contains = '"code":"E035"'
+        UseStdin = $false
+    }
+    # END narrowing-cast lint rows (CastLint)
     [PSCustomObject]@{
         Nome = "fmt_check_formatted"
         Args = @("fmt", "--check", "tests\cli\fmt_formatted.spectra")
@@ -641,6 +809,13 @@ $cliTests = @(
         Contains = "0: main()"
         UseStdin = $false
     }
+    [PSCustomObject]@{
+        Nome = "run_array_iteration_sum"
+        Args = @("run", "tests\validation\array_iteration_sum.spectra")
+        ExpectExit = 0
+        Contains = ""
+        UseStdin = $false
+    }
 )
 
 Write-Host ""
@@ -654,8 +829,7 @@ foreach ($cliTest in $cliTests) {
         $stdinText = Get-Content -LiteralPath $stdinPath -Raw
         $r = Invoke-SpectraCommand -commandArgs @("fmt", "--stdin") -workingDir (Get-Location).Path -stdinText $stdinText
     } else {
-        $needsExperimental = ($cliTest.Args.Count -gt 0 -and @("compile", "check", "lint", "run") -contains $cliTest.Args[0])
-        $r = Invoke-SpectraCommand -commandArgs $cliTest.Args -workingDir (Get-Location).Path -includeExperimental $needsExperimental
+        $r = Invoke-SpectraCommand -commandArgs $cliTest.Args -workingDir (Get-Location).Path
     }
 
     $exitMatches = $false
@@ -1079,8 +1253,8 @@ New-Item -ItemType Directory -Force -Path $diagnosticsTemp | Out-Null
 $jsonReport = Join-Path $diagnosticsTemp "diagnostics.json"
 $sarifReport = Join-Path $diagnosticsTemp "diagnostics.sarif"
 
-$jsonDiag = Invoke-SpectraCommand -commandArgs @("check", "--json", "tests\errors\type_mismatch.spectra") -workingDir (Get-Location).Path -includeExperimental $true
-$sarifDiag = Invoke-SpectraCommand -commandArgs @("check", "--sarif", "tests\errors\type_mismatch.spectra") -workingDir (Get-Location).Path -includeExperimental $true
+$jsonDiag = Invoke-SpectraCommand -commandArgs @("check", "--json", "tests\errors\type_mismatch.spectra") -workingDir (Get-Location).Path
+$sarifDiag = Invoke-SpectraCommand -commandArgs @("check", "--sarif", "tests\errors\type_mismatch.spectra") -workingDir (Get-Location).Path
 Set-Content -LiteralPath $jsonReport -Value $jsonDiag.Output -Encoding UTF8
 Set-Content -LiteralPath $sarifReport -Value $sarifDiag.Output -Encoding UTF8
 
@@ -1161,20 +1335,6 @@ if ($runtimeFloatCasts.Status -eq "PASSOU") {
 }
 $results += [PSCustomObject]@{ Diretorio = "phase1-backend"; Teste = "validate_r112_runtime_float_cast_codegen"; Status = $runtimeFloatCasts.Status; Detalhe = $runtimeFloatCasts.Detail }
 
-# ---------------------------------------------------------------------------
-# Grupo 8.6: R-106 feature maturity policy
-# ---------------------------------------------------------------------------
-Write-Host ""
-Write-Host "--- R-106 feature maturity policy ---" -ForegroundColor Yellow
-$featureMaturity = Invoke-HostCommand -name "validate_feature_maturity" -fileName "python" -arguments @("scripts\validate_feature_maturity.py", "--binary", $binary) -workingDir (Get-Location).Path
-if ($featureMaturity.Status -eq "PASSOU") {
-    $totalPassed++
-} else {
-    $totalFailed++
-}
-$results += [PSCustomObject]@{ Diretorio = "phase1-features"; Teste = "validate_feature_maturity"; Status = $featureMaturity.Status; Detalhe = $featureMaturity.Detail }
-
-# ---------------------------------------------------------------------------
 # Grupo 8.7: R-203 pattern ergonomics
 # ---------------------------------------------------------------------------
 Write-Host ""
@@ -1214,7 +1374,33 @@ if ($floatConstCast.Status -eq "PASSOU") {
 $results += [PSCustomObject]@{ Diretorio = "phase2-codegen"; Teste = "validate_r205_float_const_cast_codegen"; Status = $floatConstCast.Status; Detalhe = $floatConstCast.Detail }
 
 # ---------------------------------------------------------------------------
-# Grupo 8.10: R-1002 debugger and stack traces
+# Grupo 8.10: R-207 struct layout with padding and cumulative offsets
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-207 struct layout and drop semantics ---" -ForegroundColor Yellow
+$structLayout = Invoke-HostCommand -name "validate_r207_struct_layout" -fileName "python" -arguments @("scripts\validate_r207_struct_layout.py", "--binary", $binary) -workingDir (Get-Location).Path
+if ($structLayout.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase2-oop-layout"; Teste = "validate_r207_struct_layout"; Status = $structLayout.Status; Detalhe = $structLayout.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.11: R-208 stable OOP diagnostic codes
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-208 stable OOP diagnostic codes ---" -ForegroundColor Yellow
+$oopDiagnostics = Invoke-HostCommand -name "validate_r208_oop_diagnostics" -fileName "python" -arguments @("scripts\validate_r208_oop_diagnostics.py", "--binary", $binary) -workingDir (Get-Location).Path
+if ($oopDiagnostics.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase2-oop-diagnostics"; Teste = "validate_r208_oop_diagnostics"; Status = $oopDiagnostics.Status; Detalhe = $oopDiagnostics.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.12: R-1002 debugger and stack traces
 # ---------------------------------------------------------------------------
 Write-Host ""
 Write-Host "--- R-1002 debugger and stack traces ---" -ForegroundColor Yellow
@@ -1547,6 +1733,9 @@ Write-Host ""
 Write-Host "--- R-2505 PostgreSQL driver ---" -ForegroundColor Yellow
 $r2505Arguments = @("scripts\validate_r2505_postgres.py", "--binary", $binary, "--fixture", "tests\validation\195_postgres_driver.spectra", "--report", "target\r2505-postgres\report.json")
 if ($env:SPECTRA_POSTGRES_URL) { $r2505Arguments += @("--database-url", $env:SPECTRA_POSTGRES_URL) }
+if ($env:SPECTRA_POSTGRES_VERSION_PROBE_DOCKER_CONTAINER) {
+    $r2505Arguments += @("--version-probe-docker-container", $env:SPECTRA_POSTGRES_VERSION_PROBE_DOCKER_CONTAINER)
+}
 $r2505Postgres = Invoke-HostCommand -name "validate_r2505_postgres" -fileName "python" -arguments $r2505Arguments -workingDir (Get-Location).Path
 if ($r2505Postgres.Detail -match "skipped_environment") {
     $totalSkipped++
@@ -2255,6 +2444,278 @@ if ($r2302CorsMiddleware.Status -eq "PASSOU") {
 $results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2302_cors_middleware"; Status = $r2302CorsMiddleware.Status; Detalhe = $r2302CorsMiddleware.Detail }
 
 # ---------------------------------------------------------------------------
+# Grupo 8.60: R-2303 structured logging and request ID tracing
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2303 structured logging and request ID tracing ---" -ForegroundColor Yellow
+$r2303StructuredLogging = Invoke-HostCommand -name "validate_r2303_structured_logging" -fileName "python" -arguments @("scripts\validate_r2303_structured_logging.py") -workingDir (Get-Location).Path
+if ($r2303StructuredLogging.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2303_structured_logging"; Status = $r2303StructuredLogging.Status; Detalhe = $r2303StructuredLogging.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.61: R-2304 rate limiting
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2304 rate limiting ---" -ForegroundColor Yellow
+$r2304RateLimiting = Invoke-HostCommand -name "validate_r2304_rate_limiting" -fileName "python" -arguments @("scripts\validate_r2304_rate_limiting.py") -workingDir (Get-Location).Path
+if ($r2304RateLimiting.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2304_rate_limiting"; Status = $r2304RateLimiting.Status; Detalhe = $r2304RateLimiting.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.62: R-2305 response compression
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2305 response compression ---" -ForegroundColor Yellow
+$r2305Compression = Invoke-HostCommand -name "validate_r2305_compression" -fileName "python" -arguments @("scripts\validate_r2305_compression.py") -workingDir (Get-Location).Path
+if ($r2305Compression.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2305_compression"; Status = $r2305Compression.Status; Detalhe = $r2305Compression.Detail }
+
+# Grupo 8.63: R-2306 security headers
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2306 security headers ---" -ForegroundColor Yellow
+$r2306SecurityHeaders = Invoke-HostCommand -name "validate_r2306_security_headers" -fileName "python" -arguments @("scripts\validate_r2306_security_headers.py") -workingDir (Get-Location).Path
+if ($r2306SecurityHeaders.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2306_security_headers"; Status = $r2306SecurityHeaders.Status; Detalhe = $r2306SecurityHeaders.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.64: R-2307 API key authentication
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2307 API key authentication ---" -ForegroundColor Yellow
+$r2307ApiKey = Invoke-HostCommand -name "validate_r2307_api_key" -fileName "python" -arguments @("scripts\validate_r2307_api_key.py") -workingDir (Get-Location).Path
+if ($r2307ApiKey.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2307_api_key"; Status = $r2307ApiKey.Status; Detalhe = $r2307ApiKey.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.65: R-2308 JWT signing and verification
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2308 JWT signing and verification ---" -ForegroundColor Yellow
+$r2308Jwt = Invoke-HostCommand -name "validate_r2308_jwt" -fileName "python" -arguments @("scripts\validate_r2308_jwt.py") -workingDir (Get-Location).Path
+if ($r2308Jwt.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2308_jwt"; Status = $r2308Jwt.Status; Detalhe = $r2308Jwt.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.66: R-2309 OAuth2 client with PKCE
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2309 OAuth2 client with PKCE ---" -ForegroundColor Yellow
+$r2309OAuth = Invoke-HostCommand -name "validate_r2309_oauth" -fileName "python" -arguments @("scripts\validate_r2309_oauth.py") -workingDir (Get-Location).Path
+if ($r2309OAuth.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2309_oauth"; Status = $r2309OAuth.Status; Detalhe = $r2309OAuth.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.67: R-2312 typed cookie API
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2312 typed cookie API ---" -ForegroundColor Yellow
+$r2312Cookie = Invoke-HostCommand -name "validate_r2312_cookie" -fileName "python" -arguments @("scripts\validate_r2312_cookie.py") -workingDir (Get-Location).Path
+if ($r2312Cookie.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2312_cookie"; Status = $r2312Cookie.Status; Detalhe = $r2312Cookie.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.68: R-2313 request validation and RFC 7807
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2313 request validation and RFC 7807 ---" -ForegroundColor Yellow
+$r2313Validation = Invoke-HostCommand -name "validate_r2313_validation" -fileName "python" -arguments @("scripts\validate_r2313_validation.py") -workingDir (Get-Location).Path
+if ($r2313Validation.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2313_validation"; Status = $r2313Validation.Status; Detalhe = $r2313Validation.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.69: R-2314 unified errors and exception middleware
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2314 unified errors and exception middleware ---" -ForegroundColor Yellow
+$r2314Errors = Invoke-HostCommand -name "validate_r2314_errors" -fileName "python" -arguments @("scripts\validate_r2314_errors.py") -workingDir (Get-Location).Path
+if ($r2314Errors.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2314_errors"; Status = $r2314Errors.Status; Detalhe = $r2314Errors.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.70: R-2316 threat mitigations
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2316 threat mitigations ---" -ForegroundColor Yellow
+$r2316Security = Invoke-HostCommand -name "validate_r2316_security" -fileName "python" -arguments @("scripts\validate_r2316_security.py") -workingDir (Get-Location).Path
+if ($r2316Security.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2316_security"; Status = $r2316Security.Status; Detalhe = $r2316Security.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.71: R-2317 authenticated REST CRUD example with JWT
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2317 authenticated REST CRUD example with JWT ---" -ForegroundColor Yellow
+$r2317JwtCrud = Invoke-HostCommand -name "validate_r2317_jwt_auth_crud_example" -fileName "python" -arguments @("scripts\validate_r2317_jwt_auth_crud_example.py") -workingDir (Get-Location).Path
+if ($r2317JwtCrud.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2317_jwt_auth_crud_example"; Status = $r2317JwtCrud.Status; Detalhe = $r2317JwtCrud.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.72: R-2318 middleware composition example
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2318 middleware composition example ---" -ForegroundColor Yellow
+$r2318MiddlewareComposition = Invoke-HostCommand -name "validate_r2318_middleware_composition_example" -fileName "python" -arguments @("scripts\validate_r2318_middleware_composition_example.py") -workingDir (Get-Location).Path
+if ($r2318MiddlewareComposition.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2318_middleware_composition_example"; Status = $r2318MiddlewareComposition.Status; Detalhe = $r2318MiddlewareComposition.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.73: R-2311 server-side session management
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2311 server-side session management ---" -ForegroundColor Yellow
+$r2311Session = Invoke-HostCommand -name "validate_r2311_session" -fileName "python" -arguments @("scripts\validate_r2311_session.py") -workingDir (Get-Location).Path
+if ($r2311Session.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2311_session"; Status = $r2311Session.Status; Detalhe = $r2311Session.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.74: R-2315 HTTPS hardening
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2315 HTTPS hardening ---" -ForegroundColor Yellow
+$r2315HttpsHardening = Invoke-HostCommand -name "validate_r2315_https_hardening" -fileName "python" -arguments @("scripts\validate_r2315_https_hardening.py") -workingDir (Get-Location).Path
+if ($r2315HttpsHardening.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase23-api"; Teste = "validate_r2315_https_hardening"; Status = $r2315HttpsHardening.Status; Detalhe = $r2315HttpsHardening.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.75: R-2401 WebSocket server (RFC 6455)
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2401 WebSocket server (RFC 6455) ---" -ForegroundColor Yellow
+$r2401WebSocket = Invoke-HostCommand -name "validate_r2401_websocket" -fileName "python" -arguments @("scripts\validate_r2401_websocket.py") -workingDir (Get-Location).Path
+if ($r2401WebSocket.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase24-api"; Teste = "validate_r2401_websocket"; Status = $r2401WebSocket.Status; Detalhe = $r2401WebSocket.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.76: R-2402 WebSocket client
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2402 WebSocket client ---" -ForegroundColor Yellow
+$r2402WebSocketClient = Invoke-HostCommand -name "validate_r2402_websocket_client" -fileName "python" -arguments @("scripts\validate_r2402_websocket_client.py") -workingDir (Get-Location).Path
+if ($r2402WebSocketClient.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase24-api"; Teste = "validate_r2402_websocket_client"; Status = $r2402WebSocketClient.Status; Detalhe = $r2402WebSocketClient.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.77: R-2403 Server-Sent Events
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2403 Server-Sent Events ---" -ForegroundColor Yellow
+$r2403Sse = Invoke-HostCommand -name "validate_r2403_sse" -fileName "python" -arguments @("scripts\validate_r2403_sse.py") -workingDir (Get-Location).Path
+if ($r2403Sse.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase24-api"; Teste = "validate_r2403_sse"; Status = $r2403Sse.Status; Detalhe = $r2403Sse.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.78: R-2404 HTTP/2 server
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2404 HTTP/2 server ---" -ForegroundColor Yellow
+$r2404Http2 = Invoke-HostCommand -name "validate_r2404_http2" -fileName "python" -arguments @("scripts\validate_r2404_http2.py") -workingDir (Get-Location).Path
+if ($r2404Http2.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase24-api"; Teste = "validate_r2404_http2"; Status = $r2404Http2.Status; Detalhe = $r2404Http2.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.79: R-2405 HTTP/2 client
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2405 HTTP/2 client ---" -ForegroundColor Yellow
+$r2405Http2Client = Invoke-HostCommand -name "validate_r2405_http2_client" -fileName "python" -arguments @("scripts\validate_r2405_http2_client.py") -workingDir (Get-Location).Path
+if ($r2405Http2Client.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase24-api"; Teste = "validate_r2405_http2_client"; Status = $r2405Http2Client.Status; Detalhe = $r2405Http2Client.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 8.80: R-2406 HTTP/3 and QUIC scope decision
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-2406 HTTP/3 and QUIC scope decision ---" -ForegroundColor Yellow
+$r2406Http3Decision = Invoke-HostCommand -name "validate_r2406_http3_decision" -fileName "python" -arguments @("scripts\validate_r2406_http3_decision.py") -workingDir (Get-Location).Path
+if ($r2406Http3Decision.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase24-api"; Teste = "validate_r2406_http3_decision"; Status = $r2406Http3Decision.Status; Detalhe = $r2406Http3Decision.Detail }
+
+# ---------------------------------------------------------------------------
 # Grupo 9: Phase 12 security evidence and stress/soak smoke
 # ---------------------------------------------------------------------------
 Write-Host ""
@@ -2342,7 +2803,7 @@ if (Test-Path $aiExamplesDir) {
 
     foreach ($file in $files) {
         Write-Host "  $($file.Name)" -NoNewline
-        $r = Invoke-SpectraCommand -commandArgs @("run", $file.FullName) -workingDir (Get-Location).Path -includeExperimental $true
+        $r = Invoke-SpectraCommand -commandArgs @("run", $file.FullName) -workingDir (Get-Location).Path
 
         if ($r.TimedOut) {
             Write-Host " TIMEOUT" -ForegroundColor Red
@@ -2394,5 +2855,10 @@ $results | Format-Table -AutoSize
 
 # Salva relatorio
 $reportPath = "TEST_RESULTS.txt"
-$results | Out-File -FilePath $reportPath -Encoding UTF8
+$results | Format-Table -AutoSize -Wrap | Out-File -FilePath $reportPath -Encoding UTF8 -Width 240
 Write-Host "Relatorio salvo em: $reportPath" -ForegroundColor Cyan
+
+if ($totalFailed -gt 0) {
+    exit 1
+}
+exit 0

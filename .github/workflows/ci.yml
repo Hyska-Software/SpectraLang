@@ -56,6 +56,28 @@ jobs:
       - name: Run workspace tests
         run: cargo test --workspace
 
+  reactor-platform:
+    name: Real reactor readiness (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: cargo-test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate platform reactor and real TCP readiness
+        run: cargo test -p spectra-runtime reactor -- --nocapture
+
+      - name: Validate async standard-library real I/O
+        run: cargo test -p spectra-runtime async_stdlib_host_calls_cover_fs_tcp_udp_channels_and_cancellation -- --nocapture
+
   package-offline:
     name: Reproducible offline package gate
     runs-on: ubuntu-latest
@@ -82,3 +104,45 @@ jobs:
 
       - name: Validate offline and locked package flow
         run: python scripts/validate_r913_offline_reproducible.py --binary target/debug/spectralang
+
+  stability-quality:
+    name: Stable core quality gates
+    runs-on: ubuntu-latest
+    needs: cargo-test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build CLI
+        run: cargo build -p spectra-cli
+
+      - name: Validate formatting
+        run: cargo fmt --all -- --check
+
+      - name: Validate Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run full workspace regression
+        run: cargo test --workspace --all-targets --no-fail-fast
+
+      - name: Validate maturity and documentation contracts
+        run: |
+          python scripts/validate_language_guide.py --binary target/debug/spectralang
+          python scripts/validate_r3007_stdlib_contract.py --binary target/debug/spectralang --timeout-seconds 180 --report target/stability/r3007-ci.json
+
+      - name: Capture development stability report
+        run: python scripts/validate_stability_release.py --binary target/debug/spectralang --report target/stability/release-report.json --markdown target/stability/release-report.md
+
+      - name: Publish stability reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spectralang-stability-quality
+          path: target/stability/

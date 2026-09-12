@@ -1,0 +1,27 @@
+module request_validation
+
+from std.api.validation import ValidationSchema, ValidationResult, schema, field, min_length, max_length, range, regex, validate_json, result_ok, result_problem_json
+from std.api.http import Response, response_status
+
+public func main() returns int {
+    let s0: ValidationSchema = schema()
+    let s1: ValidationSchema = field(s0, "username", 1, true)
+    let s2: ValidationSchema = min_length(s1, "username", 3)
+    let s3: ValidationSchema = max_length(s2, "username", 20)
+    let s4: ValidationSchema = field(s3, "age", 2, true)
+    let s5: ValidationSchema = range(s4, "age", 0, 150)
+    let s6: ValidationSchema = regex(s5, "email", "^[^@]+@[^@]+$")
+    let ok: ValidationResult = validate_json(s6, "{\"username\":\"alice\",\"age\":30,\"email\":\"a@b.com\"}")
+    if result_ok(ok) != true {
+        return 1
+    }
+    let bad: ValidationResult = validate_json(s6, "{\"username\":\"ab\",\"age\":200}")
+    if result_ok(bad) == true {
+        return 2
+    }
+    let problem: string = result_problem_json(bad)
+    if problem == "" {
+        return 3
+    }
+    return 0
+}

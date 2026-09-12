@@ -1,0 +1,11 @@
+module static_non_const_initializer
+
+func runtime_value() returns int {
+    7
+}
+
+static BAD: int = runtime_value()
+
+public func main() returns int {
+    0
+}

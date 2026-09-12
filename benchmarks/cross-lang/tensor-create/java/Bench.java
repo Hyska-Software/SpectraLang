@@ -2,7 +2,7 @@
 
 public class Bench {
     public static void main(String[] args) {
-        final int iters = 20;
+        final int iters = 60;
         long total = 0L;
         for (int i = 0; i < iters; i++) {
             double[] t = new double[1_048_576];
@@ -11,7 +11,7 @@ public class Bench {
             }
             total += t.length;
         }
-        if (total != 20_971_520L) {
+        if (total != 62_914_560L) {
             System.err.println("unexpected: " + total);
             System.exit(1);
         }

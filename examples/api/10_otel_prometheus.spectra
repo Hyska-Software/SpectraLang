@@ -1,6 +1,7 @@
 module otel_prometheus_example
 
 from std.env import env_get
+from std.option import is_none, option_unwrap, option_unwrap_or
 from std.convert import string_to_int_or
 from std.time import sleep_ms
 from std.api.trace import TraceConfig, TraceSpan, config_new, config_set_batch_size, config_start, config_shutdown, span_start, span_set_attribute, span_set_attribute_int, span_set_attribute_bool, span_set_status, span_end, flush
@@ -9,10 +10,11 @@ from std.api.routing import Router, Route, router, get, route_id
 from std.api.handler import HandlerHandle, text, register_sync
 
 public func main() returns int {
-    let endpoint = env_get("SPECTRA_R2707_OTLP_ENDPOINT")
-    if endpoint == "" {
+    let endpoint_option = env_get("SPECTRA_R2707_OTLP_ENDPOINT")
+    if is_none(endpoint_option) {
         return 1
     }
+    let endpoint: string = option_unwrap(endpoint_option)
     let config: TraceConfig = config_new(endpoint, "spectralang-r2707")
     if config_set_batch_size(config, 1) != true {
         return 2
@@ -29,7 +31,9 @@ public func main() returns int {
     let handler: HandlerHandle = register_sync(route_id(demo), text("otel-prometheus-ok"))
 
     let server: Server = new()
-    let port           = string_to_int_or(env_get("SPECTRA_R2707_PORT"), 0)
+    let port_option    = env_get("SPECTRA_R2707_PORT")
+    let port_text: string = option_unwrap_or(port_option, "0")
+    let port           = string_to_int_or(port_text, 0)
     if listen(server, port) != true {
         return 5
     }

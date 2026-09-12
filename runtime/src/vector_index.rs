@@ -1,11 +1,18 @@
 //! Deterministic HNSW vector index used by `std.ml.vector_index_*`.
+//!
+//! Inserts are incremental: each vector is attached with greedy descent through
+//! the upper layers followed by ef-construction searches, heuristic neighbor
+//! selection, and degree-capped bidirectional links. Artifacts saved as `v2`
+//! reserve `M0` link slots per node at layer 0; only `v2` payloads load.
 
 use crate::artifact::{ArtifactData, TensorPayload};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::cmp::{Ordering, Reverse};
+use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 use std::time::Instant;
 
-const INDEX_VERSION: &str = "v1";
+const INDEX_VERSION: &str = "v2";
 const M: usize = 16;
+const M0: usize = 2 * M;
 const EF_CONSTRUCTION: usize = 200;
 const EF_SEARCH: usize = 64;
 const MAX_LEVEL: usize = 8;
@@ -98,8 +105,47 @@ fn normalize(vector: &[f64], dimension: usize) -> Result<Vec<f64>, VectorIndexEr
     Ok(vector.iter().map(|value| value / norm).collect())
 }
 
+/// Heap item for ef-construction searches. Total order over `(score, node)`
+/// keeps heap pop order deterministic for a given insertion sequence.
+#[derive(Clone)]
+struct SearchCandidate {
+    score: f64,
+    node: usize,
+}
+
+impl PartialEq for SearchCandidate {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for SearchCandidate {}
+
+impl Ord for SearchCandidate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.score
+            .total_cmp(&other.score)
+            .then_with(|| self.node.cmp(&other.node))
+    }
+}
+
+impl PartialOrd for SearchCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 fn score(left: &[f64], right: &[f64]) -> f64 {
     left.iter().zip(right).map(|(a, b)| a * b).sum()
+}
+/// Maximum degree per layer: `M0` at layer 0 (wider fan-out where recall
+/// matters most), `M` above — the standard HNSW split.
+fn neighbor_cap(layer: usize) -> usize {
+    if layer == 0 {
+        M0
+    } else {
+        M
+    }
 }
 
 impl VectorIndex {
@@ -111,6 +157,7 @@ impl VectorIndex {
         metadata.insert("artifact_role".to_owned(), "vector_index".to_owned());
         metadata.insert("index_type".to_owned(), "hnsw".to_owned());
         metadata.insert("index_version".to_owned(), INDEX_VERSION.to_owned());
+        metadata.insert("m0".to_owned(), M0.to_string());
         metadata.insert("metric".to_owned(), "cosine".to_owned());
         metadata.insert("dtype".to_owned(), "f64".to_owned());
         metadata.insert("m".to_owned(), M.to_string());
@@ -147,13 +194,25 @@ impl VectorIndex {
         }
         let started = Instant::now();
         let vector = normalize(vector, self.dimension)?;
-        if let Some(existing) = self.entries.iter_mut().find(|entry| entry.id == id) {
-            existing.vector = vector;
-        } else {
-            let level = deterministic_level(self.entries.len());
-            self.entries.push(VectorEntry { id, vector, level });
+        match self.entries.iter().position(|entry| entry.id == id) {
+            Some(position) => self.update_entry(position, vector),
+            None => {
+                let ordinal = self.entries.len();
+                let level = deterministic_level(ordinal);
+                // Capture the descent root and the pre-insert ceiling BEFORE
+                // promotion: the node attaches only up to the previous
+                // max_level (standard HNSW), and never starts from itself.
+                let root = if ordinal == 0 { 0 } else { self.entry_point };
+                let prev_max_level = self.max_level;
+                self.entries.push(VectorEntry { id, vector, level });
+                self.links.push(vec![Vec::new(); level + 1]);
+                if ordinal == 0 || level > self.max_level {
+                    self.max_level = level;
+                    self.entry_point = ordinal;
+                }
+                self.attach(ordinal, root, prev_max_level);
+            }
         }
-        self.rebuild_graph();
         self.metrics.insert_count = self.metrics.insert_count.saturating_add(1);
         self.metrics.total_insert_ns = self
             .metrics
@@ -162,68 +221,219 @@ impl VectorIndex {
         Ok(self.entries.len())
     }
 
-    fn rebuild_graph(&mut self) {
-        self.max_level = self
-            .entries
+    /// Incremental HNSW insertion: greedy descent from `root` (an existing
+    /// node, never the one being attached) through the layers above the node's
+    /// level, then an ef-construction search and heuristic neighbor selection
+    /// per layer up to `layer_ceiling` (the max level before this insert) with
+    /// bidirectional links pruned back to the layer capacity. Deterministic
+    /// for a given insertion sequence: levels derive from the ordinal and
+    /// every tie-break compares scores (then node ordinals) with total order.
+    fn attach(&mut self, index: usize, root: usize, layer_ceiling: usize) {
+        if self.entries.len() == 1 {
+            return;
+        }
+        let query = self.entries[index].vector.clone();
+        let top = self.entries[index].level.min(layer_ceiling);
+        let mut entry = root.min(self.entries.len() - 1);
+        if entry == index {
+            entry = if index == 0 { 1 } else { 0 };
+        }
+        if top < self.max_level {
+            entry = self.greedy_descend(&query, entry, self.max_level, top + 1);
+        }
+        for layer in (0..=top).rev() {
+            let candidates = self
+                .search_layer(&query, entry, EF_CONSTRUCTION, layer)
+                .into_iter()
+                .filter(|candidate| *candidate != index && self.entries[*candidate].level >= layer)
+                .collect::<Vec<_>>();
+            if candidates.is_empty() {
+                continue;
+            }
+            let capacity = neighbor_cap(layer);
+            for chosen in self.select_neighbors(&query, &candidates, capacity) {
+                self.link(index, chosen, layer, capacity);
+            }
+            entry = candidates[0];
+        }
+    }
+
+    /// Re-links a vector updated in place under an existing id: clears the
+    /// node's adjacency, attaches it via the incremental path, then re-prunes
+    /// its former neighbors. This keeps id updates sub-quadratic without a
+    /// full graph rebuild.
+    fn update_entry(&mut self, position: usize, vector: Vec<f64>) {
+        let stale = self.links[position]
             .iter()
-            .map(|entry| entry.level)
-            .max()
-            .unwrap_or(0);
-        self.entry_point = self
-            .entries
-            .iter()
-            .enumerate()
-            .max_by(|(_, left), (_, right)| {
-                left.level
-                    .cmp(&right.level)
-                    .then_with(|| right.id.cmp(&left.id))
-            })
-            .map(|(index, _)| index)
-            .unwrap_or(0);
-        self.links = self
-            .entries
-            .iter()
-            .map(|entry| vec![Vec::new(); entry.level + 1])
-            .collect();
-        for index in 0..self.entries.len() {
-            let level = self.entries[index].level;
-            for layer in 0..=level {
-                let mut candidates = (0..index)
-                    .filter(|candidate| self.entries[*candidate].level >= layer)
-                    .map(|candidate| {
-                        (
-                            candidate,
-                            score(&self.entries[index].vector, &self.entries[candidate].vector),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                candidates.sort_by(|left, right| {
-                    right
-                        .1
-                        .total_cmp(&left.1)
-                        .then_with(|| self.entries[left.0].id.cmp(&self.entries[right.0].id))
-                });
-                for (candidate, _) in candidates.into_iter().take(M) {
-                    self.links[index][layer].push(candidate);
-                    self.links[candidate][layer].push(index);
-                    self.links[candidate][layer].sort_unstable_by(|left, right| {
-                        score(
-                            &self.entries[candidate].vector,
-                            &self.entries[*right].vector,
-                        )
-                        .total_cmp(&score(
-                            &self.entries[candidate].vector,
-                            &self.entries[*left].vector,
-                        ))
-                        .then_with(|| self.entries[*left].id.cmp(&self.entries[*right].id))
-                    });
-                    self.links[candidate][layer].truncate(M);
-                }
-                self.links[index][layer].sort_unstable();
-                self.links[index][layer].dedup();
-                self.links[index][layer].truncate(M);
+            .map(Vec::clone)
+            .collect::<Vec<_>>();
+        self.entries[position].vector = vector;
+        let level = self.entries[position].level;
+        self.links[position] = vec![Vec::new(); level + 1];
+        // If the updated node was the sole descent root, its cleared
+        // adjacency would strand attach(); move the entry point to a
+        // deterministic fallback (first stale neighbor, else lowest ordinal).
+        if position == self.entry_point && self.entries.len() > 1 {
+            self.entry_point = stale
+                .iter()
+                .flatten()
+                .copied()
+                .find(|candidate| *candidate != position)
+                .unwrap_or(
+                    (0..self.entries.len())
+                        .find(|other| *other != position)
+                        .unwrap_or(0),
+                );
+        }
+        self.attach(position, self.entry_point, self.max_level);
+        for (layer, neighbors) in stale.into_iter().enumerate() {
+            let capacity = neighbor_cap(layer);
+            for neighbor in neighbors {
+                self.prune(neighbor, layer, capacity);
             }
         }
+    }
+
+    fn greedy_descend(&self, query: &[f64], mut current: usize, from: usize, to: usize) -> usize {
+        if to > from {
+            return current;
+        }
+        for layer in (to..=from).rev() {
+            let mut changed = true;
+            while changed {
+                changed = false;
+                let current_score = score(query, &self.entries[current].vector);
+                for neighbor in self.links[current].get(layer).into_iter().flatten() {
+                    let neighbor_score = score(query, &self.entries[*neighbor].vector);
+                    if neighbor_score > current_score
+                        || (neighbor_score == current_score
+                            && self.entries[*neighbor].id < self.entries[current].id)
+                    {
+                        current = *neighbor;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        current
+    }
+
+    /// Best-first beam search restricted to one layer, returning up to `ef`
+    /// nodes sorted by descending similarity to `query`.
+    fn search_layer(&self, query: &[f64], entry: usize, ef: usize, layer: usize) -> Vec<usize> {
+        let entry_score = score(query, &self.entries[entry].vector);
+        let mut visited = HashSet::new();
+        visited.insert(entry);
+        let mut frontier = BinaryHeap::from([SearchCandidate {
+            score: entry_score,
+            node: entry,
+        }]);
+        let mut results = BinaryHeap::from([Reverse(SearchCandidate {
+            score: entry_score,
+            node: entry,
+        })]);
+        while let Some(candidate) = frontier.pop() {
+            if results.len() >= ef
+                && candidate.score
+                    < results
+                        .peek()
+                        .map(|worst| worst.0.score)
+                        .unwrap_or(candidate.score)
+            {
+                break;
+            }
+            for neighbor in self.links[candidate.node].get(layer).into_iter().flatten() {
+                if visited.insert(*neighbor) {
+                    let candidate_score = score(query, &self.entries[*neighbor].vector);
+                    let worse = results.len() >= ef
+                        && candidate_score
+                            <= results
+                                .peek()
+                                .map(|worst| worst.0.score)
+                                .unwrap_or(f64::NEG_INFINITY);
+                    if !worse {
+                        let next = SearchCandidate {
+                            score: candidate_score,
+                            node: *neighbor,
+                        };
+                        frontier.push(next.clone());
+                        results.push(Reverse(next));
+                        if results.len() > ef {
+                            results.pop();
+                        }
+                    }
+                }
+            }
+        }
+        let mut found = results
+            .into_iter()
+            .map(|wrapped| wrapped.0.node)
+            .collect::<Vec<_>>();
+        found.sort_by(|left, right| {
+            score(query, &self.entries[*right].vector)
+                .total_cmp(&score(query, &self.entries[*left].vector))
+                .then_with(|| right.cmp(left))
+        });
+        found
+    }
+
+    /// Heuristic neighbor selection (HNSW algorithm 4): keep a candidate when
+    /// it is closer to the query than to every already-selected neighbor; fill
+    /// any remaining slots with the strongest leftovers so nodes retain full
+    /// degree on sparse regions.
+    fn select_neighbors(&self, query: &[f64], candidates: &[usize], m: usize) -> Vec<usize> {
+        let mut ordered = candidates.to_vec();
+        ordered.sort_by(|left, right| {
+            score(query, &self.entries[*right].vector)
+                .total_cmp(&score(query, &self.entries[*left].vector))
+                .then_with(|| left.cmp(right))
+        });
+        let mut selected: Vec<usize> = Vec::with_capacity(m.min(ordered.len()));
+        let mut deferred = Vec::new();
+        for candidate in ordered {
+            if selected.len() < m {
+                let candidate_score = score(query, &self.entries[candidate].vector);
+                let diverse = selected.iter().all(|chosen| {
+                    score(
+                        &self.entries[candidate].vector,
+                        &self.entries[*chosen].vector,
+                    ) < candidate_score
+                });
+                if diverse {
+                    selected.push(candidate);
+                    continue;
+                }
+            }
+            deferred.push(candidate);
+        }
+        for candidate in deferred {
+            if selected.len() >= m {
+                break;
+            }
+            selected.push(candidate);
+        }
+        selected.sort_unstable();
+        selected
+    }
+
+    fn link(&mut self, left: usize, right: usize, layer: usize, capacity: usize) {
+        if !self.links[left][layer].contains(&right) {
+            self.links[left][layer].push(right);
+        }
+        if !self.links[right][layer].contains(&left) {
+            self.links[right][layer].push(left);
+        }
+        self.prune(left, layer, capacity);
+        self.prune(right, layer, capacity);
+    }
+
+    fn prune(&mut self, node: usize, layer: usize, capacity: usize) {
+        if self.links[node][layer].len() <= capacity {
+            return;
+        }
+        let reference = self.entries[node].vector.clone();
+        let candidates = std::mem::take(&mut self.links[node][layer]);
+        self.links[node][layer] = self.select_neighbors(&reference, &candidates, capacity);
     }
 
     pub(crate) fn query(
@@ -238,30 +448,7 @@ impl VectorIndex {
         }
         let started = Instant::now();
         let query = normalize(vector, self.dimension)?;
-        let mut current = self.entry_point;
-        for layer in (1..=self.max_level).rev() {
-            let mut changed = true;
-            while changed {
-                changed = false;
-                let current_score = score(&query, &self.entries[current].vector);
-                for neighbor in self
-                    .links
-                    .get(current)
-                    .and_then(|levels| levels.get(layer))
-                    .into_iter()
-                    .flatten()
-                {
-                    let neighbor_score = score(&query, &self.entries[*neighbor].vector);
-                    if neighbor_score > current_score
-                        || (neighbor_score == current_score
-                            && self.entries[*neighbor].id < self.entries[current].id)
-                    {
-                        current = *neighbor;
-                        changed = true;
-                    }
-                }
-            }
-        }
+        let current = self.greedy_descend(&query, self.entry_point, self.max_level, 1);
         let mut visited = HashSet::new();
         let mut frontier = vec![current];
         let mut scored = Vec::new();
@@ -326,7 +513,7 @@ impl VectorIndex {
             vectors.extend(entry.vector.iter().flat_map(|value| value.to_le_bytes()));
             levels.extend_from_slice(&(entry.level as i64).to_le_bytes());
             for layer in 0..layers {
-                for slot in 0..M {
+                for slot in 0..M0 {
                     let value = self
                         .links
                         .get(ids.len() - 1)
@@ -377,7 +564,7 @@ impl VectorIndex {
                     name: "links".to_owned(),
                     dtype: "int".to_owned(),
                     precision: "f64".to_owned(),
-                    shape: vec![self.entries.len(), layers, M],
+                    shape: vec![self.entries.len(), layers, M0],
                     layout: "contiguous".to_owned(),
                     bytes: links,
                 },
@@ -387,10 +574,18 @@ impl VectorIndex {
 
     pub(crate) fn from_artifact(data: &ArtifactData) -> Result<Self, VectorIndexError> {
         let metadata = &data.metadata;
+        let index_version = metadata
+            .get("index_version")
+            .map(String::as_str)
+            .unwrap_or_default();
+        // Only v2 payloads load: v2 reserves M0 link slots at layer 0 for
+        // the wider fan-out used by incremental inserts.
+        if index_version != INDEX_VERSION {
+            return Err(invalid("metadata index_version is incompatible"));
+        }
         for (key, expected) in [
             ("artifact_role", "vector_index"),
             ("index_type", "hnsw"),
-            ("index_version", INDEX_VERSION),
             ("metric", "cosine"),
             ("dtype", "f64"),
             ("m", "16"),
@@ -402,6 +597,10 @@ impl VectorIndex {
                 return Err(invalid(format!("metadata {key} is incompatible")));
             }
         }
+        if metadata.get("m0") != Some(&M0.to_string()) {
+            return Err(invalid("metadata m0 is incompatible"));
+        }
+        let link_slots = M0;
         let dimension = metadata
             .get("dimension")
             .and_then(|value| value.parse::<usize>().ok())
@@ -448,7 +647,7 @@ impl VectorIndex {
             || links.dtype != "int"
             || vectors.shape != vec![entry_count, dimension]
             || levels.shape != vec![entry_count]
-            || links.shape != vec![entry_count, max_level + 1, M]
+            || links.shape != vec![entry_count, max_level + 1, link_slots]
         {
             return Err(invalid(
                 "vector index array shapes or dtypes are incompatible",
@@ -493,8 +692,9 @@ impl VectorIndex {
             .map(|chunk| i64::from_le_bytes(chunk.try_into().expect("validated i64 width")));
         let mut graph = vec![vec![Vec::new(); max_level + 1]; entry_count];
         for node in 0..entry_count {
-            for layer in 0..=max_level {
-                for _slot in 0..M {
+            for (layer, neighbors) in graph[node].iter_mut().enumerate().take(max_level + 1) {
+                let capacity = if layer == 0 { M0 } else { M };
+                for _slot in 0..link_slots {
                     let value = links_values
                         .next()
                         .ok_or_else(|| invalid("truncated HNSW links"))?;
@@ -507,13 +707,13 @@ impl VectorIndex {
                         {
                             return Err(invalid("invalid HNSW link"));
                         }
-                        graph[node][layer].push(neighbor);
+                        neighbors.push(neighbor);
                     }
                 }
-                graph[node][layer].sort_unstable();
-                graph[node][layer].dedup();
-                if graph[node][layer].len() > M {
-                    return Err(invalid("HNSW degree exceeds M"));
+                neighbors.sort_unstable();
+                neighbors.dedup();
+                if neighbors.len() > capacity {
+                    return Err(invalid("HNSW degree exceeds layer capacity"));
                 }
             }
         }
@@ -529,9 +729,10 @@ impl VectorIndex {
                 level: level_values[index] as usize,
             })
             .collect::<Vec<_>>();
+        let metadata = metadata.clone();
         Ok(Self {
             dimension,
-            metadata: metadata.clone(),
+            metadata,
             entries,
             links: graph,
             entry_point,
@@ -593,5 +794,129 @@ mod tests {
         assert!(index.artifact_data().is_err());
         assert!(index.set_metadata("model_version", "v1"));
         assert!(index.artifact_data().is_ok());
+    }
+
+    fn sample_vectors(dimension: usize, count: usize) -> Vec<Vec<f64>> {
+        let mut state = 0x5eed_1234_9e37_79b9_u64;
+        (0..count)
+            .map(|_| {
+                let raw = (0..dimension)
+                    .map(|_| {
+                        state = splitmix64(state);
+                        ((state >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0
+                    })
+                    .collect::<Vec<_>>();
+                normalize(&raw, dimension).unwrap()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn incremental_insert_recall_at_10_beats_bruteforce_threshold() {
+        let dimension = 8;
+        let count = 2000;
+        let vectors = sample_vectors(dimension, count);
+        let mut index = VectorIndex::new(dimension).unwrap();
+        for (ordinal, vector) in vectors.iter().enumerate() {
+            index.insert(format!("v{ordinal:05}"), vector).unwrap();
+        }
+        let queries = vectors.iter().step_by(20).take(100);
+        let mut total_recall = 0.0;
+        for query in queries {
+            let evidence = index.query(query, 10).unwrap();
+            let mut brute = (0..count)
+                .map(|candidate| (score(query, &vectors[candidate]), candidate))
+                .collect::<Vec<_>>();
+            brute.sort_by(|left, right| {
+                right
+                    .0
+                    .total_cmp(&left.0)
+                    .then_with(|| left.1.cmp(&right.1))
+            });
+            let truth = brute
+                .into_iter()
+                .take(10)
+                .map(|(_, candidate)| candidate)
+                .collect::<HashSet<_>>();
+            let hits = evidence
+                .results
+                .iter()
+                .filter_map(|result| result.id.trim_start_matches('v').parse::<usize>().ok())
+                .filter(|candidate| truth.contains(candidate))
+                .count();
+            total_recall += hits as f64 / truth.len() as f64;
+        }
+        let average_recall = total_recall / 100.0;
+        println!(
+            "recall@10 over {count} vectors, M={M}, M0={M0}, ef_construction={EF_CONSTRUCTION}, ef_search={EF_SEARCH}: {average_recall:.4}"
+        );
+        assert!(
+            average_recall >= 0.9,
+            "recall@10 {average_recall} below 0.9"
+        );
+    }
+
+    #[test]
+    fn incremental_index_matches_rebuild_from_persisted_format() {
+        let dimension = 12;
+        let vectors = sample_vectors(dimension, 400);
+        let mut index = VectorIndex::new(dimension).unwrap();
+        assert!(index.set_metadata("model_version", "round-trip"));
+        for (ordinal, vector) in vectors.iter().enumerate() {
+            index.insert(format!("v{ordinal:05}"), vector).unwrap();
+        }
+        let artifact = index.artifact_data().unwrap();
+        assert_eq!(
+            artifact.metadata.get("index_version").map(String::as_str),
+            Some("v2")
+        );
+        let mut rebuilt = VectorIndex::from_artifact(&artifact).unwrap();
+        assert_eq!(rebuilt.entry_point, index.entry_point);
+        assert_eq!(rebuilt.max_level, index.max_level);
+        // The live graph keeps level+1 adjacency rows per node; the loader
+        // normalizes every node to max_level+1 padded rows, so compare only
+        // the meaningful rows.
+        for (live, loaded) in index.links.iter().zip(&rebuilt.links) {
+            assert_eq!(loaded[..live.len()], live[..]);
+        }
+        for query in vectors.iter().step_by(37).take(25) {
+            let live = index.query(query, 10).unwrap();
+            let loaded = rebuilt.query(query, 10).unwrap();
+            assert_eq!(live.results.len(), loaded.results.len());
+            for (left, right) in live.results.iter().zip(&loaded.results) {
+                assert_eq!(left.id, right.id);
+                assert_eq!(
+                    left.score.total_cmp(&right.score),
+                    std::cmp::Ordering::Equal
+                );
+            }
+        }
+    }
+    #[test]
+    fn legacy_v1_artifacts_are_rejected() {
+        let dimension = 3;
+        let mut index = VectorIndex::new(dimension).unwrap();
+        assert!(index.set_metadata("model_version", "legacy"));
+        for (id, vector) in [
+            ("a", vec![1.0, 0.0, 0.0]),
+            ("b", vec![0.0, 1.0, 0.0]),
+            ("c", vec![0.0, 0.0, 1.0]),
+        ] {
+            index.insert(id.to_owned(), &vector).unwrap();
+        }
+        let v2_artifact = index.artifact_data().unwrap();
+        // A v1-marked payload (no m0, M link slots) is rejected instead of
+        // being upgraded in memory.
+        let mut metadata = v2_artifact.metadata.clone();
+        metadata.insert("index_version".to_owned(), "v1".to_owned());
+        metadata.remove("m0");
+        let legacy = ArtifactData {
+            name: v2_artifact.name.clone(),
+            model_version: v2_artifact.model_version.clone(),
+            kind: v2_artifact.kind.clone(),
+            metadata,
+            tensors: v2_artifact.tensors.clone(),
+        };
+        assert!(VectorIndex::from_artifact(&legacy).is_err());
     }
 }

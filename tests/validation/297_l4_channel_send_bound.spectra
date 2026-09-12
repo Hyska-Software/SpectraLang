@@ -1,0 +1,29 @@
+module bug_hunt_v2_297_channel_send_bound
+
+import std.concurrent as concurrent
+
+async func carry(value: int) returns int {
+    let before = value
+    let after = async {
+        before + 1
+    }
+    await after
+}
+
+public func main() returns int {
+    concurrent.reset()
+    let channel = concurrent.channel_new()
+    concurrent.channel_send(channel, block_on(carry(20)))
+    concurrent.channel_send(channel, 21)
+
+    if concurrent.channel_recv(channel) != 21 {
+        return 1
+    }
+    if concurrent.channel_recv(channel) != 21 {
+        return 2
+    }
+    if concurrent.channel_len(channel) != 0 {
+        return 3
+    }
+    return 0
+}

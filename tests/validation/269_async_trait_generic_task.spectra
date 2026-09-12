@@ -1,0 +1,27 @@
+// R-269 candidate: an async method from a concretely substituted generic
+// trait must produce a task with the substituted result type.
+module r269_async_trait_generic_task
+
+trait AsyncValue<T> {
+    async func get(&self) returns T
+}
+
+record IntSource {
+    public value: int,
+}
+
+impl AsyncValue<int> for IntSource {
+    async func get(&self) returns int {
+        return self.value
+    }
+}
+
+async func drive(source: IntSource) returns int {
+    let value = await source.get()
+    return value + 1
+}
+
+public func main() returns int {
+    let source = IntSource { value: 41 }
+    return block_on(drive(source)) - 42
+}

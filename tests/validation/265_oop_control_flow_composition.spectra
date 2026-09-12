@@ -1,0 +1,67 @@
+// R-265 candidate: trait-backed aggregate mutation must remain coherent when
+// called from loop, do-while, and switch control-flow lowering.
+module r265_oop_control_flow_composition
+
+trait Stepper {
+    func step(&mut self) returns int
+}
+
+record Machine {
+    public cursor: int,
+    public total: int,
+}
+
+impl Stepper for Machine {
+    func step(&mut self) returns int {
+        self.cursor = self.cursor + 1
+        self.total = self.total + self.cursor
+        self.cursor
+    }
+}
+
+impl Machine {
+    public func category(&self) returns int {
+        switch self.cursor {
+            case 1: {
+                return 10
+            }
+            case 2: {
+                return 20
+            }
+            else: {
+                return 30
+            }
+        }
+    }
+}
+
+public func main() returns int {
+    let machine = Machine { cursor: 0, total: 0 }
+
+    loop {
+        let current = machine.step()
+        if current >= 3 {
+            break
+        }
+    }
+
+    do {
+        machine.step()
+    } while machine.cursor < 5
+
+    if machine.category() != 30 {
+        return 1
+    }
+    if machine.total != 15 {
+        return 2
+    }
+
+    switch machine.total {
+        case 15: {
+            return 0
+        }
+        else: {
+            return 3
+        }
+    }
+}

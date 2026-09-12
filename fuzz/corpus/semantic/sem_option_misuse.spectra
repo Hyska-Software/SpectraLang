@@ -1,0 +1,4 @@
+module sem_option_misuse
+func f(maybe: Option<int>) returns int {
+    return maybe + 1
+}

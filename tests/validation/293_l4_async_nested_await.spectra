@@ -1,0 +1,16 @@
+module bug_hunt_v2_293_async_nested_await
+
+async func ready(value: int) returns int {
+    return value
+}
+
+async func nested() returns int {
+    let left = await ready(20)
+    let right_task = ready(22)
+    let right = await right_task
+    left + right
+}
+
+public func main() returns int {
+    block_on(nested()) - 42
+}

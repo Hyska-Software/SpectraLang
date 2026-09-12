@@ -1,0 +1,22 @@
+// R-NEG-08: duplicate inherent methods must not silently overwrite each other.
+module rneg_oop_duplicate_impl_method
+
+record Counter {
+    public value: int,
+}
+
+impl Counter {
+    public func read(&self) returns int {
+        self.value
+    }
+}
+
+impl Counter {
+    public func read(&self) returns int {
+        self.value + 1
+    }
+}
+
+public func main() returns int {
+    return 0
+}

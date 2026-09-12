@@ -7,16 +7,13 @@ pub enum Keyword {
     Module,
     Import,
     From,
-    Export,
 
     // Declarations
     Func,
-    Fn,
     Returns,
     Async,
     Await,
     Record,
-    Struct,
     Enum,
     Impl,
     Class,
@@ -25,7 +22,6 @@ pub enum Keyword {
 
     // Visibility
     Public,
-    Pub,
     Internal,
     Mut,
 
@@ -36,33 +32,24 @@ pub enum Keyword {
     Match,
     Switch,
     Case,
-    Cond,
     If,
     Else,
     When,
     Then,
     Otherwise,
-    Elif,
-    ElseIf,
     Unless,
 
     // Control flow - loops
     While,
     Do,
     For,
-    Foreach,
     In,
-    Of,
-    Repeat,
-    Until,
     Loop,
 
     // Control flow - jumps
     Return,
     Break,
     Continue,
-    Yield,
-    Goto,
 
     // Word-form logical operators
     AndWord,
@@ -90,16 +77,13 @@ impl Keyword {
             "module" => Some(Self::Module),
             "import" => Some(Self::Import),
             "from" => Some(Self::From),
-            "export" => Some(Self::Export),
 
             // Declarations
             "func" => Some(Self::Func),
-            "fn" => Some(Self::Fn),
             "returns" => Some(Self::Returns),
             "async" => Some(Self::Async),
             "await" => Some(Self::Await),
             "record" => Some(Self::Record),
-            "struct" => Some(Self::Struct),
             "enum" => Some(Self::Enum),
             "impl" => Some(Self::Impl),
             "class" => Some(Self::Class),
@@ -108,7 +92,6 @@ impl Keyword {
 
             // Visibility
             "public" => Some(Self::Public),
-            "pub" => Some(Self::Pub),
             "internal" => Some(Self::Internal),
             "mut" => Some(Self::Mut),
 
@@ -119,33 +102,23 @@ impl Keyword {
             "match" => Some(Self::Match),
             "switch" => Some(Self::Switch),
             "case" => Some(Self::Case),
-            "cond" => Some(Self::Cond),
             "if" => Some(Self::If),
             "else" => Some(Self::Else),
             "when" => Some(Self::When),
             "then" => Some(Self::Then),
             "otherwise" => Some(Self::Otherwise),
-            "elif" => Some(Self::Elif),
-            "elseif" => Some(Self::ElseIf),
             "unless" => Some(Self::Unless),
 
             // Control flow - loops
             "while" => Some(Self::While),
             "do" => Some(Self::Do),
             "for" => Some(Self::For),
-            "foreach" => Some(Self::Foreach),
             "in" => Some(Self::In),
-            "of" => Some(Self::Of),
-            "repeat" => Some(Self::Repeat),
-            "until" => Some(Self::Until),
             "loop" => Some(Self::Loop),
-
             // Control flow - jumps
             "return" => Some(Self::Return),
             "break" => Some(Self::Break),
             "continue" => Some(Self::Continue),
-            "yield" => Some(Self::Yield),
-            "goto" => Some(Self::Goto),
 
             // Word-form logical operators
             "and" => Some(Self::AndWord),
@@ -177,16 +150,13 @@ impl fmt::Display for Keyword {
             Keyword::Module => "module",
             Keyword::Import => "import",
             Keyword::From => "from",
-            Keyword::Export => "export",
 
             // Declarations
             Keyword::Func => "func",
-            Keyword::Fn => "fn",
             Keyword::Returns => "returns",
             Keyword::Async => "async",
             Keyword::Await => "await",
             Keyword::Record => "record",
-            Keyword::Struct => "struct",
             Keyword::Enum => "enum",
             Keyword::Impl => "impl",
             Keyword::Class => "class",
@@ -195,7 +165,6 @@ impl fmt::Display for Keyword {
 
             // Visibility
             Keyword::Public => "public",
-            Keyword::Pub => "pub",
             Keyword::Internal => "internal",
             Keyword::Mut => "mut",
 
@@ -206,33 +175,23 @@ impl fmt::Display for Keyword {
             Keyword::Match => "match",
             Keyword::Switch => "switch",
             Keyword::Case => "case",
-            Keyword::Cond => "cond",
             Keyword::If => "if",
             Keyword::Else => "else",
             Keyword::When => "when",
             Keyword::Then => "then",
             Keyword::Otherwise => "otherwise",
-            Keyword::Elif => "elif",
-            Keyword::ElseIf => "elseif",
             Keyword::Unless => "unless",
 
             // Control flow - loops
             Keyword::While => "while",
             Keyword::Do => "do",
             Keyword::For => "for",
-            Keyword::Foreach => "foreach",
             Keyword::In => "in",
-            Keyword::Of => "of",
-            Keyword::Repeat => "repeat",
-            Keyword::Until => "until",
             Keyword::Loop => "loop",
-
             // Control flow - jumps
             Keyword::Return => "return",
             Keyword::Break => "break",
             Keyword::Continue => "continue",
-            Keyword::Yield => "yield",
-            Keyword::Goto => "goto",
 
             // Word-form logical operators
             Keyword::AndWord => "and",
@@ -284,10 +243,6 @@ pub enum Operator {
     And, // &&
     Or,  // ||
 
-    // Arrows
-    Arrow,    // -> (for function returns)
-    FatArrow, // => (for match arms, etc.)
-
     // Range operators
     Range,          // ..
     RangeInclusive, // ..=
@@ -314,8 +269,6 @@ impl fmt::Display for Operator {
             Operator::GreaterEqual => ">=",
             Operator::And => "&&",
             Operator::Or => "||",
-            Operator::Arrow => "->",
-            Operator::FatArrow => "=>",
             Operator::Range => "..",
             Operator::RangeInclusive => "..=",
         };

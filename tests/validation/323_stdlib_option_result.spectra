@@ -1,0 +1,54 @@
+module stdlib_option_result
+
+import std.option as option
+import std.result as result
+
+public func main() returns int {
+    let some = Option::Some(42)
+    let none = Option::None
+    if option.is_some(some) != true or option.is_none(some) != false {
+        return 1
+    }
+    if option.is_some(none) != false or option.is_none(none) != true {
+        return 2
+    }
+    if option.option_unwrap(some) != 42 {
+        return 3
+    }
+    if option.option_unwrap_or(some, 0) != 42 or option.option_unwrap_or(none, 99) != 99 {
+        return 4
+    }
+
+    let ok = Result::Ok(100)
+    let err = Result::Err("failure")
+    if result.is_ok(ok) != true or result.is_err(ok) != false {
+        return 5
+    }
+    if result.is_ok(err) != false or result.is_err(err) != true {
+        return 6
+    }
+    if result.result_unwrap(ok) != 100 {
+        return 7
+    }
+    if result.result_unwrap_or(ok, 0) != 100 or result.result_unwrap_or(err, 77) != 77 {
+        return 8
+    }
+    if result.result_unwrap_err(err) != "failure" {
+        return 9
+    }
+
+    let text_some: Option<string> = Option::Some("payload")
+    let text_none: Option<string> = Option::None
+    if option.option_unwrap(text_some) != "payload" {
+        return 10
+    }
+    if option.option_unwrap_or(text_none, "fallback") != "fallback" {
+        return 11
+    }
+
+    let text_ok: Result<string, int> = Result::Ok("ready")
+    if result.result_unwrap(text_ok) != "ready" {
+        return 12
+    }
+    return 0
+}

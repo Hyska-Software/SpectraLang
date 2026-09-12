@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -63,6 +64,40 @@ def object_sections(path: Path) -> list[str]:
     return names
 
 
+def compiler_proven_local_record(symbols: str, function_name: str, local_name: str) -> str | None:
+    """Return the native location record kind for one local, if present.
+
+    The check is intentionally scoped to the user's procedure. A def-range
+    somewhere in the runtime PDB is not evidence that the compiler preserved a
+    location for this Spectra local.
+    """
+    function_marker = symbols.find(f"`{function_name}`")
+    if function_marker < 0:
+        return None
+    procedure_start = symbols.rfind("S_LPROC32", 0, function_marker)
+    if procedure_start < 0:
+        return None
+    procedure_end = symbols.find("S_END", procedure_start)
+    if procedure_end < 0:
+        return None
+    procedure = symbols[procedure_start:procedure_end]
+    local_marker = procedure.find(f"`{local_name}`")
+    if local_marker < 0:
+        return None
+    local_tail = procedure[local_marker:]
+    next_local = local_tail.find("S_LOCAL", len(local_name) + 2)
+    if next_local >= 0:
+        local_tail = local_tail[:next_local]
+    for marker in (
+        "S_DEFRANGE_REGISTER",
+        "S_DEFRANGE_FRAMEPOINTER_REL",
+        "S_DEFRANGE_REGISTER_REL",
+    ):
+        if marker in local_tail:
+            return marker
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", required=True)
@@ -109,6 +144,7 @@ def main() -> int:
     failures.extend(sidecar_failures)
     executable = {"status": "not_run"}
     pdb_validation = {"status": "not_run"}
+    pdb_symbols_text = ""
     if object_result.returncode == 0:
         exe_result = run([str(binary), "compile", "--debug-info=native", "-O0", "--emit-exe", str(exe_path), str(fixture)], root)
         if exe_result.returncode == 0 and exe_path.is_file():
@@ -123,7 +159,8 @@ def main() -> int:
                 else:
                     summary = subprocess.run([pdbutil, "dump", "-summary", str(pdb)], text=True, capture_output=True, timeout=60)
                     symbols = subprocess.run([pdbutil, "dump", "-symbols", str(pdb)], text=True, capture_output=True, timeout=60)
-                    pdb_text = summary.stdout + symbols.stdout
+                    pdb_symbols_text = symbols.stdout
+                    pdb_text = summary.stdout + pdb_symbols_text
                     required_pdb_markers = ["Has Debug Info: true", "Has Types: true", "spectra_user_main", "debug_value"]
                     missing = [marker for marker in required_pdb_markers if marker not in pdb_text]
                     pdb_validation = {"status": "passed" if not missing and summary.returncode == 0 and symbols.returncode == 0 else "failed", "missing": missing}
@@ -189,11 +226,25 @@ def main() -> int:
         "sections": [name for name in sections if "debug" in name],
         "source": str(fixture),
     }
+    local_record = compiler_proven_local_record(
+        pdb_symbols_text,
+        "spectra_user_main",
+        "debug_value",
+    )
+    local_status = (
+        "passed"
+        if pdb_status == "passed" and local_record is not None
+        else "not_run"
+        if pdb_status == "not_run"
+        else "failed"
+    )
     local_validation = {
-        "status": "failed" if pdb_status == "passed" else ("not_run" if pdb_status == "not_run" else "failed"),
+        "status": local_status,
         "required": ["debug_value"],
-        "location_evidence": "compatibility_frame_relative_zero",
-        "reason": "compiler-proven stack/register location is not available yet",
+        "location_evidence": f"llvm-pdbutil:{local_record}" if local_record else None,
+        "reason": None
+        if local_status == "passed"
+        else "PDB has no compiler-proven native location record for debug_value",
     }
     if local_validation["status"] == "failed":
         failures.append("native local location is not compiler-proven; compatibility frame-relative records are insufficient")

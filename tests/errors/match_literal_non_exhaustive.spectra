@@ -1,0 +1,14 @@
+// Negative regression: a match with only literal patterns and no wildcard
+// must fail with E031.
+module match_literal_non_exhaustive
+
+func pick(value: int) returns int {
+    return match value {
+        when 1 then 10,
+        when 2 then 20
+    }
+}
+
+public func main() returns int {
+    return pick(1)
+}

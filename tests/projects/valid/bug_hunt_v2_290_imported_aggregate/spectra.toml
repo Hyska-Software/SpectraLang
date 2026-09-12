@@ -1,0 +1,5 @@
+[project]
+name = "bug_hunt_v2_290_imported_aggregate"
+version = "0.1.0"
+entry = "src/main.spectra"
+src_dirs = ["src"]

@@ -1,0 +1,60 @@
+// R-259 regression: nested Drop values must survive block exits, returns and
+// aggregate destruction without duplicate or missing destructor calls.
+module r259_drop_nested_lifetimes
+
+import std.io
+
+record Token {
+    public id: int,
+    public name: string,
+}
+
+impl Drop for Token {
+    func drop(&mut self) {
+        println(f"[R-259 drop] {self.id}:{self.name}")
+    }
+}
+
+record Bundle {
+    public token: Token,
+    public active: bool,
+}
+
+impl Bundle {
+    public func make(id: int) returns Bundle {
+        let token = Token { id: id, name: "bundle" }
+        return Bundle { token: token, active: true }
+    }
+
+    public func deactivate(&mut self) {
+        self.active = false
+    }
+}
+
+func make_returned() returns Token {
+    let token = Token { id: 3, name: "returned" }
+    return token
+}
+
+public func main() returns int {
+    {
+        let local = Token { id: 1, name: "local" }
+        println(local.id)
+    }
+
+    {
+        let bundle = Bundle::make(2)
+        bundle.deactivate()
+        if bundle.active {
+            return 1
+        }
+        println(bundle.token.id)
+    }
+
+    let returned = make_returned()
+    if returned.id != 3 {
+        return 2
+    }
+    println(returned.name)
+    return 0
+}

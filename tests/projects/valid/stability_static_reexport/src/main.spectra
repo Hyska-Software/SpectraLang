@@ -1,0 +1,10 @@
+module main
+
+from facade import COUNTER
+
+public func main() returns int {
+    if COUNTER != 9 {
+        return 1
+    }
+    return 0
+}

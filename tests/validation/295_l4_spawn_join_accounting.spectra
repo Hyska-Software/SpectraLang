@@ -1,0 +1,22 @@
+module bug_hunt_v2_295_spawn_join_accounting
+
+import std.concurrent as concurrent
+
+public func main() returns int {
+    concurrent.reset()
+    let first  = concurrent.task_spawn_fn( | value: int | { value}, 17)
+    let second = concurrent.task_spawn_fn( | value: int | { value}, 25)
+    let total  = concurrent.task_join(first) + concurrent.task_join(second)
+
+    if total != 42 {
+        return 1
+    }
+    if concurrent.stats_tasks_spawned() != 2 {
+        return 2
+    }
+    concurrent.reset()
+    if concurrent.stats_tasks_spawned() != 0 {
+        return 3
+    }
+    return 0
+}

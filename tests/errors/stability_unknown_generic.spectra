@@ -1,0 +1,6 @@
+module stability_unknown_generic
+
+public func main() returns int {
+    let value: Option<MissingType> = Option::None
+    return 0
+}

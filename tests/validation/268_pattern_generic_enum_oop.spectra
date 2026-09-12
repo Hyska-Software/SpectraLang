@@ -1,0 +1,40 @@
+// R-268 regression: generic enum patterns carrying record values must retain
+// their concrete payload type through matching and method dispatch.
+module r268_pattern_generic_enum_oop
+
+record Score {
+    public value: int,
+}
+
+impl Score {
+    public func doubled(&self) returns int {
+        self.value * 2
+    }
+}
+
+enum Packet<T> {
+    Item(T),
+    Tagged { value: T },
+    Empty,
+}
+
+func score(packet: Packet<Score>) returns int {
+    return match packet {
+        when Packet::Item(item) then item.doubled(),
+        when Packet::Tagged { value } then value.doubled() + 1,
+        when Packet::Empty then 0
+    }
+}
+
+public func main() returns int {
+    if score(Packet::Item(Score { value: 4 })) != 8 {
+        return 1
+    }
+    if score(Packet::Tagged { value: Score { value: 5 } }) != 11 {
+        return 2
+    }
+    if score(Packet::Empty) != 0 {
+        return 3
+    }
+    return 0
+}

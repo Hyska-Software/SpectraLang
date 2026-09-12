@@ -1,0 +1,8 @@
+module stability_fs_result_type_mismatch
+
+import std.fs as fs
+
+public func main() returns int {
+    let content: string = fs.fs_read("missing.txt")
+    return 0
+}

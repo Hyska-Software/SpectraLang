@@ -23,10 +23,12 @@ impl Pass for ConstantFolding {
         let mut modified = false;
 
         for func in &mut module.functions {
+            if func.suspension_barrier {
+                continue;
+            }
             let mut constants: HashMap<usize, i64> = HashMap::new();
             let mut replacements: Vec<(usize, usize, i64)> = Vec::new(); // (block_idx, instr_idx, value)
-
-            // Collect constants from ConstInt instructions
+                                                                         // Collect constants from ConstInt instructions
             for block in &func.blocks {
                 for instr in &block.instructions {
                     if let InstructionKind::ConstInt { result, value } = &instr.kind {

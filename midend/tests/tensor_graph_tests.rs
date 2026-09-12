@@ -3,7 +3,7 @@ use spectra_midend::{
     ASTLowering, TensorDType, TensorDevice, TensorGraph, TensorGraphErrorKind, TensorGraphFunction,
     TensorGraphNode, TensorGraphOp, TensorGraphSource, TensorMetadata, TensorShape,
 };
-use std::collections::HashSet;
+
 use std::fs;
 use std::path::Path;
 
@@ -23,9 +23,7 @@ fn assert_snapshot(name: &str, actual: &str) {
 
 fn lower_source(source: &str) -> TensorGraph {
     let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
-    let ast = Parser::new(tokens, HashSet::new())
-        .parse()
-        .expect("parsing should pass");
+    let ast = Parser::new(tokens).parse().expect("parsing should pass");
     let ir = ASTLowering::new()
         .lower_module(&ast)
         .expect("lowering should pass");
@@ -300,7 +298,9 @@ fn tensor_graph_lowering_reports_backend_evidence_and_codes() {
                 ),
                 node(
                     1,
-                    TensorGraphOp::Elementwise { name: "relu".into() },
+                    TensorGraphOp::Elementwise {
+                        name: "relu".into(),
+                    },
                     vec![0],
                     TensorMetadata::new(
                         TensorDType::Float,
@@ -310,7 +310,9 @@ fn tensor_graph_lowering_reports_backend_evidence_and_codes() {
                 ),
                 node(
                     2,
-                    TensorGraphOp::Elementwise { name: "tanh_f".into() },
+                    TensorGraphOp::Elementwise {
+                        name: "tanh_f".into(),
+                    },
                     vec![1],
                     TensorMetadata::new(
                         TensorDType::Float,
@@ -329,9 +331,18 @@ fn tensor_graph_lowering_reports_backend_evidence_and_codes() {
     assert_eq!(lowered.report.fusion_groups, 1);
     assert!(lowered.report.planned_buffers > 0);
     assert!(lowered.report.peak_live_buffers > 0);
-    assert_eq!(TensorGraphErrorKind::DtypeMismatch.diagnostic_code(), "E2909");
-    assert_eq!(TensorGraphErrorKind::InvalidLayout.diagnostic_code(), "E2911");
-    assert_eq!(TensorGraphErrorKind::FallbackNotAllowed.diagnostic_code(), "E2912");
+    assert_eq!(
+        TensorGraphErrorKind::DtypeMismatch.diagnostic_code(),
+        "E2909"
+    );
+    assert_eq!(
+        TensorGraphErrorKind::InvalidLayout.diagnostic_code(),
+        "E2911"
+    );
+    assert_eq!(
+        TensorGraphErrorKind::FallbackNotAllowed.diagnostic_code(),
+        "E2912"
+    );
 }
 
 #[test]

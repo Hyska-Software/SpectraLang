@@ -1,0 +1,13 @@
+// Partition summation for the fanout pipeline.
+module pipeline
+
+// Inclusive range sum split_lo..split_hi.
+public func part_sum(split_lo: int, split_hi: int) returns int {
+    let total = 0
+    let i = split_lo
+    while i <= split_hi {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}

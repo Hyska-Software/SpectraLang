@@ -42,6 +42,14 @@ def require_contains(path: Path, needles: list[str]) -> None:
     text = path.read_text(encoding="utf-8")
     missing = [needle for needle in needles if needle not in text]
     if missing:
+        # The runtime stdlib is decomposed into focused modules; preserve the
+        # stage-level contract when a marker moved out of mod.rs.
+        stage_text = "\n".join(
+            source.read_text(encoding="utf-8")
+            for source in sorted(path.parent.rglob("*.rs"))
+        )
+        missing = [needle for needle in missing if needle not in stage_text]
+    if missing:
         for needle in missing:
             print(f"[R-2103] missing marker in {path}: {needle}", file=sys.stderr)
         raise SystemExit(1)
@@ -50,13 +58,15 @@ def require_contains(path: Path, needles: list[str]) -> None:
 def main() -> int:
     require_contains(
         ROOT / "midend" / "src" / "ir.rs",
-        ["AsyncSuspend", "AsyncResume", "AsyncReady", "Task {"],
+        ["AsyncReady", "Task {"],
     )
     require_contains(
         ROOT / "runtime" / "src" / "stdlib" / "mod.rs",
         [
             "spectra.async.task.ready",
             "spectra.async.task.poll",
+            "spectra.async.task.wait",
+            "std_async_task_wait",
             "spectra.async.task.result",
             "spectra.async.task.cancel",
             "std_async_task_cancel",
@@ -81,16 +91,35 @@ def main() -> int:
             "tests/validation/121_async_await_lowering.spectra",
         ]
     )
+    # The coroutine lowering shape since the poll/drop split: the ramp allocates a
+    # frame and creates a `Task`, child awaits lower to `poll.child`, and poll
+    # completion flows through `coroutine.complete` (these replaced the earlier
+    # `async.ready` + `spectra.async.task.wait/result` host-call shape).
     require_output(
         dump.stdout,
         [
             "fn add_one() -> Task<int>",
-            "async.suspend",
-            "async.resume",
-            "async.ready<int>",
-            "spectra.async.task.poll",
-            "spectra.async.task.result",
+            "coroutine.create",
+            "poll.child",
+            "coroutine.complete",
         ],
+    )
+
+    # Real-wait regression: out-of-order awaits with a ~200 ms task.
+    # `spectralang run` propagates the program's exit code, so 0 means the
+    # values survived the waits and the slow task really elapsed >= 200 ms
+    # (the fixture itself asserts that via time.monotonic_millis).
+    run(
+        [
+            "cargo",
+            "run",
+            "-q",
+            "-p",
+            "spectra-cli",
+            "--",
+            "run",
+            "tests/validation/349_async_wait_out_of_order.spectra",
+        ]
     )
 
     run(

@@ -4,8 +4,7 @@ use crate::span::Span;
 pub enum Type {
     Int,
     Float,
-    /// Explicit signed/unsigned integer width. `Type::Int` remains the
-    /// compatibility i64 spelling used by the legacy stdlib ABI.
+    /// Explicit signed/unsigned integer width. `Type::Int` is the i64 spelling.
     ExactInt {
         signed: bool,
         width: IntWidth,
@@ -31,6 +30,17 @@ pub enum Type {
     },
     Enum {
         name: String,
+    },
+    /// A concrete application of a generic nominal type, preserving the
+    /// base name and every resolved argument instead of encoding the
+    /// application only in a mangled nominal name.
+    ///
+    /// The nominal name remains available to adapters, while
+    /// semantic/type-checking code can compare `List<int>` and
+    /// `List<string>` structurally.
+    Applied {
+        name: String,
+        args: Vec<Type>,
     },
     /// Generic type parameter (e.g., T in fn foo<T>(x: T))
     TypeParameter {
@@ -96,6 +106,13 @@ pub struct Module {
     /// can pre-register the return types and generate correct cross-module calls.
     /// e.g. ("square", Type::Int) when `import mathutils;` brings in `square`.
     pub imported_function_return_types: Vec<(String, Type)>,
+    /// Full callable signatures for user-defined functions imported from other
+    /// modules. The backend uses these declarations when emitting relocatable
+    /// AOT objects, where an imported call must be declared as an external
+    /// symbol before the native linker resolves it from another module object.
+    pub imported_function_signatures: Vec<(String, Vec<Type>, Type)>,
+    /// Imported module-level statics: `(local_name, qualified_global_key, type)`.
+    pub imported_static_globals: Vec<(String, String, Type)>,
     /// Enum AST definitions from imported user modules.
     /// Populated by the semantic analyser so the midend can register
     /// cross-module enum layouts before lowering.
@@ -104,6 +121,16 @@ pub struct Module {
     /// Populated by the semantic analyser so the midend can register
     /// cross-module struct layouts before lowering.
     pub imported_struct_defs: Vec<Struct>,
+    /// Trait implementations imported from user modules.  Each entry carries
+    /// the local trait/type names and concrete trait arguments so semantic and
+    /// midend passes preserve cross-module coherence and dyn dispatch.
+    pub imported_trait_impls: Vec<(String, String, Vec<Type>)>,
+    /// Generic function templates imported from user modules for downstream
+    /// monomorphization.
+    pub imported_generic_functions: Vec<Function>,
+    /// Trait declarations imported from builtin or user modules for midend
+    /// vtable slot/signature construction.
+    pub imported_trait_decls: Vec<TraitDeclaration>,
 }
 
 impl Module {
@@ -114,8 +141,13 @@ impl Module {
             items: Vec::new(),
             std_import_aliases: Vec::new(),
             imported_function_return_types: Vec::new(),
+            imported_function_signatures: Vec::new(),
+            imported_static_globals: Vec::new(),
             imported_enum_defs: Vec::new(),
             imported_struct_defs: Vec::new(),
+            imported_trait_impls: Vec::new(),
+            imported_generic_functions: Vec::new(),
+            imported_trait_decls: Vec::new(),
         }
     }
 }
@@ -344,7 +376,7 @@ pub struct ForLoop {
     pub iterable: Expression,
     pub body: Block,
     pub span: Span,
-    // Note: both `for x in expr` and `for x of expr` have identical semantics.
+    // Note: only `for x in expr` is supported; `of` is not a keyword.
 }
 
 #[derive(Debug, Clone)]
@@ -515,13 +547,13 @@ pub struct MatchArm {
 #[derive(Debug, Clone)]
 pub enum Pattern {
     // Wildcard pattern: _
-    Wildcard,
+    Wildcard(Span),
 
     // Literal patterns: 42, true, "hello"
     Literal(Expression),
 
     // Identifier pattern: x (binds value)
-    Identifier(String),
+    Identifier(String, Span),
 
     // Tuple pattern: (a, b, _)
     Tuple(Vec<Pattern>),
@@ -549,9 +581,9 @@ pub enum Pattern {
 impl Pattern {
     pub fn span(&self) -> Span {
         match self {
-            Pattern::Wildcard => Span::dummy(),
+            Pattern::Wildcard(span) => *span,
             Pattern::Literal(expr) => expr.span,
-            Pattern::Identifier(_) => Span::dummy(),
+            Pattern::Identifier(_, span) => *span,
             Pattern::Tuple(elements) => elements
                 .iter()
                 .map(Pattern::span)
@@ -692,10 +724,18 @@ pub struct SwitchCase {
 /// Bloco de implementação para adicionar métodos a um tipo
 #[derive(Debug, Clone)]
 pub struct ImplBlock {
-    pub type_name: String,          // Nome do tipo (struct ou enum)
+    pub type_name: String, // Nome do tipo (struct ou enum)
+    /// Optional module qualification from `impl module::Type`.
+    /// The semantic phase validates the module/type target before treating
+    /// the implementation as an ordinary impl for the imported type.
+    pub module_path: Option<String>,
     pub trait_name: Option<String>, // Nome do trait (se for impl Trait for Type)
     pub methods: Vec<Method>,       // Métodos implementados
     pub span: Span,
+    /// Type arguments of the impl target (e.g. `impl Par<T>` or `impl Par<int>`).
+    pub type_args: Vec<TypeAnnotation>,
+    /// Generic parameter clause of the impl: `impl<T: Bound> Trait for Type` (R-213).
+    pub type_params: Vec<TypeParameter>,
 }
 
 /// Método associado a um tipo
@@ -735,6 +775,8 @@ pub struct TraitDeclaration {
     pub parent_traits: Vec<String>, // NEW: Trait inheritance (e.g., trait Debug: Printable)
     pub methods: Vec<TraitMethod>,  // Assinaturas de métodos (sem corpo)
     pub span: Span,
+    /// Generic type parameters: `trait Container<T>` (R-213).
+    pub type_params: Vec<TypeParameter>,
 }
 
 /// Método em um trait (pode ter ou não implementação default)
@@ -756,6 +798,10 @@ pub struct TraitImpl {
     pub type_name: String,    // Nome do tipo que implementa o trait
     pub methods: Vec<Method>, // Métodos implementados (com corpo)
     pub span: Span,
+    /// Type arguments of the impl target (e.g. `impl Trait for Par<T>`).
+    pub type_args: Vec<TypeAnnotation>,
+    /// Generic parameter clause of the impl: `impl<T: Bound> Trait for Type` (R-213).
+    pub type_params: Vec<TypeParameter>,
 }
 
 // ============================================================================

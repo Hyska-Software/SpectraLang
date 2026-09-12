@@ -120,6 +120,19 @@ impl IRBuilder {
         self.try_emit(func, |result| InstructionKind::Alloca { result, ty })
     }
 
+    pub fn build_global_addr(
+        &self,
+        func: &mut Function,
+        name: String,
+        ty: crate::ir::Type,
+    ) -> Value {
+        self.try_emit(func, |result| InstructionKind::GlobalAddr {
+            result,
+            name,
+            ty,
+        })
+    }
+
     pub fn build_load(&self, func: &mut Function, ptr: Value) -> Value {
         self.try_emit(func, |result| InstructionKind::Load {
             result,
@@ -158,6 +171,26 @@ impl IRBuilder {
         })
     }
 
+    pub fn build_field_ptr(&self, func: &mut Function, ptr: Value, offset: i64) -> Value {
+        self.try_emit(func, |result| InstructionKind::FieldPtr {
+            result,
+            ptr,
+            offset,
+        })
+    }
+
+    pub fn build_manual_alloc(&self, func: &mut Function, size: i64) -> Value {
+        self.try_emit(func, |result| InstructionKind::ManualAlloc { result, size })
+    }
+
+    pub fn build_escape_manual_alloc(&self, func: &mut Function, ptr: Value) {
+        if let Some(block_id) = self.current_block {
+            if let Some(block) = func.get_block_mut(block_id) {
+                block.add_instruction(InstructionKind::EscapeManualAlloc { ptr });
+            }
+        }
+    }
+
     pub fn build_copy(&self, func: &mut Function, source: Value) -> Value {
         self.try_emit(func, |result| InstructionKind::Copy { result, source })
     }
@@ -170,16 +203,34 @@ impl IRBuilder {
         self.try_emit(func, |result| InstructionKind::ConstInt { result, value })
     }
 
-    pub fn build_const_int_typed(&self, func: &mut Function, value: i64, ty: crate::ir::Type) -> Value {
-        self.try_emit(func, |result| InstructionKind::ConstIntTyped { result, value, ty })
+    pub fn build_const_int_typed(
+        &self,
+        func: &mut Function,
+        value: i64,
+        ty: crate::ir::Type,
+    ) -> Value {
+        self.try_emit(func, |result| InstructionKind::ConstIntTyped {
+            result,
+            value,
+            ty,
+        })
     }
 
     pub fn build_const_float(&self, func: &mut Function, value: f64) -> Value {
         self.try_emit(func, |result| InstructionKind::ConstFloat { result, value })
     }
 
-    pub fn build_const_float_typed(&self, func: &mut Function, value: f64, ty: crate::ir::Type) -> Value {
-        self.try_emit(func, |result| InstructionKind::ConstFloatTyped { result, value, ty })
+    pub fn build_const_float_typed(
+        &self,
+        func: &mut Function,
+        value: f64,
+        ty: crate::ir::Type,
+    ) -> Value {
+        self.try_emit(func, |result| InstructionKind::ConstFloatTyped {
+            result,
+            value,
+            ty,
+        })
     }
 
     pub fn build_const_bool(&self, func: &mut Function, value: bool) -> Value {
@@ -187,7 +238,10 @@ impl IRBuilder {
     }
 
     pub fn build_const_string(&self, func: &mut Function, value: String) -> Value {
-        self.try_emit(func, |result| InstructionKind::ConstString { result, value })
+        self.try_emit(func, |result| InstructionKind::ConstString {
+            result,
+            value,
+        })
     }
 
     pub fn build_return(&self, func: &mut Function, value: Option<Value>) {
@@ -239,12 +293,8 @@ impl IRBuilder {
         args: Vec<Value>,
         has_return: bool,
     ) -> Option<Value> {
-        let Some(block_id) = self.current_block else {
-            return None;
-        };
-        let Some(pos) = func.blocks.iter().position(|b| b.id == block_id) else {
-            return None;
-        };
+        let block_id = self.current_block?;
+        let pos = func.blocks.iter().position(|b| b.id == block_id)?;
         let result = if has_return {
             Some(func.next_value())
         } else {
@@ -254,6 +304,7 @@ impl IRBuilder {
             result,
             function: function_name,
             args,
+            is_tail: false,
         });
         result
     }
@@ -287,12 +338,8 @@ impl IRBuilder {
         has_return: bool,
         result_type: Option<Type>,
     ) -> Option<Value> {
-        let Some(block_id) = self.current_block else {
-            return None;
-        };
-        let Some(pos) = func.blocks.iter().position(|b| b.id == block_id) else {
-            return None;
-        };
+        let block_id = self.current_block?;
+        let pos = func.blocks.iter().position(|b| b.id == block_id)?;
         let result = if has_return {
             Some(func.next_value())
         } else {
@@ -325,12 +372,8 @@ impl IRBuilder {
         sig_params: Vec<crate::ir::Type>,
         sig_return: crate::ir::Type,
     ) -> Option<Value> {
-        let Some(block_id) = self.current_block else {
-            return None;
-        };
-        let Some(pos) = func.blocks.iter().position(|b| b.id == block_id) else {
-            return None;
-        };
+        let block_id = self.current_block?;
+        let pos = func.blocks.iter().position(|b| b.id == block_id)?;
         let has_return = sig_return != crate::ir::Type::Void;
         let result = if has_return {
             Some(func.next_value())
@@ -345,22 +388,6 @@ impl IRBuilder {
             signature_return: Box::new(sig_return),
         });
         result
-    }
-
-    pub fn build_async_suspend(&self, func: &mut Function, task: Value, state: usize) {
-        if let Some(block_id) = self.current_block {
-            if let Some(block) = func.get_block_mut(block_id) {
-                block.add_instruction(InstructionKind::AsyncSuspend { task, state });
-            }
-        }
-    }
-
-    pub fn build_async_resume(&self, func: &mut Function, task: Value, state: usize) {
-        if let Some(block_id) = self.current_block {
-            if let Some(block) = func.get_block_mut(block_id) {
-                block.add_instruction(InstructionKind::AsyncResume { task, state });
-            }
-        }
     }
 
     pub fn build_async_ready(

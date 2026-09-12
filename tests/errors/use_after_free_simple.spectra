@@ -1,0 +1,9 @@
+module use_after_free_simple
+
+import std.tensor as tensor
+
+public func main() returns int {
+    let handle = tensor.arange(1, 4, 1)
+    tensor.free(handle)
+    return tensor.rank(handle)
+}

@@ -78,12 +78,17 @@ Use `status_reason(status)`, `status_class(status)`, and
 - `request_new(method)` constructs a compatibility request for `/`.
 - `request_method(request)` returns the method code.
 - `request_path(request)` returns the request path.
+- `request_body(request)` returns the request body decoded as UTF-8 text;
+  invalid byte sequences are replaced with U+FFFD.
 - `request_header(request, name)` returns the first case-insensitive header
   match or an empty string.
 - `request_with_header(request, name, value)` returns a new request handle with
   the header inserted or replaced. It is used by CORS, middleware, and
   validation fixtures that need to model incoming HTTP headers from Spectra
   code.
+- `request_with_body(request, body)` returns a new request handle with a
+  UTF-8 body. It is the stable constructor used by JSON handlers and outbound
+  client requests.
 - `request_cookie(request, name)` reads a case-insensitive cookie from the
   `Cookie` header or returns an empty string.
 - `response(status)` and `response_new(status)` construct a response handle.

@@ -12,7 +12,13 @@ SPECTRALANG = ROOT / "target" / "debug" / "spectralang.exe"
 
 
 def read(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
+    source = ROOT / path
+    if source.suffix == ".rs":
+        return "\n".join(
+            sibling.read_text(encoding="utf-8")
+            for sibling in sorted(source.parent.rglob("*.rs"))
+        )
+    return source.read_text(encoding="utf-8")
 
 
 def fail(message: str) -> None:
@@ -47,7 +53,7 @@ def parse_toml(path: str):
 def validate_rust_surface() -> None:
     http = read("packages/spectra-api/src/http.rs")
     lib = read("packages/spectra-api/src/lib.rs")
-    runtime_api = read("runtime/src/api/mod.rs")
+    runtime_api = read("packages/spectra-api/src/host_calls.rs")
     midend = read("midend/src/lowering.rs")
     builtins = read("compiler/src/semantic/builtin_modules.rs")
 

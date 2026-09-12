@@ -1560,40 +1560,44 @@ let i = float_to_int(3.99)
          // 3 (truncated)
 ```
 
-### std.collections — Dynamic Lists
+### std.collections — Typed Collections
 
 ```spectra
 import std.collections
 ```
 
-Lists store `int` values. Use int handles to pass lists between functions. String values are stored as integer pointers.
+The source contract uses typed `List<T>` and `Map<K,V>` values. Runtime handles
+are opaque implementation details and must not be treated as user-visible
+integers. Operations whose result may be absent return `Option<T>`.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `list_new` | `() returns int` | Create new list; returns handle |
-| `list_push` | `(h: int, v: int) returns unit` | Append value |
-| `list_len` | `(h: int) returns int` | Length |
-| `list_get` | `(h: int, i: int) returns int` | Get element (-1 if OOB) |
-| `list_set` | `(h: int, i: int, v: int) returns unit` | Set element |
-| `list_pop` | `(h: int) returns int` | Remove and return last (-1 if empty) |
-| `list_pop_front` | `(h: int) returns int` | Remove and return first (-1 if empty) |
-| `list_insert_at` | `(h: int, i: int, v: int) returns unit` | Insert at index |
-| `list_remove_at` | `(h: int, i: int) returns int` | Remove at index (-1 if OOB) |
-| `list_contains` | `(h: int, v: int) returns bool` | Contains value? |
-| `list_index_of` | `(h: int, v: int) returns int` | First index (-1 if not found) |
-| `list_sort` | `(h: int) returns unit` | Sort ascending in-place |
-| `list_sort_by` | `(h: int, cmp: func(int,int) returns int) returns unit` | Sort with comparator |
-| `list_map` | `(h: int, f: func(int) returns int) returns int` | Map → new list handle |
-| `list_filter` | `(h: int, f: func(int) returns bool) returns int` | Filter → new list handle |
-| `list_reduce` | `(h: int, init: int, f: func(int,int) returns int) returns int` | Reduce to single value |
-| `list_clear` | `(h: int) returns unit` | Remove all elements |
-| `list_free` | `(h: int) returns unit` | Free list memory |
+| `list_new<T>` | `() returns List<T>` | Create a typed list |
+| `list_push<T>` | `(List<T>, T) returns unit` | Append value |
+| `list_len<T>` | `(List<T>) returns int` | Length |
+| `list_get<T>` | `(List<T>, int) returns Option<T>` | Get element or `None` |
+| `list_set<T>` | `(List<T>, int, T) returns unit` | Set element |
+| `list_pop<T>` | `(List<T>) returns Option<T>` | Remove and return last or `None` |
+| `list_pop_front<T>` | `(List<T>) returns Option<T>` | Remove and return first or `None` |
+| `list_insert_at<T>` | `(List<T>, int, T) returns unit` | Insert at index |
+| `list_remove_at<T>` | `(List<T>, int) returns Option<T>` | Remove at index or `None` |
+| `list_contains<T>` | `(List<T>, T) returns bool` | Contains value? |
+| `list_index_of<T>` | `(List<T>, T) returns int` | First index or `-1` |
+| `list_sort` | `(List<int>) returns unit` | Sort ascending in-place |
+| `list_sort_by` | `(List<int>, func(int,int) returns int) returns unit` | Sort with comparator |
+| `list_map` | `(List<int>, func(int) returns int) returns List<int>` | Map to a new list |
+| `list_filter` | `(List<int>, func(int) returns bool) returns List<int>` | Filter to a new list |
+| `list_reduce` | `(List<int>, int, func(int,int) returns int) returns int` | Reduce to single value |
+| `list_clear<T>` | `(List<T>) returns unit` | Remove all elements |
+| `list_free<T>` | `(List<T>) returns unit` | Release list resources |
 | `list_free_all` | `() returns int` | Free all lists |
 
 ```spectra
 import std.collections
+import std.option as option
+from std.collections import List
 
-let lst = list_new()
+let lst: List<int> = list_new()
 list_push(lst, 10)
 list_push(lst, 20)
 list_push(lst, 30)
@@ -1601,14 +1605,20 @@ list_push(lst, 30)
 let n = list_len(lst)
            // 3
 let first = list_get(lst, 0)
-    // 10
+    // Some(10)
+if option.is_none(first) {
+    return 1
+}
 
-let doubled = list_map(lst, |x| x * 2)
-let total = list_reduce(lst, 0, |acc, x| acc + x)
+let doubled = list_map(lst, |x: int| x * 2)
+let total = list_reduce(lst, 0, |acc: int, x: int| acc + x)
   // 60
 
 list_free(lst)
 ```
+
+Legacy sentinel behavior is available only through an explicit
+`import std.compat.collections` import. It is not the stable default.
 
 ### std.tensor — Tensor Handles
 
@@ -1713,27 +1723,44 @@ let b = random_bool()
 ### std.fs — File System
 
 ```spectra
-import std.fs
+import std.fs as fs
 ```
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `fs_read` | `(path: string) returns string` | Read entire file ("" on error) |
-| `fs_write` | `(path: string, content: string) returns bool` | Write file, creating missing parent directories when possible |
-| `fs_append` | `(path: string, content: string) returns bool` | Append to file, creating missing parent directories when possible |
-| `fs_exists` | `(path: string) returns bool` | File exists? |
-| `fs_remove` | `(path: string) returns bool` | Delete file |
+| `fs_read` | `(path: string) returns Result<string, Error>` | Read entire file |
+| `fs_write` | `(path: string, content: string) returns Result<bool, Error>` | Write file, creating missing parent directories when possible |
+| `fs_append` | `(path: string, content: string) returns Result<bool, Error>` | Append to file, creating missing parent directories when possible |
+| `fs_exists` | `(path: string) returns Result<bool, Error>` | File exists? Missing paths are `Ok(false)` |
+| `fs_remove` | `(path: string) returns Result<bool, Error>` | Delete file |
 
-Filesystem operations return safe values for ordinary filesystem failures:
-`fs_read` returns `""`, while write/append/exists/remove return `false`.
+Filesystem operations return `Result` values for ordinary filesystem failures;
+inspect `std.error` instead of guessing from a sentinel. Legacy behavior is
+available only through an explicit `import std.compat.fs`.
 
 ```spectra
-import std.fs
+import std.fs as fs
 
-let ok = fs_write("target/artifacts/output.txt", "Hello\n")
-let content = fs_read("output.txt")
-let exists = fs_exists("output.txt")
+let write_result = fs.fs_write("target/artifacts/output.txt", "Hello\n")
+let content_result = fs.fs_read("output.txt")
+let exists_result = fs.fs_exists("output.txt")
 ```
+
+### std.error — Structured Errors
+
+```spectra
+import std.error as error
+from std.error import ErrorCode
+
+let failure = error.new(ErrorCode::NotFound, "missing", "fs_read", "data.txt", "agent", false)
+let code = error.code(failure)
+let operation = error.operation(failure)
+```
+
+`Error` also exposes `message`, `context`, `origin`, and `retryable` through
+the corresponding accessors. `ErrorCode` is closed and currently maps
+`InvalidArgument`, `NotFound`, `PermissionDenied`, `Io`, `Internal`, and
+`Unsupported` to stable numeric codes.
 
 ### std.env — Environment
 
@@ -1743,18 +1770,24 @@ import std.env
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `env_get` | `(key: string) returns string` | Get env var ("" if not set) |
+| `env_get` | `(key: string) returns Option<string>` | Get env var without conflating absence and an empty value |
 | `env_set` | `(key: string, value: string) returns bool` | Set env var |
 | `env_args_count` | `() returns int` | Number of CLI arguments |
-| `env_arg` | `(index: int) returns string` | Argument at index ("" if OOB) |
+| `env_arg` | `(index: int) returns Option<string>` | Argument at index, or None if out of bounds |
 
 ```spectra
 import std.env
+import std.option
 
-let home = env_get("HOME")
+let home_option = env_get("HOME")
+let home = option_unwrap_or(home_option, "")
 let argc = env_args_count()
-let first_arg = env_arg(0)
+let first_arg_option = env_arg(0)
+let first_arg = option_unwrap_or(first_arg_option, "")
 ```
+
+For legacy empty-string sentinel behavior, import `std.compat.env` explicitly;
+new code should keep absence represented as `Option<string>`.
 
 ### std.option — Option Helpers
 
@@ -1997,7 +2030,6 @@ let credit = TxKind::Credit(100)
 | `--verbose` / `-v` | Verbose build output |
 | `--summary` | Per-module pipeline summary |
 | `--json` | JSON diagnostic output (`compile`, `check`, `lint`, and `repl --json`) |
-| `--enable-experimental <feature>` | Compatibility no-op; no active experimental syntax gates |
 
 ### Stable Control-Flow Features
 
@@ -2008,7 +2040,7 @@ let credit = TxKind::Credit(100)
 | `do-while` | `do { } while` loop |
 | `loop` | Infinite `loop { }` |
 
-> Note: There are currently no active experimental syntax gates. `--enable-experimental <feature>` is accepted only for compatibility with older scripts.
+> Note: There is no experimental gating mechanism. Stable syntax parses unconditionally.
 
 ### Exit Codes
 
@@ -2339,6 +2371,8 @@ import std.math
 import std.string
 import std.convert
 import std.collections
+import std.option as option
+from std.collections import List
 import std.random
 
 public func main() returns int {
@@ -2373,16 +2407,23 @@ public func main() returns int {
                    // 123
 
     // std.collections
-    let lst = list_new()
+    let lst: List<int> = list_new()
     list_push(lst, 10)
     list_push(lst, 30)
     list_push(lst, 20)
     list_sort(lst)
-    println(list_get(lst, 0))
+    let first = list_get(lst, 0)
+    let second = list_get(lst, 1)
+    let third = list_get(lst, 2)
+    if option.is_none(first) or option.is_none(second) or option.is_none(third) {
+        list_free(lst)
+        return 1
+    }
+    println(option.option_unwrap(first))
          // 10
-    println(list_get(lst, 1))
+    println(option.option_unwrap(second))
          // 20
-    println(list_get(lst, 2))
+    println(option.option_unwrap(third))
          // 30
     list_free(lst)
 

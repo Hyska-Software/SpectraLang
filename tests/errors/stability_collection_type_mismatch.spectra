@@ -1,0 +1,10 @@
+module stability_collection_type_mismatch
+
+import std.collections as collections
+from std.collections import List
+
+public func main() returns int {
+    let values: List<int> = collections.list_new()
+    collections.list_push(values, "not an int")
+    return 0
+}

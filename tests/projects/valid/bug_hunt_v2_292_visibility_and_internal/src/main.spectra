@@ -1,0 +1,13 @@
+module main
+
+import access
+
+public func main() returns int {
+    if exported_score(40) != 42 {
+        return 1
+    }
+    if internal_score(40) != 42 {
+        return 2
+    }
+    return 0
+}

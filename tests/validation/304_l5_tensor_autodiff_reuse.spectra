@@ -1,0 +1,37 @@
+module bug_hunt_v2_304_tensor_autodiff_reuse
+
+import std.tensor as tensor
+import std.ml as ml
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled(true)
+
+    let base = tensor.full_f(3, 3.0)
+    let x = tensor.requires_grad(base, true)
+    let squared = tensor.mul(x, x)
+    let loss = diff {
+        tensor.sum_t(squared)
+    }
+    let gradient = tensor.grad(x)
+    if tensor.sum_f(gradient) as int != 18 {
+        return 1
+    }
+    if tensor.len(loss) != 1 {
+        return 2
+    }
+
+    let input = tensor.full2_f(1, 2, 1.0)
+    let weight = tensor.requires_grad(tensor.full2_f(2, 1, 1.0), true)
+    let bias = tensor.requires_grad(tensor.full_f(1, 0.0), true)
+    let target = tensor.full2_f(1, 1, 2.0)
+    let model_loss = diff {
+        ml.mse_loss(ml.linear(input, weight, bias), target)
+    }
+    if tensor.len(model_loss) != 1 or tensor.rank(tensor.grad(weight)) != 2 {
+        return 3
+    }
+
+    tensor.free_all()
+    return 0
+}
