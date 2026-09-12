@@ -47,6 +47,7 @@ public record Report {
 // `agent_start`, `agent_end`, `ask`, `ask_json`, `ask_stream`, `stream_next`,
 // `stream_close`, `act`, `tool_call`, `embed`, `remember`, `recall`, `approve`,
 // `require`, `budget_remaining`, `untrusted`, `trust`, `compensate`,
-// `rollback` and `token_count` are represented in
-// `compiler/src/semantic/builtin_std_core.rs` until package-level native extern
-// declarations become first-class syntax.
+// `rollback`, `mcp_connect`, `mcp_handle`, `mcp_serve`, `a2a_card`,
+// `a2a_handle`, `a2a_serve`, `acp_handle`, `acp_permission` and `token_count`
+// are represented in `compiler/src/semantic/builtin_std_core.rs` until
+// package-level native extern declarations become first-class syntax.

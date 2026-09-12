@@ -79,6 +79,20 @@ pub(crate) enum AgentError {
     /// bearing origin/reason, or a malformed ledger input. A declassification
     /// without a reason is the audit gap the ledger exists to close.
     Taint(String),
+    /// An MCP exchange failed (R-3218): a malformed endpoint URL, a missing
+    /// HTTP transport, a non-2xx response, or a peer that answered with a
+    /// JSON-RPC error instead of a result. The remote peer's text is carried
+    /// as data, never interpreted.
+    Mcp(String),
+    /// An A2A exchange failed (R-3219): a malformed request document, or a
+    /// task that is not journaled. A task-level outcome (a refused or failed
+    /// delegated run) is a Task state, not this error; this variant is the
+    /// adapter being handed something it cannot serve.
+    A2a(String),
+    /// An ACP exchange failed (R-3219): a malformed request document, or a
+    /// permission answer the adapter cannot map onto a decision. A client that
+    /// answers nothing usable never authorizes an action.
+    Acp(String),
     /// A bug or an exhausted runtime resource.
     Internal(String),
 }
@@ -106,6 +120,9 @@ impl AgentError {
             Self::AssertionFailed(_) => "assertion_failed",
             Self::Journal(_) => "journal_error",
             Self::Taint(_) => "taint_error",
+            Self::Mcp(_) => "mcp_error",
+            Self::A2a(_) => "a2a_error",
+            Self::Acp(_) => "acp_error",
             Self::Internal(_) => "internal",
         }
     }
@@ -130,6 +147,8 @@ impl AgentError {
             | Self::ToolLoopCeiling(_)
             | Self::CostAccountingUnavailable(_) => ERROR_CODE_UNSUPPORTED,
             Self::Provider(_) => ERROR_CODE_IO,
+            Self::Mcp(_) => ERROR_CODE_IO,
+            Self::A2a(_) | Self::Acp(_) => ERROR_CODE_IO,
             Self::Memory(_) | Self::Internal(_) => ERROR_CODE_INTERNAL,
         }
     }
@@ -151,6 +170,9 @@ impl AgentError {
             Self::AssertionFailed(_) => "require",
             Self::Journal(_) => "agent_journal",
             Self::Taint(_) => "agent_taint",
+            Self::Mcp(_) => "agent_mcp",
+            Self::A2a(_) => "agent_a2a",
+            Self::Acp(_) => "agent_acp",
             Self::Internal(_) => "agent",
         }
     }
@@ -175,6 +197,9 @@ impl AgentError {
             | Self::AssertionFailed(detail)
             | Self::Journal(detail)
             | Self::Taint(detail)
+            | Self::Mcp(detail)
+            | Self::A2a(detail)
+            | Self::Acp(detail)
             | Self::Internal(detail) => detail,
         }
     }

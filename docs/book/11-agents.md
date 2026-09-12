@@ -253,6 +253,32 @@ resume rather than a re-execution: a run with the same `run_id` resolves each
 step from the journal, returns the recorded output and appends nothing, so
 nothing is asked or executed twice and the report says `"replay":true`.
 
+## The Integrated Service
+
+`tests/projects/valid/integrated_agent_service` is the end-to-end project: a
+five-module service that binds a localhost HTTP listener, runs one agent turn
+with a token budget and the `spectra.std.fs` capability, counts two effects
+through the governed tool dispatch, asks for approval of one action and
+journals the run. `GET /health`, `GET /ledger` and `GET /status` re-read the
+run's files per request, so the surface is observably live while the run is in
+flight.
+
+Its gate kills the process after the first effect is durable and re-runs it
+with the same `run_id` and the same journal. The resumed run replays the
+recorded model turn, tool call, approval and assertion, executes only the
+second effect, and reports the same accounting as an uninterrupted run with
+`"replay":true`; the ledger keeps exactly one line per effect and the journal
+exactly one tool record per label. `scripts/validate_r3221_integrated_agent_service.py`
+drives both modes (JIT and the emitted executable), the HTTP probes and the
+interrupt/resume proof.
+
+Two integration rules the project also exercises are worth remembering when
+splitting tools across modules: the module that *dispatches* (`act`/`tool_call`)
+must import the module that *declares* the tools, and `tools::enforce_run_grant`
+checks every registered tool's derived effects against `AgentSpec.allow` before
+the first dispatch, so a run's grant must cover the whole registered tool set
+it can dispatch, not only the tool it happens to call (ADR 0019).
+
 ## The Machine-Readable Surface
 
 Coding agents consume the compiler's view directly:
@@ -308,5 +334,6 @@ and the produced binary for AOT. Both modes run with the deterministic mock
 provider and need no credentials or network.
 
 The Phase 32 validators (`scripts/validate_r32*.py`) are registered in
-`run_tests.ps1` as the items land; the package, conformance and
-integrated-project gates of `R-3221` are added with the remaining items.
+`run_tests.ps1` as the items land; the package and conformance gates of
+`R-3221` are added with the remaining items, and the integrated-project gate is
+`scripts/validate_r3221_integrated_agent_service.py`.

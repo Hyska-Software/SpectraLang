@@ -1,0 +1,562 @@
+module agent_protocol
+
+// R-3219 end-to-end fixture: the A2A server surface and the ACP agent surface,
+// both reusing the primitives that already exist -- the run, its journal and
+// the approval primitive -- and neither bypassing the governed dispatch.
+//
+// A2A: `a2a_card` renders the agent card from an authored description record
+// plus the *derived* `#[agent_tool]` surface (skills, descriptions and tags the
+// compiler produced). A delegated task is a journaled run whose id is the task
+// id: `a2a_handle`'s `message/send` drives the task through `act` (grant
+// enforcement, the tool-call ceiling, the journal and the taint gate), the
+// terminal state and its stable reason are recorded as a `task` journal step,
+// and `tasks/get` reads that state back -- resuming an interrupted task instead
+// of re-delegating it.
+//
+// ACP: `acp_handle` answers `initialize` (advertising only implemented
+// capabilities), `session/new` (the session is the run) and `session/prompt`
+// (the same governed loop). `acp_permission` is the bridge: it asks the
+// attached ACP client through `session/request_permission` and hands the mapped
+// decision to the approval primitive, so a denial is journaled and the caller
+// must not perform the action. No client is attached in this fixture, so the
+// denial is the documented default-deny -- and the gated write never happens.
+//
+// Modes, selected by `SPECTRA_R3219_MODE`:
+//   ""/"matrix" -- the passing matrix (default).
+//   "serve"     -- serve the A2A endpoint and wait for a third-party client
+//                  (the validator): the bound authority is written to
+//                  $SPECTRA_R3219_SERVE_DIR/authority.txt, and the fixture
+//                  stops when $SPECTRA_R3219_SERVE_DIR/stop appears (or after
+//                  the wall-clock bound). It then asserts the client's task
+//                  ran through the governed dispatch exactly once.
+
+import std.agent
+import std.env as env
+import std.error as error
+import std.fs as fs
+import std.option as option
+import std.string as str
+import std.time as time
+
+const JOURNAL_DIR = ".spectra/r3219-journal"
+const WORK_DIR = "target/r3219"
+const SERVED_TASK = "fixture-382-served"
+
+// The artifact the ACP-denied action would write. Nothing ever writes it.
+const OWNED = WORK_DIR + "/owned.txt"
+
+// The gate the serving specs use: the `writer` tool's compiler-derived effect.
+const ALLOW_SINK = "[\"spectra.std.fs.fs_write\"]"
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[derive(Serialize, Deserialize)]
+public record WriteArgs {
+    path: string,
+    body: string,
+}
+
+// A read-only skill: no effects, so the card reports it as such.
+#[agent_tool("Adds two integers")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+// A destructive skill: its derived effect is the filesystem write.
+#[agent_tool("Writes a file")]
+public async func writer(run: Run, args: WriteArgs) returns bool {
+    let written = fs.fs_write(args.path, args.body)
+    if let Result::Ok(ok) = written {
+        return ok
+    }
+    return false
+}
+
+func mode() returns string {
+    let value = env.env_get("SPECTRA_R3219_MODE")
+    if let Option::Some(text) = value {
+        if text != "" {
+            return text
+        }
+    }
+    return "matrix"
+}
+
+// The spec every matrix mode starts from. `allow` is a JSON array document, so
+// a mode can serve with or without the sink granted.
+func spec(run_id: string, allow: string) returns string {
+    return "{\"goal\":\"agent-protocol\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":" + allow + ",\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":3,\"journal\":\"" + JOURNAL_DIR + "\",\"journal_payloads\":false,\"run_id\":\"" + run_id + "\"}"
+}
+
+func journal_path(run_id: string) returns string {
+    return JOURNAL_DIR + "/" + run_id + ".jsonl"
+}
+
+// `true` when the file exists; a stat failure counts as "not there".
+func exists(path: string) returns bool {
+    let present = fs.fs_exists(path)
+    if let Result::Ok(ok) = present {
+        return ok
+    }
+    return false
+}
+
+// Removes a previous journal file so each execution starts fresh.
+func clean(path: string) returns int {
+    if exists(path) {
+        let removed = fs.fs_remove(path)
+        if let Result::Ok(ok) = removed {
+            if ok == true {
+                return 0
+            }
+        }
+        return 1
+    }
+    return 0
+}
+
+// The journal of a completed run, or "" when it cannot be read.
+func journal_of(run_id: string) returns string {
+    let contents = fs.fs_read(journal_path(run_id))
+    if let Result::Ok(text) = contents {
+        return text
+    }
+    return ""
+}
+
+// ── requests ─────────────────────────────────────────────────────────────
+
+// One A2A `message/send`. `prompt` is already JSON-escaped (see the callers,
+// where `\\n` is the newline the model script uses).
+func send_request(task_id: string, prompt: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"message/send\",\"params\":{\"message\":{\"messageId\":\"" + task_id + "\",\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":\"" + prompt + "\"}]}}}"
+}
+
+func get_request(task_id: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tasks/get\",\"params\":{\"id\":\"" + task_id + "\"}}"
+}
+
+// ── A2A ──────────────────────────────────────────────────────────────────
+
+// The card is the authored identity plus the derived tool surface.
+func the_card_serves_the_derived_surface() returns int {
+    let run_id = "fixture-382-card"
+    let started = agent_start(spec(run_id, ALLOW_SINK))
+    if let Result::Ok(run) = started {
+        let card = a2a_card(run, "{\"name\":\"Protocol Agent\",\"description\":\"Serves A2A and ACP\",\"version\":\"2.0.0\"}")
+        if let Result::Ok(document) = card {
+            if str.contains(document, "\"name\":\"Protocol Agent\"") == false {
+                return 2
+            }
+            if str.contains(document, "\"version\":\"2.0.0\"") == false {
+                return 3
+            }
+            // Only implemented capabilities: no streaming, no push; the
+            // journal is the state history.
+            if str.contains(document, "\"streaming\":false") == false {
+                return 4
+            }
+            if str.contains(document, "\"pushNotifications\":false") == false {
+                return 5
+            }
+            if str.contains(document, "\"stateTransitionHistory\":true") == false {
+                return 6
+            }
+            // The skills are the compiler-derived descriptors.
+            if str.contains(document, "\"id\":\"add\"") == false {
+                return 7
+            }
+            if str.contains(document, "Adds two integers") == false {
+                return 8
+            }
+            if str.contains(document, "\"id\":\"writer\"") == false {
+                return 9
+            }
+            if str.contains(document, "spectra.std.fs.fs_write") == false {
+                return 10
+            }
+        } else {
+            return 11
+        }
+        let ended = agent_end(run)
+        if let Result::Err(end_error) = ended {
+            let _ = end_error
+            return 12
+        }
+    } else {
+        return 13
+    }
+    return 0
+}
+
+// A delegated task runs through the governed dispatch and is journaled.
+func a_delegated_task_completes() returns int {
+    let run_id = "fixture-382-delegate"
+    if clean(journal_path(run_id)) != 0 {
+        return 1
+    }
+    let started = agent_start(spec(run_id, ALLOW_SINK))
+    if let Result::Ok(run) = started {
+        let sent = a2a_handle(run, send_request("task-complete", "spectra:tool=add {\\\"a\\\":20,\\\"b\\\":22}\\nspectra:final=42"))
+        if let Result::Ok(response) = sent {
+            if str.contains(response, "\"state\":\"completed\"") == false {
+                return 2
+            }
+            if str.contains(response, "\"text\":\"completed\"") == false {
+                return 3
+            }
+            // The task ran `add` once, through the governed dispatch.
+            if str.contains(response, "\"tool_calls\":1") == false {
+                return 4
+            }
+            if str.contains(response, "\"text\":\"42\"") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+
+        // Polling the same id returns the recorded terminal state.
+        let polled = a2a_handle(run, get_request("task-complete"))
+        if let Result::Ok(response) = polled {
+            if str.contains(response, "\"state\":\"completed\"") == false {
+                return 7
+            }
+        } else {
+            return 8
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(end_error) = ended {
+            let _ = end_error
+            return 9
+        }
+    } else {
+        return 10
+    }
+    // Two `task` steps (request and terminal state) and one governed tool step.
+    let journal = journal_of("task-complete")
+    if str.count_occurrences(journal, "\"kind\":\"task\"") != 2 {
+        return 11
+    }
+    if str.count_occurrences(journal, "\"kind\":\"tool\"") != 1 {
+        return 12
+    }
+    return 0
+}
+
+// A capability refusal is the task's stable reason, not a silent success.
+func an_ungranted_task_is_rejected() returns int {
+    let run_id = "fixture-382-rejected"
+    if clean(journal_path(run_id)) != 0 {
+        return 1
+    }
+    // The serving run grants nothing, so the delegated run's first dispatch
+    // (the `act` grant check) refuses: the adapter cannot bypass enforcement.
+    let started = agent_start(spec(run_id, "[]"))
+    if let Result::Ok(run) = started {
+        let sent = a2a_handle(run, send_request("task-rejected", "spectra:final=done"))
+        if let Result::Ok(response) = sent {
+            if str.contains(response, "\"state\":\"rejected\"") == false {
+                return 2
+            }
+            if str.contains(response, "capability_denied") == false {
+                return 3
+            }
+        } else {
+            return 4
+        }
+        let ended = agent_end(run)
+        if let Result::Err(end_error) = ended {
+            let _ = end_error
+            return 5
+        }
+    } else {
+        return 6
+    }
+    return 0
+}
+
+// Unknown tasks and unsupported methods are protocol results.
+func unknown_tasks_and_methods_are_typed() returns int {
+    let run_id = "fixture-382-protocol"
+    let started = agent_start(spec(run_id, ALLOW_SINK))
+    if let Result::Ok(run) = started {
+        let missing = a2a_handle(run, get_request("fixture-382-absent"))
+        if let Result::Ok(response) = missing {
+            if str.contains(response, "\"code\":-32001") == false {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let unsupported = a2a_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tasks/pushNotificationConfig/set\"}")
+        if let Result::Ok(response) = unsupported {
+            if str.contains(response, "\"code\":-32601") == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+        // A document that is not a JSON-RPC request is a typed host failure,
+        // which is what lets a caller wire the handler under any HTTP stack.
+        let malformed = a2a_handle(run, "not json")
+        if let Result::Err(refusal) = malformed {
+            if str.contains(error.message(refusal), "a2a_error") == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+        let ended = agent_end(run)
+        if let Result::Err(end_error) = ended {
+            let _ = end_error
+            return 8
+        }
+    } else {
+        return 9
+    }
+    return 0
+}
+
+// ── ACP ──────────────────────────────────────────────────────────────────
+
+// `initialize` advertises only what the adapter implements; `session/new`
+// returns the run's session; `session/prompt` runs the governed loop.
+func the_acp_surface_is_served() returns int {
+    let run_id = "fixture-382-acp-surface"
+    let started = agent_start(spec(run_id, ALLOW_SINK))
+    if let Result::Ok(run) = started {
+        let initialized = acp_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}")
+        if let Result::Ok(response) = initialized {
+            if str.contains(response, "\"loadSession\":false") == false {
+                return 2
+            }
+            if str.contains(response, "\"image\":false") == false {
+                return 3
+            }
+            if str.contains(response, "\"embeddedContext\":false") == false {
+                return 4
+            }
+            if str.contains(response, "\"permissionRequests\":true") == false {
+                return 5
+            }
+            if str.contains(response, "session/request_permission") == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+
+        let created = acp_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{\"cwd\":\".\",\"mcpServers\":[]}}")
+        if let Result::Ok(response) = created {
+            // One session per run: the session id is the run id.
+            if str.contains(response, "\"sessionId\":\"" + run_id + "\"") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+
+        let prompted = acp_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/prompt\",\"params\":{\"sessionId\":\"" + run_id + "\",\"prompt\":[{\"type\":\"text\",\"text\":\"spectra:final=done\"}]}}")
+        if let Result::Ok(response) = prompted {
+            if str.contains(response, "\"stopReason\":\"end_turn\"") == false {
+                return 10
+            }
+            if str.contains(response, "\"agentText\":\"done\"") == false {
+                return 11
+            }
+        } else {
+            return 12
+        }
+
+        let unsupported = acp_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"session/load\"}")
+        if let Result::Ok(response) = unsupported {
+            if str.contains(response, "\"code\":-32601") == false {
+                return 13
+            }
+        } else {
+            return 14
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(end_error) = ended {
+            let _ = end_error
+            return 15
+        }
+    } else {
+        return 16
+    }
+    return 0
+}
+
+// ACP permission denial aborts the action and is journaled.
+func a_permission_denial_aborts_the_action() returns int {
+    let run_id = "fixture-382-acp-deny"
+    if clean(journal_path(run_id)) != 0 {
+        return 1
+    }
+    if clean(OWNED) != 0 {
+        return 2
+    }
+    let started = agent_start(spec(run_id, ALLOW_SINK))
+    if let Result::Ok(run) = started {
+        // No ACP client is attached in this fixture, so the bridge answers
+        // with the documented default-deny -- journaled like any decision.
+        let allowed = false
+        let decided = acp_permission(run, "spectra.std.fs.fs_write")
+        if let Result::Ok(ok) = decided {
+            allowed = ok
+        } else {
+            return 3
+        }
+
+        // The action the permission guards: it runs only when allowed.
+        if allowed == true {
+            let written = fs.fs_write(OWNED, "pwned")
+            let _ = written
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(end_error) = ended {
+            let _ = end_error
+            return 4
+        }
+    } else {
+        return 5
+    }
+    // The denial is journaled with its attribution, and the gated action never
+    // happened.
+    let journal = journal_of(run_id)
+    if str.contains(journal, "\"kind\":\"approval\"") == false {
+        return 6
+    }
+    if str.contains(journal, "\"output\":\"false\"") == false {
+        return 7
+    }
+    if str.contains(journal, "no ACP client attached") == false {
+        return 8
+    }
+    if exists(OWNED) == true {
+        return 9
+    }
+    return 0
+}
+
+// ── the third-party-client mode ──────────────────────────────────────────
+
+// Waits for the validator's stop sentinel, bounded so a lost client cannot
+// park the process.
+func wait_for_stop(dir: string, iterations: int) returns bool {
+    let elapsed = 0
+    loop {
+        if exists(dir + "/stop") {
+            return true
+        }
+        if elapsed >= iterations {
+            return false
+        }
+        time.sleep_ms(25)
+        elapsed = elapsed + 1
+    }
+    return false
+}
+
+// Serves the A2A endpoint so a third-party client (the validator, over a real
+// socket) can fetch the card, delegate a task and poll it, then asserts that
+// the delegated task executed exactly once through the governed dispatch.
+func serve_for_a_third_party_client() returns int {
+    let directory = env.env_get("SPECTRA_R3219_SERVE_DIR")
+    if option.is_none(directory) {
+        return 1
+    }
+    let dir = option.option_unwrap(directory)
+    if dir == "" {
+        return 1
+    }
+    let run_id = "fixture-382-serve"
+    if clean(journal_path(run_id)) != 0 {
+        return 2
+    }
+    if clean(journal_path(SERVED_TASK)) != 0 {
+        return 3
+    }
+    let started = agent_start(spec(run_id, ALLOW_SINK))
+    if let Result::Ok(run) = started {
+        let bound = a2a_serve(run, "127.0.0.1:0", "{\"name\":\"Protocol Agent\"}")
+        if let Result::Ok(authority) = bound {
+            let published = fs.fs_write(dir + "/authority.txt", authority)
+            if let Result::Err(write_error) = published {
+                let _ = write_error
+                return 4
+            }
+            if wait_for_stop(dir, 1200) == false {
+                return 5
+            }
+            let ended = agent_end(run)
+            if let Result::Ok(report) = ended {
+                let _ = report
+            } else {
+                return 6
+            }
+        } else {
+            return 7
+        }
+    } else {
+        return 8
+    }
+    // The client's task is a journaled run: the request and the terminal Task
+    // (two `task` steps) plus one governed tool step. The terminal state itself
+    // is asserted by the validator, which parses the record's JSON output.
+    let journal = journal_of(SERVED_TASK)
+    if str.count_occurrences(journal, "\"kind\":\"tool\"") != 1 {
+        return 9
+    }
+    if str.count_occurrences(journal, "\"kind\":\"task\"") != 2 {
+        return 10
+    }
+    return 0
+}
+
+public func main() returns int {
+    let selected = mode()
+    if selected == "serve" {
+        return serve_for_a_third_party_client()
+    }
+
+    let created = fs.create_dir_all(WORK_DIR)
+    if let Result::Err(creation_error) = created {
+        let _ = creation_error
+        return 1
+    }
+
+    let card = the_card_serves_the_derived_surface()
+    if card != 0 {
+        return 10 + card
+    }
+    let delegated = a_delegated_task_completes()
+    if delegated != 0 {
+        return 20 + delegated
+    }
+    let rejected = an_ungranted_task_is_rejected()
+    if rejected != 0 {
+        return 30 + rejected
+    }
+    let protocol = unknown_tasks_and_methods_are_typed()
+    if protocol != 0 {
+        return 40 + protocol
+    }
+    let acp = the_acp_surface_is_served()
+    if acp != 0 {
+        return 50 + acp
+    }
+    let denial = a_permission_denial_aborts_the_action()
+    if denial != 0 {
+        return 60 + denial
+    }
+    return 0
+}

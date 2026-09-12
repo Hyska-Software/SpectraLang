@@ -1,0 +1,50 @@
+module service
+
+// The project's HTTP surface.
+//
+// The service is a real listener: `main` binds an ephemeral localhost port and
+// starts the accept loop, then performs the agent run while the server keeps
+// serving on its own thread. `/ledger` and `/status` re-read the run's files
+// per request, so a request made while the run is parked mid-flight observes
+// the live state (which is what the validator's interrupt/resume proof does).
+
+from std.api.handler import text, with_header, register_sync_callback
+from std.api.http import Request, Response
+from std.api.routing import Router, get, route_id
+
+import store
+
+func health_body(request: Request) returns Response {
+    return with_header(text("ok"), "Content-Type", "text/plain")
+}
+
+func ledger_body(request: Request) returns Response {
+    return with_header(text(read_text(ledger_path())), "Content-Type", "text/plain")
+}
+
+func status_body(request: Request) returns Response {
+    if path_exists(status_path()) == false {
+        return with_header(text("pending"), "Content-Type", "text/plain")
+    }
+    return with_header(text(read_text(status_path())), "Content-Type", "text/plain")
+}
+
+public func register_routes(routes: Router) returns int {
+    let health = get(routes, "/health")
+    if route_id(health) == 0 {
+        return 1
+    }
+    let ledger = get(routes, "/ledger")
+    if route_id(ledger) == 0 {
+        return 2
+    }
+    let status = get(routes, "/status")
+    if route_id(status) == 0 {
+        return 3
+    }
+
+    let health_handler = register_sync_callback(route_id(health), health_body)
+    let ledger_handler = register_sync_callback(route_id(ledger), ledger_body)
+    let status_handler = register_sync_callback(route_id(status), status_body)
+    return 0
+}

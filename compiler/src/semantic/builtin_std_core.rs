@@ -448,6 +448,86 @@ pub(crate) fn make_std_agent() -> ModuleExports {
         "rollback".to_string(),
         pub_fn(vec![run.clone(), Type::String], result_of(Type::Int)),
     );
+    // mcp_connect(run: Run, url: string) -> Result<string, Error> (async;
+    // R-3218). Discovers a remote MCP server's tools over the run's HTTP
+    // transport, registers them under a name namespaced by the server identity
+    // (capability `mcp.<authority>`), and returns their descriptors as
+    // untrusted data.
+    exports.functions.insert(
+        "mcp_connect".to_string(),
+        agent_async_fn(vec![run.clone(), Type::String], result_of(Type::String)),
+    );
+    // mcp_handle(run: Run, request: string) -> Result<string, Error> (sync;
+    // R-3218). Serves one MCP JSON-RPC request from the project's registered
+    // tools; `tools/call` executes through the governed dispatch.
+    exports.functions.insert(
+        "mcp_handle".to_string(),
+        pub_fn(
+            vec![run.clone(), Type::String],
+            result_of(Type::String),
+        ),
+    );
+    // mcp_serve(run: Run, bind: string) -> Result<string, Error> (sync;
+    // R-3218). Starts the in-process HTTP listener and returns the bound
+    // address, so any MCP client can call the run's tools.
+    exports.functions.insert(
+        "mcp_serve".to_string(),
+        pub_fn(vec![run.clone(), Type::String], result_of(Type::String)),
+    );
+    // a2a_card(run: Run, description: string) -> Result<string, Error> (sync;
+    // R-3219). The A2A AgentCard: the authored strings plus the derived
+    // `#[agent_tool]` surface as skills.
+    exports.functions.insert(
+        "a2a_card".to_string(),
+        pub_fn(
+            vec![run.clone(), Type::String],
+            result_of(Type::String),
+        ),
+    );
+    // a2a_handle(run: Run, request: string) -> Result<string, Error> (sync;
+    // R-3219). Serves one A2A JSON-RPC request; `message/send` delegates a
+    // task as a journaled run driven through the governed dispatch, and
+    // `tasks/get`/`tasks/cancel` read and close it from the journal.
+    exports.functions.insert(
+        "a2a_handle".to_string(),
+        pub_fn(
+            vec![run.clone(), Type::String],
+            result_of(Type::String),
+        ),
+    );
+    // a2a_serve(run: Run, bind: string, description: string)
+    // -> Result<string, Error> (sync; R-3219). Starts the in-process A2A
+    // listener (agent card over GET, JSON-RPC over POST) and returns the bound
+    // address.
+    exports.functions.insert(
+        "a2a_serve".to_string(),
+        pub_fn(
+            vec![run.clone(), Type::String, Type::String],
+            result_of(Type::String),
+        ),
+    );
+    // acp_handle(run: Run, request: string) -> Result<string, Error> (sync;
+    // R-3219). Answers one ACP request (`initialize`, `session/new`,
+    // `session/prompt`, `session/cancel`), advertising only implemented
+    // capabilities.
+    exports.functions.insert(
+        "acp_handle".to_string(),
+        pub_fn(
+            vec![run.clone(), Type::String],
+            result_of(Type::String),
+        ),
+    );
+    // acp_permission(run: Run, action: string) -> Result<bool, Error> (sync;
+    // R-3219). Asks the attached ACP client through
+    // `session/request_permission` and journals the mapped decision through
+    // the approval primitive; false aborts the action.
+    exports.functions.insert(
+        "acp_permission".to_string(),
+        pub_fn(
+            vec![run.clone(), Type::String],
+            result_of(Type::Bool),
+        ),
+    );
 
     exports
 }

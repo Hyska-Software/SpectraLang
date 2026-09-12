@@ -222,6 +222,16 @@ path = "tests/validation/380_agent_compensation.spectra"
 covers = ["std.agent.compensate", "std.agent.rollback"]
 
 [[probe]]
+id = "agent-mcp"
+path = "tests/validation/381_agent_mcp.spectra"
+covers = ["std.agent.mcp_connect", "std.agent.mcp_handle", "std.agent.mcp_serve"]
+
+[[probe]]
+id = "agent-protocol"
+path = "tests/validation/382_agent_protocol.spectra"
+covers = ["std.agent.a2a_card", "std.agent.a2a_handle", "std.agent.a2a_serve", "std.agent.acp_handle", "std.agent.acp_permission"]
+
+[[probe]]
 id = "agent-surface"
 path = "tests/validation/365_agent_surface.spectra"
 covers = ["std.agent.*"]

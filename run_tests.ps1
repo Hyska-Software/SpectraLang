@@ -3066,6 +3066,26 @@ if ($r3223AgentTaint.Status -eq "PASSOU") {
 $results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3223_agent_taint"; Status = $r3223AgentTaint.Status; Detalhe = $r3223AgentTaint.Detail }
 
 Write-Host ""
+Write-Host "--- R-3218 MCP client and server ---" -ForegroundColor Yellow
+$r3218Mcp = Invoke-HostCommand -name "validate_r3218_mcp" -fileName "python" -arguments @("scripts\validate_r3218_mcp.py") -workingDir (Get-Location).Path
+if ($r3218Mcp.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3218_mcp"; Status = $r3218Mcp.Status; Detalhe = $r3218Mcp.Detail }
+
+Write-Host ""
+Write-Host "--- R-3219 A2A and ACP exposure ---" -ForegroundColor Yellow
+$r3219AgentProtocols = Invoke-HostCommand -name "validate_r3219_agent_protocols" -fileName "python" -arguments @("scripts\validate_r3219_agent_protocols.py") -workingDir (Get-Location).Path
+if ($r3219AgentProtocols.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3219_agent_protocols"; Status = $r3219AgentProtocols.Status; Detalhe = $r3219AgentProtocols.Detail }
+
+Write-Host ""
 Write-Host "--- R-3224 compensation declaration and execution ---" -ForegroundColor Yellow
 $r3224AgentCompensation = Invoke-HostCommand -name "validate_r3224_agent_compensation" -fileName "python" -arguments @("scripts\validate_r3224_agent_compensation.py") -workingDir (Get-Location).Path
 if ($r3224AgentCompensation.Status -eq "PASSOU") {
@@ -3074,6 +3094,26 @@ if ($r3224AgentCompensation.Status -eq "PASSOU") {
     $totalFailed++
 }
 $results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3224_agent_compensation"; Status = $r3224AgentCompensation.Status; Detalhe = $r3224AgentCompensation.Detail }
+
+Write-Host ""
+Write-Host "--- R-3221 integrated agent service (JIT/AOT + interrupt/resume) ---" -ForegroundColor Yellow
+$r3221IntegratedAgentService = Invoke-HostCommand -name "validate_r3221_integrated_agent_service" -fileName "python" -arguments @("scripts\validate_r3221_integrated_agent_service.py") -workingDir (Get-Location).Path
+if ($r3221IntegratedAgentService.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3221_integrated_agent_service"; Status = $r3221IntegratedAgentService.Status; Detalhe = $r3221IntegratedAgentService.Detail }
+
+Write-Host ""
+Write-Host "--- R-3219 A2A and ACP protocol exposure ---" -ForegroundColor Yellow
+$r3219AgentProtocols = Invoke-HostCommand -name "validate_r3219_agent_protocols" -fileName "python" -arguments @("scripts\validate_r3219_agent_protocols.py") -workingDir (Get-Location).Path
+if ($r3219AgentProtocols.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3219_agent_protocols"; Status = $r3219AgentProtocols.Status; Detalhe = $r3219AgentProtocols.Detail }
 
 # ---------------------------------------------------------------------------
 # Resumo

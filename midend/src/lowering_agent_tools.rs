@@ -51,11 +51,27 @@ pub(crate) const AGENT_REGISTER_TOOL_HOST_CALL: &str = "spectra.std.agent.regist
 /// `compensate` is included because it validates the declared name against the
 /// runtime registry, and `rollback` because it dispatches the compensations;
 /// both therefore need the module's tools registered before they run (R-3224).
+/// The MCP hosts (R-3218) dispatch through the same path: `mcp_handle` and
+/// `mcp_serve` answer `tools/call` for this project's tools, and `mcp_connect`
+/// registers the remote tools alongside them.
+///
+/// The A2A and ACP hosts (R-3219) dispatch as well: `a2a_card` and `a2a_handle`
+/// read the derived tool surface and run a delegated task through `act`, and
+/// `acp_handle`'s `session/prompt` runs the same loop, so all three register
+/// their module's tools first. `acp_permission` performs no dispatch; it only
+/// asks for and journals a decision.
 pub(crate) const AGENT_DISPATCH_HOST_CALLS: &[&str] = &[
     "spectra.std.agent.act",
     "spectra.std.agent.tool_call",
     "spectra.std.agent.compensate",
     "spectra.std.agent.rollback",
+    "spectra.std.agent.mcp_connect",
+    "spectra.std.agent.mcp_handle",
+    "spectra.std.agent.mcp_serve",
+    "spectra.std.agent.a2a_card",
+    "spectra.std.agent.a2a_handle",
+    "spectra.std.agent.a2a_serve",
+    "spectra.std.agent.acp_handle",
 ];
 
 /// IR name of the marshalling wrapper for `tool`.

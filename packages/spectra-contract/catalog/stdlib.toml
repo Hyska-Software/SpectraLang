@@ -75,6 +75,96 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/365_agent_surface.spectra"
 
 [[entry]]
+path = "std.agent.a2a_card"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string) -> Result<string, Error>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }]
+returns = "Result<string, Error>"
+ir_return = "Result<string,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.a2a_card"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/AI-AGENT-REFERENCE.md"
+fixture = "tests/validation/382_agent_protocol.spectra"
+
+[[entry]]
+path = "std.agent.a2a_handle"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string) -> Result<string, Error>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }]
+returns = "Result<string, Error>"
+ir_return = "Result<string,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.a2a_handle"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/AI-AGENT-REFERENCE.md"
+fixture = "tests/validation/382_agent_protocol.spectra"
+
+[[entry]]
+path = "std.agent.a2a_serve"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string, string) -> Result<string, Error>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }, { name = "arg2", ty = "string" }]
+returns = "Result<string, Error>"
+ir_return = "Result<string,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.a2a_serve"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/AI-AGENT-REFERENCE.md"
+fixture = "tests/validation/382_agent_protocol.spectra"
+
+[[entry]]
+path = "std.agent.acp_handle"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string) -> Result<string, Error>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }]
+returns = "Result<string, Error>"
+ir_return = "Result<string,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.acp_handle"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/AI-AGENT-REFERENCE.md"
+fixture = "tests/validation/382_agent_protocol.spectra"
+
+[[entry]]
+path = "std.agent.acp_permission"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string) -> Result<bool, Error>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }]
+returns = "Result<bool, Error>"
+ir_return = "Result<bool,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.acp_permission"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/AI-AGENT-REFERENCE.md"
+fixture = "tests/validation/382_agent_protocol.spectra"
+
+[[entry]]
 path = "std.agent.act"
 kind = "function"
 namespace = "std.agent"
@@ -253,6 +343,60 @@ maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/365_agent_surface.spectra"
+
+[[entry]]
+path = "std.agent.mcp_connect"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string) -> Task<Result<string, Error>>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }]
+returns = "Task<Result<string, Error>>"
+ir_return = "Task<Result<string,Error>>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.mcp_connect"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/AI-AGENT-REFERENCE.md"
+fixture = "tests/validation/381_agent_mcp.spectra"
+
+[[entry]]
+path = "std.agent.mcp_handle"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string) -> Result<string, Error>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }]
+returns = "Result<string, Error>"
+ir_return = "Result<string,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.mcp_handle"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/AI-AGENT-REFERENCE.md"
+fixture = "tests/validation/381_agent_mcp.spectra"
+
+[[entry]]
+path = "std.agent.mcp_serve"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string) -> Result<string, Error>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }]
+returns = "Result<string, Error>"
+ir_return = "Result<string,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.mcp_serve"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/AI-AGENT-REFERENCE.md"
+fixture = "tests/validation/381_agent_mcp.spectra"
 
 [[entry]]
 path = "std.agent.recall"

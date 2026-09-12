@@ -18,7 +18,7 @@ The platform has three layers, with a one-way dependency rule:
 | --- | --- | --- |
 | A — surface | derived, static project view: `surface`, `impact`, `explain`, `docs` | the compiler; consumed by coding agents |
 | B — governance | capabilities, taint, approval, budget, durability, trace | the runtime, at one generic dispatch point |
-| C — execution | twenty free functions plus `json_schema` | `std.agent`, called by Spectra code |
+| C — execution | the `std.agent` free functions plus `json_schema` | `std.agent`, called by Spectra code |
 
 A informs B, B authorizes C, and C never decides by itself: a layer-C function
 that needs an effect asks layer B, and an ungranted effect fails with a
@@ -50,9 +50,87 @@ single attribute in
 The adoption path with runnable projects is
 [`docs/book/11-agents.md`](book/11-agents.md).
 
+### MCP: tools in and out (R-3218)
+
+`std.agent.mcp_connect(run, url)` consumes a remote MCP server;
+`std.agent.mcp_handle(run, request)` and `std.agent.mcp_serve(run, bind)`
+expose this project's tools. HTTP is the transport — see *Not promised* above
+for why stdio is not implemented.
+
+- The **client** speaks `initialize` and `tools/list` over the run's injected
+  `HttpTransport`, then registers every discovered tool as an ordinary registry
+  entry named `mcp__<sanitized authority>__<remote name>`. From then on
+  `tool_call` and `act` reach it through the same governed dispatch as a
+  compiled `#[agent_tool]`: the tool-call ceiling, the journal step, the grant
+  check and the taint provenance all apply, and the invocation itself is a
+  `tools/call` request. Discovery is one journaled `mcp` step, so a resumed run
+  re-registers exactly what it originally discovered without contacting the
+  server again.
+- **The per-server capability is `mcp.<authority>`**, where `<authority>` is
+  the lowercased `host[:port]` of the endpoint URL. A remote tool's derived
+  effect is exactly that name, so `allow: ["mcp"]` grants every server and
+  `allow: ["mcp.api.example.com"]` grants one host. The identity is taken from
+  the URL the caller wrote, never from a server-supplied field, so a peer
+  cannot name its own capability.
+- Remote **descriptions and schemas are untrusted data**: `mcp_connect`
+  records each one in the run's taint ledger under the server capability before
+  it returns them, so from that point on the R-3223 sink gate applies to the
+  run. Nothing a peer sends is executed, matched against a control-flow
+  decision, or turned into a grant; a description full of instructions can only
+  ever *add* a gate.
+- The **server** answers `initialize`, `ping`, `tools/list` and `tools/call`
+  from the process's registered tools. `tools/list` reports the compiler's
+  derived name, description and `inputSchema`, plus the effect-derived
+  `readOnlyHint`/`destructiveHint` annotations; `tools/call` executes inside
+  the serving run through the governed dispatch. A tool failure is a tool
+  result with `isError`; a run-level refusal (a capability denial, a crossed
+  ceiling) is a JSON-RPC error. `mcp_handle` serves one request, so any HTTP
+  stack can route to it; `mcp_serve` starts the crate's minimal HTTP/1.1
+  listener and returns the bound address — it has no TLS, authentication or
+  back-pressure, so bind it to loopback or front it with the application's own
+  server.
+
 The reference below is generated from the contract catalog by
 `scripts/generate_capability_reference.py`; run it with `--check` in CI to detect
 drift.
+
+### A2A and ACP: interop adapters (R-3219)
+
+Exposing an agent over another protocol is an adapter, not an architecture: both
+`std.agent.a2a_*` and `std.agent.acp_*` are built on the run, its journal and
+the approval registry, and neither adds a dispatch path.
+
+- **A2A.** `a2a_card(run, description)` renders the AgentCard from an authored
+  description record plus the **derived** `#[agent_tool]` surface — each tool's
+  id, description and tags come from the compiler, so the advertised skills and
+  the compiled tools cannot drift. `a2a_handle` serves `message/send`,
+  `tasks/get` and `tasks/cancel` of the `0.3` JSON-RPC binding.
+- **A task is a run.** The task id *is* the run id; a delegated task is created
+  with the serving run's spec, so the host's grants, model and ceilings apply to
+  it. The request and the terminal Task are `task` journal steps, which is what
+  makes `tasks/get` answer from durable state and resume an interrupted task
+  forward — recorded model and tool steps return their recorded outputs, so no
+  effect executes twice. The Task carries a stable reason (`completed`, or
+  `failed`/`rejected` with the typed error) and the run report as metadata.
+- **Governed by construction.** A delegated task runs through `act`, so the grant
+  check, the tool-call ceiling, the journal step and the taint gate apply exactly
+  as they do to a local call: an ungranted tool is observable to the A2A client
+  as a `rejected` task naming `capability_denied`, never a silent success.
+- **ACP.** `acp_handle` answers `initialize`, `session/new` and
+  `session/prompt`, advertising only implemented capabilities; one session is
+  served per run and its ACP `sessionId` is the run id.
+- **The permission bridge reuses `approve`.** `acp_permission(run, action)`
+  sends the ACP `session/request_permission` request (allow-once / allow-always /
+  reject), maps the client's selected option onto the run's decision, and hands
+  it to the approval primitive — so the decision is journaled with its
+  attribution, `allow-always` is cached on the run, and replay never re-asks the
+  client. With no client attached the answer is the journaled default-deny, and
+  an answer the adapter cannot map never authorizes an action.
+- **Transport.** ACP's client seam (`set_acp_client`, installed by the embedding
+  application, which owns the pipe) is the outbound path; `a2a_serve` carries
+  the crate's shared in-crate HTTP/1.1 listener — with no TLS, authentication or
+  back-pressure — so bind it to loopback or front it with the application's own
+  server, and route `a2a_handle`/`acp_handle` directly if you have one.
 
 <!-- BEGIN GENERATED CAPABILITY REFERENCE -->
 
@@ -74,7 +152,7 @@ writing it fails `E3201`, and the diagnostic suggests the runtime name.
 
 ### Namespaces
 
-51 namespace grants cover 1119 host calls.
+51 namespace grants cover 1127 host calls.
 
 | Namespace grant | Host calls |
 | --- | --- |
@@ -109,7 +187,7 @@ writing it fails `E3201`, and the diagnostic suggests the runtime name.
 | `spectra.api.validation` | 17 |
 | `spectra.api.version` | 3 |
 | `spectra.api.websocket` | 24 |
-| `spectra.std.agent` | 21 |
+| `spectra.std.agent` | 29 |
 | `spectra.std.char` | 8 |
 | `spectra.std.collections` | 48 |
 | `spectra.std.concurrent` | 17 |
@@ -249,7 +327,21 @@ operator or author might otherwise infer them.
   embedding program.
 - **No async `main`.** Entry points stay `public func main() returns int`;
   async work is driven with `block_on`.
-- **No subprocess, so no stdio MCP.** MCP uses the existing HTTP transport.
+- **No subprocess, so no stdio MCP transport.** The language has no subprocess
+  primitive, so a program cannot spawn a child process or speak to it over
+  pipes — the stdio transport the MCP specification defines is therefore not
+  implemented, and there is no plan to emulate it. The MCP adapter accepts only
+  an absolute `http://`/`https://` endpoint and refuses any other scheme with a
+  typed `mcp_error` instead of degrading silently
+  (`packages/spectra-agent/src/mcp/wire.rs`). HTTP is the supported transport,
+  and it stays the host's: client requests go through the injected
+  `HttpTransport`, the server side is either the application's own stack
+  (`mcp_handle` answers exactly one request, so any HTTP server can route to
+  it) or the minimal listener `mcp_serve` starts for a project. Subprocess
+  execution is listed as refused in
+  [`agent-platform-plan.md`](agent-platform-plan.md) §2.5 and out of scope in
+  §12; a stdio transport would follow only after a language subprocess
+  primitive exists, which is not scheduled.
 - **The journal stores digests by default.** `journal_payloads` is opt-in;
   a replay returns recorded outputs, not recorded request payloads.
 - **Exactly one attribute.** `#[agent_tool("...")]` is the only new attribute;

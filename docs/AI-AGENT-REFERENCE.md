@@ -2704,6 +2704,14 @@ an existing journal).
 | `trust` | `(run, value: string, reason: string) -> Result<string, Error>` | audited declassification |
 | `compensate` | `(run, tool: string, args_json: string) -> Result<bool, Error>` | journal a pending compensation (LIFO) |
 | `rollback` | `(run, reason: string) -> Result<int, Error>` | execute pending compensations, LIFO |
+| `mcp_connect` | `(run, url: string) -> Result<string, Error>` *async* | discover a remote MCP server over HTTP and register its tools |
+| `mcp_handle` | `(run, request: string) -> Result<string, Error>` | answer one MCP JSON-RPC request from this project's tools |
+| `mcp_serve` | `(run, bind: string) -> Result<string, Error>` | start the in-crate HTTP listener; returns the bound address |
+| `a2a_card` | `(run, description: string) -> Result<string, Error>` | the A2A agent card: authored strings + derived tool skills |
+| `a2a_handle` | `(run, request: string) -> Result<string, Error>` | answer one A2A JSON-RPC request (`message/send`, `tasks/get`, `tasks/cancel`) |
+| `a2a_serve` | `(run, bind: string, description: string) -> Result<string, Error>` | start the in-crate A2A listener (card over GET, JSON-RPC over POST) |
+| `acp_handle` | `(run, request: string) -> Result<string, Error>` | answer one ACP request (`initialize`, `session/new`, `session/prompt`, `session/cancel`) |
+| `acp_permission` | `(run, action: string) -> Result<bool, Error>` | ask the attached ACP client and journal the decision; false aborts |
 | `token_count` | `(text: string) -> int` | shared tokenizer count |
 
 `Run` and `ChunkStream` are opaque handles. `T::json_schema()` on a
@@ -2753,6 +2761,72 @@ public async func add(run: Run, args: AddArgs) returns int {
   same `run_id` replays recorded outputs instead of re-executing effects and
   reports `"replay":true`.
 
+### MCP
+
+HTTP is the MCP transport; there is no stdio transport (the language has no
+subprocess primitive). `mcp_connect(run, url)` speaks `initialize` and
+`tools/list` over the run's injected `HttpTransport` and registers every
+discovered tool as a governed registry entry named
+`mcp__<sanitized authority>__<remote name>`, with the derived effect
+`mcp.<authority>` (the lowercased `host[:port]` of the URL) — so `allow:
+["mcp"]` grants every server and `allow: ["mcp.api.example.com"]` grants one.
+Remote descriptions and schemas are recorded as untrusted provenance before
+they are returned, and a remote invocation flows through the same governed
+dispatch a compiled tool does. `mcp_handle(run, request)` answers one
+`initialize`/`ping`/`tools/list`/`tools/call` request from this project's
+registered tools (`tools/call` executes inside the run through that dispatch),
+and `mcp_serve(run, bind)` wraps it in a minimal HTTP/1.1 listener and returns
+the bound `host:port`.
+
+### A2A and ACP
+
+Both are adapters over the same primitives — the run, its journal and the
+approval registry — and both dispatch through the one governed path.
+
+**A2A.** `a2a_card(run, description)` renders the AgentCard from an authored
+description record (`name`, `description`, `version`, `url`; a missing field
+defaults, a non-string field is a typed failure) plus the **derived** tool
+surface: each `#[agent_tool]` becomes a skill whose id, description and tags
+come from the compiler's descriptor and effect set. Only implemented
+capabilities are advertised (`streaming`/`pushNotifications` are false; the
+journal is the state history). `a2a_handle(run, request)` serves one JSON-RPC
+request of the `0.3` binding: `message/send` delegates a task, `tasks/get`
+reads and resumes it, `tasks/cancel` closes it.
+
+A delegated task **is** a run: the task id is the run id, created with the
+serving run's spec, so the host's grants, model and ceilings apply. The request
+and the terminal state are `task` journal steps; `message/send` drives the task
+through `act` (grant enforcement, the tool-call ceiling, the journal and the
+taint gate), and the terminal Task carries a stable reason — `completed`, or
+`failed`/`rejected` with the typed error (`capability_denied`,
+`budget_exceeded`, …) and the run report as metadata. `tasks/get` returns the
+recorded state, and an interrupted task is resumed forward from its journal
+rather than re-delegated, so no effect executes twice. Without a journal
+(`"journal": ""`) a task can be delegated but not polled or cancelled.
+`a2a_serve(run, bind, description)` wraps the handler in the crate's shared
+HTTP/1.1 listener: `GET /.well-known/agent-card.json` returns the card (its
+`url` is the bound endpoint), `POST` any path answers JSON-RPC.
+
+**ACP.** `acp_handle(run, request)` answers `initialize` (advertising only
+implemented capabilities: no session loading, no image/audio/embedded-context
+prompts, no MCP-over-ACP), `session/new` (one session per run; the ACP
+`sessionId` is the run id) and `session/prompt` (the same `act` loop, returning
+a `stopReason`, with the agent text under the protocol's `_meta` extension
+because a request/response transport cannot stream `session/update`).
+`session/cancel` is a notification.
+
+`acp_permission(run, action)` is the permission bridge: it builds the ACP
+`session/request_permission` request (the action as the tool call, with
+allow-once / allow-always / reject options), asks the attached `AcpClient`
+(installed by the embedding application with `set_acp_client`, which owns the
+pipe) and hands the mapped decision to `approve_with`, so the decision is
+journaled with its attribution, `allow-always` is cached on the run, and a
+replayed run never re-asks the client. `false` means the caller must not perform
+the action. With no client attached the answer is the journaled
+`default-deny (no ACP client attached)`; a selected option the adapter never
+offered, or an answer with no usable outcome, is a typed failure and never an
+allow.
+
 ### Commands
 
 ```powershell
@@ -2772,8 +2846,11 @@ regression against the checked-in baseline.
 
 Taint is message-granular; there is no string-level flow tracking. `require` is
 a runtime assertion, not static verification. Compensation runs only on an
-explicit `rollback`. Entry points stay synchronous. MCP is HTTP-only (no
-stdio).
+explicit `rollback`. Entry points stay synchronous. MCP, A2A and ACP are
+HTTP/host-transport only (no stdio: the language has no subprocess primitive).
+A2A does not implement streaming or push notifications, and ACP does not
+implement session loading, non-text prompts or MCP-over-ACP; the card and
+`initialize` report exactly that.
 
 Runnable projects: `examples/agent/01-tool-and-run`,
 `examples/agent/02-approval-and-budget`, `examples/agent/04-durable-replay`;

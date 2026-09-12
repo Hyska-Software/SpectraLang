@@ -161,6 +161,40 @@ pub(crate) fn lookup_std_host_group_agent(
             "spectra.std.agent.rollback",
             builtin_result_ir_type(IRType::Int),
         )),
+        // ── MCP (R-3218) ─────────────────────────────────────────────────
+        ("agent", "mcp_connect") => Some(agent_descriptor(
+            "spectra.std.agent.mcp_connect",
+            agent_task(builtin_result_ir_type(IRType::String)),
+        )),
+        ("agent", "mcp_handle") => Some(agent_descriptor(
+            "spectra.std.agent.mcp_handle",
+            builtin_result_ir_type(IRType::String),
+        )),
+        ("agent", "mcp_serve") => Some(agent_descriptor(
+            "spectra.std.agent.mcp_serve",
+            builtin_result_ir_type(IRType::String),
+        )),
+        // ── A2A and ACP exposure (R-3219) ────────────────────────────────
+        ("agent", "a2a_card") => Some(agent_descriptor(
+            "spectra.std.agent.a2a_card",
+            builtin_result_ir_type(IRType::String),
+        )),
+        ("agent", "a2a_handle") => Some(agent_descriptor(
+            "spectra.std.agent.a2a_handle",
+            builtin_result_ir_type(IRType::String),
+        )),
+        ("agent", "a2a_serve") => Some(agent_descriptor(
+            "spectra.std.agent.a2a_serve",
+            builtin_result_ir_type(IRType::String),
+        )),
+        ("agent", "acp_handle") => Some(agent_descriptor(
+            "spectra.std.agent.acp_handle",
+            builtin_result_ir_type(IRType::String),
+        )),
+        ("agent", "acp_permission") => Some(agent_descriptor(
+            "spectra.std.agent.acp_permission",
+            builtin_result_ir_type(IRType::Bool),
+        )),
         _ => None,
     }
 }

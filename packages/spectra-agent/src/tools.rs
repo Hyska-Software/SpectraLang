@@ -26,17 +26,38 @@ use crate::replay::{self, Kind, Resolved};
 use crate::run;
 use crate::trace;
 
+/// A tool served by a remote MCP server (R-3218 T1).
+///
+/// The entry carries the endpoint and the peer's own tool name; the runtime
+/// never executes it as code, it forwards `tools/call` over the run's injected
+/// HTTP transport through [`crate::mcp::client::call_tool`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RemoteTool {
+    /// The endpoint URL the tool was discovered at.
+    pub(crate) url: String,
+    /// The per-server capability derived from the endpoint identity
+    /// (`mcp.<authority>`), which is also the tool's derived effect.
+    pub(crate) server: String,
+    /// The tool name as the remote server knows it (the registry key is the
+    /// namespaced name this process dispatches).
+    pub(crate) remote_name: String,
+}
+
 /// One registered tool.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RegisteredTool {
     pub(crate) name: String,
-    /// Address of the synthesized marshalling wrapper.
+    /// Address of the synthesized marshalling wrapper. Zero for a remote MCP
+    /// tool, whose body lives in another process.
     pub(crate) address: i64,
     pub(crate) description: String,
     /// JSON Schema of the tool's single payload argument.
     pub(crate) input_schema: String,
     /// Host-call names reachable from the tool body, derived by the compiler.
+    /// A remote MCP tool derives the per-server capability instead.
     pub(crate) effects: Vec<String>,
+    /// Set when the tool is served by a remote MCP server (R-3218).
+    pub(crate) remote: Option<RemoteTool>,
 }
 
 fn registry() -> &'static Mutex<BTreeMap<String, RegisteredTool>> {
@@ -87,6 +108,54 @@ pub(crate) fn register(
                     description,
                     input_schema,
                     effects,
+                    remote: None,
+                },
+            );
+            true
+        }
+    }
+}
+
+/// Registers one remote MCP tool under this process's namespaced name
+/// (R-3218 T1), idempotently.
+///
+/// The entry's effect is the per-server capability `mcp.<authority>`, so
+/// `enforce_run_grant` refuses a run whose grant does not name that server:
+/// a tool discovered by one run is never callable by a run that did not grant
+/// its server. Re-registering the same name refreshes the peer metadata; a
+/// name already owned by a compiled local tool is never replaced, because the
+/// local wrapper is this process's own code and a remote peer must not be able
+/// to shadow it.
+pub(crate) fn register_remote(
+    name: String,
+    remote: RemoteTool,
+    description: String,
+    input_schema: String,
+) -> bool {
+    if name.is_empty() || remote.url.is_empty() || remote.remote_name.is_empty() {
+        return false;
+    }
+    let effects = vec![remote.server.clone()];
+    let mut tools = lock();
+    match tools.get_mut(&name) {
+        Some(existing) if existing.remote.is_none() => false,
+        Some(existing) => {
+            existing.description = description;
+            existing.input_schema = input_schema;
+            existing.effects = effects;
+            existing.remote = Some(remote);
+            false
+        }
+        None => {
+            tools.insert(
+                name.clone(),
+                RegisteredTool {
+                    name,
+                    address: 0,
+                    description,
+                    input_schema,
+                    effects,
+                    remote: Some(remote),
                 },
             );
             true
@@ -233,6 +302,11 @@ pub(crate) fn dispatch(
 /// Reaches `tool`'s marshalling wrapper by address and returns its JSON result
 /// or typed failure (ADR 0019).
 ///
+/// A remote MCP tool has no wrapper: its body lives in another process, so the
+/// invocation is one `tools/call` over the run's injected HTTP transport
+/// (R-3218 T1). Journaling, budget and tracing stay with the entry points
+/// above, so both kinds of tool share one dispatch path.
+///
 /// No accounting, journaling or tracing: those belong to the entry points
 /// above, so both share one wrapper-invocation path.
 fn call_wrapper(
@@ -240,6 +314,9 @@ fn call_wrapper(
     tool: &RegisteredTool,
     arguments: &str,
 ) -> Result<String, AgentError> {
+    if let Some(remote) = &tool.remote {
+        return crate::mcp::client::call_tool(run_handle, remote, &tool.name, arguments);
+    }
     let args_pointer = unsafe { abi::alloc_string(arguments) };
     if args_pointer == 0 {
         return Err(AgentError::Internal(

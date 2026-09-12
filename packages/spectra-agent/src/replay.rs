@@ -49,6 +49,17 @@ pub(crate) enum Kind {
     /// governed dispatch. Recorded even when the compensation fails, so a
     /// replay never re-executes it.
     Rollback,
+    /// One MCP `tools/list` discovery (R-3218 T1): the negotiated server
+    /// identity and the remote tool descriptors it returned. A replay returns
+    /// the recorded descriptors without contacting the server again, so a
+    /// resumed run re-registers exactly the tools it originally discovered.
+    Mcp,
+    /// One A2A task lifecycle record (R-3219 T1): the delegated request and,
+    /// at the following step, the task's terminal state. A task id maps to a
+    /// run id, so polling a task after a restart reads the recorded state
+    /// rather than re-delegating it, and an interrupted task resumes forward
+    /// from the effects the journal already holds.
+    Task,
 }
 
 impl Kind {
@@ -63,6 +74,8 @@ impl Kind {
             Self::TaintDecision => "taint_decision",
             Self::Compensation => "compensation",
             Self::Rollback => "rollback",
+            Self::Mcp => "mcp",
+            Self::Task => "task",
         }
     }
 }

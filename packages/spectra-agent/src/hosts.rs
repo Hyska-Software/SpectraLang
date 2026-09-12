@@ -1028,6 +1028,157 @@ extern "C" fn rollback_host(ctx: *mut SpectraHostCallContext) -> i32 {
     })
 }
 
+// ── MCP hosts (R-3218) ───────────────────────────────────────────────────
+
+/// `spectra.std.agent.mcp_connect(run, url) -> Task<Result<string, Error>>`.
+///
+/// Discovers a remote MCP server's tools over the run's injected HTTP
+/// transport, registers each one as a governed registry entry namespaced by
+/// the server identity, and records every description and schema in the run's
+/// taint ledger. Returns the descriptor document, which is untrusted data.
+extern "C" fn mcp_connect_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some((run_handle, strings)) = read_run_and_prompt(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let url = strings[0].clone();
+    in_run(run_handle, || {
+        write_run_task(ctx, run_handle, move || {
+            let document = crate::mcp::client::connect(run_handle, &url)?;
+            allocate_outcome("the MCP descriptor document", &document)
+        })
+    })
+}
+
+/// `spectra.std.agent.mcp_handle(run, request) -> Result<string, Error>`.
+///
+/// Serves one MCP JSON-RPC request from the project's registered tools and
+/// executes `tools/call` inside the run through the governed dispatch. The
+/// empty string is the response to a notification.
+extern "C" fn mcp_handle_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some((run_handle, strings)) = read_run_and_prompt(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let request = strings[0].clone();
+    let outcome = (|| -> Result<i64, AgentError> {
+        let response = crate::mcp::server::handle(run_handle, &request)?;
+        allocate_outcome("the MCP response", &response)
+    })();
+    write_outcome(ctx, outcome)
+}
+
+/// `spectra.std.agent.mcp_serve(run, bind) -> Result<string, Error>`.
+///
+/// Starts the in-process HTTP listener and returns the bound `host:port`, so a
+/// third-party MCP client can call the run's tools.
+extern "C" fn mcp_serve_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some((run_handle, strings)) = read_run_and_prompt(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let bind = strings[0].clone();
+    let outcome = (|| -> Result<i64, AgentError> {
+        let authority = crate::mcp::server::serve(run_handle, &bind)?;
+        allocate_outcome("the MCP listener address", &authority)
+    })();
+    write_outcome(ctx, outcome)
+}
+
+// ── A2A and ACP hosts (R-3219) ───────────────────────────────────────────
+
+/// `spectra.std.agent.a2a_card(run, description_json) -> Result<string, Error>`.
+///
+/// The A2A AgentCard: the authored strings from `description_json` plus the
+/// derived `#[agent_tool]` surface as skills.
+extern "C" fn a2a_card_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some((run_handle, strings)) = read_run_and_prompt(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let description = strings[0].clone();
+    let outcome = (|| -> Result<i64, AgentError> {
+        let document = crate::protocol::a2a::card(run_handle, &description)?;
+        allocate_outcome("the A2A agent card", &document)
+    })();
+    write_outcome(ctx, outcome)
+}
+
+/// `spectra.std.agent.a2a_handle(run, request) -> Result<string, Error>`.
+///
+/// Serves one A2A JSON-RPC request. A delegated task runs inside its own
+/// journaled run through the governed dispatch; the response is the Task.
+extern "C" fn a2a_handle_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some((run_handle, strings)) = read_run_and_prompt(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let request = strings[0].clone();
+    let outcome = (|| -> Result<i64, AgentError> {
+        let response = crate::protocol::a2a::handle(run_handle, &request)?;
+        allocate_outcome("the A2A response", &response)
+    })();
+    write_outcome(ctx, outcome)
+}
+
+/// `spectra.std.agent.a2a_serve(run, bind, description_json)
+/// -> Result<string, Error>`.
+///
+/// Starts the in-process A2A listener (the agent card and JSON-RPC over HTTP)
+/// and returns the bound `host:port`.
+extern "C" fn a2a_serve_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some((run_handle, strings)) = read_run_and_prompt(ctx, 3) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let bind = strings[0].clone();
+    let description = strings[1].clone();
+    let outcome = (|| -> Result<i64, AgentError> {
+        let authority = crate::protocol::a2a::serve(run_handle, &bind, &description)?;
+        allocate_outcome("the A2A listener address", &authority)
+    })();
+    write_outcome(ctx, outcome)
+}
+
+/// `spectra.std.agent.acp_handle(run, request) -> Result<string, Error>`.
+///
+/// Answers one ACP JSON-RPC request from the client (`initialize`,
+/// `session/new`, `session/prompt`, `session/cancel`). A notification returns
+/// the empty string.
+extern "C" fn acp_handle_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some((run_handle, strings)) = read_run_and_prompt(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let request = strings[0].clone();
+    let outcome = (|| -> Result<i64, AgentError> {
+        let response = crate::protocol::acp::handle(run_handle, &request)?;
+        allocate_outcome("the ACP response", &response)
+    })();
+    write_outcome(ctx, outcome)
+}
+
+/// `spectra.std.agent.acp_permission(run, action) -> Result<bool, Error>`.
+///
+/// Asks the attached ACP client through `session/request_permission` and
+/// journals the mapped decision through the approval primitive. False — a
+/// denial, a cancellation, no client attached — means the caller must not
+/// perform the action.
+extern "C" fn acp_permission_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some((run_handle, strings)) = read_run_and_prompt(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let action = strings[0].clone();
+    write_outcome(
+        ctx,
+        crate::protocol::acp::permission(run_handle, &action).map(i64::from),
+    )
+}
+
+/// Allocates the packed string a sync host returns, or a typed internal error.
+fn allocate_outcome(what: &str, document: &str) -> Result<i64, AgentError> {
+    let pointer = unsafe { abi::alloc_string(document) };
+    if pointer == 0 {
+        return Err(AgentError::Internal(format!(
+            "could not allocate {what}"
+        )));
+    }
+    Ok(pointer)
+}
+
 /// Registers every `spectra.std.agent.*` host function and returns the number
 /// of newly inserted entries.
 pub(crate) fn register() -> usize {
@@ -1051,6 +1202,14 @@ pub(crate) fn register() -> usize {
         ("spectra.std.agent.trust", trust_host as _),
         ("spectra.std.agent.compensate", compensate_host as _),
         ("spectra.std.agent.rollback", rollback_host as _),
+        ("spectra.std.agent.mcp_connect", mcp_connect_host as _),
+        ("spectra.std.agent.mcp_handle", mcp_handle_host as _),
+        ("spectra.std.agent.mcp_serve", mcp_serve_host as _),
+        ("spectra.std.agent.a2a_card", a2a_card_host as _),
+        ("spectra.std.agent.a2a_handle", a2a_handle_host as _),
+        ("spectra.std.agent.a2a_serve", a2a_serve_host as _),
+        ("spectra.std.agent.acp_handle", acp_handle_host as _),
+        ("spectra.std.agent.acp_permission", acp_permission_host as _),
     ] {
         if spectra_runtime::ffi::register_host_function(name, function) {
             inserted += 1;
@@ -1126,9 +1285,10 @@ mod tests {
         spectra_runtime::ffi::clear_host_functions();
         spectra_runtime::register();
         // Nine R-3211 gateway functions, the three R-3222 dispatch hosts, the
-        // two R-3217 governance hosts, the two R-3223 taint hosts and the two
-        // R-3224 compensation hosts.
-        assert_eq!(register(), 18);
+        // two R-3217 governance hosts, the two R-3223 taint hosts, the two
+        // R-3224 compensation hosts, the three R-3218 MCP hosts and the five
+        // R-3219 protocol hosts.
+        assert_eq!(register(), 26);
         guard
     }
 

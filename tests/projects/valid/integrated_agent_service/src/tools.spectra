@@ -1,0 +1,52 @@
+module tools
+
+// The project's agent tools (ADR 0017/0019).
+//
+// `record_effect` is the counted external effect the interrupt/resume gate
+// observes: it appends one labelled line to the ledger and returns the new
+// line count. The governed dispatch journals the step *before* returning its
+// result, so replaying a run returns the recorded count without reaching this
+// body and the line is appended exactly once.
+//
+// `notify_release` is the one action the scenario refuses to perform until
+// `approve` allowed it. The CLI process attaches no approver, so the default
+// decision is a deny and the action never runs; an embedding host that
+// installs an `Approver` (spectra_agent::set_approver) is the only way to
+// reach the allow path.
+
+import std.agent
+import std.fs as fs
+
+import store
+
+#[derive(Serialize, Deserialize)]
+public record EffectArgs {
+    label: string,
+}
+
+#[derive(Serialize, Deserialize)]
+public record NotifyArgs {
+    channel: string,
+}
+
+#[agent_tool("Appends one labelled effect to the run ledger and returns the new line count")]
+public async func record_effect(run: Run, args: EffectArgs) returns int {
+    let before = read_text(ledger_path())
+    let next = line_count(before) + 1
+    let wrote = fs.fs_write(ledger_path(), before + args.label + "\n")
+    if let Result::Err(write_problem) = wrote {
+        return -1
+    }
+    return next
+}
+
+#[agent_tool("Appends one release notification to the run ledger")]
+public async func notify_release(run: Run, args: NotifyArgs) returns int {
+    let before = read_text(ledger_path())
+    let next = line_count(before) + 1
+    let wrote = fs.fs_write(ledger_path(), before + "notified:" + args.channel + "\n")
+    if let Result::Err(write_problem) = wrote {
+        return -1
+    }
+    return next
+}

@@ -10220,7 +10220,7 @@ Durability is what makes an agent operable: a crash resumes instead of restartin
 
 ## R-3218 std.agent.mcp Client and Server
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `medium`
@@ -10241,7 +10241,7 @@ MCP is where the tool ecosystem already lives. Exposing Spectra functions as MCP
 
 ## R-3219 std.agent.protocol: A2A and ACP Exposure
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P2`
 - Owner: `web`
 - Risk: `medium`

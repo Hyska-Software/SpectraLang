@@ -1,0 +1,76 @@
+module store
+
+// Paths and small filesystem helpers shared by the service's modules.
+//
+// Every cross-module interface in this project is a string or an int, so a
+// module boundary never moves an opaque API handle: the `Server`/`Router`
+// handles stay in `main`, the `Run` handle stays in `scenario`, and `tools`
+// only ever receives the `Run` handle the dispatch ABI hands it.
+
+import std.fs as fs
+import std.string as str
+
+// All runtime state lives under one directory the validator owns: it cleans
+// the directory before a fresh run and inspects the files afterwards.
+public func work_dir() returns string {
+    return "target/r3221-integrated-agent-service"
+}
+
+public func ledger_path() returns string {
+    return work_dir() + "/ledger.txt"
+}
+
+public func status_path() returns string {
+    return work_dir() + "/status.txt"
+}
+
+public func port_path() returns string {
+    return work_dir() + "/port.txt"
+}
+
+public func release_path() returns string {
+    return work_dir() + "/release.txt"
+}
+
+public func journal_dir() returns string {
+    return work_dir() + "/journal"
+}
+
+public func ensure_work_dir() returns int {
+    let created = fs.create_dir_all(work_dir())
+    if let Result::Err(problem) = created {
+        return 1
+    }
+    return 0
+}
+
+public func path_exists(path: string) returns bool {
+    let probe = fs.fs_exists(path)
+    if let Result::Ok(present) = probe {
+        return present
+    }
+    return false
+}
+
+// The file's text, or "" when it cannot be read. A missing file is not an
+// error here: the service reports "pending" until the run writes its report.
+public func read_text(path: string) returns string {
+    let read = fs.fs_read(path)
+    if let Result::Ok(body) = read {
+        return body
+    }
+    return ""
+}
+
+public func write_text(path: string, body: string) returns int {
+    let wrote = fs.fs_write(path, body)
+    if let Result::Err(problem) = wrote {
+        return 1
+    }
+    return 0
+}
+
+// Number of newline-terminated lines in `body`.
+public func line_count(body: string) returns int {
+    return str.count_occurrences(body, "\n")
+}

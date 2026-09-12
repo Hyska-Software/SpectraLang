@@ -1,0 +1,227 @@
+module scenario
+
+// The agent run the service performs.
+//
+// One run id, one journal, two counted effects, one approval and one budget
+// assertion:
+//
+//   * the run starts with the `spectra.std.fs` capability and a 1000-token
+//     ceiling. The dispatcher checks every registered tool's derived effects
+//     against the grant, ignoring the compiler-emitted helpers (`spectra.std.string.*`,
+//     `spectra.std.convert.*`, the coroutine and JSON ABIs) that ADR 0019
+//     excludes, so this grant covers both tools and the budget accounting is
+//     observable;
+//   * `ask` spends tokens and is journaled as the run's first step;
+//   * `record_effect(first)` is the first counted effect;
+//   * `approve` asks for the one action that requires approval. A CLI process
+//     attaches no approver, so the decision is a deny and `notify_release` is
+//     never dispatched — there is no implicit allow;
+//   * `require` records a governed assertion;
+//   * with `SPECTRA_R3221_GATE=interrupt` the run then waits for the release
+//     marker, which is where the validator kills the process. Re-running with
+//     the same run id replays the four recorded steps and only
+//     `record_effect(second)` executes, so the second line appears once.
+//
+// The gate mode is an environment variable (the same seam the taint fixture
+// uses): an ordinary run does not wait at all, so the project runs to
+// completion under `spectralang run` and through the emitted executable
+// without any external coordination.
+
+import std.env as env
+from std.io import println
+
+import std.agent
+import std.convert as conv
+import std.error as error
+import std.string as str
+import std.time as time
+
+import store
+
+// The dispatching module must import the module that declares the tools: the
+// synthesized per-module registration function is emitted next to the
+// wrappers (ADR 0019) and every function that dispatches calls the
+// registration of each tool-declaring module it imports. Without this import
+// the registry is empty and the first `tool_call` fails with `unknown_tool`.
+import tools
+
+const RUN_ID = "integrated-agent-service"
+const DENIAL_RUN_ID = "integrated-agent-service-narrow"
+const GATE_VARIABLE = "SPECTRA_R3221_GATE"
+const INTERRUPT_MODE = "interrupt"
+const APPROVAL_ACTION = "spectra.std.fs.fs_write"
+const BUDGET_TOKENS = 1000
+
+// `gate_mode()` is "interrupt" only when the validator asked for the
+// interrupt/resume proof; every other value (including unset) completes the
+// run in one pass.
+func gate_mode() returns string {
+    let value = env.env_get(GATE_VARIABLE)
+    if let Option::Some(text) = value {
+        if text != "" {
+            return text
+        }
+    }
+    return "auto"
+}
+
+// The run's spec. `journal_payloads` keeps the tool arguments and the approval
+// action readable on disk, which is what the validator inspects.
+func spec(run_id: string, allow: string) returns string {
+    return "{\"goal\":\"integrated-agent-service\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[" + allow + "],\"max_tokens\":" + conv.int_to_string(BUDGET_TOKENS) + ",\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":4,\"untrusted\":\"approve\",\"seed\":11,\"journal\":\"" + journal_dir() + "\",\"journal_payloads\":true,\"run_id\":\"" + run_id + "\"}"
+}
+
+// A failed step keeps its number as the exit code and is printed, so the
+// validator's output names the step and the typed cause instead of an
+// anonymous non-zero status.
+func failed(step: int, cause: Error) returns int {
+    println("scenario step " + conv.int_to_string(step) + " failed: " + error.message(cause))
+    return step
+}
+
+// Waits for the release marker the validator drops between the interrupted
+// run and its resume. Bounded, so a mistyped environment variable cannot park
+// the program forever.
+func await_release() returns int {
+    let spins = 0
+    while spins < 300 {
+        if path_exists(release_path()) {
+            return 0
+        }
+        time.sleep_ms(100)
+        spins = spins + 1
+    }
+    return 1
+}
+
+// The main scenario. Returns 0 on success, or `10 + n` naming the failed step.
+public func perform() returns int {
+    let started = agent_start(spec(RUN_ID, "\"spectra.std.fs\""))
+    if let Result::Err(start_error) = started {
+        return failed(10, start_error)
+    }
+    if let Result::Ok(run) = started {
+        // The budget the spec declared is what the run reports as remaining.
+        let before = budget_remaining(run)
+        if let Result::Ok(remaining) = before {
+            if remaining != BUDGET_TOKENS {
+                println("scenario step 11: budget_remaining was " + conv.int_to_string(remaining))
+                return 11
+            }
+        } else {
+            return 12
+        }
+
+        // One model turn: tokens are spent and the step is journaled.
+        let reply = block_on(ask(run, "summarise the service run"))
+        if let Result::Err(ask_error) = reply {
+            return failed(13, ask_error)
+        }
+        let after = budget_remaining(run)
+        if let Result::Ok(remaining) = after {
+            if remaining >= BUDGET_TOKENS {
+                println("scenario step 14: budget_remaining was " + conv.int_to_string(remaining))
+                return 14
+            }
+            if remaining <= 0 {
+                println("scenario step 15: budget_remaining was " + conv.int_to_string(remaining))
+                return 15
+            }
+        } else {
+            return 16
+        }
+
+        // First counted effect, through the governed dispatch.
+        let first = block_on(tool_call(run, "record_effect", "{\"label\":\"first\"}"))
+        if let Result::Err(first_error) = first {
+            return failed(17, first_error)
+        }
+
+        // The one action that requires approval. No approver is attached in a
+        // CLI process, so the decision is a deny and the action is refused.
+        let allowed = approve(run, APPROVAL_ACTION)
+        if let Result::Ok(decision) = allowed {
+            if decision == true {
+                let notified = block_on(tool_call(run, "notify_release", "{\"channel\":\"ops\"}"))
+                if let Result::Err(notify_error) = notified {
+                    return failed(18, notify_error)
+                }
+            }
+        } else {
+            return 19
+        }
+
+        let asserted = require(run, true, "the run stayed within its budget")
+        if let Result::Err(assert_error) = asserted {
+            return failed(20, assert_error)
+        }
+
+        // The interruption point. In `interrupt` mode the validator kills the
+        // process here, after the first effect and the approval are durable.
+        if gate_mode() == INTERRUPT_MODE {
+            if await_release() != 0 {
+                println("scenario step 21: the release marker never appeared")
+                return 21
+            }
+        }
+
+        // The second counted effect: the only fresh step of a resumed run.
+        let second = block_on(tool_call(run, "record_effect", "{\"label\":\"second\"}"))
+        if let Result::Err(second_error) = second {
+            return failed(22, second_error)
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(end_error) = ended {
+            return failed(23, end_error)
+        }
+        if let Result::Ok(report) = ended {
+            if write_text(status_path(), report) != 0 {
+                return 24
+            }
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                println("scenario step 25: " + report)
+                return 25
+            }
+            if str.contains(report, "\"tool_calls\":2") == false {
+                println("scenario step 26: " + report)
+                return 26
+            }
+            if str.contains(report, "\"compensations_pending\":0") == false {
+                println("scenario step 27: " + report)
+                return 27
+            }
+            println("report " + report)
+        }
+    }
+    return 0
+}
+
+// A second run whose capability grant is empty. The dispatcher refuses to
+// start any dispatch unless every registered tool's derived effects are inside
+// the grant, so the call fails with a typed `capability_denied` before a tool
+// body runs (and before any step is journaled). Proves the capability set is
+// enforced on the integrated dispatch path, not just declared.
+public func capability_denial() returns int {
+    let started = agent_start(spec(DENIAL_RUN_ID, ""))
+    if let Result::Err(start_error) = started {
+        return 30
+    }
+    if let Result::Ok(run) = started {
+        let attempted = block_on(tool_call(run, "record_effect", "{\"label\":\"denied\"}"))
+        if let Result::Ok(value) = attempted {
+            return 31
+        }
+        if let Result::Err(denial) = attempted {
+            let message = error.message(denial)
+            if str.contains(message, "capability_denied") == false {
+                return 32
+            }
+        }
+        let ended = agent_end(run)
+        if let Result::Err(end_error) = ended {
+            return 33
+        }
+    }
+    return 0
+}

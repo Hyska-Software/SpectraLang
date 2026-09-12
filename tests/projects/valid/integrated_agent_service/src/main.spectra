@@ -1,0 +1,64 @@
+module main
+
+// Entry point: bind the HTTP service, run the agent scenario, then shut the
+// server down.
+//
+// The `Server` and `Router` handles stay in this function (the module
+// boundary rule the crate's examples follow); the other modules expose only
+// strings, ints and their own run handles.
+
+import std.convert as conv
+from std.io import println
+
+from std.api.server import Server, new, listen, serve, shutdown, local_port
+from std.api.routing import Router, router
+
+import scenario
+import service
+import store
+
+public func main() returns int {
+    if ensure_work_dir() != 0 {
+        return 1
+    }
+
+    let routes: Router = router()
+    if register_routes(routes) != 0 {
+        return 2
+    }
+
+    let server: Server = new()
+    if listen(server, 0) != true {
+        return 3
+    }
+    if block_on(serve(server, routes)) != 1 {
+        return 4
+    }
+    let port = local_port(server)
+    if port <= 0 {
+        return 5
+    }
+    // The validator learns the ephemeral port from this file (and the line
+    // above) instead of assuming a fixed one.
+    if write_text(port_path(), conv.int_to_string(port)) != 0 {
+        return 6
+    }
+    println("port=" + conv.int_to_string(port))
+
+    let code = perform()
+    if code != 0 {
+        let closed = shutdown(server)
+        return 100 + code
+    }
+
+    let denial = capability_denial()
+    if denial != 0 {
+        let closed = shutdown(server)
+        return 200 + denial
+    }
+
+    if shutdown(server) != true {
+        return 7
+    }
+    return 0
+}

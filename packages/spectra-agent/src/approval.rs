@@ -133,6 +133,30 @@ pub(crate) fn decide(request: &ApprovalRequest) -> Decision {
 /// the approver and appends the decision. An `allow-always` decision is cached
 /// on the run and answers later approvals of the same action.
 pub(crate) fn approve(run_handle: i64, action: &str) -> Result<bool, AgentError> {
+    approve_with(run_handle, action, |request| Ok(decide(request)))
+}
+
+/// [`approve`] with an explicit decision supplier (R-3219).
+///
+/// The supplier is the seam the ACP permission bridge uses: a protocol adapter
+/// that must ask a peer instead of the process approver plugs in here, and
+/// inherits every property of the primitive — the recorded decision is
+/// returned without asking again, `allow-always` is cached on the run, and the
+/// decision is journaled with the approver's own attribution before this
+/// returns.
+///
+/// The supplier is invoked **only when a decision is actually needed**: a
+/// replayed approval and a cached `allow-always` never reach it, so a remote
+/// peer is never re-asked a decided action. It is called with no run lock
+/// held, so a supplier that blocks on a peer cannot deadlock the run table.
+pub(crate) fn approve_with<F>(
+    run_handle: i64,
+    action: &str,
+    decide_action: F,
+) -> Result<bool, AgentError>
+where
+    F: FnOnce(&ApprovalRequest) -> Result<Decision, AgentError>,
+{
     let (run_id, goal) = run::with_run(run_handle, |state| {
         (state.run_id.clone(), state.spec.goal.clone())
     })?;
@@ -153,12 +177,12 @@ pub(crate) fn approve(run_handle: i64, action: &str) -> Result<bool, AgentError>
                 Some(true) => Decision::AllowAlways {
                     by: "cached allow-always".to_string(),
                 },
-                _ => decide(&ApprovalRequest {
+                _ => decide_action(&ApprovalRequest {
                     run: run_id.clone(),
                     goal: goal.clone(),
                     step: token.step,
                     action: action.to_string(),
-                }),
+                })?,
             };
             (token.step, decision)
         }

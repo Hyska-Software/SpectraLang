@@ -8,7 +8,12 @@
 //! assertions and the OpenTelemetry GenAI span seam, and R-3223 adds the
 //! message/handle taint ledger with `untrusted`/`trust` and the sink gate at
 //! the dispatch seam, and R-3224 adds declared compensation
-//! (`compensate`/`rollback`). This crate is an `rlib`
+//! (`compensate`/`rollback`), and R-3218 adds the MCP client and server
+//! (`mcp_connect`/`mcp_handle`/`mcp_serve`) over the injected HTTP transport,
+//! and R-3219 adds the A2A server (`a2a_card`/`a2a_handle`/`a2a_serve`) and
+//! the ACP agent surface with its permission bridge (`acp_handle`/
+//! `acp_permission`), both reusing the run journal and the approval primitive.
+//! This crate is an `rlib`
 //! aggregated by `spectra_api::register` (see
 //! `packages/spectra-api/src/api_registration.rs`): it declares no staticlib,
 //! no `#[no_mangle]` symbol, and no linker entry.
@@ -24,8 +29,11 @@ mod error;
 mod eval;
 mod hosts;
 mod journal;
+mod mcp;
 mod memory;
+mod net;
 mod policy;
+mod protocol;
 mod provider;
 mod replay;
 mod run;
@@ -41,6 +49,7 @@ pub use eval::{
     run_suite, Baseline, BaselineStatus, CaseExecution, CaseExecutor, CaseInvocation, EvalSuite,
     GraderKind, Regression, SuiteReport,
 };
+pub use protocol::acp::{set_acp_client, AcpClient};
 pub use provider::transport::{
     clear_http_transport, set_http_transport, HttpTransport, TransportResponse,
 };
@@ -87,6 +96,30 @@ pub const COMPENSATE_HOST_CALL: &str = "spectra.std.agent.compensate";
 /// Runtime host-call name the midend lowers `std.agent.rollback` to.
 pub const ROLLBACK_HOST_CALL: &str = "spectra.std.agent.rollback";
 
+/// Runtime host-call name the midend lowers `std.agent.mcp_connect` to.
+pub const MCP_CONNECT_HOST_CALL: &str = "spectra.std.agent.mcp_connect";
+
+/// Runtime host-call name the midend lowers `std.agent.mcp_handle` to.
+pub const MCP_HANDLE_HOST_CALL: &str = "spectra.std.agent.mcp_handle";
+
+/// Runtime host-call name the midend lowers `std.agent.mcp_serve` to.
+pub const MCP_SERVE_HOST_CALL: &str = "spectra.std.agent.mcp_serve";
+
+/// Runtime host-call name the midend lowers `std.agent.a2a_card` to.
+pub const A2A_CARD_HOST_CALL: &str = "spectra.std.agent.a2a_card";
+
+/// Runtime host-call name the midend lowers `std.agent.a2a_handle` to.
+pub const A2A_HANDLE_HOST_CALL: &str = "spectra.std.agent.a2a_handle";
+
+/// Runtime host-call name the midend lowers `std.agent.a2a_serve` to.
+pub const A2A_SERVE_HOST_CALL: &str = "spectra.std.agent.a2a_serve";
+
+/// Runtime host-call name the midend lowers `std.agent.acp_handle` to.
+pub const ACP_HANDLE_HOST_CALL: &str = "spectra.std.agent.acp_handle";
+
+/// Runtime host-call name the midend lowers `std.agent.acp_permission` to.
+pub const ACP_PERMISSION_HOST_CALL: &str = "spectra.std.agent.acp_permission";
+
 /// Register this crate's host functions into the process-wide runtime
 /// registry and return the number of newly inserted entries.
 pub fn register() -> usize {
@@ -114,10 +147,11 @@ mod tests {
         let first = register();
         let second = register();
         assert_eq!(
-            first, 21,
+            first, 29,
             "token_count + the eight R-3211 host functions + remember/recall + \
              budget_remaining + act/tool_call/register_tool + approve/require + \
-             untrusted/trust + compensate/rollback"
+             untrusted/trust + compensate/rollback + mcp_connect/mcp_handle/mcp_serve + \
+             a2a_card/a2a_handle/a2a_serve + acp_handle/acp_permission"
         );
         assert_eq!(second, 0);
     }
