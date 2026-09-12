@@ -1667,8 +1667,8 @@ pub(crate) fn dist_worker_read_frame(
 // APPEND-ONLY section. Covers: reconnect backoff schedule, coordinator
 // tolerance of a mid-ALLREDUCE disconnect with worker retry, typed bounded
 // WorkerLost failure (no deadlock), idempotent DONE replay, and the
-// multi-process e2e entry point driven by
-// .github/workflows/distributed-e2e.yml.
+// multi-process e2e entry point
+// (`dist_tcp_e2e_two_os_processes_over_real_tcp`).
 #[cfg(test)]
 mod dist_tcp_fault_tests {
     use super::*;
@@ -1912,7 +1912,7 @@ mod dist_tcp_fault_tests {
     /// SPECTRA_DIST_BIND:SPECTRA_DIST_PORT (the ns-cluster script passes
     /// SPECTRA_DIST_BIND=0.0.0.0) and run one real training session against
     /// remote workers attaching from other network namespaces. Driven by
-    /// scripts/distributed_ns_cluster.sh / .github/workflows/distributed-ns.yml.
+    /// scripts/distributed_ns_cluster.sh.
     fn e2e_coordinator_role() {
         let bind = std::env::var("SPECTRA_DIST_BIND")
             .ok()
@@ -1939,8 +1939,7 @@ mod dist_tcp_fault_tests {
     /// Multi-process e2e: THIS process runs the coordinator event loop while
     /// two separate OS processes re-invoking the compiled test binary with
     /// SPECTRA_DIST_ROLE=worker and drive the byte-level protocol over real
-    /// TCP loopback — no shared memory, no threads-as-workers. Used directly
-    /// by `.github/workflows/distributed-e2e.yml`; also safe to run locally
+    /// TCP loopback — no shared memory, no threads-as-workers. Run directly
     /// via `cargo test -p spectra-runtime --lib dist_tcp_e2e`. With
     /// SPECTRA_DIST_ROLE=coordinator|worker both halves can instead run as
     /// separate processes across real networks — see
@@ -2056,7 +2055,7 @@ mod dist_tcp_fault_tests {
     // Covers the optional SPECTRA_DIST_TOKEN contract: tokenized HELLO
     // round-trip, typed Auth rejection of a wrong/missing token, and a full
     // tokened training run. The multi-node container entrypoint at the bottom
-    // is driven by .github/workflows/distributed-multi-node.yml.
+    // is driven by the SPECTRA_DIST_ROLE=coordinator|worker contract.
 
     #[test]
     fn dist_hello_token_roundtrip_and_malformed_rejection() {

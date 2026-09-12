@@ -1,6 +1,6 @@
 # Compiler Test Pyramid
 
-Updated: 2026-05-21  
+Updated: 2026-09-11  
 Roadmap item: `R-104`
 
 ## Goal
@@ -71,16 +71,22 @@ Current Phase 1 targets:
 
 This is a deterministic fuzz layer rather than a `cargo-fuzz` integration. It is sufficient for Phase 1 because it gives executable, CI-friendly malformed-input coverage without introducing another toolchain dependency.
 
-### 4. CI execution
+### 4. Local execution
 
-Primary workflow:
+Primary runner:
 
-- [D:\Lang\SpectraLang\.github\workflows\ci.yml](D:\Lang\SpectraLang\.github\workflows\ci.yml)
+- [D:\Lang\SpectraLang\run_tests.ps1](D:\Lang\SpectraLang\run_tests.ps1)
 
 Coverage:
 
-- `cargo test --workspace` on Windows, Linux, and macOS
-- full scripted Spectra regression suite on Windows
+- crate-level `cargo test` lanes (interop, LSP, midend tensor graph tests)
+- full scripted Spectra regression suite, including the validator scripts under `scripts/`
+
+The repository keeps a single GitHub workflow,
+[D:\Lang\SpectraLang\.github\workflows\release.yml](D:\Lang\SpectraLang\.github\workflows\release.yml),
+which builds and publishes release artifacts. The per-platform CI matrix that
+previously enforced `cargo test --workspace` on every push was removed;
+`run_tests.ps1` is the supported regression entry point.
 
 ## Exit Criteria for New Compiler Work
 

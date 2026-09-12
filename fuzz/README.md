@@ -12,7 +12,7 @@ remains fast and does not require `cargo-fuzz`.
 - `lowering`: lowers parseable AST modules into midend IR.
 
 All targets reject non-UTF-8 input and sources larger than 16 KiB
-(`-max_len=16384` in CI matches this cap).
+(`-max_len=16384` keeps a run inside this cap).
 
 ## Corpus
 
@@ -78,45 +78,21 @@ target\debug\lowering corpus\lowering
 
 A non-zero exit means a seed crashed or could not be read.
 
-## CI smoke job
+## Crash triage
 
-`.github/workflows/fuzz-smoke.yml` runs a short libFuzzer session per target
-on GitHub-hosted `ubuntu-latest` for pushes to `main`/`master`/`ai/**`,
-pull requests, and manual dispatch:
+Reproduce with
+`cargo fuzz run <target> fuzz/artifacts/<crash-file>`, minimize with
+`cargo fuzz tmin`, add a regression seed to `corpus/<target>/`, fix the
+compiler bug, and add a checked-in regression test before closing the issue.
 
-- nightly toolchain + `cargo-fuzz` via `taiki-e/install-action`
-- 60 s per target (`-max_total_time=60 -max_len=16384 -rss_limit_mb=2560`)
-- crashes fail the job (no continue-on-error); crash artifacts are uploaded
-  from `artifacts/*` when the job fails
+## Corpus maintenance
 
-Crash triage: reproduce locally with
-`cargo fuzz run <target> fuzz/artifacts/<crash-file>`, minimize, add a
-regression seed to `corpus/<target>/`, fix the compiler bug, and add a
-checked-in regression test before closing the issue.
+Corpus refresh is a manual, local step — run the target for as long as is
+useful, then minimize:
 
-## Nightly fuzzing
+```powershell
+cargo fuzz cmin <target>
+```
 
-`.github/workflows/fuzz-nightly.yml` runs on a schedule (`0 3 * * *` UTC) and
-via manual dispatch, one matrix job per target:
-
-- 10 min per target (`-max_total_time=600`, same `-max_len=16384` /
-  `-rss_limit_mb=2560` caps as the smoke job)
-- crash artifacts uploaded from `artifacts/*` when a target fails
-  (retention 30 days)
-- after every run (success or failure), the corpus is minimized with
-  `cargo fuzz cmin` and the updated `corpus/<target>/` is uploaded as an
-  artifact `fuzz-corpus-<target>` (retention 7 days)
-
-The corpus folds back into the repo automatically. After every successful
-nightly run, the `merge-corpus` job downloads the `fuzz-corpus-<target>`
-artifacts, merges them into `corpus/<target>/` (deduplicated by SHA-256
-content hash against the committed seeds), and opens an automated pull
-request on branch `fuzz/corpus-update` (`fuzz: refresh nightly corpus`,
-labeled `fuzz` / `corpus`).
-
-The cycle is: nightly runs → corpus PR is opened → a human reviews and
-approves the merge. When reviewing, skim the diff for oversized or sensitive
-inputs; crash-derived regression seeds still go through manual triage
-(reproduce with `cargo fuzz run <target> fuzz/artifacts/<crash-file>`,
-minimize with `cargo fuzz tmin`, add the seed here, fix the bug, and add a
-checked-in regression test).
+Review the `corpus/<target>/` diff for oversized or sensitive inputs before
+committing the minimized seeds.
