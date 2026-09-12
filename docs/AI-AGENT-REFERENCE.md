@@ -37,6 +37,8 @@
 27. [Interop Baseline](#27-interop-baseline)
 28. [Package Manager Baseline](#28-package-manager-baseline)
 29. [Tooling Baseline](#29-tooling-baseline)
+30. [Agent Platform (std.agent)](#30-agent-platform-stdagent)
+31. [Async Essentials (await, Task, block_on)](#31-async-essentials-await-task-block_on)
 
 ---
 
@@ -134,6 +136,7 @@ public from std.io import println
 | `import std.char;` | Char classification |
 | `import std.time;` | Timestamps, sleep |
 | `import std.range;` | Stored range handles |
+| `import std.agent;` | Governed agent runs, model calls and tools (see section 30) |
 
 ### User Module Import
 
@@ -2012,6 +2015,11 @@ let credit = TxKind::Credit(100)
 | `spectralang fmt <files>` | Format source files |
 | `spectralang repl` | Start interactive REPL |
 | `spectralang new <name>` | Scaffold new project |
+| `spectralang surface --json [path]` | Public surface of a project, including derived agent tools |
+| `spectralang impact --json <symbol> [path]` | What changing a symbol affects (SIR call graph) |
+| `spectralang explain [--json] <CODE>` | Explain a diagnostic code |
+| `spectralang docs [--json] [--section <name>]` | Language reference embedded in the binary |
+| `spectralang agent eval [--json] [--suite <path>]` | Run an agent evaluation suite against a baseline |
 | `spectralang help` | Show help |
 
 ### Common Flags
@@ -2643,6 +2651,185 @@ Runtime diagnostic baseline:
 - Native DWARF/PDB source stepping is not claimed by the current baseline.
 
 For the full tooling contract, see `docs/tooling.md`.
+
+---
+
+## 30. Agent Platform (`std.agent`)
+
+`std.agent` is the native, governed agent runtime. An agent is an ordinary
+Spectra program: model and tool calls run inside a **run** that owns the
+capability set, the budget, the journal, the approval decisions and the
+transcript.
+
+```spectra
+import std.agent
+```
+
+### The Run
+
+`agent_start(spec_json: string) -> Result<Run, Error>` takes the run contract as
+a JSON document (the ABI carries records as JSON; the `AgentSpec` record type
+documents the shape). `agent_end(run) -> Result<string, Error>` returns the
+report JSON.
+
+`AgentSpec` fields: `goal`, `model`, `endpoint`, `allow`, `max_tokens`,
+`max_cost_micros`, `max_seconds`, `max_tool_calls`, `untrusted`, `seed`,
+`journal`, `journal_payloads`, `run_id`.
+
+`Report` fields: `status`, `steps`, `tool_calls`, `tokens_in`, `tokens_out`,
+`cost_micros`, `elapsed_ms`, `compensations_pending`; the JSON adds `ceiling`
+(the name of the ceiling that cancelled the run) and `replay` (the run resumed
+an existing journal).
+
+### The Surface
+
+| Function | Signature (source view) | Role |
+| --- | --- | --- |
+| `agent_start` | `(spec_json: string) -> Result<Run, Error>` | validate grants, allocate the run, open the journal |
+| `agent_end` | `(run: Run) -> Result<string, Error>` | close the run, return the report JSON |
+| `ask` | `(run, prompt: string) -> Result<string, Error>` *async* | one model turn |
+| `ask_json` | `(run, prompt: string, schema: string) -> Result<string, Error>` *async* | schema-constrained turn, validated client-side |
+| `ask_stream` | `(run, prompt: string) -> Result<ChunkStream, Error>` *async* | chunked turn |
+| `stream_next` | `(stream: ChunkStream) -> Result<string, Error>` *async* | next chunk; empty string ends |
+| `stream_close` | `(stream: ChunkStream) -> Result<bool, Error>` *async* | release the stream |
+| `act` | `(run, prompt: string) -> Result<string, Error>` *async* | model/tool loop until a final answer or a ceiling |
+| `tool_call` | `(run, name: string, args_json: string) -> Result<string, Error>` *async* | governed dispatch of one tool |
+| `embed` | `(run, text: string) -> Result<Tensor, Error>` *async* | 1-D float embedding |
+| `remember` | `(run, text: string) -> Result<bool, Error>` | append to run memory |
+| `recall` | `(run, query: string, top_k: int) -> Result<string, Error>` | deterministic retrieval |
+| `approve` | `(run, action: string) -> Result<bool, Error>` | ask the approver; default deny |
+| `require` | `(run, condition: bool, message: string) -> Result<bool, Error>` | governed assertion |
+| `budget_remaining` | `(run: Run) -> Result<int, Error>` | tokens left before `max_tokens` |
+| `untrusted` | `(run, value: string, origin: string) -> Result<string, Error>` | record provenance |
+| `trust` | `(run, value: string, reason: string) -> Result<string, Error>` | audited declassification |
+| `compensate` | `(run, tool: string, args_json: string) -> Result<bool, Error>` | journal a pending compensation (LIFO) |
+| `rollback` | `(run, reason: string) -> Result<int, Error>` | execute pending compensations, LIFO |
+| `token_count` | `(text: string) -> int` | shared tokenizer count |
+
+`Run` and `ChunkStream` are opaque handles. `T::json_schema()` on a
+`#[derive(Serialize)]` record emits the JSON Schema that `#[agent_tool]`
+derives for a payload.
+
+### The Tool Attribute
+
+Exactly one attribute exists: `#[agent_tool("description")]` on a
+`public async` function whose first parameter is `run: Run`. The tool name is
+the function name, the input schema comes from the payload parameter through
+the JSON derive, and effects/capabilities are read from the IR call graph —
+only the description is authored.
+
+```spectra
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[agent_tool("Adds two integers")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+```
+
+### Governance
+
+- `AgentSpec.allow` grants a namespace prefix (`spectra.std.fs`), a full host
+  call (`spectra.std.fs.fs_read`) or a scoped form
+  (`spectra.api.client.request:host=api.example.com`). A grant matching nothing
+  fails `E3201`; an unsupported scope key fails `E3202`; a bad tool declaration
+  fails `E3203`/`E3204`; a literal `compensate` tool name that names no
+  `#[agent_tool]` fails `E3205`. Enforcement is at the one generic host-call
+  dispatch function, so the cached and batch entrypoints cannot bypass it.
+- `untrusted`/`trust` maintain a digest-keyed provenance ledger; catalog
+  entries classified as sinks are gated while the run holds untrusted content,
+  per the run's `untrusted` policy (`block` | `approve` | `allow`).
+- Ceilings are enforced by cooperative cancellation: the crossing call is
+  accounted and answered, later calls are refused, and the report names the
+  ceiling. A ceiling that could never be enforced is refused at `agent_start`.
+- `approve` with no approver attached is a deny (journaled); `require(false)`
+  returns `assertion_failed` with the message and the run goal.
+- The journal is append-only at `<journal>/<run_id>.jsonl` with digests and an
+  idempotency key, flushed before an effecting call returns. A run with the
+  same `run_id` replays recorded outputs instead of re-executing effects and
+  reports `"replay":true`.
+
+### Commands
+
+```powershell
+spectralang surface --json [path]                     # modules, functions, types, derived tools
+spectralang impact --json <symbol> [path]             # what changing a symbol affects
+spectralang explain [--json] <CODE>                   # diagnostic code reference
+spectralang docs [--json] [--section <name>]          # language reference embedded in the binary
+spectralang agent eval [--json] [--suite <path>] [--repeat <n>] [--judge]
+```
+
+`surface` reports each `#[agent_tool]` with its `input_schema`, `effects` and
+`capabilities`; `agent eval` runs a case suite with deterministic graders
+(`approval`, `refusal`, `tool_set`, `budget`, `schema`) and exits `65` on a
+regression against the checked-in baseline.
+
+### Limits
+
+Taint is message-granular; there is no string-level flow tracking. `require` is
+a runtime assertion, not static verification. Compensation runs only on an
+explicit `rollback`. Entry points stay synchronous. MCP is HTTP-only (no
+stdio).
+
+Runnable projects: `examples/agent/01-tool-and-run`,
+`examples/agent/02-approval-and-budget`, `examples/agent/04-durable-replay`;
+see `docs/book/11-agents.md`.
+
+---
+
+## 31. Async Essentials (`await`, `Task`, `block_on`)
+
+The async surface the agent functions use is part of the core language.
+
+```spectra
+async func fetch_total(base: int) returns int {
+    let first = await ready(base)          // suspend inside an async context
+    return first + 1
+}
+
+public func main() returns int {
+    let task = fetch_total(41)             // calling an async func produces Task<int>
+    let value = block_on(task)             // drive it to completion from sync code
+    if value != 42 {
+        return 1
+    }
+    return 0
+}
+```
+
+Rules:
+
+- `async func f(...) returns T` is called to produce a `Task<T>`; the body does
+  not run until the task is driven.
+- `await expr` is valid only inside an async context (`async func`, an
+  `async { ... }` block, or an async closure); awaiting yields the task's value.
+- `block_on(task)` is the sync bridge: it drives a task to completion. Entry
+  points stay synchronous (`public func main() returns int`), so agent programs
+  call `block_on` in `main` or in a sync helper.
+- `async { ... }` is a task literal: its last expression is the value.
+
+```spectra
+let task: Task<int> = async {
+    let base = await ready(40)
+    base + 2
+}
+let value = block_on(task)
+```
+
+The same program runs under JIT and AOT; the coroutine state machine is lowered
+for both. Loops and locals that cross an `await` are frame-resident, so their
+values survive a suspension. For handle-based task concurrency
+(`task_spawn_fn`, `task_join`, channels and counters) see `std.concurrent` and
+`docs/concurrency-serving.md`.
+
+Fixtures: `tests/validation/351_async_typed_frame.spectra`,
+`tests/validation/294_l4_explicit_task_block.spectra`,
+`tests/validation/367_async_bool_loop.spectra`,
+`tests/validation/368_async_await_loop.spectra`.
 
 ---
 

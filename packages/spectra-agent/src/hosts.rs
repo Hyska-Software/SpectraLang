@@ -993,6 +993,41 @@ extern "C" fn trust_host(ctx: *mut SpectraHostCallContext) -> i32 {
     write_outcome(ctx, outcome)
 }
 
+// ── compensation hosts (R-3224) ──────────────────────────────────────────
+
+/// `spectra.std.agent.compensate(run, tool, arguments_json)
+/// -> Result<bool, Error>`.
+///
+/// Journals a pending compensation (LIFO) after validating the tool name
+/// against the run's registered registry. Synchronous: the declaration is
+/// durable before it returns.
+extern "C" fn compensate_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some((run_handle, strings)) = read_run_and_prompt(ctx, 3) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let (tool, arguments) = (strings[0].clone(), strings[1].clone());
+    write_outcome(
+        ctx,
+        crate::compensate::compensate(run_handle, &tool, &arguments).map(i64::from),
+    )
+}
+
+/// `spectra.std.agent.rollback(run, reason) -> Result<int, Error>`.
+///
+/// Executes the pending compensations in LIFO order through the governed
+/// dispatch and returns the number executed. Synchronous, and executed with
+/// the run entered on the active run chain so the tools' own host calls pass
+/// the policy and taint seams (R-3223).
+extern "C" fn rollback_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some((run_handle, strings)) = read_run_and_prompt(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let reason = strings[0].clone();
+    in_run(run_handle, || {
+        write_outcome(ctx, crate::compensate::rollback(run_handle, &reason))
+    })
+}
+
 /// Registers every `spectra.std.agent.*` host function and returns the number
 /// of newly inserted entries.
 pub(crate) fn register() -> usize {
@@ -1014,6 +1049,8 @@ pub(crate) fn register() -> usize {
         ("spectra.std.agent.require", require_host as _),
         ("spectra.std.agent.untrusted", untrusted_host as _),
         ("spectra.std.agent.trust", trust_host as _),
+        ("spectra.std.agent.compensate", compensate_host as _),
+        ("spectra.std.agent.rollback", rollback_host as _),
     ] {
         if spectra_runtime::ffi::register_host_function(name, function) {
             inserted += 1;
@@ -1089,8 +1126,9 @@ mod tests {
         spectra_runtime::ffi::clear_host_functions();
         spectra_runtime::register();
         // Nine R-3211 gateway functions, the three R-3222 dispatch hosts, the
-        // two R-3217 governance hosts and the two R-3223 taint hosts.
-        assert_eq!(register(), 16);
+        // two R-3217 governance hosts, the two R-3223 taint hosts and the two
+        // R-3224 compensation hosts.
+        assert_eq!(register(), 18);
         guard
     }
 

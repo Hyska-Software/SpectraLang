@@ -1,0 +1,294 @@
+module agent_compensation
+
+// R-3224 end-to-end fixture: declared compensation and explicit rollback,
+// against the deterministic mock provider.
+//
+// The counting device is a module-level mutable counter: each compensation
+// tool increments its own counter, so "executes exactly once" is observable
+// from the language itself rather than inferred from a return value. The
+// journal is the durable record: a fresh run declares and rolls back, and a
+// second run with the same run id replays both steps without dispatching the
+// compensation tool again — the counter stays at one.
+//
+// The LIFO flow declares the good compensation first and the failing one
+// second, so execution order is: the failing one (arguments its derived schema
+// rejects, so the marshalling wrapper fails it), then the good one. The
+// failure is journaled (`"ok":false`) and does not mask the compensation
+// declared before it; the validator reads the journal to pin both.
+//
+// The compile-time half of the feature is a separate error fixture
+// (`tests/errors/agent_compensate_unknown_tool.spectra`, E3205): a literal
+// tool name the compilation unit does not declare cannot build. A name this
+// module cannot see — a computed name, or a tool of a module analyzed later —
+// is validated at runtime by the run's registered-tool registry instead.
+
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const JOURNAL_DIR = ".spectra/r3224-compensation"
+const ONCE_RUN = "fixture-380-once"
+const PENDING_RUN = "fixture-380-pending"
+const LIFO_RUN = "fixture-380-lifo"
+
+// Compensation invocation counters. Static state is the counting device: a
+// replayed compensation must not move them.
+static REFUNDS: int = 0
+static RELEASES: int = 0
+static SHIPMENTS: int = 0
+
+#[derive(Serialize, Deserialize)]
+public record StepArgs {
+    id: int,
+}
+
+// The irreversible step: it succeeds and is never compensated implicitly; the
+// author declares the compensation.
+#[agent_tool("Records a shipment step")]
+public async func ship(run: Run, args: StepArgs) returns int {
+    SHIPMENTS = SHIPMENTS + 1
+    return SHIPMENTS
+}
+
+// Compensation one: refunds the recorded step.
+#[agent_tool("Refunds the recorded step")]
+public async func refund(run: Run, args: StepArgs) returns int {
+    REFUNDS = REFUNDS + 1
+    return REFUNDS
+}
+
+// Compensation two: releases the reserved inventory.
+#[agent_tool("Releases the reserved inventory")]
+public async func release(run: Run, args: StepArgs) returns int {
+    RELEASES = RELEASES + 1
+    return RELEASES
+}
+
+func spec(run_id: string) returns string {
+    return "{\"goal\":\"agent-compensation\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":3,\"journal\":\"" + JOURNAL_DIR + "\",\"journal_payloads\":false,\"run_id\":\"" + run_id + "\"}"
+}
+
+func journal_path(run_id: string) returns string {
+    return JOURNAL_DIR + "/" + run_id + ".jsonl"
+}
+
+// Removes a previous journal file so each execution starts fresh.
+func clean(path: string) returns int {
+    let exists = fs.fs_exists(path)
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(path)
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+// One pass of "irreversible step, injected failure, declared compensation,
+// rollback". `replayed` selects the expected report mode. Returns 0 on
+// success.
+func irreversible_then_rollback(replayed: bool) returns int {
+    let started = agent_start(spec(ONCE_RUN))
+    if let Result::Ok(run) = started {
+        // 1. The irreversible step succeeds (or replays its recorded result).
+        let shipped = block_on(tool_call(run, "ship", "{\"id\":1}"))
+        if let Result::Ok(value) = shipped {
+            if value != "1" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        // 2. The injected failure: malformed arguments fail the wrapper's
+        //    schema before the tool runs. The dispatch returns a typed tool
+        //    failure; the run itself stays alive so the author can decide to
+        //    compensate.
+        let failed = block_on(tool_call(run, "ship", "{\"id\":\"not-a-number\"}"))
+        if let Result::Err(failure) = failed {
+            if error.message(failure) == "" {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        // 3. The compensation is declared (LIFO) and pending until rollback.
+        let declared = compensate(run, "refund", "{\"id\":1}")
+        if let Result::Ok(ok) = declared {
+            if ok == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+
+        // 4. The explicit rollback executes it once.
+        let rolled = rollback(run, "the second step failed")
+        if let Result::Ok(count) = rolled {
+            if count != 1 {
+                return 8
+            }
+        } else {
+            return 9
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"status\":\"rolled_back\"") == false {
+                return 10
+            }
+            if str.contains(report, "\"compensations_pending\":0") == false {
+                return 11
+            }
+            if replayed == true {
+                if str.contains(report, "\"replay\":true") == false {
+                    return 12
+                }
+            } else {
+                if str.contains(report, "\"replay\":false") == false {
+                    return 13
+                }
+            }
+        } else {
+            return 14
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// A pending compensation that is never rolled back stays visible in the
+// report, so a silent leak cannot hide.
+func pending_is_reported() returns int {
+    let started = agent_start(spec(PENDING_RUN))
+    if let Result::Ok(run) = started {
+        let declared = compensate(run, "release", "{\"id\":7}")
+        if let Result::Ok(ok) = declared {
+            if ok == false {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"compensations_pending\":1") == false {
+                return 4
+            }
+            // No rollback happened: the run keeps its completed status.
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// Declared good first, failing second: LIFO executes the failing one first,
+// journals the failure, and then executes the good one.
+func lifo_and_journaled_failure() returns int {
+    let started = agent_start(spec(LIFO_RUN))
+    if let Result::Ok(run) = started {
+        // "release" is declared first, so it executes last.
+        let first = compensate(run, "release", "{\"id\":9}")
+        if let Result::Err(_) = first {
+            return 2
+        }
+        // "refund" carries arguments its schema rejects: the compensation is
+        // declarable but fails when executed.
+        let second = compensate(run, "refund", "{\"id\":\"broken\"}")
+        if let Result::Err(_) = second {
+            return 3
+        }
+
+        let rolled = rollback(run, "prove LIFO")
+        if let Result::Ok(count) = rolled {
+            if count != 2 {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(_) = ended {
+            return 6
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    // Start from a clean journal so the fixture's own files are deterministic.
+    let cleaned_once = clean(journal_path(ONCE_RUN))
+    let cleaned_pending = clean(journal_path(PENDING_RUN))
+    let cleaned_lifo = clean(journal_path(LIFO_RUN))
+    if cleaned_once != 0 {
+        return 1
+    }
+    if cleaned_pending != 0 {
+        return 2
+    }
+    if cleaned_lifo != 0 {
+        return 3
+    }
+    REFUNDS = 0
+    RELEASES = 0
+    SHIPMENTS = 0
+
+    // 1. The fresh run: irreversible step, injected failure, one compensation,
+    //    executed exactly once.
+    let fresh = irreversible_then_rollback(false)
+    if fresh != 0 {
+        return fresh
+    }
+    if REFUNDS != 1 {
+        return 100 + REFUNDS
+    }
+
+    // 2. The replay: the same run id and journal. The compensation must not
+    //    execute a second time; the counter stays at one.
+    let replayed = irreversible_then_rollback(true)
+    if replayed != 0 {
+        return 200 + replayed
+    }
+    if REFUNDS != 1 {
+        return 300 + REFUNDS
+    }
+
+    // 3. A pending compensation that is never rolled back is reported.
+    let pending = pending_is_reported()
+    if pending != 0 {
+        return 400 + pending
+    }
+
+    // 4. LIFO order and a journaled failure that does not mask the rest.
+    let lifo = lifo_and_journaled_failure()
+    if lifo != 0 {
+        return 500 + lifo
+    }
+    if REFUNDS != 1 {
+        return 600 + REFUNDS
+    }
+    // Only the LIFO flow executed a `release`: the pending flow declared one
+    // and never rolled back, which is exactly the leak the report surfaces.
+    if RELEASES != 1 {
+        return 700 + RELEASES
+    }
+    return 0
+}

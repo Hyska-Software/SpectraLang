@@ -6,6 +6,50 @@ the capability security model — the vocabulary, the single dispatch enforcemen
 seam and the guarantees a run provides — is recorded in
 [`docs/adr/0016-agent-capability-enforcement.md`](adr/0016-agent-capability-enforcement.md).
 
+## Overview
+
+`std.agent` makes agents ordinary Spectra programs. There is no agent language
+mode and no second type system: a run is a handle, a tool is a `public async`
+function with `#[agent_tool("...")]`, and a model call is a host call.
+
+The platform has three layers, with a one-way dependency rule:
+
+| Layer | What it is | Where it lives |
+| --- | --- | --- |
+| A — surface | derived, static project view: `surface`, `impact`, `explain`, `docs` | the compiler; consumed by coding agents |
+| B — governance | capabilities, taint, approval, budget, durability, trace | the runtime, at one generic dispatch point |
+| C — execution | twenty free functions plus `json_schema` | `std.agent`, called by Spectra code |
+
+A informs B, B authorizes C, and C never decides by itself: a layer-C function
+that needs an effect asks layer B, and an ungranted effect fails with a
+structured error (`capability_denied`, `trust_required`, `budget_exceeded`, …)
+rather than an opaque exception.
+
+The life of a run:
+
+1. `agent_start(spec_json)` validates the spec and every grant against the
+   catalog, allocates the run and opens the journal. The tool table reaches the
+   runtime separately: lowering emits one idempotent registration function per
+   module that declares tools, and every dispatch entry point calls it (ADR
+   0019).
+2. The run is active for the dynamic extent of its own host calls — `ask`,
+   `ask_json`, `ask_stream`, `embed`, `act`, `tool_call` — so model-driven
+   effects and tool wrappers are bounded by its ceiling; the program's own
+   frame keeps pre-phase behaviour.
+3. `act` runs the model/tool loop through the single governed dispatch; every
+   step is journaled with an idempotency key before it returns.
+4. `agent_end(run)` closes the run and returns the report, including the
+   ceiling that was hit (if any) and whether the run replayed a journal.
+
+The run contract is fixed in
+[`docs/adr/0018-agent-run-contract.md`](adr/0018-agent-run-contract.md), the
+tool dispatch ABI in
+[`docs/adr/0019-agent-tool-dispatch.md`](adr/0019-agent-tool-dispatch.md), the
+single attribute in
+[`docs/adr/0017-agent-surface-generation.md`](adr/0017-agent-surface-generation.md).
+The adoption path with runnable projects is
+[`docs/book/11-agents.md`](book/11-agents.md).
+
 The reference below is generated from the contract catalog by
 `scripts/generate_capability_reference.py`; run it with `--check` in CI to detect
 drift.
@@ -30,7 +74,7 @@ writing it fails `E3201`, and the diagnostic suggests the runtime name.
 
 ### Namespaces
 
-51 namespace grants cover 1117 host calls.
+51 namespace grants cover 1119 host calls.
 
 | Namespace grant | Host calls |
 | --- | --- |
@@ -65,7 +109,7 @@ writing it fails `E3201`, and the diagnostic suggests the runtime name.
 | `spectra.api.validation` | 17 |
 | `spectra.api.version` | 3 |
 | `spectra.api.websocket` | 24 |
-| `spectra.std.agent` | 19 |
+| `spectra.std.agent` | 21 |
 | `spectra.std.char` | 8 |
 | `spectra.std.collections` | 48 |
 | `spectra.std.concurrent` | 17 |
@@ -158,3 +202,55 @@ program without a run exactly as it was.
   compiler emits around author code need no grant, and are excluded from a
   tool's derived effects: requiring a grant for them would mean every
   tool-bearing spec grants the compiler.
+
+## Security model: what a run promises, and what it does not
+
+The promises below are properties the runtime enforces; each is pinned by a
+deterministic test (the phase's invariants I1–I10), never only by an eval. The
+non-promises are the concept's refusals (plan section 2.5) stated where an
+operator or author might otherwise infer them.
+
+### Promised
+
+| Promise | Enforced by |
+| --- | --- |
+| Every effect executed inside a run's dynamic extent was authorized by that run's capability set. | Capability policy at the single generic dispatch function, called from all four generic entrypoints including the cached and batch paths; denial returns `capability_denied`. |
+| A grant that matches no catalog host call fails the build. | `E3201`/`E3202` validation against the contract catalog at compile time. |
+| A ceiling is enforced or the run is cancelled; the report names the ceiling that was hit. | Provider-independent accounting, cooperative cancellation, `ceiling` in the report. |
+| No effect is executed twice across a journal replay. | Append-only journal with idempotency keys, flushed before an effecting call returns; replay resolves recorded outputs. |
+| Human approval fails closed. | `approve` without an attached approver is a deny; the decision is journaled so replay never re-asks. |
+| A sensitive sink is not reached silently while untrusted content is in context. | Digest-keyed provenance ledger + catalog sinks + the run's `untrusted` policy; every decision is journaled (`taint_decision`). |
+| Declassification is explicit and attributable. | `trust(run, value, reason)` requires a non-blank reason and names the digest it declassifies. |
+| Tool metadata exposed to a model is derived, never hand-declared except the description. | `surface --json` reads the compiler's view; tool name, schema, effects and capabilities come from the declaration and the IR call graph. |
+| Compensations never execute twice and never implicitly on the fatal path. | LIFO pending list, replay-safe `rollback`, `compensations_pending` in the report. |
+| A program with no active run behaves exactly as before the workstream. | The run is active only for the dynamic extent of run-scoped hosts; I5 pins the unchanged behaviour. |
+
+### Not promised
+
+- **No information-flow tracking for strings and scalars.** Taint is
+  message/digest granular. Gating is "this run chain holds untrusted content",
+  which is conservative: a sink that does not touch the untrusted value can
+  still be gated, and a transformation of an untrusted value is a different
+  digest that stays untrusted. There is no secret detection.
+- **No static verification.** `require(run, condition, message)` is a runtime
+  assertion; there are no effect rows in the type system and no effect or
+  precondition annotations.
+- **No automatic rollback.** Compensation is declared with `compensate` and
+  executed only by an explicit `rollback`. The runtime cannot re-enter compiled
+  tool code from the fatal panic path, and nothing rolls back the filesystem or
+  the network.
+- **No capability enforcement on fast host calls.** The 28 fast calls are
+  in-process compute with no external effect and no denial channel. The
+  exclusion is by construction and pinned by a completeness test (I1) that
+  fails if any effect-bearing host call enters the fast path — it is a tested
+  invariant, not a promise of convenience.
+- **Not a sandbox.** A capability set bounds what a run's own host calls may
+  do; it does not isolate the process, the filesystem or the network from the
+  embedding program.
+- **No async `main`.** Entry points stay `public func main() returns int`;
+  async work is driven with `block_on`.
+- **No subprocess, so no stdio MCP.** MCP uses the existing HTTP transport.
+- **The journal stores digests by default.** `journal_payloads` is opt-in;
+  a replay returns recorded outputs, not recorded request payloads.
+- **Exactly one attribute.** `#[agent_tool("...")]` is the only new attribute;
+  a second one requires revising ADR 0017 first.

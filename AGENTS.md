@@ -621,3 +621,44 @@ For roadmap or planning work explicitly requested by the user:
 3. Update roadmap status, dependencies, backlog, or strategic plan as required by
    the active scope.
 4. Validate TOML parsing and cross-file consistency when planning files change.
+
+---
+
+## Agent Platform Validation Commands
+
+These commands validate the `std.agent` surface (Phase 32) when a change
+touches it. They are additive to the rules above; the full repository suite
+remains `.\run_tests.ps1`, which registers the `scripts/validate_r32*.py`
+validators.
+
+```powershell
+# Build the CLI once (JIT and AOT paths).
+cargo build -p spectra-cli
+
+# Runtime governance units: dispatch, policy, journal/replay, budget, approval,
+# taint, tools, compensation.
+cargo test -p spectra-agent
+
+# Generated-surface gates: each must report a match (no drift).
+python scripts/generate_lowering_tables.py --check
+python scripts/generate_host_calls.py --check
+python scripts/generate_capability_reference.py --check
+
+# Machine-readable surface: modules, functions, types and the derived
+# `#[agent_tool]` metadata (input schema, effects, capabilities).
+.\target\debug\spectralang.exe surface --json examples\agent\01-tool-and-run
+
+# Examples: JIT, then AOT (`--debug-info=none` avoids the MSVC PDB limit).
+.\target\debug\spectralang.exe run examples\agent\01-tool-and-run
+.\target\debug\spectralang.exe compile --debug-info=none --emit-exe target\example-01-agent.exe examples\agent\01-tool-and-run
+.\target\example-01-agent.exe
+
+# Evaluation: deterministic graders against the checked-in baseline; exits 65
+# on regression. The judge grader never runs by default.
+.\target\debug\spectralang.exe agent eval --json
+```
+
+Agent programs must exercise both `spectralang run` and
+`spectralang compile --emit-exe` plus the produced binary; a JIT-only check is
+not AOT parity. Governance assertions belong in deterministic tests, never only
+in an eval.

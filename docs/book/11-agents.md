@@ -1,0 +1,312 @@
+# 11. Agents
+
+This chapter is the runnable path through `std.agent`, the native agent runtime.
+An agent is not a new kind of program: it is an ordinary Spectra program whose
+model and tool calls run inside a **governed run**. The run owns the capability
+set, the budget, the journal, the approval decisions and the transcript, and it
+enforces them at the single host-call dispatch point the language already
+routes every external effect through.
+
+The platform has three layers, and the dependency rule is one-way
+(`docs/agent-platform-plan.md`, section 3):
+
+- **surface** — `spectralang surface --json`, `impact --json`, `explain --json`,
+  `docs`; derived from the compiler, consumed by coding agents;
+- **governance** — capabilities, taint, budget, approval, durability and trace;
+  enforced by the runtime;
+- **execution** — the `std.agent` functions below, called by Spectra code.
+
+A layer-C function that needs an effect asks layer B; when B has not granted
+the capability, the effect fails with a structured error instead of an opaque
+exception.
+
+## The Run
+
+`agent_start` takes the run contract as a JSON string — the host ABI has no
+record channel, so records travel as JSON documents and the compiler-declared
+`AgentSpec`/`Report` record types document the shape (the plan's adaptation 11).
+The fields are:
+
+| `AgentSpec` field | Meaning |
+| --- | --- |
+| `goal` | what the run is for; cited by errors, the journal and evals |
+| `model` | provider-scoped model name (`mock/echo` selects the deterministic mock) |
+| `endpoint` | provider base URL; `mock:` selects the in-process mock provider |
+| `allow` | capability grants; empty means **default deny** inside the run |
+| `max_tokens` | hard ceiling on billable tokens (`0` = unlimited) |
+| `max_cost_micros` | hard cost ceiling (`0` = none) |
+| `max_seconds` | wall-clock ceiling (`0` = none) |
+| `max_tool_calls` | hard ceiling on governed tool dispatches (`0` = none) |
+| `untrusted` | taint policy: `approve` (default), `block` or `allow` |
+| `seed` | `-1` = provider default; `>=0` requests deterministic sampling |
+| `journal` | journal directory (default `.spectra/journal`) |
+| `journal_payloads` | keep record payloads on disk (default `false`, digests only) |
+| `run_id` | pin the journal file name so a re-run resumes the same journal |
+
+`agent_end(run)` closes the run and returns the report as JSON:
+
+```json
+{"status":"completed","steps":3,"tool_calls":2,"tokens_in":13,"tokens_out":7,
+ "cost_micros":27,"elapsed_ms":302,"ceiling":"","compensations_pending":0,
+ "replay":false}
+```
+
+`status` is one of `completed`, `budget_exceeded`, `failed` or `rolled_back`;
+`ceiling` names the ceiling that cancelled the run (`max_tokens`,
+`max_cost_micros`, `max_seconds`, `max_tool_calls`); `replay` is `true` when the
+run resumed an existing journal. The authored `Report` record declares the
+first eight fields; `ceiling` and `replay` are additive keys.
+
+## A Tool Is an Ordinary Function
+
+Exactly one attribute exists: `#[agent_tool("description")]`. Everything except
+the description is derived from the declaration:
+
+```spectra
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[agent_tool("Adds two integers")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+```
+
+| Derived | From |
+| --- | --- |
+| tool name `add` | function name (project-wide unique; duplicates rejected) |
+| `inputSchema` | the non-`run` parameter, through the existing JSON derive |
+| effects | the host calls reachable from the body through the IR call graph |
+| required capabilities | those host calls, as namespace prefixes |
+| model-invocability | the `run` parameter in first position |
+
+The declaration is validated at compile time: a non-public, non-async or
+generic function, a `dyn` parameter, a missing or misplaced `run`, a non-literal
+description, a duplicate name (`E3203`), or a payload type the JSON derive
+cannot decode (`E3204`) fails the build. `spectralang surface --json` prints the
+derived metadata, so the model-facing tool list and the compiler's view cannot
+drift:
+
+```json
+{"name":"add","description":"Adds two integers",
+ "input_schema":"{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"]}",
+ "payload_param":"args","payload_type":"AddArgs","module":"main",
+ "effects":[],"capabilities":[]}
+```
+
+## The Surface
+
+Twenty free functions are the phase's surface; `register_tool` is
+compiler-emitted and internal, and `T::json_schema()` on a derived record is the
+associated entry point that emits the JSON Schema used for tool payloads.
+
+| Function | Signature (source view) | Role |
+| --- | --- | --- |
+| `agent_start` | `(spec_json: string) -> Result<Run, Error>` | validate the spec and grants, allocate the run, open the journal |
+| `agent_end` | `(run) -> Result<string, Error>` | close the run, return the report JSON |
+| `ask` | `(run, prompt) -> Result<string, Error>` *async* | one model turn under budget and journal |
+| `ask_json` | `(run, prompt, schema) -> Result<string, Error>` *async* | schema-constrained turn, validated client-side |
+| `ask_stream` | `(run, prompt) -> Result<ChunkStream, Error>` *async* | same turn, chunked |
+| `stream_next` | `(stream) -> Result<string, Error>` *async* | next chunk; `""` ends the stream |
+| `stream_close` | `(stream) -> Result<bool, Error>` *async* | release the stream; idempotent |
+| `act` | `(run, prompt) -> Result<string, Error>` *async* | model → tool → model loop until a final answer or a ceiling |
+| `tool_call` | `(run, name, args_json) -> Result<string, Error>` *async* | governed dispatch of one tool; returns its JSON result |
+| `embed` | `(run, text) -> Result<Tensor, Error>` *async* | 1-D float embedding |
+| `remember` | `(run, text) -> Result<bool, Error>` | append to run memory |
+| `recall` | `(run, query, top_k) -> Result<string, Error>` | deterministic retrieval |
+| `approve` | `(run, action) -> Result<bool, Error>` | ask the registered approver; default deny |
+| `require` | `(run, condition, message) -> Result<bool, Error>` | governed assertion |
+| `budget_remaining` | `(run) -> Result<int, Error>` | tokens left before `max_tokens` |
+| `untrusted` | `(run, value, origin) -> Result<string, Error>` | record provenance; returns the value |
+| `trust` | `(run, value, reason) -> Result<string, Error>` | audited declassification; reason required |
+| `compensate` | `(run, tool, args_json) -> Result<bool, Error>` | journal a pending compensation (LIFO) |
+| `rollback` | `(run, reason) -> Result<int, Error>` | execute pending compensations, LIFO, replay-safe |
+| `token_count` | `(text: string) -> int` | token count over the shared tokenizer |
+
+`compensate` validates the tool name against the run's registered tools before
+anything is journaled; a literal name that names no `#[agent_tool]` declaration
+in the compilation unit fails `E3205` at compile time (and every name is
+checked again at runtime, so a computed name cannot declare an unexecutable
+compensation). `rollback` runs the pending compensations in LIFO order through
+the same governed dispatch as `act`/`tool_call`, so capabilities, taint gating
+and budget still apply. The rollback is replay-safe: an executed compensation
+is not executed again, and a failure never masks the compensations that follow
+it. The compensation fixture is
+`tests/validation/380_agent_compensation.spectra`.
+
+## Runnable Examples
+
+All three examples run against the deterministic mock provider: no network and
+no credentials. The mock is scripted through the prompt
+(`spectra:tool=<name> {json}`, `spectra:final=<text>`, `spectra:json`,
+`spectra:sleep-ms=N`), which is what makes the tool loops reproducible in CI.
+
+### 01 — Tool and Run
+
+`examples/agent/01-tool-and-run` declares one tool, runs one plain turn, drives
+one tool loop with `act`, dispatches one tool directly with `tool_call`, and
+prints the report.
+
+```powershell
+.\target\debug\spectralang.exe run examples\agent\01-tool-and-run
+.\target\debug\spectralang.exe compile --debug-info=none --emit-exe target\example-01-agent.exe examples\agent\01-tool-and-run
+.\target\example-01-agent.exe
+```
+
+Both paths print the same lines and exit `0` (`--debug-info=none` avoids a
+pre-existing MSVC PDB limit; it does not change the program):
+
+```text
+ask    -> mock echo: hello
+act    -> the tool answered 42
+call   -> 42
+report -> {"status":"completed","steps":3,"tool_calls":2,...}
+```
+
+### 02 — Approval and Budget
+
+`examples/agent/02-approval-and-budget` shows the deny path, a governed
+assertion and a token-ceiling crossing (the same JIT and AOT commands, with
+`example-02-agent.exe`):
+
+```powershell
+.\target\debug\spectralang.exe run examples\agent\02-approval-and-budget
+```
+
+```text
+assert -> passed
+approve -> denied
+require -> assertion_failed: refused: fs_write was not approved (run goal: example-approval-and-budget)
+report  -> {"status":"failed",...}
+budget  -> 6 tokens left
+ceiling -> next call refused with a typed error
+report  -> {"status":"budget_exceeded",...,"ceiling":"max_tokens",...}
+```
+
+A denial is a successful `approve` call carrying `false`, never an implicit
+allow. Allowing the action needs an approver attached by the process that
+embeds the runtime (`spectra_agent::set_approver`); a Spectra program asks and
+must handle both answers.
+
+### 04 — Durable Replay
+
+`examples/agent/04-durable-replay` writes a journal and then re-runs with the
+same `run_id`. The tool `record_event` performs a real external effect — it
+reads a counter file, adds one and writes it back — so the counter is the
+proof:
+
+```powershell
+.\target\debug\spectralang.exe run examples\agent\04-durable-replay
+```
+
+```text
+fresh  answer -> run complete
+fresh  report -> {"status":"completed","steps":2,"tool_calls":1,...,"replay":false}
+counter after fresh  -> 1 first
+replay answer -> run complete
+replay report -> {"status":"completed","steps":2,"tool_calls":1,...,"elapsed_ms":0,"replay":true}
+counter after replay -> 1 first
+journal -> .spectra/example-04-journal/example-04.jsonl
+```
+
+After the replay the counter still reads `1 first`: the recorded tool result was
+returned instead of executing the effect twice, and `elapsed_ms` for the
+replayed work is `0`. `03-mcp-and-memory` follows when the MCP item lands.
+
+## Governance
+
+- **Capabilities.** `AgentSpec.allow` is validated at compile time against the
+  contract catalog — the same data the runtime dispatches. A grant is a
+  namespace prefix (`spectra.std.fs`), a full host call
+  (`spectra.std.fs.fs_read`) or a scoped form
+  (`spectra.api.client.request:host=api.example.com`). A grant that matches
+  nothing fails `E3201`; an unsupported scope key fails `E3202`. Enforcement
+  happens at the single generic dispatch function, so the cached and batch
+  entrypoints cannot bypass it; a denied call returns `capability_denied`.
+- **Taint.** `untrusted(run, value, origin)` records provenance and `trust(run,
+  value, reason)` declassifies, both returning the value unchanged. Tool
+  results and external content enter the transcript untrusted. While the run
+  holds untrusted content, catalog entries classified as sinks are gated by the
+  run's `untrusted` policy and every decision is journaled
+  (`kind = "taint_decision"`).
+- **Budget.** Every ceiling is enforced cooperatively: the crossing call is
+  accounted and answered, the run is cancelled, every later call is refused
+  before reaching the provider, and the report names the ceiling. A ceiling
+  that could never be enforced (a cost ceiling on a provider that reports no
+  cost) is refused at `agent_start` instead of being accepted silently.
+- **Approval and assertions.** `approve` asks the registered approver; with
+  none attached the answer is deny and the decision is journaled so replay
+  never asks twice. `require(run, false, message)` returns an
+  `assertion_failed` error carrying the message and the run goal and marks the
+  run failed.
+
+## Durability and Replay
+
+An effecting call is journaled as one append-only line in
+`<journal>/<run_id>.jsonl` with `run`, `step`, `kind`, `input_digest`,
+`output_digest`, `idempotency_key`, `timestamp` and usage; payloads are opt-in.
+The record is flushed before the call returns, which is what makes a re-run a
+resume rather than a re-execution: a run with the same `run_id` resolves each
+step from the journal, returns the recorded output and appends nothing, so
+nothing is asked or executed twice and the report says `"replay":true`.
+
+## The Machine-Readable Surface
+
+Coding agents consume the compiler's view directly:
+
+```powershell
+.\target\debug\spectralang.exe surface --json examples\agent\01-tool-and-run
+.\target\debug\spectralang.exe impact --json add examples\agent\01-tool-and-run
+.\target\debug\spectralang.exe explain --json E3201
+.\target\debug\spectralang.exe docs --json --section stdlib
+```
+
+`surface` reports modules, functions, types and the derived `tools` array;
+`impact` reports what changing a symbol affects from the SIR call graph;
+`explain` prints a diagnostic code from the embedded error reference; `docs`
+prints the language reference embedded in the running binary.
+
+## Evaluation
+
+Model-dependent behavior is measured with the eval harness, never pinned as a
+platform guarantee:
+
+```powershell
+.\target\debug\spectralang.exe agent eval --json
+.\target\debug\spectralang.exe agent eval --suite examples/agent/evals/agent_core.json --repeat 3
+```
+
+Each case runs a Spectra program in a fresh process; deterministic graders
+(`approval`, `refusal`, `tool_set`, `budget`, `schema`) run by default, the
+judge grader only with `--judge`. The command reports `pass@1` and `pass^k` and
+exits `65` when a case regresses against the checked-in baseline. Governance
+claims are covered by deterministic tests, not by evals.
+
+## Honest Limits
+
+- There are no effect rows in the type system and no static verification of
+  `require`; it is a runtime assertion.
+- Taint is message-granular, keyed by content digest. There is no string-level
+  information-flow tracking, so a sink can be gated even when it does not touch
+  the untrusted value, and declassification is explicit.
+- Compensation is declared and executed on explicit `rollback`, never
+  automatically; the runtime cannot re-enter compiled tool code from the fatal
+  panic path. `compensations_pending` makes a silent leak visible.
+- The journal stores digests by default; a crash resume returns recorded
+  outputs, not recorded payloads.
+- Entry points stay synchronous; async work is driven with `block_on`.
+- MCP is HTTP-only: stdio needs subprocess support the language does not have.
+
+## Validation
+
+Each example is an ordinary project and is reproduced by the two commands
+above: `spectralang run` for JIT, then `compile --debug-info=none --emit-exe`
+and the produced binary for AOT. Both modes run with the deterministic mock
+provider and need no credentials or network.
+
+The Phase 32 validators (`scripts/validate_r32*.py`) are registered in
+`run_tests.ps1` as the items land; the package, conformance and
+integrated-project gates of `R-3221` are added with the remaining items.

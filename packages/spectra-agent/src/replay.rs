@@ -42,6 +42,13 @@ pub(crate) enum Kind {
     /// One gated sink decision (R-3223 T3): `allow` or `deny` under the run's
     /// `untrusted` policy.
     TaintDecision,
+    /// One `compensate` declaration (R-3224 T1): the pending compensation and
+    /// the identity a replay uses to rebuild the LIFO stack.
+    Compensation,
+    /// One executed compensation attempt (R-3224 T2), executed through the
+    /// governed dispatch. Recorded even when the compensation fails, so a
+    /// replay never re-executes it.
+    Rollback,
 }
 
 impl Kind {
@@ -54,6 +61,8 @@ impl Kind {
             Self::Assertion => "assertion",
             Self::Taint => "taint",
             Self::TaintDecision => "taint_decision",
+            Self::Compensation => "compensation",
+            Self::Rollback => "rollback",
         }
     }
 }

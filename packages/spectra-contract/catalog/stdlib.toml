@@ -219,6 +219,24 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/372_agent_budget.spectra"
 
 [[entry]]
+path = "std.agent.compensate"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string, string) -> Result<bool, Error>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }, { name = "arg2", ty = "string" }]
+returns = "Result<bool, Error>"
+ir_return = "Result<bool,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.compensate"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/AI-AGENT-REFERENCE.md"
+fixture = "tests/validation/380_agent_compensation.spectra"
+
+[[entry]]
 path = "std.agent.embed"
 kind = "function"
 namespace = "std.agent"
@@ -307,6 +325,24 @@ maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/376_agent_journal.spectra"
+
+[[entry]]
+path = "std.agent.rollback"
+kind = "function"
+namespace = "std.agent"
+signature = "fn(Run, string) -> Result<int, Error>"
+params = [{ name = "arg0", ty = "Run" }, { name = "arg1", ty = "string" }]
+returns = "Result<int, Error>"
+ir_return = "Result<int,Error>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.agent.rollback"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/AI-AGENT-REFERENCE.md"
+fixture = "tests/validation/380_agent_compensation.spectra"
 
 [[entry]]
 path = "std.agent.stream_close"

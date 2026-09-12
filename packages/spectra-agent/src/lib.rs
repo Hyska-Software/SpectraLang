@@ -7,7 +7,8 @@
 //! R-3217 adds the durable journal with replay, human approval, governed
 //! assertions and the OpenTelemetry GenAI span seam, and R-3223 adds the
 //! message/handle taint ledger with `untrusted`/`trust` and the sink gate at
-//! the dispatch seam. This crate is an `rlib`
+//! the dispatch seam, and R-3224 adds declared compensation
+//! (`compensate`/`rollback`). This crate is an `rlib`
 //! aggregated by `spectra_api::register` (see
 //! `packages/spectra-api/src/api_registration.rs`): it declares no staticlib,
 //! no `#[no_mangle]` symbol, and no linker entry.
@@ -17,6 +18,7 @@ mod act;
 mod approval;
 mod assert;
 mod budget;
+mod compensate;
 mod digest;
 mod error;
 mod eval;
@@ -79,6 +81,12 @@ pub const UNTRUSTED_HOST_CALL: &str = "spectra.std.agent.untrusted";
 /// Runtime host-call name the midend lowers `std.agent.trust` to.
 pub const TRUST_HOST_CALL: &str = "spectra.std.agent.trust";
 
+/// Runtime host-call name the midend lowers `std.agent.compensate` to.
+pub const COMPENSATE_HOST_CALL: &str = "spectra.std.agent.compensate";
+
+/// Runtime host-call name the midend lowers `std.agent.rollback` to.
+pub const ROLLBACK_HOST_CALL: &str = "spectra.std.agent.rollback";
+
 /// Register this crate's host functions into the process-wide runtime
 /// registry and return the number of newly inserted entries.
 pub fn register() -> usize {
@@ -106,10 +114,10 @@ mod tests {
         let first = register();
         let second = register();
         assert_eq!(
-            first, 19,
+            first, 21,
             "token_count + the eight R-3211 host functions + remember/recall + \
              budget_remaining + act/tool_call/register_tool + approve/require + \
-             untrusted/trust"
+             untrusted/trust + compensate/rollback"
         );
         assert_eq!(second, 0);
     }

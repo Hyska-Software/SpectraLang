@@ -1,4 +1,4 @@
-// Hand-written lowering table for the `std.agent` namespace (R-3209/R-3211/R-3212/R-3216).
+// Hand-written lowering table for the `std.agent` namespace (R-3209/R-3211/R-3212/R-3216/R-3224).
 //
 // The R-3207 generator covers the seven legacy tables through its LAYOUT; this
 // namespace was created after that migration, so the arm lives here until it is
@@ -151,6 +151,15 @@ pub(crate) fn lookup_std_host_group_agent(
         ("agent", "trust") => Some(agent_descriptor(
             "spectra.std.agent.trust",
             builtin_result_ir_type(IRType::String),
+        )),
+        // ── compensation (sync; R-3224) ──────────────────────────────────
+        ("agent", "compensate") => Some(agent_descriptor(
+            "spectra.std.agent.compensate",
+            builtin_result_ir_type(IRType::Bool),
+        )),
+        ("agent", "rollback") => Some(agent_descriptor(
+            "spectra.std.agent.rollback",
+            builtin_result_ir_type(IRType::Int),
         )),
         _ => None,
     }

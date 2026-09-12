@@ -1,0 +1,108 @@
+module main
+
+// Example 01 — a tool and a run.
+//
+// The smallest complete `std.agent` program:
+//
+//   1. one function is exposed to the model with `#[agent_tool]`;
+//   2. `agent_start` opens a governed run;
+//   3. `ask` performs one model turn, `act` runs the model/tool loop and
+//      `tool_call` dispatches one tool directly;
+//   4. `agent_end` closes the run and returns its report.
+//
+// Everything runs against the deterministic mock provider
+// (`endpoint: "mock:"`), so no credentials and no network are required. The
+// tool name, its input schema and its effects are all derived — only the
+// description string is authored.
+
+import std.agent
+from std.io import println
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+// `run` in first position marks the function as a tool the model may call.
+// The payload parameter (`AddArgs`) becomes the tool's JSON Schema through the
+// same derive that produces `to_json`/`from_json`.
+#[agent_tool("Adds two integers")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+// The spec is the run's contract: goal, provider, capability grants and
+// ceilings. `mock:` selects the deterministic provider; `seed` makes sampling
+// reproducible. The host ABI carries records as JSON documents, so the spec is
+// written as a JSON string (the typed `AgentSpec` record shape documents it).
+func spec() returns string {
+    return "{\"goal\":\"example-tool-and-run\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}"
+}
+
+// Runs the three call shapes and returns 0 when every observable matched.
+async func run_checks() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(start_error) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        // One model turn. The mock echoes a prompt it does not recognize.
+        let reply = await ask(run, "hello")
+        if let Result::Ok(text) = reply {
+            println("ask    -> " + text)
+            if text != "mock echo: hello" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        // The tool loop: the mock follows the scripted directive lines, so the
+        // model asks for `add` and then answers. `act` journals every step and
+        // returns the final answer.
+        let script = "spectra:tool=add {\"a\":20,\"b\":22}\nspectra:final=the tool answered 42"
+        let answer = await act(run, script)
+        if let Result::Ok(text) = answer {
+            println("act    -> " + text)
+            if text != "the tool answered 42" {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        // The same governed dispatch without a model turn: `tool_call` invokes
+        // the tool's marshalling wrapper directly and returns its JSON result.
+        let direct = await tool_call(run, "add", "{\"a\":40,\"b\":2}")
+        if let Result::Ok(value) = direct {
+            println("call   -> " + value)
+            if value != "42" {
+                return 6
+            }
+        } else {
+            return 7
+        }
+
+        // Closing the run returns the report: counters, status and ceilings.
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report -> " + report)
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 8
+            }
+            if str.contains(report, "\"tool_calls\":2") == false {
+                return 9
+            }
+        } else {
+            return 10
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    // Entry points stay synchronous; `block_on` drives the async run.
+    return block_on(run_checks())
+}

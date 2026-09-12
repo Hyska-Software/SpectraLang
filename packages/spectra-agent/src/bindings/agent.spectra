@@ -1,0 +1,52 @@
+// Public Spectra surface of the native agent runtime.
+//
+// The compiler exposes these declarations as the stable `std.agent` built-in
+// module (`compiler/src/semantic/builtin_std_core.rs`), and the native
+// implementation is registered under the `spectra.std.agent.*` host-call
+// namespace (`packages/spectra-agent/src/hosts.rs`).
+//
+// `Run` and `ChunkStream` are opaque handles owned by the runtime; `AgentSpec`
+// and `Report` are the authored record shapes. The host ABI has no record
+// channel, so both travel as JSON documents and are decoded with the existing
+// JSON derive.
+
+module std.agent
+
+public record AgentSpec {
+    public goal: string,
+    public model: string,
+    public endpoint: string,
+    public allow: List<string>,
+    public max_tokens: int,
+    public max_cost_micros: int,
+    public max_seconds: int,
+    public max_tool_calls: int,
+    public untrusted: string,
+    public seed: int,
+    public journal: string,
+    public journal_payloads: bool,
+    public run_id: string,
+}
+
+// The authored `Report` record keeps eight declared fields; the runtime's
+// report JSON adds the `ceiling` (which ceiling cancelled the run) and
+// `replay` (the run resumed a journal) keys, and the JSON derive ignores keys
+// the record does not declare.
+public record Report {
+    public status: string,
+    public steps: int,
+    public tool_calls: int,
+    public tokens_in: int,
+    public tokens_out: int,
+    public cost_micros: int,
+    public elapsed_ms: int,
+    public compensations_pending: int,
+}
+
+// Native function declarations live in the compiler, not in this package:
+// `agent_start`, `agent_end`, `ask`, `ask_json`, `ask_stream`, `stream_next`,
+// `stream_close`, `act`, `tool_call`, `embed`, `remember`, `recall`, `approve`,
+// `require`, `budget_remaining`, `untrusted`, `trust`, `compensate`,
+// `rollback` and `token_count` are represented in
+// `compiler/src/semantic/builtin_std_core.rs` until package-level native extern
+// declarations become first-class syntax.

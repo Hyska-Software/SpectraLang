@@ -1,0 +1,11 @@
+[project]
+name = "spectra.agent"
+version = "0.1.0"
+entry = "src/bindings/mod.spectra"
+src_dirs = ["src/bindings"]
+
+[release]
+channel = "beta"
+compatibility = "spectralang-0.1"
+
+[dependencies]

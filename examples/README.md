@@ -37,3 +37,16 @@ Demonstrações gerais da linguagem e fixtures de regressão históricas:
   fornecida externamente no "model-call boundary" — a geração propriamente
   dita usa `ml.generate` com um modelo causal-LM via ONNX Runtime
   (ver `std.ml.generate` na referência da stdlib).
+
+## examples/agent — runtime de agentes (`std.agent`)
+
+Projetos executáveis com o provedor mock determinístico (sem credenciais nem
+rede), em JIT (`spectralang run`) e AOT (`compile --debug-info=none --emit-exe`):
+
+| Diretório | O que demonstra |
+|---|---|
+| `01-tool-and-run` | `#[agent_tool]`, `agent_start`/`ask`/`act`/`tool_call`/`agent_end` |
+| `02-approval-and-budget` | negação padrão de aprovação, `require` e teto de tokens |
+| `04-durable-replay` | journal e replay com o mesmo `run_id`, sem repetir o efeito |
+
+Ver `docs/book/11-agents.md`.

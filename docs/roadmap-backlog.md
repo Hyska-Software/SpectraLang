@@ -10347,7 +10347,7 @@ Prompt injection cannot be prevented, but damage can be bounded: capabilities bo
 
 ## R-3224 Compensation Declaration and Execution
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `runtime`
 - Risk: `medium`

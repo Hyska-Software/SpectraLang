@@ -1,0 +1,17 @@
+module spectra_agent
+
+// `spectra.agent` package entry point.
+//
+// The package publishes the public Spectra surface of the native agent
+// runtime. The compiler exposes that surface as the `std.agent` built-in
+// module (`compiler/src/semantic/builtin_std_core.rs`), and native behavior is
+// provided by the `spectra.std.agent.*` host calls registered in
+// `packages/spectra-agent/src/hosts.rs`.
+//
+// Publishing the package, like `spectra.api`, is a distribution step: it makes
+// the surface discoverable through the local registry without changing how the
+// runtime is linked.
+
+public func main() returns int {
+    return 0
+}

@@ -14,6 +14,7 @@ use spectra_runtime::handles::{HandleError, HandleId, HandleKind, HandleTable};
 use spectra_runtime::stdlib::CancellationToken;
 
 use crate::budget::{Budget, Ceiling};
+use crate::compensate::PendingCompensation;
 use crate::error::AgentError;
 use crate::journal::Journal;
 use crate::spec::{AgentSpec, UntrustedPolicy};
@@ -56,6 +57,10 @@ pub(crate) struct RunState {
     pub tasks: Vec<CancellationToken>,
     /// Provenance of everything that entered the run (R-3223 T1).
     pub taint: Ledger,
+    /// Declared, not-yet-executed compensations in declaration order
+    /// (R-3224). `rollback` drains this stack LIFO; `agent_end` reports its
+    /// length as `compensations_pending`, so a silent leak is visible.
+    pub pending_compensations: Vec<PendingCompensation>,
 }
 
 impl RunState {
@@ -79,6 +84,7 @@ impl RunState {
             cancelled: false,
             tasks: Vec::new(),
             taint: Ledger::default(),
+            pending_compensations: Vec::new(),
         }
     }
 
@@ -116,6 +122,19 @@ impl RunState {
         self.cancelled = true;
     }
 
+    /// Marks the run `rolled_back` after an explicit `rollback` (R-3224 T3).
+    ///
+    /// A budget cancellation wins, before or during the rollback: the resource
+    /// decision must keep naming the ceiling. Every other prior outcome
+    /// (`completed`, `failed`) is superseded, because the rollback is the run's
+    /// explicit final act and `rolled_back` is exactly what the report must say
+    /// about it.
+    pub(crate) fn mark_rolled_back(&mut self) {
+        if self.status != "budget_exceeded" {
+            self.status = "rolled_back";
+        }
+    }
+
     /// The typed error every call on a cancelled run returns.
     pub(crate) fn cancelled_error(&self) -> AgentError {
         let ceiling = self.ceiling.map(Ceiling::name).unwrap_or("budget");
@@ -149,7 +168,7 @@ impl RunState {
             concat!(
                 "{{\"status\":\"{}\",\"steps\":{},\"tool_calls\":{},\"tokens_in\":{},",
                 "\"tokens_out\":{},\"cost_micros\":{},\"elapsed_ms\":{},",
-                "\"ceiling\":\"{}\",\"compensations_pending\":0,\"replay\":{}}}"
+                "\"ceiling\":\"{}\",\"compensations_pending\":{},\"replay\":{}}}"
             ),
             self.status,
             self.steps,
@@ -159,6 +178,7 @@ impl RunState {
             self.cost_micros,
             self.elapsed_ms(),
             self.report_ceiling(),
+            self.pending_compensations.len(),
             self.journal
                 .as_ref()
                 .map(Journal::replaying)

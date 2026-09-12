@@ -223,7 +223,13 @@ def main() -> None:
     validate_sources()
     if REPORT.exists():
         REPORT.unlink()
-    run_command([cargo_cmd(), "test", "-q", "-p", "spectra-api", "conformance_v0", "--offline"])
+    # Cargo invocations get a generous timeout: a cold rebuild of spectra-api
+    # under a loaded machine exceeds the generic 120s budget, which would turn
+    # the R-3007 release gate into a false negative.
+    run_command(
+        [cargo_cmd(), "test", "-q", "-p", "spectra-api", "conformance_v0", "--offline"],
+        timeout=900,
+    )
     run_command(
         [
             cargo_cmd(),
@@ -237,7 +243,8 @@ def main() -> None:
             "--",
             "--output",
             str(REPORT),
-        ]
+        ],
+        timeout=900,
     )
     validate_report(load_report())
     validate_planning()

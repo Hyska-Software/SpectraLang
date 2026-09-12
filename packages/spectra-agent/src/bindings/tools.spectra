@@ -1,0 +1,21 @@
+// Model-callable tools for the agent runtime.
+//
+// A tool is an ordinary function, not a package binding:
+//
+//     #[agent_tool("Adds two integers")]
+//     public async func add(run: Run, args: AddArgs) returns int { ... }
+//
+// `#[agent_tool("description")]` is the only attribute the language adds. The
+// tool name is the function name (project-wide unique), the input schema comes
+// from the payload parameter through the JSON derive, and effects and required
+// capabilities are read from the IR call graph by `surface --json`. Nothing is
+// declared here.
+//
+// Lowering synthesizes one marshalling wrapper per tool and an idempotent
+// registration function per module; the wrapper ABI is frozen in
+// `docs/adr/0019-agent-tool-dispatch.md` and the runtime invokes wrappers by
+// address through the governed dispatch (`act`, `tool_call`).
+//
+// There is no tool registry in this package and no native extern declaration:
+// the surface is the `#[agent_tool]` attribute plus the compiler's `std.agent`
+// declarations.

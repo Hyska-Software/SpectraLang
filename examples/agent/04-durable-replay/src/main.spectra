@@ -1,0 +1,176 @@
+module main
+
+// Example 04 — durability and replay.
+//
+// A run that writes a journal, then a second run with the same `run_id` that
+// replays it. The proof is a counter the program owns:
+//
+//   * the tool `record_event` performs a real external effect (read a counter
+//     file, add one, write it back);
+//   * the fresh run calls the tool once, so the counter reads `1 first`;
+//   * the replay run repeats the same script against the same journal, and the
+//     counter *still* reads `1 first` — the recorded tool result is returned
+//     instead of executing the effect again — while the report says
+//     `"replay":true` and the wall-clock counter for the replayed step is `0`.
+//
+// The journal is append-only at `<journal dir>/<run_id>.jsonl`. Records carry
+// digests (and, with `journal_payloads`, the payloads) plus an idempotency key
+// and are flushed before the effecting call returns, which is what makes the
+// replay a resume rather than a re-execution.
+
+import std.agent
+import std.convert as conv
+import std.fs as fs
+from std.io import println
+import std.string as str
+
+const JOURNAL_DIR = ".spectra/example-04-journal"
+const RUN_ID = "example-04"
+const WORK_DIR = "target/agent-example-04"
+const COUNTER = WORK_DIR + "/events.txt"
+const SCRIPT = "spectra:tool=record_event {\"label\":\"first\"}\nspectra:final=run complete"
+
+#[derive(Serialize, Deserialize)]
+public record RecordArgs {
+    label: string,
+}
+
+// The counted effect. `fs.fs_read`/`fs.fs_write` are granted through the spec's
+// `spectra.std.fs` namespace because the run is active while the tool wrapper
+// executes.
+#[agent_tool("Appends one event to the run's event log")]
+public async func record_event(run: Run, args: RecordArgs) returns int {
+    let before = 0
+    let present = fs.fs_exists(COUNTER)
+    if let Result::Ok(exists) = present {
+        if exists == true {
+            let current = fs.fs_read(COUNTER)
+            if let Result::Ok(text) = current {
+                before = conv.string_to_int_or(str.trim(text), 0)
+            }
+        }
+    }
+    let next = before + 1
+    let written = fs.fs_write(COUNTER, conv.int_to_string(next) + " " + args.label)
+    if let Result::Err(write_error) = written {
+        return -1
+    }
+    return next
+}
+
+// `run_id` pins the journal file the run opens; `journal_payloads` keeps the
+// record payloads on disk so the example can show what replay returns.
+func spec(run_id: string) returns string {
+    return "{\"goal\":\"example-durable-replay\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"spectra.std.fs\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":3,\"journal\":\"" + JOURNAL_DIR + "\",\"journal_payloads\":true,\"run_id\":\"" + run_id + "\"}"
+}
+
+func journal_path(run_id: string) returns string {
+    return JOURNAL_DIR + "/" + run_id + ".jsonl"
+}
+
+// Removes a file when it exists; a missing file is already clean.
+func clean(path: string) returns int {
+    let present = fs.fs_exists(path)
+    if let Result::Ok(exists) = present {
+        if exists == true {
+            let removed = fs.fs_remove(path)
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+// The counter's content, or "" when it cannot be read.
+func counter() returns string {
+    let text = fs.fs_read(COUNTER)
+    if let Result::Ok(value) = text {
+        return value
+    }
+    return ""
+}
+
+// One full run: start, act on the scripted tool chain, close, report.
+func perform_run(label: string) returns string {
+    let started = agent_start(spec(RUN_ID))
+    if let Result::Err(start_error) = started {
+        return ""
+    }
+    if let Result::Ok(run) = started {
+        let answer = block_on(act(run, SCRIPT))
+        if let Result::Ok(text) = answer {
+            println(label + " answer -> " + text)
+        } else {
+            return ""
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            return report
+        }
+    }
+    return ""
+}
+
+public func main() returns int {
+    let created = fs.create_dir_all(WORK_DIR)
+    if let Result::Err(creation_error) = created {
+        return 1
+    }
+    if clean(COUNTER) != 0 {
+        return 2
+    }
+    if clean(journal_path(RUN_ID)) != 0 {
+        return 3
+    }
+
+    // Fresh run: the tool executes and increments the counter.
+    let fresh = perform_run("fresh ")
+    if fresh == "" {
+        return 4
+    }
+    println("fresh  report -> " + fresh)
+    if str.contains(fresh, "\"replay\":false") == false {
+        return 5
+    }
+    let after_fresh = counter()
+    println("counter after fresh  -> " + after_fresh)
+    if str.trim(after_fresh) != "1 first" {
+        return 6
+    }
+
+    // The fresh run wrote the journal the replay run will read.
+    let written_journal = fs.fs_read(journal_path(RUN_ID))
+    if let Result::Ok(text) = written_journal {
+        if str.contains(text, "\"kind\":\"tool\"") == false {
+            return 7
+        }
+    } else {
+        return 8
+    }
+
+    // Replay run: same run id, same journal, same script.
+    let replayed = perform_run("replay")
+    if replayed == "" {
+        return 9
+    }
+    println("replay report -> " + replayed)
+    if str.contains(replayed, "\"replay\":true") == false {
+        return 10
+    }
+
+    // The counter is unchanged: the recorded tool result was returned, so the
+    // effect was not executed a second time.
+    let after_replay = counter()
+    println("counter after replay -> " + after_replay)
+    if str.trim(after_replay) != "1 first" {
+        return 11
+    }
+
+    println("journal -> " + journal_path(RUN_ID))
+    return 0
+}

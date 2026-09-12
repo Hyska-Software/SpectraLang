@@ -1,0 +1,17 @@
+// Durability, replay and approval for agent runs.
+//
+// A run journals one append-only line per effecting call at
+// `<journal>/<run_id>.jsonl` with `run`, `step`, `kind`, `input_digest`,
+// `output_digest`, `idempotency_key`, `timestamp` and usage. Records are
+// flushed before an effecting call returns, so a re-run with the same
+// `run_id` resolves recorded outputs instead of executing effects again and
+// the report says `"replay":true`. Payloads are stored only when
+// `AgentSpec.journal_payloads` is set.
+//
+// Approval decisions and governed assertions are journaled the same way, which
+// is what makes replay replay-safe: a recorded decision is returned rather
+// than asked again, and `approve` with no approver attached is a deny.
+//
+// The record format is frozen in `docs/adr/0018-agent-run-contract.md`; the
+// implementation lives in `packages/spectra-agent/src/journal.rs` and
+// `packages/spectra-agent/src/replay.rs`. No declaration is published here.

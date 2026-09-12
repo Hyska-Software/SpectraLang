@@ -430,6 +430,24 @@ pub(crate) fn make_std_agent() -> ModuleExports {
             result_of(Type::String),
         ),
     );
+    // compensate(run: Run, tool: string, arguments_json: string)
+    // -> Result<bool, Error> (sync; R-3224). Journals a pending compensation
+    // (LIFO) after validating the tool name against the run's registry.
+    // Literal tool names are additionally checked at compile time (E3205).
+    exports.functions.insert(
+        "compensate".to_string(),
+        pub_fn(
+            vec![run.clone(), Type::String, Type::String],
+            result_of(Type::Bool),
+        ),
+    );
+    // rollback(run: Run, reason: string) -> Result<int, Error> (sync; R-3224).
+    // Executes the pending compensations in LIFO order through the governed
+    // dispatch and returns the number executed.
+    exports.functions.insert(
+        "rollback".to_string(),
+        pub_fn(vec![run.clone(), Type::String], result_of(Type::Int)),
+    );
 
     exports
 }

@@ -1,0 +1,37 @@
+module agent_compensate_unknown_tool
+
+// R-3224 T1 negative fixture: a literal tool name passed to `compensate` must
+// match an `#[agent_tool]` declaration the compilation unit knows.
+//
+// `refunnd` is one edit away from the declared `refund`, so the E3205
+// diagnostic must suggest it. A computed tool name is not checked here — the
+// runtime registry check in `compensate` validates every name at declaration
+// time, which is also what covers a tool reached through a module this one
+// does not import.
+
+import std.agent
+
+#[derive(Serialize, Deserialize)]
+public record StepArgs {
+    id: int,
+}
+
+#[agent_tool("Refunds the recorded step")]
+public async func refund(run: Run, args: StepArgs) returns int {
+    return args.id
+}
+
+func spec() returns string {
+    return "{\"goal\":\"compensate-unknown\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"seed\":3,\"journal\":\"\"}"
+}
+
+public func main() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let declared = compensate(run, "refunnd", "{\"id\":1}")
+        if let Result::Err(_) = declared {
+            return 1
+        }
+    }
+    return 0
+}

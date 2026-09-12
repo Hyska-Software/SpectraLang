@@ -211,6 +211,12 @@ impl SemanticAnalyzer {
                     if name == "agent_start" && self.functions.contains_key(name.as_str()) {
                         self.validate_agent_start_capabilities(arguments);
                     }
+                    // R-3224 T1: a literal tool name in `compensate` is
+                    // checked against the tools the compilation unit knows
+                    // (E3205); the runtime registry covers every other name.
+                    if name == "compensate" && self.functions.contains_key(name.as_str()) {
+                        self.validate_compensate_tool_name(arguments);
+                    }
                 }
 
                 self.validate_static_tensor_call(callee, arguments, expr.span);

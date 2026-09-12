@@ -47,9 +47,15 @@ pub(crate) const AGENT_REGISTER_TOOL_HOST_CALL: &str = "spectra.std.agent.regist
 
 /// Host calls that dispatch through the governed tool path. A function that
 /// contains one of these must register its module's tools before it runs.
+///
+/// `compensate` is included because it validates the declared name against the
+/// runtime registry, and `rollback` because it dispatches the compensations;
+/// both therefore need the module's tools registered before they run (R-3224).
 pub(crate) const AGENT_DISPATCH_HOST_CALLS: &[&str] = &[
     "spectra.std.agent.act",
     "spectra.std.agent.tool_call",
+    "spectra.std.agent.compensate",
+    "spectra.std.agent.rollback",
 ];
 
 /// IR name of the marshalling wrapper for `tool`.

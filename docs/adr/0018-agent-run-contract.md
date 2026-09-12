@@ -209,6 +209,37 @@ implicitly on the fatal path. Automatic rollback from failure paths would
 over-promise: the runtime cannot re-enter compiled tool code from the fatal
 panic path in this phase. The author decides when to compensate.
 
+#### Landed detail: R-3224
+
+The two host calls are synchronous, because the declaration must be durable
+before `compensate` returns and the rollback must report how many
+compensations it executed.
+
+- `compensate` validates the tool name against the run's registered registry
+  at declaration time (a computed name has no other check), then journals a
+  `compensation` step whose `output` is `"true"` and whose `attribution` is
+  the JSON `{tool, arguments}` a replay re-reads to rebuild the pending stack.
+  The flush precedes the return, so a crash cannot lose the declaration.
+- `rollback` executes the pending stack LIFO through the governed dispatch:
+  the same core `invoke` uses (lookup, `max_tool_calls` charge, wrapper by
+  address), reached with the run on the active chain so the tools' own host
+  calls still pass the policy and taint seams. It reserves one `rollback` step
+  per attempt and records the outcome **even on failure** — a model-driven
+  tool failure is unrecorded (R-3222), but a failed compensation must not be
+  re-executed by a replay, so the attempt is the durable unit. A failure is
+  journaled and the walk continues; `rollback` returns the number of attempts.
+- E3205 is the compile-time half of the name check: a literal tool name is
+  validated against the tools the compilation unit knows (this module's
+  `#[agent_tool]` declarations plus the tools of the modules already analyzed,
+  which are its imports). A name the compiler cannot see — a computed name, or
+  a tool of a module analyzed later — is left to the runtime registry check
+  above, so the diagnostic never rejects a name the runtime could not itself
+  refute.
+- `Report.compensations_pending` is the live pending count (0 after a
+  rollback), and an explicit `rollback` marks `Report.status == "rolled_back"`
+  unless a budget ceiling cancelled the run — before or during the rollback:
+  the ceiling is the resource decision and the report must keep naming it.
+
 ### OpenTelemetry GenAI spans
 
 `std.agent` reuses `std.api.trace` and emits GenAI spans mapping to the pinned

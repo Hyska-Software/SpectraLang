@@ -217,6 +217,11 @@ path = "tests/validation/377_agent_taint.spectra"
 covers = ["std.agent.untrusted", "std.agent.trust"]
 
 [[probe]]
+id = "agent-compensation"
+path = "tests/validation/380_agent_compensation.spectra"
+covers = ["std.agent.compensate", "std.agent.rollback"]
+
+[[probe]]
 id = "agent-surface"
 path = "tests/validation/365_agent_surface.spectra"
 covers = ["std.agent.*"]

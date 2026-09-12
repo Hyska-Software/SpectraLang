@@ -439,6 +439,64 @@ impl SemanticAnalyzer {
         }
     }
 
+    /// Validate a literal tool name in a `compensate(run, name, args)` call
+    /// (R-3224 T1 / E3205).
+    ///
+    /// `compensate` names a tool by string; the runtime resolves it against its
+    /// registry at declaration time, so only a literal can be checked here. The
+    /// known set is this module's own `#[agent_tool]` declarations plus the
+    /// tools exported by the modules already registered — the imports, which
+    /// the pipeline analyzes first. The cross-module limit is deliberate: a
+    /// name this module cannot see (a computed name, or a tool of a module the
+    /// pipeline has not analyzed yet) is not judged here; the runtime registry
+    /// check in `compensate` validates every name before anything is
+    /// journaled, so nothing can declare an unexecutable compensation.
+    pub(crate) fn validate_compensate_tool_name(&mut self, arguments: &[Expression]) {
+        let Some(name_literal) = arguments.get(1) else {
+            return;
+        };
+        let ExpressionKind::StringLiteral(name) = &name_literal.kind else {
+            return;
+        };
+
+        let mut known: Vec<String> = self.agent_tools.keys().cloned().collect();
+        {
+            let registry = self
+                .registry
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            for (_, exports) in registry.iter_modules() {
+                for tool in exports.tools.keys() {
+                    if !known.iter().any(|existing| existing == tool) {
+                        known.push(tool.clone());
+                    }
+                }
+            }
+        }
+        if known.iter().any(|candidate| candidate == name) {
+            return;
+        }
+
+        let hint = match closest_agent_tool(name, &known) {
+            Some(suggestion) => format!(
+                "Did you mean '{suggestion}'? compensate names an #[agent_tool] declaration. A name this module cannot see (a tool reached through a module analyzed later) is validated at runtime by the tool registry instead."
+            ),
+            None => "compensate names an #[agent_tool] declaration in this module or in a module it imports. The runtime tool-registry check covers a name the compiler cannot see.".to_string(),
+        };
+        self.push_semantic_error_coded(
+            "E3205",
+            format!(
+                "Unknown tool '{name}' in compensate: no #[agent_tool] declaration in this compilation unit matches it"
+            ),
+            name_literal.span,
+            Some(
+                "E3205: a literal tool name in compensate must match an #[agent_tool] declaration."
+                    .to_string(),
+            ),
+            Some(hint),
+        );
+    }
+
     /// Render the JSON Schema for a tool payload parameter.
     ///
     /// The accepted shapes mirror the decode side of the existing JSON derive
@@ -654,6 +712,29 @@ fn closest_host_call(name: &str) -> Option<String> {
     }
     let (distance, candidate) = best?;
     (distance <= 3).then(|| candidate.to_string())
+}
+
+/// Closest known `#[agent_tool]` name to `name`, for E3205's did-you-mean.
+///
+/// Uses the same threshold as `suggest_name`: a typo by one or two characters
+/// is worth suggesting, a different word is not.
+fn closest_agent_tool(name: &str, known: &[String]) -> Option<String> {
+    let threshold = (name.len() / 3 + 1).min(3);
+    let mut best: Option<(usize, &String)> = None;
+    for candidate in known {
+        if candidate == name {
+            continue;
+        }
+        let distance = levenshtein_distance(name, candidate);
+        if distance <= threshold
+            && best
+                .as_ref()
+                .is_none_or(|(best_distance, _)| distance < *best_distance)
+        {
+            best = Some((distance, candidate));
+        }
+    }
+    best.map(|(_, candidate)| candidate.clone())
 }
 
 /// Human-readable list of supported scope keys for a hint.

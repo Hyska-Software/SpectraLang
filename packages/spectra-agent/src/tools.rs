@@ -136,7 +136,10 @@ fn parse_effects(effects_json: &str) -> Vec<String> {
 }
 
 /// Resolves a tool by name.
-fn lookup(name: &str) -> Result<RegisteredTool, AgentError> {
+///
+/// `pub(crate)` so `compensate` can validate a declared tool name against the
+/// registry at declaration time (R-3224 T1), before anything is journaled.
+pub(crate) fn lookup(name: &str) -> Result<RegisteredTool, AgentError> {
     let tools = lock();
     match tools.get(name) {
         Some(tool) => Ok(tool.clone()),
@@ -184,6 +187,59 @@ pub(crate) fn invoke(run_handle: i64, name: &str, arguments: &str) -> Result<Str
         Resolved::Fresh(token) => token,
     };
 
+    let message = call_wrapper(run_handle, &tool, arguments)?;
+    // The result is durable before it is returned to the dispatcher.
+    replay::commit(
+        run_handle,
+        &token,
+        Some(&input),
+        &message,
+        StepUsage::default(),
+        -1,
+        None,
+    )?;
+    trace::emit_execute_tool(
+        &run_id,
+        &goal,
+        token.step,
+        &tool.name,
+        Some(arguments),
+        Some(&message),
+    );
+    Ok(message)
+}
+
+/// The governed dispatch core: resolve the tool, charge the run's tool-call
+/// ceiling, and reach its marshalling wrapper (R-3224 T2).
+///
+/// [`invoke`] is this core wrapped in the R-3217 replay/journal discipline;
+/// the compensation runner calls it once per journaled `rollback` step,
+/// because a compensation must execute through exactly the same path — the
+/// capability check its caller performs, the taint gate inside the wrapper's
+/// own host calls, and the budget charge here. It deliberately performs no
+/// replay resolution: `rollback` reserves its own step so a *failed*
+/// compensation is recorded (unlike a model-driven tool call, which R-3222
+/// leaves unrecorded on failure).
+pub(crate) fn dispatch(
+    run_handle: i64,
+    name: &str,
+    arguments: &str,
+) -> Result<String, AgentError> {
+    let tool = lookup(name)?;
+    budget::charge_tool_call(run_handle)?;
+    call_wrapper(run_handle, &tool, arguments)
+}
+
+/// Reaches `tool`'s marshalling wrapper by address and returns its JSON result
+/// or typed failure (ADR 0019).
+///
+/// No accounting, journaling or tracing: those belong to the entry points
+/// above, so both share one wrapper-invocation path.
+fn call_wrapper(
+    run_handle: i64,
+    tool: &RegisteredTool,
+    arguments: &str,
+) -> Result<String, AgentError> {
     let args_pointer = unsafe { abi::alloc_string(arguments) };
     if args_pointer == 0 {
         return Err(AgentError::Internal(
@@ -204,28 +260,10 @@ pub(crate) fn invoke(run_handle: i64, name: &str, arguments: &str) -> Result<Str
     let status = unsafe { wrapper(run_handle, args_pointer, out_slot as i64) };
     let message = abi::read_string_arg(unsafe { *out_slot }).unwrap_or_default();
     if status == 0 {
-        // The result is durable before it is returned to the dispatcher.
-        replay::commit(
-            run_handle,
-            &token,
-            Some(&input),
-            &message,
-            StepUsage::default(),
-            -1,
-            None,
-        )?;
-        trace::emit_execute_tool(
-            &run_id,
-            &goal,
-            token.step,
-            &tool.name,
-            Some(arguments),
-            Some(&message),
-        );
         Ok(message)
     } else {
         Err(AgentError::ToolFailed(if message.is_empty() {
-            format!("tool '{name}' failed without a message")
+            format!("tool '{}' failed without a message", tool.name)
         } else {
             message
         }))
