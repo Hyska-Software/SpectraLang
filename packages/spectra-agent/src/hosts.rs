@@ -15,13 +15,18 @@ use spectra_runtime::stdlib::CancellationToken;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use serde_json::{json, Value};
+
 use crate::abi;
 use crate::budget;
 use crate::error::{self, AgentError};
-use crate::provider::{self, Message, ProviderRequest, SamplingParams};
+use crate::journal::StepUsage;
+use crate::provider::{self, FinishReason, Message, ProviderRequest, ProviderResponse, SamplingParams};
+use crate::replay::{self, Kind, Resolved, Token};
 use crate::run;
 use crate::schema;
 use crate::spec::AgentSpec;
+use crate::trace;
 
 // ── shared helpers ───────────────────────────────────────────────────────
 
@@ -201,6 +206,172 @@ pub(crate) fn build_request(
     }
 }
 
+/// Canonical fingerprint of a provider request, used as the model step's
+/// journal input. Two runs of the same program produce the same fingerprint,
+/// which is what makes a post-crash retry collide with the recorded step.
+fn request_fingerprint(
+    spec: &AgentSpec,
+    sampling: SamplingParams,
+    messages: &[Message],
+    json_schema: Option<&str>,
+    tools: &[provider::ToolDefinition],
+) -> String {
+    let messages: Vec<Value> = messages
+        .iter()
+        .map(|message| json!([message.role, message.content]))
+        .collect();
+    let tools: Vec<Value> = tools
+        .iter()
+        .map(|tool| json!([tool.name, tool.input_schema]))
+        .collect();
+    json!({
+        "model": spec.model,
+        "endpoint": spec.endpoint,
+        "messages": messages,
+        "tools": tools,
+        "schema": json_schema,
+        "temperature": sampling.temperature,
+        "top_k": sampling.top_k,
+        "seed": sampling.seed,
+        "max_tokens": (spec.max_tokens > 0).then_some(spec.max_tokens),
+    })
+    .to_string()
+}
+
+fn finish_label(finish: &FinishReason) -> &str {
+    match finish {
+        FinishReason::Stop => "stop",
+        FinishReason::Length => "length",
+        FinishReason::Other(reason) => reason,
+    }
+}
+
+fn finish_from_label(label: &str) -> FinishReason {
+    match label {
+        "stop" => FinishReason::Stop,
+        "length" => FinishReason::Length,
+        other => FinishReason::Other(other.to_string()),
+    }
+}
+
+/// The recorded output of a model step: everything the caller needs to
+/// reconstruct the response (text, tool calls, usage, cost, finish).
+fn response_json(response: &ProviderResponse) -> String {
+    json!({
+        "text": response.text,
+        "tool_calls": response
+            .tool_calls
+            .iter()
+            .map(|call| json!({"name": call.name, "arguments": call.arguments}))
+            .collect::<Vec<_>>(),
+        "usage": {
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        },
+        "cost_micros": response.cost_micros,
+        "retries": response.retries,
+        "finish": finish_label(&response.finish),
+    })
+    .to_string()
+}
+
+fn response_from_json(output: &str) -> Result<ProviderResponse, AgentError> {
+    let value: Value = serde_json::from_str(output)
+        .map_err(|error| AgentError::Journal(format!("recorded model output is invalid: {error}")))?;
+    let text = value
+        .get("text")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AgentError::Journal("recorded model output has no text".to_string()))?
+        .to_string();
+    let tool_calls = value
+        .get("tool_calls")
+        .and_then(Value::as_array)
+        .map(|calls| {
+            calls
+                .iter()
+                .filter_map(|call| {
+                    Some(provider::ToolCall {
+                        name: call.get("name")?.as_str()?.to_string(),
+                        arguments: call.get("arguments")?.as_str()?.to_string(),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Ok(ProviderResponse {
+        text,
+        tool_calls,
+        usage: provider::Usage {
+            input_tokens: value
+                .pointer("/usage/input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            output_tokens: value
+                .pointer("/usage/output_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+        },
+        cost_micros: value.get("cost_micros").and_then(Value::as_u64).unwrap_or(0),
+        retries: value.get("retries").and_then(Value::as_u64).unwrap_or(0),
+        finish: value
+            .get("finish")
+            .and_then(Value::as_str)
+            .map(finish_from_label)
+            .unwrap_or(FinishReason::Stop),
+    })
+}
+
+/// The recorded output of a streamed model step.
+fn stream_json(stream: &provider::ProviderStream) -> String {
+    json!({
+        "chunks": stream.chunks,
+        "usage": {
+            "input_tokens": stream.usage.input_tokens,
+            "output_tokens": stream.usage.output_tokens,
+        },
+        "cost_micros": stream.cost_micros,
+        "retries": stream.retries,
+    })
+    .to_string()
+}
+
+/// `(tokens_in, tokens_out)` plus cost and retries from a recorded stream.
+#[allow(clippy::type_complexity)]
+fn stream_from_json(
+    output: &str,
+) -> Result<(Vec<String>, (u64, u64), u64, u64), AgentError> {
+    let value: Value = serde_json::from_str(output).map_err(|error| {
+        AgentError::Journal(format!("recorded stream output is invalid: {error}"))
+    })?;
+    let chunks = value
+        .get("chunks")
+        .and_then(Value::as_array)
+        .map(|chunks| {
+            chunks
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .ok_or_else(|| AgentError::Journal("recorded stream output has no chunks".to_string()))?;
+    let usage = (
+        value
+            .pointer("/usage/input_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        value
+            .pointer("/usage/output_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+    );
+    Ok((
+        chunks,
+        usage,
+        value.get("cost_micros").and_then(Value::as_u64).unwrap_or(0),
+        value.get("retries").and_then(Value::as_u64).unwrap_or(0),
+    ))
+}
+
 /// One model turn plus accounting. The turn is accounted for before the caller
 /// inspects the payload: the tokens were spent even if the response is later
 /// rejected by `ask_json` validation.
@@ -218,7 +389,13 @@ fn model_turn(
 }
 
 /// One model turn over an explicit transcript, with the tools exposed to the
-/// model (R-3222). Accounting is identical to `model_turn`.
+/// model (R-3222) and the journal/replay discipline of R-3217.
+///
+/// A recorded step returns the recorded response without calling the provider:
+/// that is I3's "no effect twice across a replay". A fresh step calls the
+/// provider, accounts the turn, journals the response, and only then returns —
+/// the journal flush precedes the value, so a crash cannot lose a completed
+/// effect.
 pub(crate) fn model_turn_with(
     run_handle: i64,
     messages: Vec<Message>,
@@ -227,6 +404,32 @@ pub(crate) fn model_turn_with(
 ) -> Result<provider::ProviderResponse, AgentError> {
     let (spec, sampling) = snapshot(run_handle)?;
     let provider = resolve_provider(&spec)?;
+    let fingerprint = request_fingerprint(&spec, sampling, &messages, json_schema.as_deref(), &tools);
+
+    let token: Token = match replay::resolve(run_handle, Kind::Model, &fingerprint)? {
+        Resolved::Recorded(record) => {
+            let response = response_from_json(&record.output)?;
+            run::with_run(run_handle, |state| {
+                state.record_turn(
+                    record.usage.tokens_in,
+                    record.usage.tokens_out,
+                    record.usage.cost_micros,
+                    response.retries,
+                )
+            })?;
+            trace::emit_chat(
+                &record.run,
+                &spec.goal,
+                record.step,
+                &spec.model,
+                None,
+                Some(&response.text),
+            );
+            return Ok(response);
+        }
+        Resolved::Fresh(token) => token,
+    };
+
     let request = build_request(&spec, sampling, messages, json_schema, tools);
     match provider.complete(&request) {
         Ok(response) => {
@@ -238,6 +441,34 @@ pub(crate) fn model_turn_with(
                     response.retries,
                 )
             })?;
+            replay::commit(
+                run_handle,
+                &token,
+                Some(&fingerprint),
+                &response_json(&response),
+                StepUsage {
+                    tokens_in: response.usage.input_tokens,
+                    tokens_out: response.usage.output_tokens,
+                    cost_micros: response.cost_micros,
+                },
+                sampling.seed.unwrap_or(-1),
+                None,
+            )?;
+            let run_id = run::with_run(run_handle, |state| state.run_id.clone())?;
+            let prompt = request
+                .messages
+                .iter()
+                .rev()
+                .find(|message| message.role == "user")
+                .map(|message| message.content.as_str());
+            trace::emit_chat(
+                &run_id,
+                &spec.goal,
+                token.step,
+                &spec.model,
+                prompt,
+                Some(&response.text),
+            );
             Ok(response)
         }
         Err(error) => {
@@ -300,8 +531,26 @@ extern "C" fn agent_start_host(ctx: *mut SpectraHostCallContext) -> i32 {
         // fails closed here rather than accepting a ceiling that cannot fire.
         let provider = provider::provider_for(&spec);
         budget::cost_ceiling_is_enforceable(&spec, provider.reports_cost())?;
-        let handle = run::alloc_run(spec)?;
+        // R-3217: the journal identity is fixed at start. A non-empty `run_id`
+        // that names an existing journal resumes that run in replay mode.
+        let run_id = if spec.run_id.is_empty() {
+            crate::journal::new_run_id()
+        } else {
+            spec.run_id.clone()
+        };
+        let journal = if spec.journal.is_empty() {
+            None
+        } else {
+            Some(crate::journal::Journal::open(
+                &run_id,
+                &spec.journal,
+                spec.journal_payloads,
+            )?)
+        };
+        let goal = spec.goal.clone();
+        let handle = run::alloc_run(spec, run_id.clone(), journal)?;
         crate::policy::install();
+        trace::emit_invoke_agent(&run_id, &goal);
         Ok(handle)
     })();
     write_outcome(ctx, outcome)
@@ -400,6 +649,34 @@ extern "C" fn ask_stream_host(ctx: *mut SpectraHostCallContext) -> i32 {
     write_run_task(ctx, run_handle, move || {
         let (spec, sampling) = snapshot(run_handle)?;
         let provider = resolve_provider(&spec)?;
+        let fingerprint = format!(
+            "stream\0{}",
+            request_fingerprint(
+                &spec,
+                sampling,
+                &[Message::user(prompt.clone())],
+                None,
+                &[]
+            )
+        );
+        let token = match replay::resolve(run_handle, Kind::Model, &fingerprint)? {
+            Resolved::Recorded(record) => {
+                let (chunks, usage, cost_micros, retries) = stream_from_json(&record.output)?;
+                run::with_run(run_handle, |state| {
+                    state.record_turn(usage.0, usage.1, cost_micros, retries)
+                })?;
+                trace::emit_chat(
+                    &record.run,
+                    &spec.goal,
+                    record.step,
+                    &spec.model,
+                    None,
+                    None,
+                );
+                return run::alloc_stream(chunks);
+            }
+            Resolved::Fresh(token) => token,
+        };
         let request = build_request(
             &spec,
             sampling,
@@ -422,6 +699,28 @@ extern "C" fn ask_stream_host(ctx: *mut SpectraHostCallContext) -> i32 {
                 stream.retries,
             )
         })?;
+        replay::commit(
+            run_handle,
+            &token,
+            Some(&fingerprint),
+            &stream_json(&stream),
+            StepUsage {
+                tokens_in: stream.usage.input_tokens,
+                tokens_out: stream.usage.output_tokens,
+                cost_micros: stream.cost_micros,
+            },
+            sampling.seed.unwrap_or(-1),
+            None,
+        )?;
+        let run_id = run::with_run(run_handle, |state| state.run_id.clone())?;
+        trace::emit_chat(
+            &run_id,
+            &spec.goal,
+            token.step,
+            &spec.model,
+            Some(&prompt),
+            None,
+        );
         run::alloc_stream(stream.chunks)
     })
 }
@@ -466,9 +765,40 @@ extern "C" fn embed_host(ctx: *mut SpectraHostCallContext) -> i32 {
     write_run_task(ctx, run_handle, move || {
         let (spec, _sampling) = snapshot(run_handle)?;
         let provider = resolve_provider(&spec)?;
+        let fingerprint = format!("embed\0{}\0{}", spec.model, text);
+        let token = match replay::resolve(run_handle, Kind::Embed, &fingerprint)? {
+            // The recorded vector is re-materialized as the tensor the caller
+            // expects; the provider is not called again.
+            Resolved::Recorded(record) => return alloc_float_tensor(&vector_from_json(&record.output)?),
+            Resolved::Fresh(token) => token,
+        };
         let vector = provider.embed(&text).map_err(AgentError::from)?;
+        replay::commit(
+            run_handle,
+            &token,
+            Some(&fingerprint),
+            &vector_to_json(&vector),
+            StepUsage::default(),
+            -1,
+            None,
+        )?;
         alloc_float_tensor(&vector)
     })
+}
+
+/// Serializes an embedding so a replayed step can rebuild its tensor.
+fn vector_to_json(vector: &[f64]) -> String {
+    Value::Array(vector.iter().map(|value| json!(value)).collect()).to_string()
+}
+
+fn vector_from_json(output: &str) -> Result<Vec<f64>, AgentError> {
+    let value: Value = serde_json::from_str(output)
+        .map_err(|error| AgentError::Journal(format!("recorded embedding is invalid: {error}")))?;
+    value
+        .as_array()
+        .map(|values| values.iter().filter_map(Value::as_f64).collect())
+        .filter(|values: &Vec<f64>| !values.is_empty())
+        .ok_or_else(|| AgentError::Journal("recorded embedding is empty".to_string()))
 }
 
 // ── tool dispatch (R-3222) ───────────────────────────────────────────────
@@ -539,6 +869,45 @@ extern "C" fn register_tool_host(ctx: *mut SpectraHostCallContext) -> i32 {
     write_outcome(ctx, outcome)
 }
 
+// ── governance hosts (R-3217) ────────────────────────────────────────────
+
+/// `spectra.std.agent.approve(run, action) -> Result<bool, Error>`.
+///
+/// True when the action is authorized. Without an attached approver the
+/// decision is a deny, so an unattended run fails closed.
+extern "C" fn approve_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some((run_handle, strings)) = read_run_and_prompt(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let action = strings[0].clone();
+    write_outcome(
+        ctx,
+        crate::approval::approve(run_handle, &action).map(i64::from),
+    )
+}
+
+/// `spectra.std.agent.require(run, condition, message) -> Result<bool, Error>`.
+///
+/// The condition crosses as the ABI's boolean word; `false` returns a typed
+/// error carrying the message and the run goal, and marks the run failed.
+extern "C" fn require_host(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Some(args) = abi::args(ctx) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    if args.len() != 3 {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    let Some(message) = abi::read_string_arg(args[2]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let run_handle = args[0];
+    let condition = args[1] != 0;
+    write_outcome(
+        ctx,
+        crate::assert::require(run_handle, condition, &message).map(i64::from),
+    )
+}
+
 /// Registers every `spectra.std.agent.*` host function and returns the number
 /// of newly inserted entries.
 pub(crate) fn register() -> usize {
@@ -556,6 +925,8 @@ pub(crate) fn register() -> usize {
         ("spectra.std.agent.act", act_host as _),
         ("spectra.std.agent.tool_call", tool_call_host as _),
         ("spectra.std.agent.register_tool", register_tool_host as _),
+        ("spectra.std.agent.approve", approve_host as _),
+        ("spectra.std.agent.require", require_host as _),
     ] {
         if spectra_runtime::ffi::register_host_function(name, function) {
             inserted += 1;
@@ -626,8 +997,9 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         spectra_runtime::ffi::clear_host_functions();
         spectra_runtime::register();
-        // Nine R-3211 gateway functions plus the three R-3222 dispatch hosts.
-        assert_eq!(register(), 12);
+        // Nine R-3211 gateway functions plus the three R-3222 dispatch hosts
+        // and the two R-3217 governance hosts.
+        assert_eq!(register(), 14);
         guard
     }
 

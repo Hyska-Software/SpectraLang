@@ -26,6 +26,8 @@ __pycache__/
 
 # Spectra intermediate outputs
 .spectra_cache/
+# Run journals (R-3217): the default journal directory is `.spectra/journal`.
+.spectra/
 
 # Agent / IDE caches
 .agents/

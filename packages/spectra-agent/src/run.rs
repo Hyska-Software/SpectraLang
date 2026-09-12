@@ -14,11 +14,19 @@ use spectra_runtime::stdlib::CancellationToken;
 
 use crate::budget::{Budget, Ceiling};
 use crate::error::AgentError;
+use crate::journal::Journal;
 use crate::spec::AgentSpec;
 
 /// Live state of one `agent_start` -> `agent_end` run.
 pub(crate) struct RunState {
     pub spec: AgentSpec,
+    /// The run's journal identity: the run id every record carries, and the
+    /// journal itself when the spec enabled one (R-3217 T1).
+    pub run_id: String,
+    pub journal: Option<Journal>,
+    /// `approve` decisions scoped to the run: `allow-always` is cached here so
+    /// a later step of the same run does not re-ask (R-3217 T3).
+    pub approvals: std::collections::BTreeMap<String, bool>,
     /// Ceilings compiled from `spec` and the accrual they are measured
     /// against (R-3216 T1).
     pub budget: Budget,
@@ -47,10 +55,13 @@ pub(crate) struct RunState {
 }
 
 impl RunState {
-    pub(crate) fn new(spec: AgentSpec) -> Self {
+    pub(crate) fn new(spec: AgentSpec, run_id: String, journal: Option<Journal>) -> Self {
         let budget = Budget::compile(&spec);
         Self {
             spec,
+            run_id,
+            journal,
+            approvals: std::collections::BTreeMap::new(),
             budget,
             started: Instant::now(),
             steps: 0,
@@ -124,15 +135,16 @@ impl RunState {
     }
 
     /// Report document in the plan's field order, plus the `ceiling` key the
-    /// R-3216 report contract requires ("which ceiling was hit"). The extra
-    /// key is additive: the authored `Report` record keeps its eight declared
-    /// fields and the JSON derive ignores keys it does not declare.
+    /// R-3216 report contract requires ("which ceiling was hit") and the
+    /// `replay` key R-3217 adds (whether the run resumed an existing journal).
+    /// Both extras are additive: the authored `Report` record keeps its eight
+    /// declared fields and the JSON derive ignores keys it does not declare.
     pub(crate) fn report_json(&self) -> String {
         format!(
             concat!(
                 "{{\"status\":\"{}\",\"steps\":{},\"tool_calls\":{},\"tokens_in\":{},",
                 "\"tokens_out\":{},\"cost_micros\":{},\"elapsed_ms\":{},",
-                "\"ceiling\":\"{}\",\"compensations_pending\":0}}"
+                "\"ceiling\":\"{}\",\"compensations_pending\":0,\"replay\":{}}}"
             ),
             self.status,
             self.steps,
@@ -142,6 +154,10 @@ impl RunState {
             self.cost_micros,
             self.elapsed_ms(),
             self.report_ceiling(),
+            self.journal
+                .as_ref()
+                .map(Journal::replaying)
+                .unwrap_or(false),
         )
     }
 }
@@ -196,9 +212,13 @@ fn unknown(handle: i64, error: HandleError) -> AgentError {
 }
 
 /// Allocates a run and returns its raw handle.
-pub(crate) fn alloc_run(spec: AgentSpec) -> Result<i64, AgentError> {
+pub(crate) fn alloc_run(
+    spec: AgentSpec,
+    run_id: String,
+    journal: Option<Journal>,
+) -> Result<i64, AgentError> {
     let mut table = lock(runs());
-    let handle = table.insert(RunState::new(spec));
+    let handle = table.insert(RunState::new(spec, run_id, journal));
     Ok(handle.raw())
 }
 
@@ -291,14 +311,21 @@ mod tests {
         AgentSpec::parse(r#"{"goal":"g","model":"mock/echo","seed":1}"#).expect("valid spec")
     }
 
+    fn run() -> i64 {
+        alloc_run(spec(), "run-test".to_string(), None).expect("alloc")
+    }
+
     #[test]
     fn released_run_handle_cannot_be_reused() {
-        let handle = alloc_run(spec()).expect("alloc");
+        let handle = run();
         let state = take_run(handle).expect("first end");
         assert_eq!(state.steps, 0);
         let report = state.report_json();
         assert!(report.starts_with("{\"status\":\"completed\""), "{report}");
-        assert!(report.ends_with("\"compensations_pending\":0}"), "{report}");
+        assert!(
+            report.ends_with("\"compensations_pending\":0,\"replay\":false}"),
+            "{report}"
+        );
         // Double end and use-after-end are typed errors, never a panic.
         assert!(matches!(take_run(handle), Err(AgentError::UnknownHandle(_))));
         assert!(matches!(
@@ -309,7 +336,7 @@ mod tests {
 
     #[test]
     fn accounting_and_status_are_reported() {
-        let handle = alloc_run(spec()).expect("alloc");
+        let handle = run();
         with_run(handle, |state| {
             state.record_turn(3, 5, 13, 1);
             state.record_turn(2, 4, 10, 0);
@@ -348,7 +375,7 @@ mod tests {
 
     #[test]
     fn allow_list_is_visible_to_the_policy_layer() {
-        let handle = alloc_run(spec()).expect("alloc");
+        let handle = run();
         let grants = allow_for_raw_id(handle as u64).expect("live run");
         assert!(grants.is_empty());
         assert!(allow_for_raw_id(0).is_none());

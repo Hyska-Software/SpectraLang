@@ -70,6 +70,11 @@ pub(crate) enum AgentError {
     /// The spec declares a cost ceiling that the selected provider cannot
     /// enforce because it does not report per-response cost (R-3216 T1).
     CostAccountingUnavailable(String),
+    /// A governed `require(run, condition, message)` assertion failed
+    /// (R-3217 T4). The message carries the assertion text and the run goal.
+    AssertionFailed(String),
+    /// The run journal could not be read, written or replayed (R-3217 T1/T2).
+    Journal(String),
     /// A bug or an exhausted runtime resource.
     Internal(String),
 }
@@ -94,6 +99,8 @@ impl AgentError {
             Self::CapabilityDenied(_) => "capability_denied",
             Self::ToolLoopCeiling(_) => "tool_loop_ceiling",
             Self::CostAccountingUnavailable(_) => "cost_accounting_unavailable",
+            Self::AssertionFailed(_) => "assertion_failed",
+            Self::Journal(_) => "journal_error",
             Self::Internal(_) => "internal",
         }
     }
@@ -104,10 +111,12 @@ impl AgentError {
             Self::InvalidSpec(_) | Self::InvalidHandle(_) | Self::SchemaViolation(_) => {
                 ERROR_CODE_INVALID_ARGUMENT
             }
+            Self::AssertionFailed(_) => ERROR_CODE_INVALID_ARGUMENT,
             Self::UnknownHandle(_) => ERROR_CODE_NOT_FOUND,
             Self::UnknownTool(_) => ERROR_CODE_NOT_FOUND,
             Self::CapabilityDenied(_) => ERROR_CODE_PERMISSION_DENIED,
             Self::ToolFailed(_) => ERROR_CODE_IO,
+            Self::Journal(_) => ERROR_CODE_IO,
             Self::ProviderNotConfigured(_)
             | Self::DeterministicUnavailable(_)
             | Self::EmbeddingNotConfigured(_)
@@ -133,6 +142,8 @@ impl AgentError {
             Self::UnknownTool(_) | Self::ToolFailed(_) | Self::ToolLoopCeiling(_) => "agent_tool",
             Self::CapabilityDenied(_) => "agent_dispatch",
             Self::CostAccountingUnavailable(_) => "agent_start",
+            Self::AssertionFailed(_) => "require",
+            Self::Journal(_) => "agent_journal",
             Self::Internal(_) => "agent",
         }
     }
@@ -154,6 +165,8 @@ impl AgentError {
             | Self::CapabilityDenied(detail)
             | Self::ToolLoopCeiling(detail)
             | Self::CostAccountingUnavailable(detail)
+            | Self::AssertionFailed(detail)
+            | Self::Journal(detail)
             | Self::Internal(detail) => detail,
         }
     }

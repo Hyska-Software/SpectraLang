@@ -83,22 +83,56 @@ requirement on the writer, not a best-effort log.
 `R-3217` owns the file format and the writer. This ADR freezes the record
 shape; a change to it requires revising this ADR.
 
+#### Record extensions landed by R-3217
+
+The nine core fields stay frozen. R-3217 records three further, optional
+fields, because replay is only truthful if the recorded output can be returned:
+
+- `output` — the effect's result, **always** recorded. Replay returns it
+  instead of executing the effect. Storing only a digest would leave replay
+  with nothing to return, so it would have to re-execute the very effect I3
+  forbids duplicating. This is the one place where "digests only" cannot hold.
+- `input` — the request payload (prompt, tool arguments, embedding text).
+  Recorded **only** when the spec opts in with `journal_payloads`. The digest
+  is always recorded; the payload is the sensitive part and is captured on
+  request, never by default.
+- `attribution` — the human-facing payload a replayed step needs: an
+  approval's who/when (`allow-always by alice`, `deny by default-deny (no
+  approver attached)`), or an assertion's message.
+
+Credential material is never recorded: the runtime has no credential channel
+that reaches the journal, and the request payload that could carry a header is
+captured only by opting in.
+
+The journal is JSON Lines, one file per run, at
+`<spec.journal>/<run id>.jsonl`. `spec.journal` is the directory: absent means
+the default `.spectra/journal`, and an explicit empty string disables
+journaling (the field's long-standing default, so pre-R-3217 specs stay
+journal-free). Two further spec fields are additive: `journal_payloads`
+(boolean, default false) and `run_id` (string, default empty = a fresh run id).
+
 ### Replay algorithm
 
 Replay is forward-only and keyed:
 
 1. Read the journal in step order.
-2. For each step, compute the step key (run, step, input digest) and compare it
-   with the recorded record.
+2. Every run — fresh or resumed — re-derives its effect sequence from step 0,
+   so the same program computes the same step numbers. For each step, compute
+   the step key (run, step, input digest) and compare it with the recorded
+   record.
 3. A **matching key** returns the recorded output instead of executing the
    effect.
 4. A **missing key** executes the effect normally and appends a new record.
    Partial journals therefore resume forward rather than failing.
-5. Retries after a crash derive the same idempotency key and collide with the
+5. A record at the step whose kind or input digest does **not** match is a
+   **divergence**: the run is refused with a typed `journal_error` rather than
+   replaying an unrelated outcome or silently skipping an effect.
+6. Retries after a crash derive the same idempotency key and collide with the
    recorded step, so an effect is never executed twice across a replay.
 
 Replay produces identical tool ordering and outputs. A replayed run must not
-ask twice for an approval that was already decided.
+ask twice for an approval that was already decided. The resumed run's report
+carries `"replay":true`; a fresh run carries `"replay":false`.
 
 ### Approval caching
 
@@ -107,6 +141,13 @@ when no UI is attached; there is no implicit allow. Decisions — including
 allow-once and allow-always — are journaled with who and when. Replay consults
 the journal first and never re-asks a decided action. An approval is scoped to
 its action: allow-once applies to one step, allow-always to the run.
+
+Landed granularity: `allow-always` is cached on the run so a later step of the
+same run does not re-ask; `allow-once` and `deny` are not cached, so the next
+step's approval asks again (and is journaled again). The decision is the
+approver's own payload, and the journal records its attribution, so a replayed
+decision stays attributable. A denial is a normal `Ok(false)`, not an error:
+the caller decides whether to stop.
 
 ### `require` assertion semantics
 
@@ -119,6 +160,15 @@ its action: allow-once applies to one step, allow-always to the run.
 An assertion failure is a run outcome, not a panic; it is visible in the
 journal and in `Report.status`. Assertions are deterministic checks that
 belong in a run, distinct from evaluation graders.
+
+Landed detail: the typed error is `assertion_failed`, and its message is
+`{message} (run goal: {goal})` — both cited by the same string so a caller can
+observe intent and failure together. The assertion's journal record carries the
+message in `attribution`, so a replayed run that failed an assertion fails
+again with the same message and goal, without re-evaluating the condition. The
+condition and message are part of the step's input digest: a resumed run that
+asserts something different at the same step is a divergence (fail closed)
+rather than a silent replay of an unrelated outcome.
 
 ### Taint ledger and sink gating (D10)
 
@@ -178,13 +228,27 @@ Span mapping:
 
 Attributes:
 
-- `gen_ai.agent.name` — the run's agent name;
+- `gen_ai.agent.name` — the run's agent name. `AgentSpec` has no separate name
+  field in this phase, so the run's `goal` (the identity cited by tests, evals,
+  journal records and denial messages) *is* the agent name;
 - `gen_ai.conversation.id` — the conversation/session correlating the run's
-  model calls and messages.
+  model calls and messages, which is the run id;
+- `gen_ai.operation.name` — the operation the span name encodes;
+- `gen_ai.request.model` on `chat`, `gen_ai.tool.name` on `execute_tool`.
 
-The conventions version is recorded on the span. Content capture (prompts,
-completions, tool payloads) is opt-in and off by default; spans validate
-against the pinned version with content absent unless opted in.
+The conventions version and its schema URL are recorded on every span. Content
+capture (prompts, completions, tool payloads) is opt-in and off by default;
+spans validate against the pinned version with content absent unless opted in.
+
+Landed seam: R-3217 provides `TraceSink` plus `set_trace_sink` in
+`spectra-agent`. No sink means no spans (a no-op, no allocation). A sink opts
+into content with `captures_content`, which defaults to `false`, so content is
+absent unless a sink asks for it. The adapter that forwards a span into the
+runtime's `std.api.trace` exporter lives outside this crate (this crate must
+not depend on `spectra-api`, which aggregates it) and remains **pending**; the
+trait is the seam it will implement, and the deterministic span-shape test
+already pins the conventions version, the operation names, the attributes and
+the absence of content.
 
 ### What an eval may assert versus what a test must cover
 

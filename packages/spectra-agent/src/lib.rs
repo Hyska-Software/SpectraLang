@@ -2,27 +2,41 @@
 //!
 //! R-3209 landed the namespace seam with one function (`std.agent.token_count`);
 //! R-3211 adds the model gateway and run lifecycle on top of it, R-3212
-//! adds provenance-carrying memory (`remember`/`recall`), and R-3216 adds
-//! budget accounting, cooperative cancellation and `budget_remaining`. This
-//! crate is an `rlib` aggregated by `spectra_api::register` (see
+//! adds provenance-carrying memory (`remember`/`recall`), R-3216 adds
+//! budget accounting, cooperative cancellation and `budget_remaining`, and
+//! R-3217 adds the durable journal with replay, human approval, governed
+//! assertions and the OpenTelemetry GenAI span seam. This crate is an `rlib`
+//! aggregated by `spectra_api::register` (see
 //! `packages/spectra-api/src/api_registration.rs`): it declares no staticlib,
 //! no `#[no_mangle]` symbol, and no linker entry.
 
 mod abi;
 mod act;
+mod approval;
+mod assert;
 mod budget;
+mod digest;
 mod error;
 mod hosts;
+mod journal;
 mod memory;
 mod policy;
 mod provider;
+mod replay;
 mod run;
 mod schema;
 mod spec;
 mod token;
 mod tools;
+mod trace;
 
-pub use provider::transport::{clear_http_transport, set_http_transport, HttpTransport, TransportResponse};
+pub use approval::{set_approver, ApprovalRequest, Approver, Decision};
+pub use provider::transport::{
+    clear_http_transport, set_http_transport, HttpTransport, TransportResponse,
+};
+pub use trace::{
+    set_trace_sink, Span, TraceSink, GEN_AI_CONVENTIONS_SCHEMA_URL, GEN_AI_CONVENTIONS_VERSION,
+};
 
 /// Runtime host-call name the midend lowers `std.agent.token_count` to.
 pub const TOKEN_COUNT_HOST_CALL: &str = "spectra.std.agent.token_count";
@@ -44,6 +58,12 @@ pub const TOOL_CALL_HOST_CALL: &str = "spectra.std.agent.tool_call";
 
 /// Runtime host-call name a synthesized registration function emits per tool.
 pub const REGISTER_TOOL_HOST_CALL: &str = "spectra.std.agent.register_tool";
+
+/// Runtime host-call name the midend lowers `std.agent.approve` to.
+pub const APPROVE_HOST_CALL: &str = "spectra.std.agent.approve";
+
+/// Runtime host-call name the midend lowers `std.agent.require` to.
+pub const REQUIRE_HOST_CALL: &str = "spectra.std.agent.require";
 
 /// Register this crate's host functions into the process-wide runtime
 /// registry and return the number of newly inserted entries.
@@ -71,7 +91,7 @@ mod tests {
         spectra_runtime::ffi::clear_host_functions();
         let first = register();
         let second = register();
-        assert_eq!(first, 15, "token_count + the eight R-3211 host functions + remember/recall + budget_remaining + act/tool_call/register_tool");
+        assert_eq!(first, 17, "token_count + the eight R-3211 host functions + remember/recall + budget_remaining + act/tool_call/register_tool + approve/require");
         assert_eq!(second, 0);
     }
 }

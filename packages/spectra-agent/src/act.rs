@@ -21,6 +21,7 @@ use crate::hosts::{model_turn_with, snapshot};
 use crate::provider::Message;
 use crate::run;
 use crate::tools;
+use crate::trace;
 
 /// Upper bound on model turns in one `act` call. A declared
 /// `max_tool_calls`/token/time ceiling is the intended governor; this bound
@@ -33,7 +34,10 @@ pub(crate) fn act(run_handle: i64, prompt: &str) -> Result<String, AgentError> {
     // I7: every tool reachable from this run must be inside the run's grant
     // before the first dispatch.
     tools::enforce_run_grant(run_handle)?;
-    let _spec = snapshot(run_handle)?.0;
+    let spec = snapshot(run_handle)?.0;
+    // R-3217 T5: the loop's planning turn is the `plan` span.
+    let run_id = run::with_run(run_handle, |state| state.run_id.clone())?;
+    trace::emit_plan(&run_id, &spec.goal, Some(prompt));
 
     let definitions = tools::definitions();
     let mut messages = vec![Message::user(prompt)];

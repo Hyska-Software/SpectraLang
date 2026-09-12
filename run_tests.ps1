@@ -3016,6 +3016,16 @@ if ($r3216AgentBudget.Status -eq "PASSOU") {
 $results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3216_agent_budget"; Status = $r3216AgentBudget.Status; Detalhe = $r3216AgentBudget.Detail }
 
 Write-Host ""
+Write-Host "--- R-3217 journal, replay, approval, assertions and tracing ---" -ForegroundColor Yellow
+$r3217AgentJournal = Invoke-HostCommand -name "validate_r3217_agent_journal" -fileName "python" -arguments @("scripts\validate_r3217_agent_journal.py") -workingDir (Get-Location).Path
+if ($r3217AgentJournal.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3217_agent_journal"; Status = $r3217AgentJournal.Status; Detalhe = $r3217AgentJournal.Detail }
+
+Write-Host ""
 Write-Host "--- R-3222 tool loop act and governed tool dispatch ---" -ForegroundColor Yellow
 $r3222AgentAct = Invoke-HostCommand -name "validate_r3222_agent_act" -fileName "python" -arguments @("scripts\validate_r3222_agent_act.py") -workingDir (Get-Location).Path
 if ($r3222AgentAct.Status -eq "PASSOU") {

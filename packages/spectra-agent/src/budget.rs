@@ -332,7 +332,7 @@ mod tests {
 
     /// A detached run state used to evaluate the pure budget arithmetic.
     fn run_state(spec: &AgentSpec) -> RunState {
-        RunState::new(spec.clone())
+        RunState::new(spec.clone(), "run-budget".to_string(), None)
     }
 
     #[test]
@@ -382,7 +382,8 @@ mod tests {
     #[test]
     fn tool_call_ceiling_allows_two_and_denies_the_third() {
         let handle =
-            run::alloc_run(spec(r#","max_tool_calls":2"#)).expect("alloc run");
+            run::alloc_run(spec(r#","max_tool_calls":2"#), "run-budget".to_string(), None)
+                .expect("alloc run");
         for allowed in 0..2 {
             charge_tool_call(handle).unwrap_or_else(|error| panic!("call {allowed}: {error}"));
         }
@@ -417,7 +418,8 @@ mod tests {
 
     #[test]
     fn settle_marks_cancelled_on_crossing_and_cancels_in_flight_siblings() {
-        let handle = run::alloc_run(spec(r#","max_tokens":6"#)).expect("alloc");
+        let handle = run::alloc_run(spec(r#","max_tokens":6"#), "run-budget".to_string(), None)
+            .expect("alloc");
         let token = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let sibling = Arc::new(std::sync::atomic::AtomicBool::new(false));
         run::register_task(handle, Arc::clone(&token));
@@ -449,7 +451,7 @@ mod tests {
 
     #[test]
     fn cancellation_tokens_are_registered_and_removed_by_identity() {
-        let handle = run::alloc_run(spec("")).expect("alloc");
+        let handle = run::alloc_run(spec(""), "run-budget".to_string(), None).expect("alloc");
         let token = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let other = Arc::new(std::sync::atomic::AtomicBool::new(false));
         assert!(run::register_task(handle, Arc::clone(&token)));

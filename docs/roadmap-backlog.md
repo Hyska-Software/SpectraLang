@@ -10198,7 +10198,7 @@ An agent loop without a ceiling is a financial incident waiting to happen. This 
 
 ## R-3217 Journal, Replay, Approval, Assertions and Tracing
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `runtime`
 - Risk: `high`

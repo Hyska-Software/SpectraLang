@@ -44,7 +44,14 @@ pub(crate) struct AgentSpec {
     pub max_tool_calls: i64,
     pub untrusted: UntrustedPolicy,
     pub seed: i64,
+    /// Journal directory. Absent means [`crate::journal::DEFAULT_DIR`]; an
+    /// explicit empty string disables the journal (R-3217 T1).
     pub journal: String,
+    /// Whether request payloads (prompts, tool arguments) are captured.
+    /// Digests are always recorded; payload capture is opt-in (R-3217).
+    pub journal_payloads: bool,
+    /// Run identity to resume. Empty means a fresh run id.
+    pub run_id: String,
 }
 
 impl AgentSpec {
@@ -79,7 +86,20 @@ impl AgentSpec {
         let max_cost_micros = optional_non_negative(object, "max_cost_micros")?;
         let max_seconds = optional_non_negative(object, "max_seconds")?;
         let max_tool_calls = optional_non_negative(object, "max_tool_calls")?;
-        let journal = optional_string(object, "journal")?;
+        // `journal` is optional with a default directory; an explicit empty
+        // string is the documented "no journal" spelling, so a pre-R-3217 spec
+        // that passes `""` stays journal-free.
+        let journal = match object.get("journal") {
+            None => crate::journal::DEFAULT_DIR.to_string(),
+            Some(Value::String(value)) => value.clone(),
+            Some(_) => {
+                return Err(AgentError::InvalidSpec(
+                    "spec field 'journal' must be a string".to_string(),
+                ))
+            }
+        };
+        let journal_payloads = optional_bool(object, "journal_payloads")?;
+        let run_id = optional_string(object, "run_id")?;
 
         let untrusted = match object.get("untrusted") {
             None => UntrustedPolicy::Approve,
@@ -124,6 +144,8 @@ impl AgentSpec {
             untrusted,
             seed,
             journal,
+            journal_payloads,
+            run_id,
         })
     }
 }
@@ -140,6 +162,8 @@ const KNOWN_KEYS: &[&str] = &[
     "untrusted",
     "seed",
     "journal",
+    "journal_payloads",
+    "run_id",
 ];
 
 fn required_string(
@@ -225,6 +249,19 @@ fn optional_non_negative(
     }
 }
 
+fn optional_bool(
+    object: &serde_json::Map<String, Value>,
+    key: &str,
+) -> Result<bool, AgentError> {
+    match object.get(key) {
+        None => Ok(false),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(_) => Err(AgentError::InvalidSpec(format!(
+            "spec field '{key}' must be a boolean"
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,6 +303,27 @@ mod tests {
         assert_eq!(spec.seed, 7);
         assert!(spec.deterministic());
         assert_eq!(spec.journal, "target/journal");
+    }
+
+    #[test]
+    fn journal_defaults_to_the_standard_directory_and_can_be_disabled() {
+        let spec = AgentSpec::parse(r#"{"goal":"g","model":"mock/echo"}"#).expect("valid spec");
+        assert_eq!(spec.journal, crate::journal::DEFAULT_DIR);
+        assert!(!spec.journal_payloads);
+        assert_eq!(spec.run_id, "");
+        let disabled =
+            AgentSpec::parse(r#"{"goal":"g","model":"mock/echo","journal":""}"#).expect("valid");
+        assert_eq!(disabled.journal, "");
+        let resumed = AgentSpec::parse(
+            r#"{"goal":"g","model":"mock/echo","run_id":"run-1","journal":"target/j","journal_payloads":true}"#,
+        )
+        .expect("valid");
+        assert_eq!(resumed.run_id, "run-1");
+        assert_eq!(resumed.journal, "target/j");
+        assert!(resumed.journal_payloads);
+        let error = AgentSpec::parse(r#"{"goal":"g","model":"m","journal_payloads":"yes"}"#)
+            .expect_err("must reject a non-boolean");
+        assert!(error.detail().contains("journal_payloads"), "{error:?}");
     }
 
     #[test]

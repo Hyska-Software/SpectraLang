@@ -19,9 +19,12 @@ use std::sync::{LazyLock, Mutex, MutexGuard};
 use crate::abi;
 use crate::budget;
 use crate::error::AgentError;
+use crate::journal::StepUsage;
 use crate::policy;
 use crate::provider::ToolDefinition;
+use crate::replay::{self, Kind, Resolved};
 use crate::run;
+use crate::trace;
 
 /// One registered tool.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,13 +148,33 @@ fn lookup(name: &str) -> Result<RegisteredTool, AgentError> {
 /// **before** the wrapper runs, so the (max+1)-th call is denied without
 /// executing. Every failure below the ABI (unknown tool, malformed arguments,
 /// a failing tool) is a typed error the caller reports back to the model.
+///
+/// R-3217 T1/T2: the invocation is a journaled step. A replayed step returns
+/// the recorded result without reaching the wrapper — the tool body does not
+/// run twice — while the charge is still applied, so a replayed run's report
+/// and ceiling behavior are identical to the original.
 pub(crate) fn invoke(run_handle: i64, name: &str, arguments: &str) -> Result<String, AgentError> {
     let tool = lookup(name)?;
     budget::charge_tool_call(run_handle)?;
-    // R-3217 owns the journal; this is the seam. The identity of the tool and
-    // the argument document are known here, and nothing may invoke a wrapper
-    // outside this function.
-    let _journal_seam = (&tool.name, arguments.len());
+    let (run_id, goal) = run::with_run(run_handle, |state| {
+        (state.run_id.clone(), state.spec.goal.clone())
+    })?;
+    let input = format!("tool\0{}\0{}", tool.name, arguments);
+    let token = match replay::resolve(run_handle, Kind::Tool, &input)? {
+        Resolved::Recorded(record) => {
+            let result = record.output.clone();
+            trace::emit_execute_tool(
+                &record.run,
+                &goal,
+                record.step,
+                &tool.name,
+                None,
+                Some(&result),
+            );
+            return Ok(result);
+        }
+        Resolved::Fresh(token) => token,
+    };
 
     let args_pointer = unsafe { abi::alloc_string(arguments) };
     if args_pointer == 0 {
@@ -173,6 +196,24 @@ pub(crate) fn invoke(run_handle: i64, name: &str, arguments: &str) -> Result<Str
     let status = unsafe { wrapper(run_handle, args_pointer, out_slot as i64) };
     let message = abi::read_string_arg(unsafe { *out_slot }).unwrap_or_default();
     if status == 0 {
+        // The result is durable before it is returned to the dispatcher.
+        replay::commit(
+            run_handle,
+            &token,
+            Some(&input),
+            &message,
+            StepUsage::default(),
+            -1,
+            None,
+        )?;
+        trace::emit_execute_tool(
+            &run_id,
+            &goal,
+            token.step,
+            &tool.name,
+            Some(arguments),
+            Some(&message),
+        );
         Ok(message)
     } else {
         Err(AgentError::ToolFailed(if message.is_empty() {

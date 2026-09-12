@@ -207,6 +207,11 @@ path = "tests/validation/375_agent_act.spectra"
 covers = ["std.agent.act", "std.agent.tool_call"]
 
 [[probe]]
+id = "agent-journal"
+path = "tests/validation/376_agent_journal.spectra"
+covers = ["std.agent.approve", "std.agent.require"]
+
+[[probe]]
 id = "agent-surface"
 path = "tests/validation/365_agent_surface.spectra"
 covers = ["std.agent.*"]

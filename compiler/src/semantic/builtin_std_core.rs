@@ -247,6 +247,8 @@ pub(crate) fn make_std_agent() -> ModuleExports {
             ("untrusted", builtin_type_annotation("string")),
             ("seed", builtin_type_annotation("int")),
             ("journal", builtin_type_annotation("string")),
+            ("journal_payloads", builtin_type_annotation("bool")),
+            ("run_id", builtin_type_annotation("string")),
         ]),
     );
     exports.types.insert(
@@ -391,6 +393,22 @@ pub(crate) fn make_std_agent() -> ModuleExports {
             visibility: ExportVisibility::Internal,
             is_async: false,
         },
+    );
+    // approve(run: Run, action: string) -> Result<bool, Error> (sync; R-3217)
+    // True when the action is authorized. No approver attached means deny.
+    exports.functions.insert(
+        "approve".to_string(),
+        pub_fn(vec![run.clone(), Type::String], result_of(Type::Bool)),
+    );
+    // require(run: Run, condition: bool, message: string)
+    // -> Result<bool, Error> (sync; R-3217). False returns a typed error
+    // naming the message and the run goal and marks the run failed.
+    exports.functions.insert(
+        "require".to_string(),
+        pub_fn(
+            vec![run.clone(), Type::Bool, Type::String],
+            result_of(Type::Bool),
+        ),
     );
 
     exports

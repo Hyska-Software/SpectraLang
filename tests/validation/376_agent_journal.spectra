@@ -1,0 +1,235 @@
+module agent_journal
+
+// R-3217 end-to-end fixture: the durable journal, replay, human approval and
+// governed assertions, against the deterministic mock provider.
+//
+// `require` is exercised on both outcomes: `true` passes and is journaled,
+// `false` returns a typed error naming the assertion message *and* the run
+// goal while the run reports `failed`. `approve` is exercised with no
+// approver attached, which must deny — there is no implicit allow.
+//
+// The journal itself is checked at the language surface: a fresh run writes
+// `<journal>/<run_id>.jsonl`, and a second run with the same run id replays
+// the recorded steps (report `"replay":true`) without appending a record, so
+// nothing is asked or executed twice.
+
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const JOURNAL_DIR = ".spectra/r3217-journal"
+const FRESH_RUN = "fixture-376-fresh"
+const ASSERT_RUN = "fixture-376-assert"
+
+// The journal directory is explicit and the run id is fixed so the fixture can
+// find its own file; `journal_payloads` stays false (digests by default).
+func spec(run_id: string) returns string {
+    return "{\"goal\":\"agent-journal\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":3,\"journal\":\"" + JOURNAL_DIR + "\",\"journal_payloads\":false,\"run_id\":\"" + run_id + "\"}"
+}
+
+func journal_path(run_id: string) returns string {
+    return JOURNAL_DIR + "/" + run_id + ".jsonl"
+}
+
+// Removes a previous journal file so each validator run starts fresh.
+func clean(path: string) returns int {
+    let exists = fs.fs_exists(path)
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(path)
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+// A fresh run journals its assertion and approval steps and writes the file.
+func fresh_run_writes_a_journal() returns int {
+    let started = agent_start(spec(FRESH_RUN))
+    if let Result::Ok(run) = started {
+        let assertion = require(run, true, "the run must be journaled")
+        if let Result::Ok(passed) = assertion {
+            if passed == false {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        // No approver is attached by default: the decision is a deny.
+        let approval = approve(run, "spectra.std.fs.fs_write")
+        if let Result::Ok(allowed) = approval {
+            if allowed == true {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 6
+            }
+            if str.contains(report, "\"replay\":false") == false {
+                return 7
+            }
+        } else {
+            return 8
+        }
+    } else {
+        return 1
+    }
+
+    let exists = fs.fs_exists(journal_path(FRESH_RUN))
+    if let Result::Ok(present) = exists {
+        if present == false {
+            return 9
+        }
+    } else {
+        return 10
+    }
+    let contents = fs.fs_read(journal_path(FRESH_RUN))
+    if let Result::Ok(text) = contents {
+        // The ADR-frozen record shape is on disk: kind, digests, the
+        // idempotency key and the timestamp.
+        if str.contains(text, "\"kind\":\"assertion\"") == false {
+            return 11
+        }
+        if str.contains(text, "\"kind\":\"approval\"") == false {
+            return 12
+        }
+        if str.contains(text, "\"input_digest\"") == false {
+            return 13
+        }
+        if str.contains(text, "\"output_digest\"") == false {
+            return 14
+        }
+        if str.contains(text, "\"idempotency_key\"") == false {
+            return 15
+        }
+        if str.contains(text, "\"timestamp\"") == false {
+            return 16
+        }
+    } else {
+        return 17
+    }
+    return 0
+}
+
+// A second run with the same id replays the journal: the recorded outcomes are
+// returned and no record is appended, so nothing is asked or executed twice.
+func replay_asks_nothing_twice() returns int {
+    let before = fs.fs_read(journal_path(FRESH_RUN))
+    if let Result::Ok(before_text) = before {
+        let started = agent_start(spec(FRESH_RUN))
+        if let Result::Ok(run) = started {
+            let assertion = require(run, true, "the run must be journaled")
+            if let Result::Ok(passed) = assertion {
+                if passed == false {
+                    return 2
+                }
+            } else {
+                return 3
+            }
+            // The denial is a recorded decision: replay returns it without
+            // asking again.
+            let approval = approve(run, "spectra.std.fs.fs_write")
+            if let Result::Ok(allowed) = approval {
+                if allowed == true {
+                    return 4
+                }
+            } else {
+                return 5
+            }
+            let ended = agent_end(run)
+            if let Result::Ok(report) = ended {
+                if str.contains(report, "\"replay\":true") == false {
+                    return 6
+                }
+            } else {
+                return 7
+            }
+        } else {
+            return 1
+        }
+
+        let after = fs.fs_read(journal_path(FRESH_RUN))
+        if let Result::Ok(after_text) = after {
+            if after_text != before_text {
+                return 8
+            }
+        } else {
+            return 9
+        }
+    } else {
+        return 10
+    }
+    return 0
+}
+
+// `require(false)` names the message and the goal and fails the run.
+func require_false_names_message_and_goal() returns int {
+    let started = agent_start(spec(ASSERT_RUN))
+    if let Result::Ok(run) = started {
+        let assertion = require(run, false, "the budget must be positive")
+        if let Result::Err(failure) = assertion {
+            let message = error.message(failure)
+            if str.contains(message, "assertion_failed") == false {
+                return 2
+            }
+            if str.contains(message, "the budget must be positive") == false {
+                return 3
+            }
+            if str.contains(message, "agent-journal") == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"status\":\"failed\"") == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    let fresh_journal = clean(journal_path(FRESH_RUN))
+    if fresh_journal != 0 {
+        return 10
+    }
+    let assertion_journal = clean(journal_path(ASSERT_RUN))
+    if assertion_journal != 0 {
+        return 11
+    }
+
+    let journaled = fresh_run_writes_a_journal()
+    if journaled != 0 {
+        return 100 + journaled
+    }
+    let replayed = replay_asks_nothing_twice()
+    if replayed != 0 {
+        return 200 + replayed
+    }
+    let asserted = require_false_names_message_and_goal()
+    if asserted != 0 {
+        return 300 + asserted
+    }
+    return 0
+}

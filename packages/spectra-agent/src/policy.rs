@@ -116,7 +116,8 @@ mod tests {
             .collect::<Vec<_>>()
             .join(",");
         let json = format!(r#"{{"goal":"g","model":"mock/echo","allow":[{grants}]}}"#);
-        alloc_run(AgentSpec::parse(&json).expect("spec")).expect("alloc")
+        alloc_run(AgentSpec::parse(&json).expect("spec"), "run-policy".to_string(), None)
+            .expect("alloc")
     }
 
     #[test]

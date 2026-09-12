@@ -134,6 +134,15 @@ pub(crate) fn lookup_std_host_group_agent(
             "spectra.std.agent.register_tool",
             builtin_result_ir_type(IRType::Bool),
         )),
+        // ── governance (sync; R-3217) ────────────────────────────────────
+        ("agent", "approve") => Some(agent_descriptor(
+            "spectra.std.agent.approve",
+            builtin_result_ir_type(IRType::Bool),
+        )),
+        ("agent", "require") => Some(agent_descriptor(
+            "spectra.std.agent.require",
+            builtin_result_ir_type(IRType::Bool),
+        )),
         _ => None,
     }
 }
