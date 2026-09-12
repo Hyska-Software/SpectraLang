@@ -2847,6 +2847,59 @@ if (Test-Path $aiExamplesDir) {
 }
 
 # ---------------------------------------------------------------------------
+# Grupo 10.1: Phase 32 agent platform — M0 surface (R-3201..R-3205)
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-3201 agent platform ADRs and fast-path invariant ---" -ForegroundColor Yellow
+$r3201AgentAdr = Invoke-HostCommand -name "validate_r3201_agent_platform_adr" -fileName "python" -arguments @("scripts\validate_r3201_agent_platform_adr.py") -workingDir (Get-Location).Path
+if ($r3201AgentAdr.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3201_agent_platform_adr"; Status = $r3201AgentAdr.Status; Detalhe = $r3201AgentAdr.Detail }
+
+Write-Host ""
+Write-Host "--- R-3202 spectralang surface --json ---" -ForegroundColor Yellow
+$r3202SurfaceJson = Invoke-HostCommand -name "validate_r3202_surface_json" -fileName "python" -arguments @("scripts\validate_r3202_surface_json.py") -workingDir (Get-Location).Path
+if ($r3202SurfaceJson.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3202_surface_json"; Status = $r3202SurfaceJson.Status; Detalhe = $r3202SurfaceJson.Detail }
+
+Write-Host ""
+Write-Host "--- R-3203 spectralang impact --json ---" -ForegroundColor Yellow
+$r3203ImpactJson = Invoke-HostCommand -name "validate_r3203_impact_json" -fileName "python" -arguments @("scripts\validate_r3203_impact_json.py") -workingDir (Get-Location).Path
+if ($r3203ImpactJson.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3203_impact_json"; Status = $r3203ImpactJson.Status; Detalhe = $r3203ImpactJson.Detail }
+
+Write-Host ""
+Write-Host "--- R-3204 diagnostics repair information and explain ---" -ForegroundColor Yellow
+$r3204DiagnosticsRepair = Invoke-HostCommand -name "validate_r3204_diagnostics_repair" -fileName "python" -arguments @("scripts\validate_r3204_diagnostics_repair.py") -workingDir (Get-Location).Path
+if ($r3204DiagnosticsRepair.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3204_diagnostics_repair"; Status = $r3204DiagnosticsRepair.Status; Detalhe = $r3204DiagnosticsRepair.Detail }
+
+Write-Host ""
+Write-Host "--- R-3205 embedded version-matched language reference ---" -ForegroundColor Yellow
+$r3205EmbeddedDocs = Invoke-HostCommand -name "validate_r3205_embedded_docs" -fileName "python" -arguments @("scripts\validate_r3205_embedded_docs.py") -workingDir (Get-Location).Path
+if ($r3205EmbeddedDocs.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3205_embedded_docs"; Status = $r3205EmbeddedDocs.Status; Detalhe = $r3205EmbeddedDocs.Detail }
+
+# ---------------------------------------------------------------------------
 # Resumo
 # ---------------------------------------------------------------------------
 $totalDecisive = $totalPassed + $totalFailed

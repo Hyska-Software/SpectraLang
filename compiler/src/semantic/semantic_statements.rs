@@ -40,15 +40,31 @@ impl SemanticAnalyzer {
                             {
                                 self.error_coded_with_hint(code, message, value.span, hint);
                             } else {
-                                self.error_with_hint(
+                                // E003: let-binding type mismatch carries the
+                                // expected/actual pair plus a concrete fix so
+                                // agent workflows can repair in one round trip.
+                                let expected = type_name(&declared_type);
+                                let actual = type_name(&inferred_type);
+                                let fix = self
+                                    .conversion_hint(&inferred_type, &declared_type)
+                                    .unwrap_or_else(|| {
+                                        "Add an explicit conversion; if the value is an Option or Result, handle it with `if let` or propagate it with `?`.".to_string()
+                                    });
+                                let error = SemanticError::new(
                                     format!(
                                         "Let binding has type {}, but {} was declared",
-                                        type_name(&inferred_type),
-                                        type_name(&declared_type)
+                                        actual, expected
                                     ),
                                     value.span,
+                                )
+                                .with_code("E003")
+                                .with_hint(
                                     "Change the annotation or convert the initializer explicitly.",
-                                );
+                                )
+                                .with_expected(expected)
+                                .with_actual(actual)
+                                .with_fix(fix);
+                                self.push_semantic_error_built(error);
                             }
                         }
                     }
@@ -188,21 +204,32 @@ impl SemanticAnalyzer {
 
                 if !self.inferred_binding_types_match(&value_type, &target_type) {
                     let hint = self.conversion_hint(&value_type, &target_type);
-                    self.push_semantic_error_coded(
-                        "E003",
+                    // Prefer the concrete conversion hint when one exists;
+                    // otherwise point at the Option/Result handling forms.
+                    let fix = hint.clone().unwrap_or_else(|| {
+                        "Add an explicit conversion; if the value is an Option or Result, handle it with `if let` or propagate it with `?`.".to_string()
+                    });
+                    let mut error = SemanticError::new(
                         format!(
                             "Cannot assign value of type {} to target of type {}",
                             type_name(&value_type),
                             type_name(&target_type)
                         ),
                         assign_stmt.value.span,
-                        Some(format!(
-                            "assignment target resolves to {} while the expression resolves to {}",
-                            type_name(&target_type),
-                            type_name(&value_type)
-                        )),
-                        hint,
-                    );
+                    )
+                    .with_code("E003")
+                    .with_context(format!(
+                        "assignment target resolves to {} while the expression resolves to {}",
+                        type_name(&target_type),
+                        type_name(&value_type)
+                    ))
+                    .with_expected(type_name(&target_type))
+                    .with_actual(type_name(&value_type))
+                    .with_fix(fix);
+                    if let Some(hint) = hint {
+                        error = error.with_hint(hint);
+                    }
+                    self.push_semantic_error_built(error);
                 }
 
                 // Assignment revives a released binding (E034 flow state).
@@ -859,5 +886,43 @@ impl SemanticAnalyzer {
                 ),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod assignment_repair_field_tests {
+    use crate::{CompilationOptions, CompilationPipeline, CompilerError};
+
+    #[test]
+    fn repair_fields_populate_for_assignment_type_mismatch() {
+        let source = r#"
+            module repair_e003
+
+            func main() {
+                let count: int = 0
+                count = "text"
+            }
+        "#;
+        let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
+        let errors = pipeline
+            .compile(source, "assignment_repair.spectra")
+            .expect_err("assignment type mismatch must be rejected");
+        let error = errors
+            .iter()
+            .find_map(|error| match error {
+                CompilerError::Semantic(semantic)
+                    if semantic.code.as_deref() == Some("E003") =>
+                {
+                    Some(semantic)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("expected coded E003: {errors:?}"));
+        assert_eq!(error.expected.as_deref(), Some("int"));
+        assert_eq!(error.actual.as_deref(), Some("string"));
+        assert!(
+            matches!(error.fix.as_deref(), Some(fix) if fix.contains("convert")),
+            "E003 must carry a concrete conversion fix: {error:?}"
+        );
     }
 }

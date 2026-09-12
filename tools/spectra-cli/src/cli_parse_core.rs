@@ -12,6 +12,10 @@ fn execute_action(action: CliAction) -> CliResult<()> {
                 HelpTopic::Repl => print_repl_help(),
                 HelpTopic::NewProject => print_new_help(),
                 HelpTopic::ReleaseInfo => print_release_info_help(),
+                HelpTopic::Surface => print_surface_help(),
+                HelpTopic::Impact => print_impact_help(),
+                HelpTopic::Docs => print_docs_help(),
+                HelpTopic::Explain => print_explain_help(),
                 HelpTopic::Package => print_package_help(),
                 HelpTopic::Db => print_db_help(),
                 HelpTopic::Format => print_format_help(),
@@ -27,6 +31,10 @@ fn execute_action(action: CliAction) -> CliResult<()> {
         CliAction::Repl(options) => execute_repl(options),
         CliAction::NewProject(options) => execute_new_project(options),
         CliAction::ReleaseInfo(options) => execute_release_info(options),
+        CliAction::Surface(options) => execute_surface(options),
+        CliAction::Impact(options) => execute_impact(options),
+        CliAction::Docs(options) => execute_docs(options),
+        CliAction::Explain(options) => execute_explain(options),
         CliAction::Package(invocation) => execute_package_command(invocation),
         CliAction::Format(options) => execute_format(options),
         CliAction::Db(invocation) => execute_db_command(invocation),
@@ -58,6 +66,10 @@ fn parse_cli() -> CliResult<CliAction> {
                 return match target.as_str() {
                     "new" | "new-project" => Ok(CliAction::Help(HelpTopic::NewProject)),
                     "release-info" | "release" => Ok(CliAction::Help(HelpTopic::ReleaseInfo)),
+                    "surface" => Ok(CliAction::Help(HelpTopic::Surface)),
+                    "impact" => Ok(CliAction::Help(HelpTopic::Impact)),
+                    "docs" => Ok(CliAction::Help(HelpTopic::Docs)),
+                    "explain" => Ok(CliAction::Help(HelpTopic::Explain)),
                     "package" | "pkg" => Ok(CliAction::Help(HelpTopic::Package)),
                     "db" | "database" => Ok(CliAction::Help(HelpTopic::Db)),
                     "repl" => Ok(CliAction::Help(HelpTopic::Repl)),
@@ -111,6 +123,54 @@ fn parse_cli() -> CliResult<CliAction> {
 
             let options = parse_release_info_invocation(&mut args)?;
             return Ok(CliAction::ReleaseInfo(options));
+        }
+        Some("surface") => {
+            args.next();
+            if let Some(flag) = args.peek() {
+                if matches!(flag.as_str(), "--help" | "-h") {
+                    args.next();
+                    return Ok(CliAction::Help(HelpTopic::Surface));
+                }
+            }
+
+            let options = parse_surface_invocation(&mut args)?;
+            return Ok(CliAction::Surface(options));
+        }
+        Some("impact") => {
+            args.next();
+            if let Some(flag) = args.peek() {
+                if matches!(flag.as_str(), "--help" | "-h") {
+                    args.next();
+                    return Ok(CliAction::Help(HelpTopic::Impact));
+                }
+            }
+
+            let options = parse_impact_invocation(&mut args)?;
+            return Ok(CliAction::Impact(options));
+        }
+        Some("docs") => {
+            args.next();
+            if let Some(flag) = args.peek() {
+                if matches!(flag.as_str(), "--help" | "-h") {
+                    args.next();
+                    return Ok(CliAction::Help(HelpTopic::Docs));
+                }
+            }
+
+            let options = parse_docs_invocation(&mut args)?;
+            return Ok(CliAction::Docs(options));
+        }
+        Some("explain") => {
+            args.next();
+            if let Some(flag) = args.peek() {
+                if matches!(flag.as_str(), "--help" | "-h") {
+                    args.next();
+                    return Ok(CliAction::Help(HelpTopic::Explain));
+                }
+            }
+
+            let options = parse_explain_invocation(&mut args)?;
+            return Ok(CliAction::Explain(options));
         }
         Some("package") | Some("pkg") => {
             args.next();

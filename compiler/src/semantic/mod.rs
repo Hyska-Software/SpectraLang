@@ -25,6 +25,7 @@ fn import_local_name(
 
 pub mod builtin_modules;
 pub mod module_registry;
+pub mod surface;
 
 use builtin_modules::register_builtin_modules;
 use module_registry::{
@@ -298,6 +299,7 @@ fn report_import_cycles(modules: &[&Module]) -> Vec<SemanticError> {
             )
             .with_code("E028")
             .with_hint("Break the cycle by removing or restructuring one of these imports")
+            .with_fix("Break the cycle by removing or restructuring one import in the reported chain.")
         })
         .collect()
 }

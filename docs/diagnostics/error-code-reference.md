@@ -13,6 +13,7 @@ This file defines the stable diagnostic-code ranges currently implemented in Pha
 | `P001-P099` | parser | Syntax and feature-gate errors |
 | `E001-E099` | semantic | Name resolution, typing, control flow, and trait validation errors |
 | `E2101-E2120` | semantic | Phase 21 async/await, task safety, and Send/Sync diagnostics |
+| `E3201-E3209` | semantic | Phase 32 agent platform: capability vocabulary and tool declarations |
 | `lint(<rule>)` | lint | Lint warnings or denied lint findings |
 | `midend` | midend | Internal IR/lowering errors without a stable subcode yet |
 | `backend` | backend | Codegen or backend execution errors without a stable subcode yet |

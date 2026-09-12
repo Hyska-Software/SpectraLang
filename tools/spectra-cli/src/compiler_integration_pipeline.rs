@@ -466,6 +466,31 @@ impl SpectraCompiler {
         Ok(report.warnings)
     }
 
+    /// Shared module registry populated by every module compiled so far.
+    ///
+    /// Tooling clones the `Arc` and reads the exports of every module compiled
+    /// through this compiler (surface snapshots, impact analysis).
+    pub fn registry(
+        &self,
+    ) -> std::sync::Arc<std::sync::RwLock<spectra_compiler::semantic::module_registry::ModuleRegistry>>
+    {
+        self.pipeline.registry()
+    }
+
+    /// Compile a module and return its IR for read-only tooling.
+    ///
+    /// Impact analysis walks the SIR call graph, which lives in the backend
+    /// artifacts the normal compile path already produces; this accessor keeps
+    /// the tooling from re-implementing lowering.
+    pub fn compile_module_ir(
+        &mut self,
+        source: &str,
+        filename: &str,
+    ) -> Result<spectra_midend::ir::Module, Vec<CompilerError>> {
+        let report = self.compile_to_report(source, filename)?;
+        Ok(report.artifacts.ir_module)
+    }
+
     pub fn print_aggregate_summary(&self) {
         if let Some(aggregate) = &self.aggregate {
             aggregate.print_summary();

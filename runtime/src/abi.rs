@@ -715,4 +715,78 @@ mod tests {
             HostCallClass::Generic
         );
     }
+
+    /// Host-call namespace prefixes whose calls touch the outside world and
+    /// therefore require the generic dispatch path, where capability policy is
+    /// enforced and denial can be reported (ADR 0016, decisions D2/D4).
+    ///
+    /// The set is derived from the host functions registered by
+    /// `runtime/src/stdlib/registration.rs` and
+    /// `runtime/src/stdlib/stdlib_bindings.rs`. `spectra.agent.*` is included
+    /// preemptively: the namespace is allocated by ADR 0017 and its calls are
+    /// effect-bearing by construction.
+    const EFFECT_HOST_NAMESPACES: &[&str] = &[
+        "spectra.agent.",
+        "spectra.api.",
+        "spectra.async.",
+        "spectra.std.env.",
+        "spectra.std.fs.",
+        "spectra.std.io.",
+        "spectra.std.random.",
+        "spectra.std.serve.",
+        "spectra.std.time.",
+    ];
+
+    /// Pins invariant I1: no host call that touches the outside world is in
+    /// the fast path. The fast path is in-process compute and has no denial
+    /// channel, so an effect-bearing call there would be an unenforceable
+    /// bypass (ADR 0016).
+    #[test]
+    fn fast_host_call_effect_namespace() {
+        assert_eq!(FastHostCall::ALL.len(), FastHostCall::COUNT);
+        for fast in FastHostCall::ALL {
+            // Exhaustive classification. There is deliberately no wildcard
+            // arm: adding a `FastHostCall` variant breaks compilation here
+            // until the new call is consciously classified as effect-free.
+            match fast {
+                FastHostCall::ConcurrentReset
+                | FastHostCall::StringLen
+                | FastHostCall::StringCharAt
+                | FastHostCall::ConcurrentSpawnBatch
+                | FastHostCall::ConcurrentJoinBatchSum
+                | FastHostCall::ConcurrentJoin
+                | FastHostCall::BuilderNew
+                | FastHostCall::BuilderPush
+                | FastHostCall::BuilderLen
+                | FastHostCall::BuilderFinish
+                | FastHostCall::BuilderFree
+                | FastHostCall::MapSet
+                | FastHostCall::MapContains
+                | FastHostCall::MapNew
+                | FastHostCall::MapLen
+                | FastHostCall::MapClear
+                | FastHostCall::MapFree
+                | FastHostCall::ChannelNew
+                | FastHostCall::ChannelSend
+                | FastHostCall::ChannelRecv
+                | FastHostCall::ChannelClose
+                | FastHostCall::ChannelLen
+                | FastHostCall::MlLinear
+                | FastHostCall::MlMseLoss
+                | FastHostCall::TensorBackward
+                | FastHostCall::MlSgdStep
+                | FastHostCall::TensorFullF
+                | FastHostCall::ConcurrentSpawnFn => {}
+            }
+
+            let name = fast.host_name();
+            for prefix in EFFECT_HOST_NAMESPACES {
+                assert!(
+                    !name.starts_with(prefix),
+                    "fast host call `{name}` falls under effect namespace `{prefix}`; \
+                     effect-bearing calls must use the generic dispatch path"
+                );
+            }
+        }
+    }
 }

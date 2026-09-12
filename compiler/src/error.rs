@@ -110,6 +110,12 @@ pub struct LexError {
     pub context: Option<String>,
     pub hint: Option<String>,
     pub code: Option<String>,
+    /// Textual type or value the diagnostic expected, when known.
+    pub expected: Option<String>,
+    /// Textual type or value the diagnostic actually found, when known.
+    pub actual: Option<String>,
+    /// Concrete repair suggestion for the reported problem, when known.
+    pub fix: Option<String>,
 }
 
 impl LexError {
@@ -120,6 +126,9 @@ impl LexError {
             context: None,
             hint: None,
             code: None,
+            expected: None,
+            actual: None,
+            fix: None,
         }
     }
 
@@ -135,6 +144,21 @@ impl LexError {
 
     pub fn with_code(mut self, code: impl Into<String>) -> Self {
         self.code = Some(code.into());
+        self
+    }
+
+    pub fn with_expected(mut self, expected: impl Into<String>) -> Self {
+        self.expected = Some(expected.into());
+        self
+    }
+
+    pub fn with_actual(mut self, actual: impl Into<String>) -> Self {
+        self.actual = Some(actual.into());
+        self
+    }
+
+    pub fn with_fix(mut self, fix: impl Into<String>) -> Self {
+        self.fix = Some(fix.into());
         self
     }
 }
@@ -146,6 +170,12 @@ pub struct ParseError {
     pub context: Option<String>,
     pub hint: Option<String>,
     pub code: Option<String>,
+    /// Textual type or value the diagnostic expected, when known.
+    pub expected: Option<String>,
+    /// Textual type or value the diagnostic actually found, when known.
+    pub actual: Option<String>,
+    /// Concrete repair suggestion for the reported problem, when known.
+    pub fix: Option<String>,
 }
 
 impl ParseError {
@@ -156,6 +186,9 @@ impl ParseError {
             context: None,
             hint: None,
             code: None,
+            expected: None,
+            actual: None,
+            fix: None,
         }
     }
 
@@ -171,6 +204,21 @@ impl ParseError {
 
     pub fn with_code(mut self, code: impl Into<String>) -> Self {
         self.code = Some(code.into());
+        self
+    }
+
+    pub fn with_expected(mut self, expected: impl Into<String>) -> Self {
+        self.expected = Some(expected.into());
+        self
+    }
+
+    pub fn with_actual(mut self, actual: impl Into<String>) -> Self {
+        self.actual = Some(actual.into());
+        self
+    }
+
+    pub fn with_fix(mut self, fix: impl Into<String>) -> Self {
+        self.fix = Some(fix.into());
         self
     }
 }
@@ -182,6 +230,12 @@ pub struct SemanticError {
     pub context: Option<String>,
     pub hint: Option<String>,
     pub code: Option<String>,
+    /// Textual type or value the diagnostic expected, when known.
+    pub expected: Option<String>,
+    /// Textual type or value the diagnostic actually found, when known.
+    pub actual: Option<String>,
+    /// Concrete repair suggestion for the reported problem, when known.
+    pub fix: Option<String>,
 }
 
 impl SemanticError {
@@ -192,6 +246,9 @@ impl SemanticError {
             context: None,
             hint: None,
             code: None,
+            expected: None,
+            actual: None,
+            fix: None,
         }
     }
 
@@ -207,6 +264,21 @@ impl SemanticError {
 
     pub fn with_code(mut self, code: impl Into<String>) -> Self {
         self.code = Some(code.into());
+        self
+    }
+
+    pub fn with_expected(mut self, expected: impl Into<String>) -> Self {
+        self.expected = Some(expected.into());
+        self
+    }
+
+    pub fn with_actual(mut self, actual: impl Into<String>) -> Self {
+        self.actual = Some(actual.into());
+        self
+    }
+
+    pub fn with_fix(mut self, fix: impl Into<String>) -> Self {
+        self.fix = Some(fix.into());
         self
     }
 }

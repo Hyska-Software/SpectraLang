@@ -562,6 +562,13 @@ impl SemanticAnalyzer {
         self.errors.push(error);
     }
 
+    /// Push a semantic error that was fully built with the `SemanticError`
+    /// builders, preserving optional repair information (`expected`, `actual`,
+    /// `fix`) alongside the usual code/context/hint fields.
+    pub(crate) fn push_semantic_error_built(&mut self, error: SemanticError) {
+        self.errors.push(error);
+    }
+
     pub(crate) fn error(&mut self, message: impl Into<String>, span: Span) {
         self.push_semantic_error(message, span, None, None);
     }

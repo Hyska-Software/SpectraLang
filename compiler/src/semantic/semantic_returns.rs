@@ -130,24 +130,78 @@ impl SemanticAnalyzer {
                     }
                     actual => {
                         if !self.return_types_match(&actual, expected_type) {
-                            self.push_semantic_error_coded(
-                                "E004",
+                            let hint = self.conversion_hint(&actual, expected_type);
+                            let mut error = SemanticError::new(
                                 format!(
                                     "Function final expression has type {}, expected {}",
                                     type_name(&actual),
                                     type_name(expected_type)
                                 ),
                                 body.span,
-                                Some(format!(
-                                    "function declared to return {}",
-                                    type_name(expected_type)
-                                )),
-                                self.conversion_hint(&actual, expected_type),
+                            )
+                            .with_code("E004")
+                            .with_context(format!(
+                                "function declared to return {}",
+                                type_name(expected_type)
+                            ))
+                            .with_expected(type_name(expected_type))
+                            .with_actual(type_name(&actual))
+                            .with_fix(
+                                "Align the returned value with the declared return type.",
                             );
+                            if let Some(hint) = hint {
+                                error = error.with_hint(hint);
+                            }
+                            self.push_semantic_error_built(error);
                         }
                     }
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod final_expression_repair_field_tests {
+    use crate::{CompilationOptions, CompilationPipeline, CompilerError, SemanticError};
+
+    fn compile(source: &str) -> Result<(), Vec<CompilerError>> {
+        let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
+        pipeline
+            .compile(source, "final_expression_repair.spectra")
+            .map(|_| ())
+    }
+
+    fn semantic_error<'a>(errors: &'a [CompilerError], code: &str) -> &'a SemanticError {
+        errors
+            .iter()
+            .find_map(|error| match error {
+                CompilerError::Semantic(semantic) if semantic.code.as_deref() == Some(code) => {
+                    Some(semantic)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("expected coded {code}: {errors:?}"))
+    }
+
+    #[test]
+    fn repair_fields_populate_for_final_expression_return_mismatch() {
+        let source = r#"
+            module repair_e004_final
+
+            func compute() returns int {
+                "text"
+            }
+
+            func main() { }
+        "#;
+        let errors = compile(source).expect_err("final expression mismatch must be rejected");
+        let error = semantic_error(&errors, "E004");
+        assert_eq!(error.expected.as_deref(), Some("int"));
+        assert_eq!(error.actual.as_deref(), Some("string"));
+        assert_eq!(
+            error.fix.as_deref(),
+            Some("Align the returned value with the declared return type.")
+        );
     }
 }

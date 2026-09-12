@@ -19,7 +19,7 @@ use compiler_integration::{
 };
 use formatter::{run as run_formatter, ExplainMode, FormatOptions};
 use package::{PackageCommand, PackageInvocation};
-use project::{ProjectPlan, ProjectSourceEntry};
+use project::{ProjectError, ProjectPlan, ProjectSourceEntry};
 use release_channel::{cli_channel, cli_compatibility_level};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -198,6 +198,10 @@ enum CliAction {
     Repl(ReplOptions),
     NewProject(NewProjectOptions),
     ReleaseInfo(ReleaseInfoOptions),
+    Surface(SurfaceOptions),
+    Impact(ImpactOptions),
+    Docs(DocsOptions),
+    Explain(ExplainOptions),
     Package(PackageInvocation),
     Format(FormatOptions),
     Db(DbInvocation),
@@ -210,6 +214,10 @@ enum HelpTopic {
     Repl,
     NewProject,
     ReleaseInfo,
+    Surface,
+    Impact,
+    Docs,
+    Explain,
     Package,
     Format,
     Lint,
@@ -294,5 +302,9 @@ include!("repl_session.rs");
 include!("cli_repl_project.rs");
 include!("cli_package.rs");
 include!("cli_diagnostics.rs");
+include!("cli_surface.rs");
+include!("cli_impact.rs");
+include!("cli_docs.rs");
+include!("cli_explain.rs");
 include!("cli_help.rs");
 include!("cli_tests.rs");

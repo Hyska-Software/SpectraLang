@@ -298,6 +298,15 @@ where
         &mut self.backend
     }
 
+    /// Shared cross-module symbol registry populated by every module compiled
+    /// through this pipeline.
+    ///
+    /// Tooling (surface snapshots, contract checks) clones the `Arc` instead
+    /// of taking ownership, so the pipeline stays reusable after inspection.
+    pub fn registry(&self) -> Arc<RwLock<ModuleRegistry>> {
+        Arc::clone(&self.registry)
+    }
+
     /// Compile and execute (for REPL)
     pub fn compile_and_execute(&mut self, source: &str) -> Result<(), Vec<CompilerError>> {
         let compilation = self.compile(source, "<repl>")?;

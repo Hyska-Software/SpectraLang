@@ -9860,7 +9860,7 @@ anchors: `docs/agent-platform-plan.md`.
 
 ## R-3201 ADR and Invariants for Agent Governance
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `runtime`
 - Risk: `medium`
@@ -9881,7 +9881,7 @@ Prevent the two failure modes that would be expensive later: a policy that can b
 
 ## R-3202 spectralang surface --json
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `tooling`
 - Risk: `medium`
@@ -9902,7 +9902,7 @@ A coding agent must answer 'what does this project expose' in one call instead o
 
 ## R-3203 spectralang impact --json
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `tooling`
 - Risk: `medium`
@@ -9923,7 +9923,7 @@ Impact analysis is the single most valuable signal for a coding agent editing an
 
 ## R-3204 Diagnostics with Repair Information
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `frontend`
 - Risk: `medium`
@@ -9944,7 +9944,7 @@ Repair efficiency dominates one-shot generation quality in agent workflows; a di
 
 ## R-3205 Version-Matched Language Reference from the CLI
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P2`
 - Owner: `tooling`
 - Risk: `low`

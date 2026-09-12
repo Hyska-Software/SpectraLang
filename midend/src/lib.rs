@@ -3,6 +3,7 @@
 
 pub mod autodiff;
 pub mod builder;
+pub mod callgraph;
 pub mod ir;
 pub mod layout;
 pub mod lowering;

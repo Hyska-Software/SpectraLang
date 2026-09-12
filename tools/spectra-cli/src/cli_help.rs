@@ -16,6 +16,10 @@ fn print_global_help() {
     println!("    repl       Start an interactive Spectra prompt");
     println!("    new        Scaffold a new Spectra project");
     println!("    release-info  Report CLI and package release channel metadata");
+    println!("    surface    Emit the machine-readable public surface of a project");
+    println!("    impact     Report what changing a symbol affects (call graph)");
+    println!("    docs       Print the embedded language reference (version-matched)");
+    println!("    explain    Explain a diagnostic code from the embedded reference");
     println!("    package    Resolve, lock, build, publish, and consume packages");
     println!("    db         Apply, inspect, and roll back database migrations");
     println!("    fmt        Format Spectra source files");
@@ -181,6 +185,92 @@ fn print_release_info_help() {
     println!("    {} release-info --root .", program_name());
     println!(
         "    {} release-info --json --root tests/projects/valid/package_workspace",
+        program_name()
+    );
+}
+
+fn print_surface_help() {
+    println!("SpectraLang CLI - 'surface' command");
+    println!();
+    println!("USAGE:");
+    println!(
+        "    {} surface --json [OPTIONS] [path]",
+        program_name()
+    );
+    println!();
+    println!("Emit the public surface of a project (modules, functions, types, traits).");
+    println!();
+    println!("OPTIONS:");
+    println!("    --json              Required; machine-readable JSON output");
+    println!("    --tokens <n>        Token budget; output is trimmed deterministically");
+    println!("    --package <name>    Restrict the snapshot to one package");
+    println!("    --include-builtins  Include stdlib/builtin modules");
+    println!();
+    println!("EXIT CODES:");
+    println!("    0 success, 64 usage error, 65 compilation failure, 74 I/O error");
+    println!();
+    println!("EXAMPLES:");
+    println!(
+        "    {} surface --json --tokens 2000 tests/projects/valid/phase21_async_pipeline",
+        program_name()
+    );
+}
+
+fn print_docs_help() {
+    println!("SpectraLang CLI - 'docs' command");
+    println!();
+    println!("USAGE:");
+    println!("    {} docs [OPTIONS]", program_name());
+    println!();
+    println!("Print the language reference embedded in the running binary.");
+    println!();
+    println!("OPTIONS:");
+    println!("    --json             Emit machine-readable JSON");
+    println!("    --section <name>   Print a single section (slug, nickname or heading)");
+    println!();
+    println!("EXAMPLES:");
+    println!("    {} docs --json", program_name());
+    println!("    {} docs --json --section stdlib", program_name());
+    println!("    {} docs --section errors", program_name());
+}
+
+fn print_explain_help() {
+    println!("SpectraLang CLI - 'explain' command");
+    println!();
+    println!("USAGE:");
+    println!("    {} explain [--json] <CODE>", program_name());
+    println!("    {} explain --list [--json]", program_name());
+    println!();
+    println!("Explain a diagnostic code using the embedded error-code reference.");
+    println!();
+    println!("OPTIONS:");
+    println!("    --json    Emit machine-readable JSON");
+    println!("    --list    List every documented code");
+    println!();
+    println!("EXAMPLES:");
+    println!("    {} explain --json E004", program_name());
+    println!("    {} explain E033", program_name());
+}
+
+fn print_impact_help() {
+    println!("SpectraLang CLI - 'impact' command");
+    println!();
+    println!("USAGE:");
+    println!("    {} impact --json <SYMBOL> [path]", program_name());
+    println!();
+    println!("Report what changing a symbol affects, from the SIR call graph.");
+    println!();
+    println!("SYMBOLS:");
+    println!("    function           A free function by name");
+    println!("    Module::function   A function qualified by module");
+    println!("    Type.field         Field readers, writers and constructors");
+    println!();
+    println!("OPTIONS:");
+    println!("    --json    Required; machine-readable JSON output");
+    println!();
+    println!("EXAMPLES:");
+    println!(
+        "    {} impact --json phase21_total tests/projects/valid/phase21_async_pipeline",
         program_name()
     );
 }

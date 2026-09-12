@@ -30,7 +30,7 @@ impl Pass for FunctionInlining {
     fn run(&mut self, module: &mut Module) -> bool {
         let mut modified = false;
         for _ in 0..4 {
-            let call_graph = collect_direct_calls(module);
+            let call_graph = crate::callgraph::direct_calls(module);
             let candidates = collect_candidates(module, &call_graph);
             if candidates.is_empty() {
                 break;
@@ -53,23 +53,6 @@ impl Pass for FunctionInlining {
         }
         modified
     }
-}
-
-fn collect_direct_calls(module: &Module) -> HashMap<String, HashSet<String>> {
-    let mut calls = HashMap::new();
-    for function in &module.functions {
-        let entry = calls
-            .entry(function.name.clone())
-            .or_insert_with(HashSet::new);
-        for block in &function.blocks {
-            for instruction in &block.instructions {
-                if let InstructionKind::Call { function, .. } = &instruction.kind {
-                    entry.insert(function.clone());
-                }
-            }
-        }
-    }
-    calls
 }
 
 fn collect_candidates(

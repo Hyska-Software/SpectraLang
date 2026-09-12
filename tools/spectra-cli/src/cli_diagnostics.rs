@@ -42,7 +42,7 @@ fn run_structured_diagnostics(
                 success: false,
                 files: vec![JsonFileDiagnostics {
                     path: path_to_string(&path),
-                    diagnostics: vec![generic_error_diagnostic(format!("{}", error), Some("cli"))],
+                    diagnostics: vec![project_error_diagnostic(&error)],
                 }],
             };
 
@@ -196,6 +196,22 @@ fn emit_sarif_report(report: &JsonDiagnosticReport, has_errors: bool) -> CliResu
                 result["properties"] = json!({ "hint": hint });
             }
 
+            // SARIF `fix` objects describe concrete textual replacements; the
+            // repair field is advisory guidance, so it travels through the
+            // free-form `properties` bag and the output stays schema-valid
+            // with and without it.
+            if let Some(fix) = &diagnostic.fix {
+                let properties = result["properties"].as_object_mut();
+                match properties {
+                    Some(map) => {
+                        map.insert("fix".to_string(), json!(fix));
+                    }
+                    None => {
+                        result["properties"] = json!({ "fix": fix });
+                    }
+                }
+            }
+
             if !diagnostic.related.is_empty() {
                 result["relatedLocations"] = json!(diagnostic
                     .related
@@ -288,6 +304,9 @@ fn convert_lint_diagnostic(diagnostic: LintDiagnostic) -> JsonDiagnostic {
         message,
         phase: Some("lint".to_string()),
         hint: note,
+        expected: None,
+        actual: None,
+        fix: None,
         range: Some(span_to_range(&span)),
         related,
     }
@@ -295,15 +314,39 @@ fn convert_lint_diagnostic(diagnostic: LintDiagnostic) -> JsonDiagnostic {
 
 fn convert_compiler_error(error: CompilerError) -> JsonDiagnostic {
     match error {
-        CompilerError::Lexical(e) => {
-            span_error_to_json("lexical", e.code, e.message, e.span, e.context, e.hint)
-        }
-        CompilerError::Parse(e) => {
-            span_error_to_json("parse", e.code, e.message, e.span, e.context, e.hint)
-        }
-        CompilerError::Semantic(e) => {
-            span_error_to_json("semantic", e.code, e.message, e.span, e.context, e.hint)
-        }
+        CompilerError::Lexical(e) => span_error_to_json(
+            "lexical",
+            e.code,
+            e.message,
+            e.span,
+            e.context,
+            e.hint,
+            e.expected,
+            e.actual,
+            e.fix,
+        ),
+        CompilerError::Parse(e) => span_error_to_json(
+            "parse",
+            e.code,
+            e.message,
+            e.span,
+            e.context,
+            e.hint,
+            e.expected,
+            e.actual,
+            e.fix,
+        ),
+        CompilerError::Semantic(e) => span_error_to_json(
+            "semantic",
+            e.code,
+            e.message,
+            e.span,
+            e.context,
+            e.hint,
+            e.expected,
+            e.actual,
+            e.fix,
+        ),
         CompilerError::Midend(e) => {
             generic_error_diagnostic(format!("midend error: {}", e.message), Some("midend"))
         }
@@ -313,6 +356,7 @@ fn convert_compiler_error(error: CompilerError) -> JsonDiagnostic {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn span_error_to_json(
     phase: &'static str,
     code: Option<String>,
@@ -320,6 +364,9 @@ fn span_error_to_json(
     span: Span,
     context: Option<String>,
     hint: Option<String>,
+    expected: Option<String>,
+    actual: Option<String>,
+    fix: Option<String>,
 ) -> JsonDiagnostic {
     let mut related = Vec::new();
     if let Some(context) = context {
@@ -335,6 +382,9 @@ fn span_error_to_json(
         message,
         phase: Some(phase.to_string()),
         hint,
+        expected,
+        actual,
+        fix,
         range: Some(span_to_range(&span)),
         related,
     }
@@ -342,6 +392,48 @@ fn span_error_to_json(
 
 fn io_error_diagnostic(error: &io::Error) -> JsonDiagnostic {
     generic_error_diagnostic(format!("I/O error: {}", error), Some("io"))
+}
+
+/// Map project resolution failures onto the stable diagnostic codes.
+///
+/// The CLI resolver detects missing user modules and import cycles before
+/// semantic analysis runs. Both conditions have stable codes (E029/E028), so
+/// an agent gets the same contract regardless of which stage catches them.
+fn project_error_diagnostic(error: &ProjectError) -> JsonDiagnostic {
+    let message = format!("{}", error);
+    match error {
+        ProjectError::MissingDependencies(_) => JsonDiagnostic {
+            severity: JsonSeverity::Error,
+            code: Some("E029".to_string()),
+            message,
+            phase: Some("semantic".to_string()),
+            hint: None,
+            expected: Some("existing module".to_string()),
+            actual: None,
+            fix: Some(
+                "Create a source file declaring the missing module, or fix the import path."
+                    .to_string(),
+            ),
+            range: None,
+            related: Vec::new(),
+        },
+        ProjectError::CyclicDependency(_) => JsonDiagnostic {
+            severity: JsonSeverity::Error,
+            code: Some("E028".to_string()),
+            message,
+            phase: Some("semantic".to_string()),
+            hint: None,
+            expected: Some("acyclic import graph".to_string()),
+            actual: None,
+            fix: Some(
+                "Break the cycle by removing or restructuring one import in the reported chain."
+                    .to_string(),
+            ),
+            range: None,
+            related: Vec::new(),
+        },
+        _ => generic_error_diagnostic(message, Some("cli")),
+    }
 }
 
 fn generic_error_diagnostic(message: String, phase: Option<&str>) -> JsonDiagnostic {
@@ -354,6 +446,9 @@ fn generic_error_diagnostic(message: String, phase: Option<&str>) -> JsonDiagnos
         message,
         phase: phase.map(|value| value.to_string()),
         hint: None,
+        expected: None,
+        actual: None,
+        fix: None,
         range: None,
         related: Vec::new(),
     }
@@ -398,6 +493,12 @@ struct JsonDiagnostic {
     message: String,
     phase: Option<String>,
     hint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expected: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    actual: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fix: Option<String>,
     range: Option<JsonRange>,
     related: Vec<JsonRelated>,
 }
@@ -525,6 +626,9 @@ mod diagnostics_tests {
                 spectra_compiler::span::Location::new(3, 7),
                 spectra_compiler::span::Location::new(3, 12),
             ),
+            None,
+            None,
+            None,
             None,
             None,
         );

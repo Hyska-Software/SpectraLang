@@ -1,0 +1,32 @@
+module impact_analysis
+
+// R-3203 impact-analysis fixture. The SIR call graph and the field-access
+// index must observe the relationships the validator queries through the CLI:
+// total -> reader, main -> total, main -> writer, and Point.x used by both
+// `reader` (field read) and `writer` (construction).
+
+public record Point {
+    x: int,
+    y: int,
+}
+
+public func reader(point: Point) returns int {
+    return point.x + point.y
+}
+
+public func writer(value: int) returns Point {
+    return Point { x: value, y: value + 1 }
+}
+
+public func total(point: Point) returns int {
+    return reader(point)
+}
+
+public func main() returns int {
+    let point = writer(3)
+    let sum = total(point)
+    if sum == 7 {
+        return 0
+    }
+    return 1
+}

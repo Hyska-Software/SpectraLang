@@ -91,31 +91,48 @@ impl SemanticAnalyzer {
                     ),
                     None => format!("Available stdlib modules: {}", available),
                 };
-                self.error_coded_with_hint(
-                    "E033",
-                    format!("Unknown standard library module '{}'", module_path),
-                    import.span,
-                    hint,
+                self.push_semantic_error_built(
+                    SemanticError::new(
+                        format!("Unknown standard library module '{}'", module_path),
+                        import.span,
+                    )
+                    .with_code("E033")
+                    .with_expected("registered stdlib module")
+                    .with_fix(hint.clone())
+                    .with_hint(hint),
                 );
                 return aliases;
             }
             if self.current_module_name.as_deref() == Some(module_path.as_str()) {
-                self.error_coded_with_hint(
-                    "E028",
-                    format!("Circular import: module '{}' imports itself", module_path),
-                    import.span,
-                    format!(
+                self.push_semantic_error_built(
+                    SemanticError::new(
+                        format!("Circular import: module '{}' imports itself", module_path),
+                        import.span,
+                    )
+                    .with_code("E028")
+                    .with_hint(format!(
                         "Remove the self-import of '{}' from module '{}'",
                         module_path, module_path
+                    ))
+                    .with_fix(
+                        "Break the cycle by removing or restructuring one import in the reported chain.",
                     ),
                 );
                 return aliases;
             }
-            self.error_coded_with_hint(
-                "E029",
-                format!("User module '{}' does not exist", module_path),
-                import.span,
-                "Check the spelling of the module path; the module must be declared as a source file in the same project or package",
+            self.push_semantic_error_built(
+                SemanticError::new(
+                    format!("User module '{}' does not exist", module_path),
+                    import.span,
+                )
+                .with_code("E029")
+                .with_hint(
+                    "Check the spelling of the module path; the module must be declared as a source file in the same project or package",
+                )
+                .with_expected("existing module")
+                .with_fix(
+                    "Check the spelling of the module path or declare the module source file.",
+                ),
             );
             return aliases;
         };
@@ -829,5 +846,91 @@ impl SemanticAnalyzer {
             .collect();
         names.sort_unstable();
         names.join(", ")
+    }
+}
+
+#[cfg(test)]
+mod import_repair_field_tests {
+    use crate::{CompilationOptions, CompilationPipeline, CompilerError, SemanticError};
+
+    fn compile(source: &str) -> Result<(), Vec<CompilerError>> {
+        let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
+        pipeline
+            .compile(source, "import_repair.spectra")
+            .map(|_| ())
+    }
+
+    fn semantic_error<'a>(errors: &'a [CompilerError], code: &str) -> &'a SemanticError {
+        errors
+            .iter()
+            .find_map(|error| match error {
+                CompilerError::Semantic(semantic) if semantic.code.as_deref() == Some(code) => {
+                    Some(semantic)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("expected coded {code}: {errors:?}"))
+    }
+
+    #[test]
+    fn repair_fields_populate_for_unknown_stdlib_module() {
+        let source = r#"
+            module repair_e033
+
+            import std.doesnotexist
+
+            func main() { }
+        "#;
+        let errors = compile(source).expect_err("unknown stdlib module must be rejected");
+        let error = semantic_error(&errors, "E033");
+        assert_eq!(
+            error.expected.as_deref(),
+            Some("registered stdlib module")
+        );
+        assert!(
+            matches!(
+                error.fix.as_deref(),
+                Some(fix) if fix.contains("Available stdlib modules")
+            ),
+            "E033 must carry the did-you-mean fix: {error:?}"
+        );
+    }
+
+    #[test]
+    fn repair_fields_populate_for_missing_user_module() {
+        let source = r#"
+            module repair_e029
+
+            import missing.user.helpers
+
+            func main() { }
+        "#;
+        let errors = compile(source).expect_err("missing user module must be rejected");
+        let error = semantic_error(&errors, "E029");
+        assert_eq!(error.expected.as_deref(), Some("existing module"));
+        assert_eq!(
+            error.fix.as_deref(),
+            Some("Check the spelling of the module path or declare the module source file.")
+        );
+    }
+
+    #[test]
+    fn repair_fields_populate_for_self_import() {
+        let source = r#"
+            module repair_e028
+
+            import repair_e028
+
+            func main() { }
+        "#;
+        let errors = compile(source).expect_err("self import must be rejected");
+        let error = semantic_error(&errors, "E028");
+        assert!(
+            matches!(
+                error.fix.as_deref(),
+                Some(fix) if fix.contains("Break the cycle")
+            ),
+            "E028 must carry a cycle-breaking fix: {error:?}"
+        );
     }
 }
