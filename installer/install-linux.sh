@@ -68,6 +68,7 @@ CODE_CMD="$(resolve_code_cli)"
 
 # ── Build or locate binaries ─────────────────────────────────────────────────
 SPECTRALANG_BIN=""
+SPC_BIN=""
 SPECTRA_LSP_BIN=""
 VSIX_PATH=""
 
@@ -83,10 +84,15 @@ if [[ "${IS_REPO}" == true ]]; then
     cargo build --release -p spectra-cli -p spectra-lsp
 
     SPECTRALANG_BIN="${REPO_ROOT}/target/release/spectralang"
+    SPC_BIN="${REPO_ROOT}/target/release/spc"
     SPECTRA_LSP_BIN="${REPO_ROOT}/target/release/spectra-lsp"
 
     if [[ ! -f "${SPECTRALANG_BIN}" ]]; then
         print_error "spectralang binary not found after build."
+        exit 1
+    fi
+    if [[ ! -f "${SPC_BIN}" ]]; then
+        print_error "spc binary not found after build."
         exit 1
     fi
     if [[ ! -f "${SPECTRA_LSP_BIN}" ]]; then
@@ -111,12 +117,17 @@ else
     print_step "Using pre-built binaries from ${SCRIPT_DIR}"
 
     SPECTRALANG_BIN="${SCRIPT_DIR}/bin/spectralang"
+    SPC_BIN="${SCRIPT_DIR}/bin/spc"
     SPECTRA_LSP_BIN="${SCRIPT_DIR}/bin/spectra-lsp"
     VSIX_PATH="${SCRIPT_DIR}/extension/spectra-vscode-extension.vsix"
 
     if [[ ! -f "${SPECTRALANG_BIN}" ]]; then
         print_error "Pre-built spectralang not found at ${SPECTRALANG_BIN}"
         print_error "Run this script from an extracted release tarball or clone the repo."
+        exit 1
+    fi
+    if [[ ! -f "${SPC_BIN}" ]]; then
+        print_error "Pre-built spc not found at ${SPC_BIN}"
         exit 1
     fi
     if [[ ! -f "${SPECTRA_LSP_BIN}" ]]; then
@@ -128,8 +139,9 @@ fi
 # ── Install binaries ─────────────────────────────────────────────────────────
 print_step "Installing binaries to ${DEST}..."
 cp "${SPECTRALANG_BIN}" "${DEST}/spectralang"
+cp "${SPC_BIN}" "${DEST}/spc"
 cp "${SPECTRA_LSP_BIN}" "${DEST}/spectra-lsp"
-chmod +x "${DEST}/spectralang" "${DEST}/spectra-lsp"
+chmod +x "${DEST}/spectralang" "${DEST}/spc" "${DEST}/spectra-lsp"
 
 # ── Update PATH ──────────────────────────────────────────────────────────────
 if ! echo "$PATH" | tr ':' '\n' | grep -qx "${DEST}"; then
@@ -212,6 +224,7 @@ echo ""
 print_success "SpectraLang installed successfully!"
 echo ""
 echo "  Binaries:     ${DEST}/spectralang"
+echo "                ${DEST}/spc  (alias)"
 echo "                ${DEST}/spectra-lsp"
 echo "  VSIX:         ${VSIX_PATH}"
 if [[ -n "${CODE_CMD}" ]]; then
@@ -220,5 +233,6 @@ fi
 echo ""
 echo "Quick start:"
 echo "  spectralang --help"
+echo "  spc --help"
 echo "  spectralang version"
 echo ""

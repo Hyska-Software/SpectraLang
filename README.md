@@ -112,7 +112,7 @@ Both workstreams share the same compiler, runtime, and tooling. A single `spectr
 | `runtime/` | Runtime services, memory management, FFI, stdlib hooks, async reactor |
 | `runtime/src/api/` | HTTP parser, server, client, JSON, TLS, routing (the `spectra.api` surface) |
 | `runtime/src/reactor/` | Platform-specific event loop (`epoll` / `IOCP` / `kqueue`) |
-| `tools/spectra-cli/` | `spectralang` command-line interface |
+| `tools/spectra-cli/` | `spectralang` command-line interface (`spc` alias) |
 | `tools/spectra-lsp/` | Language server implementation |
 | `tools/spectra-interop/` | Language interop helpers |
 | `examples/` | Sample Spectra programs (basic, AI, API, projects) |
@@ -177,7 +177,7 @@ cargo build -p spectra-interop
 cargo install --path tools/spectra-cli
 ```
 
-After this, `spectralang` is available on your `PATH`.
+After this, `spectralang` and its short alias `spc` are available on your `PATH`. Both names run the same CLI; help and usage text print the name you invoked.
 
 ### Optional: Windows installer
 

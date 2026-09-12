@@ -33,6 +33,26 @@ if (-not (Test-Path $binary)) {
     }
 }
 
+# R-1005: the `spc` alias must ship and behave identically to `spectralang`.
+$aliasBinary = Join-Path (Split-Path -Parent $binary) "spc.exe"
+if (-not (Test-Path $aliasBinary)) {
+    Write-Host "Binario alias spc.exe nao encontrado. Compilando..." -ForegroundColor Yellow
+    & "C:\Users\estev\.cargo\bin\cargo.exe" build -p spectra-cli 2>&1 | Out-Null
+}
+if (-not (Test-Path $aliasBinary)) {
+    Write-Host "ERRO: binario alias spc.exe nao encontrado (R-1005)." -ForegroundColor Red
+    exit 1
+}
+$canonicalProbe = (& $binary --list-experimental 2>&1 | Out-String)
+$canonicalProbeExit = $LASTEXITCODE
+$aliasProbe = (& $aliasBinary --list-experimental 2>&1 | Out-String)
+$aliasProbeExit = $LASTEXITCODE
+if ($canonicalProbeExit -ne 0 -or $aliasProbeExit -ne 0 -or $aliasProbe -ne $canonicalProbe) {
+    Write-Host "ERRO: 'spc --list-experimental' divergiu de 'spectralang --list-experimental' (R-1005)." -ForegroundColor Red
+    exit 1
+}
+Write-Host "Alias spc validado (R-1005)." -ForegroundColor Green
+
 if ($Phase -contains "stability_release") {
     Write-Host "--- SpectraLang required stability release gate ---" -ForegroundColor Yellow
     $stabilityArguments = @(

@@ -1,8 +1,11 @@
+// User-facing help text. Every command line shown here is printed with the
+// invoked program name (`spectralang` or its `spc` alias) so help always
+// documents the command the user actually typed.
 fn print_global_help() {
     println!("SpectraLang CLI");
     println!();
     println!("USAGE:");
-    println!("    spectralang <COMMAND> [OPTIONS] <paths>...");
+    println!("    {} <COMMAND> [OPTIONS] <paths>...", program_name());
     println!();
     println!("COMMANDS:");
     println!("    compile    Compile Spectra modules (default)");
@@ -25,20 +28,26 @@ fn print_global_help() {
     print_compilation_options(None);
     println!();
     println!("EXAMPLES:");
-    println!("    spectralang compile src/main.spectra");
-    println!("    spectralang check examples/");
-    println!("    spectralang run -O3 app.spectra");
-    println!("    spectralang lint src/");
-    println!("    spectralang bench --bench-json target/bench.json src/");
-    println!("    spectralang repl --run");
-    println!("    spectralang new my-project");
-    println!("    spectralang release-info --json --root .");
-    println!("    spectralang package build --root .");
-    println!("    spectralang package add math --path ../math");
-    println!("    spectralang db migrate --database app.sqlite --migrations-dir migrations");
-    println!("    spectralang --list-experimental");
-    println!("    spectralang fmt src/");
-    println!("    spectralang fmt --stdin < file.spectra");
+    println!("    {} compile src/main.spectra", program_name());
+    println!("    {} check examples/", program_name());
+    println!("    {} run -O3 app.spectra", program_name());
+    println!("    {} lint src/", program_name());
+    println!(
+        "    {} bench --bench-json target/bench.json src/",
+        program_name()
+    );
+    println!("    {} repl --run", program_name());
+    println!("    {} new my-project", program_name());
+    println!("    {} release-info --json --root .", program_name());
+    println!("    {} package build --root .", program_name());
+    println!("    {} package add math --path ../math", program_name());
+    println!(
+        "    {} db migrate --database app.sqlite --migrations-dir migrations",
+        program_name()
+    );
+    println!("    {} --list-experimental", program_name());
+    println!("    {} fmt src/", program_name());
+    println!("    {} fmt --stdin < file.spectra", program_name());
     println!();
     print_experimental_features();
     println!();
@@ -56,7 +65,11 @@ fn print_build_help(command: BuildCommand) {
     println!("SpectraLang CLI - '{}' command", command.name());
     println!();
     println!("USAGE:");
-    println!("    spectralang {} [OPTIONS] <paths>...", command.name());
+    println!(
+        "    {} {} [OPTIONS] <paths>...",
+        program_name(),
+        command.name()
+    );
     println!();
     println!("{}", command.description());
     println!();
@@ -65,36 +78,45 @@ fn print_build_help(command: BuildCommand) {
     println!("Examples:");
     match command {
         BuildCommand::Compile => {
-            println!("    spectralang compile src/main.spectra");
-            println!("    spectralang compile --dump-ir project/");
+            println!("    {} compile src/main.spectra", program_name());
+            println!("    {} compile --dump-ir project/", program_name());
         }
         BuildCommand::Check => {
-            println!("    spectralang check src/");
-            println!("    spectralang check --dump-ast main.spectra");
+            println!("    {} check src/", program_name());
+            println!("    {} check --dump-ast main.spectra", program_name());
         }
         BuildCommand::Run => {
-            println!("    spectralang run app.spectra");
-            println!("    spectralang run --timings src/main.spectra");
+            println!("    {} run app.spectra", program_name());
+            println!("    {} run --timings src/main.spectra", program_name());
         }
         BuildCommand::Lint => {
-            println!("    spectralang lint src/");
-            println!("    spectralang lint --deny shadowing examples/");
+            println!("    {} lint src/", program_name());
+            println!("    {} lint --deny shadowing examples/", program_name());
         }
         BuildCommand::Bench => {
-            println!("    spectralang bench src/");
-            println!("    spectralang bench --bench-json target/bench.json tests/validation/");
-            println!("    spectralang bench --async --bench-json target/async-bench.json");
+            println!("    {} bench src/", program_name());
+            println!(
+                "    {} bench --bench-json target/bench.json tests/validation/",
+                program_name()
+            );
+            println!(
+                "    {} bench --async --bench-json target/async-bench.json",
+                program_name()
+            );
         }
     }
     println!();
-    println!("Use 'spectralang --list-experimental' to see active experimental language gates.");
+    println!(
+        "Use '{} --list-experimental' to see active experimental language gates.",
+        program_name()
+    );
 }
 
 fn print_repl_help() {
     println!("SpectraLang CLI - 'repl' command");
     println!();
     println!("USAGE:");
-    println!("    spectralang repl [OPTIONS] [paths]...");
+    println!("    {} repl [OPTIONS] [paths]...", program_name());
     println!();
     println!("Starts an interactive prompt that can compile, check, or run Spectra modules.");
     println!();
@@ -131,7 +153,7 @@ fn print_new_help() {
     println!("SpectraLang CLI - 'new' command");
     println!();
     println!("USAGE:");
-    println!("    spectralang new [OPTIONS] <path>");
+    println!("    {} new [OPTIONS] <path>", program_name());
     println!();
     println!("Create a new Spectra project with a starter module and manifest.");
     println!();
@@ -139,15 +161,15 @@ fn print_new_help() {
     println!("    -f, --force        Scaffold even if the directory already exists");
     println!();
     println!("Examples:");
-    println!("    spectralang new hello-world");
-    println!("    spectralang new --force .");
+    println!("    {} new hello-world", program_name());
+    println!("    {} new --force .", program_name());
 }
 
 fn print_release_info_help() {
     println!("SpectraLang CLI - 'release-info' command");
     println!();
     println!("USAGE:");
-    println!("    spectralang release-info [OPTIONS] [root]");
+    println!("    {} release-info [OPTIONS] [root]", program_name());
     println!();
     println!("Report CLI and package release channel metadata.");
     println!();
@@ -156,15 +178,21 @@ fn print_release_info_help() {
     println!("    --json            Emit machine-readable JSON");
     println!();
     println!("Examples:");
-    println!("    spectralang release-info --root .");
-    println!("    spectralang release-info --json --root tests/projects/valid/package_workspace");
+    println!("    {} release-info --root .", program_name());
+    println!(
+        "    {} release-info --json --root tests/projects/valid/package_workspace",
+        program_name()
+    );
 }
 
 fn print_db_help() {
     println!("SpectraLang CLI - 'db' command");
     println!();
     println!("USAGE:");
-    println!("    spectralang db <migrate|rollback|status> [OPTIONS]");
+    println!(
+        "    {} db <migrate|rollback|status> [OPTIONS]",
+        program_name()
+    );
     println!();
     println!("OPTIONS:");
     println!("    --database <path>          SQLite database path");
@@ -173,16 +201,25 @@ fn print_db_help() {
     println!("    --json                     Emit JSON (status only)");
     println!();
     println!("EXAMPLES:");
-    println!("    spectralang db migrate --database app.sqlite --migrations-dir migrations");
-    println!("    spectralang db rollback --database app.sqlite --migrations-dir migrations --steps 1");
-    println!("    spectralang db status --database app.sqlite --migrations-dir migrations --json");
+    println!(
+        "    {} db migrate --database app.sqlite --migrations-dir migrations",
+        program_name()
+    );
+    println!(
+        "    {} db rollback --database app.sqlite --migrations-dir migrations --steps 1",
+        program_name()
+    );
+    println!(
+        "    {} db status --database app.sqlite --migrations-dir migrations --json",
+        program_name()
+    );
 }
 
 fn print_package_help() {
     println!("SpectraLang CLI - 'package' command");
     println!();
     println!("USAGE:");
-    println!("    spectralang package <SUBCOMMAND> [OPTIONS]");
+    println!("    {} package <SUBCOMMAND> [OPTIONS]", program_name());
     println!();
     println!("SUBCOMMANDS:");
     println!("    lock       Resolve packages and write spectra.lock");
@@ -225,23 +262,38 @@ fn print_package_help() {
     println!("    --json                 Emit JSON report for 'test'");
     println!();
     println!("Examples:");
-    println!("    spectralang package lock --root .");
-    println!("    spectralang package build --root examples/workspace");
-    println!("    spectralang package test --root . --filter api");
-    println!("    spectralang package add math --path ../math --version 0.1.0");
-    println!("    spectralang package search api");
-    println!("    spectralang package add spectra.api");
-    println!("    spectralang package add math --git https://github.com/org/math.git --tag v1.2.3");
-    println!("    spectralang package register --root . --git https://github.com/org/math.git --tag v1.2.3 --catalog ./catalog");
-    println!("    spectralang package publish --root packages/math --registry .spectra-registry");
-    println!("    spectralang package add math --version 0.1.0 --registry .spectra-registry");
+    println!("    {} package lock --root .", program_name());
+    println!("    {} package build --root examples/workspace", program_name());
+    println!("    {} package test --root . --filter api", program_name());
+    println!(
+        "    {} package add math --path ../math --version 0.1.0",
+        program_name()
+    );
+    println!("    {} package search api", program_name());
+    println!("    {} package add spectra.api", program_name());
+    println!(
+        "    {} package add math --git https://github.com/org/math.git --tag v1.2.3",
+        program_name()
+    );
+    println!(
+        "    {} package register --root . --git https://github.com/org/math.git --tag v1.2.3 --catalog ./catalog",
+        program_name()
+    );
+    println!(
+        "    {} package publish --root packages/math --registry .spectra-registry",
+        program_name()
+    );
+    println!(
+        "    {} package add math --version 0.1.0 --registry .spectra-registry",
+        program_name()
+    );
 }
 
 fn print_format_help() {
     println!("SpectraLang CLI - 'fmt' command");
     println!();
     println!("USAGE:");
-    println!("    spectralang fmt [OPTIONS] <paths>...");
+    println!("    {} fmt [OPTIONS] <paths>...", program_name());
     println!();
     println!("Format Spectra source files in-place or verify formatting with --check.");
     println!();
@@ -255,17 +307,17 @@ fn print_format_help() {
     println!("    -h, --help          Show this help text");
     println!();
     println!("Examples:");
-    println!("    spectralang fmt src/");
-    println!("    spectralang fmt --check examples/test.spectra");
-    println!("    spectralang fmt --stdin < script.spectra");
-    println!("    spectralang fmt --stdout src/main.spectra");
+    println!("    {} fmt src/", program_name());
+    println!("    {} fmt --check examples/test.spectra", program_name());
+    println!("    {} fmt --stdin < script.spectra", program_name());
+    println!("    {} fmt --stdout src/main.spectra", program_name());
 }
 
 fn print_lint_help() {
     println!("SpectraLang CLI - 'lint' command");
     println!();
     println!("USAGE:");
-    println!("    spectralang lint [OPTIONS] <paths>...");
+    println!("    {} lint [OPTIONS] <paths>...", program_name());
     println!();
     println!("Run Spectra's lint checks across the provided files or directories.");
     println!("Warnings are reported to stdout; denied rules cause the command to fail with exit code 65.");
@@ -288,8 +340,8 @@ fn print_lint_help() {
     println!("Available lint rules: {}", lint_rule_list());
     println!();
     println!("Examples:");
-    println!("    spectralang lint src/");
-    println!("    spectralang lint --deny shadowing examples/");
+    println!("    {} lint src/", program_name());
+    println!("    {} lint --deny shadowing examples/", program_name());
 }
 
 fn print_compilation_options(command: Option<BuildCommand>) {
@@ -347,7 +399,10 @@ fn print_experimental_features() {
 
 fn usage_error(message: &str) -> CliError {
     let trimmed = message.trim_end();
-    let formatted = format!("{}\nUse 'spectra --help' for usage information.", trimmed);
+    let formatted = format!(
+        "{}\nUse '{} --help' for usage information.",
+        trimmed,
+        program_name()
+    );
     CliError::usage(formatted)
 }
-

@@ -2255,6 +2255,196 @@ returns `NULL` and the JIT panics.
 
 ---
 
+## R-1005 `spc` CLI Alias
+
+- Status: `complete`
+- Priority: `P2`
+- Owner: `tooling`
+- Risk: `low`
+- Dependencies: none
+
+### Problem (2026-09-11)
+
+`tools/spectra-cli/Cargo.toml` declares a single binary target
+(`[[bin]] name = "spectralang"`), so every distribution surface ships only
+the long command: `cargo install --path tools/spectra-cli`, the Windows
+installer, the `.deb`, and the release artifacts. Users who want the short
+`spc` command must create a personal alias, which does not cover scripts,
+CI, or other machines.
+
+The alias must be a real second entry point over the same implementation,
+including the Windows JIT fast-path export wiring. Without that wiring
+`spc run` panics with `can't resolve symbol spectra_rt_*_fast` (see
+R-1004), so the alias would be broken exactly on the command users reach
+for most.
+
+### Design
+
+1. One implementation, two entry points (lib + thin bins):
+   - `src/lib.rs` receives the current `src/main.rs` content; the `main()`
+     body becomes `pub fn run() -> i32` (returns the exit code; no
+     `process::exit` inside the library).
+   - `src/main.rs` and `src/bin/spc.rs` become identical three-line
+     wrappers: `fn main() { std::process::exit(spectra_cli::run()); }`.
+   - `Cargo.toml`: keep `[[bin]] spectralang`, add
+     `[[bin]] name = "spc" path = "src/bin/spc.rs"`, and add
+     `default-run = "spectralang"`. Documented commands such as
+     `cargo run -q -p spectra-cli -- run …` (docs/concurrency-serving.md,
+     this backlog) stop resolving once a package has two bin targets.
+   - Rejected: a second `[[bin]]` pointing at `src/main.rs`. Cargo compiles
+     the whole CLI twice, and `cargo test -p spectra-cli` builds one
+     unit-test harness per bin target, running every CLI unit test twice.
+   - Rejected: creating the alias in installers only (copy/symlink).
+     `cargo install` cannot create aliases, the default `cargo build`
+     output would not contain `spc`, and Windows has no symlink step today.
+
+2. Invoked-name aware user-facing text:
+   - `program_name()` returns a `OnceLock<String>` initialized once in
+     `run()` from `env::args_os().next()` file stem (`.exe` stripped), and
+     falls back to `spectralang` when unset or empty. Unit tests call the
+     parsers/printers directly, so the fallback keeps their output
+     deterministic.
+   - Replace the 58 hardcoded `spectralang` occurrences in
+     `src/cli_help.rs` and the `'spectralang help db'` hint in
+     `src/cli_parse_core.rs` with the derived name, so `spc --help` and
+     `spc help db` describe themselves.
+   - Fix `usage_error()`'s stale `Use 'spectra --help' for usage information.`
+     hint (currently pinned by `cli_tests.rs::usage_error_includes_help_hint`)
+     to use the derived name.
+   - Do not rename identifiers that merely contain the word:
+     `spectralang.release-info.v1`, SARIF tool name `SpectraLang`,
+     `spectralang-0.1` compatibility strings, and `spectralang-*` temp-dir
+     prefixes are data, not commands.
+
+3. Windows PE exports: `build.rs` emits the `spectra_rt_*_fast` symbol
+   `/EXPORT:` link args scoped to `--bin=spectralang`. Extend that loop to
+   both bin names and keep the per-bin scoping; the existing comment
+   documents that applying `/EXPORT` to lib/test targets breaks their link.
+
+4. Packaging and distribution (a `spc` command that is not installed is not
+   delivered):
+   - `cargo install --path tools/spectra-cli` installs every bin target of
+     the package, so `spc` lands on `PATH` automatically; document it.
+   - `.github/workflows/release.yml` "Stage binaries": also copy
+     `spc${{ matrix.ext }}` for the four targets.
+   - `installer/spectra.iss`: install `spc.exe` next to `spectralang.exe`.
+   - `installer/build-deb.sh`: install `/usr/local/bin/spc`.
+   - `installer/install-linux.sh`: install `spc` from both the source build
+     and the prebuilt `bin/` path.
+   - `README.md` (install/CLI section) and `docs/tooling.md`: document
+     `spc` as an equivalent alias; existing examples stay canonical on
+     `spectralang`.
+
+### Files
+
+| File | Change |
+|---|---|
+| `tools/spectra-cli/Cargo.toml` | `default-run`, second `[[bin]]` |
+| `tools/spectra-cli/src/lib.rs` | new crate root (moved from `main.rs`), `pub fn run() -> i32` |
+| `tools/spectra-cli/src/main.rs` | thin `spectralang` wrapper |
+| `tools/spectra-cli/src/bin/spc.rs` | thin `spc` wrapper |
+| `tools/spectra-cli/build.rs` | `/EXPORT:` link args for both bin names |
+| `tools/spectra-cli/src/cli_help.rs` | `program_name()` + interpolated usage/help/examples |
+| `tools/spectra-cli/src/cli_parse_core.rs` | db help hint uses the derived name |
+| `tools/spectra-cli/src/cli_tests.rs` | usage-hint pin updated; name-derivation unit tests |
+| `tools/spectra-cli/tests/cli_alias.rs` | new binary-level alias tests |
+| `run_tests.ps1` | alias gate |
+| `.github/workflows/release.yml`, `installer/*` | ship `spc` |
+| `README.md`, `docs/tooling.md` | alias documentation |
+
+### Non-goals
+
+- renaming or removing `spectralang`; `spc` is additive
+- `.spectra` / `.spc` source-extension handling
+- VS Code extension bundled-binary resolution (`server/<platform>/spectralang`
+  in `tools/vscode-extension/src/config.ts` keeps targeting the canonical name)
+- `spc`-specific behavior, environment variable, or version string
+- switching the Python validation scripts and their default
+  `--binary target/debug/spectralang.exe` to the alias
+
+### Acceptance
+
+- `cargo build -p spectra-cli` produces both `spectralang` and `spc` for the
+  host target, and `cargo run -p spectra-cli -- --list-experimental` still
+  runs `spectralang` (`default-run`).
+- `spc --help` and `spc help <topic>` work for every topic and print the
+  invoked name in `USAGE:` and examples; `spectralang --help` is unchanged
+  except for the corrected usage-error hint.
+- `spc` and `spectralang` produce identical stdout and exit codes for the
+  same arguments on: `--list-experimental`, `--help`,
+  `check tests/cli/lint_clean.spectra`, `run` on a deterministic fixture,
+  and a usage error (missing path → exit 64).
+- Windows: `target\debug\spc.exe run tests\validation\77_concurrency_pipeline.spectra`
+  exits 0 with no `can't resolve symbol` panic, and
+  `dumpbin /exports target\debug\spc.exe` lists the `spectra_rt_*_fast`
+  symbols (proves the R-1004 export fix covers the alias binary).
+- `cargo install --path tools/spectra-cli` puts both commands on `PATH`.
+- Release staging, the Inno Setup installer, the `.deb`, and
+  `install-linux.sh` include `spc` for every supported target; both shell
+  installers pass `bash -n` (ISCC/dpkg execution belongs to the release
+  pipeline).
+- `cargo test -p spectra-cli` passes including the new alias tests; unit
+  tests cover `program_name_from_arg0` for `spc.exe`, an absolute path, and
+  the empty fallback.
+- `run_tests.ps1` fails when `target\debug\spc.exe` is missing or its
+  `--list-experimental` output differs from `spectralang.exe` output.
+
+### Validation
+
+- `cargo build -p spectra-cli`
+- `target\debug\spc.exe --help` (USAGE shows `spc`)
+- `target\debug\spc.exe run tests\validation\77_concurrency_pipeline.spectra`
+  (Windows, JIT fast-path symbols, rc=0)
+- `cargo test -p spectra-cli`
+- focused `run_tests.ps1` CLI gates
+
+### Completion evidence (2026-09-11)
+
+Implemented as designed:
+
+- `tools/spectra-cli/Cargo.toml`: `default-run = "spectralang"` plus the
+  second `[[bin]] name = "spc"` target.
+- `tools/spectra-cli/src/lib.rs`: crate root moved from `src/main.rs`;
+  `pub fn run() -> i32` is the single implementation. `src/main.rs` and
+  `src/bin/spc.rs` are thin wrappers over it.
+- `tools/spectra-cli/src/lib.rs`: `program_name()` / `program_name_from_arg0()`
+  derive the displayed name from `argv[0]`; `cli_help.rs` and the `db` help
+  hint in `cli_parse_core.rs` interpolate it, and the stale
+  `Use 'spectra --help' …` hint now prints the invoked name.
+- `tools/spectra-cli/build.rs`: the `/EXPORT:` loop covers both bin names.
+
+Validation executed:
+
+- `cargo test -p spectra-cli`: 78 lib unit tests + 4 `cli_alias` integration
+  tests + 6 pipeline integration tests passed; the two bin targets carry no
+  unit tests, so nothing runs twice.
+- `target\debug\spc.exe --help` prints `spc <COMMAND> [OPTIONS] <paths>...`,
+  `spc help db` prints the `spc` usage line (exit 0), `spc` with no arguments
+  exits 64 with `Use 'spc --help' for usage information.`
+- `target\debug\spc.exe run tests\validation\77_concurrency_pipeline.spectra`
+  exits 0 on Windows (JIT fast-path symbols resolved).
+- PE export tables parsed from both binaries contain all 24
+  `spectra_rt_*_fast` symbols in `spc.exe` and `spectralang.exe` (dumpbin is
+  not available on this workstation).
+- `cargo install --path tools/spectra-cli --debug --root …` installed
+  `spc.exe` and `spectralang.exe`; `cargo run -p spectra-cli -- --list-experimental`
+  still resolves to `spectralang` via `default-run`.
+- The `run_tests.ps1` alias gate was executed standalone, including the
+  rebuild fallback when `spc.exe` is deleted; it compares
+  `spc --list-experimental` with `spectralang --list-experimental`.
+
+Packaging and documentation:
+
+- `.github/workflows/release.yml` stages `spc` for all four targets;
+  `installer/spectra.iss`, `installer/build-deb.sh`, and
+  `installer/install-linux.sh` install `spc` (both shell scripts pass
+  `bash -n`); `README.md` and `docs/tooling.md` document the alias.
+- Acceptance bullet revised to the honest verification boundary: the
+  installer definitions are in place, while ISCC/dpkg execution belongs to
+  the release pipeline and was not run on this workstation.
+
+---
+
 # Phase 11: Concurrency and Serving
 
 ## R-1101 Concurrency Model

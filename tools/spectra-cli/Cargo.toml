@@ -3,6 +3,10 @@ name = "spectra-cli"
 version = "0.3.4"
 edition = "2021"
 build = "build.rs"
+# Both bin targets share the implementation in `src/lib.rs`. `default-run`
+# keeps `cargo run -p spectra-cli -- …` (documented in README/docs) on the
+# canonical name now that the package has two binaries.
+default-run = "spectralang"
 
 [features]
 default = []
@@ -11,6 +15,10 @@ gpu = ["spectra-runtime/gpu"]
 [[bin]]
 name = "spectralang"
 path = "src/main.rs"
+
+[[bin]]
+name = "spc"
+path = "src/bin/spc.rs"
 
 [dependencies]
 spectra-compiler = { path = "../../compiler" }

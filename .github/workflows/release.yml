@@ -137,6 +137,7 @@ jobs:
         run: |
           mkdir -p staging
           cp target/${{ matrix.target }}/release/spectralang${{ matrix.ext }} staging/
+          cp target/${{ matrix.target }}/release/spc${{ matrix.ext }} staging/
           cp target/${{ matrix.target }}/release/spectra-lsp${{ matrix.ext }} staging/
 
       - name: Upload artifact

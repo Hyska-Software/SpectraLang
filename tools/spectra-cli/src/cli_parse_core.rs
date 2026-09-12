@@ -226,7 +226,7 @@ where
                 steps = value.parse::<usize>().map_err(|_| usage_error("--steps must be a non-negative integer."))?;
             }
             "--json" => json = true,
-            "--help" | "-h" => return Err(usage_error("Use 'spectralang help db' for database command help.")),
+            "--help" | "-h" => return Err(usage_error(&format!("Use '{} help db' for database command help.", program_name()))),
             other => return Err(usage_error(&format!("Unknown db option '{other}'."))),
         }
     }

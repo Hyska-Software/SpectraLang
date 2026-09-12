@@ -2,6 +2,23 @@
 
 This document describes the Phase 10 tooling baseline.
 
+## CLI
+
+The CLI ships two equivalent command names: `spectralang` and the short alias
+`spc`. Both are real binaries over the same implementation
+(`tools/spectra-cli/src/lib.rs`) and differ only in the name printed by help
+and usage messages, so `spc --help` documents `spc`.
+
+```powershell
+spectralang --help
+spc --help
+spc run app.spectra
+```
+
+`cargo install --path tools/spectra-cli` installs both names, and the Windows
+installer, `.deb`, and `installer/install-linux.sh` install `spc` next to
+`spectralang`.
+
 ## LSP
 
 The language server lives in `tools/spectra-lsp`.

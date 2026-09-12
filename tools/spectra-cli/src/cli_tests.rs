@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsStr;
 
     #[test]
     fn exit_code_values_are_stable() {
@@ -17,7 +18,28 @@ mod tests {
         assert!(error.message.contains("Missing source"));
         assert!(error
             .message
-            .contains("Use 'spectra --help' for usage information."));
+            .contains("Use 'spectralang --help' for usage information."));
+    }
+
+    #[test]
+    fn program_name_uses_canonical_fallback_until_run_initializes_it() {
+        assert_eq!(program_name(), "spectralang");
+    }
+
+    #[test]
+    fn program_name_derives_from_arg0() {
+        assert_eq!(program_name_from_arg0(None), "spectralang");
+        assert_eq!(program_name_from_arg0(Some(OsStr::new(""))), "spectralang");
+        assert_eq!(program_name_from_arg0(Some(OsStr::new("spc"))), "spc");
+        assert_eq!(program_name_from_arg0(Some(OsStr::new("spc.exe"))), "spc");
+        assert_eq!(
+            program_name_from_arg0(Some(OsStr::new("target/debug/spc.exe"))),
+            "spc"
+        );
+        assert_eq!(
+            program_name_from_arg0(Some(OsStr::new("bin/spectralang"))),
+            "spectralang"
+        );
     }
 
     #[test]

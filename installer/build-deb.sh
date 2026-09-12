@@ -45,8 +45,10 @@ mkdir -p "${STAGING}/usr/share/mime/packages"
 
 # ── Copy binaries ─────────────────────────────────────────────────────────────
 cp "${BIN_DIR}/spectralang" "${STAGING}/usr/local/bin/spectralang"
+cp "${BIN_DIR}/spc" "${STAGING}/usr/local/bin/spc"
 cp "${BIN_DIR}/spectra-lsp" "${STAGING}/usr/local/bin/spectra-lsp"
 chmod 755 "${STAGING}/usr/local/bin/spectralang"
+chmod 755 "${STAGING}/usr/local/bin/spc"
 chmod 755 "${STAGING}/usr/local/bin/spectra-lsp"
 
 # ── Copy VSIX (if present) ────────────────────────────────────────────────────
@@ -123,6 +125,7 @@ Description: ${DESCRIPTION}
  .
  This package provides:
   - spectralang: the command-line compiler and REPL
+  - spc: short alias of the spectralang CLI
   - spectra-lsp: the Language Server Protocol daemon for editor integration
 EOF
 

@@ -1185,6 +1185,27 @@ acceptance = [
 ]
 
 [[items]]
+id = "R-1005"
+title = "spc CLI Alias"
+phase = "phase_10"
+owner = "tooling"
+priority = "P2"
+status = "complete"
+risk = "low"
+dependencies = []
+summary = "Ship `spc` as a real second entry point of the `spectralang` CLI: one implementation behind two bin targets (lib + thin bins), invoked-name aware help/usage text, Windows `spectra_rt_*_fast` PE exports for the alias binary, and packaging/installer/doc coverage so `spc` exists after `cargo install` and in every released artifact."
+acceptance = [
+  "`cargo build -p spectra-cli` produces both `spectralang` and `spc`, and `default-run` keeps `cargo run -p spectra-cli -- …` on `spectralang`",
+  "`spc --help` and `spc help <topic>` work for every topic and print the invoked name; `spectralang --help` stays canonical",
+  "`spc` and `spectralang` produce identical stdout and exit codes for `--list-experimental`, `--help`, `check tests/cli/lint_clean.spectra`, a deterministic `run`, and a usage error (exit 64)",
+  "on Windows, `target\\debug\\spc.exe run tests\\validation\\77_concurrency_pipeline.spectra` exits 0 without a `can't resolve symbol` panic and the `spc.exe` PE export table lists the `spectra_rt_*_fast` symbols",
+  "`cargo install --path tools/spectra-cli` installs both commands on PATH",
+  "release staging, the Inno Setup installer, the .deb, and `install-linux.sh` include `spc` for every supported target, with both shell installers passing `bash -n` (ISCC/dpkg execution belongs to the release pipeline)",
+  "`cargo test -p spectra-cli` passes including the binary-level alias tests and the `program_name_from_arg0` unit tests",
+  "`run_tests.ps1` fails when `target\\debug\\spc.exe` is missing or its `--list-experimental` output differs from `spectralang.exe`"
+]
+
+[[items]]
 id = "R-1101"
 title = "Concurrency Model"
 phase = "phase_11"

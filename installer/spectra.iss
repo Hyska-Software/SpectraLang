@@ -54,6 +54,7 @@ Name: "installvsix"; Description: "Install VS Code extension (requires VS Code)"
 [Files]
 ; Core binaries
 Source: "{#SourceDir}\spectralang.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\spc.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\spectra-lsp.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; Icon used by the installer, shortcuts and Windows file association
 Source: "spectra-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
@@ -69,7 +70,7 @@ Name: "{group}\Uninstall SpectraLang"; Filename: "{uninstallexe}"
 ; Install VS Code extension after setup (user can deselect the task)
 Filename: "{cmd}"; Parameters: "/c code --install-extension ""{app}\spectra-vscode-extension.vsix"" --force"; Flags: runhidden waituntilterminated; StatusMsg: "Installing VS Code extension..."; Description: "Install the SpectraLang VS Code extension"; Tasks: installvsix
 ; Open a new PowerShell so the user can try spectra-cli immediately (PATH already active)
-Filename: "powershell.exe"; Parameters: "-NoExit -Command ""$env:PATH = [System.Environment]::GetEnvironmentVariable('Path','User') + ';' + [System.Environment]::GetEnvironmentVariable('Path','Machine'); Write-Host 'SpectraLang installed. Run: spectralang --help' -ForegroundColor Green"""; Description: "Open a terminal to try spectralang"; Flags: postinstall skipifsilent nowait; Tasks: addtopath
+Filename: "powershell.exe"; Parameters: "-NoExit -Command ""$env:PATH = [System.Environment]::GetEnvironmentVariable('Path','User') + ';' + [System.Environment]::GetEnvironmentVariable('Path','Machine'); Write-Host 'SpectraLang installed. Run: spectralang --help (or spc --help)' -ForegroundColor Green"""; Description: "Open a terminal to try spectralang"; Flags: postinstall skipifsilent nowait; Tasks: addtopath
 
 [Registry]
 ; ── PATH management (user-level so no UAC prompt by default) ─────────────────
