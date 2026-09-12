@@ -1,7 +1,9 @@
 pub fn register() -> usize {
     spectra_runtime::initialize();
     spectra_runtime::register();
-    let mut inserted = 0;
+    // Namespace crates aggregate here, in dependency order, so a single
+    // `spectra_api_register_host_calls` call wires every host surface.
+    let mut inserted = spectra_agent::register();
     for spec in HOST_CALLS {
         if register_host_function(spec.name, spec.function) {
             inserted += 1;

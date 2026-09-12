@@ -168,6 +168,26 @@ pub(crate) fn make_std_math() -> ModuleExports {
     exports
 }
 
+/// `std.agent` — Phase 32 agent-platform namespace.
+///
+/// R-3209 lands exactly one function so the compiler/midend/runtime/catalog
+/// seam is proven end to end before the rest of the library follows.
+pub(crate) fn make_std_agent() -> ModuleExports {
+    let mut exports = ModuleExports {
+        stdlib_path: Some(vec!["std".to_string(), "agent".to_string()]),
+        package_name: Some("std".to_string()),
+        ..Default::default()
+    };
+
+    // token_count(text: string) -> int
+    exports.functions.insert(
+        "token_count".to_string(),
+        pub_fn(vec![Type::String], Type::Int),
+    );
+
+    exports
+}
+
 pub(crate) fn make_std_numeric() -> ModuleExports {
     let mut exports = ModuleExports {
         stdlib_path: Some(vec!["std".to_string(), "numeric".to_string()]),

@@ -188,11 +188,12 @@ impl AsyncTaskRegistry {
         task_id: SpectraHostValue,
         frame: Box<AsyncFrame>,
         affinity: AsyncAffinity,
+        run_chain: Vec<u64>,
     ) -> bool {
         self.tasks.get(task_id).is_some()
             && self
                 .coroutine_frames
-                .attach_boxed_frame(task_id, frame, affinity)
+                .attach_boxed_frame(task_id, frame, affinity, run_chain)
     }
 
     pub(crate) fn is_coroutine_task(&self, task_id: SpectraHostValue) -> bool {

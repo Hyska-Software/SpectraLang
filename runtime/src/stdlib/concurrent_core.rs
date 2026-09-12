@@ -154,6 +154,10 @@ pub(crate) enum ConcurrentJob {
         fn_ptr: SpectraHostValue,
         arg: SpectraHostValue,
         queued_at: StdInstant,
+        /// Run chain captured on the submitting thread (R-3213 T2). The worker
+        /// installs it around the closure so a host call inside the task is
+        /// attributable to the run that spawned it.
+        run_chain: Vec<u64>,
     },
     BatchLane {
         batch: Arc<ConcurrentBatch>,
@@ -196,6 +200,7 @@ impl ConcurrentExecutor {
                             fn_ptr,
                             arg,
                             queued_at,
+                            run_chain,
                         } => {
                             let execution_started = StdInstant::now();
                             if let Some(data) = concurrent_diagnostics() {
@@ -206,7 +211,14 @@ impl ConcurrentExecutor {
                             // same boundary HOFs use (spectra_rt_invoke_closure,
                             // catch_unwind inside). A panicking closure marks
                             // the task FAILED; it never aborts the process.
-                            let outcome = invoke_concurrent_closure(fn_ptr, arg);
+                            //
+                            // The captured run chain is installed for the call
+                            // and cleared when it returns (R-3213 T2), so the
+                            // pooled worker never leaks a stale run into the
+                            // next job.
+                            let outcome = crate::agent::run_context::with_chain(run_chain, || {
+                                invoke_concurrent_closure(fn_ptr, arg)
+                            });
                             let completed = match outcome {
                                 Ok(value) => task.complete(value),
                                 Err(()) => task.fail(),
@@ -283,6 +295,7 @@ impl ConcurrentExecutor {
         task: Arc<ConcurrentTask>,
         fn_ptr: SpectraHostValue,
         arg: SpectraHostValue,
+        run_chain: Vec<u64>,
     ) -> Result<(), ()> {
         self.sender
             .send(ConcurrentJob::Closure {
@@ -290,6 +303,7 @@ impl ConcurrentExecutor {
                 fn_ptr,
                 arg,
                 queued_at: StdInstant::now(),
+                run_chain,
             })
             .map_err(|_| ())
     }
@@ -568,8 +582,11 @@ pub(crate) fn spawn_concurrent_task_fn(
         registry.allocate_task()
     };
     record_concurrent_task_created();
+    // Capture the run chain on the spawning thread; the worker reinstalls it
+    // for the duration of the closure (R-3213 T2).
+    let run_chain = crate::agent::run_context::current_chain();
     if concurrent_executor()
-        .submit_closure(Arc::clone(&task), fn_ptr, arg)
+        .submit_closure(Arc::clone(&task), fn_ptr, arg, run_chain)
         .is_err()
     {
         if task.fail() {

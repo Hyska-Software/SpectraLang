@@ -540,6 +540,8 @@ mod lowering_std_host_math_io_error;
 mod lowering_std_host_numeric;
 #[path = "lowering_std_host_tensor_ml.rs"]
 mod lowering_std_host_tensor_ml;
+#[path = "lowering_std_agent.rs"]
+mod lowering_std_agent;
 
 /// Public re-export preserved from the pre-split layout: consumed by
 /// `packages/spectra-api` (contract-drift test) as
@@ -558,7 +560,8 @@ use {
     lowering_impl_module::*, lowering_impl_monomorphization::*, lowering_impl_patterns::*,
     lowering_impl_statements::*, lowering_impl_substitution::*, lowering_impl_type_inference::*,
     lowering_impl_types::*, lowering_impl_types_tail::*, lowering_json_derive::*,
-    lowering_std_api::*, lowering_std_host::*, lowering_std_host_collections_string::*,
+    lowering_std_agent::*, lowering_std_api::*, lowering_std_host::*,
+    lowering_std_host_collections_string::*,
     lowering_std_host_convert_time::*, lowering_std_host_fs_env_result::*,
     lowering_std_host_math_io_error::*, lowering_std_host_numeric::*,
     lowering_std_host_tensor_ml::*,

@@ -21,6 +21,13 @@ ROOT = Path(__file__).resolve().parents[1]
 REPORT_SCHEMA = "spectralang.r3007_stdlib_contract.v1"
 ALLOWED_CLASSIFICATIONS = {"production", "baseline", "simulation", "unsupported", "incomplete"}
 ALLOWED_OWNERS = {"frontend", "semantic", "midend", "backend", "runtime", "numerics", "ml", "web", "db", "tooling", "ecosystem"}
+# Scope predicate keys consumed by the governance layer (URL host, path prefix,
+# table name, HTTP method); see R-3214.
+ALLOWED_SCOPE_KEYS = {"host", "method", "table", "path_prefix"}
+# Compiler-level aliases resolve to a sibling host call (`std.api.routing.router`
+# lowers to `spectra.api.routing.router_new`), so they own no `HostCallSpec` and
+# carry no `rust_symbol`.
+HOST_CALL_ALIASES = {"std.api.routing.router"}
 SOURCE_KEYS = ("semantic", "runtime", "api_runtime", "lowering", "backend")
 SYMBOL_RE = re.compile(r"(?:std|spectra\.std|spectra\.api)\.[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*")
 FULL_DECL_RE = re.compile(r'\(\s*"((?:std|spectra\.std|spectra\.api)\.[A-Za-z0-9_.]+)"\s*,\s*"([^"]+)"')
@@ -350,6 +357,78 @@ def load_roadmap_ids(root: Path) -> set[str]:
     return {item["id"] for item in data.get("items", []) if "id" in item}
 
 
+def ir_return_is_valid(value: str) -> bool:
+    """Accept the module-level IR type grammar: `Name` or `Name<arg[,arg]*>`.
+
+    Arguments are nested types or `key=number` entries (``Tensor<float,rank=1>``).
+    """
+    text = value.strip()
+    if not text:
+        return False
+    pos = 0
+    length = len(text)
+
+    def skip_whitespace() -> None:
+        nonlocal pos
+        while pos < length and text[pos] == " ":
+            pos += 1
+
+    def parse_name() -> bool:
+        nonlocal pos
+        if pos >= length or not (text[pos].isalpha() or text[pos] == "_"):
+            return False
+        pos += 1
+        while pos < length and (text[pos].isalnum() or text[pos] == "_"):
+            pos += 1
+        return True
+
+    def parse_arg() -> bool:
+        nonlocal pos
+        mark = pos
+        if parse_name():
+            skip_whitespace()
+            if pos < length and text[pos] == "=":
+                pos += 1
+                skip_whitespace()
+                digits = pos
+                while pos < length and text[pos].isdigit():
+                    pos += 1
+                if pos > digits:
+                    return True
+                pos = mark
+                return False
+            pos = mark
+        return parse_type()
+
+    def parse_type() -> bool:
+        nonlocal pos
+        skip_whitespace()
+        if not parse_name():
+            return False
+        skip_whitespace()
+        if pos < length and text[pos] == "<":
+            pos += 1
+            while True:
+                skip_whitespace()
+                if not parse_arg():
+                    return False
+                skip_whitespace()
+                if pos < length and text[pos] == ",":
+                    pos += 1
+                    continue
+                break
+            skip_whitespace()
+            if pos >= length or text[pos] != ">":
+                return False
+            pos += 1
+        return True
+
+    if not parse_type():
+        return False
+    skip_whitespace()
+    return pos == length
+
+
 def validate_manifest(root: Path, manifest: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if manifest.get("schema") != REPORT_SCHEMA:
@@ -431,6 +510,44 @@ def validate_manifest(root: Path, manifest: dict[str, Any]) -> list[str]:
                         errors.append(
                             f"typed catalog entry {path} has an invalid owner"
                         )
+                    if kind == "function":
+                        # R-3206: the lowering tables and the generated host-call
+                        # table are derived from these fields.
+                        for field_name in ("returns", "ir_return"):
+                            if not str(entry.get(field_name, "")).strip():
+                                errors.append(
+                                    f"typed catalog entry {path} is missing {field_name}"
+                                )
+                        if "returns_value" not in entry:
+                            errors.append(
+                                f"typed catalog entry {path} is missing returns_value"
+                            )
+                        elif not isinstance(entry["returns_value"], bool):
+                            errors.append(
+                                f"typed catalog entry {path} has a non-boolean returns_value"
+                            )
+                        ir_return = str(entry.get("ir_return", ""))
+                        if ir_return and not ir_return_is_valid(ir_return):
+                            errors.append(
+                                f"typed catalog entry {path} has an invalid ir_return {ir_return!r}"
+                            )
+                        # Only `std.api.*` functions owning a HostCallSpec carry a
+                        # `rust_symbol`; runtime-registered std functions and
+                        # compiler aliases (which resolve to a sibling host call)
+                        # have no Rust host-call target to name.
+                        if (
+                            path.startswith("std.api.")
+                            and path not in HOST_CALL_ALIASES
+                            and not str(entry.get("rust_symbol", "")).strip()
+                        ):
+                            errors.append(
+                                f"typed catalog entry {path} is missing rust_symbol"
+                            )
+                    for scope_key in entry.get("scope_keys", []):
+                        if scope_key not in ALLOWED_SCOPE_KEYS:
+                            errors.append(
+                                f"typed catalog entry {path} has an unknown scope key {scope_key}"
+                            )
     roadmap_ids = load_roadmap_ids(root)
     prefixes: list[str] = []
     for namespace in manifest.get("namespace", []):

@@ -5,7 +5,9 @@
 //! 2. the embedded stdlib catalog (`spectra_contract::catalog()`, sourced from
 //!    packages/spectra-contract/catalog/stdlib.toml)
 //! 3. the mid-end `std.api` lowering table
-//!    (`spectra_midend::lowering::std_api_host_call_target`)
+//!    (`spectra_midend::lowering::std_api_host_call_target`), generated from
+//!    the catalog by `scripts/generate_lowering_tables.py` alongside the six
+//!    `midend/src/lowering_std_host_*.rs` group tables
 //! 4. the compiler's manual builtin tables
 //!    (`STD_API_PUBLIC_FUNCTIONS` / `STD_API_PUBLIC_TYPES` /
 //!    `STD_API_MODULE_PATHS`)
@@ -188,5 +190,45 @@ fn every_registered_std_api_function_has_a_lowering_target() {
     assert!(
         ghosts.is_empty(),
         "ghost std.api surface exported by the compiler registry: {ghosts:?}"
+    );
+}
+
+/// The seven mid-end host-call lowering tables are generated from the catalog.
+/// A hand edit of a generated file (or a catalog change that was not
+/// regenerated) must fail here instead of silently shipping a stale table.
+#[test]
+fn lowering_tables_are_generated_and_current() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("packages/spectra-api must live two levels below the repository root")
+        .to_path_buf();
+    let generator = repo_root.join("scripts").join("generate_lowering_tables.py");
+    assert!(generator.is_file(), "missing generator {}", generator.display());
+
+    let mut spawn_failures = Vec::new();
+    for interpreter in ["python3", "python", "py"] {
+        let output = std::process::Command::new(interpreter)
+            .arg(&generator)
+            .arg("--check")
+            .current_dir(&repo_root)
+            .output();
+        match output {
+            Ok(output) => {
+                assert!(
+                    output.status.success(),
+                    "the mid-end lowering tables are stale; run \
+                     `python scripts/generate_lowering_tables.py` and commit the result:\n{}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                return;
+            }
+            Err(error) => spawn_failures.push(format!("{interpreter}: {error}")),
+        }
+    }
+    panic!(
+        "no python interpreter available to run {}: {spawn_failures:?}",
+        generator.display()
     );
 }

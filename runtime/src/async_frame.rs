@@ -329,10 +329,14 @@ struct FrameRecord {
     waiters: Vec<Arc<(Mutex<WaiterState>, Condvar)>>,
     result: Option<AsyncResultStorage>,
     error: Option<AsyncResultStorage>,
+    /// Run chain active when the coroutine was created (R-3213 T2). The
+    /// resumption path reinstalls it so a host call inside a poll is
+    /// attributable to the run that created the coroutine.
+    run_chain: Vec<u64>,
 }
 
 impl FrameRecord {
-    fn new_boxed(frame: Box<AsyncFrame>, affinity: AsyncAffinity) -> Self {
+    fn new_boxed(frame: Box<AsyncFrame>, affinity: AsyncAffinity, run_chain: Vec<u64>) -> Self {
         Self {
             frame,
             state: AsyncTaskState::Created,
@@ -345,6 +349,7 @@ impl FrameRecord {
             waiters: Vec::new(),
             result: None,
             error: None,
+            run_chain,
         }
     }
 }
@@ -366,6 +371,9 @@ impl RegistryInner {
 pub(crate) struct AsyncFramePoll {
     pub(crate) frame: *mut AsyncFrame,
     pub(crate) cancel_before_poll: bool,
+    /// Run chain captured when the coroutine was created (R-3213 T2); the
+    /// caller installs it around the poll invocation.
+    pub(crate) run_chain: Vec<u64>,
 }
 
 pub(crate) struct AsyncFrameDrop {
@@ -412,7 +420,7 @@ impl AsyncFrameRegistry {
         frame: AsyncFrame,
         affinity: AsyncAffinity,
     ) -> bool {
-        self.attach_boxed_frame(task, Box::new(frame), affinity)
+        self.attach_boxed_frame(task, Box::new(frame), affinity, Vec::new())
     }
 
     pub(crate) fn attach_boxed_frame(
@@ -420,6 +428,7 @@ impl AsyncFrameRegistry {
         task: SpectraHostValue,
         frame: Box<AsyncFrame>,
         affinity: AsyncAffinity,
+        run_chain: Vec<u64>,
     ) -> bool {
         let mut inner = self
             .inner
@@ -430,7 +439,7 @@ impl AsyncFrameRegistry {
         }
         inner
             .frames
-            .insert(task, FrameRecord::new_boxed(frame, affinity));
+            .insert(task, FrameRecord::new_boxed(frame, affinity, run_chain));
         true
     }
 
@@ -533,10 +542,12 @@ impl AsyncFrameRegistry {
         }
         record.polling = true;
         record.state = AsyncTaskState::Polling;
+        let run_chain = record.run_chain.clone();
         let frame = record.frame.as_mut();
         Ok(AsyncFramePoll {
             frame: frame as *mut AsyncFrame,
             cancel_before_poll: record.cancel_requested,
+            run_chain,
         })
     }
 

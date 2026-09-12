@@ -1,0 +1,26 @@
+module agent_surface
+
+import std.agent as agent
+
+// R-3209: proves the `std.agent` namespace seam end to end. `token_count`
+// must return the same deterministic value under JIT (`spectralang run`) and
+// AOT (`spectralang compile --emit-exe`).
+public func main() returns int {
+    // Whitespace tokenization through the std.ml path.
+    if agent.token_count("alpha beta gamma") != 3 {
+        return 1
+    }
+    // Punctuation is stripped and case is folded by the shared tokenizer.
+    if agent.token_count("Hello, world!") != 2 {
+        return 2
+    }
+    // A single token stays a single token.
+    if agent.token_count("solo") != 1 {
+        return 3
+    }
+    // Empty input has no tokens.
+    if agent.token_count("") != 0 {
+        return 4
+    }
+    return 0
+}

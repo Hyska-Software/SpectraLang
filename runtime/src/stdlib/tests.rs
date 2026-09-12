@@ -7465,6 +7465,164 @@ fn concurrent_task_spawn_fn_panicking_closure_fails_task_without_abort() {
     );
 }
 
+// ── concurrent.task_spawn_fn: run-context propagation (R-3213) ───────────
+
+/// Run chain observed from inside a spawned closure.
+static SPAWN_FN_OBSERVED_RUN_CHAIN: std::sync::Mutex<Option<Vec<u64>>> =
+    std::sync::Mutex::new(None);
+
+extern "C" fn spawn_fn_run_chain_closure(_env: i64, _arg: i64) -> i64 {
+    *SPAWN_FN_OBSERVED_RUN_CHAIN
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) =
+        Some(crate::agent::run_context::current_chain());
+    1
+}
+
+fn observed_spawn_run_chain() -> Option<Vec<u64>> {
+    SPAWN_FN_OBSERVED_RUN_CHAIN
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone()
+}
+
+#[test]
+fn concurrent_task_spawn_fn_inherits_the_spawning_run() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    assert_eq!(call_host(CONCURRENT_RESET, &[]).0, HOST_STATUS_SUCCESS);
+    *SPAWN_FN_OBSERVED_RUN_CHAIN
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = None;
+
+    let outer = crate::agent::run_context::push(7);
+    let inner = crate::agent::run_context::push(8);
+    let closure = heap_closure(spawn_fn_run_chain_closure as *const () as usize, 0);
+    let (status, task) = call_host(CONCURRENT_TASK_SPAWN_FN, &[closure, 0]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    // Capture happens at spawn: the caller's chain is cleared before the join,
+    // so the worker can only observe the captured value.
+    drop(inner);
+    drop(outer);
+    assert_eq!(crate::agent::run_context::current_chain(), Vec::<u64>::new());
+
+    assert_eq!(
+        call_host(CONCURRENT_TASK_JOIN, &[task]).0,
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(observed_spawn_run_chain(), Some(vec![7, 8]));
+}
+
+#[test]
+fn concurrent_task_spawn_fn_outside_a_run_sees_no_run() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    assert_eq!(call_host(CONCURRENT_RESET, &[]).0, HOST_STATUS_SUCCESS);
+    *SPAWN_FN_OBSERVED_RUN_CHAIN
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = None;
+    assert_eq!(crate::agent::run_context::current(), None);
+
+    let closure = heap_closure(spawn_fn_run_chain_closure as *const () as usize, 0);
+    let (_, task) = call_host(CONCURRENT_TASK_SPAWN_FN, &[closure, 0]);
+    assert_eq!(
+        call_host(CONCURRENT_TASK_JOIN, &[task]).0,
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(observed_spawn_run_chain(), Some(Vec::new()));
+}
+
+#[test]
+fn concurrent_worker_does_not_leak_the_run_into_later_work() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    assert_eq!(call_host(CONCURRENT_RESET, &[]).0, HOST_STATUS_SUCCESS);
+
+    // First job runs inside a run.
+    *SPAWN_FN_OBSERVED_RUN_CHAIN
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = None;
+    let closure = heap_closure(spawn_fn_run_chain_closure as *const () as usize, 0);
+    {
+        let _run = crate::agent::run_context::push(11);
+        let (_, task) = call_host(CONCURRENT_TASK_SPAWN_FN, &[closure, 0]);
+        assert_eq!(
+            call_host(CONCURRENT_TASK_JOIN, &[task]).0,
+            HOST_STATUS_SUCCESS
+        );
+        assert_eq!(observed_spawn_run_chain(), Some(vec![11]));
+    }
+    assert_eq!(crate::agent::run_context::current(), None);
+
+    // The next job, submitted with no run, must not inherit the pooled
+    // worker's previous chain.
+    let closure = heap_closure(spawn_fn_run_chain_closure as *const () as usize, 0);
+    let (_, task) = call_host(CONCURRENT_TASK_SPAWN_FN, &[closure, 0]);
+    assert_eq!(
+        call_host(CONCURRENT_TASK_JOIN, &[task]).0,
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(observed_spawn_run_chain(), Some(Vec::new()));
+}
+
+/// Run chain observed from inside a background worker.
+static BACKGROUND_OBSERVED_RUN_CHAIN: std::sync::Mutex<Option<Vec<u64>>> =
+    std::sync::Mutex::new(None);
+
+fn observed_background_run_chain() -> Option<Vec<u64>> {
+    BACKGROUND_OBSERVED_RUN_CHAIN
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone()
+}
+
+#[test]
+fn background_task_inherits_the_spawning_run() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    assert_eq!(call_host(ASYNC_TASK_RESET, &[]).0, HOST_STATUS_SUCCESS);
+    *BACKGROUND_OBSERVED_RUN_CHAIN
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = None;
+
+    let task = {
+        let _run = crate::agent::run_context::push(17);
+        spawn_background_task(|| {
+            *BACKGROUND_OBSERVED_RUN_CHAIN
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) =
+                Some(crate::agent::run_context::current_chain());
+            Ok(1)
+        })
+        .expect("background task should be allocated")
+    };
+    assert_eq!(crate::agent::run_context::current(), None);
+    assert_eq!(
+        call_host(ASYNC_TASK_BLOCK_ON, &[task]),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+    assert_eq!(observed_background_run_chain(), Some(vec![17]));
+
+    // Spawning with no run on this thread keeps the worker run-free.
+    let task = spawn_background_task(|| {
+        *BACKGROUND_OBSERVED_RUN_CHAIN
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) =
+            Some(crate::agent::run_context::current_chain());
+        Ok(2)
+    })
+    .expect("background task should be allocated");
+    assert_eq!(
+        call_host(ASYNC_TASK_BLOCK_ON, &[task]),
+        (HOST_STATUS_SUCCESS, 2)
+    );
+    assert_eq!(observed_background_run_chain(), Some(Vec::new()));
+}
+
 // ── RagGenerate ──────────────────────────────────────────────────────────
 
 #[cfg(feature = "onnx")]

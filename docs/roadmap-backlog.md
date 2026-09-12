@@ -9965,7 +9965,7 @@ Training-data scarcity is the largest single handicap of a young language; shipp
 
 ## R-3206 Extended Contract Catalog Schema
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `ecosystem`
 - Risk: `high`
@@ -9985,7 +9985,7 @@ Until this lands, every agent function costs eight to ten hand edits across four
 
 ## R-3207 Generate Midend Lowering Tables from the Catalog
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `midend`
 - Risk: `high`
@@ -10006,7 +10006,7 @@ Removes one of the four copies. The remaining manual work is the semantic signat
 
 ## R-3208 Generate the Host-Call Table and Remove the Manual Count
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P1`
 - Owner: `web`
 - Risk: `medium`
@@ -10027,7 +10027,7 @@ Removes the second copy; the count assertion at api_tests.rs:93-95 becomes compu
 
 ## R-3209 std.agent Namespace and packages/spectra-agent Crate
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `runtime`
 - Risk: `high`
@@ -10112,7 +10112,7 @@ Long-running agents need memory that survives a restart and can be audited. The 
 
 ## R-3213 Run Context and Propagation
 
-- Status: `not_started`
+- Status: `complete`
 - Priority: `P0`
 - Owner: `runtime`
 - Risk: `high`

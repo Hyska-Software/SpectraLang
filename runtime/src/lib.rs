@@ -3,6 +3,7 @@ use std::thread::ThreadId;
 use std::time::{Duration, Instant, SystemTime};
 
 pub mod abi;
+pub mod agent;
 pub(crate) mod artifact;
 pub(crate) mod async_abi;
 pub(crate) mod async_frame;

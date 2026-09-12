@@ -35,7 +35,7 @@ docs = [
 
 [sources]
 semantic = ["compiler/src/semantic/builtin_modules.rs"]
-runtime = ["runtime/src/stdlib"]
+runtime = ["runtime/src/stdlib", "packages/spectra-agent/src"]
 api_runtime = ["packages/spectra-api/src"]
 lowering = ["midend/src/lowering.rs"]
 backend = ["backend/src/codegen.rs"]
@@ -190,6 +190,11 @@ covers = ["std.api.http3.*"]
 id = "api-json-derive"
 path = "tests/validation/357_json_derive_roundtrip.spectra"
 covers = ["std.api.json.quote_string", "std.api.json.quote_char", "std.api.json.encode_number", "std.api.json.decode_field", "std.api.json.typed_error_field"]
+
+[[probe]]
+id = "agent-surface"
+path = "tests/validation/365_agent_surface.spectra"
+covers = ["std.agent.*"]
 
 [[follow_up]]
 prefix = "std.tensor.diff"
@@ -417,6 +422,19 @@ owner = "runtime"
 classification = "incomplete"
 roadmap = "R-3001"
 reason = "Embedded 127.0.0.1-only HTTP/1.1 listener with POST /infer and GET /metrics dispatching to real dense/ONNX forward passes; sequential connections, no TLS/auth/back-pressure, and no API observability traces keep it below production."
+
+[[namespace]]
+prefix = "std.agent"
+owner = "runtime"
+classification = "baseline"
+roadmap = "R-3209"
+reason = "Phase 32 M2 seam: exactly one function (token_count) is landed end to end through compiler, midend, runtime, catalog, JIT and AOT; the remaining agent library follows in R-3210 and later."
+
+[[follow_up]]
+prefix = "std.agent"
+owner = "runtime"
+roadmap = "R-3209"
+reason = "The auditor's semantic source list only reads compiler/src/semantic/builtin_modules.rs, which decomposed into #[path] child modules, so make_std_agent is not seen as a semantic declaration; the runtime registration and the compiler declaration are both present and the seam is proven by the agent-surface probe."
 
 [[namespace]]
 prefix = "std.api.trace"

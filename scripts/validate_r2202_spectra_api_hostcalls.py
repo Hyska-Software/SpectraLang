@@ -7,7 +7,13 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 557
+
+sys.path.insert(0, str(ROOT / "scripts"))
+from generate_host_calls import catalog_host_call_count  # noqa: E402
+
+# R-3208: the typed catalog owns the host-call bindings, so the expected table
+# size is derived instead of a hand-maintained literal.
+PACKAGE_HOST_CALL_COUNT = catalog_host_call_count()
 LEGACY_REQUIRED_HOST_CALLS = [
     "spectra.api.version.major",
     "spectra.api.version.minor",
@@ -325,11 +331,13 @@ def validate_host_calls() -> None:
         "spectra_api_register_host_calls" in lib,
         "crate must export an FFI registration symbol",
     )
+    # R-3208: HOST_CALLS is generated from the catalog, so the registration
+    # count is derived from the table instead of a hardcoded literal.
     require(
-        f"assert_eq!(HOST_CALLS.len(), {PACKAGE_HOST_CALL_COUNT})" in lib,
-        "unit tests must assert host-call count",
+        "assert_eq!(spectra_api_host_call_count(), HOST_CALLS.len())" in lib,
+        "unit tests must derive the host-call count from HOST_CALLS.len()",
     )
-    # Covered by the HOST_CALLS.len() assert above; the runtime duplicate is gone.
+    # Covered by the derived assert above; the runtime duplicate is gone.
 
 
 def validate_cli_integration() -> None:

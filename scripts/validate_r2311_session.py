@@ -13,7 +13,13 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 557
+
+sys.path.insert(0, str(ROOT / "scripts"))
+from generate_host_calls import catalog_host_call_count  # noqa: E402
+
+# R-3208: the typed catalog owns the host-call bindings, so the expected table
+# size is derived instead of a hand-maintained literal.
+PACKAGE_HOST_CALL_COUNT = catalog_host_call_count()
 SESSION_CALLS = [
     "memory_store",
     "redis_store",

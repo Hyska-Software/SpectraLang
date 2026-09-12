@@ -89,10 +89,10 @@ mod tests {
             assert!(spec.name.starts_with(HOST_PREFIX), "{}", spec.name);
             assert!(names.insert(spec.name), "duplicate {}", spec.name);
         }
-        #[cfg(feature = "http3")]
-        assert_eq!(HOST_CALLS.len(), 557);
-        #[cfg(not(feature = "http3"))]
-        assert_eq!(HOST_CALLS.len(), 529);
+        // The expected size is derived from the generated table, never
+        // hardcoded: HOST_CALLS comes from the catalog, so a new native
+        // function only touches the catalog and the generator.
+        assert_eq!(spectra_api_host_call_count(), HOST_CALLS.len());
         let registered_names: HashSet<_> = HOST_CALLS.iter().map(|spec| spec.name).collect();
         for (name, _) in db::POSTGRES_HOST_CALLS {
             assert!(
@@ -106,8 +106,17 @@ mod tests {
     fn register_adds_all_api_host_calls_to_runtime_registry() {
         let _guard = test_guard();
         clear_host_functions();
+        // `register()` also aggregates namespace crates (`std.agent`, ...).
+        // Measure the aggregated crate contribution first so the total stays
+        // an exact equality instead of a superset check.
+        let namespace_inserted = spectra_agent::register();
+        clear_host_functions();
         let inserted = register();
-        assert_eq!(inserted, HOST_CALLS.len());
+        assert_eq!(
+            inserted,
+            HOST_CALLS.len() + namespace_inserted,
+            "register() must insert the API table plus the aggregated namespace crates"
+        );
         for spec in HOST_CALLS {
             assert!(lookup_host_function(spec.name).is_some(), "{}", spec.name);
         }

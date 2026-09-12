@@ -27,6 +27,7 @@ pub fn register_builtin_modules(registry: &mut ModuleRegistry) {
     registry.register_module("std.ml".to_string(), make_std_ml());
     registry.register_module("std.concurrent".to_string(), make_std_concurrent());
     registry.register_module("std.serve".to_string(), make_std_serve());
+    registry.register_module("std.agent".to_string(), make_std_agent());
     register_std_api_modules(registry, "std.api");
 }
 

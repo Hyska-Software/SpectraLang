@@ -30,6 +30,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 serde_json = { version = "1.0", features = ["preserve_order"] }
 spectra-runtime = { path = "../../runtime" }
 spectra-db = { path = "../spectra-db" }
+spectra-agent = { path = "../spectra-agent" }
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 webpki-roots = "0.26"

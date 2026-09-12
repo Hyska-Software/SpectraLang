@@ -32,6 +32,9 @@ pub(crate) fn lookup_std_host_function(path: &[String]) -> Option<HostFunctionDe
         [prefix, api, module, function] if prefix == "std" && api == "api" => {
             lookup_std_api_host_function(module, function)
         }
+        [prefix, agent, function] if prefix == "std" && agent == "agent" => {
+            lookup_std_host_group_agent(agent, function)
+        }
         [prefix, module, function] if prefix == "std" => {
             lookup_std_host_module_function(module, function)
         }

@@ -46,7 +46,11 @@ pub(crate) fn create_coroutine_task_boxed(
 ) -> Result<SpectraHostValue, i32> {
     let mut registry = lock_async_task_registry()?;
     let task_id = registry.allocate_coroutine_task(parent_scope);
-    if !registry.attach_coroutine_frame_boxed(task_id, frame, affinity) {
+    // Capture the run chain at creation; every later poll reinstalls it so the
+    // resumption path keeps the run visible to host calls inside the poll
+    // (R-3213 T2).
+    let run_chain = crate::agent::run_context::current_chain();
+    if !registry.attach_coroutine_frame_boxed(task_id, frame, affinity, run_chain) {
         let _ = registry.tasks.remove(task_id);
         return Err(HOST_STATUS_INTERNAL_ERROR);
     }
@@ -75,10 +79,17 @@ pub(crate) fn poll_coroutine_task(task_id: SpectraHostValue) -> Result<AsyncPoll
         (frames, invocation)
     };
     let mut context = AsyncPollContext::new();
+    let frame = invocation.frame;
     let status = if invocation.cancel_before_poll {
         AsyncPollStatus::Cancelled
     } else {
-        unsafe { AsyncPollStatus::from_abi((*invocation.frame).invoke_poll(task_id, &mut context)) }
+        // Reinstall the chain captured at creation for the duration of the
+        // poll, so a host call made while a compiled coroutine is resumed is
+        // attributable to the run that created it. The polling thread's own
+        // chain is restored on return (R-3213 T2).
+        crate::agent::run_context::with_chain(invocation.run_chain, || unsafe {
+            AsyncPollStatus::from_abi((*frame).invoke_poll(task_id, &mut context))
+        })
     };
     let (outcome, drop_action) = {
         let mut registry = lock_async_task_registry()?;
@@ -310,6 +321,10 @@ where
     F: FnOnce() -> Result<SpectraHostValue, ()> + Send + 'static,
 {
     let parent = tracing::current().and_then(|id| tracing::context(id).ok());
+    // Capture the run chain on the spawning thread, exactly like the tracing
+    // parent above, so a host call made by the background work is attributable
+    // to the run that requested it (R-3213 T2).
+    let run_chain = crate::agent::run_context::current_chain();
     let task_id = {
         let _lifecycle = lock_unpoisoned(background_task_lifecycle());
         let mut registry = lock_async_task_registry()?;
@@ -325,7 +340,9 @@ where
             .map(|registry| registry.task_is_cancelled(task_id))
             .unwrap_or(true);
         if !cancelled {
-            let result = tracing::with_context(parent, work);
+            let result = crate::agent::run_context::with_chain(run_chain, || {
+                tracing::with_context(parent, work)
+            });
             if let Ok(mut registry) = async_task_registry().lock() {
                 match result {
                     Ok(value) => {
@@ -1444,12 +1461,59 @@ mod coroutine_tests {
         DROPS.fetch_add(1, Ordering::SeqCst);
     }
 
+    /// Run chain observed while a compiled coroutine poll is resumed (R-3213).
+    static POLLED_RUN_CHAIN: std::sync::Mutex<Option<Vec<u64>>> = std::sync::Mutex::new(None);
+
+    unsafe extern "C" fn run_chain_poll(_: i64, _: i64, context: i64) -> i64 {
+        *POLLED_RUN_CHAIN
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) =
+            Some(crate::agent::run_context::current_chain());
+        (*(context as *mut AsyncPollContext)).set_result(AsyncResultStorage::scalar(1));
+        1
+    }
+
+    fn observed_polled_run_chain() -> Option<Vec<u64>> {
+        POLLED_RUN_CHAIN
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+
     fn reset() {
         let mut registry = lock_async_task_registry().expect("registry");
         registry.clear();
         POLLS.store(0, Ordering::SeqCst);
         REENTERED.store(false, Ordering::SeqCst);
         DROPS.store(0, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn coroutine_resumption_reinstalls_the_creating_run() {
+        let _guard = crate::runtime_test_guard();
+        reset();
+        *POLLED_RUN_CHAIN
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = None;
+
+        let task = {
+            let _run = crate::agent::run_context::push(31);
+            create_coroutine_task(
+                AsyncFrame::new(Vec::new(), run_chain_poll, count_drop),
+                None,
+                AsyncAffinity::Any,
+            )
+            .expect("task")
+        };
+        // The resuming thread no longer has the run; the poll must restore it
+        // from the chain captured at creation.
+        assert_eq!(crate::agent::run_context::current(), None);
+
+        assert_eq!(poll_coroutine_task(task), Ok(AsyncPollOutcome::Ready));
+        assert_eq!(observed_polled_run_chain(), Some(vec![31]));
+        // The polling thread's own chain is restored, not the captured one.
+        assert_eq!(crate::agent::run_context::current(), None);
+        assert!(drop_coroutine_task(task).expect("drop"));
     }
 
     #[test]

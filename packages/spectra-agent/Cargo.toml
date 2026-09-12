@@ -1,0 +1,13 @@
+[package]
+name = "spectra-agent"
+version = "0.1.0"
+edition = "2021"
+
+# An rlib only: the namespace is aggregated by the existing `spectra-api`
+# registration path, so this crate adds no staticlib, no C symbol, and no
+# linker entry.
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+spectra-runtime = { path = "../../runtime" }

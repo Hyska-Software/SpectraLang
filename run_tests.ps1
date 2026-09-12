@@ -2900,6 +2900,62 @@ if ($r3205EmbeddedDocs.Status -eq "PASSOU") {
 $results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3205_embedded_docs"; Status = $r3205EmbeddedDocs.Status; Detalhe = $r3205EmbeddedDocs.Detail }
 
 # ---------------------------------------------------------------------------
+# Grupo 10.2: Phase 32 agent platform — M1 single source of truth (R-3206..R-3208)
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-3206 extended contract catalog schema ---" -ForegroundColor Yellow
+$r3206CatalogSchema = Invoke-HostCommand -name "validate_r3206_catalog_schema" -fileName "python" -arguments @("scripts\validate_r3206_catalog_schema.py", "--report", "target\r3206-catalog-schema\report.json") -workingDir (Get-Location).Path
+if ($r3206CatalogSchema.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3206_catalog_schema"; Status = $r3206CatalogSchema.Status; Detalhe = $r3206CatalogSchema.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 10.3: Phase 32 agent platform — M4 governance seams
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-3213 run context and propagation ---" -ForegroundColor Yellow
+$r3213RunContext = Invoke-HostCommand -name "validate_r3213_run_context" -fileName "python" -arguments @("scripts\validate_r3213_run_context.py") -workingDir (Get-Location).Path
+if ($r3213RunContext.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3213_run_context"; Status = $r3213RunContext.Status; Detalhe = $r3213RunContext.Detail }
+
+Write-Host ""
+Write-Host "--- R-3207 generated midend lowering tables ---" -ForegroundColor Yellow
+$r3207LoweringGeneration = Invoke-HostCommand -name "validate_r3207_lowering_generation" -fileName "python" -arguments @("scripts\validate_r3207_lowering_generation.py") -workingDir (Get-Location).Path
+if ($r3207LoweringGeneration.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3207_lowering_generation"; Status = $r3207LoweringGeneration.Status; Detalhe = $r3207LoweringGeneration.Detail }
+
+Write-Host ""
+Write-Host "--- R-3208 generated host-call table ---" -ForegroundColor Yellow
+$r3208HostcallGeneration = Invoke-HostCommand -name "validate_r3208_hostcall_generation" -fileName "python" -arguments @("scripts\validate_r3208_hostcall_generation.py") -workingDir (Get-Location).Path
+if ($r3208HostcallGeneration.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3208_hostcall_generation"; Status = $r3208HostcallGeneration.Status; Detalhe = $r3208HostcallGeneration.Detail }
+
+Write-Host ""
+Write-Host "--- R-3209 std.agent namespace and crate ---" -ForegroundColor Yellow
+$r3209AgentNamespace = Invoke-HostCommand -name "validate_r3209_agent_namespace" -fileName "python" -arguments @("scripts\validate_r3209_agent_namespace.py") -workingDir (Get-Location).Path
+if ($r3209AgentNamespace.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3209_agent_namespace"; Status = $r3209AgentNamespace.Status; Detalhe = $r3209AgentNamespace.Detail }
+
+# ---------------------------------------------------------------------------
 # Resumo
 # ---------------------------------------------------------------------------
 $totalDecisive = $totalPassed + $totalFailed

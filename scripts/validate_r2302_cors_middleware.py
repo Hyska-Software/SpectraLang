@@ -8,7 +8,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_HOST_CALL_COUNT = 557
 
 
 def cargo_command() -> str:
@@ -117,13 +116,11 @@ def validate_implementation() -> None:
     ]:
         require(name in lib, f"{name} missing from spectra-api host table")
         require(name in runtime, f"{name} missing from runtime host-call contract")
+    # R-3208: HOST_CALLS is generated from the catalog, so the registration
+    # count is derived from the table instead of a hardcoded literal.
     require(
-        f"assert_eq!(HOST_CALLS.len(), {PACKAGE_HOST_CALL_COUNT})" in lib,
-        f"package host-call count must be {PACKAGE_HOST_CALL_COUNT}",
-    )
-    require(
-        f"assert_eq!(HOST_CALLS.len(), {PACKAGE_HOST_CALL_COUNT})" in api_tests,
-        f"package host-call count must be {PACKAGE_HOST_CALL_COUNT}",
+        "assert_eq!(spectra_api_host_call_count(), HOST_CALLS.len())" in api_tests,
+        "package registration count must be derived from HOST_CALLS.len()",
     )
 
 

@@ -2980,6 +2980,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "spectra-agent"
+version = "0.1.0"
+dependencies = [
+ "spectra-runtime",
+]
+
+[[package]]
 name = "spectra-api"
 version = "0.1.0"
 dependencies = [
@@ -3001,6 +3008,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "spectra-agent",
  "spectra-compiler",
  "spectra-contract",
  "spectra-db",

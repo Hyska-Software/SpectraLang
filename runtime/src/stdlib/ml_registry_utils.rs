@@ -503,7 +503,9 @@ pub(crate) fn ml_wordpiece_decode(tokenizer: &MlWordpieceTokenizer, ids: &[i64])
     Some(words.join(" "))
 }
 
-pub(crate) fn ml_token_set(text: &str) -> HashSet<String> {
+/// Token stream shared by every std.ml text path. Splits on whitespace,
+/// strips ASCII punctuation, and lowercases; empty results are dropped.
+pub(crate) fn ml_text_tokens(text: &str) -> impl Iterator<Item = String> + '_ {
     text.split_whitespace()
         .map(|token| {
             token
@@ -511,7 +513,17 @@ pub(crate) fn ml_token_set(text: &str) -> HashSet<String> {
                 .to_ascii_lowercase()
         })
         .filter(|token| !token.is_empty())
-        .collect()
+}
+
+pub(crate) fn ml_token_set(text: &str) -> HashSet<String> {
+    ml_text_tokens(text).collect()
+}
+
+/// Token count produced by the std.ml text tokenizer, exposed for the
+/// `std.agent` namespace (`std.agent.token_count`). Reusing
+/// [`ml_text_tokens`] keeps a single tokenization definition in the runtime.
+pub fn text_token_count(text: &str) -> usize {
+    ml_text_tokens(text).count()
 }
 
 pub(crate) fn ml_f1_overlap(answer: &str, expected: &str) -> f64 {

@@ -20,6 +20,7 @@ impl SemanticAnalyzer {
             "std.ml",
             "std.concurrent",
             "std.serve",
+            "std.agent",
             "std.api",
             "std.api.http",
             "std.api.server",

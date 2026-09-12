@@ -89,6 +89,9 @@ pub(crate) use tensor_autograd::*;
 #[path = "ml_registry_utils.rs"]
 mod ml_registry_utils;
 pub(crate) use ml_registry_utils::*;
+// Public seam consumed by the `spectra-agent` host crate (R-3209): the
+// `std.agent` namespace counts tokens through the std.ml tokenizer.
+pub use ml_registry_utils::text_token_count;
 
 #[path = "ml_artifacts_modules.rs"]
 mod ml_artifacts_modules;
