@@ -8,6 +8,7 @@
 # wrappers live in a different module than the dispatcher.
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -16,7 +17,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPECTRALANG = ROOT / "target" / "debug" / "spectralang.exe"
+SPECTRALANG = Path(
+    os.environ.get("SPECTRALANG_BINARY") or (ROOT / "target" / "debug" / "spectralang.exe")
+)
 CARGO = shutil.which("cargo") or "cargo"
 FIXTURE = "tests/validation/375_agent_act.spectra"
 PROJECT = "tests/projects/valid/agent_act"
@@ -167,7 +170,22 @@ def validate_contract() -> None:
 
 
 def validate_catalog() -> None:
-    run_command([sys.executable, "scripts/generate_stdlib_catalog.py"])
+    probe = ROOT / "target" / "r3222-catalog-probe" / "stdlib.toml"
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    if probe.exists():
+        probe.unlink()
+    run_command(
+        [
+            sys.executable,
+            "scripts/generate_stdlib_catalog.py",
+            "--output",
+            str(probe.relative_to(ROOT)),
+        ]
+    )
+    require(
+        probe.read_bytes() == (ROOT / CATALOG).read_bytes(),
+        "the checked-in catalog must be the generator's output",
+    )
     with (ROOT / CATALOG).open("rb") as handle:
         catalog = tomllib.load(handle)
     entries = {entry["path"]: entry for entry in catalog["entry"]}
@@ -256,7 +274,8 @@ def validate_behavior() -> None:
 
 
 def main() -> None:
-    run_command([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"])
+    if not os.environ.get("SPECTRA_CLI_BUILT"):
+        run_command([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"])
     validate_implementation()
     validate_contract()
     validate_catalog()

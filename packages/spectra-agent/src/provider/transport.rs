@@ -83,6 +83,12 @@ mod tests {
 
     #[test]
     fn installation_is_idempotent_and_clearable() {
+        // The slot is process-global and the `hosts`/`replay`/`mcp` tests
+        // install their own transports; this test clears it first, so it must
+        // hold the same lock or it wipes a peer mid-flight.
+        let _guard = crate::GLOBAL_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         clear_http_transport();
         assert!(set_http_transport(EchoTransport));
         assert!(!set_http_transport(EchoTransport));

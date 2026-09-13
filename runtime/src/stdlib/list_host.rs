@@ -44,6 +44,7 @@ pub(crate) extern "C" fn std_list_push(ctx: *mut SpectraHostCallContext) -> i32 
         let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
         let handle = args[0] as usize;
         let value = args[1];
+        crate::ffi::escape_stored_value(value);
 
         match with_list_registry(|registry| registry.push(handle, value)) {
             Ok(len) => {

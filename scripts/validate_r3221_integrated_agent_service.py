@@ -43,7 +43,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPECTRALANG = ROOT / "target" / "debug" / "spectralang.exe"
+SPECTRALANG = Path(
+    os.environ.get("SPECTRALANG_BINARY") or (ROOT / "target" / "debug" / "spectralang.exe")
+)
 CARGO = shutil.which("cargo") or "cargo"
 
 PROJECT = "tests/projects/valid/integrated_agent_service"
@@ -429,7 +431,8 @@ def validate_behavior() -> dict:
 
 
 def main() -> None:
-    run_command([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"])
+    if not os.environ.get("SPECTRA_CLI_BUILT"):
+        run_command([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"])
     validate_project_shape()
     validate_tracker()
     compile_aot()

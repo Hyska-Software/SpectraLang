@@ -1,0 +1,129 @@
+module main
+
+// Example 05 — streaming turns and schema-constrained output.
+//
+// Three ways to get an answer out of the same governed run:
+//
+//   1. `ask_stream` opens a chunk handle; `stream_next` yields the chunks and
+//      the empty chunk ends the stream; `stream_close` releases the handle;
+//   2. `ask_json` takes a JSON Schema — `Cobranca::json_schema()` is the one
+//      the compiler derives from the record — and the client validates the
+//      provider's payload before the caller ever sees it;
+//   3. `ask` is the plain turn.
+//
+// The mock provider is scripted and deterministic: `spectra:json` returns a
+// schema-shaped document, `spectra:invalid-json` returns one the schema
+// rejects, any other prompt echoes. No credentials and no network.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.string as str
+
+// One derive, two products: the record's `to_json`/`from_json` and the JSON
+// Schema the constrained call validates against.
+#[derive(Serialize, Deserialize)]
+public record Cobranca {
+    count: int,
+    label: string,
+}
+
+func spec() returns string {
+    return "{\"goal\":\"example-streaming-and-schema\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}"
+}
+
+async func run_checks() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        // 1. Streaming: print every chunk as it arrives, then the whole reply.
+        let opened = await ask_stream(run, "chunks")
+        if let Result::Ok(stream) = opened {
+            let chunks = 0
+            let total  = ""
+            let done   = false
+            while done == false {
+                let next = await stream_next(stream)
+                if let Result::Ok(chunk) = next {
+                    if chunk == "" {
+                        done = true
+                    } else {
+                        chunks = chunks + 1
+                        total = total + chunk
+                        println("chunk " + convert.int_to_string(chunks) + " -> " + chunk)
+                    }
+                } else {
+                    return 2
+                }
+            }
+            println("reply    -> " + total)
+            if chunks < 2 {
+                return 3
+            }
+            if total != "mock echo: chunks" {
+                return 4
+            }
+            let closed = await stream_close(stream)
+            if let Result::Ok(ok) = closed {
+                if ok == false {
+                    return 5
+                }
+            } else {
+                return 6
+            }
+        } else {
+            return 1
+        }
+
+        // 2. Structured output: the derived schema, then a payload that
+        // satisfies it and one that does not.
+        let schema = Cobranca::json_schema()
+        println("schema   -> " + schema)
+        let good = await ask_json(run, "spectra:json", schema)
+        if let Result::Ok(payload) = good {
+            println("payload  -> " + payload)
+            if payload != "{\"count\":3,\"label\":\"mock-response\"}" {
+                return 7
+            }
+        } else {
+            return 8
+        }
+
+        let bad = await ask_json(run, "spectra:invalid-json", schema)
+        if let Result::Err(schema_error) = bad {
+            let message = error.message(schema_error)
+            println("rejected -> " + message)
+            if str.contains(message, "schema") == false {
+                return 9
+            }
+        } else {
+            return 10
+        }
+
+        // 3. The plain turn.
+        let reply = await ask(run, "hello")
+        if let Result::Ok(text) = reply {
+            println("ask      -> " + text)
+        } else {
+            return 11
+        }
+
+        // The report closes the run: status, counters and the journal flag.
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report   -> " + report)
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 12
+            }
+        } else {
+            return 13
+        }
+    } else {
+        return 14
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(run_checks())
+}

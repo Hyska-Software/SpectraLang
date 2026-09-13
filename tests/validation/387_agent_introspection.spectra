@@ -1,0 +1,258 @@
+module agent_introspection
+
+// R-3212/R-3216 introspection at the language surface: the numbers a run can
+// report about itself, and the typed values it can hand back.
+//
+// Pinned here:
+//   - `budget_remaining` is the unclamped sentinel (`i64::MAX`) on a run with
+//     no ceiling, the declared ceiling before any work, and the exact
+//     remainder after a model turn (`tokens_in + tokens_out` are what the
+//     ceiling counts);
+//   - a run cancelled by its ceiling reports zero, not an error, and its
+//     report says `budget_exceeded`;
+//   - `embed` returns the provider's deterministic vector: fixed width, same
+//     text twice gives the same first element, different text does not;
+//   - a tool whose result is a record hands back the `to_json` document
+//     through `tool_call`, which is what the model would see.
+//
+// The record-result check used to expose a runtime defect (an aggregate result
+// outliving the coroutine frame that owns it, so the caller could read
+// reclaimed memory); it is fixed and pinned by
+// `tests/validation/388_async_aggregate_result_lifetime.spectra`. See
+// `docs/architecture/coroutine-aggregate-result-lifetime.md`.
+
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.string as str
+import std.tensor as tensor
+
+const SENTINEL = 9223372036854775807
+
+#[derive(Serialize, Deserialize)]
+public record QuoteArgs {
+    symbol: string,
+}
+
+#[derive(Serialize, Deserialize)]
+public record Quote {
+    symbol: string,
+    price: float,
+}
+
+// A tool returning a record: the wrapper encodes it with the same derive that
+// produces `to_json`, so the model sees the document below.
+#[agent_tool("Quotes a symbol")]
+public async func quote(run: Run, args: QuoteArgs) returns Quote {
+    return Quote { symbol: args.symbol, price: 512.5 }
+}
+
+func spec(run_id: string, max_tokens: int) returns string {
+    return "{\"goal\":\"introspection\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":" +
+        convert.int_to_string(max_tokens) +
+        ",\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":17,\"journal\":\"\",\"run_id\":\"" +
+        run_id +
+        "\"}"
+}
+
+// A run with no ceiling reports the sentinel; the same run reaches the tool
+// and the embed primitive.
+async func unlimited_run_reports_the_sentinel() returns int {
+    let started = agent_start(spec("fixture-387-unlimited", 0))
+    if let Result::Ok(run) = started {
+        let before = budget_remaining(run)
+        if let Result::Ok(remaining) = before {
+            if remaining != SENTINEL {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        let reply = await ask(run, "alpha")
+        if let Result::Ok(text) = reply {
+            if text != "mock echo: alpha" {
+                return 4
+            }
+        } else {
+            return 5
+        }
+        let after = budget_remaining(run)
+        if let Result::Ok(remaining) = after {
+            if remaining != SENTINEL {
+                return 6
+            }
+        } else {
+            return 7
+        }
+
+        // The record-returning tool: the JSON document is the model-facing
+        // result of the governed dispatch.
+        let called = await tool_call(run, "quote", "{\"symbol\":\"SPX\"}")
+        if let Result::Ok(value) = called {
+            if value != "{\"symbol\":\"SPX\",\"price\":512.5}" {
+                return 8
+            }
+        } else {
+            return 9
+        }
+
+        // Deterministic embeddings: fixed width, same text twice, different
+        // text differs.
+        let first = await embed(run, "alpha")
+        if let Result::Ok(vector) = first {
+            if tensor.len(vector) != 8 {
+                return 10
+            }
+            let again = await embed(run, "alpha")
+            if let Result::Ok(other) = again {
+                if tensor.get_f(vector, 0) != tensor.get_f(other, 0) {
+                    return 11
+                }
+            } else {
+                return 12
+            }
+            let different = await embed(run, "beta")
+            if let Result::Ok(other) = different {
+                if tensor.get_f(vector, 0) == tensor.get_f(other, 0) {
+                    return 13
+                }
+            } else {
+                return 14
+            }
+        } else {
+            return 15
+        }
+
+        if token_count("alpha beta gamma") != 3 {
+            return 16
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"tool_calls\":1") == false {
+                return 17
+            }
+            if str.contains(report, "\"tokens_in\":1") == false {
+                return 18
+            }
+            if str.contains(report, "\"tokens_out\":3") == false {
+                return 19
+            }
+        } else {
+            return 20
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// A ceiling of 6 tokens: the run starts with 6, the turn costs 1 in + 3 out,
+// and the remainder is 2.
+async func a_ceiling_is_decremented_exactly() returns int {
+    let started = agent_start(spec("fixture-387-ceiling", 6))
+    if let Result::Ok(run) = started {
+        let before = budget_remaining(run)
+        if let Result::Ok(remaining) = before {
+            if remaining != 6 {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let reply = await ask(run, "alpha")
+        if let Result::Ok(text) = reply {
+            if text != "mock echo: alpha" {
+                return 4
+            }
+        } else {
+            return 5
+        }
+        let after = budget_remaining(run)
+        if let Result::Ok(remaining) = after {
+            if remaining != 2 {
+                return 6
+            }
+        } else {
+            return 7
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+// A ceiling the turn crosses: the crossing turn keeps its value, the run is
+// cancelled, and the *next* unit of work is refused. Introspection after the
+// cancellation reports zero.
+async func a_cancelled_run_reports_zero() returns int {
+    let started = agent_start(spec("fixture-387-cancelled", 1))
+    if let Result::Ok(run) = started {
+        // The first turn is admitted (nothing was used yet) and crosses the
+        // ceiling; it keeps its value.
+        let crossing = await ask(run, "alpha")
+        if let Result::Ok(text) = crossing {
+            if text != "mock echo: alpha" {
+                return 8
+            }
+        } else {
+            return 9
+        }
+
+        // The run is cancelled: the next unit of work is refused with the
+        // typed error.
+        let refused = await ask(run, "beta")
+        if let Result::Err(budget_error) = refused {
+            if str.contains(error.message(budget_error), "budget_exceeded") == false {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        let remaining = budget_remaining(run)
+        if let Result::Ok(value) = remaining {
+            if value != 0 {
+                return 4
+            }
+        } else {
+            return 5
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"status\":\"budget_exceeded\"") == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    let first = block_on(unlimited_run_reports_the_sentinel())
+    if first != 0 {
+        return first
+    }
+    let second = block_on(a_ceiling_is_decremented_exactly())
+    if second != 0 {
+        return 100 + second
+    }
+    let third = block_on(a_cancelled_run_reports_zero())
+    if third != 0 {
+        return 200 + third
+    }
+    return 0
+}

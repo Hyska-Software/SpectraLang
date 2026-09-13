@@ -5,6 +5,7 @@
 # and identical results in JIT and AOT.
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -13,7 +14,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPECTRALANG = ROOT / "target" / "debug" / "spectralang.exe"
+SPECTRALANG = Path(
+    os.environ.get("SPECTRALANG_BINARY") or (ROOT / "target" / "debug" / "spectralang.exe")
+)
 CARGO = shutil.which("cargo") or "cargo"
 FIXTURE = "tests/validation/365_agent_surface.spectra"
 
@@ -81,7 +84,22 @@ def validate_implementation() -> None:
 
 
 def validate_catalog() -> None:
-    run_command([sys.executable, "scripts/generate_stdlib_catalog.py"])
+    probe = ROOT / "target" / "r3209-catalog-probe" / "stdlib.toml"
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    if probe.exists():
+        probe.unlink()
+    run_command(
+        [
+            sys.executable,
+            "scripts/generate_stdlib_catalog.py",
+            "--output",
+            str(probe.relative_to(ROOT)),
+        ]
+    )
+    require(
+        probe.read_bytes() == (ROOT / "packages/spectra-contract/catalog/stdlib.toml").read_bytes(),
+        "the checked-in catalog must be the generator's output",
+    )
     with (ROOT / "packages/spectra-contract/catalog/stdlib.toml").open("rb") as handle:
         catalog = tomllib.load(handle)
     entries = {entry["path"]: entry for entry in catalog["entry"]}
@@ -128,7 +146,8 @@ def validate_planning() -> None:
 
 
 def main() -> None:
-    run_command([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"])
+    if not os.environ.get("SPECTRA_CLI_BUILT"):
+        run_command([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"])
     validate_implementation()
     validate_catalog()
     validate_execution()

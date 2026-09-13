@@ -1530,7 +1530,11 @@ Tasks:
 - **T4 — runnable examples.** `examples/agent/01-tool-and-run`, `02-approval-and-budget`,
   `03-mcp-and-memory`, `04-durable-replay`: each runs end to end through the normal CLI
   with a mock provider (no credentials required), in JIT and via
-  `spectralang compile --emit-exe`.
+  `spectralang compile --emit-exe`. Extended with `05-streaming-and-schema`,
+  `06-capabilities-and-taint` and `07-protocol-surface`, and with the language-surface
+  fixtures `tests/validation/384..387` (streaming lifecycle, run-level grant enforcement,
+  journal artifact, run introspection); the certification gate runs the examples and the
+  fixtures in JIT and AOT.
 - **T5 — conformance suite v1.** `packages/spectra-agent/tests/conformance.rs` (create)
   plus `scripts/validate_r3221_agent_conformance.py`: capability denial on all four
   dispatch entrypoints; fast-path invariant; journal replay without duplicate effects;

@@ -1,17 +1,27 @@
 #!/usr/bin/env python3
 """R-3221 certification gate: the Phase 32 agent platform release gate.
 
-Five checks, in order, stopping at the first failure:
+The checks run in order, stopping at the first failure:
 
-  (a) the crate conformance suite
+  (a) the prelude: `spectra-cli` and the compiler's contract dump are built
+      once and exported to every validator (`SPECTRALANG_BINARY`,
+      `SPECTRA_CLI_BUILT`, `SPECTRA_CONTRACT_DUMP`), so no validator rebuilds
+      the CLI and no catalog probe re-enters cargo;
+  (b) the crate conformance suite
       (`cargo test -p spectra-agent --test conformance`);
-  (b) the full sweep of the phase's item validators
-      (`scripts/validate_r3201_*.py` ... `scripts/validate_r3224_*.py`);
-  (c) surface determinism: two `spectralang surface --json` runs over
+  (c) the full sweep of the phase's item validators: every
+      `scripts/validate_r32XX_*.py` of the phase, so an item with several
+      validators (R-3221 carries the package gate and the host-adapter gate)
+      runs all of them;
+  (d) surface determinism: two `spectralang surface --json` runs over
       `tests/projects/valid/integrated_agent_service` are byte-identical;
-  (d) every runnable example (`examples/agent/01..04`) in JIT and AOT
+  (e) every runnable example (`examples/agent/01..07`) in JIT and AOT
       (`compile --debug-info=none --emit-exe`, then execute);
-  (e) the integrated-project validator
+  (f) the verification fixtures (`tests/validation/384..389`) in JIT and AOT --
+      the language-surface contracts for streaming lifecycle, run-level grant
+      enforcement, the journal artifact and run introspection, plus the
+      aggregate-result lifetime regression;
+  (g) the integrated-project validator
       (`scripts/validate_r3221_integrated_agent_service.py`).
 
 Every check's status is written to
@@ -19,9 +29,17 @@ Every check's status is written to
 a single failing check exits non-zero. The gate is intentionally heavy: it
 re-runs every item validator, because it is the release gate, not a smoke test.
 
+The share-nothing work -- the item-validator sweep, the examples and the
+fixtures -- runs in a bounded process pool (`--jobs`, default 4). Each
+validator owns its `target/` and `.spectra/` paths, the crate tests namespace
+their work directory by process id, and the catalog probes generate into a
+per-item path instead of the repository, so concurrency changes the wall clock
+and nothing else: results are reported in input order and a failure is named
+with the lowest item index that failed.
+
 Two R-3221 validators are excluded from the sweep for exactly one reason each:
 this script itself (recursion) and the integrated-project validator, which check
-(e) runs as its dedicated slot. The package validator
+(f) runs as its dedicated slot. The package validator
 (`validate_r3221_agent_package.py`) stays in the sweep, so no item validator is
 skipped silently; a validator that is expected and missing is a failure.
 """
@@ -35,14 +53,27 @@ import shutil
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Callable
+from typing import Callable, TypeVar
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_DIR = ROOT / "scripts"
 WORK = ROOT / "target" / "r3221-agent-conformance"
 REPORT_PATH = WORK / "report.json"
+
+# Parallelism for the independent work: the item-validator sweep, the examples
+# and the fixtures are share-nothing processes (each owns its `target/` and
+# `.spectra/` paths, and the crate tests namespace their work directory by
+# process id), so they run in a bounded pool instead of one after another. Four
+# leaves the six-core reference host room for the linker, which is the
+# heaviest single operation; `--jobs` overrides it.
+MAX_JOBS = 4
+JOBS = max(1, min(MAX_JOBS, os.cpu_count() or 1))
+
+T = TypeVar("T")
+R = TypeVar("R")
 
 SELF = "scripts/validate_r3221_agent_conformance.py"
 INTEGRATED_VALIDATOR = "scripts/validate_r3221_integrated_agent_service.py"
@@ -55,6 +86,22 @@ EXAMPLES = {
     "02-approval-and-budget": "examples/agent/02-approval-and-budget",
     "03-mcp-and-memory": "examples/agent/03-mcp-and-memory",
     "04-durable-replay": "examples/agent/04-durable-replay",
+    "05-streaming-and-schema": "examples/agent/05-streaming-and-schema",
+    "06-capabilities-and-taint": "examples/agent/06-capabilities-and-taint",
+    "07-protocol-surface": "examples/agent/07-protocol-surface",
+}
+
+# The language-surface contracts that back the example set: the streaming
+# handle lifecycle, run-level grant enforcement, the journal artifact and run
+# introspection. They are fixtures, not examples: each asserts its contract and
+# exits non-zero on the first mismatch.
+VERIFICATION_FIXTURES = {
+    "stream_lifecycle": "tests/validation/384_agent_stream_lifecycle.spectra",
+    "capabilities_in_practice": "tests/validation/385_agent_capabilities_in_practice.spectra",
+    "journal_artifact": "tests/validation/386_agent_journal_artifact.spectra",
+    "introspection": "tests/validation/387_agent_introspection.spectra",
+    "aggregate_result_lifetime": "tests/validation/388_async_aggregate_result_lifetime.spectra",
+    "string_and_container_payload_lifetime": "tests/validation/389_string_and_container_payload_lifetime.spectra",
 }
 
 CARGO = os.environ.get("CARGO") or shutil.which("cargo") or "cargo"
@@ -83,6 +130,40 @@ def run(args: list[str], timeout: int) -> tuple[int, str]:
         timeout=timeout,
     )
     return completed.returncode, completed.stdout
+
+
+def parallel_map(items: list[T], worker: Callable[[T], R], label: str) -> list[R]:
+    """Maps `worker` over `items` with at most [`JOBS`] in flight.
+
+    Results come back in input order. A worker raises `CheckFailure` with its
+    own item named in the message; when more than one fails, the failure
+    reported is the one with the lowest input index, and everything not yet
+    started is cancelled, so a failing run names the same item it would name if
+    the work had been serial.
+    """
+    if not items:
+        return []
+    results: list[R | None] = [None] * len(items)
+    failures: list[tuple[int, str]] = []
+    workers = max(1, min(JOBS, len(items)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(worker, item): index for index, item in enumerate(items)}
+        for future in as_completed(futures):
+            index = futures[future]
+            try:
+                results[index] = future.result()
+            except CheckFailure as error:
+                failures.append((index, str(error)))
+                for pending in futures:
+                    pending.cancel()
+            except Exception as error:  # noqa: BLE001 - reported with the item's failure
+                failures.append((index, f"{type(error).__name__}: {error}"))
+                for pending in futures:
+                    pending.cancel()
+    if failures:
+        index, detail = min(failures, key=lambda failure: failure[0])
+        raise CheckFailure(f"{label} stopped at item {index + 1}: {detail}")
+    return [result for result in results if result is not None]  # type: ignore[misc]
 
 
 def resolve_binary(override: str | None = None) -> Path:
@@ -121,14 +202,45 @@ def cargo(args: list[str], timeout: int, label: str) -> str:
     raise CheckFailure(f"{label} failed (exit {code}):\n{tail(output)}")
 
 
-# ── (a) the conformance suite ────────────────────────────────────────────
+# ── (a) the prelude: build once, share with every validator ──────────────
 
 
 def check_cli_build() -> dict:
-    if BINARY is not None:
-        return {"binary": str(BINARY), "reused": True}
-    output = cargo(["build", "-q", "-p", "spectra-cli", "--offline"], 1200, "spectra-cli build")
-    return {"binary": str(resolve_binary()), "output": tail(output, 5)}
+    """Builds what the rest of the gate consumes and publishes it in the env.
+
+    Both builds happen once, here, in cargo's non-test feature set:
+
+      * `spectra-cli` -- the binary every validator would otherwise build for
+        itself. Validators skip their own build when `SPECTRA_CLI_BUILT` is
+        set, which also keeps them from flipping the shared build directory
+        between cargo's test and non-test feature sets (a flip rebuilds the
+        world and costs minutes).
+      * `dump_stdlib_contract` -- the compiler's contract dump, exported as
+        `SPECTRA_CONTRACT_DUMP` so the eleven catalog probes run it directly
+        instead of re-entering cargo.
+    """
+    evidence: dict = {}
+    if BINARY is None:
+        output = cargo(["build", "-q", "-p", "spectra-cli", "--offline"], 1200, "spectra-cli build")
+        evidence["output"] = tail(output, 5)
+    binary = resolve_binary()
+
+    dump = ROOT / "target" / "debug" / ("dump_stdlib_contract.exe" if sys.platform.startswith("win") else "dump_stdlib_contract")
+    dump_output = cargo(
+        ["build", "-q", "-p", "spectra-compiler", "--bin", "dump_stdlib_contract", "--offline"],
+        1200,
+        "contract dump build",
+    )
+    if not dump.is_file():
+        raise CheckFailure(f"contract dump binary missing after its build: {dump}")
+    evidence["dump"] = tail(dump_output, 3)
+
+    os.environ["SPECTRALANG_BINARY"] = str(binary)
+    os.environ["SPECTRA_CLI_BUILT"] = "1"
+    os.environ["SPECTRA_CONTRACT_DUMP"] = str(dump)
+    evidence["binary"] = str(binary)
+    evidence["reused_binary"] = BINARY is not None and "output" not in evidence
+    return evidence
 
 
 def check_conformance_suite() -> dict:
@@ -159,29 +271,32 @@ def expected_validators() -> list[tuple[str, Path]]:
                 f"R-{number}: no validator in scripts/ (expected {prefix}*.py); "
                 "an item validator may not be skipped silently"
             )
-        found.append((f"R-{number}", matches[0]))
+        # Every validator of the item runs: an item with several scripts
+        # (R-3221 has the package gate and the host-adapter gate) must not
+        # silently drop the ones that sort after the first.
+        found.extend((f"R-{number}", script) for script in matches)
     return found
 
 
 def check_item_validators() -> dict:
-    results: list[dict] = []
-    for item, script in expected_validators():
+    entries = expected_validators()
+
+    def validate(entry: tuple[str, Path]) -> dict:
+        item, script = entry
         started = time.monotonic()
         code, output = run([sys.executable, str(script.relative_to(ROOT))], timeout=2400)
-        entry = {
+        record = {
             "item": item,
             "script": str(script.relative_to(ROOT)),
             "status": "passed" if code == 0 else "failed",
             "seconds": round(time.monotonic() - started, 2),
         }
         if code != 0:
-            entry["output"] = tail(output, 30)
-            results.append(entry)
-            raise CheckFailure(
-                f"{item} validator {script.name} failed (exit {code}):\n{tail(output, 30)}"
-            )
-        results.append(entry)
-    return {"validators": results, "count": len(results)}
+            raise CheckFailure(f"{item} validator {script.name} failed (exit {code}):\n{tail(output, 30)}")
+        return record
+
+    results = parallel_map(entries, validate, "validator sweep")
+    return {"validators": results, "count": len(results), "jobs": JOBS}
 
 
 # ── (c) surface determinism ──────────────────────────────────────────────
@@ -216,11 +331,11 @@ deterministic (module/symbol order and key order)"
 
 def check_examples() -> dict:
     binary = resolve_binary()
-    evidence: dict[str, dict] = {}
     example_work = WORK / "examples"
     example_work.mkdir(parents=True, exist_ok=True)
 
-    for name, project in EXAMPLES.items():
+    def check(entry: tuple[str, str]) -> tuple[str, dict]:
+        name, project = entry
         source = ROOT / project / "src" / "main.spectra"
         if not source.is_file():
             raise CheckFailure(f"example {name} has no {source.relative_to(ROOT)}")
@@ -250,11 +365,58 @@ def check_examples() -> dict:
         code, output = run([executable], timeout=600)
         if code != 0:
             raise CheckFailure(f"example {name} (AOT) exited {code}:\n{tail(output)}")
-        evidence[name] = {"jit": jit_tail, "aot": tail(output, 5)}
-    return evidence
+        return name, {"jit": jit_tail, "aot": tail(output, 5)}
+
+    pairs = parallel_map(list(EXAMPLES.items()), check, "example set")
+    return dict(pairs)
 
 
-# ── (e) the integrated project ───────────────────────────────────────────
+# ── (e) the verification fixtures ────────────────────────────────────────
+
+
+def check_verification_fixtures() -> dict:
+    binary = resolve_binary()
+    fixture_work = WORK / "fixtures"
+    fixture_work.mkdir(parents=True, exist_ok=True)
+
+    def check(entry: tuple[str, str]) -> tuple[str, dict]:
+        name, fixture = entry
+        source = ROOT / fixture
+        if not source.is_file():
+            raise CheckFailure(f"verification fixture {name} has no {fixture}")
+
+        code, output = run([binary, "run", fixture], timeout=600)
+        if code != 0:
+            raise CheckFailure(f"fixture {name} (JIT) exited {code}:\n{tail(output)}")
+        jit_tail = tail(output, 5)
+
+        executable = fixture_work / (name + (".exe" if sys.platform.startswith("win") else ""))
+        if executable.exists():
+            executable.unlink()
+        code, output = run(
+            [
+                binary,
+                "compile",
+                "--debug-info=none",
+                "--emit-exe",
+                str(executable),
+                fixture,
+            ],
+            timeout=900,
+        )
+        if code != 0 or not executable.is_file():
+            raise CheckFailure(f"fixture {name} (AOT compile) exited {code}:\n{tail(output)}")
+
+        code, output = run([executable], timeout=600)
+        if code != 0:
+            raise CheckFailure(f"fixture {name} (AOT) exited {code}:\n{tail(output)}")
+        return name, {"jit": jit_tail, "aot": tail(output, 5)}
+
+    pairs = parallel_map(list(VERIFICATION_FIXTURES.items()), check, "fixture set")
+    return dict(pairs)
+
+
+# ── (f) the integrated project ───────────────────────────────────────────
 
 
 def check_integrated_project() -> dict:
@@ -279,18 +441,30 @@ def checks() -> list[tuple[str, Callable[[], dict]]]:
         ("item_validators", check_item_validators),
         ("surface_determinism", check_surface_determinism),
         ("examples_jit_and_aot", check_examples),
+        ("verification_fixtures_jit_and_aot", check_verification_fixtures),
         ("integrated_project", check_integrated_project),
     ]
 
 
 def main() -> None:
+    global JOBS
+
     parser = argparse.ArgumentParser(description="R-3221 agent platform certification gate")
     parser.add_argument(
         "--binary",
         default=None,
         help="spectralang binary to use (default: target/debug/spectralang[.exe], built if absent)",
     )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=JOBS,
+        help=f"parallel processes for the share-nothing work (default: {JOBS}; the sweep, the "
+        "examples and the fixtures run in a pool of this size, 1 restores the serial order)",
+    )
     arguments = parser.parse_args()
+
+    JOBS = max(1, arguments.jobs)
 
     WORK.mkdir(parents=True, exist_ok=True)
     if arguments.binary:

@@ -42,4 +42,9 @@ pub fn keep_fast_symbols() {
         0,
     );
     let _ = spectra_rt_host_invoke_cached_batch(ptr::null(), 0);
+
+    // AOT entry shims register their `.rodata` literals so the runtime can
+    // read them as strings; the zero-length call is a no-op that keeps the
+    // symbol in the image.
+    spectra_rt_register_literal(0, 0);
 }

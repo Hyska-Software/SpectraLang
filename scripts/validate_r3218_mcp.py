@@ -25,7 +25,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPECTRALANG = ROOT / "target" / "debug" / "spectralang.exe"
+SPECTRALANG = Path(
+    os.environ.get("SPECTRALANG_BINARY") or (ROOT / "target" / "debug" / "spectralang.exe")
+)
 CARGO = shutil.which("cargo") or "cargo"
 FIXTURE = "tests/validation/381_agent_mcp.spectra"
 JOURNAL_DIR = ROOT / ".spectra" / "r3218-journal"
@@ -181,12 +183,21 @@ def validate_contract() -> None:
 
 
 def validate_catalog() -> None:
-    first = run_command([sys.executable, "scripts/generate_stdlib_catalog.py"])
+    probe = ROOT / "target" / "r3218-catalog-probe" / "stdlib.toml"
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    if probe.exists():
+        probe.unlink()
+    probe_args = ["--output", str(probe.relative_to(ROOT))]
+    first = run_command([sys.executable, "scripts/generate_stdlib_catalog.py", *probe_args])
     require("generated" in first, f"catalog generator produced no report:\n{first}")
-    once = (ROOT / CATALOG).read_bytes()
-    run_command([sys.executable, "scripts/generate_stdlib_catalog.py"])
-    twice = (ROOT / CATALOG).read_bytes()
+    once = probe.read_bytes()
+    run_command([sys.executable, "scripts/generate_stdlib_catalog.py", *probe_args])
+    twice = probe.read_bytes()
     require(once == twice, "catalog generation must be idempotent")
+    require(
+        once == (ROOT / CATALOG).read_bytes(),
+        "the checked-in catalog must be the generator's output",
+    )
 
     with (ROOT / CATALOG).open("rb") as handle:
         catalog = tomllib.load(handle)
@@ -463,7 +474,8 @@ def validate_third_party_client() -> None:
 
 
 def main() -> None:
-    run_command([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"])
+    if not os.environ.get("SPECTRA_CLI_BUILT"):
+        run_command([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"])
     if JOURNAL_DIR.exists():
         shutil.rmtree(JOURNAL_DIR)
     validate_implementation()

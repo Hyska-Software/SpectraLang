@@ -1,0 +1,181 @@
+module string_and_container_payload_lifetime
+
+// Regression: a value a function owns must outlive that function's frame.
+//
+// Every function that builds aggregates gets a manual allocation frame, and
+// the frame exit releases everything allocated inside it. The backend escapes
+// the root return pointer, but the values *reachable* from a returned
+// aggregate are separate allocations: a string built in the callee, a string
+// inside an enum payload, a list's elements. Those used to be released with
+// the producer's frame, so the caller read reused memory once the allocator
+// handed the block out again — the churn below is what makes that visible.
+//
+// See `docs/architecture/coroutine-aggregate-result-lifetime.md`.
+
+import std.collections as collections
+import std.convert as convert
+import std.string as str
+
+record Wrapper {
+    text: string
+    count: int
+}
+
+// Allocates and drops values of the same shapes in a loop, so a block that was
+// released too early is reused quickly.
+func churn(rounds: int) returns int {
+    let total = 0
+    let index = 0
+    while index < rounds {
+        let label = "churn-" + convert.int_to_string(index)
+        let wrapper = Wrapper { text: label, count: index }
+        total = total + str.len(wrapper.text)
+        index = index + 1
+    }
+    return total
+}
+
+func sync_wrapper(seed: int) returns Wrapper {
+    let text = "wrapper-" + convert.int_to_string(seed)
+    return Wrapper { text: text, count: seed }
+}
+
+async func async_wrapper(seed: int) returns Wrapper {
+    let text = "async-wrapper-" + convert.int_to_string(seed)
+    return Wrapper { text: text, count: seed }
+}
+
+func sync_result(seed: int) returns Result<string, int> {
+    let text = "result-" + convert.int_to_string(seed)
+    return Result::Ok(text)
+}
+
+async func async_result(seed: int) returns Result<string, int> {
+    let text = "async-result-" + convert.int_to_string(seed)
+    return Result::Ok(text)
+}
+
+func sync_option(seed: int) returns Option<string> {
+    return Option::Some("option-" + convert.int_to_string(seed))
+}
+
+func sync_list(seed: int) returns List<string> {
+    let items: List<string> = collections.list_new()
+    collections.list_push(items, "list-" + convert.int_to_string(seed))
+    collections.list_push(items, "list-" + convert.int_to_string(seed + 1))
+    return items
+}
+
+async func async_list(seed: int) returns List<string> {
+    let items: List<string> = collections.list_new()
+    collections.list_push(items, "async-list-" + convert.int_to_string(seed))
+    return items
+}
+
+func sync_map(seed: int) returns Map<string, string> {
+    let entries: Map<string, string> = collections.map_new()
+    collections.map_set(entries, "key-" + convert.int_to_string(seed), "value-" + convert.int_to_string(seed))
+    return entries
+}
+
+public func main() returns int {
+    let wrapper = sync_wrapper(1)
+    let async_wrapper_value = block_on(async_wrapper(2))
+    let result = sync_result(3)
+    let async_result_value = block_on(async_result(4))
+    let option = sync_option(5)
+    let items = sync_list(6)
+    let async_items = block_on(async_list(7))
+    let entries = sync_map(8)
+
+    // Anything released too early is reused from here on.
+    if churn(400) == 0 {
+        return 2
+    }
+
+    if wrapper.text != "wrapper-1" or wrapper.count != 1 {
+        return 3
+    }
+    if async_wrapper_value.text != "async-wrapper-2" or async_wrapper_value.count != 2 {
+        return 4
+    }
+    if let Result::Ok(text) = result {
+        if text != "result-3" {
+            return 5
+        }
+    } else {
+        return 6
+    }
+    if let Result::Ok(text) = async_result_value {
+        if text != "async-result-4" {
+            return 7
+        }
+    } else {
+        return 8
+    }
+    if let Option::Some(text) = option {
+        if text != "option-5" {
+            return 9
+        }
+    } else {
+        return 10
+    }
+
+    if collections.list_len(items) != 2 {
+        return 11
+    }
+    if let Option::Some(text) = collections.list_get(items, 0) {
+        if text != "list-6" {
+            return 12
+        }
+    } else {
+        return 13
+    }
+    if let Option::Some(text) = collections.list_get(items, 1) {
+        if text != "list-7" {
+            return 14
+        }
+    } else {
+        return 15
+    }
+
+    if collections.list_len(async_items) != 1 {
+        return 16
+    }
+    if let Option::Some(text) = collections.list_get(async_items, 0) {
+        if text != "async-list-7" {
+            return 17
+        }
+    } else {
+        return 18
+    }
+
+    if collections.map_len(entries) != 1 {
+        return 19
+    }
+    // A literal query: the runtime classifies a pointer as a *string* only
+    // when the allocation table tracks it, so both the JIT's interned literal
+    // and the AOT image's registered `.rodata` literal have to be trackable.
+    if collections.map_contains(entries, "key-8") == false {
+        return 20
+    }
+    if let Option::Some(text) = collections.map_get(entries, "key-8") {
+        if text != "value-8" {
+            return 21
+        }
+        if str.len(text) != 7 {
+            return 22
+        }
+    } else {
+        return 23
+    }
+
+    // The same classification decides list membership.
+    if collections.list_contains(items, "list-6") == false {
+        return 24
+    }
+    if collections.list_contains(items, "absent") == true {
+        return 25
+    }
+    return 0
+}

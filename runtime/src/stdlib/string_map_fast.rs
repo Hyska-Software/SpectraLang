@@ -81,6 +81,9 @@ pub fn map_set_fast(handle: usize, key: i64, value: i64) -> i32 {
     let map_arc = with_map_registry(|reg| reg.get(handle));
     match map_arc {
         Some(map_arc) => {
+            // The map outlives the frame that stored these values.
+            crate::ffi::escape_stored_value(key);
+            crate::ffi::escape_stored_value(value);
             lock_unpoisoned(&map_arc)
                 .data
                 .insert(collection_key(key), value);

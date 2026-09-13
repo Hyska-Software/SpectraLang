@@ -68,7 +68,17 @@ deterministic mock provider (no credentials):
 
 - `examples/agent/01-tool-and-run`
 - `examples/agent/02-approval-and-budget`
+- `examples/agent/03-mcp-and-memory`
 - `examples/agent/04-durable-replay`
+- `examples/agent/05-streaming-and-schema`
+- `examples/agent/06-capabilities-and-taint`
+- `examples/agent/07-protocol-surface`
+
+The language-surface contracts those examples demonstrate are pinned by
+`tests/validation/384_agent_stream_lifecycle.spectra`,
+`385_agent_capabilities_in_practice.spectra`,
+`386_agent_journal_artifact.spectra`, `387_agent_introspection.spectra` and
+`388_async_aggregate_result_lifetime.spectra`.
 
 Run them in JIT and through AOT:
 

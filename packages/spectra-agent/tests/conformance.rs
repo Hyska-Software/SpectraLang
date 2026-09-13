@@ -164,8 +164,14 @@ fn remaining(run: i64) -> i64 {
 }
 
 /// A temporary work directory under `target/`, cleaned before use.
+///
+/// The directory is namespaced by process id: the certification gate runs
+/// `cargo test -p spectra-agent` from several validators at once during its
+/// parallel sweep, and each test process owns its paths.
 fn work_dir(name: &str) -> PathBuf {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/r3221-agent-conformance/conformance");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/r3221-agent-conformance/conformance")
+        .join(format!("p{}", std::process::id()));
     let dir = root.join(name);
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("work directory");

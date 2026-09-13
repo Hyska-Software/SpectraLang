@@ -205,6 +205,28 @@ pub extern "C" fn spectra_rt_manual_escape(ptr: *mut u8, current_frame_id: usize
     }
 }
 
+/// Re-parents a value that a runtime-owned container is about to store.
+///
+/// A list or a map outlives the frame that pushed the value into it, so a value
+/// allocated by the pushing frame has to escape before it is stored: the
+/// alternative is a container holding a pointer the frame exit already freed.
+/// Values that are not tracked allocations (scalars, strings from literals,
+/// allocations owned by another frame) are left alone by the escape.
+pub(crate) fn escape_stored_value(value: SpectraHostValue) {
+    if value == 0 {
+        return;
+    }
+    let frame_id = {
+        let table = allocation_table();
+        let mut guard = table.lock().unwrap_or_else(|error| error.into_inner());
+        guard.current_frame_mut().map(|frame| frame.id)
+    };
+    let Some(frame_id) = frame_id else {
+        return;
+    };
+    spectra_rt_manual_escape(value as *mut u8, frame_id);
+}
+
 /// Clears all outstanding manual allocations owned by the runtime.
 #[no_mangle]
 pub extern "C" fn spectra_rt_manual_clear() {

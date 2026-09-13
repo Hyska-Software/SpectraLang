@@ -109,10 +109,39 @@ pub(crate) fn intern_string_literal(
 
     let mut bytes: Vec<u8> = value.as_bytes().to_vec();
     bytes.push(0);
-    let boxed: Box<[u8]> = bytes.into_boxed_slice();
-    let ptr = boxed.as_ptr() as u64;
-    let len_with_null = boxed.len() as i64;
-    string_literal_storage.push(boxed);
+    let len_with_null = bytes.len() as i64;
+
+    // The buffer must be tracked by the runtime's allocation table: the
+    // runtime classifies a value as a *string* only when the pointer is
+    // tracked (`try_read_packed_string`), and that classification is what
+    // string-keyed map/set lookups and `collection_key` compare against. An
+    // untracked heap buffer makes every literal-keyed lookup miss while a
+    // computed key (a tracked allocation) works, which is exactly the
+    // asymmetry this avoids.
+    let tracked = unsafe {
+        let raw = spectra_runtime::ffi::spectra_rt_manual_alloc(bytes.len());
+        if raw.is_null() {
+            None
+        } else {
+            // The allocator returns zero-initialised bytes, so the terminating
+            // NUL already stands; copy the payload over it.
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), raw, bytes.len());
+            Some(raw as u64)
+        }
+    };
+
+    let (ptr, keepalive) = match tracked {
+        Some(ptr) => (ptr, None),
+        None => {
+            // Fallback: keep the buffer alive the old way. Lookups classify
+            // this literal as a scalar, which only affects key comparison.
+            let boxed: Box<[u8]> = bytes.into_boxed_slice();
+            (boxed.as_ptr() as u64, Some(boxed))
+        }
+    };
+    if let Some(boxed) = keepalive {
+        string_literal_storage.push(boxed);
+    }
 
     let record = StringLiteralRecord {
         ptr,

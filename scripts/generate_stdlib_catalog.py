@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -41,6 +42,24 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def dump_contract_command() -> list[str]:
+    """The command that prints the compiler's contract snapshot.
+
+    Defaults to `cargo run`, which builds the compiler from the sources being
+    audited. A caller that has already built the binary (the R-3221
+    certification gate) points `SPECTRA_CONTRACT_DUMP` at it: eleven catalog
+    probes run inside one gate run, and re-entering cargo from each of them
+    flips the shared build directory between cargo's test and non-test feature
+    sets, which costs minutes per flip.
+    """
+    prebuilt = os.environ.get("SPECTRA_CONTRACT_DUMP")
+    if prebuilt and Path(prebuilt).is_file():
+        return [prebuilt]
+    return ["cargo", "run", "-q", "-p", "spectra-compiler", "--bin", "dump_stdlib_contract"]
+
+
 sys.path.insert(0, str(ROOT / "scripts"))
 import validate_r3007_stdlib_contract as audit  # noqa: E402
 
@@ -445,7 +464,7 @@ def main() -> int:
     current_entries = {str(entry["path"]): entry for entry in current.get("entry", [])}
 
     snapshot = subprocess.run(
-        ["cargo", "run", "-q", "-p", "spectra-compiler", "--bin", "dump_stdlib_contract"],
+        dump_contract_command(),
         cwd=ROOT,
         text=True,
         capture_output=True,

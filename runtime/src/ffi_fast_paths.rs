@@ -84,8 +84,23 @@ const SPECTRA_STRING_SCAN_LIMIT: usize = 16 * 1024 * 1024;
 pub(crate) fn manual_allocation_size(ptr_val: SpectraHostValue) -> Option<usize> {
     let table = allocation_table();
     let guard = table.lock().unwrap_or_else(|e| e.into_inner());
-    let allocation = guard.allocations.get(&(ptr_val as usize))?;
-    Some(allocation._storage.len())
+    if let Some(allocation) = guard.allocations.get(&(ptr_val as usize)) {
+        return Some(allocation._storage.len());
+    }
+    guard.literal_len(ptr_val as usize)
+}
+
+/// Registers an image-owned string literal (`.rodata` in an AOT build) so the
+/// runtime reads it as a string while still owning nothing: registered
+/// literals are never freed and never counted as leaks.
+#[no_mangle]
+pub extern "C" fn spectra_rt_register_literal(ptr: i64, len: i64) {
+    let (Ok(ptr), Ok(len)) = (usize::try_from(ptr), usize::try_from(len)) else {
+        return;
+    };
+    let table = allocation_table();
+    let mut guard = table.lock().unwrap_or_else(|e| e.into_inner());
+    guard.register_literal(ptr, len);
 }
 
 /// Returns the scan ceiling in BYTES for a string pointer: the exact size

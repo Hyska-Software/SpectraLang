@@ -28,7 +28,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPECTRALANG = ROOT / "target" / "debug" / "spectralang.exe"
+SPECTRALANG = Path(
+    os.environ.get("SPECTRALANG_BINARY") or (ROOT / "target" / "debug" / "spectralang.exe")
+)
 FIXTURE = "tests/validation/383_agent_host_adapters.spectra"
 ADAPTER = "packages/spectra-api/src/agent_transport.rs"
 REGISTRATION = "packages/spectra-api/src/api_registration.rs"

@@ -7,6 +7,383 @@ const POLL_FAILED: i64 = 2;
 const POLL_CANCELLED: i64 = 3;
 
 impl ASTLowering {
+    /// The pointer a coroutine hands to its task result.
+    ///
+    /// Every ordinary function's root return pointer is escaped by the backend
+    /// before that function's manual frame exits, so whoever reads the return
+    /// value reads live memory. A coroutine result never reaches `Return`: it
+    /// travels through `CoroutineComplete` into the task registry. Aggregates
+    /// live in storage the coroutine owns (an `Alloca` inside a poll becomes
+    /// `CoroutineLocalPtr`, a frame-local block), which the frame releases when
+    /// the coroutine finishes — leaving the awaiting caller with a dangling
+    /// pointer, and a wrong value or an access violation depending on how fast
+    /// the allocator reuses the block.
+    ///
+    /// Copy the payload into a tracked manual allocation and escape it, exactly
+    /// like a returned string, so the value the caller reads outlives the
+    /// coroutine that produced it.
+    fn materialize_coroutine_payload(
+        &mut self,
+        body: &mut IRFunction,
+        block_id: usize,
+        value: Value,
+        output_type: &IRType,
+    ) -> (Value, usize) {
+        let mut seen = Vec::new();
+        self.materialize_payload(body, block_id, value, output_type, 0, &mut seen)
+    }
+
+    /// Copies every aggregate reachable from a coroutine payload into tracked
+    /// manual storage, so the value the awaiting caller reads outlives the
+    /// coroutine's frame.
+    ///
+    /// The escape walk (`emit_escape_for_value`) preserves allocations that are
+    /// already tracked; a coroutine's aggregate locals are not: the backend
+    /// lowers an `Alloca` inside a poll to `CoroutineLocalPtr`, a block the
+    /// frame owns and releases on completion. Those blocks have to be copied
+    /// out, field by field, before the value is published. Returns the payload
+    /// and the block the caller continues in: a tag-guarded variant payload
+    /// splits the block.
+    fn materialize_payload(
+        &mut self,
+        body: &mut IRFunction,
+        block_id: usize,
+        value: Value,
+        ty: &IRType,
+        depth: usize,
+        seen: &mut Vec<String>,
+    ) -> (Value, usize) {
+        const MAX_DEPTH: usize = 16;
+        if depth > MAX_DEPTH {
+            return (value, block_id);
+        }
+        // `List<T>`, `Map<K, V>` and the other runtime-owned collections are
+        // handles: their representation is an empty-fields placeholder, and the
+        // value is an index into a runtime registry, not a block to copy.
+        if let IRType::Generic { representation, .. } = ty {
+            if matches!(
+                representation.as_ref(),
+                IRType::Struct { fields, .. } if fields.is_empty()
+            ) {
+                return (value, block_id);
+            }
+            return self.materialize_payload(body, block_id, value, representation, depth, seen);
+        }
+        let named = match ty {
+            IRType::Struct { name, .. } | IRType::Enum { name, .. } => Some(name.clone()),
+            _ => None,
+        };
+        if let Some(name) = &named {
+            if seen.contains(name) {
+                return (value, block_id);
+            }
+            seen.push(name.clone());
+        }
+        let result = match ty {
+            IRType::Struct { name, fields } => {
+                let owned_fields = if fields.is_empty() {
+                    self.struct_definitions
+                        .get(name)
+                        .cloned()
+                        .unwrap_or_default()
+                } else {
+                    fields.clone()
+                };
+                let layout = crate::layout::layout_of(owned_fields.iter().map(|(_, ty)| ty));
+                let (copy, mut block) = self.copy_block(body, block_id, value, layout.size);
+                for (index, (_, field_ty)) in owned_fields.iter().enumerate() {
+                    if !Self::payload_carries_owned_value(field_ty) {
+                        continue;
+                    }
+                    let Some(offset) = layout.offsets.get(index).copied() else {
+                        continue;
+                    };
+                    let slot = self.payload_slot(body, block, copy, offset);
+                    let inner = self.load_payload(body, block, slot, field_ty);
+                    let (rebuilt, next) =
+                        self.materialize_payload(body, block, inner, field_ty, depth + 1, seen);
+                    block = next;
+                    if rebuilt.id != inner.id {
+                        self.store_payload(body, block, slot, rebuilt);
+                    } else {
+                        self.escape_payload(body, block, inner);
+                    }
+                }
+                (copy, block)
+            }
+            IRType::Tuple { elements } => {
+                let layout = crate::layout::layout_of(elements.iter());
+                let (copy, mut block) = self.copy_block(body, block_id, value, layout.size);
+                for (index, element_ty) in elements.iter().enumerate() {
+                    if !Self::payload_carries_owned_value(element_ty) {
+                        continue;
+                    }
+                    let Some(offset) = layout.offsets.get(index).copied() else {
+                        continue;
+                    };
+                    let slot = self.payload_slot(body, block, copy, offset);
+                    let inner = self.load_payload(body, block, slot, element_ty);
+                    let (rebuilt, next) =
+                        self.materialize_payload(body, block, inner, element_ty, depth + 1, seen);
+                    block = next;
+                    if rebuilt.id != inner.id {
+                        self.store_payload(body, block, slot, rebuilt);
+                    } else {
+                        self.escape_payload(body, block, inner);
+                    }
+                }
+                (copy, block)
+            }
+            IRType::Array { element_type, size } => {
+                let block_size = crate::layout::type_size_bytes(ty);
+                let (copy, mut block) = self.copy_block(body, block_id, value, block_size);
+                if Self::payload_carries_owned_value(element_type) {
+                    let stride = crate::layout::stored_size(element_type);
+                    for index in 0..*size {
+                        let offset = index * stride;
+                        let slot = self.payload_slot(body, block, copy, offset);
+                        let inner = self.load_payload(body, block, slot, element_type);
+                        let (rebuilt, next) = self.materialize_payload(
+                            body,
+                            block,
+                            inner,
+                            element_type,
+                            depth + 1,
+                            seen,
+                        );
+                        block = next;
+                        if rebuilt.id != inner.id {
+                            self.store_payload(body, block, slot, rebuilt);
+                        } else {
+                            self.escape_payload(body, block, inner);
+                        }
+                    }
+                }
+                (copy, block)
+            }
+            // A variant with data is laid out as `(tag, data...)`, and every
+            // variant shares those payload slots: a scalar variant and an
+            // aggregate variant occupy the same word. Only the variant the tag
+            // names holds a live aggregate, so the copy for an aggregate
+            // payload sits behind a tag guard; strings and pointers are escaped
+            // in place, which is safe for any value in the slot.
+            IRType::Enum { variants, .. } => {
+                let size = crate::layout::type_size_bytes(ty);
+                let (copy, mut block) = self.copy_block(body, block_id, value, size);
+                let tag = self.load_payload(body, block, copy, &IRType::Int);
+                for (variant_index, (_, data_types)) in variants.iter().enumerate() {
+                    let Some(data_types) = data_types else {
+                        continue;
+                    };
+                    let mut element_types = vec![IRType::Int];
+                    element_types.extend(data_types.iter().cloned());
+                    let layout = crate::layout::layout_of(element_types.iter());
+                    for (index, data_ty) in data_types.iter().enumerate() {
+                        if !Self::payload_carries_owned_value(data_ty) {
+                            continue;
+                        }
+                        let Some(offset) = layout.offsets.get(index + 1).copied() else {
+                            continue;
+                        };
+                        let slot = self.payload_slot(body, block, copy, offset);
+                        let inner = self.load_payload(body, block, slot, data_ty);
+                        if matches!(
+                            data_ty,
+                            IRType::String | IRType::Pointer(_) | IRType::DynTrait { .. }
+                        ) {
+                            self.escape_payload(body, block, inner);
+                            continue;
+                        }
+                        let index_value = self.push_const_int(body, block, variant_index as i64);
+                        let is_active = self.push_eq(body, block, tag, index_value);
+                        let copy_target = body.add_block("payload_variant_copy");
+                        let merge = body.add_block("payload_variant_merge");
+                        self.terminate_cond_branch(body, block, is_active, copy_target, merge);
+                        let (rebuilt, after) = self.materialize_payload(
+                            body,
+                            copy_target,
+                            inner,
+                            data_ty,
+                            depth + 1,
+                            seen,
+                        );
+                        self.store_payload(body, after, slot, rebuilt);
+                        self.terminate_branch(body, after, merge);
+                        block = merge;
+                    }
+                }
+                (copy, block)
+            }
+            // A string is already tracked storage: escaping is enough, and a
+            // zero or borrowed pointer is left alone by the escape itself.
+            IRType::String | IRType::Pointer(_) | IRType::DynTrait { .. } => {
+                self.escape_payload(body, block_id, value);
+                (value, block_id)
+            }
+            _ => (value, block_id),
+        };
+        if named.is_some() {
+            seen.pop();
+        }
+        result
+    }
+
+    /// Whether a payload of `ty` may hold an owned allocation that has to
+    /// travel with the value.
+    fn payload_carries_owned_value(ty: &IRType) -> bool {
+        matches!(
+            ty,
+            IRType::String
+                | IRType::Struct { .. }
+                | IRType::Tuple { .. }
+                | IRType::Array { .. }
+                | IRType::Enum { .. }
+                | IRType::Generic { .. }
+                | IRType::Pointer(_)
+                | IRType::DynTrait { .. }
+        )
+    }
+
+    /// Allocates a tracked block of `size` bytes and copies `value`'s words.
+    fn copy_block(
+        &mut self,
+        body: &mut IRFunction,
+        block_id: usize,
+        value: Value,
+        size: usize,
+    ) -> (Value, usize) {
+        if size == 0 {
+            // A zero-sized value carries nothing to preserve (and a zero-sized
+            // allocation would be a null pointer, which must not replace the
+            // value it stands for).
+            return (value, block_id);
+        }
+        let copy = body.next_value();
+        self.push_payload_instruction(
+            body,
+            block_id,
+            InstructionKind::ManualAlloc {
+                result: copy,
+                size: size as i64,
+            },
+        );
+        for offset in (0..size).step_by(8) {
+            let source = self.payload_slot(body, block_id, value, offset);
+            let word = self.load_payload(body, block_id, source, &IRType::Int);
+            let target = self.payload_slot(body, block_id, copy, offset);
+            self.store_payload(body, block_id, target, word);
+        }
+        // The copy lives in this frame like everything else; escaping it moves
+        // it to the base frame, which no frame exit pops.
+        self.escape_payload(body, block_id, copy);
+        (copy, block_id)
+    }
+
+    fn payload_slot(
+        &mut self,
+        body: &mut IRFunction,
+        block_id: usize,
+        base: Value,
+        offset: usize,
+    ) -> Value {
+        if offset == 0 {
+            return base;
+        }
+        let slot = body.next_value();
+        self.push_payload_instruction(
+            body,
+            block_id,
+            InstructionKind::FieldPtr {
+                result: slot,
+                ptr: base,
+                offset: offset as i64,
+            },
+        );
+        slot
+    }
+
+    fn load_payload(
+        &mut self,
+        body: &mut IRFunction,
+        block_id: usize,
+        ptr: Value,
+        ty: &IRType,
+    ) -> Value {
+        let loaded = body.next_value();
+        self.push_payload_instruction(
+            body,
+            block_id,
+            InstructionKind::Load {
+                result: loaded,
+                ptr,
+                ty: ty.clone(),
+            },
+        );
+        loaded
+    }
+
+    fn store_payload(
+        &mut self,
+        body: &mut IRFunction,
+        block_id: usize,
+        ptr: Value,
+        value: Value,
+    ) {
+        self.push_payload_instruction(body, block_id, InstructionKind::Store { ptr, value });
+    }
+
+    fn escape_payload(&mut self, body: &mut IRFunction, block_id: usize, ptr: Value) {
+        self.push_payload_instruction(body, block_id, InstructionKind::EscapeManualAlloc { ptr });
+    }
+
+    fn push_const_int(&mut self, body: &mut IRFunction, block_id: usize, value: i64) -> Value {
+        let result = body.next_value();
+        self.push_payload_instruction(body, block_id, InstructionKind::ConstInt { result, value });
+        result
+    }
+
+    fn push_eq(&mut self, body: &mut IRFunction, block_id: usize, lhs: Value, rhs: Value) -> Value {
+        let result = body.next_value();
+        self.push_payload_instruction(body, block_id, InstructionKind::Eq { result, lhs, rhs });
+        result
+    }
+
+    fn terminate_cond_branch(
+        &mut self,
+        body: &mut IRFunction,
+        block_id: usize,
+        condition: Value,
+        true_block: usize,
+        false_block: usize,
+    ) {
+        if let Some(block) = body.get_block_mut(block_id) {
+            block.set_terminator(Terminator::CondBranch {
+                condition,
+                true_block,
+                false_block,
+            });
+        }
+    }
+
+    fn terminate_branch(&mut self, body: &mut IRFunction, block_id: usize, target: usize) {
+        if let Some(block) = body.get_block_mut(block_id) {
+            block.set_terminator(Terminator::Branch { target });
+        }
+    }
+
+    fn push_payload_instruction(
+        &mut self,
+        body: &mut IRFunction,
+        block_id: usize,
+        kind: InstructionKind,
+    ) {
+        if let Some(block) = body.get_block_mut(block_id) {
+            block
+                .instructions
+                .push(Instruction { id: block.instructions.len(), kind, source_span: None });
+        }
+    }
+
     /// Turn a lowered async body into a body-free public ramp and a generated
     /// stackless poll/drop pair. The source body is lowered once, then moved
     /// wholesale into the poll function; the ramp only allocates/initializes a
@@ -445,11 +822,24 @@ impl ASTLowering {
             .collect::<Vec<_>>();
         for (block_id, value) in terminal_returns {
             let status_value = body.next_value();
-            if let Some(block) = body.get_block_mut(block_id) {
+            // A tag-guarded payload copy splits the block; the completion tail
+            // continues in whichever block the materializer ended in.
+            let (payload, tail_block) = match value {
+                Some(value) => {
+                    let (payload, block) =
+                        self.materialize_coroutine_payload(&mut body, block_id, value, &output_type);
+                    (Some(payload), block)
+                }
+                None => (None, block_id),
+            };
+            if let Some(block) = body.get_block_mut(tail_block) {
                 block.terminator = None;
                 block.instructions.push(Instruction {
                     id: block.instructions.len(),
-                    kind: InstructionKind::CoroutineComplete { task, value },
+                    kind: InstructionKind::CoroutineComplete {
+                        task,
+                        value: payload,
+                    },
                     source_span: None,
                 });
                 block.instructions.push(Instruction {

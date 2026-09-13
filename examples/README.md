@@ -49,5 +49,14 @@ rede), em JIT (`spectralang run`) e AOT (`compile --debug-info=none --emit-exe`)
 | `02-approval-and-budget` | negação padrão de aprovação, `require` e teto de tokens |
 | `03-mcp-and-memory` | `mcp_serve`/`mcp_connect`/`tool_call` pelo loopback em processo e `remember`/`recall` |
 | `04-durable-replay` | journal e replay com o mesmo `run_id`, sem repetir o efeito |
+| `05-streaming-and-schema` | `ask_stream`/`stream_next`/`stream_close`, `ask_json` com o `json_schema` derivado e os dois desfechos do validador |
+| `06-capabilities-and-taint` | grant de namespace, aprovação negada por padrão e `untrusted`/`trust` com razão obrigatória |
+| `07-protocol-surface` | `a2a_card`/`a2a_handle` (`message/send`, `tasks/get`) e `acp_handle` (`initialize`, `session/new`) em processo |
+
+Os contratos que os exemplos demonstram ficam fixados nos fixtures
+`tests/validation/384_agent_stream_lifecycle.spectra`,
+`385_agent_capabilities_in_practice.spectra`,
+`386_agent_journal_artifact.spectra` e `387_agent_introspection.spectra`
+(rodados em JIT e AOT pelo gate de certificação R-3221).
 
 Ver `docs/book/11-agents.md`.

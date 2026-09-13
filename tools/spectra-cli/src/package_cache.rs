@@ -348,20 +348,66 @@ fn atomic_write_file(path: &Path, bytes: &[u8]) -> Result<(), PackageError> {
     result
 }
 
+/// A rename that Windows can fail transiently.
+///
+/// A virus scanner or the search indexer holding a handle inside a directory
+/// is enough for `ERROR_ACCESS_DENIED` / `ERROR_SHARING_VIOLATION` on the
+/// rename that replaces it, and the handle is typically gone in milliseconds.
+/// A rename is atomic, so an attempt either moved the entry or did nothing;
+/// the retry is bounded and preserves the last error, so a genuinely held
+/// destination still fails with its own message.
+fn rename_with_retry(source: &Path, destination: &Path) -> io::Result<()> {
+    const ATTEMPTS: u32 = 5;
+    let mut last_error = io::Error::from_raw_os_error(5);
+    for attempt in 0..ATTEMPTS {
+        if attempt > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(20 * attempt as u64));
+        }
+        match fs::rename(source, destination) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                last_error = error;
+                if !is_transient_rename_error(&last_error) {
+                    break;
+                }
+            }
+        }
+    }
+    Err(last_error)
+}
+
+/// The errors a retry can plausibly ride out: access denied (5) and sharing
+/// violation (32) on Windows, and the POSIX permission error that a concurrent
+/// unlink of an open file raises.
+fn is_transient_rename_error(error: &io::Error) -> bool {
+    if error.kind() == io::ErrorKind::PermissionDenied {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        // ERROR_SHARING_VIOLATION
+        const SHARING_VIOLATION: i32 = 32;
+        if error.raw_os_error() == Some(SHARING_VIOLATION) {
+            return true;
+        }
+    }
+    false
+}
+
 fn atomic_replace(source: &Path, destination: &Path) -> Result<(), PackageError> {
     if destination.is_dir() && source.is_dir() {
         let backup = staging_path(destination, "backup");
-        fs::rename(destination, &backup).map_err(|error| PackageError::AtomicWrite {
+        rename_with_retry(destination, &backup).map_err(|error| PackageError::AtomicWrite {
             path: destination.to_path_buf(),
             message: error.to_string(),
         })?;
-        match fs::rename(source, destination) {
+        match rename_with_retry(source, destination) {
             Ok(()) => {
                 let _ = fs::remove_dir_all(&backup);
                 return Ok(());
             }
             Err(error) => {
-                let _ = fs::rename(&backup, destination);
+                let _ = rename_with_retry(&backup, destination);
                 return Err(PackageError::AtomicWrite {
                     path: destination.to_path_buf(),
                     message: error.to_string(),
@@ -370,7 +416,7 @@ fn atomic_replace(source: &Path, destination: &Path) -> Result<(), PackageError>
         }
     }
     if !destination.exists() {
-        return fs::rename(source, destination).map_err(|error| PackageError::AtomicWrite {
+        return rename_with_retry(source, destination).map_err(|error| PackageError::AtomicWrite {
             path: destination.to_path_buf(),
             message: error.to_string(),
         });
@@ -426,7 +472,7 @@ fn atomic_replace(source: &Path, destination: &Path) -> Result<(), PackageError>
     }
     #[cfg(not(windows))]
     {
-        fs::rename(source, destination).map_err(|error| PackageError::AtomicWrite {
+        rename_with_retry(source, destination).map_err(|error| PackageError::AtomicWrite {
             path: destination.to_path_buf(),
             message: error.to_string(),
         })
@@ -466,3 +512,87 @@ fn is_valid_semver(version: &str) -> bool {
     }
 }
 
+
+#[cfg(all(test, windows))]
+mod cache_tests {
+    use super::*;
+    use std::os::windows::fs::OpenOptionsExt;
+
+    /// A work tree that is unique per test: `cargo test` runs tests in
+    /// parallel threads of one process.
+    fn work_root(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("spectra-atomic-write-{}-{}", std::process::id(), name));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("work root");
+        root
+    }
+
+    /// Holds a file open without sharing: renaming the directory that contains
+    /// it fails with the access-denied error a virus scanner or the indexer
+    /// produces while it reads a just-written file.
+    fn hold_without_sharing(path: &Path) -> std::fs::File {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(path)
+            .expect("held handle")
+    }
+
+    #[test]
+    fn a_rename_of_a_held_directory_is_retried_until_the_handle_closes() {
+        let root = work_root("retry");
+        let source = root.join("source");
+        let destination = root.join("destination");
+        fs::create_dir_all(&source).expect("source");
+        fs::create_dir_all(&destination).expect("destination");
+        fs::write(source.join("payload.txt"), b"new").expect("payload");
+        fs::write(destination.join("held.txt"), b"old").expect("held file");
+
+        let held = hold_without_sharing(&destination.join("held.txt"));
+        // The scenario really blocks the first attempts: a plain rename fails
+        // with the same access-denied error the retry exists for.
+        let blocked = fs::rename(&destination, root.join("probe"));
+        assert!(
+            matches!(blocked.as_ref().err().map(io::Error::kind), Some(io::ErrorKind::PermissionDenied)),
+            "a held child must block the directory rename: {blocked:?}"
+        );
+
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(80));
+            drop(held);
+        });
+        atomic_replace(&source, &destination).expect("the retry must ride out the held handle");
+        release.join().expect("release thread");
+
+        assert!(destination.join("payload.txt").is_file(), "the new payload must be in place");
+        assert!(!destination.join("held.txt").exists(), "the replaced tree must be gone");
+        assert!(!source.exists(), "the staging directory must be consumed");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_rename_that_stays_held_still_fails_after_bounded_retries() {
+        let root = work_root("bounded");
+        let source = root.join("source");
+        let destination = root.join("destination");
+        fs::create_dir_all(&source).expect("source");
+        fs::create_dir_all(&destination).expect("destination");
+        fs::write(source.join("payload.txt"), b"new").expect("payload");
+        fs::write(destination.join("held.txt"), b"old").expect("held file");
+
+        let held = hold_without_sharing(&destination.join("held.txt"));
+        let outcome = atomic_replace(&source, &destination);
+        drop(held);
+
+        let error = outcome.expect_err("a destination that stays held must fail");
+        assert!(
+            error.to_string().contains(&destination.display().to_string()),
+            "the failure names the destination: {error}"
+        );
+        assert!(
+            destination.join("held.txt").is_file(),
+            "the original tree must be left in place"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+}

@@ -5,6 +5,7 @@
 # bookkeeping for the item.
 from __future__ import annotations
 
+import os
 import json
 import shutil
 import subprocess
@@ -13,7 +14,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPECTRALANG = ROOT / "target" / "debug" / "spectralang.exe"
+SPECTRALANG = Path(
+    os.environ.get("SPECTRALANG_BINARY") or (ROOT / "target" / "debug" / "spectralang.exe")
+)
 CARGO = shutil.which("cargo") or "cargo"
 PROJECT = "tests/projects/valid/phase21_async_pipeline"
 
@@ -190,7 +193,8 @@ def validate_planning() -> None:
 
 
 def main() -> None:
-    run_command([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"])
+    if not os.environ.get("SPECTRA_CLI_BUILT"):
+        run_command([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"])
     validate_implementation()
     validate_cli_contract()
     validate_planning()

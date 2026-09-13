@@ -5,6 +5,7 @@
 # surface and the language-level end-to-end fixture in JIT and AOT.
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -13,7 +14,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPECTRALANG = ROOT / "target" / "debug" / "spectralang.exe"
+SPECTRALANG = Path(
+    os.environ.get("SPECTRALANG_BINARY") or (ROOT / "target" / "debug" / "spectralang.exe")
+)
 CARGO = shutil.which("cargo") or "cargo"
 FIXTURE = "tests/validation/366_agent_model_surface.spectra"
 
@@ -146,7 +149,8 @@ def validate_planning() -> None:
 
 
 def main() -> None:
-    run_command([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"])
+    if not os.environ.get("SPECTRA_CLI_BUILT"):
+        run_command([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"])
     validate_implementation()
     validate_catalog()
     validate_behavior()

@@ -829,6 +829,45 @@ impl AotCodeGenerator {
             builder.ins().call(api_register_ref, &[]);
         }
 
+        // Register every image-owned string literal with the runtime. The bytes
+        // live in `.rodata`, which the allocation table does not track, and the
+        // runtime only reads a pointer as a string when it is tracked; the
+        // registration borrows the buffer (it is never freed) so literal-keyed
+        // map/set/list lookups compare by text in an AOT build exactly as they
+        // do in the JIT.
+        let literals: Vec<(cranelift_module::DataId, i64)> = self
+            .string_literal_data
+            .values()
+            .filter_map(|record| record.data_id.map(|id| (id, record.len_with_null)))
+            .collect();
+        if !literals.is_empty() {
+            let mut literal_sig = self.module.make_signature();
+            literal_sig.params.push(AbiParam::new(types::I64)); // ptr
+            literal_sig.params.push(AbiParam::new(types::I64)); // len
+            let literal_func_id = self
+                .module
+                .declare_function(
+                    "spectra_rt_register_literal",
+                    Linkage::Import,
+                    &literal_sig,
+                )
+                .map_err(|e| {
+                    BackendCodegenError::cranelift(format!(
+                        "Failed to declare 'spectra_rt_register_literal': {}",
+                        e
+                    ))
+                })?;
+            let literal_ref = self
+                .module
+                .declare_func_in_func(literal_func_id, builder.func);
+            for (data_id, len) in literals {
+                let gv = self.module.declare_data_in_func(data_id, builder.func);
+                let ptr = builder.ins().global_value(types::I64, gv);
+                let len = builder.ins().iconst(types::I64, len);
+                builder.ins().call(literal_ref, &[ptr, len]);
+            }
+        }
+
         // Call spectra_user_main() — ignore any return value
         let user_main_ref = self
             .module

@@ -1,0 +1,143 @@
+module agent_stream_lifecycle
+
+// R-3211 streaming surface verification: the chunk stream lifecycle, checked
+// at the language surface against the deterministic mock provider.
+//
+// The contract pinned here:
+//   - `ask_stream` returns a handle; `stream_next` yields chunks in order and
+//     the empty chunk marks the end;
+//   - reading past the end keeps returning the empty chunk (idempotent
+//     end-of-stream, no error, no cursor advance);
+//   - `stream_close` is idempotent -- closing twice still reports the closed
+//     state -- and a closed handle fails `stream_next` with a typed error
+//     instead of panicking;
+//   - two streams opened on the same run are independent: each carries its
+//     own cursor and chunking.
+
+import std.agent
+import std.error as error
+import std.string as str
+
+func spec() returns string {
+    return "{\"goal\":\"stream-lifecycle\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":5,\"journal\":\"\"}"
+}
+
+// Drains a stream to its end and compares the reassembled text.
+// Returns 0 on match, a positive error code otherwise.
+async func drain(stream: ChunkStream, expected: string) returns int {
+    let total = ""
+    let done  = false
+    while done == false {
+        let next = await stream_next(stream)
+        if let Result::Ok(chunk) = next {
+            if chunk == "" {
+                done = true
+            } else {
+                total = total + chunk
+            }
+        } else {
+            return 1
+        }
+    }
+    if total != expected {
+        return 2
+    }
+    return 0
+}
+
+async func streams_behave() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(start_error) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        // Reassembly: the chunks concatenated are the whole reply, and more
+        // than one chunk arrived (the mock chunks at 12 characters).
+        let opened = await ask_stream(run, "chunks")
+        if let Result::Ok(stream) = opened {
+            let drained = await drain(stream, "mock echo: chunks")
+            if drained != 0 {
+                return 10 + drained
+            }
+
+            // End of stream is sticky: after the empty chunk, the next read
+            // returns the empty chunk again, not an error.
+            let after_end = await stream_next(stream)
+            if let Result::Ok(chunk) = after_end {
+                if chunk != "" {
+                    return 20
+                }
+            } else {
+                return 21
+            }
+
+            // Close is idempotent.
+            let closed = await stream_close(stream)
+            if let Result::Ok(ok) = closed {
+                if ok == false {
+                    return 30
+                }
+            } else {
+                return 31
+            }
+            let closed_again = await stream_close(stream)
+            if let Result::Ok(ok) = closed_again {
+                if ok == false {
+                    return 32
+                }
+            } else {
+                return 33
+            }
+
+            // A released handle is a typed error, never a panic.
+            let after_close = await stream_next(stream)
+            if let Result::Err(stream_error) = after_close {
+                if str.contains(error.message(stream_error), "handle") == false {
+                    return 40
+                }
+            } else {
+                return 41
+            }
+        } else {
+            return 2
+        }
+
+        // Independence: a second stream starts at its own cursor while the
+        // first one is already released.
+        let second = await ask_stream(run, "chunks")
+        if let Result::Ok(other) = second {
+            let first_chunk = await stream_next(other)
+            if let Result::Ok(chunk) = first_chunk {
+                if chunk != "mock echo: c" {
+                    return 50
+                }
+            } else {
+                return 51
+            }
+            let closed = await stream_close(other)
+            if let Result::Ok(ok) = closed {
+                if ok == false {
+                    return 52
+                }
+            } else {
+                return 53
+            }
+        } else {
+            return 3
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 60
+            }
+        } else {
+            return 61
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(streams_behave())
+}

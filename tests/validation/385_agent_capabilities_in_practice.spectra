@@ -1,0 +1,201 @@
+module agent_capabilities_in_practice
+
+// R-3214/R-3215 grant enforcement in practice: what a grant buys a run, when
+// the check happens, and what its absence refuses.
+//
+// The contract pinned here (R-3222 T5 / I7):
+//
+//   - A tool's effects are derived from its body. A body that reaches a host
+//     sink derives the sink; the compiler's own machinery (`spectra.std.
+//     string.*`, `spectra.std.convert.*`, `spectra.api.json.*`) is excluded,
+//     so `"pong: " + label` does not make a spec grant a string helper.
+//   - The grant check is run-level and happens once, before the *first*
+//     dispatch: a spec that exposes an effectful tool must grant that effect
+//     even when the run only calls a different tool. Declared authority must
+//     cover the exposed surface.
+//   - The refusal is a typed `capability_denied` error naming the uncovered
+//     tool and effect -- and it precedes the wrapper, so the refused run's
+//     host call never happens and no artifact appears.
+//   - The granted run reaches both tools; an unknown name is refused with
+//     `unknown_tool` after a successful dispatch.
+
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const SINK = "spectra.std.fs.fs_write"
+const NOTE = "target/r3285/note.txt"
+
+#[derive(Serialize, Deserialize)]
+public record PingArgs {
+    label: string,
+}
+
+#[derive(Serialize, Deserialize)]
+public record WriteArgs {
+    path: string,
+    body: string,
+}
+
+// The body only concatenates: the derived effect is compiler machinery, not a
+// grant requirement.
+#[agent_tool("Echoes a label")]
+public async func pure_ping(run: Run, args: PingArgs) returns string {
+    return "pong: " + args.label
+}
+
+// The body reaches a host sink, so this tool's derived effect is the sink
+// itself -- and exposing it requires the run to declare it.
+#[agent_tool("Writes a file")]
+public async func write_note(run: Run, args: WriteArgs) returns bool {
+    let written = fs.fs_write(args.path, args.body)
+    if let Result::Ok(ok) = written {
+        return ok
+    }
+    return false
+}
+
+func spec(run_id: string, allow: string) returns string {
+    return "{\"goal\":\"capabilities-in-practice\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":" +
+        allow +
+        ",\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":11,\"journal\":\"\",\"run_id\":\"" +
+        run_id +
+        "\"}"
+}
+
+// Removes a previous artifact so each run starts from a known state.
+func clean(path: string) returns int {
+    let exists = fs.fs_exists(path)
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(path)
+            if let Result::Err(remove_error) = removed {
+                let _ignored = error.message(remove_error)
+                return 1
+            }
+        }
+        return 0
+    }
+    return 1
+}
+
+// The granted run reaches both tools; the ungranted one is refused before its
+// first dispatch, even though the call that triggers the check is the pure
+// tool's.
+async func matrix() returns int {
+    let cleaned = clean(NOTE)
+    if cleaned != 0 {
+        return 1
+    }
+
+    // Granted: `allow` names the exposed tool's derived sink.
+    let granted = agent_start(spec("fixture-385-granted", "[\"" + SINK + "\"]"))
+    if let Result::Ok(run) = granted {
+        let pure = await tool_call(run, "pure_ping", "{\"label\":\"x\"}")
+        if let Result::Ok(value) = pure {
+            if value != "\"pong: x\"" {
+                return 10
+            }
+        } else {
+            return 11
+        }
+
+        let written = await tool_call(
+            run,
+            "write_note",
+            "{\"path\":\"" + NOTE + "\",\"body\":\"governed\"}",
+        )
+        if let Result::Ok(value) = written {
+            if value != "true" {
+                return 12
+            }
+        } else {
+            return 13
+        }
+
+        // An unknown name is a typed error after a successful dispatch.
+        let unknown = await tool_call(run, "no_such_tool", "{}")
+        if let Result::Err(unknown_error) = unknown {
+            if str.contains(error.message(unknown_error), "unknown_tool") == false {
+                return 14
+            }
+        } else {
+            return 15
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"tool_calls\":2") == false {
+                return 16
+            }
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 17
+            }
+        } else {
+            return 18
+        }
+    } else {
+        return 2
+    }
+
+    let exists = fs.fs_exists(NOTE)
+    if let Result::Ok(present) = exists {
+        if present == false {
+            return 3
+        }
+    } else {
+        return 4
+    }
+    let contents = fs.fs_read(NOTE)
+    if let Result::Ok(text) = contents {
+        if text != "governed" {
+            return 5
+        }
+    } else {
+        return 6
+    }
+
+    // Ungranted: the run exposes an effectful tool it does not grant, so the
+    // first dispatch -- the pure tool's -- is refused, naming the uncovered
+    // tool and effect.
+    let cleaned_again = clean(NOTE)
+    if cleaned_again != 0 {
+        return 7
+    }
+    let ungranted = agent_start(spec("fixture-385-ungranted", "[]"))
+    if let Result::Ok(run) = ungranted {
+        let pure = await tool_call(run, "pure_ping", "{\"label\":\"refused\"}")
+        if let Result::Err(denied) = pure {
+            let message = error.message(denied)
+            if str.contains(message, "capability_denied") == false {
+                return 20
+            }
+            if str.contains(message, "write_note") == false {
+                return 21
+            }
+            if str.contains(message, SINK) == false {
+                return 22
+            }
+        } else {
+            return 23
+        }
+
+        // Nothing was performed: the refusal precedes the wrapper.
+        let refused_exists = fs.fs_exists(NOTE)
+        if let Result::Ok(present) = refused_exists {
+            if present == true {
+                return 24
+            }
+        } else {
+            return 25
+        }
+    } else {
+        return 8
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(matrix())
+}

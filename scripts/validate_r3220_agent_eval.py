@@ -8,6 +8,7 @@
 # every scenario through both JIT and AOT with args.
 from __future__ import annotations
 
+import os
 import json
 import shutil
 import subprocess
@@ -16,7 +17,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPECTRALANG = ROOT / "target" / "debug" / "spectralang.exe"
+SPECTRALANG = Path(
+    os.environ.get("SPECTRALANG_BINARY") or (ROOT / "target" / "debug" / "spectralang.exe")
+)
 CARGO = shutil.which("cargo") or "cargo"
 FIXTURE = "tests/validation/378_agent_eval_harness.spectra"
 SUITE = "examples/agent/evals/agent_core.json"
@@ -527,7 +530,8 @@ def validate_behavior() -> None:
 
 
 def main() -> None:
-    run([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"], expect=0)
+    if not os.environ.get("SPECTRA_CLI_BUILT"):
+        run([CARGO, "build", "-q", "-p", "spectra-cli", "--offline"], expect=0)
     for path in (JOURNAL_DIR, SCRATCH):
         if path.exists():
             shutil.rmtree(path)

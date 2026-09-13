@@ -1040,6 +1040,64 @@ mod tests {
         assert_eq!(spectra_rt_manual_quarantine_len(), 0);
     }
 
+    /// An image-owned literal is readable as a string without being owned: the
+    /// runtime sees its length, and freeing it does not release the image's
+    /// bytes (nor is it reported as a leak).
+    #[test]
+    fn registered_literals_are_readable_but_never_freed() {
+        let _lock = test_guard();
+        spectra_rt_manual_clear();
+
+        let bytes: Vec<u8> = b"literal-key\0".to_vec();
+        let ptr = bytes.as_ptr() as i64;
+        let len = bytes.len() as i64;
+        spectra_rt_register_literal(ptr, len);
+
+        assert_eq!(manual_allocation_size(ptr), Some(bytes.len()));
+        assert_eq!(
+            unsafe { crate::stdlib::try_read_packed_string(ptr) },
+            Some("literal-key".to_string())
+        );
+
+        // Freeing an image-owned literal is refused: the runtime does not own it.
+        spectra_rt_manual_free(ptr as *mut u8);
+        assert_ne!(spectra_rt_manual_free_last_status(), HOST_STATUS_SUCCESS);
+        // …and it is still readable afterwards.
+        assert_eq!(manual_allocation_size(ptr), Some(bytes.len()));
+
+        spectra_rt_manual_clear();
+    }
+
+    /// A value a container stores must outlive the frame that produced it: the
+    /// container is runtime-owned and can be read long after the pushing frame
+    /// exited, so the store escapes the value first.
+    #[test]
+    fn stored_values_escape_their_producing_frame() {
+        let _lock = test_guard();
+        spectra_rt_manual_clear();
+
+        let frame = spectra_rt_manual_frame_enter();
+        let stored = spectra_rt_manual_alloc(32);
+        let dropped = spectra_rt_manual_alloc(32);
+        assert!(!stored.is_null() && !dropped.is_null());
+
+        // What a list or map store does with the value it keeps.
+        crate::ffi::escape_stored_value(stored as i64);
+
+        spectra_rt_manual_frame_exit(frame);
+
+        // The stored block is still a live allocation: freeing it succeeds.
+        spectra_rt_manual_free(stored);
+        assert_eq!(spectra_rt_manual_free_last_status(), HOST_STATUS_SUCCESS);
+
+        // The sibling the container never took was released by the frame exit,
+        // so a second free is reported as invalid instead of succeeding.
+        spectra_rt_manual_free(dropped);
+        assert_ne!(spectra_rt_manual_free_last_status(), HOST_STATUS_SUCCESS);
+
+        spectra_rt_manual_clear();
+    }
+
     #[test]
     fn alloc_free_pressure_maintains_invariants_and_stats() {
         let _lock = test_guard();

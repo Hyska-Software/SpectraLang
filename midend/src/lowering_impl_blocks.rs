@@ -116,6 +116,60 @@ impl ASTLowering {
         ty: &IRType,
         ir_func: &mut IRFunction,
     ) {
+        let mut seen = Vec::new();
+        self.emit_escape_for_value_inner(value, ty, ir_func, 0, &mut seen);
+    }
+
+    /// Whether a value of `ty` can carry an owned manual allocation.
+    ///
+    /// Scalars travel by value; every other aggregate and a string are
+    /// pointers to tracked allocations.
+    fn carries_owned_allocation(ty: &IRType) -> bool {
+        matches!(
+            ty,
+            IRType::String
+                | IRType::Struct { .. }
+                | IRType::Tuple { .. }
+                | IRType::Array { .. }
+                | IRType::Enum { .. }
+                | IRType::DynTrait { .. }
+                // `Option<T>`, `Result<T, E>`, `List<T>` and friends: the walk
+                // continues through the concrete representation.
+                | IRType::Generic { .. }
+                // A buffer (`List` storage, a heap aggregate) is a tracked
+                // allocation reachable through a pointer field. Escaping a
+                // borrowed pointer is a no-op -- the table has no entry, or the
+                // entry belongs to another frame.
+                | IRType::Pointer(_)
+        )
+    }
+
+    fn emit_escape_for_value_inner(
+        &mut self,
+        value: Value,
+        ty: &IRType,
+        ir_func: &mut IRFunction,
+        depth: usize,
+        seen: &mut Vec<String>,
+    ) {
+        // Recursive types (`Node { next: Option<Node> }`) would otherwise lower
+        // forever: the walk follows the type graph, and payload slots are
+        // inspected per variant. Named types are visited once per path; deep
+        // anonymous nesting stops at a bound.
+        const MAX_DEPTH: usize = 16;
+        if depth > MAX_DEPTH {
+            return;
+        }
+        let named = match ty {
+            IRType::Struct { name, .. } | IRType::Enum { name, .. } => Some(name.clone()),
+            _ => None,
+        };
+        if let Some(name) = &named {
+            if seen.contains(name) {
+                return;
+            }
+            seen.push(name.clone());
+        }
         match ty {
             IRType::Struct { name, fields } => {
                 self.builder.build_escape_manual_alloc(ir_func, value);
@@ -129,14 +183,7 @@ impl ASTLowering {
                 };
                 let layout = layout::layout_of(owned_fields.iter().map(|(_, field_ty)| field_ty));
                 for (index, (_, field_ty)) in owned_fields.iter().enumerate() {
-                    if !matches!(
-                        field_ty,
-                        IRType::Struct { .. }
-                            | IRType::Tuple { .. }
-                            | IRType::Array { .. }
-                            | IRType::Enum { .. }
-                            | IRType::DynTrait { .. }
-                    ) {
+                    if !Self::carries_owned_allocation(field_ty) {
                         continue;
                     }
                     let Some(offset) = layout.offsets.get(index).copied() else {
@@ -146,21 +193,20 @@ impl ASTLowering {
                     let field_value =
                         self.builder
                             .build_load_typed(ir_func, field_ptr, field_ty.clone());
-                    self.emit_escape_for_value(field_value, field_ty, ir_func);
+                    self.emit_escape_for_value_inner(
+                        field_value,
+                        field_ty,
+                        ir_func,
+                        depth + 1,
+                        seen,
+                    );
                 }
             }
             IRType::Tuple { elements } => {
                 self.builder.build_escape_manual_alloc(ir_func, value);
                 let layout = layout::layout_of(elements.iter());
                 for (index, element_ty) in elements.iter().enumerate() {
-                    if !matches!(
-                        element_ty,
-                        IRType::Struct { .. }
-                            | IRType::Tuple { .. }
-                            | IRType::Array { .. }
-                            | IRType::Enum { .. }
-                            | IRType::DynTrait { .. }
-                    ) {
+                    if !Self::carries_owned_allocation(element_ty) {
                         continue;
                     }
                     let Some(offset) = layout.offsets.get(index).copied() else {
@@ -170,22 +216,21 @@ impl ASTLowering {
                     let element_value =
                         self.builder
                             .build_load_typed(ir_func, element_ptr, element_ty.clone());
-                    self.emit_escape_for_value(element_value, element_ty, ir_func);
+                    self.emit_escape_for_value_inner(
+                        element_value,
+                        element_ty,
+                        ir_func,
+                        depth + 1,
+                        seen,
+                    );
                 }
             }
             IRType::Array { element_type, size } => {
                 self.builder.build_escape_manual_alloc(ir_func, value);
+                if !Self::carries_owned_allocation(element_type) {
+                    return;
+                }
                 for index in 0..*size {
-                    if !matches!(
-                        element_type.as_ref(),
-                        IRType::Struct { .. }
-                            | IRType::Tuple { .. }
-                            | IRType::Array { .. }
-                            | IRType::Enum { .. }
-                            | IRType::DynTrait { .. }
-                    ) {
-                        break;
-                    }
                     let index_value = self.builder.build_const_int(ir_func, index as i64);
                     let element_ptr = self.builder.build_getelementptr(
                         ir_func,
@@ -198,13 +243,78 @@ impl ASTLowering {
                         element_ptr,
                         element_type.as_ref().clone(),
                     );
-                    self.emit_escape_for_value(element_value, element_type, ir_func);
+                    self.emit_escape_for_value_inner(
+                        element_value,
+                        element_type,
+                        ir_func,
+                        depth + 1,
+                        seen,
+                    );
                 }
             }
-            IRType::Enum { .. } | IRType::DynTrait { .. } => {
+            // A variant with data is laid out as `(tag, data...)`; only the
+            // variant the tag names holds a live payload, and every other slot
+            // is zeroed or a scalar, which `spectra_rt_manual_escape` ignores.
+            IRType::Enum { variants, .. } => {
+                self.builder.build_escape_manual_alloc(ir_func, value);
+                for (_, data_types) in variants {
+                    let Some(data_types) = data_types else {
+                        continue;
+                    };
+                    let mut element_types = vec![IRType::Int];
+                    element_types.extend(data_types.iter().cloned());
+                    let layout = layout::layout_of(element_types.iter());
+                    for (index, data_ty) in data_types.iter().enumerate() {
+                        let Some(offset) = layout.offsets.get(index + 1).copied() else {
+                            continue;
+                        };
+                        let payload_ptr =
+                            self.builder.build_field_ptr(ir_func, value, offset as i64);
+                        let payload =
+                            self.builder
+                                .build_load_typed(ir_func, payload_ptr, data_ty.clone());
+                        // Escape the slot itself before asking its declared type
+                        // for more: a call site can instantiate the enum with
+                        // type arguments that default to `int` (see the
+                        // declared-annotation override in
+                        // lowering_impl_type_inference), and the value in the
+                        // slot is still a tracked allocation. Escaping a scalar
+                        // is a no-op -- no allocation table entry exists for
+                        // it -- so this cannot re-parent anything else.
+                        self.builder.build_escape_manual_alloc(ir_func, payload);
+                        if Self::carries_owned_allocation(data_ty) {
+                            self.emit_escape_for_value_inner(
+                                payload,
+                                data_ty,
+                                ir_func,
+                                depth + 1,
+                                seen,
+                            );
+                        }
+                    }
+                }
+            }
+            // A generic application is an alias for its representation
+            // (`Option<string>` -> an enum whose data is a string): the
+            // concrete payload types live there, not in the type arguments.
+            IRType::Generic { representation, .. } => {
+                self.emit_escape_for_value_inner(value, representation, ir_func, depth, seen);
+            }
+            IRType::DynTrait { .. } | IRType::Pointer(_) => {
+                self.builder.build_escape_manual_alloc(ir_func, value);
+            }
+            // A string is a pointer to a tracked manual allocation: a string
+            // built inside the callee is released by the callee's frame exit
+            // unless it travels with the returned value. Escaping is a no-op
+            // for literals and for allocations that belong to another frame
+            // (`spectra_rt_manual_escape` only re-parents its own).
+            IRType::String => {
                 self.builder.build_escape_manual_alloc(ir_func, value);
             }
             _ => {}
+        }
+        if named.is_some() {
+            seen.pop();
         }
     }
 

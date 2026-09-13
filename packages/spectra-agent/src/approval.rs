@@ -227,6 +227,11 @@ mod tests {
 
     #[test]
     fn the_default_decision_denies_and_is_attributed() {
+        // The approver is a process-global slot: hold the crate-wide test lock
+        // so no other test installs or clears one while this test runs.
+        let _guard = crate::GLOBAL_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         set_approver(None);
         let request = ApprovalRequest {
             run: "run-x".to_string(),

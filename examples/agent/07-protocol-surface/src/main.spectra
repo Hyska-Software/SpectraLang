@@ -1,0 +1,159 @@
+module main
+
+// Example 07 — the protocol surface: A2A and ACP.
+//
+// Both protocols ride the same primitives; neither bypasses the governed
+// dispatch:
+//
+//   * A2A: `a2a_card` renders the agent card from an authored description plus
+//     the tool surface the compiler already derived. A delegated task is a
+//     journaled run whose id is the task id: `a2a_handle`'s `message/send`
+//     drives the model/tool loop inside the run, and `tasks/get` reads the
+//     terminal state back instead of re-delegating.
+//   * ACP: `acp_handle` answers `initialize` (advertising only what is
+//     implemented) and `session/new` (the session is the run).
+//
+// Everything runs in-process against the deterministic mock provider: no
+// sockets, no credentials. The requests below are the JSON-RPC documents a
+// remote client would send; the prompts carry the mock's scripted directives.
+
+from std.io import println
+import std.agent
+import std.string as str
+
+// The task state has to survive the call that produced it, so the run keeps a
+// journal: `tasks/get` reads the recorded terminal state, and re-running the
+// example resumes the journaled task instead of delegating it again.
+const JOURNAL_DIR = ".spectra/example-07-journal"
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+// The card advertises this skill: name, description and input schema are all
+// derived from this function and its payload record.
+#[agent_tool("Adds two integers")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+func spec() returns string {
+    return "{\"goal\":\"example-protocol-surface\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"run_id\":\"example-07\"}"
+}
+
+// One A2A `message/send`. `prompt` is already JSON-escaped by the caller.
+func send_request(task_id: string, prompt: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"message/send\",\"params\":{\"message\":{\"messageId\":\"" +
+        task_id +
+        "\",\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":\"" +
+        prompt +
+        "\"}]}}}"
+}
+
+func get_request(task_id: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tasks/get\",\"params\":{\"id\":\"" +
+        task_id +
+        "\"}}"
+}
+
+async func run_checks() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        // The card: authored identity plus the derived skill surface.
+        let card = a2a_card(
+            run,
+            "{\"name\":\"Example Protocol Agent\",\"description\":\"Serves A2A and ACP\",\"version\":\"2.0.0\"}",
+        )
+        if let Result::Ok(document) = card {
+            println("card     -> " + document)
+            if str.contains(document, "\"name\":\"Example Protocol Agent\"") == false {
+                return 2
+            }
+            if str.contains(document, "\"streaming\":false") == false {
+                return 3
+            }
+        } else {
+            return 4
+        }
+
+        // One delegated task: the scripted prompt makes the model call `add`
+        // and then answer 42. `\\n` is the newline of the model script.
+        let sent = a2a_handle(
+            run,
+            send_request("example-07-task", "spectra:tool=add {\\\"a\\\":20,\\\"b\\\":22}\\nspectra:final=42"),
+        )
+        if let Result::Ok(response) = sent {
+            println("send     -> " + response)
+            if str.contains(response, "\"state\":\"completed\"") == false {
+                return 5
+            }
+            if str.contains(response, "\"tool_calls\":1") == false {
+                return 6
+            }
+            if str.contains(response, "\"text\":\"42\"") == false {
+                return 7
+            }
+        } else {
+            return 8
+        }
+
+        // Polling the same task id returns the recorded state.
+        let polled = a2a_handle(run, get_request("example-07-task"))
+        if let Result::Ok(response) = polled {
+            println("get      -> " + response)
+            if str.contains(response, "\"state\":\"completed\"") == false {
+                return 9
+            }
+        } else {
+            return 10
+        }
+
+        // ACP: what the agent implements, then a session -- which is the run.
+        let initialized = acp_handle(
+            run,
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}",
+        )
+        if let Result::Ok(response) = initialized {
+            println("acp init -> " + response)
+            if str.contains(response, "\"permissionRequests\":true") == false {
+                return 11
+            }
+        } else {
+            return 12
+        }
+
+        let created = acp_handle(
+            run,
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{\"cwd\":\".\",\"mcpServers\":[]}}",
+        )
+        if let Result::Ok(response) = created {
+            println("acp new  -> " + response)
+            if str.contains(response, "\"sessionId\"") == false {
+                return 13
+            }
+        } else {
+            return 14
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report   -> " + report)
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 15
+            }
+        } else {
+            return 16
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(run_checks())
+}

@@ -241,6 +241,11 @@ mod tests {
 
     #[test]
     fn spans_map_to_the_pinned_conventions_and_hide_content_by_default() {
+        // The sink is a process-global slot: hold the crate-wide test lock so
+        // no other test installs or clears one while this test runs.
+        let _guard = crate::GLOBAL_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let recorder = Arc::new(Recorder::default());
         assert!(set_trace_sink(Some(recorder.clone())));
 
@@ -278,6 +283,12 @@ mod tests {
 
     #[test]
     fn a_content_sink_receives_content_and_no_sink_is_a_no_op() {
+        // The sink is a process-global slot: hold the crate-wide test lock so
+        // no other test installs or clears one while this test runs.
+        let _guard = crate::GLOBAL_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
         assert!(!set_trace_sink(None));
         // No sink: emitting must not panic or allocate a span.
         emit_invoke_agent("run-2", "goal");

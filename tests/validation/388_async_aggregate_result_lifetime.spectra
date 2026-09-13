@@ -1,0 +1,136 @@
+module async_aggregate_result_lifetime
+
+// Regression: an aggregate returned from a coroutine must outlive the
+// coroutine's frame.
+//
+// Every ordinary function's root return pointer is escaped out of the
+// function's manual frame by the backend. A coroutine result never reaches
+// `Return` -- it travels through `CoroutineComplete` into the task registry --
+// so an aggregate living in storage the coroutine owns used to be released
+// with the frame while the awaiting caller still held the pointer: the caller
+// then read reused memory (a wrong value, or an access violation, depending on
+// how fast the allocator handed the block out again). See
+// `docs/architecture/coroutine-aggregate-result-lifetime.md`.
+//
+// The churn between the awaits and the field reads is deliberate: it gives the
+// allocator every chance to reuse a block that should not have been released,
+// so a regression shows up here instead of in a long-running program.
+
+import std.convert as convert
+import std.string as str
+
+record Quote {
+    symbol: string
+    price: float
+}
+
+record Envelope {
+    quote: Quote
+    tag: int
+}
+
+record Ticket {
+    owner: string
+    seat: int
+}
+
+async func make_quote(symbol: string) returns Quote {
+    return Quote { symbol: symbol, price: 512.5 }
+}
+
+// A coroutine awaiting another coroutine that returns an aggregate: the inner
+// result is an aggregate value read inside an outer coroutine.
+async func make_envelope(symbol: string) returns Envelope {
+    let inner = await make_quote(symbol)
+    if inner.symbol != symbol {
+        return Envelope { quote: Quote { symbol: "torn", price: 0.0 }, tag: -1 }
+    }
+    return Envelope { quote: inner, tag: 1 }
+}
+
+// A record inside an enum payload: the tag decides which variant slot holds a
+// live aggregate, so the copy that carries it out of the frame is tag-guarded.
+async func make_ticket(seed: int) returns Result<Ticket, int> {
+    let owner = "owner-" + convert.int_to_string(seed)
+    return Result::Ok(Ticket { owner: owner, seat: seed })
+}
+
+// Allocates and drops same-shaped aggregates in a loop, so freed blocks are
+// reused quickly.
+func churn(rounds: int) returns int {
+    let total = 0
+    let index = 0
+    while index < rounds {
+        let label = "churn-" + convert.int_to_string(index)
+        let item  = Quote { symbol: label, price: 1.5 }
+        total = total + str.len(item.symbol)
+        index = index + 1
+    }
+    return total
+}
+
+public func main() returns int {
+    // An aggregate read after the coroutine that produced it finished.
+    let quote = block_on(make_quote("SPX"))
+    // An aggregate produced by a coroutine that awaited another coroutine.
+    let envelope = block_on(make_envelope("EUR"))
+
+    // Give the allocator a chance to reuse anything released too early.
+    if churn(400) == 0 {
+        return 2
+    }
+
+    if quote.symbol != "SPX" {
+        return 3
+    }
+    if quote.price != 512.5 {
+        return 4
+    }
+    if envelope.tag != 1 {
+        return 5
+    }
+    if envelope.quote.symbol != "EUR" {
+        return 6
+    }
+    if envelope.quote.price != 512.5 {
+        return 7
+    }
+
+    // An enum payload holding an aggregate built in the coroutine.
+    let ticket = block_on(make_ticket(11))
+    if let Result::Ok(value) = ticket {
+        if value.owner != "owner-11" {
+            return 14
+        }
+        if value.seat != 11 {
+            return 15
+        }
+    } else {
+        return 16
+    }
+
+    // Same shape, with the churn between the await and the read.
+    let direct = block_on(make_quote("GBP"))
+    if churn(400) == 0 {
+        return 8
+    }
+    if direct.symbol != "GBP" {
+        return 9
+    }
+    if direct.price != 512.5 {
+        return 10
+    }
+
+    // A coroutine result used inside another coroutine, read after both ended.
+    let nested = block_on(make_envelope("JPY"))
+    if churn(200) == 0 {
+        return 11
+    }
+    if nested.quote.symbol != "JPY" {
+        return 12
+    }
+    if nested.tag != 1 {
+        return 13
+    }
+    return 0
+}

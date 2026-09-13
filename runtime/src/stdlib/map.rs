@@ -139,6 +139,9 @@ pub(crate) extern "C" fn std_map_set(ctx: *mut SpectraHostCallContext) -> i32 {
         let handle = args[0] as usize;
         let key = args[1];
         let value = args[2];
+        // Both the key and the value outlive the frame that stored them.
+        crate::ffi::escape_stored_value(key);
+        crate::ffi::escape_stored_value(value);
         let map_arc = with_map_registry(|reg| reg.get(handle));
         let Some(map_arc) = map_arc else {
             return HOST_STATUS_NOT_FOUND;

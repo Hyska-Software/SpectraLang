@@ -302,7 +302,8 @@ def main() -> None:
     parser.add_argument("--binary", type=Path, default=default_binary)
     arguments = parser.parse_args()
 
-    run_command([cargo_cmd(), "build", "-q", "-p", "spectra-cli", "--offline"], timeout=1200)
+    if not os.environ.get("SPECTRA_CLI_BUILT"):
+        run_command([cargo_cmd(), "build", "-q", "-p", "spectra-cli", "--offline"], timeout=1200)
     validate_manifest_shape()
     validate_crate_aggregation()
     validate_registry_flow(arguments.binary.resolve())

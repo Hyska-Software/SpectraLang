@@ -106,6 +106,12 @@ impl Frame {
 
 struct AllocationTable {
     allocations: HashMap<usize, ManualAllocation>,
+    /// Literal buffers the image owns (`.rodata` in an AOT build) whose address
+    /// the runtime may read as a string but never frees: keyed by address, the
+    /// value is the byte length. They exist because a string is only read
+    /// through `try_read_packed_string` when its pointer is tracked, and the
+    /// key comparison the map/set/list helpers perform depends on that.
+    borrowed_literals: HashMap<usize, usize>,
     frames: Vec<Frame>,
     next_frame: usize,
     /// Freed-but-recently-live addresses (FIFO, bounded by
@@ -119,6 +125,7 @@ impl AllocationTable {
     fn new() -> Self {
         Self {
             allocations: HashMap::new(),
+            borrowed_literals: HashMap::new(),
             frames: vec![Frame::new(0)],
             next_frame: 1,
             quarantine: VecDeque::new(),
@@ -196,6 +203,20 @@ impl AllocationTable {
     /// Returns [`HOST_STATUS_SUCCESS`] on success or
     /// [`HOST_STATUS_INVALID_ARGUMENT`] when `ptr_value` is unknown or
     /// already quarantined (double free / stale pointer inside the window).
+    /// Registers an image-owned literal buffer so the runtime can read it as a
+    /// string without owning it. Idempotent; the entry is never freed by
+    /// `free_tracked`.
+    pub(crate) fn register_literal(&mut self, ptr_value: usize, len: usize) {
+        if ptr_value != 0 && len != 0 {
+            self.borrowed_literals.insert(ptr_value, len);
+        }
+    }
+
+    /// Byte length of a registered literal, when `ptr_value` is one.
+    pub(crate) fn literal_len(&self, ptr_value: usize) -> Option<usize> {
+        self.borrowed_literals.get(&ptr_value).copied()
+    }
+
     pub(crate) fn free_tracked(&mut self, ptr_value: usize) -> i32 {
         let Some(entry) = self.allocations.remove(&ptr_value) else {
             return HOST_STATUS_INVALID_ARGUMENT;

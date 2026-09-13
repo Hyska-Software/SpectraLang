@@ -2853,7 +2853,9 @@ implement session loading, non-text prompts or MCP-over-ACP; the card and
 `initialize` report exactly that.
 
 Runnable projects: `examples/agent/01-tool-and-run`,
-`examples/agent/02-approval-and-budget`, `examples/agent/04-durable-replay`;
+`examples/agent/02-approval-and-budget`, `examples/agent/03-mcp-and-memory`,
+`examples/agent/04-durable-replay`, `examples/agent/05-streaming-and-schema`,
+`examples/agent/06-capabilities-and-taint`, `examples/agent/07-protocol-surface`;
 see `docs/book/11-agents.md`.
 
 ---

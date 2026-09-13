@@ -52,6 +52,7 @@ pub(crate) extern "C" fn std_list_set(ctx: *mut SpectraHostCallContext) -> i32 {
         let handle = args[0] as usize;
         let index = args[1];
         let value = args[2];
+        crate::ffi::escape_stored_value(value);
         let _ = with_list_registry(|registry| registry.set(handle, index, value));
         if ctx_ref.result_len > 0 && !ctx_ref.results.is_null() {
             let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);
@@ -129,6 +130,7 @@ pub(crate) extern "C" fn std_list_insert_at(ctx: *mut SpectraHostCallContext) ->
         let handle = args[0] as usize;
         let index = args[1];
         let value = args[2];
+        crate::ffi::escape_stored_value(value);
         let _ = with_list_registry(|registry| registry.insert_at(handle, index, value));
         if ctx_ref.result_len > 0 && !ctx_ref.results.is_null() {
             let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);

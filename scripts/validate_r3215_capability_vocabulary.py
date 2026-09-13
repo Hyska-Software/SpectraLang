@@ -7,6 +7,7 @@
 # generated capability reference matches the catalog.
 from __future__ import annotations
 
+import os
 import json
 import shutil
 import subprocess
@@ -16,7 +17,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPECTRALANG = ROOT / "target" / "debug" / "spectralang.exe"
+SPECTRALANG = Path(
+    os.environ.get("SPECTRALANG_BINARY") or (ROOT / "target" / "debug" / "spectralang.exe")
+)
 CARGO = shutil.which("cargo") or "cargo"
 CATALOG = ROOT / "packages" / "spectra-contract" / "catalog" / "stdlib.toml"
 DOC = "docs/agent-platform.md"

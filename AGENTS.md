@@ -661,11 +661,14 @@ python scripts/generate_capability_reference.py --check
 # approval, taint matrix, compensation, MCP round trip, surface determinism).
 cargo test -p spectra-agent --test conformance
 
-# R-3221: the certification gate. It re-runs every phase-32 item validator,
-# checks surface determinism, runs every example in JIT and AOT and then the
-# integrated-project gate, writing target/r3221-agent-conformance/report.json;
-# it exits non-zero on the first failure. It is the release gate, so it is
-# heavy by design. The package gate is a peer of it.
+# R-3221: the certification gate. It builds the CLI and the contract dump once
+# and shares them with every validator, re-runs every phase-32 item validator
+# (in a process pool; `--jobs N`, default 4, `--jobs 1` restores the serial
+# order), checks surface determinism, runs every example in JIT and AOT and
+# then the integrated-project gate, writing
+# target/r3221-agent-conformance/report.json; it exits non-zero on the first
+# failure. It is the release gate, so it is heavy by design. The package gate
+# is a peer of it.
 python scripts/validate_r3221_agent_package.py
 python scripts/validate_r3221_agent_conformance.py
 python scripts/validate_r3221_integrated_agent_service.py

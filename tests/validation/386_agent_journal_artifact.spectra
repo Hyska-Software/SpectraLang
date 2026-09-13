@@ -1,0 +1,234 @@
+module agent_journal_artifact
+
+// R-3217 journal artifact verification: the on-disk record stream itself --
+// how many records a run writes, in which order, with which payload policy,
+// and that a replay of the same run id leaves the bytes untouched.
+//
+// Fixture 376 pins the replay *behavior* and the presence of the frozen record
+// fields. This fixture pins the file as a sequence: four steps (one model
+// turn, one tool call, one passing assertion, one denied approval) produce
+// exactly four records, ordered the way the run executed them, one per line,
+// and the payloads are present because the spec opts in with
+// `journal_payloads: true` (the default keeps digests only).
+//
+// Replaying the run id returns the recorded outcomes without appending a
+// record: the file is byte-identical before and after.
+
+import std.agent
+import std.collections as collections
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const JOURNAL_DIR = ".spectra/r3286-journal"
+const RUN_ID = "fixture-386-artifact"
+
+// One pure tool: its body reaches no host sink, so the run needs no grant and
+// the tool record below is the only tool work journaled.
+#[derive(Serialize, Deserialize)]
+public record LabelArgs {
+    label: string,
+}
+
+#[agent_tool("Echoes a label")]
+public async func echo_label(run: Run, args: LabelArgs) returns string {
+    return args.label
+}
+
+// Explicit journal directory and run id so the fixture finds its own file;
+// `journal_payloads` is on, so payload text is part of the artifact.
+func spec() returns string {
+    return "{\"goal\":\"journal-artifact\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":13,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        RUN_ID +
+        "\"}"
+}
+
+func journal_path() returns string {
+    return JOURNAL_DIR + "/" + RUN_ID + ".jsonl"
+}
+
+func clean(path: string) returns int {
+    let exists = fs.fs_exists(path)
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(path)
+            if let Result::Err(remove_error) = removed {
+                let _ignored = error.message(remove_error)
+                return 1
+            }
+        }
+        return 0
+    }
+    return 1
+}
+
+// The four executed steps write four records in execution order.
+async func fresh_run_records_in_order() returns int {
+    let cleaned = clean(journal_path())
+    if cleaned != 0 {
+        return 1
+    }
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let reply = await ask(run, "alpha")
+        if let Result::Ok(text) = reply {
+            if text != "mock echo: alpha" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        let called = await tool_call(run, "echo_label", "{\"label\":\"beta\"}")
+        if let Result::Ok(value) = called {
+            if value != "\"beta\"" {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        let assertion = require(run, true, "the journal is written after the run")
+        if let Result::Ok(passed) = assertion {
+            if passed == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+
+        // No approver is attached: the default is deny, and the decision is
+        // recorded like any other step.
+        let approval = approve(run, "spectra.std.fs.fs_write")
+        if let Result::Ok(allowed) = approval {
+            if allowed == true {
+                return 8
+            }
+        } else {
+            return 9
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 10
+            }
+            if str.contains(report, "\"replay\":false") == false {
+                return 11
+            }
+        } else {
+            return 12
+        }
+    } else {
+        return 13
+    }
+
+    let contents = fs.fs_read(journal_path())
+    if let Result::Err(read_error) = contents {
+        let _ignored = error.message(read_error)
+        return 14
+    }
+    if let Result::Ok(text) = contents {
+        // Exactly four records: the split yields one part per record plus the
+        // leading fragment before the first one.
+        let parts   = str.split_by(text, "\"kind\":")
+        let records = collections.list_len(parts) - 1
+        collections.list_free(parts)
+        if records != 4 {
+            return 15
+        }
+
+        // Execution order is preserved in the file.
+        let model_at     = str.index_of(text, "\"kind\":\"model\"")
+        let tool_at      = str.index_of(text, "\"kind\":\"tool\"")
+        let assertion_at = str.index_of(text, "\"kind\":\"assertion\"")
+        let approval_at  = str.index_of(text, "\"kind\":\"approval\"")
+        if model_at < 0 or tool_at < 0 or assertion_at < 0 or approval_at < 0 {
+            return 16
+        }
+        if model_at >= tool_at or tool_at >= assertion_at or assertion_at >= approval_at {
+            return 17
+        }
+
+        // One record per line: the record count matches the line count.
+        let lines      = str.split_by(text, "\n")
+        let line_count = collections.list_len(lines)
+        collections.list_free(lines)
+        if line_count != 4 and line_count != 5 {
+            return 18
+        }
+
+        // `journal_payloads: true` keeps the payload text: the prompt and the
+        // tool arguments are readable in the artifact.
+        if str.contains(text, "alpha") == false {
+            return 19
+        }
+        if str.contains(text, "beta") == false {
+            return 20
+        }
+
+        // Replaying the same run id returns the recorded outcomes and appends
+        // nothing: the bytes are unchanged.
+        let replay = agent_start(spec())
+        if let Result::Ok(run) = replay {
+            let replayed = await ask(run, "alpha")
+            if let Result::Ok(value) = replayed {
+                if value != "mock echo: alpha" {
+                    return 21
+                }
+            } else {
+                return 22
+            }
+            let replayed_call = await tool_call(run, "echo_label", "{\"label\":\"beta\"}")
+            if let Result::Ok(value) = replayed_call {
+                if value != "\"beta\"" {
+                    return 23
+                }
+            } else {
+                return 24
+            }
+            let replayed_assertion = require(run, true, "the journal is written after the run")
+            if let Result::Ok(passed) = replayed_assertion {
+                if passed == false {
+                    return 25
+                }
+            } else {
+                return 26
+            }
+            let replayed_approval = approve(run, "spectra.std.fs.fs_write")
+            if let Result::Ok(allowed) = replayed_approval {
+                if allowed == true {
+                    return 27
+                }
+            } else {
+                return 28
+            }
+            let ended = agent_end(run)
+            if let Result::Ok(report) = ended {
+                if str.contains(report, "\"replay\":true") == false {
+                    return 29
+                }
+            } else {
+                return 30
+            }
+        } else {
+            return 31
+        }
+
+        let after = fs.fs_read(journal_path())
+        if let Result::Ok(after_text) = after {
+            if after_text != text {
+                return 32
+            }
+        } else {
+            return 33
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(fresh_run_records_in_order())
+}
