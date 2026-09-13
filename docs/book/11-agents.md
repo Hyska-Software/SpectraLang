@@ -305,7 +305,9 @@ guards.
 `examples/agent/08-memory-and-recall` shows memory that outlives its writer,
 `examples/agent/09-compensation-saga` the declared undo with LIFO rollback, and
 `examples/agent/10-list-payloads` lists crossing the tool boundary in both
-directions.
+directions, `examples/agent/11-tool-call-budget` the tool-call ceiling as a
+governor, and `examples/agent/12-structured-output` a schema violation fed back
+to the model as a typed failure.
 `a2a_card` renders the authored identity plus the derived skill surface; a
 delegated task is a journaled run whose id is the task id, so `tasks/get` reads
 the terminal state back instead of re-delegating; `acp_handle` answers
@@ -369,6 +371,22 @@ the first mismatch (the certification gate runs all four in JIT and AOT):
 - `392_agent_payload_scale.spectra` — 16 KiB results, records and lists cross
   the wrapper round trip intact in both directions (arguments and results),
   including the typed rejection of a wrong element type.
+- `393_agent_tool_call_ceiling.spectra` — `max_tool_calls` as a governor: the
+  call beyond the ceiling is refused without executing (the tool's own counter
+  proves it), hitting it cancels the run with a typed error naming the ceiling,
+  and the cancelled run still reports what actually ran.
+- `394_agent_structured_output.spectra` — `ask_json` against a derived schema: a
+  compliant answer arrives whole, a violating one arrives as a typed failure
+  naming the path, the schema covers a list field as a JSON array, and the
+  `json_error_field` check reports the element index (`tags[0]`).
+- `395_agent_memory_limits.spectra` — recall boundaries: `top_k: 0` is a typed
+  error, `top_k` beyond the store is not, an empty store answers without a
+  provider turn, an empty query still ranks, and stores are scoped by goal so
+  two agents in one process cannot read each other's memory.
+- `396_agent_stream_in_tool.spectra` — streams opened inside a tool body: the
+  chunks cross the wrapper boundary and reassemble intact, a stream closed
+  without draining refuses later reads as a typed failure inside the tool, and
+  the run keeps streaming afterwards.
 
 ## Governance
 

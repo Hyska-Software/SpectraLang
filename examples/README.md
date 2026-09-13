@@ -55,6 +55,8 @@ rede), em JIT (`spectralang run`) e AOT (`compile --debug-info=none --emit-exe`)
 | `08-memory-and-recall` | `remember`/`recall` entre duas runs com o mesmo goal, com a proveniência apontando o `run_id` do escritor |
 | `09-compensation-saga` | `compensate`/`rollback` em ordem LIFO, com contador provando execução única e replay pelo journal |
 | `10-list-payloads` | `List` escalar como argumento, como retorno e como campo derivado (`json_schema`, encode e decode) |
+| `11-tool-call-budget` | teto de `max_tool_calls` no `act`: chamada recusada sem executar, run cancelada com erro tipado e report nomeando o teto |
+| `12-structured-output` | `ask_json` com o `json_schema` derivado, falha tipada de validação e o reparo alimentado de volta ao modelo |
 
 Os contratos que os exemplos demonstram ficam fixados nos fixtures
 `tests/validation/384_agent_stream_lifecycle.spectra`,
@@ -62,8 +64,10 @@ Os contratos que os exemplos demonstram ficam fixados nos fixtures
 `386_agent_journal_artifact.spectra`, `387_agent_introspection.spectra`,
 `388_async_aggregate_result_lifetime.spectra`,
 `389_string_and_container_payload_lifetime.spectra`,
-`390_agent_nested_dispatch.spectra`, `391_agent_concurrent_runs.spectra` e
-`392_agent_payload_scale.spectra` (rodados em JIT e AOT pelo gate de certificação
-R-3221).
+`390_agent_nested_dispatch.spectra`, `391_agent_concurrent_runs.spectra`,
+`392_agent_payload_scale.spectra`, `393_agent_tool_call_ceiling.spectra`,
+`394_agent_structured_output.spectra`, `395_agent_memory_limits.spectra` e
+`396_agent_stream_in_tool.spectra`
+(rodados em JIT e AOT pelo gate de certificação R-3221).
 
 Ver `docs/book/11-agents.md`.

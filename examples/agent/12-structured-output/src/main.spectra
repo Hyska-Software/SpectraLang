@@ -1,0 +1,94 @@
+module main
+
+// Example 12 - structured model output, and what the model sees when it breaks
+// the schema.
+//
+// `ask_json(run, prompt, schema)` validates the provider's answer against the
+// schema the compiler derived from the record -- the same field data that
+// drives `to_json`/`from_json` and the JSON Schema document. A compliant answer
+// arrives as the provider's document; a violating one arrives as a typed
+// failure naming the path, which a tool body can hand back to the model to
+// repair. Here the tool returns that failure text, the loop feeds it back, and
+// the next scripted directive answers with the repair.
+//
+// Everything runs in-process against the deterministic mock provider.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record Echo {
+    count: int,
+    label: string,
+}
+
+#[derive(Serialize, Deserialize)]
+public record TextArgs {
+    text: string,
+}
+
+// A compliant turn: the mock's scripted answer matches the schema.
+#[agent_tool("Reads a structured answer")]
+public async func read_structured(run: Run, args: TextArgs) returns string {
+    let reply = await ask_json(run, "spectra:json", Echo::json_schema())
+    if let Result::Ok(document) = reply {
+        return document
+    }
+    if let Result::Err(problem) = reply {
+        return error.message(problem)
+    }
+    return "unreachable"
+}
+
+// A violating turn: the mock's other answer breaks the schema, and the failure
+// text travels back to the model.
+#[agent_tool("Reads an answer that breaks the schema")]
+public async func read_violating(run: Run, args: TextArgs) returns string {
+    let reply = await ask_json(run, "spectra:invalid-json", Echo::json_schema())
+    if let Result::Ok(_document) = reply {
+        return "the validator accepted a violating answer"
+    }
+    if let Result::Err(problem) = reply {
+        return error.message(problem)
+    }
+    return "unreachable"
+}
+
+// The tool bodies read `error.message`, so the run grants that namespace.
+func spec() returns string {
+    return "{\"goal\":\"example-12-structured\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"spectra.std.error\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":53,\"journal\":\"\"}"
+}
+
+public func main() returns int {
+    println("schema: " + Echo::json_schema())
+    return block_on(demo())
+}
+
+async func demo() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(start_error) = started {
+        println("start failed: " + error.message(start_error))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let script = "spectra:tool=read_structured {\"text\":\"go\"}\nspectra:tool=read_violating {\"text\":\"go\"}\nspectra:final=repaired after the typed failure"
+        let answer = await act(run, script)
+        if let Result::Ok(text) = answer {
+            println("the loop ended with: " + text)
+        }
+        if let Result::Err(problem) = answer {
+            println("the loop failed: " + error.message(problem))
+            return 2
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report: " + report)
+        }
+    } else {
+        return 3
+    }
+    return 0
+}

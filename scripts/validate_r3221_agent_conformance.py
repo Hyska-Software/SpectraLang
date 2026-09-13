@@ -15,9 +15,9 @@ The checks run in order, stopping at the first failure:
       runs all of them;
   (d) surface determinism: two `spectralang surface --json` runs over
       `tests/projects/valid/integrated_agent_service` are byte-identical;
-  (e) every runnable example (`examples/agent/01..10`) in JIT and AOT
+  (e) every runnable example (`examples/agent/01..12`) in JIT and AOT
       (`compile --debug-info=none --emit-exe`, then execute);
-  (f) the verification fixtures (`tests/validation/384..392`) in JIT and AOT --
+  (f) the verification fixtures (`tests/validation/384..396`) in JIT and AOT --
       the language-surface contracts for streaming lifecycle, run-level grant
       enforcement, the journal artifact and run introspection, plus the
       aggregate-result lifetime regression;
@@ -92,6 +92,8 @@ EXAMPLES = {
     "08-memory-and-recall": "examples/agent/08-memory-and-recall",
     "09-compensation-saga": "examples/agent/09-compensation-saga",
     "10-list-payloads": "examples/agent/10-list-payloads",
+    "11-tool-call-budget": "examples/agent/11-tool-call-budget",
+    "12-structured-output": "examples/agent/12-structured-output",
 }
 
 # The language-surface contracts that back the example set: the streaming
@@ -108,6 +110,10 @@ VERIFICATION_FIXTURES = {
     "nested_dispatch": "tests/validation/390_agent_nested_dispatch.spectra",
     "concurrent_runs": "tests/validation/391_agent_concurrent_runs.spectra",
     "payload_scale": "tests/validation/392_agent_payload_scale.spectra",
+    "tool_call_ceiling": "tests/validation/393_agent_tool_call_ceiling.spectra",
+    "structured_output": "tests/validation/394_agent_structured_output.spectra",
+    "memory_limits": "tests/validation/395_agent_memory_limits.spectra",
+    "stream_in_tool": "tests/validation/396_agent_stream_in_tool.spectra",
 }
 
 CARGO = os.environ.get("CARGO") or shutil.which("cargo") or "cargo"

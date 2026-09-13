@@ -2863,8 +2863,9 @@ Runnable projects: `examples/agent/01-tool-and-run`,
 `examples/agent/02-approval-and-budget`, `examples/agent/03-mcp-and-memory`,
 `examples/agent/04-durable-replay`, `examples/agent/05-streaming-and-schema`,
 `examples/agent/06-capabilities-and-taint`, `examples/agent/07-protocol-surface`,
-`examples/agent/08-memory-and-recall`, `examples/agent/09-compensation-saga` and
-`examples/agent/10-list-payloads`; see `docs/book/11-agents.md`.
+`examples/agent/08-memory-and-recall`, `examples/agent/09-compensation-saga`,
+`examples/agent/10-list-payloads`, `examples/agent/11-tool-call-budget` and
+`examples/agent/12-structured-output`; see `docs/book/11-agents.md`.
 
 ---
 

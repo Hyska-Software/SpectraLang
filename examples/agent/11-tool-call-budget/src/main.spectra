@@ -1,0 +1,79 @@
+module main
+
+// Example 11 - the tool-call ceiling as a governor.
+//
+// `max_tool_calls` is not a retryable tool failure: it bounds how much work the
+// model may delegate. The call beyond the ceiling is refused *without being
+// executed*, and hitting it cancels the run like the token and cost ceilings
+// do, with a typed error naming the ceiling. The report of the cancelled run is
+// still available and says what actually ran, and the journal keeps the record.
+//
+// Everything runs in-process against the deterministic mock provider.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.string as str
+
+const JOURNAL_DIR = ".spectra/example-11-journal"
+
+// The counting device: a refused call leaves this at one.
+static ADDITIONS: int = 0
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[agent_tool("Adds two integers and counts the call")]
+public async func add(run: Run, args: AddArgs) returns int {
+    ADDITIONS = ADDITIONS + 1
+    return args.a + args.b
+}
+
+func spec(max_tool_calls: int) returns string {
+    return "{\"goal\":\"example-11-budget\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":" +
+        convert.int_to_string(max_tool_calls) +
+        ",\"untrusted\":\"approve\",\"seed\":47,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"run_id\":\"example-11-ceiling\"}"
+}
+
+public func main() returns int {
+    return block_on(demo())
+}
+
+async func demo() returns int {
+    let started = agent_start(spec(1))
+    if let Result::Err(start_error) = started {
+        println("start failed: " + error.message(start_error))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        // The model asks for two calls; the second one is over the ceiling.
+        let script = "spectra:tool=add {\"a\":20,\"b\":22}\nspectra:tool=add {\"a\":1,\"b\":1}\nspectra:final=never reached"
+        let outcome = await act(run, script)
+        if let Result::Ok(answer) = outcome {
+            println("the loop answered instead: " + answer)
+            return 2
+        }
+        if let Result::Err(ceiling) = outcome {
+            println("the ceiling stopped the run: " + error.message(ceiling))
+        }
+
+        println("calls that reached the tool: " + convert.int_to_string(ADDITIONS))
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report: " + report)
+            println("ceiling named: " + convert.bool_to_string(str.contains(report, "max_tool_calls")))
+        } else {
+            return 3
+        }
+    } else {
+        return 4
+    }
+    return 0
+}

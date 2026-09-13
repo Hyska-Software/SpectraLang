@@ -1,0 +1,156 @@
+module agent_stream_in_tool
+
+// Streams inside a tool body: the chunk handle and its chunks cross the
+// marshalling wrapper, which is where a value that outlives its producer's
+// frame would be caught.
+//
+// The contract pinned here:
+//
+//   - a tool may open a stream on its own run, drain it, and return the
+//     reassembled text: every chunk survives the wrapper boundary, so both ends
+//     and the middle of the answer are intact;
+//   - the answer is produced by the same provider the run uses, so a tool that
+//     streams and a tool that awaits `ask` see the same text;
+//   - a tool may close a stream it never drained, and `stream_close` is
+//     idempotent inside a tool body as well;
+//   - reading a closed stream reports a typed failure to the tool, which turns
+//     it into a marker instead of a crash.
+
+import std.agent
+import std.convert as convert
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record TextArgs {
+    text: string,
+}
+
+func spec() returns string {
+    return "{\"goal\":\"stream-in-tool\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":59,\"journal\":\"\"}"
+}
+
+// Drains the streamed answer and returns it whole.
+#[agent_tool("Streams an answer and returns the assembled text")]
+public async func drain_stream(run: Run, args: TextArgs) returns string {
+    let opened = await ask_stream(run, args.text)
+    if let Result::Err(_open_error) = opened {
+        return "open-failed"
+    }
+    if let Result::Ok(stream) = opened {
+        let assembled = ""
+        let done = false
+        while done == false {
+            let chunk = await stream_next(stream)
+            if let Result::Err(_read_error) = chunk {
+                return "read-failed"
+            }
+            if let Result::Ok(text) = chunk {
+                if text == "" {
+                    done = true
+                } else {
+                    assembled = assembled + text
+                }
+            }
+        }
+        let closed = await stream_close(stream)
+        if let Result::Err(_close_error) = closed {
+            return "close-failed"
+        }
+        return assembled
+    }
+    return "unreachable"
+}
+
+// Closes a stream without draining it, then proves the closed handle refuses
+// reads inside the tool as well. Returns markers, so the tool needs no grant
+// beyond the agent primitives.
+#[agent_tool("Closes an undrained stream and reports its state")]
+public async func abandon_stream(run: Run, args: TextArgs) returns string {
+    let opened = await ask_stream(run, args.text)
+    if let Result::Err(_open_error) = opened {
+        return "open-failed"
+    }
+    if let Result::Ok(stream) = opened {
+        let first = await stream_close(stream)
+        if let Result::Err(_close_error) = first {
+            return "close-failed"
+        }
+        let second = await stream_close(stream)
+        if let Result::Err(_closing_error) = second {
+            return "double-close-failed"
+        }
+        let late = await stream_next(stream)
+        if let Result::Err(_late_error) = late {
+            return "closed-read-refused"
+        }
+        return "closed-read-accepted"
+    }
+    return "unreachable"
+}
+
+func checks() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(_start_error) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        // A prompt long enough for the mock to split into several chunks: the
+        // answer's length is the proof that the chunks were reassembled, and
+        // the markers pin both ends of the boundary.
+        let prompt = "streaming inside a tool body, chunk after chunk, all the way to the end of the answer"
+        let drained = block_on(tool_call(run, "drain_stream", "{\"text\":\"" + prompt + "\"}"))
+        if let Result::Ok(value) = drained {
+            // The wrapper JSON-encodes the string: the quotes are part of it.
+            if str.contains(value, "mock echo: " + prompt) == false {
+                return 2
+            }
+            if str.contains(value, "end of the answer") == false {
+                return 3
+            }
+            if str.contains(value, "streaming inside") == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        let abandoned = block_on(tool_call(run, "abandon_stream", "{\"text\":\"short\"}"))
+        if let Result::Ok(value) = abandoned {
+            if str.contains(value, "closed-read-refused") == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+
+        // The same run can still stream afterwards: the abandoned handle did
+        // not disturb the run's provider state.
+        let again = block_on(tool_call(run, "drain_stream", "{\"text\":\"again\"}"))
+        if let Result::Ok(value) = again {
+            if str.contains(value, "mock echo: again") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"tool_calls\":3") == false {
+                return 10
+            }
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 11
+            }
+        } else {
+            return 12
+        }
+    } else {
+        return 13
+    }
+    return 0
+}
+
+public func main() returns int {
+    return checks()
+}

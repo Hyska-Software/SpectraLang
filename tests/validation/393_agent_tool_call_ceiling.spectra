@@ -1,0 +1,157 @@
+module agent_tool_call_ceiling
+
+// R-3216/R-3222 ceilings through the public surface: what the tool-call ceiling
+// denies, what the denied work left behind, and what an operation on a finished
+// run reports.
+//
+// The contract pinned here:
+//
+//   - `max_tool_calls` denies the call beyond the ceiling *without executing
+//     it*: the tool's own counter proves the denied call never ran;
+//   - hitting the ceiling cancels the run like every other budget ceiling, with
+//     a typed error naming the ceiling -- the ceiling is a governor, not a
+//     retryable tool failure;
+//   - the cancelled run still reports: `tool_calls` counts what actually ran and
+//     `ceiling` names `max_tool_calls`, while `budget_remaining` reports zero;
+//   - an operation that needs a live run (a further `tool_call`, an `agent_end`
+//     after the run already ended) reports a typed error instead of touching a
+//     dismantled run.
+
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.string as str
+
+// Counting device: the tool increments its own counter, so "the denied call
+// never executed" is observable from the language itself.
+static ADDITIONS: int = 0
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[agent_tool("Adds two integers and counts the call")]
+public async func add(run: Run, args: AddArgs) returns int {
+    ADDITIONS = ADDITIONS + 1
+    return args.a + args.b
+}
+
+func spec(max_tool_calls: int) returns string {
+    return "{\"goal\":\"tool-call-ceiling\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":" +
+        convert.int_to_string(max_tool_calls) +
+        ",\"untrusted\":\"approve\",\"seed\":37,\"journal\":\"\"}"
+}
+
+// One allowed call, a second call the ceiling must refuse, then the report.
+async func the_ceiling_denies_without_executing() returns int {
+    let started = agent_start(spec(1))
+    if let Result::Err(_start_error) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let script = "spectra:tool=add {\"a\":1,\"b\":1}\nspectra:tool=add {\"a\":40,\"b\":2}\nspectra:final=never reached"
+        let outcome = await act(run, script)
+        if let Result::Ok(_answer) = outcome {
+            return 2
+        }
+        if let Result::Err(ceiling_error) = outcome {
+            // The typed error names the ceiling that stopped the run.
+            if str.contains(error.message(ceiling_error), "budget_exceeded") == false {
+                return 3
+            }
+            if str.contains(error.message(ceiling_error), "max_tool_calls") == false {
+                return 4
+            }
+        }
+
+        // The denied call never executed: exactly one call reached the tool.
+        if ADDITIONS != 1 {
+            return 5
+        }
+
+        // The run is cancelled, but a tool-call ceiling is not a token
+        // ceiling: a spec with no `max_tokens` still reports the unclamped
+        // sentinel here. (387 pins the zero for a run cancelled *by* its token
+        // ceiling, where the tokens are what ran out.)
+        let remaining = budget_remaining(run)
+        if let Result::Ok(value) = remaining {
+            if value < 1000000000 {
+                return 10
+            }
+        }
+        if let Result::Err(_budget_error) = remaining {
+            return 11
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"tool_calls\":1") == false {
+                return 6
+            }
+            if str.contains(report, "\"ceiling\":\"max_tool_calls\"") == false {
+                return 7
+            }
+            if str.contains(report, "\"status\":\"budget_exceeded\"") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+    } else {
+        return 12
+    }
+    return 0
+}
+
+// Operations that need the run report a typed error once it ended.
+async func finished_run_operations_are_typed() returns int {
+    let started = agent_start(spec(0))
+    if let Result::Err(_start_error) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let ended = agent_end(run)
+        if let Result::Err(_end_error) = ended {
+            return 2
+        }
+
+        let late_call = await tool_call(run, "add", "{\"a\":1,\"b\":1}")
+        if let Result::Ok(_value) = late_call {
+            return 3
+        }
+        if let Result::Err(problem) = late_call {
+            if str.is_empty(error.message(problem)) {
+                return 4
+            }
+        }
+
+        // The budget of a run that is gone is a typed error, like any other
+        // operation that needs the live run.
+        let late_budget = budget_remaining(run)
+        if let Result::Ok(_value) = late_budget {
+            return 5
+        }
+
+        let late_end = agent_end(run)
+        if let Result::Ok(_report) = late_end {
+            return 6
+        }
+    } else {
+        return 7
+    }
+    return 0
+}
+
+public func main() returns int {
+    let ceiling = block_on(the_ceiling_denies_without_executing())
+    if ceiling != 0 {
+        return ceiling
+    }
+    let finished = block_on(finished_run_operations_are_typed())
+    if finished != 0 {
+        return 20 + finished
+    }
+    return 0
+}

@@ -1,0 +1,129 @@
+module agent_memory_limits
+
+// R-3212 recall boundaries: the limits a caller can rely on, and the scope a
+// store lives in.
+//
+// The contract pinned here:
+//
+//   - `top_k` must be at least 1: zero is a typed error instead of an empty
+//     answer that hides a caller bug;
+//   - `top_k` larger than the store is not an error: the answer echoes the
+//     requested `top_k` and reports the entries it has;
+//   - an empty store answers with no provider work at all: zero entries,
+//     `truncated:false`;
+//   - stores are scoped by goal: a run whose goal differs sees an empty store
+//     even in the same process, so two agents sharing a process cannot read
+//     each other's memory;
+//   - the empty query is a query: the entry it just wrote is recalled.
+
+import std.agent
+import std.error as error
+import std.string as str
+
+const JOURNAL_DIR = ".spectra/r3295-memory"
+
+func spec(goal: string) returns string {
+    return "{\"goal\":\"" +
+        goal +
+        "\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":43,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\"}"
+}
+
+func checks() returns int {
+    let started = agent_start(spec("memory-limits-alpha"))
+    if let Result::Err(_start_error) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        // An empty store answers without ranking anything.
+        let empty = recall(run, "anything at all", 3)
+        if let Result::Ok(document) = empty {
+            if str.contains(document, "\"entries\":[]") == false {
+                return 2
+            }
+            if str.contains(document, "\"truncated\":false") == false {
+                return 3
+            }
+        } else {
+            return 4
+        }
+
+        // Zero is a caller bug, reported as one.
+        let zero = recall(run, "anything at all", 0)
+        if let Result::Ok(_document) = zero {
+            return 5
+        }
+        if let Result::Err(problem) = zero {
+            if str.contains(error.message(problem), "top_k") == false {
+                return 6
+            }
+        }
+
+        let stored = remember(run, "the maintenance window is Sunday at 02:00")
+        if let Result::Err(store_error) = stored {
+            let _ignored = store_error
+            return 7
+        }
+
+        // Both boundaries in one answer: the echo of `top_k` and the count.
+        let bounded = recall(run, "when is the maintenance window", 5)
+        if let Result::Ok(document) = bounded {
+            if str.contains(document, "\"top_k\":5") == false {
+                return 8
+            }
+            if str.contains(document, "Sunday") == false {
+                return 9
+            }
+        } else {
+            return 10
+        }
+
+        // The empty query still ranks the store.
+        let unqueried = recall(run, "", 2)
+        if let Result::Ok(document) = unqueried {
+            if str.contains(document, "Sunday") == false {
+                return 11
+            }
+        } else {
+            return 12
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(_end_error) = ended {
+            return 13
+        }
+    } else {
+        return 14
+    }
+
+    // A different goal is a different store, in the same process.
+    let other = agent_start(spec("memory-limits-beta"))
+    if let Result::Err(_other_error) = other {
+        return 15
+    }
+    if let Result::Ok(run) = other {
+        let isolated = recall(run, "when is the maintenance window", 3)
+        if let Result::Ok(document) = isolated {
+            if str.contains(document, "\"entries\":[]") == false {
+                return 16
+            }
+            if str.contains(document, "Sunday") == true {
+                return 17
+            }
+        } else {
+            return 18
+        }
+        let ended = agent_end(run)
+        if let Result::Err(_end_error) = ended {
+            return 19
+        }
+    } else {
+        return 20
+    }
+    return 0
+}
+
+public func main() returns int {
+    return checks()
+}

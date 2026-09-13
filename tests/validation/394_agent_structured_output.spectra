@@ -1,0 +1,152 @@
+module agent_structured_output
+
+// R-3211/R-3210 structured model output: `ask_json` validates the provider's
+// answer against the schema the compiler derived from a record, and a violation
+// comes back as a typed failure naming the path -- not as a half-decoded value.
+//
+// The contract pinned here:
+//
+//   - a compliant answer passes the validator and reaches the caller as the
+//     provider's JSON document;
+//   - a violating answer fails with a typed error whose message names the
+//     offending path, so a tool body can hand it back to the model to repair;
+//   - the schema covers a `List<string>` field as a JSON array, and the
+//     `json_error_field` path check reports the element index of a violation
+//     (`tags[0]`), which is the same array support `to_json`/`from_json` use.
+
+import std.agent
+import std.error as error
+import std.string as str
+
+// The mock's scripted schema-shaped answer is `{"count":...,"label":...}`, so
+// this record is the one it satisfies.
+#[derive(Serialize, Deserialize)]
+public record Echo {
+    count: int,
+    label: string,
+}
+
+// A record with a list field: the schema and the typed path checks below cover
+// the array form without depending on the provider's fixed answer.
+#[derive(Serialize, Deserialize)]
+public record Invoice {
+    id: int,
+    label: string,
+    tags: List<string>,
+}
+
+#[derive(Serialize, Deserialize)]
+public record TextArgs {
+    text: string,
+}
+
+// A compliant turn: the mock's answer matches the schema.
+#[agent_tool("Extracts a structured echo")]
+public async func extract(run: Run, args: TextArgs) returns string {
+    let reply = await ask_json(run, "spectra:json", Echo::json_schema())
+    if let Result::Ok(document) = reply {
+        return document
+    }
+    if let Result::Err(_problem) = reply {
+        return "invalid"
+    }
+    return "unreachable"
+}
+
+// A violating turn: the same tool, a provider answer that breaks the schema.
+#[agent_tool("Extracts an invoice from a violating answer")]
+public async func extract_bad(run: Run, args: TextArgs) returns string {
+    let reply = await ask_json(run, "spectra:invalid-json", Invoice::json_schema())
+    if let Result::Ok(_document) = reply {
+        return "accepted"
+    }
+    if let Result::Err(problem) = reply {
+        return error.message(problem)
+    }
+    return "unreachable"
+}
+
+// `error.message` inside a tool body is an author effect, so the run grants it.
+func spec() returns string {
+    return "{\"goal\":\"structured-output\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"spectra.std.error\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":41,\"journal\":\"\"}"
+}
+
+async func schema_covers_lists() returns int {
+    let schema = Invoice::json_schema()
+    if str.contains(schema, "\"type\":\"array\"") == false {
+        return 1
+    }
+    if str.contains(schema, "\"items\":{\"type\":\"string\"}") == false {
+        return 2
+    }
+    // The typed path check walks the same schema: an element violation names
+    // its index. The documents travel as values so the check runs at run time
+    // (a literal is folded and reported at compile time instead).
+    let violating: string = "{\"id\":1,\"label\":\"x\",\"tags\":[1]}"
+    let violation = Invoice::json_error_field(violating)
+    if violation != "tags[0]" {
+        return 3
+    }
+    let incomplete: string = "{\"id\":1,\"tags\":[\"a\"]}"
+    let missing = Invoice::json_error_field(incomplete)
+    if missing != "label" {
+        return 4
+    }
+    let complete: string = "{\"id\":1,\"label\":\"x\",\"tags\":[\"a\"]}"
+    let valid = Invoice::json_error_field(complete)
+    if valid != "" {
+        return 5
+    }
+
+    let started = agent_start(spec())
+    if let Result::Err(_start_error) = started {
+        return 6
+    }
+    if let Result::Ok(run) = started {
+        let good = await tool_call(run, "extract", "{\"text\":\"an invoice\"}")
+        if let Result::Ok(value) = good {
+            // The provider's document reached the caller whole.
+            if str.contains(value, "mock-response") == false {
+                return 7
+            }
+            if str.contains(value, "count") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+
+        let bad = await tool_call(run, "extract_bad", "{\"text\":\"an invoice\"}")
+        if let Result::Ok(value) = bad {
+            // The typed failure names the kind and the path instead of
+            // reporting success: the mock's fixed answer violates the schema,
+            // and the first violation is the missing required property `id`.
+            if value == "accepted" {
+                return 10
+            }
+            if str.is_empty(value) == true {
+                return 11
+            }
+            if str.contains(value, "schema_violation") == false {
+                return 12
+            }
+            if str.contains(value, "id") == false {
+                return 13
+            }
+        } else {
+            return 13
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(_end_error) = ended {
+            return 14
+        }
+    } else {
+        return 15
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(schema_covers_lists())
+}
