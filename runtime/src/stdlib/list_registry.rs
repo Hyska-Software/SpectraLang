@@ -9,8 +9,51 @@ where
 }
 
 pub(crate) fn list_registry() -> &'static Mutex<ListRegistry> {
-    static REGISTRY: OnceLock<Mutex<ListRegistry>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(ListRegistry::new()))
+    static REGISTRY: LazyLock<Mutex<ListRegistry>> =
+        LazyLock::new(|| Mutex::new(ListRegistry::new()));
+    &REGISTRY
+}
+
+/// Reads the elements of a list handle.
+///
+/// Public because sibling host-call provider crates have to serialize
+/// collection values: the JSON encoder in `spectra-api` turns a `List<T>` into
+/// a JSON array and must see the elements. The registry itself stays private;
+/// this read seam and [`list_create`] are the whole cross-crate surface.
+pub fn list_elements(handle: i64) -> Result<Vec<SpectraHostValue>, i32> {
+    with_list_registry(|registry| {
+        let len = registry.len(handle as usize)?;
+        let mut values = Vec::with_capacity(len);
+        for index in 0..len {
+            match registry.get_option(handle as usize, index as i64)? {
+                Some(value) => values.push(value),
+                // `len` and `get_option` agree on the same table entry; a
+                // missing index means the list shrank mid-read, which no path
+                // does, so stopping short is the safe reading.
+                None => break,
+            }
+        }
+        Ok(values)
+    })
+}
+
+/// Creates a list holding `elements` and returns its handle.
+///
+/// Public for the same reason as [`list_elements`]: a host-call provider that
+/// decodes a JSON array into a `List<T>` needs a list to fill. Elements are
+/// escaped exactly like `list_push` escapes the values it stores, so a decoded
+/// string survives the frame that produced it.
+pub fn list_create(elements: &[SpectraHostValue]) -> Result<i64, i32> {
+    let memory = initialize().memory();
+    let list = memory
+        .allocate_manual(StdList::default())
+        .map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
+    let handle = with_list_registry(|registry| registry.insert(list));
+    for value in elements {
+        crate::ffi::escape_stored_value(*value);
+        with_list_registry(|registry| registry.push(handle, *value))?;
+    }
+    Ok(handle as i64)
 }
 
 #[derive(Default)]

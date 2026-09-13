@@ -1,0 +1,333 @@
+module agent_concurrent_runs
+
+// R-3213/R-3216 concurrent runs: two runs can be live in one process, and
+// interleaving their work keeps each run's context its own.
+//
+// The contract pinned here:
+//
+//   - Work is attributed by the run that dispatched it: the report counters,
+//     the budget accounting and the journal records of a run reflect only that
+//     run's dispatches, no matter how the awaits interleave.
+//   - Budgets are per run: a ceiling on one run is untouched by another run's
+//     turns, and a run with no ceiling reports the unclamped sentinel while the
+//     capped one reports its exact remainder.
+//   - The journal is per run id: each file carries only its own records, and a
+//     record's `run` field names the run that wrote it.
+//   - Memory is scoped by goal, not by run: a second run with the same goal
+//     recalls the first run's entry, and the entry names the first run as the
+//     writer by its durable `run_id`.
+
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const JOURNAL_DIR = ".spectra/r3291-concurrent"
+const RUN_A = "fixture-391-a"
+const RUN_B = "fixture-391-b"
+const RUN_C = "fixture-391-c"
+const RUN_D = "fixture-391-d"
+const RUN_E = "fixture-391-e"
+const RUN_F = "fixture-391-f"
+
+#[derive(Serialize, Deserialize)]
+public record TextArgs {
+    text: string,
+}
+
+// `max_tokens` is the only per-run knob used here; the ceiling counts the
+// tokens the provider reports for the run's own turns.
+func spec(run_id: string, max_tokens: int) returns string {
+    return "{\"goal\":\"concurrent-runs\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":" +
+        convert.int_to_string(max_tokens) +
+        ",\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":17,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"journal_payloads\":false,\"run_id\":\"" +
+        run_id +
+        "\"}"
+}
+
+#[agent_tool("Adds two integers")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[agent_tool("Echoes through the run's provider")]
+public async func echo(run: Run, args: TextArgs) returns string {
+    let reply = await ask(run, args.text)
+    if let Result::Ok(text) = reply {
+        return text
+    }
+    return "provider-error"
+}
+
+func journal_of(run_id: string) returns string {
+    let read = fs.fs_read(JOURNAL_DIR + "/" + run_id + ".jsonl")
+    if let Result::Ok(text) = read {
+        return text
+    }
+    return ""
+}
+
+func clean(run_id: string) returns bool {
+    let path = JOURNAL_DIR + "/" + run_id + ".jsonl"
+    let exists = fs.fs_exists(path)
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(path)
+            if let Result::Err(_remove_error) = removed {
+                return false
+            }
+        }
+        return true
+    }
+    return false
+}
+
+// Interleaves the two runs: A's tools, B's tools, A's tool again. Each step's
+// assertions are about the run that dispatched it, not about wall order.
+async func interleaved_work_stays_separate() returns int {
+    let first = agent_start(spec(RUN_A, 0))
+    if let Result::Err(_first_error) = first {
+        return 1
+    }
+    let second = agent_start(spec(RUN_B, 0))
+    if let Result::Err(_second_error) = second {
+        return 2
+    }
+    if let Result::Ok(run_a) = first {
+        if let Result::Ok(run_b) = second {
+            // A: one tool call. B: two, including one that awaits the provider.
+            let sum = await tool_call(run_a, "add", "{\"a\":1,\"b\":2}")
+            if let Result::Ok(value) = sum {
+                if value != "3" {
+                    return 3
+                }
+            } else {
+                return 4
+            }
+
+            let echoed = await tool_call(run_b, "echo", "{\"text\":\"b\"}")
+            if let Result::Ok(value) = echoed {
+                if str.contains(value, "mock echo: b") == false {
+                    return 5
+                }
+            } else {
+                return 6
+            }
+
+            let sum_b = await tool_call(run_b, "add", "{\"a\":10,\"b\":32}")
+            if let Result::Ok(value) = sum_b {
+                if value != "42" {
+                    return 7
+                }
+            } else {
+                return 8
+            }
+
+            let again = await tool_call(run_a, "add", "{\"a\":40,\"b\":2}")
+            if let Result::Ok(value) = again {
+                if value != "42" {
+                    return 9
+                }
+            } else {
+                return 10
+            }
+
+            let end_a = agent_end(run_a)
+            let end_b = agent_end(run_b)
+            if let Result::Ok(report_a) = end_a {
+                if str.contains(report_a, "\"tool_calls\":2") == false {
+                    return 11
+                }
+                if str.contains(report_a, "\"status\":\"completed\"") == false {
+                    return 12
+                }
+            } else {
+                return 13
+            }
+            if let Result::Ok(report_b) = end_b {
+                if str.contains(report_b, "\"tool_calls\":2") == false {
+                    return 14
+                }
+                if str.contains(report_b, "\"status\":\"completed\"") == false {
+                    return 15
+                }
+                // B's model turn counted its own tokens; A had none.
+            } else {
+                return 16
+            }
+        } else {
+            return 17
+        }
+    } else {
+        return 18
+    }
+
+    // Each journal carries only its own records; each record names its run.
+    let journal_a = journal_of(RUN_A)
+    let journal_b = journal_of(RUN_B)
+    if str.contains(journal_a, RUN_A) == false {
+        return 19
+    }
+    if str.contains(journal_a, RUN_B) == true {
+        return 20
+    }
+    if str.contains(journal_b, RUN_B) == false {
+        return 21
+    }
+    if str.contains(journal_b, RUN_A) == true {
+        return 22
+    }
+    // B's provider turn produced an extra record that A's run never had: the
+    // two files differ in record count, which is the attribution claim.
+    if journal_a == journal_b {
+        return 23
+    }
+    return 0
+}
+
+// A ceiling belongs to the run that declared it.
+async func budgets_do_not_leak_between_runs() returns int {
+    let capped = agent_start(spec(RUN_C, 12))
+    if let Result::Err(_capped_error) = capped {
+        return 1
+    }
+    let uncapped = agent_start(spec(RUN_D, 0))
+    if let Result::Err(_uncapped_error) = uncapped {
+        return 2
+    }
+    if let Result::Ok(run_capped) = capped {
+        if let Result::Ok(run_uncapped) = uncapped {
+            let before = budget_remaining(run_capped)
+            if let Result::Ok(value) = before {
+                if value != 12 {
+                    return 3
+                }
+            } else {
+                return 4
+            }
+
+            // Traffic on the uncapped run must not move the capped run's
+            // remainder.
+            let pushed = await ask(run_uncapped, "some long prompt with several tokens in it")
+            if let Result::Err(_ask_error) = pushed {
+                return 5
+            }
+
+            let after = budget_remaining(run_capped)
+            if let Result::Ok(value) = after {
+                if value != 12 {
+                    return 6
+                }
+            } else {
+                return 7
+            }
+
+            // The uncapped run reports the sentinel.
+            let sentinel = budget_remaining(run_uncapped)
+            if let Result::Ok(value) = sentinel {
+                if value < 1000000000 {
+                    return 8
+                }
+            } else {
+                return 9
+            }
+
+            let end_capped = agent_end(run_capped)
+            let end_uncapped = agent_end(run_uncapped)
+            if let Result::Err(_end_error) = end_capped {
+                return 10
+            }
+            if let Result::Err(_end_error) = end_uncapped {
+                return 11
+            }
+        } else {
+            return 12
+        }
+    } else {
+        return 13
+    }
+    return 0
+}
+
+// Memory is scoped by goal: the second run recalls the first run's entry and
+// the entry names the first run by its durable id.
+func memory_crosses_runs_and_names_the_writer() returns int {
+    let writer = agent_start(spec(RUN_E, 0))
+    if let Result::Err(_writer_error) = writer {
+        return 1
+    }
+    if let Result::Ok(run_writer) = writer {
+        let stored = remember(run_writer, "the writer recorded this fact")
+        if let Result::Err(_store_error) = stored {
+            return 2
+        }
+        let ended = agent_end(run_writer)
+        if let Result::Err(_end_error) = ended {
+            return 3
+        }
+    } else {
+        return 4
+    }
+
+    let reader = agent_start(spec(RUN_F, 0))
+    if let Result::Err(_reader_error) = reader {
+        return 5
+    }
+    if let Result::Ok(run_reader) = reader {
+        let recalled = recall(run_reader, "the writer recorded this fact", 3)
+        if let Result::Ok(document) = recalled {
+            if str.contains(document, "\"schema\":\"spectra.agent.memory_recall.v1\"") == false {
+                return 6
+            }
+            if str.contains(document, "the writer recorded this fact") == false {
+                return 7
+            }
+            // Provenance names the writing run, not the reading one.
+            if str.contains(document, RUN_E) == false {
+                return 8
+            }
+            if str.contains(document, RUN_F) == true {
+                return 9
+            }
+        } else {
+            return 10
+        }
+        let ended = agent_end(run_reader)
+        if let Result::Err(_end_error) = ended {
+            return 11
+        }
+    } else {
+        return 12
+    }
+    return 0
+}
+
+public func main() returns int {
+    for run_id in [RUN_A, RUN_B, RUN_C, RUN_D, RUN_E, RUN_F] {
+        if clean(run_id) == false {
+            return 90
+        }
+    }
+    let interleaved = block_on(interleaved_work_stays_separate())
+    if interleaved != 0 {
+        return interleaved
+    }
+    let budgets = block_on(budgets_do_not_leak_between_runs())
+    if budgets != 0 {
+        return 100 + budgets
+    }
+    let memory = memory_crosses_runs_and_names_the_writer()
+    if memory != 0 {
+        return 200 + memory
+    }
+    return 0
+}

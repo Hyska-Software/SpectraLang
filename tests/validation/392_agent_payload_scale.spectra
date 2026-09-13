@@ -1,0 +1,331 @@
+module agent_payload_scale
+
+// Payload scale at the agent surface: data far larger than a machine word has
+// to survive every boundary the run puts it through.
+//
+// The contract pinned here:
+//
+//   - A tool result larger than the dispatch scratch buffer round-trips intact
+//     through `tool_call`: both ends and the middle of the encoding survive, so
+//     the value is not truncated and not re-read after its producer's frame is
+//     gone.
+//   - Record and list results keep their shape at that size (`to_json` over the
+//     whole aggregate, not over a prefix).
+//   - A model turn with a large prompt echoes the prompt intact: the provider
+//     sees the whole string and the answer is the whole string back.
+//   - The `act` loop appends a large tool result to its transcript and still
+//     selects the next scripted directive, which is the observable proof that
+//     the result was fed back whole.
+
+import std.agent
+import std.collections as collections
+import std.error as error
+import std.string as str
+
+const CHUNK = "0123456789abcdef"
+
+#[derive(Serialize, Deserialize)]
+public record TextArgs {
+    text: string,
+}
+
+#[derive(Serialize, Deserialize)]
+public record CountArgs {
+    count: int,
+}
+
+#[derive(Serialize, Deserialize)]
+public record Payload {
+    head: string,
+    count: int,
+    tail: string,
+}
+
+#[derive(Serialize, Deserialize)]
+public record BagArgs {
+    values: List<int>,
+}
+
+#[derive(Serialize, Deserialize)]
+public record Bag {
+    values: List<string>,
+    total: int,
+}
+
+// The bodies use `std.collections` (the list tools), so the run grants that
+// namespace: effects are derived from the body, and the collections helpers are
+// an author decision, not compiler machinery.
+func spec() returns string {
+    return "{\"goal\":\"payload-scale\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"spectra.std.collections\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":19,\"journal\":\"\"}"
+}
+
+// 16 KiB with distinct markers at both ends and the middle.
+func wide_text(marker: string) returns string {
+    return marker + str.repeat_str(CHUNK, 1024) + marker + str.repeat_str(CHUNK, 1024) + marker
+}
+
+#[agent_tool("Returns a 16 KiB string")]
+public async func wide(run: Run, args: TextArgs) returns string {
+    return wide_text(args.text)
+}
+
+#[agent_tool("Returns a record with a large field")]
+public async func wide_record(run: Run, args: TextArgs) returns Payload {
+    return Payload { head: args.text, count: 2048, tail: wide_text(args.text) }
+}
+
+#[agent_tool("Returns a long list")]
+public async func wide_list(run: Run, args: CountArgs) returns List<int> {
+    let values: List<int> = collections.list_new()
+    let index = 0
+    while index < args.count {
+        collections.list_push(values, index)
+        index = index + 1
+    }
+    return values
+}
+
+// A list argument decodes element by element on the way in.
+#[agent_tool("Sums a list of integers")]
+public async func total(run: Run, args: BagArgs) returns int {
+    let sum = 0
+    let index = 0
+    let length = collections.list_len(args.values)
+    while index < length {
+        if let Option::Some(value) = collections.list_get(args.values, index) {
+            sum = sum + value
+        }
+        index = index + 1
+    }
+    return sum
+}
+
+// A record whose field is a list encodes the whole array.
+#[agent_tool("Returns a record carrying a list field")]
+public async func bag(run: Run, args: TextArgs) returns Bag {
+    let values: List<string> = collections.list_new()
+    collections.list_push(values, args.text)
+    collections.list_push(values, args.text + "2")
+    return Bag { values: values, total: 2 }
+}
+
+// A large string survives the wrapper's encode/decode round trip.
+func wide_string_round_trips() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(_start_error) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let result = block_on(tool_call(run, "wide", "{\"text\":\"HD\"}"))
+        if let Result::Ok(value) = result {
+            // The encoding is JSON: the marker opens and closes the value and
+            // appears once more in the middle, so a truncated or reassembled
+            // value cannot satisfy all three checks.
+            if str.contains(value, "\"HD" + CHUNK) == false {
+                return 2
+            }
+            if str.contains(value, CHUNK + "HD\"") == false {
+                return 3
+            }
+            if str.count_occurrences(value, "HD") != 3 {
+                return 4
+            }
+            let length = str.len(value)
+            if length < 16384 {
+                return 5
+            }
+        } else {
+            return 6
+        }
+        let ended = agent_end(run)
+        if let Result::Err(_end_error) = ended {
+            return 7
+        }
+    } else {
+        return 8
+    }
+    return 0
+}
+
+// Aggregates keep their shape at that size.
+func aggregates_keep_their_shape() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(_start_error) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let envelope = block_on(tool_call(run, "wide_record", "{\"text\":\"RC\"}"))
+        if let Result::Ok(value) = envelope {
+            if str.contains(value, "\"head\":\"RC\"") == false {
+                return 2
+            }
+            if str.contains(value, "\"count\":2048") == false {
+                return 3
+            }
+            if str.contains(value, "RC" + CHUNK) == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        let list = block_on(tool_call(run, "wide_list", "{\"count\":300}"))
+        if let Result::Ok(value) = list {
+            // The last element proves the whole list was encoded.
+            if str.contains(value, ",299]") == false {
+                return 6
+            }
+            if str.len(value) < 1024 {
+                return 7
+            }
+        } else {
+            return 8
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(_end_error) = ended {
+            return 9
+        }
+    } else {
+        return 10
+    }
+    return 0
+}
+
+// A large prompt reaches the provider and comes back whole.
+func wide_prompt_echoes_intact() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(_start_error) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let prompt = wide_text("PQ")
+        let answer = block_on(ask(run, prompt))
+        if let Result::Ok(value) = answer {
+            if str.contains(value, "PQ" + CHUNK) == false {
+                return 2
+            }
+            if str.contains(value, CHUNK + "PQ") == false {
+                return 3
+            }
+            // The prompt travels whole: the marker's three occurrences survive
+            // the turn.
+            if str.count_occurrences(value, "PQ") != 3 {
+                return 4
+            }
+            if str.len(value) < 16384 {
+                return 4
+            }
+        } else {
+            return 5
+        }
+        let ended = agent_end(run)
+        if let Result::Err(_end_error) = ended {
+            return 6
+        }
+    } else {
+        return 7
+    }
+    return 0
+}
+
+// The tool loop carries a large result into the transcript and answers next.
+func act_carries_a_large_result() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(_start_error) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let script = "spectra:tool=wide {\"text\":\"AC\"}\nspectra:final=carried the wide result"
+        let answer = block_on(act(run, script))
+        if let Result::Ok(text) = answer {
+            if text != "carried the wide result" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"tool_calls\":1") == false {
+                return 4
+            }
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+    } else {
+        return 7
+    }
+    return 0
+}
+
+// Lists cross the boundary in both directions.
+func lists_cross_the_boundary() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(_start_error) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let sum = block_on(tool_call(run, "total", "{\"values\":[1,2,3,4]}"))
+        if let Result::Ok(value) = sum {
+            if value != "10" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        // A wrong element type is a typed argument failure, not a crash.
+        let wrong = block_on(tool_call(run, "total", "{\"values\":[\"x\"]}"))
+        if let Result::Ok(_unexpected) = wrong {
+            return 4
+        }
+
+        let carried = block_on(tool_call(run, "bag", "{\"text\":\"v\"}"))
+        if let Result::Ok(value) = carried {
+            if str.contains(value, "\"values\":[\"v\",\"v2\"]") == false {
+                return 5
+            }
+            if str.contains(value, "\"total\":2") == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(_end_error) = ended {
+            return 8
+        }
+    } else {
+        return 9
+    }
+    return 0
+}
+
+public func main() returns int {
+    let lists = lists_cross_the_boundary()
+    if lists != 0 {
+        return 80 + lists
+    }
+    let wide_string = wide_string_round_trips()
+    if wide_string != 0 {
+        return wide_string
+    }
+    let aggregates = aggregates_keep_their_shape()
+    if aggregates != 0 {
+        return 20 + aggregates
+    }
+    let prompt = wide_prompt_echoes_intact()
+    if prompt != 0 {
+        return 40 + prompt
+    }
+    let carried = act_carries_a_large_result()
+    if carried != 0 {
+        return 60 + carried
+    }
+    return 0
+}

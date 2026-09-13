@@ -1,0 +1,214 @@
+module agent_nested_dispatch
+
+// R-3222/R-3212 nested dispatch: the run is on the active chain while a tool
+// wrapper executes, so a tool body can dispatch another tool on the *same* run,
+// and it can start a run of its own whose work stays separate.
+//
+// The contract pinned here:
+//
+//   - A tool body may call `tool_call` on the run it received: the nested
+//     dispatch is governed exactly like the outer one (the outer result is the
+//     wrapper's JSON encoding of a value that itself embeds the inner result).
+//   - The report counts nested dispatches as work of the run that hosts them:
+//     three top-level calls, one of which nests one more, report four tool
+//     calls. A *separate* run started inside a tool counts its own calls only:
+//     the inner report says one, and the inner journal carries exactly that one
+//     record under the inner run id.
+//   - Memory written from a tool is attributed to the writing run by its
+//     durable `run_id` (not only by the process-local handle, which a restart
+//     invalidates): a recall in the same run names the writer.
+
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const JOURNAL_DIR = ".spectra/r3290-nested"
+const OUTER_RUN = "fixture-390-outer"
+const INNER_RUN = "fixture-390-inner"
+
+#[derive(Serialize, Deserialize)]
+public record TextArgs {
+    text: string,
+}
+
+func spec(run_id: string) returns string {
+    return "{\"goal\":\"nested-dispatch\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":13,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        run_id +
+        "\"}"
+}
+
+// The innermost tool: no dispatch of its own.
+#[agent_tool("Returns the leaf reply")]
+public async func leaf(run: Run, args: TextArgs) returns string {
+    return "leaf:" + args.text
+}
+
+// Dispatches on the run it was handed. A failed nested call is reported as a
+// marker rather than through `error.message`, so the derived effect set stays
+// inside the excluded agent primitives and the fixture needs no grant.
+#[agent_tool("Dispatches a nested tool call on the same run")]
+public async func parent(run: Run, args: TextArgs) returns string {
+    let inner = await tool_call(run, "leaf", "{\"text\":\"" + args.text + "\"}")
+    if let Result::Ok(value) = inner {
+        return "parent(" + value + ")"
+    }
+    if let Result::Err(_nested_error) = inner {
+        return "parent-nested-error"
+    }
+    return "parent-unreachable"
+}
+
+// Starts a run of its own and dispatches in it: the inner run has its own
+// journal file and its own counters.
+#[agent_tool("Starts an independent run and dispatches in it")]
+public async func spawn(run: Run, args: TextArgs) returns string {
+    let started = agent_start(spec(INNER_RUN))
+    if let Result::Ok(inner_run) = started {
+        let reply = await tool_call(inner_run, "leaf", "{\"text\":\"" + args.text + "\"}")
+        let ended = agent_end(inner_run)
+        let _ignored = ended
+        if let Result::Ok(value) = reply {
+            return "spawn(" + value + ")"
+        }
+        return "spawn-error"
+    }
+    return "spawn-start-error"
+}
+
+// Writes memory from inside a tool body, then recalls it on the same run.
+#[agent_tool("Remembers and recalls on the active run")]
+public async func memory_from_tool(run: Run, args: TextArgs) returns string {
+    let stored = remember(run, args.text)
+    if let Result::Err(_store_error) = stored {
+        return "remember-error"
+    }
+    let recalled = recall(run, args.text, 3)
+    if let Result::Ok(document) = recalled {
+        return document
+    }
+    return "recall-error"
+}
+
+func journal_of(run_id: string) returns string {
+    let read = fs.fs_read(JOURNAL_DIR + "/" + run_id + ".jsonl")
+    if let Result::Ok(text) = read {
+        return text
+    }
+    return ""
+}
+
+func clean() returns bool {
+    let exists = fs.fs_exists(JOURNAL_DIR + "/" + OUTER_RUN + ".jsonl")
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(JOURNAL_DIR + "/" + OUTER_RUN + ".jsonl")
+            if let Result::Err(_remove_error) = removed {
+                return false
+            }
+        }
+        return true
+    }
+    return false
+}
+
+// Three top-level calls; `parent` nests one more, so the run reports four.
+async func nested_dispatch_is_counted() returns int {
+    let started = agent_start(spec(OUTER_RUN))
+    if let Result::Err(_start_error) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let nested = await tool_call(run, "parent", "{\"text\":\"x\"}")
+        if let Result::Ok(value) = nested {
+            if str.contains(value, "leaf:x") == false {
+                return 2
+            }
+            if str.contains(value, "parent(") == false {
+                return 3
+            }
+        } else {
+            return 4
+        }
+
+        // The inner run's leaf call belongs to the inner run.
+        let spawned = await tool_call(run, "spawn", "{\"text\":\"y\"}")
+        if let Result::Ok(value) = spawned {
+            if str.contains(value, "spawn(\\\"leaf:y\\\")") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+
+        let memory = await tool_call(run, "memory_from_tool", "{\"text\":\"nested memory\"}")
+        if let Result::Ok(value) = memory {
+            if str.contains(value, "spectra.agent.memory_recall.v1") == false {
+                return 7
+            }
+            // The entry names the writing run durably.
+            if str.contains(value, "run_id") == false {
+                return 8
+            }
+            if str.contains(value, OUTER_RUN) == false {
+                return 9
+            }
+        } else {
+            return 10
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            // parent (+1 nested), spawn, memory_from_tool.
+            if str.contains(report, "\"tool_calls\":4") == false {
+                return 11
+            }
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 12
+            }
+        } else {
+            return 13
+        }
+    }
+
+    // The outer journal records the outer dispatches and the nested one: the
+    // nested call's input carries the leaf name under the same run.
+    let outer = journal_of(OUTER_RUN)
+    if str.contains(outer, OUTER_RUN) == false {
+        return 14
+    }
+    if str.contains(outer, "parent") == false {
+        return 15
+    }
+    if str.contains(outer, "leaf") == false {
+        return 16
+    }
+    if str.contains(outer, "memory_from_tool") == false {
+        return 17
+    }
+
+    // The inner run has its own file with exactly its own dispatch.
+    let inner = journal_of(INNER_RUN)
+    if str.contains(inner, INNER_RUN) == false {
+        return 18
+    }
+    if str.contains(inner, "leaf") == false {
+        return 19
+    }
+    if str.contains(inner, "parent") == true {
+        return 20
+    }
+    if str.contains(inner, "memory_from_tool") == true {
+        return 21
+    }
+    return 0
+}
+
+public func main() returns int {
+    if clean() == false {
+        return 90
+    }
+    return block_on(nested_dispatch_is_counted())
+}

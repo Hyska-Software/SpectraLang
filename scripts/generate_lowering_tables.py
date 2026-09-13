@@ -211,6 +211,7 @@ EXCLUDED = {
         {
             "decode_field",
             "decode_field_by_key",
+            "encode_list",
             "encode_number",
             "encode_struct",
             "quote_char",

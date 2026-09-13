@@ -19,7 +19,8 @@
 //!   token budget rather than only by `top_k`.
 //! - **Scope.** A store is keyed by the run goal that wrote it, so a restarted
 //!   agent with the same goal recalls earlier memory while every entry still
-//!   names the run that produced it.
+//!   names the run that produced it: its durable `run_id` (the journal's key)
+//!   and the process-local handle that wrote it.
 //!
 //! Persistence reuses the vector-index artifact format
 //! ([`spectra_runtime::vector_index::write_artifact`]/`read_artifact`): the
@@ -106,7 +107,12 @@ pub(crate) struct MemoryEntry {
     pub ordinal: u64,
     pub tier: MemoryTier,
     pub origin: String,
+    /// Process-local handle of the run that wrote the entry.
     pub run: i64,
+    /// The writing run's `run_id`; empty when the spec declared none. The
+    /// handle above is meaningless after a restart, so the durable name of the
+    /// writer is this value -- the same one the journal keys on.
+    pub run_id: String,
     pub goal: String,
     pub timestamp_ms: u64,
     pub text: String,
@@ -139,6 +145,7 @@ impl MemoryStore {
         tier: MemoryTier,
         origin: &str,
         run_handle: i64,
+        run_id: &str,
         goal: &str,
         timestamp_ms: u64,
         text: &str,
@@ -174,6 +181,7 @@ impl MemoryStore {
             tier,
             origin: origin.to_string(),
             run: run_handle,
+            run_id: run_id.to_string(),
             goal: goal.to_string(),
             timestamp_ms,
             text: text.to_string(),
@@ -321,13 +329,14 @@ fn encode_entries(entries: &[MemoryEntry]) -> String {
         .map(|entry| {
             format!(
                 concat!(
-                    "{{\"ordinal\":{},\"tier\":{},\"origin\":{},\"run\":{},",
+                    "{{\"ordinal\":{},\"tier\":{},\"origin\":{},\"run\":{},\"run_id\":{},",
                     "\"goal\":{},\"timestamp_ms\":{},\"text\":{}}}"
                 ),
                 entry.ordinal,
                 json_string(entry.tier.as_str()),
                 json_string(&entry.origin),
                 entry.run,
+                json_string(&entry.run_id),
                 json_string(&entry.goal),
                 entry.timestamp_ms,
                 json_string(&entry.text),
@@ -361,6 +370,13 @@ fn decode_entries(encoded: &str) -> Result<Vec<MemoryEntry>, AgentError> {
             .ok_or_else(invalid)?
             .to_string();
         let run = item.get("run").and_then(|value| value.as_i64()).ok_or_else(invalid)?;
+        // Absent in artifacts written before the run id was recorded; an empty
+        // value is the honest reading of "the writer did not name itself".
+        let run_id = item
+            .get("run_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_string();
         let goal = item
             .get("goal")
             .and_then(|value| value.as_str())
@@ -385,6 +401,7 @@ fn decode_entries(encoded: &str) -> Result<Vec<MemoryEntry>, AgentError> {
             tier,
             origin,
             run,
+            run_id,
             goal,
             timestamp_ms,
             text,
@@ -408,13 +425,14 @@ fn render_recall(
         .map(|(entry, score)| {
             format!(
                 concat!(
-                    "{{\"ordinal\":{},\"tier\":{},\"origin\":{},\"run\":{},",
+                    "{{\"ordinal\":{},\"tier\":{},\"origin\":{},\"run\":{},\"run_id\":{},",
                     "\"goal\":{},\"timestamp_ms\":{},\"score\":{:.6},\"text\":{}}}"
                 ),
                 entry.ordinal,
                 json_string(entry.tier.as_str()),
                 json_string(&entry.origin),
                 entry.run,
+                json_string(&entry.run_id),
                 json_string(&entry.goal),
                 entry.timestamp_ms,
                 score,
@@ -472,10 +490,11 @@ fn embed_with_run(run_handle: i64, text: &str) -> Result<Vec<f64>, AgentError> {
 /// `spectra.std.agent.remember(run, text) -> Result<bool, Error>`.
 ///
 /// The write is attributed to the run that made it: the entry records the run
-/// handle, the run goal, the provider-embedded text, a timestamp and the
-/// `episodic` tier ("what happened during the run"). Stores are scoped by
-/// goal, so a later run with the same goal sees the entry and can still name
-/// the run that wrote it.
+/// handle, the run's durable id, the run goal, the provider-embedded text, a
+/// timestamp and the `episodic` tier ("what happened during the run"). Stores
+/// are scoped by goal, so a later run with the same goal sees the entry and can
+/// still name the run that wrote it -- after a restart the handle is gone but
+/// the id still resolves against the journal.
 extern "C" fn remember_host(ctx: *mut SpectraHostCallContext) -> i32 {
     let Some((run_handle, strings)) = hosts::read_run_and_prompt(ctx, 2) else {
         return HOST_STATUS_INVALID_ARGUMENT;
@@ -493,6 +512,7 @@ extern "C" fn remember_host(ctx: *mut SpectraHostCallContext) -> i32 {
             MemoryTier::Episodic,
             "agent",
             run_handle,
+            &spec.run_id,
             &spec.goal,
             timestamp_ms,
             &text,
@@ -602,6 +622,7 @@ mod tests {
                 MemoryTier::Episodic,
                 "agent",
                 7,
+                "run-7",
                 "goal",
                 100,
                 "alpha",
@@ -613,6 +634,7 @@ mod tests {
                 MemoryTier::Semantic,
                 "ingest",
                 8,
+                "run-8",
                 "goal",
                 200,
                 "beta",
@@ -624,6 +646,7 @@ mod tests {
                 MemoryTier::Procedural,
                 "skill",
                 9,
+                "run-9",
                 "goal",
                 300,
                 "gamma",
@@ -659,6 +682,9 @@ mod tests {
         assert!(payload.contains("\"origin\":\"skill\""), "{payload}");
         assert!(payload.contains("\"tier\":\"semantic\""), "{payload}");
         assert!(payload.contains("\"run\":8"), "{payload}");
+        // The durable name of the writer travels with the entry, so a recall
+        // after a restart still resolves against the journal.
+        assert!(payload.contains("\"run_id\":\"run-8\""), "{payload}");
         assert!(payload.contains("\"goal\":\"goal\""), "{payload}");
         assert!(payload.contains("\"timestamp_ms\":200"), "{payload}");
         assert!(payload.contains("\"truncated\":false"), "{payload}");
@@ -674,6 +700,7 @@ mod tests {
                     MemoryTier::Episodic,
                     "agent",
                     1,
+                    "run-1",
                     "ties",
                     1,
                     text,
@@ -702,10 +729,28 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" ");
         store
-            .remember(MemoryTier::Episodic, "agent", 1, "budget", 1, &long, &vector(1.0))
+            .remember(
+            MemoryTier::Episodic,
+            "agent",
+            1,
+            "run-1",
+            "budget",
+            1,
+            &long,
+            &vector(1.0),
+        )
             .expect("long memory");
         store
-            .remember(MemoryTier::Episodic, "agent", 1, "budget", 2, "short", &vector(1.0))
+            .remember(
+            MemoryTier::Episodic,
+            "agent",
+            1,
+            "run-1",
+            "budget",
+            2,
+            "short",
+            &vector(1.0),
+        )
             .expect("short memory");
         // top_k admits both entries; the token budget admits only the short one.
         let payload = store
@@ -748,6 +793,9 @@ mod tests {
             .recall("goal", "alpha", &vector(1.0), 3, RECALL_TOKEN_BUDGET)
             .expect("recall");
         assert_eq!(before, after, "a loaded store recalls identically");
+        // The loaded provenance still names the writer's durable id, which is
+        // what makes the entry identifiable after the writer's process is gone.
+        assert!(after.contains("\"run_id\":\"run-7\""), "{after}");
         let _ = std::fs::remove_file(&path);
     }
 
@@ -755,13 +803,23 @@ mod tests {
     fn dimension_mismatch_is_a_typed_error() {
         let mut store = MemoryStore::new();
         store
-            .remember(MemoryTier::Episodic, "agent", 1, "goal", 1, "a", &vector(1.0))
+            .remember(
+            MemoryTier::Episodic,
+            "agent",
+            1,
+            "run-1",
+            "goal",
+            1,
+            "a",
+            &vector(1.0),
+        )
             .expect("first memory");
         let error = store
             .remember(
                 MemoryTier::Episodic,
                 "agent",
                 1,
+                "run-1",
                 "goal",
                 2,
                 "b",

@@ -139,13 +139,20 @@ impl ASTLowering {
     /// the field. Kinds mirror `json_encode_struct`: scalars pass through
     /// untouched and the host formats them; nested structs are encoded
     /// recursively first and passed as pre-encoded `raw` chunks.
-    fn lower_json_encode_field(
+    pub(crate) fn lower_json_encode_field(
         &mut self,
         field_type: &IRType,
         field_ptr: Value,
         ir_func: &mut IRFunction,
         stack: &mut Vec<String>,
     ) -> Option<(&'static str, Value)> {
+        // A `List<element>` field stores the collections handle in its 8-byte
+        // slot. The host reads the elements itself, so the whole array takes
+        // one kind token and one host call instead of per-element calls.
+        if let Some(kind) = list_json_kind(field_type) {
+            let handle = self.builder.build_load_typed(ir_func, field_ptr, IRType::Int);
+            return Some((kind, handle));
+        }
         let representation = self.ir_type_representation(field_type).clone();
         match representation {
             IRType::Int | IRType::ExactInt { .. } => {
@@ -266,10 +273,19 @@ impl ASTLowering {
             let Some((kind, value)) =
                 self.lower_json_encode_field(field_type, field_ptr, ir_func, stack)
             else {
-                return self.invalid_value(format!(
-                    "JSON to_json on '{struct_name}.{}' is not supported for field type {:?}",
-                    field.source_name, field_type
-                ));
+                let reason = match list_element_type(field_type) {
+                    Some(element) => format!(
+                        "JSON to_json on '{struct_name}.{}': list elements of type {element:?} \
+                         are not supported; a list field must hold int, float, bool, string, \
+                         or char values",
+                        field.source_name
+                    ),
+                    None => format!(
+                        "JSON to_json on '{struct_name}.{}' is not supported for field type {:?}",
+                        field.source_name, field_type
+                    ),
+                };
+                return self.invalid_value(reason);
             };
             // Raw field names travel as literals; the host quotes them with
             // the same `serde_json` escaping `quote_string` used, so no
@@ -387,6 +403,31 @@ impl ASTLowering {
                 path, field.source_name
             ));
             return None;
+        }
+        if list_element_type(field_type).is_some() && list_json_kind(field_type).is_none() {
+            let element = list_element_type(field_type).expect("checked above");
+            self.error(format!(
+                "JSON from_json on '{path}.{}': list elements of type {element:?} are not supported; \
+                 a list field must hold int, float, bool, string, or char values",
+                field.source_name
+            ));
+            return None;
+        }
+        // A `List<element>` field decodes through the `list:<element>` mode:
+        // the host builds the collection and hands back its handle.
+        if let Some(kind) = list_json_kind(field_type) {
+            let type_lit = self.lower_string_literal(kind, ir_func);
+            let path_lit = self.lower_string_literal(path, ir_func);
+            let required = self.builder.build_const_int(ir_func, 0);
+            let handle = self.json_host(
+                ir_func,
+                "spectra.api.json.decode_field_by_key",
+                vec![obj, key, path_lit, type_lit, required, required],
+                IRType::Int,
+                "did not decode a JSON list",
+            );
+            self.builder.build_store(ir_func, field_ptr, handle);
+            return Some(());
         }
         let representation = self.ir_type_representation(field_type).clone();
         match representation {
@@ -522,6 +563,15 @@ impl ASTLowering {
         field_type: &IRType,
         stack: &mut Vec<String>,
     ) -> Result<String, String> {
+        if let IRType::Generic { name, .. } = field_type {
+            if name == "List" {
+                let Some(element) = list_element_type(field_type) else {
+                    return Err("list fields must name an element type".to_string());
+                };
+                let items = self.json_schema_type(element, stack)?;
+                return Ok(format!("{{\"type\":\"array\",\"items\":{items}}}"));
+            }
+        }
         let representation = self.ir_type_representation(field_type).clone();
         match representation {
             IRType::Int => Ok("{\"type\":\"integer\"}".to_string()),
@@ -649,6 +699,13 @@ impl ASTLowering {
         field: &JsonFieldSchema,
         stack: &mut Vec<String>,
     ) -> Option<String> {
+        // A `List<element>` field renders like a fixed-size array: the
+        // element's own DSL form inside brackets.
+        if list_element_type(&field.field_type).is_some() {
+            let element = list_element_type(&field.field_type)?.clone();
+            let rendered = self.derive_schema_element(&element, stack)?;
+            return Some(format!("[{rendered}]"));
+        }
         let representation = self.ir_type_representation(&field.field_type).clone();
         match representation {
             IRType::Int => Some("int".to_string()),
@@ -661,23 +718,28 @@ impl ASTLowering {
                 Some(inner.replacen(&name.to_string(), "", 1))
             }
             IRType::Array { element_type, .. } => {
-                let element_rep = self.ir_type_representation(element_type.as_ref()).clone();
-                let element = match element_rep {
-                    IRType::Int => "int".to_string(),
-                    IRType::Float => "float".to_string(),
-                    IRType::Bool => "bool".to_string(),
-                    IRType::String => "string".to_string(),
-                    IRType::Char => "char".to_string(),
-                    IRType::Struct { name, .. } => {
-                        let inner = self.derive_schema_string(&name, stack).ok()?;
-                        inner.replacen(&name.to_string(), "", 1)
-                    }
-                    _ => return None,
-                };
-                Some(format!("[{element}]"))
+                let rendered = self.derive_schema_element(element_type.as_ref(), stack)?;
+                Some(format!("[{rendered}]"))
             }
             _ => None,
         }
+    }
+
+    /// DSL name of one array or list element, shared by both container forms.
+    fn derive_schema_element(&mut self, element_type: &IRType, stack: &mut Vec<String>) -> Option<String> {
+        let representation = self.ir_type_representation(element_type).clone();
+        Some(match representation {
+            IRType::Int => "int".to_string(),
+            IRType::Float => "float".to_string(),
+            IRType::Bool => "bool".to_string(),
+            IRType::String => "string".to_string(),
+            IRType::Char => "char".to_string(),
+            IRType::Struct { name, .. } => {
+                let inner = self.derive_schema_string(&name, stack).ok()?;
+                inner.replacen(&name.to_string(), "", 1)
+            }
+            _ => return None,
+        })
     }
 
     /// Lower `Type::json_error_field(json)` to a single host call reporting
@@ -792,6 +854,55 @@ impl ASTLowering {
 
 /// Scalar JSON field types. `optional` is supported only for these: struct
 /// and array fields always decode from a present value or fail loudly.
+/// The element type of a `List<element>` field, or `None` for any other type.
+fn list_element_type(field_type: &IRType) -> Option<&IRType> {
+    let IRType::Generic { name, args, .. } = field_type else {
+        return None;
+    };
+    if name != "List" {
+        return None;
+    }
+    args.first()
+}
+
+/// The scalar kind of a `List<element>`'s element, or `None` for any other
+/// type.
+///
+/// `spectra.api.json.encode_list` takes this form (the bare element kind);
+/// `list_json_kind` wraps it in the `list:` token the struct encoder expects.
+pub(crate) fn list_element_json_kind(field_type: &IRType) -> Option<&'static str> {
+    scalar_json_kind(list_element_type(field_type)?)
+}
+
+/// The `list:<element>` kind token for a `List<element>` field.
+///
+/// Scalars take their own token, so one host call encodes the whole array; a
+/// list whose element has no scalar encoding has no token and is reported by
+/// the caller.
+pub(crate) fn list_json_kind(field_type: &IRType) -> Option<&'static str> {
+    let element = list_element_type(field_type)?;
+    Some(match scalar_json_kind(element)? {
+        "int" => "list:int",
+        "float" => "list:float",
+        "bool" => "list:bool",
+        "string" => "list:string",
+        _ => "list:char",
+    })
+}
+
+/// JSON kind token for a scalar IR type, spelled the way
+/// `json_encode_struct` and the derive decoders name it.
+fn scalar_json_kind(field_type: &IRType) -> Option<&'static str> {
+    Some(match field_type {
+        IRType::Int => "int",
+        IRType::Float => "float",
+        IRType::Bool => "bool",
+        IRType::String => "string",
+        IRType::Char => "char",
+        _ => return None,
+    })
+}
+
 fn is_json_scalar(field_type: &IRType) -> bool {
     matches!(
         field_type,

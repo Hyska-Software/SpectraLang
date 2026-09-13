@@ -1,0 +1,80 @@
+module main
+
+// Example 08 - memory that outlives the run that wrote it.
+//
+// `remember` writes one fact into the store scoped by the run's goal; `recall`
+// ranks the goal's entries against a query and returns a JSON document. The
+// store is deliberately not tied to the writer's lifetime: a later run with the
+// same goal reads the earlier facts, and every entry names the run that wrote
+// it by its durable `run_id` -- the same key the journal uses -- so provenance
+// survives the process that produced it.
+//
+// Everything runs in-process against the deterministic mock provider: no
+// network, no credentials.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.string as str
+
+const JOURNAL_DIR = ".spectra/example-08-journal"
+
+func spec(run_id: string) returns string {
+    return "{\"goal\":\"example-08-memory\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":23,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"run_id\":\"" +
+        run_id +
+        "\"}"
+}
+
+public func main() returns int {
+    return block_on(demo())
+}
+
+async func demo() returns int {
+    // The writer records two facts and ends.
+    let started = agent_start(spec("example-08-writer"))
+    if let Result::Err(start_error) = started {
+        println("start failed: " + error.message(start_error))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let first = remember(run, "the deploy window opens on Thursdays")
+        if let Result::Err(store_error) = first {
+            println("remember failed: " + error.message(store_error))
+            return 2
+        }
+        let second = remember(run, "the staging database is refreshed nightly")
+        let _second_result = second
+        let ended = agent_end(run)
+        let _ended_result = ended
+    } else {
+        return 3
+    }
+
+    // A different run, same goal: the facts are still there.
+    let reader = agent_start(spec("example-08-reader"))
+    if let Result::Err(reader_error) = reader {
+        println("start failed: " + error.message(reader_error))
+        return 4
+    }
+    if let Result::Ok(run) = reader {
+        let recalled = recall(run, "when does the deploy window open", 3)
+        if let Result::Err(recall_error) = recalled {
+            println("recall failed: " + error.message(recall_error))
+            return 5
+        }
+        if let Result::Ok(document) = recalled {
+            println("entries recalled: " + convert.int_to_string(str.count_occurrences(document, "\"ordinal\"")))
+            println("mentions the fact: " + convert.bool_to_string(str.contains(document, "Thursdays")))
+            // Provenance names the writing run, not the reading one.
+            println("names the writer: " + convert.bool_to_string(str.contains(document, "example-08-writer")))
+        }
+        let ended = agent_end(run)
+        let _ended_result = ended
+    } else {
+        return 6
+    }
+    return 0
+}

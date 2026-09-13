@@ -1,0 +1,127 @@
+module main
+
+// Example 10 - lists cross the tool boundary in both directions.
+//
+// A tool parameter may be a `List` of scalars, a tool may return a `List` of
+// scalars, and a derived record may carry list fields: the derive emits the
+// JSON Schema (`json_schema`), the encoder writes a JSON array, and the decoder
+// builds the collection again from an array. The run grants
+// `spectra.std.collections` because the tools use those helpers in their bodies
+// -- a body's effects are derived, and a namespace with no sinks is still an
+// author decision.
+//
+// Everything runs in-process against the deterministic mock provider.
+
+from std.io import println
+import std.agent
+import std.collections as collections
+import std.convert as convert
+import std.error as error
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record BagArgs {
+    values: List<int>,
+}
+
+#[derive(Serialize, Deserialize)]
+public record Bag {
+    labels: List<string>,
+    total: int,
+}
+
+#[agent_tool("Sums a list of integers")]
+public async func total(run: Run, args: BagArgs) returns int {
+    let sum = 0
+    let index = 0
+    let length = collections.list_len(args.values)
+    while index < length {
+        if let Option::Some(value) = collections.list_get(args.values, index) {
+            sum = sum + value
+        }
+        index = index + 1
+    }
+    return sum
+}
+
+#[agent_tool("Doubles every element")]
+public async func range(run: Run, args: BagArgs) returns List<int> {
+    let doubled: List<int> = collections.list_new()
+    let index = 0
+    let length = collections.list_len(args.values)
+    while index < length {
+        if let Option::Some(value) = collections.list_get(args.values, index) {
+            collections.list_push(doubled, value * 2)
+        }
+        index = index + 1
+    }
+    return doubled
+}
+
+#[agent_tool("Builds a record with a list field")]
+public async func bag(run: Run, args: BagArgs) returns Bag {
+    let labels: List<string> = collections.list_new()
+    collections.list_push(
+        labels,
+        "keep exactly " + convert.int_to_string(collections.list_len(args.values)),
+    )
+    return Bag { labels: labels, total: collections.list_len(args.values) }
+}
+
+func spec() returns string {
+    return "{\"goal\":\"example-10-lists\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"spectra.std.collections\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":31,\"journal\":\"\"}"
+}
+
+public func main() returns int {
+    // The derived schema describes the list field as an array.
+    println("schema: " + Bag::json_schema())
+    return block_on(demo())
+}
+
+async func demo() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(start_error) = started {
+        println("start failed: " + error.message(start_error))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let sum = await tool_call(run, "total", "{\"values\":[1,2,3,4]}")
+        if let Result::Err(sum_error) = sum {
+            println("total failed: " + error.message(sum_error))
+            return 2
+        }
+        if let Result::Ok(value) = sum {
+            println("total: " + value)
+        }
+
+        let doubled = await tool_call(run, "range", "{\"values\":[1,2,3]}")
+        if let Result::Err(range_error) = doubled {
+            println("range failed: " + error.message(range_error))
+            return 3
+        }
+        if let Result::Ok(value) = doubled {
+            println("doubled: " + value)
+            if str.contains(value, "[2,4,6]") == false {
+                return 4
+            }
+        }
+
+        let carried = await tool_call(run, "bag", "{\"values\":[1,2]}")
+        if let Result::Err(bag_error) = carried {
+            println("bag failed: " + error.message(bag_error))
+            return 5
+        }
+        if let Result::Ok(value) = carried {
+            println("bag: " + value)
+            if str.contains(value, "keep exactly 2") == false {
+                return 6
+            }
+        }
+
+        let ended = agent_end(run)
+        let _ended_result = ended
+    } else {
+        return 7
+    }
+    return 0
+}

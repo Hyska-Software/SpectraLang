@@ -194,7 +194,7 @@ impl SemanticAnalyzer {
                 payload.span,
                 Some("E3204: tool inputs cross the host ABI as JSON documents.".to_string()),
                 Some(
-                    "Use int, float, bool, string, char, a record with #[derive(Serialize)] or #[derive(Deserialize)], or a unit-only enum.".to_string(),
+                    "Use int, float, bool, string, char, a List of those, a record with #[derive(Serialize)] or #[derive(Deserialize)], or a unit-only enum.".to_string(),
                 ),
             );
             return;
@@ -211,7 +211,7 @@ impl SemanticAnalyzer {
                     payload.span,
                     Some("E3204: tool inputs cross the host ABI as JSON documents.".to_string()),
                     Some(
-                        "Use int, float, bool, string, char, a record with #[derive(Serialize)] or #[derive(Deserialize)], or a unit-only enum.".to_string(),
+                        "Use int, float, bool, string, char, a List of those, a record with #[derive(Serialize)] or #[derive(Deserialize)], or a unit-only enum.".to_string(),
                     ),
                 );
                 return;
@@ -535,6 +535,26 @@ impl SemanticAnalyzer {
             }
             Type::ExactFloat { .. } => {
                 Err(format!("exact-width float type '{}' is not decodable", type_name(ty)))
+            }
+            // A `List<element>` parameter decodes from a JSON array; the
+            // decoder builds the collection from scalar elements, so only
+            // those are accepted (the midend reuses the same modes for list
+            // fields of a derived record).
+            Type::Applied { name, args } if name == "List" => {
+                let Some(element) = args.first() else {
+                    return Err("a List parameter must name its element type".to_string());
+                };
+                match element {
+                    Type::Int | Type::Float | Type::Bool | Type::String | Type::Char => {}
+                    other => {
+                        return Err(format!(
+                            "list elements of type '{}' are not decodable; a List parameter must hold int, float, bool, string, or char values",
+                            type_name(other)
+                        ))
+                    }
+                }
+                let items = self.render_type_schema(element, stack)?;
+                Ok(format!("{{\"type\":\"array\",\"items\":{items}}}"))
             }
             Type::Array { .. } => {
                 Err("array parameters are not decodable (array annotations erase to dynamic size)"

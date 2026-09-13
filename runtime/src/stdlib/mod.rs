@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::slice;
 use std::sync::{
     atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicU8, AtomicUsize, Ordering},
-    mpsc, Arc, Condvar, Mutex, MutexGuard, OnceLock,
+    mpsc, Arc, Condvar, LazyLock, Mutex, MutexGuard, OnceLock,
 };
 use std::thread;
 use std::time::{Duration, Instant as StdInstant, SystemTime, UNIX_EPOCH};
@@ -45,6 +45,8 @@ pub(crate) use list_host::*;
 
 #[path = "list_registry.rs"]
 mod list_registry;
+// Cross-crate seam for host-call provider crates that serialize collections.
+pub use list_registry::{list_create, list_elements};
 pub(crate) use list_registry::*;
 
 #[path = "string_map_fast.rs"]

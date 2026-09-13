@@ -4,6 +4,7 @@ use serde_json::{Map, Number, Value};
 use spectra_runtime::ffi::{
     SpectraHostCallContext, SpectraHostValue, HOST_STATUS_INVALID_ARGUMENT, HOST_STATUS_SUCCESS,
 };
+use spectra_runtime::stdlib::{list_create, list_elements};
 use std::fmt;
 use std::str::FromStr;
 use std::sync::{LazyLock, Mutex};
@@ -600,12 +601,51 @@ pub extern "C" fn json_encode_number(ctx: *mut SpectraHostCallContext) -> i32 {
     write_result(ctx, alloc_spectra_string(&number.to_string()))
 }
 
+/// Appends one scalar value in the form `kind` names.
+///
+/// Shared by the struct encoder's scalar fields and by the elements of a
+/// `list:<kind>` value, so an element is formatted exactly like the equivalent
+/// standalone field. Returns `false` for an unknown kind or a value that cannot
+/// be represented; the caller fails the host call.
+fn push_scalar_json(out: &mut String, kind: &str, value: SpectraHostValue) -> bool {
+    match kind {
+        "int" => out.push_str(&value.to_string()),
+        "float" => {
+            let number = f64::from_bits(value as u64);
+            let Some(number) = Number::from_f64(number) else {
+                eprintln!("spectra.api.json encode error: non-finite float cannot be encoded as JSON");
+                return false;
+            };
+            out.push_str(&number.to_string());
+        }
+        "bool" => out.push_str(if value != 0 { "true" } else { "false" }),
+        "string" => {
+            let Some(text) = read_spectra_string(value) else {
+                return false;
+            };
+            out.push_str(&serde_json::to_string(&text).unwrap_or_default());
+        }
+        "char" => {
+            let Some(ch) = char::from_u32(value as u32) else {
+                return false;
+            };
+            let mut text = String::with_capacity(ch.len_utf8());
+            text.push(ch);
+            out.push_str(&serde_json::to_string(&text).unwrap_or_default());
+        }
+        _ => return false,
+    }
+    true
+}
+
 /// Derive support: encode one struct's fields as a JSON object in a single
 /// host call.
 ///
 /// Arguments: `(kinds, name_1, value_1, ..., name_n, value_n)` where `kinds`
 /// is a `;`-separated list parallel to the field pairs: `int`, `float`,
-/// `bool`, `string`, `char`, or `raw` for a pre-encoded nested value.
+/// `bool`, `string`, `char`, `raw` for a pre-encoded nested value, or
+/// `list:<element>` for a `List<element>` whose element kind is one of those
+/// scalars (encoded as a JSON array).
 /// Names are quoted with the same `serde_json` escaping as `quote_string`;
 /// scalars reuse the exact formatting of `int_to_string`, `encode_number`,
 /// `bool_to_string`, and `quote_char`, so output is byte-identical to the
@@ -639,29 +679,24 @@ pub extern "C" fn json_encode_struct(ctx: *mut SpectraHostCallContext) -> i32 {
         out.push_str(&serde_json::to_string(&name).unwrap_or_default());
         out.push(':');
         match *kind {
-            "int" => out.push_str(&value.to_string()),
-            "float" => {
-                let number = f64::from_bits(value as u64);
-                let Some(number) = Number::from_f64(number) else {
-                    eprintln!("spectra.api.json encode error: non-finite float cannot be encoded as JSON");
+            // `list:<element>` encodes a `List<element>` value: the element
+            // kind names the scalar form applied to every element, so a list
+            // is written as a JSON array without a per-element host call.
+            list_kind if list_kind.starts_with("list:") => {
+                let element_kind = &list_kind["list:".len()..];
+                let Ok(elements) = list_elements(value) else {
                     return HOST_STATUS_INVALID_ARGUMENT;
                 };
-                out.push_str(&number.to_string());
-            }
-            "bool" => out.push_str(if value != 0 { "true" } else { "false" }),
-            "string" => {
-                let Some(text) = read_spectra_string(value) else {
-                    return HOST_STATUS_INVALID_ARGUMENT;
-                };
-                out.push_str(&serde_json::to_string(&text).unwrap_or_default());
-            }
-            "char" => {
-                let Some(ch) = char::from_u32(value as u32) else {
-                    return HOST_STATUS_INVALID_ARGUMENT;
-                };
-                let mut text = String::with_capacity(ch.len_utf8());
-                text.push(ch);
-                out.push_str(&serde_json::to_string(&text).unwrap_or_default());
+                out.push('[');
+                for (index, element) in elements.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    if !push_scalar_json(&mut out, element_kind, *element) {
+                        return HOST_STATUS_INVALID_ARGUMENT;
+                    }
+                }
+                out.push(']');
             }
             "raw" => {
                 let Some(chunk) = read_spectra_string(value) else {
@@ -669,7 +704,11 @@ pub extern "C" fn json_encode_struct(ctx: *mut SpectraHostCallContext) -> i32 {
                 };
                 out.push_str(&chunk);
             }
-            _ => return HOST_STATUS_INVALID_ARGUMENT,
+            scalar => {
+                if !push_scalar_json(&mut out, scalar, value) {
+                    return HOST_STATUS_INVALID_ARGUMENT;
+                }
+            }
         }
     }
     out.push('}');
@@ -691,8 +730,9 @@ fn decode_failure(path: &str, reason: &str) -> i32 {
 /// Arguments: `(child_handle, path, type_name, optional, default_value)`.
 /// `child_handle` is the total-lookup result (`value_get`/`value_at`/`parse`):
 /// 0 (or an unknown handle, or JSON null) means absent. `type_name` is one of
-/// `int`, `float`, `bool`, `string`, `char`; anything else selects object
-/// mode for nested derived structs and returns the child handle unchanged.
+/// `int`, `float`, `bool`, `string`, `char`, or `list:<element>` for a
+/// `List<element>` built from a JSON array; anything else selects object mode
+/// for nested derived structs and returns the child handle unchanged.
 /// Absent `optional` fields yield `default_value`; any other violation fails
 /// loudly instead of synthesizing a silent zero.
 pub extern "C" fn json_decode_field(ctx: *mut SpectraHostCallContext) -> i32 {
@@ -733,6 +773,59 @@ pub extern "C" fn json_decode_field_by_key(ctx: *mut SpectraHostCallContext) -> 
     // Object mode has no incoming child handle, so the nested object is
     // moved into a fresh store entry (`None` selects the insert path).
     write_decoded_field(ctx, field, &path, &type_name, optional, default, None)
+}
+
+/// Encode a `List<element>` value as a JSON array.
+///
+/// Arguments: `(handle, element_kind)`. Elements are formatted with the same
+/// scalar rules the struct encoder uses, so an element is byte-identical to
+/// the equivalent standalone value.
+pub extern "C" fn json_encode_list(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(element_kind) = read_spectra_string(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Ok(elements) = list_elements(args[0]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let mut out = String::with_capacity(2 + elements.len() * 8);
+    out.push('[');
+    for (index, element) in elements.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        if !push_scalar_json(&mut out, &element_kind, *element) {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+    }
+    out.push(']');
+    write_result(ctx, alloc_spectra_string(&out))
+}
+
+/// Converts one JSON scalar into the host value `kind` names.
+///
+/// The element form of the decode side, mirroring [`push_scalar_json`]: a
+/// string element is allocated as a tracked Spectra string, so the list built
+/// by the caller keeps a readable value after this frame returns.
+fn decode_scalar_element(kind: &str, value: &Value) -> Option<SpectraHostValue> {
+    Some(match kind {
+        "int" => value
+            .as_i64()
+            .or_else(|| value.as_u64().and_then(|number| i64::try_from(number).ok()))?,
+        "float" => value.as_f64()?.to_bits() as i64,
+        "bool" => i64::from(value.as_bool()?),
+        "string" => alloc_spectra_string(value.as_str()?),
+        "char" => {
+            let text = value.as_str()?;
+            if text.chars().count() != 1 {
+                return None;
+            }
+            text.chars().next().unwrap_or_default() as i64
+        }
+        _ => return None,
+    })
 }
 
 /// Shared extraction for `json_decode_field` and
@@ -793,6 +886,29 @@ fn write_decoded_field(
             }
             _ => missing("expected single-character string".to_string()),
         },
+        // `list:<element>` builds a `List<element>` from a JSON array: the
+        // elements are decoded to host values and the list owns them, so the
+        // decoded field is a collections handle like any other list.
+        list_mode if list_mode.starts_with("list:") => {
+            let element_kind = &list_mode["list:".len()..];
+            let Some(items) = field.as_array() else {
+                return missing(format!("expected array, found {}", json_kind_name(&field)));
+            };
+            let mut elements = Vec::with_capacity(items.len());
+            for (index, item) in items.iter().enumerate() {
+                let Some(element) = decode_scalar_element(element_kind, item) else {
+                    return missing(format!(
+                        "element {index}: expected {element_kind}, found {}",
+                        json_kind_name(item)
+                    ));
+                };
+                elements.push(element);
+            }
+            match list_create(&elements) {
+                Ok(handle) => write_result(ctx, handle),
+                Err(code) => code,
+            }
+        }
         _ => {
             if !field.is_object() {
                 return missing("expected object".to_string());
@@ -1469,7 +1585,71 @@ mod tests {
         );
     }
 
-    #[test]
+        #[test]
+    fn list_values_encode_as_arrays_and_decode_back() {
+        let values = [1_i64, 2, 3];
+        let handle = spectra_runtime::stdlib::list_create(&values).expect("list");
+        let elements = spectra_runtime::stdlib::list_elements(handle).expect("read");
+        assert_eq!(elements, values);
+
+        // Encode: `encode_list` takes the bare element kind.
+        let args = [handle, alloc_spectra_string("int")];
+        let (status, text) = call_json_host(json_encode_list, &args);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(read_spectra_string(text).as_deref(), Some("[1,2,3]"));
+        // An unknown element kind fails instead of writing a wrong document.
+        // (A *known* kind that contradicts the elements is a compiler bug, not
+        // an input this host call has to survive: the kind is derived from the
+        // list's element type.)
+        let wrong = [handle, alloc_spectra_string("bogus")];
+        assert_eq!(
+            call_json_host_no_result(json_encode_list, &wrong),
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+
+        // Control: a scalar string field decodes through the same host call,
+        // so a crash here would not be about lists.
+        let (_, scalar_root) = call_json_host(
+            json_parse,
+            &[alloc_spectra_string("{\"values\":\"x\"}")],
+        );
+        let scalar_args = [
+            scalar_root,
+            alloc_spectra_string("values"),
+            alloc_spectra_string("$.values"),
+            alloc_spectra_string("string"),
+            0,
+            0,
+        ];
+        let (scalar_status, scalar_text) =
+            call_json_host(json_decode_field_by_key, &scalar_args);
+        assert_eq!(scalar_status, HOST_STATUS_SUCCESS);
+        assert_eq!(read_spectra_string(scalar_text).as_deref(), Some("x"));
+
+        // Decode: `list:<element>` turns a JSON array into a list whose
+        // elements are readable, string elements included.
+        let document = alloc_spectra_string("{\"values\":[\"a\",\"b\"]}");
+        let (_, root) = call_json_host(json_parse, &[document]);
+        let decode_args = [
+            root,
+            alloc_spectra_string("values"),
+            alloc_spectra_string("$.values"),
+            alloc_spectra_string("list:string"),
+            0,
+            0,
+        ];
+        let (status, list) = call_json_host(json_decode_field_by_key, &decode_args);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        let decoded = spectra_runtime::stdlib::list_elements(list).expect("decode built a list");
+        assert_eq!(decoded.len(), 2);
+        let rendered = decoded
+            .iter()
+            .map(|element| read_spectra_string(*element).unwrap_or_default())
+            .collect::<Vec<_>>();
+        assert_eq!(rendered, ["a", "b"]);
+    }
+
+#[test]
     fn host_parse_get_free_cycle_releases_handles() {
         // Mirrors one derived `from_json` field access: parse a document,
         // look up a member, then free the child and the root. Freed handles

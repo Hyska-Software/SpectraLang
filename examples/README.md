@@ -52,11 +52,18 @@ rede), em JIT (`spectralang run`) e AOT (`compile --debug-info=none --emit-exe`)
 | `05-streaming-and-schema` | `ask_stream`/`stream_next`/`stream_close`, `ask_json` com o `json_schema` derivado e os dois desfechos do validador |
 | `06-capabilities-and-taint` | grant de namespace, aprovação negada por padrão e `untrusted`/`trust` com razão obrigatória |
 | `07-protocol-surface` | `a2a_card`/`a2a_handle` (`message/send`, `tasks/get`) e `acp_handle` (`initialize`, `session/new`) em processo |
+| `08-memory-and-recall` | `remember`/`recall` entre duas runs com o mesmo goal, com a proveniência apontando o `run_id` do escritor |
+| `09-compensation-saga` | `compensate`/`rollback` em ordem LIFO, com contador provando execução única e replay pelo journal |
+| `10-list-payloads` | `List` escalar como argumento, como retorno e como campo derivado (`json_schema`, encode e decode) |
 
 Os contratos que os exemplos demonstram ficam fixados nos fixtures
 `tests/validation/384_agent_stream_lifecycle.spectra`,
 `385_agent_capabilities_in_practice.spectra`,
-`386_agent_journal_artifact.spectra` e `387_agent_introspection.spectra`
-(rodados em JIT e AOT pelo gate de certificação R-3221).
+`386_agent_journal_artifact.spectra`, `387_agent_introspection.spectra`,
+`388_async_aggregate_result_lifetime.spectra`,
+`389_string_and_container_payload_lifetime.spectra`,
+`390_agent_nested_dispatch.spectra`, `391_agent_concurrent_runs.spectra` e
+`392_agent_payload_scale.spectra` (rodados em JIT e AOT pelo gate de certificação
+R-3221).
 
 Ver `docs/book/11-agents.md`.

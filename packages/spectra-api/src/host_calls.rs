@@ -370,6 +370,7 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
     HostCallSpec { name: "spectra.api.http3.task_result", function: http3_host::http3_task_result },
     HostCallSpec { name: "spectra.api.json.decode_field", function: json::json_decode_field },
     HostCallSpec { name: "spectra.api.json.decode_field_by_key", function: json::json_decode_field_by_key },
+    HostCallSpec { name: "spectra.api.json.encode_list", function: json::json_encode_list },
     HostCallSpec { name: "spectra.api.json.encode_number", function: json::json_encode_number },
     HostCallSpec { name: "spectra.api.json.encode_struct", function: json::json_encode_struct },
     HostCallSpec { name: "spectra.api.json.kind", function: json::json_kind },

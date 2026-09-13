@@ -7681,6 +7681,25 @@ docs = "docs/api/std-api-json.md"
 fixture = "tests/validation/357_json_derive_roundtrip.spectra"
 
 [[entry]]
+path = "std.api.json.encode_list"
+kind = "function"
+namespace = "std.api.json"
+signature = "fn(int, string) -> string"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+rust_symbol = "json::json_encode_list"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.json.encode_list"
+maturity = "stable"
+owner = "web"
+docs = "docs/AI-AGENT-REFERENCE.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
 path = "std.api.json.encode_number"
 kind = "function"
 namespace = "std.api.json"

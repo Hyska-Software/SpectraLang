@@ -15,9 +15,9 @@ The checks run in order, stopping at the first failure:
       runs all of them;
   (d) surface determinism: two `spectralang surface --json` runs over
       `tests/projects/valid/integrated_agent_service` are byte-identical;
-  (e) every runnable example (`examples/agent/01..07`) in JIT and AOT
+  (e) every runnable example (`examples/agent/01..10`) in JIT and AOT
       (`compile --debug-info=none --emit-exe`, then execute);
-  (f) the verification fixtures (`tests/validation/384..389`) in JIT and AOT --
+  (f) the verification fixtures (`tests/validation/384..392`) in JIT and AOT --
       the language-surface contracts for streaming lifecycle, run-level grant
       enforcement, the journal artifact and run introspection, plus the
       aggregate-result lifetime regression;
@@ -89,6 +89,9 @@ EXAMPLES = {
     "05-streaming-and-schema": "examples/agent/05-streaming-and-schema",
     "06-capabilities-and-taint": "examples/agent/06-capabilities-and-taint",
     "07-protocol-surface": "examples/agent/07-protocol-surface",
+    "08-memory-and-recall": "examples/agent/08-memory-and-recall",
+    "09-compensation-saga": "examples/agent/09-compensation-saga",
+    "10-list-payloads": "examples/agent/10-list-payloads",
 }
 
 # The language-surface contracts that back the example set: the streaming
@@ -102,6 +105,9 @@ VERIFICATION_FIXTURES = {
     "introspection": "tests/validation/387_agent_introspection.spectra",
     "aggregate_result_lifetime": "tests/validation/388_async_aggregate_result_lifetime.spectra",
     "string_and_container_payload_lifetime": "tests/validation/389_string_and_container_payload_lifetime.spectra",
+    "nested_dispatch": "tests/validation/390_agent_nested_dispatch.spectra",
+    "concurrent_runs": "tests/validation/391_agent_concurrent_runs.spectra",
+    "payload_scale": "tests/validation/392_agent_payload_scale.spectra",
 }
 
 CARGO = os.environ.get("CARGO") or shutil.which("cargo") or "cargo"

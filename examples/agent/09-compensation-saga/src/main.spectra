@@ -1,0 +1,90 @@
+module main
+
+// Example 09 - a saga: declare the undo with the step, roll back in LIFO order.
+//
+// A step that cannot be undone by re-running it (a reservation, a shipment, a
+// charge) declares its compensation when it is taken: `compensate(run, tool,
+// payload)` records the undo, and `rollback(run, reason)` runs the recorded
+// compensations newest-first, each exactly once. The journal makes the pair
+// durable: replaying the run id returns the recorded outcomes without moving
+// the counters.
+//
+// Everything runs in-process against the deterministic mock provider.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+
+const JOURNAL_DIR = ".spectra/example-09-journal"
+
+// Invocation counters: the observable proof that a compensation ran once.
+static CLAIMS: int = 0
+static RELEASES: int = 0
+
+#[derive(Serialize, Deserialize)]
+public record StepArgs {
+    id: int,
+}
+
+#[agent_tool("Takes a reservation")]
+public async func claim(run: Run, args: StepArgs) returns int {
+    CLAIMS = CLAIMS + 1
+    return CLAIMS
+}
+
+#[agent_tool("Releases a reservation")]
+public async func release_claim(run: Run, args: StepArgs) returns int {
+    RELEASES = RELEASES + 1
+    return RELEASES
+}
+
+func spec() returns string {
+    return "{\"goal\":\"example-09-saga\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":29,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"run_id\":\"example-09-saga\"}"
+}
+
+public func main() returns int {
+    return block_on(demo())
+}
+
+async func demo() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(start_error) = started {
+        println("start failed: " + error.message(start_error))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let claimed = await tool_call(run, "claim", "{\"id\":1}")
+        if let Result::Err(claim_error) = claimed {
+            println("claim failed: " + error.message(claim_error))
+            return 2
+        }
+
+        // The undo travels with the step that needs it.
+        let declared = compensate(run, "release_claim", "{\"id\":1}")
+        if let Result::Err(declare_error) = declared {
+            println("compensate failed: " + error.message(declare_error))
+            return 3
+        }
+
+        let rolled = rollback(run, "the next step failed, so the reservation goes back")
+        if let Result::Err(rollback_error) = rolled {
+            println("rollback failed: " + error.message(rollback_error))
+            return 4
+        }
+        if let Result::Ok(count) = rolled {
+            println("compensations executed: " + convert.int_to_string(count))
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report: " + report)
+        }
+        println("releases observed: " + convert.int_to_string(RELEASES))
+    } else {
+        return 5
+    }
+    return 0
+}

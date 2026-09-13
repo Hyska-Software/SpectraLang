@@ -423,6 +423,12 @@ def runtime_only_signature(path: str, semantic: dict[str, dict[str, str]]) -> tu
         # the common iterator protocol. It is catalogued so the runtime
         # binding remains auditable, but it is not a source-level export.
         return "function", "fn(int, ...int) -> Iterator<int>"
+    if path == "std.api.json.encode_list":
+        # Encoder for a `List<element>` value: the derived-encoder lowering
+        # emits it for a list field or a list tool result. It has no
+        # source-level signature; the catalog entry keeps the host-call
+        # inventory auditable, exactly like the tensor literals above.
+        return "function", "fn(int, string) -> string"
     if path == "std.ml.generate":
         return "function", "fn(int, int_tensor, int, int) -> int_tensor"
     if path == "std.ml.generate_ex":
@@ -624,7 +630,10 @@ def main() -> int:
             )
         for key in ("error_model", "binding", "maturity", "owner", "docs", "fixture"):
             lines.append(f"{key} = {toml_string(str(entry[key]))}")
-    current_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # `newline="\n"` keeps the artifact byte-identical across platforms:
+    # `Path.write_text` would otherwise translate to `os.linesep` on Windows,
+    # and the freshness checks compare this file byte for byte.
+    current_path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"generated {len(entries)} catalog entries at {current_path}")
     return 0
 

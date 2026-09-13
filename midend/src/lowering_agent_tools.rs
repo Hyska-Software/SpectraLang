@@ -414,9 +414,26 @@ impl ASTLowering {
             IRType::Enum { name, .. } if self.json_enum_schemas.contains_key(name) => {
                 self.lower_enum_to_json(name, value, ir_func)
             }
-            other => self.invalid_value(format!(
-                "agent tool '{tool}' returns {other:?}, which the marshalling wrapper cannot encode as JSON"
-            )),
+            // A `List<element>` result is a JSON array: one host call reads the
+            // elements and formats the whole array.
+            IRType::Generic { name, .. } if name == "List" => {
+                let Some(element_kind) = list_element_json_kind(ty) else {
+                    self.error(format!(
+                        "agent tool '{tool}' returns {ty:?}: a tool result list must hold int, \
+                         float, bool, string, or char elements"
+                    ));
+                    return self.lower_string_literal("null", ir_func);
+                };
+                let kind = self.lower_string_literal(element_kind, ir_func);
+                host(self, "spectra.api.json.encode_list", vec![value, kind], ir_func)
+            }
+            other => {
+                self.error(format!(
+                    "agent tool '{tool}' returns {other:?}, which has no JSON encoding; \
+                     return a String, an int, a bool, a float, a derived record, or a List of scalars"
+                ));
+                self.lower_string_literal("null", ir_func)
+            }
         }
     }
 

@@ -301,7 +301,11 @@ guards.
 
 ### 07 — Protocol Surface
 
-`examples/agent/07-protocol-surface` serves A2A and ACP from the same run.
+`examples/agent/07-protocol-surface` serves A2A and ACP from the same run;
+`examples/agent/08-memory-and-recall` shows memory that outlives its writer,
+`examples/agent/09-compensation-saga` the declared undo with LIFO rollback, and
+`examples/agent/10-list-payloads` lists crossing the tool boundary in both
+directions.
 `a2a_card` renders the authored identity plus the derived skill surface; a
 delegated task is a journaled run whose id is the task id, so `tasks/get` reads
 the terminal state back instead of re-delegating; `acp_handle` answers
@@ -354,6 +358,17 @@ the first mismatch (the certification gate runs all four in JIT and AOT):
   values a function owns: a string built in the callee, an `Option`/`Result`
   payload, a list element and a map value all outlive the frame that produced
   them.
+- `390_agent_nested_dispatch.spectra` — a tool body may dispatch on the run it
+  received: the nested call is governed like the outer one, the report counts it
+  as the host run's work, a run started inside a tool keeps its own journal and
+  counters, and a memory written from a tool names the writer's durable
+  `run_id`.
+- `391_agent_concurrent_runs.spectra` — two live runs interleave: counters,
+  budgets and journals stay attributed to the run that dispatched the work, and
+  a second run with the same goal recalls the first run's entry, naming it.
+- `392_agent_payload_scale.spectra` — 16 KiB results, records and lists cross
+  the wrapper round trip intact in both directions (arguments and results),
+  including the typed rejection of a wrong element type.
 
 ## Governance
 

@@ -674,6 +674,20 @@ fn fs_directory_surface_create_rename_copy_and_readdir() {
 }
 
 #[test]
+fn list_create_and_elements_round_trip() {
+    // The cross-crate seam host-call provider crates use: build a list from
+    // values, read the identical values back, and reject a handle that names
+    // no list instead of answering with an empty vector.
+    let values = [7_i64, 8, 9];
+    let handle = crate::stdlib::list_create(&values).expect("create a list");
+    let read = crate::stdlib::list_elements(handle).expect("read the list");
+    assert_eq!(read, values);
+
+    let error = crate::stdlib::list_elements(i64::MAX).expect_err("unknown handle");
+    assert_ne!(error, 0, "an unknown handle reports a status");
+}
+
+#[test]
 fn collections_list_lifecycle() {
     let _lock = test_guard();
     clear_host_functions();
