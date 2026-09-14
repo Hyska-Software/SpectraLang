@@ -1,0 +1,186 @@
+module agent_stream_teardown
+
+// The `ChunkStream` lifecycle around a run's end.
+//
+// Runs and streams are two handle tables with two lifetimes, and this fixture
+// pins where the line falls, because the difference is user-visible:
+//
+//   - a stream opened before `agent_end` keeps serving the chunks the run
+//     already produced. That work was paid for when the stream was opened, so
+//     closing the run must not throw the buffered output away: draining after
+//     the run reported is legitimate, and every chunk still arrives in order;
+//   - the terminating empty chunk is the same after the run ended, and reading
+//     past it keeps returning it (idempotent end of stream, no cursor drift);
+//   - `stream_close` still reports the closed state; it is the *stream* handle
+//     that is released, never the run's;
+//   - after a close, a second close is still the documented idempotent `true`
+//     and a read is the typed `unknown_handle` refusal -- never a panic;
+//   - the released *run* handle stays refused, which is what keeps the two
+//     tables from being mistaken for each other.
+//
+// 384 covers the same lifecycle inside a live run (double close, read after
+// close, chunk boundaries); this fixture covers the teardown boundary.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.string as str
+
+const PROMPT = "drain me after the end"
+
+func spec() returns string {
+    return "{\"goal\":\"stream-teardown\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":11,\"journal\":\"\"}"
+}
+
+// A refusal is only a contract if it is the *typed* one.
+func refused(label: string, outcome: Result<string, Error>) returns int {
+    if let Result::Ok(value) = outcome {
+        println(label + " accepted: " + value)
+        return 1
+    }
+    if let Result::Err(problem) = outcome {
+        let message = error.message(problem)
+        if str.contains(message, "unknown_handle") == false {
+            println(label + " answered " + message)
+            return 1
+        }
+        println(label + " -> " + message)
+    }
+    return 0
+}
+
+async func the_stream_outlives_the_run() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let opened = await ask_stream(run, PROMPT)
+        if let Result::Err(problem) = opened {
+            println("stream failed: " + error.message(problem))
+            return 2
+        }
+        if let Result::Ok(stream) = opened {
+            let ended = agent_end(run)
+            if let Result::Err(problem) = ended {
+                println("end failed: " + error.message(problem))
+                return 3
+            }
+
+            // Drain after the run's report exists: the chunks are intact.
+            let total = ""
+            let chunks = 0
+            let done = false
+            while done == false {
+                let next = await stream_next(stream)
+                if let Result::Ok(chunk) = next {
+                    if chunk == "" {
+                        done = true
+                    } else {
+                        chunks = chunks + 1
+                        total = total + chunk
+                    }
+                } else {
+                    return 4
+                }
+            }
+            println("drained -> " + convert.int_to_string(chunks) + " chunks: " + total)
+            if total != "mock echo: " + PROMPT {
+                return 5
+            }
+            if chunks < 2 {
+                return 6
+            }
+
+            // Past the end marker: the same empty chunk, no cursor drift.
+            let past = await stream_next(stream)
+            if let Result::Ok(chunk) = past {
+                if chunk != "" {
+                    println("past the end: " + chunk)
+                    return 7
+                }
+            } else {
+                return 8
+            }
+
+            // Closing the stream after the run ended still reports closed.
+            let closed = await stream_close(stream)
+            if let Result::Ok(ok) = closed {
+                if ok == false {
+                    return 9
+                }
+                println("closed  -> " + convert.bool_to_string(ok))
+            } else {
+                return 10
+            }
+
+            // A second close is the idempotent `true`; a read is the refusal.
+            let closed_again = await stream_close(stream)
+            if let Result::Ok(ok) = closed_again {
+                if ok == false {
+                    return 11
+                }
+            } else {
+                return 12
+            }
+            let after_close = await stream_next(stream)
+            let read_failure = refused("after close ", after_close)
+            if read_failure != 0 {
+                return 13
+            }
+
+            // The run handle is still its own refusal.
+            let ended_again = agent_end(run)
+            let end_failure = refused("end again   ", ended_again)
+            if end_failure != 0 {
+                return 14
+            }
+        }
+    }
+    return 0
+}
+
+// A stream closed while the run is still live then read after the run ended:
+// the close, not the run's end, is what releases it.
+async func a_closed_stream_stays_closed() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let opened = await ask_stream(run, "close me first")
+        if let Result::Ok(stream) = opened {
+            let closed = await stream_close(stream)
+            if let Result::Err(problem) = closed {
+                println("close failed: " + error.message(problem))
+                return 1
+            }
+            let ended = agent_end(run)
+            if let Result::Err(problem) = ended {
+                println("end failed: " + error.message(problem))
+                return 2
+            }
+            let after = await stream_next(stream)
+            let failure = refused("closed read ", after)
+            if failure != 0 {
+                return 3
+            }
+        } else {
+            return 4
+        }
+    } else {
+        return 5
+    }
+    return 0
+}
+
+public func main() returns int {
+    let first = block_on(the_stream_outlives_the_run())
+    if first != 0 {
+        return first
+    }
+    let second = block_on(a_closed_stream_stays_closed())
+    if second != 0 {
+        return 20 + second
+    }
+    return 0
+}

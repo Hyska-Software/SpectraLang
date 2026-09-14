@@ -1,0 +1,200 @@
+module agent_spec_rejection
+
+// `agent_start`'s spec validation, at the language surface.
+//
+// `AgentSpec::parse` is strict on purpose: a typo in a capability ceiling or a
+// mistyped policy must not be silently ignored by a layer whose whole job is
+// to hold the run to what it declared. Every rejection is the typed
+// `invalid_spec` error, and every message names the field it refused.
+//
+// The specs here are *computed* (each one is concatenated with a runtime
+// value), because a string literal passed to `agent_start` is decoded at
+// compile time -- a documented, deliberate property worth knowing: a literal
+// spec that is not valid JSON never reaches the runtime at all. This fixture
+// covers the runtime half.
+//
+// One minimal spec is accepted at the end, so a fixture that refused
+// everything for the wrong reason cannot pass.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.string as str
+
+func format_seven() returns string {
+    return convert.int_to_string(7)
+}
+
+// 0 when the spec was refused with `invalid_spec` naming `expected`.
+func refused(label: string, spec_json: string, expected: string) returns int {
+    let started = agent_start(spec_json)
+    if let Result::Err(problem) = started {
+        let message = error.message(problem)
+        if str.contains(message, "invalid_spec") == false {
+            println(label + " answered " + message)
+            return 1
+        }
+        if str.contains(message, expected) == false {
+            println(label + " answered " + message + " (expected to name " + expected + ")")
+            return 1
+        }
+        println(label + " -> " + message)
+        return 0
+    }
+    if let Result::Ok(run) = started {
+        let ended = agent_end(run)
+        let _ = ended
+        println(label + " was accepted")
+        return 1
+    }
+    return 1
+}
+
+func rejected_specs(salt: string) returns int {
+    let failures = 0
+
+    // Not JSON at all, and valid JSON that is not an object.
+    failures = failures + refused("not-json      ", "not json " + salt, "not valid JSON")
+    let numbers = "[" + format_seven() + "]"
+    failures = failures + refused("not-object    ", numbers, "must be a JSON object")
+
+    // Unknown keys are refused rather than ignored -- the typo case.
+    failures = failures + refused(
+        "unknown-field ",
+        "{\"goal\":\"g-" + salt + "\",\"model\":\"mock/echo\",\"max_tokenss\":5}",
+        "unknown spec field 'max_tokenss'",
+    )
+
+    // Required fields, and the empty-string spelling of "missing".
+    failures = failures + refused(
+        "no-goal       ",
+        "{\"model\":\"mock/echo\",\"run_id\":\"" + salt + "\"}",
+        "spec field 'goal' is required",
+    )
+    failures = failures + refused(
+        "no-model      ",
+        "{\"goal\":\"g-" + salt + "\"}",
+        "spec field 'model' is required",
+    )
+    failures = failures + refused(
+        "empty-goal    ",
+        "{\"goal\":\"\",\"model\":\"mock/echo\",\"run_id\":\"" + salt + "\"}",
+        "spec field 'goal' must not be empty",
+    )
+
+    // Wrong types for typed fields.
+    failures = failures + refused(
+        "grant-not-list",
+        "{\"goal\":\"g-" + salt + "\",\"model\":\"mock/echo\",\"allow\":\"spectra.std.fs\"}",
+        "spec field 'allow' must be an array of strings",
+    )
+    failures = failures + refused(
+        "empty-grant   ",
+        "{\"goal\":\"g-" + salt + "\",\"model\":\"mock/echo\",\"allow\":[\"  \"]}",
+        "spec field 'allow' contains an empty capability",
+    )
+    failures = failures + refused(
+        "journal-int   ",
+        "{\"goal\":\"g-" + salt + "\",\"model\":\"mock/echo\",\"journal\":7}",
+        "spec field 'journal' must be a string",
+    )
+    failures = failures + refused(
+        "payloads-word ",
+        "{\"goal\":\"g-" + salt + "\",\"model\":\"mock/echo\",\"journal_payloads\":\"yes\"}",
+        "spec field 'journal_payloads' must be a boolean",
+    )
+    failures = failures + refused(
+        "run-id-int    ",
+        "{\"goal\":\"g-" + salt + "\",\"model\":\"mock/echo\",\"run_id\":7}",
+        "spec field 'run_id' must be a string",
+    )
+    failures = failures + refused(
+        "tokens-string ",
+        "{\"goal\":\"g-" + salt + "\",\"model\":\"mock/echo\",\"max_tokens\":\"many\"}",
+        "spec field 'max_tokens' must be an integer",
+    )
+
+    // Ceilings and the policy word.
+    failures = failures + refused(
+        "negative-ceil ",
+        "{\"goal\":\"g-" + salt + "\",\"model\":\"mock/echo\",\"max_tokens\":-5}",
+        "spec field 'max_tokens' must be >= 0, found -5",
+    )
+    failures = failures + refused(
+        "negative-secs ",
+        "{\"goal\":\"g-" + salt + "\",\"model\":\"mock/echo\",\"max_seconds\":-1}",
+        "spec field 'max_seconds' must be >= 0, found -1",
+    )
+    failures = failures + refused(
+        "bad-policy    ",
+        "{\"goal\":\"g-" + salt + "\",\"model\":\"mock/echo\",\"untrusted\":\"maybe\"}",
+        "spec field 'untrusted' must be one of approve|block|allow, found 'maybe'",
+    )
+    failures = failures + refused(
+        "policy-int    ",
+        "{\"goal\":\"g-" + salt + "\",\"model\":\"mock/echo\",\"untrusted\":1}",
+        "spec field 'untrusted' must be a string",
+    )
+    failures = failures + refused(
+        "seed-too-low  ",
+        "{\"goal\":\"g-" + salt + "\",\"model\":\"mock/echo\",\"seed\":-4}",
+        "spec field 'seed'",
+    )
+
+    if failures != 0 {
+        println("failures -> " + convert.int_to_string(failures))
+        return 1
+    }
+    return 0
+}
+
+// The same validation accepts a spec that declares the documented minimum, and
+// the run it opens is usable.
+async func a_minimal_spec_is_accepted(salt: string) returns int {
+    let spec_json = "{\"goal\":\"minimal-" + salt + "\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"journal\":\"\"}"
+    let started = agent_start(spec_json)
+    if let Result::Err(problem) = started {
+        println("minimal spec refused: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let answer = await ask(run, "hello")
+        if let Result::Ok(text) = answer {
+            if text != "mock echo: hello" {
+                println("unexpected answer: " + text)
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            // Defaults: no ceiling, no journal (an explicit "" disables it),
+            // and a fresh run reports itself as such.
+            if str.contains(report, "\"ceiling\":\"\"") == false {
+                return 4
+            }
+            if str.contains(report, "\"replay\":false") == false {
+                return 5
+            }
+            println("minimal -> " + report)
+        } else {
+            return 6
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    let salt = "x0"
+    let rejected = rejected_specs(salt)
+    if rejected != 0 {
+        return rejected
+    }
+    let accepted = block_on(a_minimal_spec_is_accepted(salt))
+    if accepted != 0 {
+        return 10 + accepted
+    }
+    return 0
+}

@@ -194,14 +194,25 @@ pub(crate) fn clear() {
 #[cfg(test)]
 pub(crate) static REGISTRY_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+/// Effect name standing in for an effect list that could not be read.
+///
+/// Registration must not fail on it (the compiler emits the list, so a
+/// malformed one is a bug in the emitter, not a reason to refuse the whole
+/// module), but the tool's authority is *unknown* — and unknown authority is
+/// the one thing [`enforce_run_grant`] must not authorize. The marker is not a
+/// host-call name, so [`policy::grant_matches`] never covers it and the
+/// dispatch is refused until the emitter is fixed.
+const UNREADABLE_EFFECTS: &str = "<unreadable effects>";
+
 /// Parses the compiler-emitted JSON array of effect names.
 ///
 /// A malformed document cannot be produced by the compiler (the list is built
-/// from literal host-call names), so it degrades to "no effects" instead of
-/// failing registration; the grant check then has nothing to enforce rather
-/// than blocking a tool that is legitimately exposed.
+/// from literal host-call names); when it happens anyway the tool registers
+/// with [`UNREADABLE_EFFECTS`], so the grant check refuses it instead of
+/// finding nothing to enforce.
 fn parse_effects(effects_json: &str) -> Vec<String> {
-    serde_json::from_str::<Vec<String>>(effects_json).unwrap_or_default()
+    serde_json::from_str::<Vec<String>>(effects_json)
+        .unwrap_or_else(|_| vec![UNREADABLE_EFFECTS.to_string()])
 }
 
 /// Resolves a tool by name.
@@ -387,6 +398,7 @@ pub(crate) fn enforce_run_grant(run_handle: i64) -> Result<(), AgentError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spec::AgentSpec;
 
     /// Serializes tests that mutate the process-global registry.
     fn with_registry<T>(work: impl FnOnce() -> T) -> T {
@@ -437,6 +449,40 @@ mod tests {
                 "[]"
             ));
             assert_eq!(registered().len(), 1);
+        });
+    }
+
+    /// A tool whose compiled effect list could not be read holds unknown
+    /// authority, and unknown authority is never granted.
+    #[test]
+    fn a_tool_with_an_unreadable_effect_list_is_refused_by_every_grant() {
+        with_registry(|| {
+            // The compiler emits a JSON array; this one is truncated, which is
+            // the shape a broken emitter or a third-party registration would
+            // produce.
+            assert!(register(
+                "mystery".to_string(),
+                0x1000,
+                "registers with an effect list nobody can read".to_string(),
+                "{}".to_string(),
+                r#"["spectra.std.fs.fs_write""#,
+            ));
+            let tool = registered().pop().expect("registered");
+            assert_eq!(tool.effects, vec![UNREADABLE_EFFECTS.to_string()]);
+
+            // Even a grant that covers the whole standard library does not
+            // cover the marker, so the dispatch is refused rather than
+            // silently authorized with no effects to check.
+            let spec = AgentSpec::parse(
+                r#"{"goal":"unreadable","model":"mock/echo","endpoint":"mock:","allow":["spectra.std","spectra"]}"#,
+            )
+            .expect("valid spec");
+            let run = run::alloc_run(spec, "run-unreadable-effects".to_string(), None)
+                .expect("alloc run");
+            let error = enforce_run_grant(run).expect_err("unknown authority is not grantable");
+            assert_eq!(error.kind(), "capability_denied");
+            assert!(error.detail().contains(UNREADABLE_EFFECTS), "{error}");
+            run::take_run(run).expect("end");
         });
     }
 

@@ -1,0 +1,229 @@
+module agent_dead_handle_matrix
+
+// The dead-run guard matrix: every entry point that takes a `Run` must answer
+// with a typed `unknown_handle` once the run has been closed.
+//
+// The contract this pins, at the language surface and for the whole surface:
+//
+//   - `agent_end` releases the run handle and no entry point keeps working
+//     against the torn-down state. A guard forgotten somewhere would either
+//     panic, silently succeed, or mutate state that no longer has an owner --
+//     and the state-mutating calls (`remember`, `recall`, `compensate`,
+//     `untrusted`) are where that hurts. The three protocol adapters are in
+//     this matrix because they were the exception when it was written: their
+//     direct entry points served a released run while their socket front-end
+//     answered `410 Gone`; the guard now lives in the adapters themselves;
+//   - the error is the typed kind, not a bare failure: `unknown_handle` with
+//     the handle value in the message;
+//   - closing twice is the same refusal, never a second report.
+//
+// `ChunkStream` handles are deliberately *not* part of this matrix: they are
+// their own table with their own lifecycle (a stream keeps the chunks the run
+// already paid for until it is drained or closed), which
+// `400_agent_stream_teardown.spectra` pins.
+//
+// Only `agent_start` may allocate a new run; nothing here reuses a handle.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.string as str
+
+const GUARDED = "spectra.std.fs.fs_write"
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+// One declared tool, so `compensate`'s compile-time name check (E3205) has a
+// declaration to match. Nothing here dispatches it; the fixture is about dead
+// handles, not about work.
+#[agent_tool("Adds two integers")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+func spec() returns string {
+    return "{\"goal\":\"dead-handle-matrix\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"mcp\",\"spectra.std.fs\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}"
+}
+
+// Each helper returns 1 when the call did *not* answer with the typed refusal.
+func expected_text(label: string, outcome: Result<string, Error>) returns int {
+    if let Result::Ok(value) = outcome {
+        println(label + " accepted a dead run: " + value)
+        return 1
+    }
+    if let Result::Err(problem) = outcome {
+        let message = error.message(problem)
+        if str.contains(message, "unknown_handle") == false {
+            println(label + " answered " + message)
+            return 1
+        }
+        println(label + " -> " + message)
+    }
+    return 0
+}
+
+func expected_stream(label: string, outcome: Result<ChunkStream, Error>) returns int {
+    if let Result::Ok(value) = outcome {
+        let _ = value
+        println(label + " accepted a dead run")
+        return 1
+    }
+    if let Result::Err(problem) = outcome {
+        let message = error.message(problem)
+        if str.contains(message, "unknown_handle") == false {
+            println(label + " answered " + message)
+            return 1
+        }
+        println(label + " -> " + message)
+    }
+    return 0
+}
+
+func expected_tensor(label: string, outcome: Result<Tensor<float, rank1>, Error>) returns int {
+    if let Result::Ok(value) = outcome {
+        let _ = value
+        println(label + " accepted a dead run")
+        return 1
+    }
+    if let Result::Err(problem) = outcome {
+        let message = error.message(problem)
+        if str.contains(message, "unknown_handle") == false {
+            println(label + " answered " + message)
+            return 1
+        }
+        println(label + " -> " + message)
+    }
+    return 0
+}
+
+func expected_flag(label: string, outcome: Result<bool, Error>) returns int {
+    if let Result::Ok(value) = outcome {
+        println(label + " accepted a dead run: " + convert.bool_to_string(value))
+        return 1
+    }
+    if let Result::Err(problem) = outcome {
+        let message = error.message(problem)
+        if str.contains(message, "unknown_handle") == false {
+            println(label + " answered " + message)
+            return 1
+        }
+        println(label + " -> " + message)
+    }
+    return 0
+}
+
+func expected_number(label: string, outcome: Result<int, Error>) returns int {
+    if let Result::Ok(value) = outcome {
+        println(label + " accepted a dead run: " + convert.int_to_string(value))
+        return 1
+    }
+    if let Result::Err(problem) = outcome {
+        let message = error.message(problem)
+        if str.contains(message, "unknown_handle") == false {
+            println(label + " answered " + message)
+            return 1
+        }
+        println(label + " -> " + message)
+    }
+    return 0
+}
+
+async func every_entry_point_refuses() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let closed = agent_end(run)
+        if let Result::Err(problem) = closed {
+            println("end failed: " + error.message(problem))
+            return 2
+        }
+        if let Result::Ok(report) = closed {
+            println("report -> " + report)
+        }
+
+        let failures = 0
+
+        // Async model and tool entry points.
+        failures = failures + expected_text("ask        ", await ask(run, "hello"))
+        failures = failures + expected_text("ask_json   ", await ask_json(run, "spectra:json", "{}"))
+        failures = failures + expected_stream("ask_stream ", await ask_stream(run, "hello"))
+        failures = failures + expected_tensor("embed      ", await embed(run, "alpha"))
+        failures = failures + expected_text("act        ", await act(run, "spectra:final=done"))
+        failures = failures + expected_text("tool_call  ", await tool_call(run, "add", "{}"))
+        failures = failures + expected_text("mcp_connect", await mcp_connect(run, "http://127.0.0.1:1/mcp"))
+
+        // Synchronous state.
+        failures = failures + expected_flag("remember   ", remember(run, "text"))
+        failures = failures + expected_text("recall     ", recall(run, "text", 1))
+        failures = failures + expected_number("budget     ", budget_remaining(run))
+        failures = failures + expected_flag("approve    ", approve(run, GUARDED))
+        failures = failures + expected_flag("require    ", require(run, true, "must hold"))
+        failures = failures + expected_text("untrusted  ", untrusted(run, "value", "external:web"))
+        failures = failures + expected_text("trust      ", trust(run, "value", "reviewed"))
+        failures = failures + expected_flag("compensate ", compensate(run, "add", "{}"))
+        failures = failures + expected_number("rollback   ", rollback(run, "reason"))
+
+        // Protocol adapters.
+        failures = failures + expected_text("mcp_handle ", mcp_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}"))
+        failures = failures + expected_text("mcp_serve  ", mcp_serve(run, "127.0.0.1:0"))
+        failures = failures + expected_text("a2a_card   ", a2a_card(run, "{\"name\":\"Dead\"}"))
+        failures = failures + expected_text("a2a_handle ", a2a_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tasks/get\",\"params\":{\"id\":\"x\"}}"))
+        failures = failures + expected_text("a2a_serve  ", a2a_serve(run, "127.0.0.1:0", "{\"name\":\"Dead\"}"))
+        failures = failures + expected_text("acp_handle ", acp_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}"))
+        failures = failures + expected_flag("acp_perm   ", acp_permission(run, GUARDED))
+
+        // Closing twice is the same refusal, not a second report.
+        failures = failures + expected_text("end_again  ", agent_end(run))
+
+        if failures != 0 {
+            println("failures   -> " + convert.int_to_string(failures))
+            return 4
+        }
+    }
+    return 0
+}
+
+// A run whose journal is enabled keeps the same guarantee: the handle table is
+// the run's, not the journal's.
+async func journaled_run_refuses_too() returns int {
+    let started = agent_start("{\"goal\":\"dead-handle-journal\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\".spectra/dead-handle-journal\",\"run_id\":\"dead-handle\"}")
+    if let Result::Ok(run) = started {
+        let turn = await ask(run, "hello")
+        if let Result::Err(problem) = turn {
+            println("ask failed: " + error.message(problem))
+            return 1
+        }
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 2
+        }
+        let after = expected_flag("remember   ", remember(run, "text"))
+        if after != 0 {
+            return 3
+        }
+    } else {
+        return 4
+    }
+    return 0
+}
+
+public func main() returns int {
+    let first = block_on(every_entry_point_refuses())
+    if first != 0 {
+        return first
+    }
+    let second = block_on(journaled_run_refuses_too())
+    if second != 0 {
+        return 10 + second
+    }
+    return 0
+}

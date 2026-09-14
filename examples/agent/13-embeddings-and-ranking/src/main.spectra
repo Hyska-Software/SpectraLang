@@ -1,0 +1,311 @@
+module main
+
+// Example 13 — embeddings as a ranking primitive, and a replayed embedding.
+//
+// `embed(run, text)` is the only `std.agent` call that returns a value the
+// program computes with: a 1-D float tensor, allocated by the runtime and
+// owned by the calling coroutine. This example puts it to work the way a
+// retrieval layer does:
+//
+//   1. embed a query and a candidate set, then score the candidates with
+//      cosine similarity — computed here from the language's own tensor
+//      accessors (`tensor.len`, `tensor.get_f`) and `std.math.sqrt_f`, because
+//      the score is program logic, not a runtime primitive;
+//   2. rank them and remember the text that won;
+//   3. close the run, open a second run on the same journal and run id, and
+//      walk the *same* effect sequence again: every embedding resolves from the
+//      journal instead of the provider, so the score comes back bit-identical;
+//   4. `recall` the remembered text in the replayed run, so the memory store
+//      and the journal are both visible in one program.
+//
+// The replay discipline is the point of step 3: ADR 0018 makes replay
+// positional, so a resumed run walks the same effects in the same order. A run
+// that asks for a different effect than the journal records is a *divergence*
+// and fails closed rather than silently replaying something else — that is why
+// both runs here embed the same three texts in the same order.
+//
+// Honest note on what the mock can show: the deterministic mock provider's
+// embedding is a hash vector, not a semantic one, so texts that are *related
+// in meaning* are not closer than unrelated ones. What this example therefore
+// checks is the mechanics a retrieval layer depends on — fixed width, exact
+// self-similarity, determinism, replay without a provider round trip, and a
+// ranking that is a total function of the vectors. A semantic embedding model
+// reached through an OpenAI-compatible endpoint fills the same contract.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.fs as fs
+import std.math as math
+import std.string as str
+import std.tensor as tensor
+
+const JOURNAL_DIR = ".spectra/example-13-journal"
+const RUN_ID = "example-13"
+
+// The query and the candidate set. The provider is deterministic, so these
+// strings are the whole input to the vectors below.
+const QUERY = "retrieval augmented generation over a local corpus"
+const RELATED = "retrieval augmented generation over a shared corpus"
+const UNRELATED = "cranelift backend register allocation"
+const WIDTH = 8
+
+func spec() returns string {
+    return "{\"goal\":\"example-embeddings-and-ranking\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":17,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"journal_payloads\":false,\"run_id\":\"" +
+        RUN_ID +
+        "\"}"
+}
+
+func journal_path() returns string {
+    return JOURNAL_DIR + "/" + RUN_ID + ".jsonl"
+}
+
+// Removes a previous journal so the example starts from a known state; the
+// first run must be fresh for the second one to be a replay.
+func clean(path: string) returns int {
+    let present = fs.fs_exists(path)
+    if let Result::Ok(exists) = present {
+        if exists == true {
+            let removed = fs.fs_remove(path)
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+// Cosine similarity of two embeddings: the score a retrieval layer ranks on.
+// Both vectors are dynamic rank-1 float tensors, so the width is read from the
+// handle rather than declared.
+func cosine(left: Tensor<float, rank1>, right: Tensor<float, rank1>) returns float {
+    let width = tensor.len(left)
+    if tensor.len(right) != width {
+        return -2.0
+    }
+    let dot = 0.0
+    let norm_left = 0.0
+    let norm_right = 0.0
+    let index = 0
+    while index < width {
+        let x = tensor.get_f(left, index)
+        let y = tensor.get_f(right, index)
+        dot = dot + x * y
+        norm_left = norm_left + x * x
+        norm_right = norm_right + y * y
+        index = index + 1
+    }
+    let scale = math.sqrt_f(norm_left) * math.sqrt_f(norm_right)
+    if scale == 0.0 {
+        return 0.0
+    }
+    return dot / scale
+}
+
+func close(left: float, right: float, tolerance: float) returns bool {
+    return math.abs_f(left - right) < tolerance
+}
+
+async func run_checks() returns int {
+    // The fresh run's numbers, kept so the replay can prove it reproduced
+    // them from the journal rather than from a fresh provider answer.
+    let fresh_related_score = 0.0
+    let fresh_unrelated_score = 0.0
+    let fresh_first_component = 0.0
+
+    // ── the fresh run: embed, rank, remember ────────────────────────────────
+    let started = agent_start(spec())
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let query = await embed(run, QUERY)
+        let related = await embed(run, RELATED)
+        let unrelated = await embed(run, UNRELATED)
+        if let Result::Err(problem) = query {
+            println("embed failed: " + error.message(problem))
+            return 2
+        }
+        if let Result::Err(problem) = related {
+            println("embed failed: " + error.message(problem))
+            return 3
+        }
+        if let Result::Err(problem) = unrelated {
+            println("embed failed: " + error.message(problem))
+            return 4
+        }
+        if let Result::Ok(query_vector) = query {
+            if let Result::Ok(related_vector) = related {
+                if let Result::Ok(unrelated_vector) = unrelated {
+                    let width = tensor.len(query_vector)
+                    println("width      -> " + convert.int_to_string(width))
+                    if width != WIDTH {
+                        return 5
+                    }
+
+                    // The scores the ranking is built from.
+                    let self_score = cosine(query_vector, query_vector)
+                    fresh_related_score = cosine(query_vector, related_vector)
+                    fresh_unrelated_score = cosine(query_vector, unrelated_vector)
+                    fresh_first_component = tensor.get_f(query_vector, 0)
+                    println("self       -> " + convert.float_to_string(self_score))
+                    println("related    -> " + convert.float_to_string(fresh_related_score))
+                    println("unrelated  -> " + convert.float_to_string(fresh_unrelated_score))
+
+                    // A vector is exactly similar to itself, and the candidate
+                    // that *is* the query is the unique top of this ranking.
+                    if close(self_score, 1.0, 0.000000001) == false {
+                        return 6
+                    }
+                    if fresh_related_score >= self_score {
+                        return 7
+                    }
+                    if fresh_unrelated_score >= self_score {
+                        return 8
+                    }
+                }
+            }
+        }
+
+        // The run remembers what it ranked first: memory is scoped by goal and
+        // carries the provenance a later run reads back.
+        let stored = remember(run, QUERY)
+        if let Result::Ok(ok) = stored {
+            if ok == false {
+                return 9
+            }
+        } else {
+            return 10
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("fresh      -> " + report)
+            // A fresh run is not a replay, and an embedding is not a model
+            // turn: `steps` counts `ask`/`ask_json`/`ask_stream` turns only.
+            if str.contains(report, "\"replay\":false") == false {
+                return 11
+            }
+            if str.contains(report, "\"steps\":0") == false {
+                return 12
+            }
+        } else {
+            return 13
+        }
+    }
+
+    // ── the replay: the same effects, resolved from the journal ─────────────
+    let second_start = agent_start(spec())
+    if let Result::Err(problem) = second_start {
+        println("replay start failed: " + error.message(problem))
+        return 14
+    }
+    if let Result::Ok(again) = second_start {
+        let query = await embed(again, QUERY)
+        let related = await embed(again, RELATED)
+        let unrelated = await embed(again, UNRELATED)
+        if let Result::Err(problem) = query {
+            println("replay embed failed: " + error.message(problem))
+            return 15
+        }
+        if let Result::Err(problem) = related {
+            println("replay embed failed: " + error.message(problem))
+            return 16
+        }
+        if let Result::Err(problem) = unrelated {
+            println("replay embed failed: " + error.message(problem))
+            return 17
+        }
+        if let Result::Ok(replayed_query) = query {
+            if let Result::Ok(replayed_related) = related {
+                if let Result::Ok(replayed_unrelated) = unrelated {
+                    // The replayed vectors are the recorded ones: the scores
+                    // come back bit-identical, and so does the first component,
+                    // which no fresh hash of the same text could guarantee
+                    // against a tampered journal.
+                    let replayed_score = cosine(replayed_query, replayed_related)
+                    let replayed_unrelated_score = cosine(replayed_query, replayed_unrelated)
+                    let replayed_component = tensor.get_f(replayed_query, 0)
+                    println("replayed   -> " + convert.float_to_string(replayed_score))
+                    if replayed_score != fresh_related_score {
+                        return 18
+                    }
+                    if replayed_unrelated_score != fresh_unrelated_score {
+                        return 19
+                    }
+                    if replayed_component != fresh_first_component {
+                        return 20
+                    }
+                }
+            }
+        }
+
+        // The text the first run stored is readable here with its provenance.
+        let recalled = recall(again, QUERY, 1)
+        if let Result::Err(problem) = recalled {
+            println("recall failed: " + error.message(problem))
+            return 21
+        }
+        if let Result::Ok(payload) = recalled {
+            println("recall     -> " + payload)
+            if str.contains(payload, QUERY) == false {
+                return 22
+            }
+            if str.contains(payload, "\"tier\":\"episodic\"") == false {
+                return 23
+            }
+        }
+
+        let ended = agent_end(again)
+        if let Result::Ok(report) = ended {
+            println("replay     -> " + report)
+            if str.contains(report, "\"replay\":true") == false {
+                return 24
+            }
+        } else {
+            return 25
+        }
+    }
+    return 0
+}
+
+// The journal is the record of what ran: three embeddings from the fresh run,
+// and nothing appended by the replay that only resolved them.
+func journal_steps() returns int {
+    let text = fs.fs_read(journal_path())
+    if let Result::Err(problem) = text {
+        println("journal failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(body) = text {
+        let embeddings = str.count_occurrences(body, "\"kind\":\"embed\"")
+        println("journal    -> " + convert.int_to_string(embeddings) + " embed steps")
+        if embeddings != 3 {
+            return 2
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    if clean(journal_path()) != 0 {
+        return 30
+    }
+    let ran = block_on(run_checks())
+    if ran != 0 {
+        return ran
+    }
+    let steps = journal_steps()
+    if steps != 0 {
+        return 50 + steps
+    }
+    return 0
+}

@@ -1,0 +1,290 @@
+module main
+
+// Example 15 — the MCP service surface a project serves.
+//
+// `mcp_handle` answers one MCP JSON-RPC request against the project's
+// registered tools without opening a socket, which is the document a
+// third-party MCP client sees. `mcp_serve` is the socket in front of the very
+// same handler (examples 03 and 381 cover that round trip; this example covers
+// the documents themselves):
+//
+//   * `initialize` — server identity and capabilities;
+//   * `notifications/initialized` — a notification, answered with the empty
+//     document the streaming-HTTP transport turns into `202 Accepted`;
+//   * `ping` — an empty result;
+//   * `tools/list` — one descriptor per registered tool, with the *derived*
+//     annotations: `readOnlyHint` is true only when the tool derives no
+//     effects, and `destructiveHint` is true when any derived effect is a
+//     catalog sink (a write), so the advertised surface cannot drift from the
+//     compiled one;
+//   * `tools/call` — the governed dispatch. A tool failure is a *tool result*
+//     (`isError: true`) because the protocol models it that way, while a
+//     run-level refusal — a capability denial or a crossed ceiling — is a
+//     JSON-RPC error, so a client can tell "the tool said no" from "the run
+//     said no";
+//   * an unserved method is `-32601`, and a document that is not a JSON-RPC
+//     object is a typed `mcp_error`.
+//
+// The second run repeats the call with an empty grant: the same request is
+// answered with the run-level refusal naming the effect the grant does not
+// authorize, which is exactly what a governed dispatch must never hide.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const WORK_DIR = "target/agent-example-15"
+const NOTE = WORK_DIR + "/note.txt"
+
+#[derive(Serialize, Deserialize)]
+public record PathArgs {
+    path: string,
+}
+
+// A read-only tool: its only derived effect is `spectra.std.fs.fs_read`, which
+// is not a sink, so `tools/list` advertises it as non-destructive.
+#[agent_tool("Reads a file")]
+public async func lookup(run: Run, args: PathArgs) returns string {
+    let text = fs.fs_read(args.path)
+    if let Result::Ok(body) = text {
+        return body
+    }
+    return "missing"
+}
+
+// A writing tool: `fs_write` is a catalog sink, so the descriptor is marked
+// destructive without anyone writing that down here.
+#[agent_tool("Writes a note")]
+public async func persist(run: Run, args: PathArgs) returns bool {
+    let written = fs.fs_write(args.path, "served over MCP")
+    if let Result::Ok(ok) = written {
+        return ok
+    }
+    return false
+}
+
+func spec(allow: string) returns string {
+    return "{\"goal\":\"example-mcp-service-surface\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[" +
+        allow +
+        "],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":31,\"journal\":\"\"}"
+}
+
+func request(id: int, method: string, params: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":" +
+        convert.int_to_string(id) +
+        ",\"method\":\"" +
+        method +
+        "\",\"params\":" +
+        params +
+        "}"
+}
+
+func call_request(id: int, name: string, arguments: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":" +
+        convert.int_to_string(id) +
+        ",\"method\":\"tools/call\",\"params\":{\"name\":\"" +
+        name +
+        "\",\"arguments\":" +
+        arguments +
+        "}}"
+}
+
+// The protocol surface, request by request.
+func served_surface() returns int {
+    let started = agent_start(spec("\"spectra.std.fs\""))
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let initialized = mcp_handle(run, request(1, "initialize", "{}"))
+        if let Result::Err(problem) = initialized {
+            println("initialize failed: " + error.message(problem))
+            return 2
+        }
+        if let Result::Ok(document) = initialized {
+            println("initialize -> " + document)
+            if str.contains(document, "\"name\":\"spectra-agent\"") == false {
+                return 3
+            }
+            if str.contains(document, "\"tools\"") == false {
+                return 4
+            }
+        }
+
+        // A notification has no response: the transport answers 202.
+        let notified = mcp_handle(run, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}")
+        if let Result::Ok(document) = notified {
+            if document != "" {
+                println("notify     -> " + document)
+                return 5
+            }
+            println("notify     -> (notification: no response document)")
+        } else {
+            return 6
+        }
+
+        let pinged = mcp_handle(run, request(2, "ping", "{}"))
+        if let Result::Ok(document) = pinged {
+            if str.contains(document, "\"result\":{}") == false {
+                return 7
+            }
+        } else {
+            return 8
+        }
+
+        // The advertised descriptors: derived names, schemas and annotations.
+        let listed = mcp_handle(run, request(3, "tools/list", "{}"))
+        if let Result::Ok(document) = listed {
+            println("tools/list -> " + document)
+            if str.contains(document, "\"name\":\"lookup\"") == false {
+                return 9
+            }
+            if str.contains(document, "\"name\":\"persist\"") == false {
+                return 10
+            }
+            // Both derive an effect, so neither is read-only; only the writer
+            // is destructive, because only its effect is a catalog sink.
+            if str.contains(document, "\"readOnlyHint\":false") == false {
+                return 11
+            }
+            if str.contains(document, "\"destructiveHint\":true") == false {
+                return 12
+            }
+            // The input schema is the one the compiler derived from the record.
+            if str.contains(document, "\"path\":{\"type\":\"string\"}") == false {
+                return 13
+            }
+        } else {
+            return 14
+        }
+
+        // A governed call that succeeds: the wrapper's JSON result as text.
+        let written = mcp_handle(run, call_request(4, "persist", "{\"path\":\"" + NOTE + "\"}"))
+        if let Result::Ok(document) = written {
+            println("call ok    -> " + document)
+            if str.contains(document, "\"isError\":false") == false {
+                return 15
+            }
+            if str.contains(document, "\"text\":\"true\"") == false {
+                return 16
+            }
+        } else {
+            return 17
+        }
+
+        // An unknown tool is a tool-level failure, not a protocol failure.
+        let missing = mcp_handle(run, call_request(5, "no_such_tool", "{}"))
+        if let Result::Ok(document) = missing {
+            if str.contains(document, "\"isError\":true") == false {
+                return 18
+            }
+            if str.contains(document, "unknown_tool") == false {
+                return 19
+            }
+        } else {
+            return 20
+        }
+
+        // Arguments that do not decode against the derived schema are the
+        // same shape: the tool failed, the protocol did not.
+        let wrong_type = mcp_handle(run, call_request(6, "lookup", "{\"path\":7}"))
+        if let Result::Ok(document) = wrong_type {
+            if str.contains(document, "\"isError\":true") == false {
+                return 21
+            }
+        } else {
+            return 22
+        }
+
+        // A method this project does not serve.
+        let unserved = mcp_handle(run, request(7, "resources/list", "{}"))
+        if let Result::Ok(document) = unserved {
+            if str.contains(document, "\"code\":-32601") == false {
+                return 23
+            }
+        } else {
+            return 24
+        }
+
+        // A document that is not a JSON-RPC object is a typed failure.
+        let malformed = mcp_handle(run, "not a json-rpc document")
+        if let Result::Err(problem) = malformed {
+            println("malformed  -> " + error.message(problem))
+            if str.contains(error.message(problem), "mcp_error") == false {
+                return 25
+            }
+        } else {
+            return 26
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report     -> " + report)
+            // Two dispatches reached a tool: the write, and the call whose
+            // arguments failed to decode inside the wrapper. An unknown tool
+            // name is refused before the dispatch, so it is never charged.
+            if str.contains(report, "\"tool_calls\":2") == false {
+                return 27
+            }
+        } else {
+            return 28
+        }
+    }
+    return 0
+}
+
+// The same request under a run whose grant authorizes nothing: the refusal is
+// run-level, so it is a JSON-RPC error naming the ungranted effect.
+func refused_dispatch() returns int {
+    let started = agent_start(spec(""))
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let refused = mcp_handle(run, call_request(1, "persist", "{\"path\":\"" + NOTE + "\"}"))
+        if let Result::Ok(document) = refused {
+            println("refused    -> " + document)
+            if str.contains(document, "\"code\":-32001") == false {
+                return 2
+            }
+            if str.contains(document, "does not authorize") == false {
+                return 3
+            }
+        } else {
+            return 4
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            // The refused call never reached the tool, so nothing was charged.
+            if str.contains(report, "\"tool_calls\":0") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    let prepared = fs.create_dir_all(WORK_DIR)
+    if let Result::Err(problem) = prepared {
+        println("work dir failed: " + error.message(problem))
+        return 30
+    }
+    let served = served_surface()
+    if served != 0 {
+        return served
+    }
+    let refused = refused_dispatch()
+    if refused != 0 {
+        return 40 + refused
+    }
+    return 0
+}

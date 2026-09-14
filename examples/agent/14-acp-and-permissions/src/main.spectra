@@ -1,0 +1,262 @@
+module main
+
+// Example 14 — the ACP surface and the permission bridge.
+//
+// An ACP client (an editor, an IDE agent host) drives this program over
+// JSON-RPC: `acp_handle` answers one request at a time, and `acp_permission`
+// is the only path by which the *client* — not the host — authorizes an
+// action the agent wants to take.
+//
+// What the example shows:
+//
+//   1. `initialize` advertises exactly what the adapter implements: no session
+//      loading, no image/audio prompt parts, no embedded context, no MCP over
+//      HTTP or SSE — and `session/request_permission` is listed because the
+//      adapter *sends* it;
+//   2. `session/new` binds the session to the run (`sessionId` is the run id),
+//      and `session/prompt` drives one governed model turn through the same
+//      loop `act` uses, answering with a stop reason and the agent's text;
+//   3. `session/cancel` is a notification, so it answers with the empty
+//      document; an unserved method answers `-32601` naming the method;
+//   4. `acp_permission(run, action)` with no client attached is the documented
+//      default-deny: `false`, journaled through the approval primitive with an
+//      attribution that names the reason. The guarded action is therefore
+//      skipped — a permission bridge that fails open would be worse than no
+//      bridge at all;
+//   5. `approve(run, action)` is the *other* bridge (the embedding host's
+//      approver, not the ACP client). It also answers `false` here, and the
+//      two decisions are distinguishable in the journal by their attribution,
+//      which is the point: an operator reading the journal can tell which
+//      counterparty decided.
+//
+// Everything runs in-process against the deterministic mock provider: no
+// credentials, no sockets.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const JOURNAL_DIR = ".spectra/example-14-journal"
+const RUN_ID = "example-14"
+
+// The action the guard protects. Naming the host call it stands for makes the
+// journal record and the demo's own output directly comparable.
+const GUARDED = "spectra.std.fs.fs_write"
+
+func spec() returns string {
+    return "{\"goal\":\"example-acp-and-permissions\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"spectra.std.fs\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":29,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        RUN_ID +
+        "\"}"
+}
+
+func journal_path() returns string {
+    return JOURNAL_DIR + "/" + RUN_ID + ".jsonl"
+}
+
+func clean(path: string) returns int {
+    let present = fs.fs_exists(path)
+    if let Result::Ok(exists) = present {
+        if exists == true {
+            let removed = fs.fs_remove(path)
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+func initialize_request() returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":1,\"clientCapabilities\":{}}}"
+}
+
+func new_session_request() returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{\"cwd\":\".\",\"mcpServers\":[]}}"
+}
+
+func prompt_request(text: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/prompt\",\"params\":{\"sessionId\":\"" +
+        RUN_ID +
+        "\",\"prompt\":[{\"type\":\"text\",\"text\":\"" +
+        text +
+        "\"}]}}"
+}
+
+async func handle_case() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        // ── the advertised capabilities ─────────────────────────────────────
+        let initialized = acp_handle(run, initialize_request())
+        if let Result::Err(problem) = initialized {
+            println("initialize failed: " + error.message(problem))
+            return 2
+        }
+        if let Result::Ok(document) = initialized {
+            println("initialize -> " + document)
+            if str.contains(document, "\"loadSession\":false") == false {
+                return 3
+            }
+            if str.contains(document, "\"image\":false") == false {
+                return 4
+            }
+            if str.contains(document, "\"http\":false") == false {
+                return 5
+            }
+            // The adapter sends one client request, so it says so.
+            if str.contains(document, "\"permissionRequests\":true") == false {
+                return 6
+            }
+            if str.contains(document, "session/request_permission") == false {
+                return 7
+            }
+        }
+
+        // ── the session is the run ──────────────────────────────────────────
+        let created = acp_handle(run, new_session_request())
+        if let Result::Ok(document) = created {
+            println("session    -> " + document)
+            if str.contains(document, "\"sessionId\":\"" + RUN_ID + "\"") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+
+        // ── one governed turn through the ACP shape ─────────────────────────
+        let prompted = acp_handle(run, prompt_request("spectra:final=the acp turn ran"))
+        if let Result::Ok(document) = prompted {
+            println("prompt     -> " + document)
+            if str.contains(document, "\"stopReason\":\"end_turn\"") == false {
+                return 10
+            }
+            if str.contains(document, "\"agentText\":\"the acp turn ran\"") == false {
+                return 11
+            }
+        } else {
+            return 12
+        }
+
+        // ── a notification answers with nothing ─────────────────────────────
+        let cancelled = acp_handle(run, "{\"jsonrpc\":\"2.0\",\"method\":\"session/cancel\"}")
+        if let Result::Ok(document) = cancelled {
+            if document != "" {
+                println("cancel     -> " + document)
+                return 13
+            }
+            println("cancel     -> (notification: no response document)")
+        } else {
+            return 14
+        }
+
+        // ── a method this adapter does not serve ────────────────────────────
+        let unserved = acp_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"session/load\"}")
+        if let Result::Ok(document) = unserved {
+            println("unserved   -> " + document)
+            if str.contains(document, "\"code\":-32601") == false {
+                return 15
+            }
+            if str.contains(document, "session/load") == false {
+                return 16
+            }
+        } else {
+            return 17
+        }
+
+        // ── the permission bridge ───────────────────────────────────────────
+        // No ACP client is attached to this process, so the bridge denies --
+        // and the guarded action below is skipped because of it.
+        let decided = acp_permission(run, GUARDED)
+        if let Result::Err(problem) = decided {
+            println("permission -> " + error.message(problem))
+            return 18
+        }
+        if let Result::Ok(allowed) = decided {
+            println("permission -> allowed=" + convert.bool_to_string(allowed))
+            if allowed == true {
+                println("the bridge granted an action with no client attached")
+                return 19
+            }
+        }
+
+        // The other bridge: the embedding host's approver. Also closed here,
+        // and journaled separately.
+        let asked = approve(run, GUARDED)
+        if let Result::Ok(allowed) = asked {
+            if allowed == true {
+                return 20
+            }
+        } else {
+            return 21
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report     -> " + report)
+            // Two model turns ran (the prompt and nothing else): the handle
+            // calls are not turns.
+            if str.contains(report, "\"steps\":1") == false {
+                return 22
+            }
+        } else {
+            return 23
+        }
+    }
+    return 0
+}
+
+// The journal is where the two decisions become auditable: both are
+// `approval` steps with `output:"false"`, and their attributions name the
+// counterparty that answered.
+func journal_case() returns int {
+    let text = fs.fs_read(journal_path())
+    if let Result::Err(problem) = text {
+        println("journal failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(body) = text {
+        let approvals = str.count_occurrences(body, "\"kind\":\"approval\"")
+        println("journal    -> " + convert.int_to_string(approvals) + " approval steps")
+        if approvals != 2 {
+            return 2
+        }
+        if str.contains(body, "\"output\":\"false\"") == false {
+            return 3
+        }
+        // The ACP bridge names its own reason; the approver names its own.
+        if str.contains(body, "no ACP client attached") == false {
+            return 4
+        }
+        if str.contains(body, "no approver attached") == false {
+            return 5
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    if clean(journal_path()) != 0 {
+        return 30
+    }
+    let handled = block_on(handle_case())
+    if handled != 0 {
+        return handled
+    }
+    let journaled = journal_case()
+    if journaled != 0 {
+        return 40 + journaled
+    }
+    return 0
+}

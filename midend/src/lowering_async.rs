@@ -7,6 +7,67 @@ const POLL_FAILED: i64 = 2;
 const POLL_CANCELLED: i64 = 3;
 
 impl ASTLowering {
+    /// Frame-slot types for values a call produced.
+    ///
+    /// `collect_value_types` reads only what the body's own instructions say,
+    /// and an IR `Call`/`HostCall` carries no result type — so a frame slot for
+    /// a call's result defaulted to `Int`. Inside a coroutine that slot *is* the
+    /// value's storage, so a float-returning call read across a suspension came
+    /// back as an integer and the comparison failed Cranelift verification
+    /// (`fcmp.f64 ge` against an `i64` operand). The callee's registered return
+    /// type and the host call's declared result type supply the missing type.
+    ///
+    /// Only scalar results are hinted: aggregate and pointer results are `i64`
+    /// words whose slots already carry them correctly, and re-typing them would
+    /// move representations this fix has no reason to touch.
+    fn call_result_type_hints(
+        &self,
+        body: &IRFunction,
+    ) -> std::collections::HashMap<usize, IRType> {
+        fn scalar(ty: &IRType) -> bool {
+            matches!(
+                ty,
+                IRType::Int
+                    | IRType::ExactInt { .. }
+                    | IRType::Float
+                    | IRType::ExactFloat { .. }
+                    | IRType::Bool
+                    | IRType::String
+                    | IRType::Char
+            )
+        }
+
+        let mut hints = std::collections::HashMap::new();
+        for block in &body.blocks {
+            for instruction in &block.instructions {
+                match &instruction.kind {
+                    InstructionKind::Call {
+                        result: Some(result),
+                        function,
+                        ..
+                    } => {
+                        if let Some(ty) = self.function_return_types.get(function) {
+                            if scalar(ty) {
+                                hints.insert(result.id, ty.clone());
+                            }
+                        }
+                    }
+                    InstructionKind::HostCall {
+                        result: Some(result),
+                        result_type: Some(ty),
+                        ..
+                    } => {
+                        if scalar(ty) {
+                            hints.insert(result.id, ty.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        hints
+    }
+
     /// The pointer a coroutine hands to its task result.
     ///
     /// Every ordinary function's root return pointer is escaped by the backend
@@ -405,6 +466,7 @@ impl ASTLowering {
         for (slot, ty) in &local_slot_types {
             type_hints.insert(*slot, ty.clone());
         }
+        type_hints.extend(self.call_result_type_hints(&body));
         for (index, parameter) in source_params.iter().enumerate() {
             type_hints.insert(index + 3, parameter.ty.clone());
         }
@@ -694,6 +756,31 @@ impl ASTLowering {
             .chain((0..source_params.len()).map(|id| id + 3))
             .collect();
         // Phase 1 (immutable): compute the reload set per block.
+        //
+        // A value produced by a `FrameLoad`/`StateLoad` has no slot of its own:
+        // the store pass below intentionally skips those results, because the
+        // value already lives in the slot it was read from. Reloading such a
+        // value from its *own* id read a slot nothing had ever written, and the
+        // local it stood for came back as garbage (`-1`) on the far side of the
+        // suspension -- `count = count + zero(await one(1))` returned `-1`
+        // instead of `0`. Reload it from its source instead.
+        let reload_source: std::collections::HashMap<usize, ReloadSource> = {
+            let mut map = std::collections::HashMap::new();
+            for block in body.blocks.iter() {
+                for instruction in block.instructions.iter() {
+                    match &instruction.kind {
+                        InstructionKind::FrameLoad { result, slot, .. } => {
+                            map.insert(result.id, ReloadSource::Frame(*slot));
+                        }
+                        InstructionKind::StateLoad { result, .. } => {
+                            map.insert(result.id, ReloadSource::State);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            map
+        };
         let mut reload_plan: Vec<(usize, Vec<usize>)> = Vec::new();
         for block in body.blocks.iter() {
             let mut defs = std::collections::BTreeSet::new();
@@ -733,14 +820,28 @@ impl ASTLowering {
             let mut loads = Vec::with_capacity(need.len());
             for orig_id in need {
                 let fresh = body.next_value();
-                loads.push(Instruction {
-                    id: loads.len(),
-                    kind: InstructionKind::FrameLoad {
+                let ty = type_hints.get(&orig_id).cloned().unwrap_or(IRType::Int);
+                let kind = match reload_source.get(&orig_id) {
+                    Some(ReloadSource::Frame(source)) => InstructionKind::FrameLoad {
+                        result: fresh,
+                        frame,
+                        slot: *source,
+                        ty,
+                    },
+                    Some(ReloadSource::State) => InstructionKind::StateLoad {
+                        result: fresh,
+                        frame,
+                    },
+                    None => InstructionKind::FrameLoad {
                         result: fresh,
                         frame,
                         slot: orig_id,
-                        ty: type_hints.get(&orig_id).cloned().unwrap_or(IRType::Int),
+                        ty,
                     },
+                };
+                loads.push(Instruction {
+                    id: loads.len(),
+                    kind,
                     source_span: None,
                 });
                 remap.insert(orig_id, fresh);
@@ -908,6 +1009,7 @@ impl ASTLowering {
         for (slot, ty) in &local_slot_types {
             final_hints.insert(*slot, ty.clone());
         }
+        final_hints.extend(self.call_result_type_hints(&body));
         let slots: Vec<AsyncFrameSlot> = (0..body.next_value_id)
             .map(|id| {
                 let (name, ty) = match id {
@@ -1329,6 +1431,20 @@ fn remap_terminator_operands(
         Terminator::Switch { value, .. } => remap_value(value, map),
         _ => {}
     }
+}
+
+/// Where a value that has no frame slot of its own can be re-read from.
+///
+/// The uniform suspension pass reloads every operand a block uses but does not
+/// define, normally from the slot named by the value's own id. Values produced
+/// by a frame or state load are the exception: their bytes already live in the
+/// slot they were read from, so that is where a reload has to come from.
+#[derive(Debug, Clone, Copy)]
+enum ReloadSource {
+    /// The value is the result of `FrameLoad` from this slot.
+    Frame(usize),
+    /// The value is the result of `StateLoad`; re-read the coroutine state.
+    State,
 }
 
 /// Replace scalar promoted-local allocas with durable coroutine frame slots.

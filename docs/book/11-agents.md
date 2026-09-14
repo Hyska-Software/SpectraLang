@@ -139,10 +139,14 @@ it. The compensation fixture is
 
 ## Runnable Examples
 
-All seven examples run against the deterministic mock provider: no network and
-no credentials. The mock is scripted through the prompt
+Every example runs against the deterministic mock provider: no network and no
+credentials. The mock is scripted through the prompt
 (`spectra:tool=<name> {json}`, `spectra:final=<text>`, `spectra:json`,
 `spectra:sleep-ms=N`), which is what makes the tool loops reproducible in CI.
+The first seven are described below; `08`–`15` cover memory across runs,
+compensations, list payloads, the tool-call ceiling, structured output, the
+embedding primitive, the ACP surface with its permission bridge, and the MCP
+surface a project serves.
 
 ### 01 — Tool and Run
 
@@ -336,7 +340,8 @@ journaled task instead of delegating it twice.
 
 The contracts the examples demonstrate are pinned by fixtures under
 `tests/validation/`, each of which asserts its invariant and exits non-zero on
-the first mismatch (the certification gate runs all four in JIT and AOT):
+the first mismatch (the certification gate runs every one of them in JIT and
+AOT):
 
 - `384_agent_stream_lifecycle.spectra` — the chunk handle lifecycle:
   reassembly, sticky end-of-stream, idempotent `stream_close`, a typed error
@@ -393,7 +398,40 @@ the first mismatch (the certification gate runs all four in JIT and AOT):
   poll that used to be reported as a failure
   (`docs/architecture/agent-block-on-flake-known-failure.md`).
 
-The stress harness (`scripts/stress_agent_block_on.py`) repeats that fixture in
+- `398_agent_dead_handle_matrix.spectra` — the dead-run guard, entry point by
+  entry point: after `agent_end` every function that takes a `Run` answers the
+  typed `unknown_handle` refusal instead of executing against a torn-down run,
+  and closing twice is the same refusal rather than a second report. The three
+  protocol adapters were the exception when this fixture was written — they
+  kept serving a released run through the direct entry point while their socket
+  front-end answered `410 Gone`; the guard now lives in the adapters themselves.
+- `399_agent_spec_rejection.spectra` — the spec validator, field by field:
+  non-JSON, non-object, unknown key, missing and empty required fields, wrong
+  types (`allow`, `journal`, `journal_payloads`, `run_id`, ceilings), a negative
+  ceiling, a bad policy word and a bad seed each answer `invalid_spec` naming
+  the field, and a minimal spec still opens a usable run. (A *literal* spec is
+  decoded at compile time, so the fixture builds each one at runtime.)
+- `400_agent_stream_teardown.spectra` — where the stream's lifetime ends: a
+  stream opened before `agent_end` still drains its buffered chunks in order,
+  the end marker is idempotent, `stream_close` still reports closed, and the
+  run handle stays its own refusal — the two handle tables are not each other.
+- `401_agent_provider_routing.spectra` — which provider a spec selects: the
+  mock by endpoint *or* model prefix (the prefix outranking a non-mock
+  endpoint), the unconfigured local bridge, the empty-endpoint fallback, and
+  the refusal of `https://` on the synchronous path.
+- `402_agent_script_directives.spectra` — the grammar every `act` fixture rides
+  on: a tool directive with an **empty remainder means `{}`** (the tool runs, so
+  the argument document decoded), a script that ends on a tool directive stops
+  with the empty answer instead of repeating the call, and each call consumes
+  its own script from index 0.
+- `403_async_scalar_slots_and_float_payloads.spectra` — the code-generation
+  regressions this sweep found and fixed: a float payload in a generic enum
+  (`Result<float, E>`, `Option<float>`, a declared enum), a float-returning
+  call whose value is read across a suspension, and an assignment whose own
+  value crosses one (`count = count + zero(await one(1))` used to evaluate to
+  `-1`). See `docs/architecture/agent-async-scalar-slot-fixes.md`.
+
+The stress harness (`scripts/stress_agent_block_on.py`) repeats fixture 397 in
 many short-lived processes for triage; it is not part of the gate.
 
 ## Governance
@@ -505,6 +543,19 @@ claims are covered by deterministic tests, not by evals.
   outputs, not recorded payloads.
 - Entry points stay synchronous; async work is driven with `block_on`.
 - MCP is HTTP-only: stdio needs subprocess support the language does not have.
+- `ChunkStream` handles are not part of the run's handle table: `agent_end`
+  releases the run, not the streams it opened. A stream keeps the chunks the run
+  already produced until it is drained or closed, so reading one after the run
+  ended is legitimate; the boundary is pinned by fixture 400.
+- A tool result enters the transcript as untrusted content (origin
+  `tool:<name>`), and the taint gate is consulted at the dispatch seam, so a
+  scripted loop that dispatches a *sink* after a tool has run needs an approver
+  or `untrusted: "allow"`. Fixture 402 records this as a harness fact; the gate
+  itself is fixture 377.
+- The mock's scripted mode keeps an arm that replays a trailing
+  `spectra:final=`, but no language-level caller can reach it: the loop ends at
+  the first final and every call consumes its script from index 0. It is
+  documented rather than pinned.
 
 ## Validation
 

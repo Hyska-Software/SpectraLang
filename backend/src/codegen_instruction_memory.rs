@@ -1,4 +1,26 @@
 impl CodeGenerator {
+    /// The `i64` word a scalar occupies in the runtime's slot representation.
+    ///
+    /// The runtime ABI carries scalars as `i64` words: an `f64` by its bit
+    /// pattern, a narrower integer widened, a pointer (already `i64` in this
+    /// backend) unchanged. Any instruction that hands a *value* to a
+    /// `I64_I64` runtime import needs this, not the raw value: Cranelift's
+    /// verifier rejects a call whose argument type does not match the declared
+    /// signature, and the failure surfaces only for the non-`i64` scalar
+    /// shapes (`Result<float, E>`, `Option<float>`).
+    pub(crate) fn scalar_word(builder: &mut FunctionBuilder, value: Value) -> Value {
+        match builder.func.dfg.value_type(value) {
+            types::I64 => value,
+            types::F64 => builder.ins().bitcast(types::I64, MemFlags::new(), value),
+            types::F32 => {
+                let promoted = builder.ins().fpromote(types::F64, value);
+                builder.ins().bitcast(types::I64, MemFlags::new(), promoted)
+            }
+            types::I8 | types::I16 | types::I32 => builder.ins().uextend(types::I64, value),
+            _ => value,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn generate_memory_instruction<M: Module>(
         module: &mut M,
@@ -38,14 +60,24 @@ impl CodeGenerator {
 
             // Escape a manual allocation to the base frame so it survives
             // frame_exit (used by dyn Trait vtables, R-210).
+            //
+            // `spectra_rt_manual_escape` is `(ptr: i64, frame: i64)` and
+            // treats a value that is not a tracked allocation as a no-op, so a
+            // scalar payload escapes by its word. An escaped f64 reaches the
+            // runtime as its bit pattern; passing the raw f64 instead is a
+            // Cranelift verifier error ("arg 0 has type f64, expected i64"),
+            // which is what an enum payload of a float type hit — the shape
+            // `fn f() -> Result<float, E> { Result::Ok(1.5) }` produced before
+            // this coercion existed.
             InstructionKind::EscapeManualAlloc { ptr } => {
                 let ptr_val = get_value(ptr)?;
+                let word = Self::scalar_word(builder, ptr_val);
                 let escape_ref = module.declare_func_in_func(
                     hostcall.runtime_func(RuntimeImport::ManualEscape),
                     builder.func,
                 );
                 let frame_val = builder.use_var(frame_var);
-                builder.ins().call(escape_ref, &[ptr_val, frame_val]);
+                builder.ins().call(escape_ref, &[word, frame_val]);
             }
 
             // Memory operations

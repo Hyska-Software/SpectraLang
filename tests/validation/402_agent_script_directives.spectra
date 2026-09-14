@@ -1,0 +1,242 @@
+module agent_script_directives
+
+// The scripted-directive grammar every `act` fixture rides on.
+//
+// The deterministic mock turns directive lines in the first user message into
+// a model/tool loop with no network:
+//
+//   * `spectra:tool=<name> <json>` answers the turn with one tool call and no
+//     text. The remainder after the name is the raw argument document, and an
+//     **empty remainder means `{}`** -- the rule this fixture exists for, since
+//     every other fixture passes explicit JSON;
+//   * `spectra:final=<text>` ends the loop with that text and no tool calls;
+//   * the directive answered is the one at index `N`, where `N` is the number
+//     of completed tool results in the request, so a script is consumed one
+//     turn at a time *within one call*: the index is read from the transcript
+//     of the call in progress, so each `act` starts its script at index 0;
+//   * past the end of the script the loop **stops** when the last directive was
+//     a tool call -- the answer is the empty string, not a repeated call. (The
+//     mock also replays a trailing `spectra:final=`, but no caller can reach
+//     that arm: the loop ends at the first final, and each call starts its
+//     script over, so the transcript never outruns a script that ends on one.
+//     The arm is documented, not pinned, because it is not observable from the
+//     language.)
+//
+// Two observations make the grammar checkable without reading the transcript:
+// the tool's own effect (it writes a marker file, and a wrapper that failed to
+// decode its arguments would never reach that write) and the report's
+// `tool_calls`, which only counts dispatches that happened.
+//
+// The spec sets `untrusted: "allow"` on purpose. A tool result enters the
+// transcript as untrusted content (origin `tool:<name>`), so once this fixture's
+// writing tool has run, the *next* dispatch of a sink is what the taint gate
+// guards: with the default `approve` policy and no approver attached, the
+// second call would be refused before it ran and the scripted loop would end
+// with a capability denial instead of a result. 377 pins that gate; here it is
+// a harness fact the directive grammar has to be exercised around.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const WORK_DIR = "target/agent-fixture-402"
+const MARKER = WORK_DIR + "/marker.txt"
+
+#[derive(Serialize, Deserialize)]
+public record Empty {
+}
+
+// Writes the marker and reports its own argument document, so a call that
+// decoded `{}` is distinguishable from one that never ran.
+#[agent_tool("Writes the marker file")]
+public async func mark(run: Run, args: Empty) returns string {
+    let _ = args
+    let written = fs.fs_write(MARKER, "ran")
+    if let Result::Ok(ok) = written {
+        if ok == true {
+            return "marked"
+        }
+    }
+    return "unwritable"
+}
+
+func spec() returns string {
+    return "{\"goal\":\"script-directives\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"spectra.std.fs\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"allow\",\"seed\":13,\"journal\":\"\"}"
+}
+
+func clean() returns int {
+    let present = fs.fs_exists(MARKER)
+    if let Result::Ok(exists) = present {
+        if exists == true {
+            let removed = fs.fs_remove(MARKER)
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+func marker_present() returns int {
+    let present = fs.fs_exists(MARKER)
+    if let Result::Ok(exists) = present {
+        if exists == true {
+            return 1
+        }
+    }
+    return 0
+}
+
+// A directive with an empty remainder still dispatches, with `{}` arguments.
+async func a_bare_directive_means_empty_object() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let script = "spectra:tool=mark\nspectra:final=marked"
+        let answer = await act(run, script)
+        if let Result::Err(problem) = answer {
+            println("act failed: " + error.message(problem))
+            return 2
+        }
+        if let Result::Ok(text) = answer {
+            println("act        -> " + text)
+            if text != "marked" {
+                return 3
+            }
+        }
+
+        // The tool body ran, so its `{}` argument document decoded.
+        if marker_present() == 0 {
+            println("the tool never ran: an empty remainder must mean {}")
+            return 4
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report     -> " + report)
+            if str.contains(report, "\"tool_calls\":1") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+    }
+    return 0
+}
+
+// A script that ends on a tool directive stops instead of replaying it, and
+// the next call consumes its own script from the start.
+async func the_script_does_not_restart() returns int {
+    if clean() != 0 {
+        return 1
+    }
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        // One tool directive and nothing else: the turn after the dispatch is
+        // past the script, so the loop ends with the empty answer.
+        let stops = await act(run, "spectra:tool=mark")
+        if let Result::Ok(text) = stops {
+            println("stopped    -> \"" + text + "\"")
+            if text != "" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        // A second call consumes *its own* script from index 0: it dispatches
+        // the tool once more and then answers with the scripted final. The
+        // index is read from the call's own transcript, so nothing about the
+        // previous call carries over.
+        let second = await act(run, "spectra:tool=mark\nspectra:final=second script")
+        if let Result::Ok(text) = second {
+            println("second     -> " + text)
+            if text != "second script" {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report     -> " + report)
+            // Two dispatches across the two calls: the stopped one and the
+            // second call's own tool turn.
+            if str.contains(report, "\"tool_calls\":2") == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+    } else {
+        return 8
+    }
+    return 0
+}
+
+// Two directives are consumed in order, one turn each.
+async func directives_are_consumed_in_order() returns int {
+    if clean() != 0 {
+        return 1
+    }
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let script = "spectra:tool=mark\nspectra:tool=mark\nspectra:final=twice"
+        let answer = await act(run, script)
+        if let Result::Ok(text) = answer {
+            println("ordered    -> " + text)
+            if text != "twice" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report     -> " + report)
+            if str.contains(report, "\"tool_calls\":2") == false {
+                return 4
+            }
+            if str.contains(report, "\"steps\":3") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+    } else {
+        return 7
+    }
+    return 0
+}
+
+public func main() returns int {
+    let prepared = fs.create_dir_all(WORK_DIR)
+    if let Result::Err(problem) = prepared {
+        println("work dir failed: " + error.message(problem))
+        return 30
+    }
+    let first = block_on(a_bare_directive_means_empty_object())
+    if first != 0 {
+        return first
+    }
+    let second = block_on(the_script_does_not_restart())
+    if second != 0 {
+        return 10 + second
+    }
+    let third = block_on(directives_are_consumed_in_order())
+    if third != 0 {
+        return 20 + third
+    }
+    return 0
+}

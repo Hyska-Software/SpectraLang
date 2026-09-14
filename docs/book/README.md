@@ -73,12 +73,20 @@ deterministic mock provider (no credentials):
 - `examples/agent/05-streaming-and-schema`
 - `examples/agent/06-capabilities-and-taint`
 - `examples/agent/07-protocol-surface`
+- `examples/agent/08-memory-and-recall`
+- `examples/agent/09-compensation-saga`
+- `examples/agent/10-list-payloads`
+- `examples/agent/11-tool-call-budget`
+- `examples/agent/12-structured-output`
+- `examples/agent/13-embeddings-and-ranking`
+- `examples/agent/14-acp-and-permissions`
+- `examples/agent/15-mcp-service-surface`
 
 The language-surface contracts those examples demonstrate are pinned by
-`tests/validation/384_agent_stream_lifecycle.spectra`,
-`385_agent_capabilities_in_practice.spectra`,
-`386_agent_journal_artifact.spectra`, `387_agent_introspection.spectra` and
-`388_async_aggregate_result_lifetime.spectra`.
+`tests/validation/384_agent_stream_lifecycle.spectra` through
+`403_async_scalar_slots_and_float_payloads.spectra` (one fixture per contract;
+see chapter 11 for the list, and the certification gate
+`scripts/validate_r3221_agent_conformance.py` for the JIT/AOT runner).
 
 Run them in JIT and through AOT:
 

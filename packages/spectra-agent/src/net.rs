@@ -20,7 +20,11 @@
 //!   receives a response instead of observing a reset connection (Windows
 //!   resets a socket that is closed with unread bytes);
 //! * a handler warning `stop` ends the loop after its response is written,
-//!   which is how a listener whose serving run has ended goes away.
+//!   which is how a listener whose serving run has ended goes away;
+//! * a connection that fails mid-read (a stalled peer hitting the read
+//!   timeout, a reset, a half-open socket) ends **that connection**, never the
+//!   loop, so one bad peer cannot silently take the endpoint down while the
+//!   process still advertises its authority.
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -129,6 +133,14 @@ fn accept_loop(listener: TcpListener, handler: Handler) {
 
         // The request is read before anything is decided, so the peer always
         // receives a response instead of seeing a reset connection.
+        //
+        // A connection that failed mid-read (the read timeout above, a reset,
+        // a half-open socket) is that connection's problem, never the
+        // listener's: one stalled or abortive peer must not take the endpoint
+        // down for everyone else. The listener stops for exactly two reasons —
+        // a handler that warns `stop` (the 410 a run-scoped adapter answers
+        // once its run has ended) or the process exiting — which is the
+        // lifecycle the adapters document.
         let (response, stop) = match read_request(&mut stream) {
             Ok(Some(request)) => {
                 let response = handler(&request);
@@ -138,11 +150,18 @@ fn accept_loop(listener: TcpListener, handler: Handler) {
                 render(&Response::text(400, "Bad Request", "malformed HTTP request")),
                 false,
             ),
-            Err(_) => break,
+            Err(_) => (
+                render(&Response::text(
+                    408,
+                    "Request Timeout",
+                    "the connection did not deliver a complete request",
+                )),
+                false,
+            ),
         };
-        if stream.write_all(response.as_bytes()).is_err() {
-            break;
-        }
+        // A peer that vanished while the response was written is gone; the
+        // next connection is unaffected.
+        let _ = stream.write_all(response.as_bytes());
         let _ = stream.flush();
         if stop {
             break;

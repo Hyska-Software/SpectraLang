@@ -57,6 +57,9 @@ rede), em JIT (`spectralang run`) e AOT (`compile --debug-info=none --emit-exe`)
 | `10-list-payloads` | `List` escalar como argumento, como retorno e como campo derivado (`json_schema`, encode e decode) |
 | `11-tool-call-budget` | teto de `max_tool_calls` no `act`: chamada recusada sem executar, run cancelada com erro tipado e report nomeando o teto |
 | `12-structured-output` | `ask_json` com o `json_schema` derivado, falha tipada de validação e o reparo alimentado de volta ao modelo |
+| `13-embeddings-and-ranking` | `embed` como primitiva de ranking (similaridade de cosseno calculada no programa), `remember`/`recall` e o embedding reconstruído pelo journal sem nova ida ao provider |
+| `14-acp-and-permissions` | a superfície ACP (`initialize`, `session/new`, `session/prompt`, `session/cancel`, método não servido) e a ponte de permissão `acp_permission` negando por padrão, com as duas decisões distintas no journal (`sem cliente ACP` vs `sem approver`) |
+| `15-mcp-service-surface` | a superfície MCP servida (`mcp_handle`): `initialize`, notificação, `ping`, `tools/list` com as anotações derivadas, `tools/call` com sucesso, falha de tool (`isError`) e recusa de run (`-32001`), além do método não servido e do documento inválido |
 
 Os contratos que os exemplos demonstram ficam fixados nos fixtures
 `tests/validation/384_agent_stream_lifecycle.spectra`,
@@ -70,7 +73,18 @@ Os contratos que os exemplos demonstram ficam fixados nos fixtures
 `396_agent_stream_in_tool.spectra` e
 `397_agent_nested_dispatch_stress.spectra` — esta última repete o dispatch
 aninhado 50 vezes numa run, a forma em que um worker de tool em background e o
-chamador que espera compartilham a mesma árvore de tasks (rodados em JIT e AOT
-pelo gate de certificação R-3221).
+chamador que espera compartilham a mesma árvore de tasks.
+
+Os fixtures `398_agent_dead_handle_matrix.spectra` (todo entry point num
+`Run` já encerrado responde `unknown_handle`),
+`399_agent_spec_rejection.spectra` (a validação estrita do spec, campo a campo),
+`400_agent_stream_teardown.spectra` (o ciclo de vida do `ChunkStream` na
+fronteira de teardown da run), `401_agent_provider_routing.spectra` (qual
+provider cada spec seleciona e o que um provider não configurado responde),
+`402_agent_script_directives.spectra` (a gramática das diretivas do mock) e
+`403_async_scalar_slots_and_float_payloads.spectra` (as regressões de codegen
+`Result<float, _>`/slot escalar em corrotina/reload encadeado) fecham a matriz
+de cobertura da superfície. Todos rodam em JIT e AOT pelo gate de certificação
+R-3221.
 
 Ver `docs/book/11-agents.md`.

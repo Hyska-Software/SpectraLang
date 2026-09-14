@@ -253,13 +253,10 @@ pub(crate) fn settle_task(
 
 /// Charges one tool call against `max_tool_calls`.
 ///
-/// This is the crate API the governed tool dispatch (R-3222) calls before
-/// executing a tool. The call is denied — and the run cancelled — when the
-/// ceiling is reached, so with `max_tool_calls = 2` the third call fails.
-///
-/// Dead until the dispatch path lands (R-3222); the crate tests exercise it
-/// directly in the meantime.
-#[allow(dead_code)]
+/// This is the crate API the governed tool dispatch calls before executing a
+/// tool (R-3222), and the declared-compensation rollback path uses it too
+/// (R-3224). The call is denied — and the run cancelled — when the ceiling is
+/// reached, so with `max_tool_calls = 2` the third call fails.
 pub(crate) fn charge_tool_call(run_handle: i64) -> Result<(), AgentError> {
     run::with_run(run_handle, |state| {
         guard(state, None)?;

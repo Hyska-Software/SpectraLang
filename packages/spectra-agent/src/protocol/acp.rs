@@ -246,6 +246,11 @@ fn decision_from_answer(answer: &str) -> Result<Decision, AgentError> {
 /// notification has no response. A malformed document is a typed failure,
 /// which is what lets a caller wire this handler under any transport.
 pub(crate) fn handle(run_handle: i64, request: &str) -> Result<String, AgentError> {
+    // The session is the run, so a request against a run that has ended is
+    // refused like every other call on a dead handle: an adapter that kept
+    // answering `initialize` for a released run would tell a client the
+    // session is still there.
+    run::with_run(run_handle, |_| ())?;
     let value: Value = serde_json::from_str(request).map_err(|error| {
         AgentError::Acp(format!("the ACP request is not a JSON document: {error}"))
     })?;

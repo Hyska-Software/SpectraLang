@@ -1,0 +1,123 @@
+module agent_provider_routing
+
+// Which provider a spec selects, and what an unconfigured one says.
+//
+// `provider_for` is a precedence chain, and the precedence is user-visible:
+//
+//   1. `endpoint: "mock:"` *or* a `mock/` model prefix selects the
+//      deterministic mock -- a `mock/` model wins even when the endpoint says
+//      something else, so a spec cannot accidentally point a mock model at a
+//      real endpoint;
+//   2. `endpoint: "local:"` or a `local/` model prefix selects the local
+//      bridge. It is deliberately not configured in this build (the runtime
+//      does not export its ML generation entry to the agent crate), and it
+//      reports that as a typed `provider_not_configured` instead of pretending
+//      to generate;
+//   3. everything else is an OpenAI-compatible HTTP endpoint, and an empty
+//      endpoint is resolved from `SPECTRA_AGENT_ENDPOINT`/`OPENAI_BASE_URL` --
+//      with neither set, the provider is unconfigured and says so;
+//   4. an `https://` endpoint on the synchronous path is refused by name
+//      ("HTTPS is only available through the asynchronous TLS client bridge")
+//      rather than attempted insecurely.
+//
+// No network is involved for any of these: the unconfigured paths fail before
+// a connection is opened.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.string as str
+
+func spec(model: string, endpoint: string, seed: string) returns string {
+    return "{\"goal\":\"provider-routing\",\"model\":\"" +
+        model +
+        "\",\"endpoint\":\"" +
+        endpoint +
+        "\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":" +
+        seed +
+        ",\"journal\":\"\"}"
+}
+
+// Runs one turn and hands the *answer* to the caller, or a marker carrying the
+// error kind so an unexpected success cannot be mistaken for a pass.
+async func answer_of(spec_json: string) returns string {
+    let started = agent_start(spec_json)
+    if let Result::Err(problem) = started {
+        return "refused:" + error.message(problem)
+    }
+    if let Result::Ok(run) = started {
+        let answer = await ask(run, "hello")
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            return "end-failed:" + error.message(problem)
+        }
+        if let Result::Ok(text) = answer {
+            return text
+        }
+        if let Result::Err(problem) = answer {
+            return "failed:" + error.message(problem)
+        }
+    }
+    return "unreachable"
+}
+
+func expect(label: string, actual: string, expected: string) returns int {
+    if actual != expected {
+        println(label + " -> " + actual + " (expected " + expected + ")")
+        return 1
+    }
+    println(label + " -> " + actual)
+    return 0
+}
+
+func expect_contains(label: string, actual: string, needle: string) returns int {
+    if str.contains(actual, needle) == false {
+        println(label + " -> " + actual + " (expected to contain " + needle + ")")
+        return 1
+    }
+    println(label + " -> " + actual)
+    return 0
+}
+
+async func routing_is_written_down() returns int {
+    let seed = convert.int_to_string(7)
+
+    // 1. The mock, selected by endpoint and by model prefix. A model that is
+    //    not `mock/echo` still goes to the mock, and the mock names the model
+    //    it was asked for.
+    let by_endpoint = await answer_of(spec("mock/echo", "mock:", seed))
+    let endpoint_failure = expect("mock-endpoint ", by_endpoint, "mock echo: hello")
+    let by_prefix = await answer_of(spec("mock/echo", "", seed))
+    let prefix_failure = expect("mock-prefix   ", by_prefix, "mock echo: hello")
+    let other_model = await answer_of(spec("other/model", "mock:", seed))
+    let named_failure = expect("mock-named    ", other_model, "mock(other/model) echo: hello")
+
+    // A `mock/` model outranks a non-mock endpoint.
+    let precedence = await answer_of(spec("mock/echo", "https://provider.invalid", seed))
+    let precedence_failure = expect("mock-wins     ", precedence, "mock echo: hello")
+
+    // 2. The local bridge is selected and reports that it is not configured.
+    let local = await answer_of(spec("local/tiny", "local:", convert.int_to_string(-1)))
+    let local_failure = expect_contains("local         ", local, "provider_not_configured")
+
+    // 3. No endpoint and no environment fallback.
+    let unconfigured = await answer_of(spec("gpt-test", "", convert.int_to_string(-1)))
+    let unconfigured_failure = expect_contains("no-endpoint   ", unconfigured, "provider_not_configured")
+
+    // 4. HTTPS on the synchronous path is refused by name.
+    let https = await answer_of(spec("gpt-test", "https://provider.invalid", convert.int_to_string(-1)))
+    let https_failure = expect_contains("https-sync    ", https, "HTTPS is only available")
+
+    let failures = endpoint_failure + prefix_failure + named_failure + precedence_failure +
+        local_failure + unconfigured_failure + https_failure
+    if failures != 0 {
+        println("failures -> " + convert.int_to_string(failures))
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(routing_is_written_down())
+}

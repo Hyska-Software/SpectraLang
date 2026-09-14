@@ -1,0 +1,248 @@
+module async_scalar_slots
+
+// Three code-generation regressions found while writing the agent examples and
+// fixtures, pinned here so they cannot come back.
+//
+// 1. **A float payload in a generic enum.** `Result<float, E>` construction
+//    (`Result::Ok(1.5)`) passed the raw `f64` to the runtime helper that keeps
+//    an escaped value alive, which takes an `i64` word. Cranelift refused the
+//    call ("arg 0 has type f64, expected i64") and the module never compiled,
+//    so *any* function whose documented return was `Result<float, _>` was
+//    unbuildable.
+//
+// 2. **A call's result read across a suspension.** A local bound to a
+//    float-returning call (`let score = half(2)`) was given an `i64` frame slot
+//    because the slot's type came from a syntactic hint that a call expression
+//    could not answer. Inside a coroutine that slot *is* the value, so the
+//    comparison that read it back was an `f64` comparison against an `i64`
+//    operand -- another verifier rejection, this time only when the value
+//    crossed an `await`.
+//
+// 3. **A value that is itself a frame load.** The suspension pass reloads every
+//    operand a block uses but does not define, from the slot named by the
+//    value's own id. For a value produced by a `FrameLoad` that slot does not
+//    exist (the store pass skips those results), so the reload read an
+//    uninitialized slot: `count = count + zero(await one(1))` evaluated to
+//    `-1` instead of `0`. Silent wrong answers are worse than a rejection, which
+//    is why this one is pinned with exact values and not only with "it runs".
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.math as math
+import std.tensor as tensor
+
+// The float-payload shapes: a declared return type, both variants, a match, and
+// an if-let unwrap.
+func ok_payload(seed: int) returns Result<float, string> {
+    if seed > 0 {
+        return Result::Ok(1.5)
+    }
+    return Result::Err("not positive")
+}
+
+func err_payload(seed: int) returns Result<float, float> {
+    if seed > 0 {
+        return Result::Ok(convert.int_to_float(seed))
+    }
+    return Result::Err(0.25)
+}
+
+func option_payload(seed: int) returns Option<float> {
+    if seed > 0 {
+        return Option::Some(2.5)
+    }
+    return Option::None
+}
+
+func enum_payload(seed: int) returns Level {
+    if seed > 0 {
+        return Level::Exact(0.125)
+    }
+    return Level::Unknown
+}
+
+enum Level {
+    Exact(float),
+    Unknown,
+}
+
+// The async shapes: a float-returning call whose result lives across an await,
+// and an assignment whose own value crosses one.
+func half(seed: int) returns float {
+    return convert.int_to_float(seed) / 2.0
+}
+
+func zero(seed: float) returns int {
+    let _ = seed
+    return 0
+}
+
+async func value_across_a_suspension() returns int {
+    let score = half(9)
+    let later = await half_async(4)
+    if math.abs_f(score - 4.5) > 0.000000001 {
+        println("score across the suspension: " + convert.float_to_string(score))
+        return 1
+    }
+    if math.abs_f(later - 2.0) > 0.000000001 {
+        println("awaited value: " + convert.float_to_string(later))
+        return 2
+    }
+    return 0
+}
+
+async func half_async(seed: int) returns float {
+    return half(seed)
+}
+
+async func reassignment_across_a_suspension() returns int {
+    let count = 0
+    count = count + zero(await half_async(1))
+    if count != 0 {
+        println("first update: " + convert.int_to_string(count))
+        return 1
+    }
+    count = count + zero(await half_async(1))
+    if count != 0 {
+        println("second update: " + convert.int_to_string(count))
+        return 2
+    }
+    count = count + 5 + zero(await half_async(3))
+    if count != 5 {
+        println("third update: " + convert.int_to_string(count))
+        return 3
+    }
+    return 0
+}
+
+func float_payloads() returns int {
+    let good = ok_payload(3)
+    if let Result::Ok(value) = good {
+        if math.abs_f(value - 1.5) > 0.000000001 {
+            println("ok payload: " + convert.float_to_string(value))
+            return 1
+        }
+    } else {
+        return 2
+    }
+    let bad = ok_payload(-1)
+    if let Result::Err(message) = bad {
+        if message != "not positive" {
+            println("err payload: " + message)
+            return 3
+        }
+    } else {
+        return 4
+    }
+
+    let second = err_payload(3)
+    if let Result::Ok(value) = second {
+        if value != 3.0 {
+            println("int-to-float payload: " + convert.float_to_string(value))
+            return 5
+        }
+    } else {
+        return 6
+    }
+
+    let third = err_payload(-1)
+    if let Result::Err(value) = third {
+        if math.abs_f(value - 0.25) > 0.000000001 {
+            println("error payload: " + convert.float_to_string(value))
+            return 7
+        }
+    } else {
+        return 8
+    }
+
+    let some = option_payload(1)
+    if let Option::Some(value) = some {
+        if math.abs_f(value - 2.5) > 0.000000001 {
+            println("option payload: " + convert.float_to_string(value))
+            return 9
+        }
+    } else {
+        return 10
+    }
+    let none = option_payload(0)
+    if let Option::Some(value) = none {
+        println("option payload from the empty arm: " + convert.float_to_string(value))
+        return 11
+    }
+
+    // A user-declared enum with a float payload, matched rather than unwrapped.
+    let exact = enum_payload(1)
+    match exact {
+        when Level::Exact(value) then {
+            if math.abs_f(value - 0.125) > 0.000000001 {
+                println("enum payload: " + convert.float_to_string(value))
+                return 12
+            }
+        },
+        when Level::Unknown then {
+            return 13
+        },
+    }
+    return 0
+}
+
+// The same payload shapes through the runtime that motivated the report: an
+// embedding is a float tensor, and its first component is read back into a
+// float local that outlives a suspension.
+async func embedding_across_a_suspension() returns int {
+    let started = agent_start("{\"goal\":\"async-scalar-slots\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"journal\":\"\"}")
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let embedded = await embed(run, "alpha")
+        if let Result::Err(problem) = embedded {
+            println("embed failed: " + error.message(problem))
+            return 2
+        }
+        if let Result::Ok(vector) = embedded {
+            if tensor.len(vector) != 8 {
+                return 3
+            }
+            let component = tensor.get_f(vector, 0)
+            let answer = await ask(run, "hello")
+            if let Result::Err(problem) = answer {
+                println("ask failed: " + error.message(problem))
+                return 4
+            }
+            if math.abs_f(component - tensor.get_f(vector, 0)) > 0.000000001 {
+                println("the component moved across the suspension")
+                return 5
+            }
+        }
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 6
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    let payloads = float_payloads()
+    if payloads != 0 {
+        return payloads
+    }
+    let suspension = block_on(value_across_a_suspension())
+    if suspension != 0 {
+        return 10 + suspension
+    }
+    let reassignment = block_on(reassignment_across_a_suspension())
+    if reassignment != 0 {
+        return 20 + reassignment
+    }
+    let embedding = block_on(embedding_across_a_suspension())
+    if embedding != 0 {
+        return 30 + embedding
+    }
+    return 0
+}

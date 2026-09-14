@@ -559,6 +559,34 @@ impl ASTLowering {
         }
     }
 
+    /// The IR type a promoted local's slot must be allocated with.
+    ///
+    /// The declared annotation wins (it is the binding contract), then a
+    /// literal's own type, then the expression's resolved type — a call, a
+    /// field access or an operator has no syntactic hint, and a slot that
+    /// falls back to `Int` is read back as an integer: inside a coroutine that
+    /// slot *is* the frame slot the value crosses a suspension through, so a
+    /// float-returning call bound to a local produced `fcmp.f64 ge` against an
+    /// `i64` operand and failed Cranelift verification.
+    ///
+    /// Only scalars are hinted here. Struct, array and tensor locals have their
+    /// own storage paths, and widening this to them would move those paths.
+    fn slot_hint_for(&mut self, annotation: Option<&TypeAnnotation>, value: &Expression) -> Option<IRType> {
+        let scalar = |ty: IRType| match ty {
+            IRType::Int | IRType::Float | IRType::Bool | IRType::String | IRType::Char => Some(ty),
+            _ => None,
+        };
+        if let Some(annotation) = annotation {
+            if let Some(ty) = scalar(self.lower_type_annotation(annotation)) {
+                return Some(ty);
+            }
+        }
+        if let Some(ty) = Self::syntactic_ir_type_hint(value) {
+            return Some(ty);
+        }
+        scalar(self.infer_expr_ir_type(value))
+    }
+
     /// Like [`Self::find_assigned_variables`], but also records a best-effort
     /// IR type per mutated binding so its stack slot is allocated with the
     /// right type instead of a blanket `Int`. A wrong slot type makes the
@@ -566,7 +594,7 @@ impl ASTLowering {
     /// type while stores carry the real value type, which panics in the
     /// Cranelift frontend (e.g. a `bool` mutated inside a loop).
     pub(crate) fn find_assigned_variables_with_types(
-        &self,
+        &mut self,
         statements: &[Statement],
         hints: &mut std::collections::HashMap<String, IRType>,
     ) -> std::collections::HashSet<String> {
@@ -580,7 +608,7 @@ impl ASTLowering {
                         (&let_stmt.pattern, &let_stmt.value)
                     {
                         if !hints.contains_key(name) {
-                            if let Some(ty) = Self::syntactic_ir_type_hint(value) {
+                            if let Some(ty) = self.slot_hint_for(let_stmt.ty.as_ref(), value) {
                                 hints.insert(name.clone(), ty);
                             }
                         }
@@ -591,7 +619,7 @@ impl ASTLowering {
                     if let spectra_compiler::ast::LValue::Identifier(name) = &assign.target {
                         assigned.insert(name.clone());
                         if !hints.contains_key(name) {
-                            if let Some(ty) = Self::syntactic_ir_type_hint(&assign.value) {
+                            if let Some(ty) = self.slot_hint_for(None, &assign.value) {
                                 hints.insert(name.clone(), ty);
                             }
                         }

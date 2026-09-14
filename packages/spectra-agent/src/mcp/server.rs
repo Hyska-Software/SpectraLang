@@ -71,6 +71,11 @@ fn lock() -> MutexGuard<'static, BTreeMap<String, i64>> {
 /// with `202 Accepted`. A malformed document is a typed failure, because the
 /// caller handed the adapter something that is not a request at all.
 pub(crate) fn handle(run_handle: i64, request: &str) -> Result<String, AgentError> {
+    // The serving run must be live. The listener already answers 410 for a run
+    // that has ended; checking here too is what makes the direct entry point
+    // and the socket agree, instead of one of them listing the tool surface of
+    // a run that no longer exists.
+    run::with_run(run_handle, |_| ())?;
     let value: Value = serde_json::from_str(request).map_err(|error| {
         AgentError::Mcp(format!("the MCP request is not a JSON document: {error}"))
     })?;
@@ -508,6 +513,36 @@ mod tests {
                     .contains("does not authorize"),
                 "{response}"
             );
+            run::take_run(serving).expect("end");
+        });
+    }
+
+    /// A peer that connects and then says nothing has to end its own
+    /// connection, not the listener.
+    ///
+    /// The listener allows five seconds for a request (the read timeout in
+    /// `net`), so this test deliberately waits past it: before the fix, the
+    /// timed-out connection tripped the accept loop's error arm, the listener
+    /// thread returned, the port was released and the endpoint was dead for the
+    /// rest of the process lifetime — while the run still advertised the
+    /// authority as served. The connecting peer is a port scanner or a stalled
+    /// client, so the failure was reachable without a governing run doing
+    /// anything wrong.
+    #[test]
+    fn a_stalled_connection_does_not_take_the_listener_down() {
+        with_registry(|| {
+            let serving = start();
+            let authority = serve(serving, "127.0.0.1:0").expect("served");
+
+            let stalled = TcpStream::connect(&authority).expect("connect");
+            std::thread::sleep(std::time::Duration::from_millis(5_400));
+            drop(stalled);
+
+            // The same endpoint still answers. The connect itself fails when
+            // the accept loop died, so this is the whole assertion.
+            let (status, body) =
+                third_party_post(&authority, &wire::request(5, "tools/list", json!({})));
+            assert_eq!(status, 200, "{body}");
             run::take_run(serving).expect("end");
         });
     }
