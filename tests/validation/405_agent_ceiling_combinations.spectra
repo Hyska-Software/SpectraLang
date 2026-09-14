@@ -1,0 +1,241 @@
+module agent_ceiling_combinations
+
+// Ceilings together: which one wins, which call is refused, and what the report
+// names.
+//
+// 372 pins each ceiling on its own and 393 pins the tool-call ceiling inside
+// `act`. What is left is the combination, because the four ceilings share one
+// run and one cancellation:
+//
+//   * with `max_tokens` and `max_tool_calls` both declared, the token ceiling
+//     is evaluated first, so a run that blows its budget never reaches the tool
+//     at all: the dispatch is refused with the token ceiling named, and the
+//     tool's own record shows it did not execute;
+//   * the tool-call ceiling on its own is crossed by `tool_call` (outside
+//     `act`): the call beyond it is refused *before* the tool runs, and the
+//     tool's own record (an entry it wrote to memory) proves exactly one
+//     execution;
+//   * a wall-clock cancellation leaves `budget_remaining` at the documented
+//     sentinel when no token ceiling is declared -- introspection never fails
+//     because a run was cancelled, and "no token ceiling" stays "unbounded"
+//     rather than becoming a number that means something else -- while the
+//     next call is refused naming the ceiling that did cancel it.
+//
+// The canceling resource is always named by the typed error *and* by the
+// report; a run never fails silently.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record MarkArgs {
+    mark: string,
+}
+
+// Records its own execution in the run's memory: the fixture counts the entries
+// to prove how many dispatches actually ran, which a return value cannot show
+// once the loop stops reporting.
+#[agent_tool("Records one execution")]
+public async func note_execution(run: Run, args: MarkArgs) returns string {
+    let stored = remember(run, args.mark)
+    if let Result::Ok(ok) = stored {
+        if ok == true {
+            return "recorded"
+        }
+    }
+    return "not recorded"
+}
+
+func spec(extra: string) returns string {
+    return "{\"goal\":\"ceiling-combinations\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[]," +
+        extra +
+        ",\"untrusted\":\"allow\",\"seed\":7,\"journal\":\"\"}"
+}
+
+// How many entries the tool wrote: the payload lists one entry per execution.
+func recorded_executions(run: Run, query: string) returns int {
+    let payload = recall(run, query, 10)
+    if let Result::Ok(document) = payload {
+        return str.count_occurrences(document, "\"origin\":\"agent\"")
+    }
+    if let Result::Err(problem) = payload {
+        let _ = problem
+        return -1
+    }
+    return -2
+}
+
+// A: both ceilings declared. The token ceiling is evaluated first, so the
+// dispatch is refused and the tool never runs.
+async func tokens_outrank_tool_calls() returns int {
+    let started = agent_start(spec("\"max_tokens\":6,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":1"))
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let first = await ask(run, "hello")
+        if let Result::Err(problem) = first {
+            println("first turn refused: " + error.message(problem))
+            return 2
+        }
+        // Two turns take the run past six tokens.
+        let second = await ask(run, "hello again")
+        if let Result::Err(problem) = second {
+            println("second turn refused: " + error.message(problem))
+            return 3
+        }
+
+        let dispatched = await tool_call(run, "note_execution", "{\"mark\":\"first\"}")
+        if let Result::Err(problem) = dispatched {
+            println("dispatch -> " + error.message(problem))
+            if str.contains(error.message(problem), "budget_exceeded") == false {
+                return 4
+            }
+            if str.contains(error.message(problem), "max_tokens") == false {
+                return 5
+            }
+        } else {
+            println("the tool ran after the token ceiling was crossed")
+            return 6
+        }
+
+        // Nothing was recorded: the refusal happened before the wrapper.
+        let count = recorded_executions(run, "first")
+        if count != 0 {
+            println("executions after the refusal: " + convert.int_to_string(count))
+            return 7
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report   -> " + report)
+            if str.contains(report, "\"ceiling\":\"max_tokens\"") == false {
+                return 8
+            }
+            // The refused dispatch is not a tool call: it never ran.
+            if str.contains(report, "\"tool_calls\":0") == false {
+                return 9
+            }
+        } else {
+            return 10
+        }
+    }
+    return 0
+}
+
+// B: only the tool ceiling, crossed outside `act` by a direct dispatch.
+async func the_tool_ceiling_stops_the_second_dispatch() returns int {
+    let started = agent_start(spec("\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":1"))
+    if let Result::Ok(run) = started {
+        let first = await tool_call(run, "note_execution", "{\"mark\":\"one\"}")
+        if let Result::Err(problem) = first {
+            println("first dispatch refused: " + error.message(problem))
+            return 1
+        }
+        let second = await tool_call(run, "note_execution", "{\"mark\":\"two\"}")
+        if let Result::Err(problem) = second {
+            println("second   -> " + error.message(problem))
+            if str.contains(error.message(problem), "budget_exceeded") == false {
+                return 2
+            }
+            if str.contains(error.message(problem), "max_tool_calls") == false {
+                return 3
+            }
+        } else {
+            println("the call beyond the ceiling executed")
+            return 4
+        }
+
+        // Exactly one execution: the refused call never reached the wrapper.
+        let count = recorded_executions(run, "one")
+        if count != 1 {
+            println("executions after the refusal: " + convert.int_to_string(count))
+            return 5
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report   -> " + report)
+            if str.contains(report, "\"ceiling\":\"max_tool_calls\"") == false {
+                return 6
+            }
+            if str.contains(report, "\"tool_calls\":1") == false {
+                return 7
+            }
+        } else {
+            return 8
+        }
+    } else {
+        return 9
+    }
+    return 0
+}
+
+// C: a wall-clock cancellation with no token ceiling.
+async func a_clock_cancellation_keeps_the_sentinel() returns int {
+    let started = agent_start(spec("\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":1,\"max_tool_calls\":0"))
+    if let Result::Ok(run) = started {
+        let slow = await ask(run, "spectra:sleep-ms=1100")
+        if let Result::Err(problem) = slow {
+            println("the crossing turn was refused: " + error.message(problem))
+            return 1
+        }
+        let remaining = budget_remaining(run)
+        if let Result::Ok(left) = remaining {
+            println("remaining-> " + convert.int_to_string(left))
+            // No token ceiling: the sentinel, even though the run is cancelled.
+            if left < 1000000000 {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        let after = await ask(run, "hello")
+        if let Result::Err(problem) = after {
+            println("after    -> " + error.message(problem))
+            if str.contains(error.message(problem), "max_seconds") == false {
+                return 4
+            }
+        } else {
+            println("a call was served after the clock ceiling cancelled the run")
+            return 5
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report   -> " + report)
+            if str.contains(report, "\"ceiling\":\"max_seconds\"") == false {
+                return 6
+            }
+            if str.contains(report, "\"status\":\"budget_exceeded\"") == false {
+                return 7
+            }
+        } else {
+            return 8
+        }
+    } else {
+        return 9
+    }
+    return 0
+}
+
+public func main() returns int {
+    let first = block_on(tokens_outrank_tool_calls())
+    if first != 0 {
+        return first
+    }
+    let second = block_on(the_tool_ceiling_stops_the_second_dispatch())
+    if second != 0 {
+        return 20 + second
+    }
+    let third = block_on(a_clock_cancellation_keeps_the_sentinel())
+    if third != 0 {
+        return 40 + third
+    }
+    return 0
+}

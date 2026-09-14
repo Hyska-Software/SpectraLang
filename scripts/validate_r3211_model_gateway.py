@@ -90,6 +90,26 @@ def validate_implementation() -> None:
     for host in ["agent_start", "agent_end", "ask", "ask_json", "ask_stream", "stream_next", "stream_close", "embed"]:
         require(host in hosts, f"hosts.rs missing {host}")
 
+    # The local provider answers from a real model through the runtime's own
+    # generation engine (R-3211 T2). The bridge is public runtime surface, and
+    # the provider must use it: a provider that refused, or that re-implemented
+    # loading beside the engine, would be the placeholder this check replaces.
+    runtime_lib = read("runtime/src/lib.rs")
+    require(
+        "pub mod local_model;" in runtime_lib,
+        "runtime does not export the local_model bridge",
+    )
+    bridge = read("runtime/src/local_model.rs")
+    for term in ["pub struct CausalLm", "pub struct Tokenizer", "pub struct EmbeddingModel", "generate_streaming"]:
+        require(term in bridge, f"runtime local_model bridge missing {term}")
+    local_provider = read("packages/spectra-agent/src/provider/local.rs")
+    for term in ["spectra_runtime::local_model", "CausalLm::load", "generate_streaming", "EmbeddingModel::load"]:
+        require(term in local_provider, f"the local provider does not use {term}")
+    require(
+        "NOT_CONFIGURED" not in local_provider,
+        "the local provider still carries its placeholder refusal",
+    )
+
 
 def validate_catalog() -> None:
     with (ROOT / "packages/spectra-contract/catalog/stdlib.toml").open("rb") as handle:

@@ -11,6 +11,7 @@ pub mod ffi;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 pub mod handles;
+pub mod local_model;
 pub mod health;
 pub mod memory;
 pub mod metrics;

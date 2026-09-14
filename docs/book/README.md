@@ -81,10 +81,12 @@ deterministic mock provider (no credentials):
 - `examples/agent/13-embeddings-and-ranking`
 - `examples/agent/14-acp-and-permissions`
 - `examples/agent/15-mcp-service-surface`
+- `examples/agent/16-a2a-task-lifecycle`
+- `examples/agent/17-token-budgeting`
 
 The language-surface contracts those examples demonstrate are pinned by
 `tests/validation/384_agent_stream_lifecycle.spectra` through
-`403_async_scalar_slots_and_float_payloads.spectra` (one fixture per contract;
+`408_agent_taint_ledger_edges.spectra` (one fixture per contract;
 see chapter 11 for the list, and the certification gate
 `scripts/validate_r3221_agent_conformance.py` for the JIT/AOT runner).
 

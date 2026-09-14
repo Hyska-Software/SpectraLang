@@ -59,6 +59,8 @@ rede), em JIT (`spectralang run`) e AOT (`compile --debug-info=none --emit-exe`)
 | `12-structured-output` | `ask_json` com o `json_schema` derivado, falha tipada de validação e o reparo alimentado de volta ao modelo |
 | `13-embeddings-and-ranking` | `embed` como primitiva de ranking (similaridade de cosseno calculada no programa), `remember`/`recall` e o embedding reconstruído pelo journal sem nova ida ao provider |
 | `14-acp-and-permissions` | a superfície ACP (`initialize`, `session/new`, `session/prompt`, `session/cancel`, método não servido) e a ponte de permissão `acp_permission` negando por padrão, com as duas decisões distintas no journal (`sem cliente ACP` vs `sem approver`) |
+| `16-a2a-task-lifecycle` | o ciclo de vida das tarefas A2A: `completed` com poll idempotente, `failed` nomeando o teto, `rejected` pela grant e as recusas codificadas (`-32002`, `-32001`, `-32600`, `-32602`, `-32601`) |
+| `17-token-budgeting` | `token_count` como primitiva de orçamento: sentinela sem teto, embedding que não é turno, a identidade `token_count(prompt) + token_count(resposta)` e as duas metades da regra (o caller decide o que cabe; o runtime recusa depois de gasto) |
 | `15-mcp-service-surface` | a superfície MCP servida (`mcp_handle`): `initialize`, notificação, `ping`, `tools/list` com as anotações derivadas, `tools/call` com sucesso, falha de tool (`isError`) e recusa de run (`-32001`), além do método não servido e do documento inválido |
 
 Os contratos que os exemplos demonstram ficam fixados nos fixtures
@@ -83,8 +85,17 @@ fronteira de teardown da run), `401_agent_provider_routing.spectra` (qual
 provider cada spec seleciona e o que um provider não configurado responde),
 `402_agent_script_directives.spectra` (a gramática das diretivas do mock) e
 `403_async_scalar_slots_and_float_payloads.spectra` (as regressões de codegen
-`Result<float, _>`/slot escalar em corrotina/reload encadeado) fecham a matriz
-de cobertura da superfície. Todos rodam em JIT e AOT pelo gate de certificação
+`Result<float, _>`/slot escalar em corrotina/reload encadeado),
+`404_agent_memory_edges.spectra` (o insert vazio, o `top_k` negativo e a
+fronteira exata do orçamento de payload: 512 tokens entram, 513 não),
+`405_agent_ceiling_combinations.spectra` (qual teto vence quando vários são
+declarados, o teto de tool cruzado fora do `act` e o sentinela após um
+cancelamento por relógio), `406_agent_replay_divergence.spectra` (a divergência
+tipada, o prefixo retomado para a frente e o uso regravado no orçamento),
+`407_agent_a2a_task_states.spectra` (os estados de tarefa e as recusas
+codificadas), `408_agent_taint_ledger_edges.spectra` (tags obrigatórias, o corte
+em 256 caracteres e a proveniência endereçada por conteúdo) fecham a matriz de
+cobertura da superfície. Todos rodam em JIT e AOT pelo gate de certificação
 R-3221.
 
 Ver `docs/book/11-agents.md`.

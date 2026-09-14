@@ -639,6 +639,13 @@ cargo build -p spectra-cli
 # taint, tools, compensation.
 cargo test -p spectra-agent
 
+# The local provider answers from a real ONNX model through the runtime's own
+# generation engine, so its end-to-end case is gated on the same opt-in feature
+# the engine is (`onnx` links onnxruntime, a network fetch at build time):
+# generation, streaming, embeddings and the token accounting, over the
+# checked-in fixtures in tests/fixtures/r3211.
+cargo test -p spectra-agent --features onnx --test conformance -- the_local_provider
+
 # Generated-surface gates: each must report a match (no drift).
 python scripts/generate_lowering_tables.py --check
 python scripts/generate_host_calls.py --check

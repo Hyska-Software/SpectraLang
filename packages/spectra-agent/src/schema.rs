@@ -136,6 +136,12 @@ fn validate_value(instance: &Value, schema: &Value, path: &str) -> Result<(), St
     Ok(())
 }
 
+/// Whether `instance` has the JSON Schema type `expected`.
+///
+/// An unknown type keyword matches nothing: the schemas this validator serves
+/// come from the compiler's derive or from an authored document, and a typo in
+/// either must surface as a validation failure rather than as a validator that
+/// approves every instance.
 fn type_matches(instance: &Value, expected: &str) -> bool {
     match expected {
         "object" => instance.is_object(),
@@ -148,7 +154,11 @@ fn type_matches(instance: &Value, expected: &str) -> bool {
             .unwrap_or(false),
         "boolean" => instance.is_boolean(),
         "null" => instance.is_null(),
-        _ => true,
+        // An unrecognised `type` keyword is a broken schema, not a wildcard:
+        // accepting every instance for it would turn a typo (`"type":"strng"`)
+        // into a validator that silently approves anything. The caller reports
+        // the mismatch with the type it saw and the type it expected.
+        _ => false,
     }
 }
 
@@ -237,5 +247,21 @@ mod tests {
         assert_eq!(validate("3", r#"{"type":"integer"}"#), Ok(()));
         assert_eq!(validate("3.0", r#"{"type":"integer"}"#), Ok(()));
         assert!(validate("3.5", r#"{"type":"integer"}"#).is_err());
+    }
+
+    /// A type keyword this validator does not implement matches nothing: a
+    /// typo (`"strng"`) must fail validation instead of approving anything.
+    #[test]
+    fn an_unknown_type_keyword_matches_nothing() {
+        let typo = r#"{"type":"object","properties":{"count":{"type":"strng"}},"required":["count"]}"#;
+        let error = validate(r#"{"count":"three"}"#, typo).expect_err("a typo must not validate");
+        assert!(error.contains("$.count"), "{error}");
+
+        let correct = r#"{"type":"object","properties":{"count":{"type":"string"}},"required":["count"]}"#;
+        assert_eq!(validate(r#"{"count":"three"}"#, correct), Ok(()));
+
+        // The same rule at the top level, where the whole instance is checked.
+        assert!(validate("4", r#"{"type":"numberr"}"#).is_err());
+        assert_eq!(validate("4", r#"{"type":"number"}"#), Ok(()));
     }
 }

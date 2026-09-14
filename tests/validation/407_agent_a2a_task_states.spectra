@@ -1,0 +1,452 @@
+module agent_a2a_task_states
+
+// The A2A task states the language can reach, state by state.
+//
+// Example 16 demonstrates the lifecycle; this fixture pins it, with the
+// evidence each state has to carry:
+//
+//   * `completed` — the artifact holds the answer, the metadata holds the run
+//     report, and a poll returns the *same* task (same timestamp, same
+//     artifact): a poll resumes nothing that already finished. The task's
+//     journal holds exactly two `task` records, the request and the terminal
+//     state;
+//   * `failed` — a delegated loop that crossed a ceiling. The reason names the
+//     ceiling and the report's `ceiling` key agrees. This is the state a
+//     delegated run only reaches because the adapter settles the run before
+//     reading its outcome: a task that spent past its ceiling must never be
+//     reported as a success;
+//   * `rejected` — the delegated loop refused before its first turn, because a
+//     tool the serving run exposes carries an effect its grant does not cover.
+//     No artifact, and the report charged no call;
+//   * the refusals around them: canceling a terminal task is `-32002`, an
+//     unknown task is `-32001`, a different message for a recorded id is
+//     `-32600`, a request without a text part is `-32602`, an unserved method
+//     is `-32601`, and a document that is not a request is a typed
+//     `a2a_error`.
+//
+// Not reachable from the language: a task whose terminal step never landed
+// (an interrupted process). Canceling and polling that state is pinned by the
+// crate test `a2a::tests::canceling_and_unknown_methods_follow_the_protocol`,
+// which writes the request step by hand -- a `.spectra` program has no way to
+// interrupt a task between its two commits.
+
+// Note: the helper below is `send_request`, not `send`. A user function
+// exported under a name the runtime library already imports (winsock's `send`,
+// `recv`, `connect`, ... on Windows) collides at link time -- `LNK2005: send
+// already defined` -- which is a limitation of the AOT linkage, not of this
+// program. `docs/architecture/agent-async-scalar-slot-fixes.md` records it.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const DIR = ".spectra/fixture-407-journal"
+const WORK_DIR = "target/agent-fixture-407"
+const NOTE = WORK_DIR + "/note.txt"
+
+#[derive(Serialize, Deserialize)]
+public record Empty {
+}
+
+#[agent_tool("Writes the fixture note")]
+public async func note(run: Run, args: Empty) returns string {
+    let _ = args
+    let written = fs.fs_write(NOTE, "delegated")
+    if let Result::Ok(ok) = written {
+        if ok == true {
+            return "written"
+        }
+    }
+    return "unwritable"
+}
+
+func spec(run_id: string, allow: string, ceiling: string) returns string {
+    return "{\"goal\":\"fixture-407-tasks\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[" +
+        allow +
+        "],\"max_tokens\":" +
+        ceiling +
+        ",\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"allow\",\"seed\":19,\"journal\":\"" +
+        DIR +
+        "\",\"run_id\":\"" +
+        run_id +
+        "\"}"
+}
+
+func journal_path(task_id: string) returns string {
+    return DIR + "/" + task_id + ".jsonl"
+}
+
+func clean(path: string) returns int {
+    let present = fs.fs_exists(path)
+    if let Result::Ok(exists) = present {
+        if exists == true {
+            let removed = fs.fs_remove(path)
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+func send_request(task_id: string, prompt: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"message/send\",\"params\":{\"message\":{\"messageId\":\"" +
+        task_id +
+        "\",\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":\"" +
+        prompt +
+        "\"}]}}}"
+}
+
+func get(task_id: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tasks/get\",\"params\":{\"id\":\"" + task_id + "\"}}"
+}
+
+func cancel(task_id: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tasks/cancel\",\"params\":{\"id\":\"" + task_id + "\"}}"
+}
+
+// The completed state, its poll, and the journal behind it.
+func completed_and_polled() returns int {
+    let started = agent_start(spec("fixture-407-completed", "\"spectra.std.fs\"", "0"))
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let delegated = a2a_handle(run, send_request("task-completed", "spectra:final=the delegated answer"))
+        if let Result::Err(problem) = delegated {
+            println("send failed: " + error.message(problem))
+            return 2
+        }
+        if let Result::Ok(document) = delegated {
+            if str.contains(document, "\"state\":\"completed\"") == false {
+                return 3
+            }
+            if str.contains(document, "\"text\":\"the delegated answer\"") == false {
+                return 4
+            }
+            if str.contains(document, "\"ceiling\":\"\"") == false {
+                return 5
+            }
+        }
+
+        let polled = a2a_handle(run, get("task-completed"))
+        if let Result::Ok(document) = polled {
+            // The poll reads the recorded task: the same artifact, and (the
+            // real evidence) no new journal record -- a poll resumes nothing
+            // that already finished.
+            if str.contains(document, "\"state\":\"completed\"") == false {
+                return 6
+            }
+            if str.contains(document, "\"text\":\"the delegated answer\"") == false {
+                return 7
+            }
+            let records_after_poll = task_records("task-completed")
+            if records_after_poll != 2 {
+                println("a poll added a task record: " + convert.int_to_string(records_after_poll))
+                return 8
+            }
+        } else {
+            return 9
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 8
+        }
+    }
+
+    // The task's journal: the request was durable before the task ran, and the
+    // terminal state right after it.
+    let records = task_records("task-completed")
+    if records != 2 {
+        println("task records: " + convert.int_to_string(records))
+        return 10
+    }
+    // A record's payload is a JSON document stored *inside* a JSON line, so its
+    // quotes are escaped on disk: asserting on the raw text means matching the
+    // escaped form.
+    let text = fs.fs_read(journal_path("task-completed"))
+    if let Result::Ok(body) = text {
+        if str.contains(body, "spectra:final=the delegated answer") == false {
+            return 11
+        }
+        if str.contains(body, "\\\"state\\\":\\\"completed") == false {
+            return 12
+        }
+    } else {
+        return 13
+    }
+    return 0
+}
+
+// The number of `task` records the task's journal holds.
+func task_records(task_id: string) returns int {
+    let text = fs.fs_read(journal_path(task_id))
+    if let Result::Ok(body) = text {
+        return str.count_occurrences(body, "\"kind\":\"task\"")
+    }
+    if let Result::Err(problem) = text {
+        let _ = problem
+        return -1
+    }
+    return -2
+}
+
+// A delegated loop that crossed the ceiling fails, naming it.
+func failed_by_ceiling() returns int {
+    let started = agent_start(spec("fixture-407-failed", "\"spectra.std.fs\"", "1"))
+    if let Result::Ok(run) = started {
+        let delegated = a2a_handle(run, send_request("task-failed", "one two three four five six seven eight nine ten"))
+        if let Result::Ok(document) = delegated {
+            println("failed   -> " + document)
+            if str.contains(document, "\"state\":\"failed\"") == false {
+                return 1
+            }
+            if str.contains(document, "budget_exceeded") == false {
+                return 2
+            }
+            if str.contains(document, "max_tokens") == false {
+                return 3
+            }
+            if str.contains(document, "\"ceiling\":\"max_tokens\"") == false {
+                return 4
+            }
+            // A failed task carries no artifact: the answer never existed.
+            if str.contains(document, "\"artifacts\":[]") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 7
+        }
+    } else {
+        return 8
+    }
+    return 0
+}
+
+// An ungranted tool rejects the delegation before it executes anything.
+func rejected_by_grant() returns int {
+    let started = agent_start(spec("fixture-407-rejected", "", "0"))
+    if let Result::Ok(run) = started {
+        let delegated = a2a_handle(run, send_request("task-rejected", "spectra:final=never reached"))
+        if let Result::Ok(document) = delegated {
+            println("rejected -> " + document)
+            if str.contains(document, "\"state\":\"rejected\"") == false {
+                return 1
+            }
+            if str.contains(document, "does not authorize") == false {
+                return 2
+            }
+            if str.contains(document, "\"tool_calls\":0") == false {
+                return 3
+            }
+            if str.contains(document, "\"steps\":0") == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+        // The note the ungranted tool would have written does not exist.
+        let present = fs.fs_exists(NOTE)
+        if let Result::Ok(exists) = present {
+            if exists == true {
+                println("the rejected task's tool ran anyway")
+                return 6
+            }
+        }
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 7
+        }
+    } else {
+        return 8
+    }
+    return 0
+}
+
+// The protocol refusals around the states.
+func the_refusals_are_coded() returns int {
+    let started = agent_start(spec("fixture-407-refusals", "\"spectra.std.fs\"", "0"))
+    if let Result::Ok(run) = started {
+        let delegated = a2a_handle(run, send_request("task-refusal", "spectra:final=done"))
+        if let Result::Err(problem) = delegated {
+            println("send failed: " + error.message(problem))
+            return 1
+        }
+
+        let late = a2a_handle(run, cancel("task-refusal"))
+        if let Result::Ok(document) = late {
+            if str.contains(document, "\"code\":-32002") == false {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        let unknown = a2a_handle(run, get("task-nobody-sent"))
+        if let Result::Ok(document) = unknown {
+            if str.contains(document, "\"code\":-32001") == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        // The id is a run id: a different message is refused, not answered
+        // with the recorded task.
+        let reused = a2a_handle(run, send_request("task-refusal", "a different request"))
+        if let Result::Ok(document) = reused {
+            if str.contains(document, "\"code\":-32600") == false {
+                return 6
+            }
+            if str.contains(document, "different request") == false {
+                return 7
+            }
+        } else {
+            return 8
+        }
+
+        let no_text = a2a_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"message/send\",\"params\":{\"message\":{\"messageId\":\"task-empty\",\"role\":\"user\",\"parts\":[]}}}")
+        if let Result::Ok(document) = no_text {
+            if str.contains(document, "\"code\":-32602") == false {
+                return 9
+            }
+        } else {
+            return 10
+        }
+
+        let unserved = a2a_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tasks/list\"}")
+        if let Result::Ok(document) = unserved {
+            if str.contains(document, "\"code\":-32601") == false {
+                return 11
+            }
+        } else {
+            return 12
+        }
+
+        // A document that is not a request at all is a typed failure, not a
+        // protocol response.
+        let malformed = a2a_handle(run, "not a json-rpc document")
+        if let Result::Err(problem) = malformed {
+            println("malformed-> " + error.message(problem))
+            if str.contains(error.message(problem), "a2a_error") == false {
+                return 13
+            }
+        } else {
+            println("a malformed document was answered")
+            return 14
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 15
+        }
+    } else {
+        return 16
+    }
+    return 0
+}
+
+// A cancellation needs a recorded request: without a journal a task can be
+// delegated but not polled or canceled, and that is reported, not invented.
+func no_journal_no_poll() returns int {
+    // The grant still has to cover the exposed tool (the delegated loop checks
+    // it before its first turn); what is missing here is the journal.
+    let started = agent_start("{\"goal\":\"fixture-407-nojournal\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"spectra.std.fs\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"allow\",\"seed\":19,\"journal\":\"\"}")
+    if let Result::Ok(run) = started {
+        let delegated = a2a_handle(run, send_request("task-nojournal", "spectra:final=done anyway"))
+        if let Result::Ok(document) = delegated {
+            if str.contains(document, "\"state\":\"completed\"") == false {
+                return 1
+            }
+        } else {
+            return 2
+        }
+        // Nothing was recorded, so the task does not exist for a later call.
+        let polled = a2a_handle(run, get("task-nojournal"))
+        if let Result::Ok(document) = polled {
+            if str.contains(document, "\"code\":-32001") == false {
+                println("polled -> " + document)
+                return 3
+            }
+        } else {
+            return 4
+        }
+        let canceled = a2a_handle(run, cancel("task-nojournal"))
+        if let Result::Ok(document) = canceled {
+            if str.contains(document, "\"code\":-32001") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 7
+        }
+    } else {
+        return 8
+    }
+    return 0
+}
+
+public func main() returns int {
+    let prepared = fs.create_dir_all(WORK_DIR)
+    if let Result::Err(problem) = prepared {
+        println("work dir failed: " + error.message(problem))
+        return 30
+    }
+    let prepared_journal = fs.create_dir_all(DIR)
+    if let Result::Err(problem) = prepared_journal {
+        println("journal dir failed: " + error.message(problem))
+        return 31
+    }
+    let a = clean(journal_path("task-completed"))
+    let b = clean(journal_path("task-failed"))
+    let c = clean(journal_path("task-rejected"))
+    let d = clean(journal_path("task-refusal"))
+    let e = clean(NOTE)
+    let unused = a + b + c + d + e
+    if unused != 0 {
+        return 32
+    }
+
+    let first = completed_and_polled()
+    if first != 0 {
+        return first
+    }
+    let second = failed_by_ceiling()
+    if second != 0 {
+        return 20 + second
+    }
+    let third = rejected_by_grant()
+    if third != 0 {
+        return 40 + third
+    }
+    let fourth = the_refusals_are_coded()
+    if fourth != 0 {
+        return 60 + fourth
+    }
+    let fifth = no_journal_no_poll()
+    if fifth != 0 {
+        return 80 + fifth
+    }
+    return 0
+}

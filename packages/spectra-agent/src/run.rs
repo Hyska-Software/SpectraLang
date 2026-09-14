@@ -312,6 +312,8 @@ pub(crate) fn register_task(handle: i64, token: CancellationToken) -> bool {
 /// Removes a task's cancellation token by identity (`Arc::ptr_eq`), so a
 /// finished task never makes a later cancellation touch an unrelated token.
 pub(crate) fn unregister_task(handle: i64, token: &CancellationToken) {
+    // A run that has already been released needs no cleanup: the token list
+    // died with it, so an unknown handle here is not a failure.
     let _ = with_run(handle, |state| {
         state.tasks.retain(|candidate| !Arc::ptr_eq(candidate, token));
     });

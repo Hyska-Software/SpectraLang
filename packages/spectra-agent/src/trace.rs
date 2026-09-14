@@ -5,7 +5,9 @@
 //! activities onto the GenAI semantic conventions and hands them to a
 //! [`TraceSink`]. No sink is a no-op, and this crate deliberately does not
 //! depend on `spectra-api`: the adapter that forwards a span into the runtime's
-//! tracer is the embedder's (reported as pending; the trait is the seam).
+//! tracer belongs to the embedder, and `spectra-api` installs one
+//! (`ApiTraceSink`, `packages/spectra-api/src/agent_transport.rs`) alongside the
+//! HTTP transport when a Spectra program starts.
 //!
 //! Conventions version: **1.34.0** — the minimum version containing both
 //! `gen_ai.conversation.id` (added in 1.34.0) and the `invoke_agent` operation

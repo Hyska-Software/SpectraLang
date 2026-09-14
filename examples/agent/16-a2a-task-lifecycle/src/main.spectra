@@ -1,0 +1,404 @@
+module main
+
+// Example 16 — the A2A task lifecycle.
+//
+// A delegated task *is* a run: the task id is the run id, and its state lives
+// in the serving run's journal. `a2a_handle` is the whole surface a client
+// talks to, and this example walks every terminal state the language can
+// reach, plus the refusals around them:
+//
+//   * `completed` — the task ran through the governed loop and its artifact
+//     carries the answer, while the task metadata carries the run report so a
+//     client can see the work that was actually done;
+//   * `failed` — the delegated loop crossed a ceiling. The state names the
+//     ceiling and the report agrees, which only holds because the delegated
+//     run is settled before its outcome is read (a task that spent its way
+//     past `max_tokens` must never be reported as a success);
+//   * `rejected` — the delegated loop refused *before* executing anything,
+//     because a tool the serving run exposes carries an effect its grant does
+//     not cover (`enforce_run_grant`, the same check the local path runs);
+//   * `canceled` — reachable for a task whose terminal step never landed after
+//     an interruption; this example pins the *terminal* cases and the crate
+//     test `a2a::tests::canceling_and_unknown_methods_follow_the_protocol`
+//     pins that one, because the language cannot interrupt a task;
+//   * a task id is a run id and is never reused: re-sending a *different*
+//     message for a recorded id is a typed refusal, and an unknown id is
+//     `-32001`; an unserved method is `-32601` and a malformed request is a
+//     typed `a2a_error`.
+//
+// Everything runs in-process against the deterministic mock provider.
+
+// Note: the helper below is `send_request`, not `send`. A user function
+// exported under a name the runtime library already imports (winsock's `send`,
+// `recv`, `connect`, ... on Windows) collides at link time -- `LNK2005: send
+// already defined` -- which is a limitation of the AOT linkage, not of this
+// program. `docs/architecture/agent-async-scalar-slot-fixes.md` records it.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const JOURNAL_DIR = ".spectra/example-16-journal"
+
+const WORK_NOTE = "target/agent-example-16/note.txt"
+
+#[derive(Serialize, Deserialize)]
+public record Empty {
+}
+
+// A tool whose only effect is a catalog sink (`fs_write`). Whether a run may
+// expose it is what separates a `rejected` task from a `completed` one: the
+// grant is the serving spec's, not the tool's.
+#[agent_tool("Writes a delegation note")]
+public async func note(run: Run, args: Empty) returns string {
+    let _ = args
+    let written = fs.fs_write(WORK_NOTE, "delegated")
+    if let Result::Ok(ok) = written {
+        if ok == true {
+            return "written"
+        }
+    }
+    return "unwritable"
+}
+
+func clean(path: string) returns int {
+    let present = fs.fs_exists(path)
+    if let Result::Ok(exists) = present {
+        if exists == true {
+            let removed = fs.fs_remove(path)
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+// The serving spec is the delegated run's spec: grants, model and ceilings all
+// travel into the task.
+func spec(run_id: string, allow: string, extra: string) returns string {
+    return "{\"goal\":\"example-a2a-tasks\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[" +
+        allow +
+        "],\"max_tokens\":" +
+        extra +
+        ",\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"allow\",\"seed\":23,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"run_id\":\"" +
+        run_id +
+        "\"}"
+}
+
+func journal_path(run_id: string) returns string {
+    return JOURNAL_DIR + "/" + run_id + ".jsonl"
+}
+
+func send_request(task_id: string, prompt: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"message/send\",\"params\":{\"message\":{\"messageId\":\"" +
+        task_id +
+        "\",\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":\"" +
+        prompt +
+        "\"}]}}}"
+}
+
+func get(task_id: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tasks/get\",\"params\":{\"id\":\"" + task_id + "\"}}"
+}
+
+func cancel(task_id: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tasks/cancel\",\"params\":{\"id\":\"" + task_id + "\"}}"
+}
+
+// A completed task: the artifact carries the answer, the metadata the report.
+func completed_task() returns int {
+    // The delegated loop checks its grant before the first dispatch, so a task
+    // that must run needs the exporting tool's effect covered.
+    let started = agent_start(spec("example-16-completed", "\"spectra.std.fs\"", "0"))
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let delegated = a2a_handle(run, send_request("task-completed", "spectra:final=delegated answer"))
+        if let Result::Err(problem) = delegated {
+            println("send failed: " + error.message(problem))
+            return 2
+        }
+        if let Result::Ok(document) = delegated {
+            println("completed -> " + document)
+            if str.contains(document, "\"state\":\"completed\"") == false {
+                return 3
+            }
+            if str.contains(document, "\"text\":\"delegated answer\"") == false {
+                return 4
+            }
+            // The report is how a client sees that the work went through the
+            // governed path, and that it did not re-execute anything.
+            if str.contains(document, "\"ceiling\":\"\"") == false {
+                return 5
+            }
+            if str.contains(document, "\"replay\":false") == false {
+                return 6
+            }
+        }
+
+        // Polling returns the recorded task: the same answer, no second run.
+        let polled = a2a_handle(run, get("task-completed"))
+        if let Result::Ok(document) = polled {
+            if str.contains(document, "\"text\":\"delegated answer\"") == false {
+                return 7
+            }
+        } else {
+            return 8
+        }
+
+        // A terminal task cannot be canceled: that is a protocol-level refusal
+        // with its own code, not a second state.
+        let late = a2a_handle(run, cancel("task-completed"))
+        if let Result::Ok(document) = late {
+            println("cancel     -> " + document)
+            if str.contains(document, "\"code\":-32002") == false {
+                return 9
+            }
+        } else {
+            return 10
+        }
+
+        // A task id is a run id: a different message for the same id is
+        // refused rather than silently answered with the recorded outcome.
+        // The refusal is a JSON-RPC error document -- `a2a_handle` answers
+        // protocol outcomes with documents, and reserves typed host errors for
+        // a request that is not a request at all.
+        let reused = a2a_handle(run, send_request("task-completed", "a different request"))
+        if let Result::Err(problem) = reused {
+            println("reused     -> " + error.message(problem))
+            return 11
+        }
+        if let Result::Ok(document) = reused {
+            println("reused     -> " + document)
+            if str.contains(document, "\"code\":-32600") == false {
+                return 12
+            }
+            if str.contains(document, "different request") == false {
+                return 13
+            }
+        }
+
+        // An unknown id, and a request with no text part.
+        let missing = a2a_handle(run, get("task-nobody-sent"))
+        if let Result::Ok(document) = missing {
+            if str.contains(document, "\"code\":-32001") == false {
+                return 14
+            }
+        } else {
+            return 15
+        }
+        let no_text = a2a_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"message/send\",\"params\":{\"message\":{\"messageId\":\"task-empty\",\"role\":\"user\",\"parts\":[]}}}")
+        if let Result::Ok(document) = no_text {
+            if str.contains(document, "\"code\":-32602") == false {
+                return 16
+            }
+        } else {
+            return 17
+        }
+        let unserved = a2a_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tasks/list\"}")
+        if let Result::Ok(document) = unserved {
+            if str.contains(document, "\"code\":-32601") == false {
+                return 18
+            }
+        } else {
+            return 19
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("serving    -> " + report)
+            // The delegation is the serving run's work only as a task: it does
+            // no model turn of its own.
+            if str.contains(report, "\"steps\":0") == false {
+                return 19
+            }
+        } else {
+            return 20
+        }
+    }
+    return 0
+}
+
+// A failed task: the delegated loop crossed the ceiling the serving run
+// declared, and the task names it.
+func failed_task() returns int {
+    let started = agent_start(spec("example-16-failed", "\"spectra.std.fs\"", "1"))
+    if let Result::Ok(run) = started {
+        let delegated = a2a_handle(run, send_request("task-failed", "one two three four five six seven eight nine ten"))
+        if let Result::Ok(document) = delegated {
+            println("failed     -> " + document)
+            if str.contains(document, "\"state\":\"failed\"") == false {
+                return 2
+            }
+            if str.contains(document, "budget_exceeded") == false {
+                return 3
+            }
+            if str.contains(document, "max_tokens") == false {
+                return 4
+            }
+            if str.contains(document, "\"ceiling\":\"max_tokens\"") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+        let ended = agent_end(run)
+        let _ = ended
+    } else {
+        return 7
+    }
+    return 0
+}
+
+// A rejected task: the delegated loop refuses before executing anything,
+// because the serving run exposes a tool whose effect its grant does not cover.
+func rejected_task() returns int {
+    let started = agent_start(spec("example-16-rejected", "", "0"))
+    if let Result::Ok(run) = started {
+        // A request document carries the prompt inside a JSON string, so the
+        // prompt holds no raw newline; one directive is enough, because the
+        // grant check runs before the loop's first turn.
+        let delegated = a2a_handle(run, send_request("task-rejected", "spectra:final=never reached"))
+        if let Result::Ok(document) = delegated {
+            println("rejected   -> " + document)
+            if str.contains(document, "\"state\":\"rejected\"") == false {
+                return 2
+            }
+            // The reason is the capability denial the local path would produce.
+            if str.contains(document, "does not authorize") == false {
+                return 3
+            }
+            // Nothing executed: no artifact, and the report charged no call.
+            if str.contains(document, "\"tool_calls\":0") == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+        // The rejected state is what a later poll reads, too.
+        let polled = a2a_handle(run, get("task-rejected"))
+        if let Result::Ok(document) = polled {
+            if str.contains(document, "\"state\":\"rejected\"") == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+        let ended = agent_end(run)
+        let _ = ended
+    } else {
+        return 8
+    }
+    return 0
+}
+
+// A granted run: the same delegation reaches the tool and the note lands.
+func granted_task() returns int {
+    let started = agent_start(spec("example-16-granted", "\"spectra.std.fs\"", "0"))
+    if let Result::Ok(run) = started {
+        // A bare tool directive: the delegated loop dispatches it, then the
+        // script is exhausted and the loop answers with the empty string.
+        let delegated = a2a_handle(run, send_request("task-granted", "spectra:tool=note"))
+        if let Result::Ok(document) = delegated {
+            println("granted    -> " + document)
+            if str.contains(document, "\"state\":\"completed\"") == false {
+                return 2
+            }
+            if str.contains(document, "\"tool_calls\":1") == false {
+                return 3
+            }
+        } else {
+            return 4
+        }
+        let note = fs.fs_read(WORK_NOTE)
+        if let Result::Ok(text) = note {
+            if text != "delegated" {
+                return 5
+            }
+        } else {
+            return 6
+        }
+        let ended = agent_end(run)
+        let _ = ended
+    } else {
+        return 7
+    }
+    return 0
+}
+
+// The task's step records live under the task id (which *is* the delegated
+// run's id): the request is durable before the task runs, and the terminal
+// state right after it, so a poll or a resume reads them back from there
+// instead of re-delegating.
+func task_journal() returns int {
+    let text = fs.fs_read(journal_path("task-completed"))
+    if let Result::Err(problem) = text {
+        println("journal failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(body) = text {
+        let steps = str.count_occurrences(body, "\"kind\":\"task\"")
+        println("journal    -> " + convert.int_to_string(steps) + " task steps")
+        if steps != 2 {
+            return 2
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    let prepared = fs.create_dir_all("target/agent-example-16")
+    if let Result::Err(problem) = prepared {
+        println("work dir failed: " + error.message(problem))
+        return 30
+    }
+    if clean(WORK_NOTE) != 0 {
+        return 31
+    }
+    // The task journals are keyed by task id (the delegated run's id), so
+    // those are the files to clear: a reused journal would replay the recorded
+    // step instead of executing it -- correct semantics, wrong starting state
+    // for an example that asserts the work happened.
+    let journals = [journal_path("task-completed"), journal_path("task-failed"), journal_path("task-rejected"), journal_path("task-granted")]
+    let index = 0
+    while index < 4 {
+        let path = journals[index]
+        let cleaned = clean(path)
+        let _ = cleaned
+        index = index + 1
+    }
+
+    let first = completed_task()
+    if first != 0 {
+        return first
+    }
+    let second = failed_task()
+    if second != 0 {
+        return 40 + second
+    }
+    let third = rejected_task()
+    if third != 0 {
+        return 50 + third
+    }
+    let fourth = granted_task()
+    if fourth != 0 {
+        return 60 + fourth
+    }
+    let fifth = task_journal()
+    if fifth != 0 {
+        return 70 + fifth
+    }
+    return 0
+}

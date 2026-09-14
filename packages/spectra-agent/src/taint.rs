@@ -304,13 +304,34 @@ pub(crate) fn gate(chain: &[u64], host_call: &str, args: &[SpectraHostValue]) ->
                 origins_text(&tainted),
                 scope_note(host_call, args)
             );
-            let _ = journal_decision(&caller, host_call, "allow", Some(attribution));
-            PolicyDecision::Allow
+            // An allow that cannot be journaled is not an allow: the ledger is
+            // the audit trail, and a gate decision no record can explain is
+            // exactly the silent pass this module exists to prevent.
+            match journal_decision(&caller, host_call, "allow", Some(attribution)) {
+                Ok(()) => PolicyDecision::Allow,
+                Err(error) => PolicyDecision::Deny {
+                    reason: format!(
+                        "{}; the audit record is missing because the decision could not be \
+                         journaled: {}",
+                        denial_reason(&caller, &tainted, host_call, policy, &scope_note(host_call, args)),
+                        error.message()
+                    ),
+                },
+            }
         }
         UntrustedPolicy::Block => {
             let reason = denial_reason(&caller, &tainted, host_call, policy, &scope_note(host_call, args));
-            // The denial is durable before the trap consumes it.
-            let _ = journal_decision(&caller, host_call, "deny", Some(reason.clone()));
+            // The denial is durable before the trap consumes it; when the
+            // record cannot be written the denial still stands, and its reason
+            // says the audit trail is incomplete.
+            let reason = match journal_decision(&caller, host_call, "deny", Some(reason.clone())) {
+                Ok(()) => reason,
+                Err(error) => format!(
+                    "{reason}; the audit record is missing because the decision could not be \
+                     journaled: {}",
+                    error.message()
+                ),
+            };
             PolicyDecision::Deny { reason }
         }
         UntrustedPolicy::Approve => {
@@ -322,7 +343,14 @@ pub(crate) fn gate(chain: &[u64], host_call: &str, args: &[SpectraHostValue]) ->
                         "{}; the attached approver denied the action",
                         denial_reason(&caller, &tainted, host_call, policy, &scope_note(host_call, args))
                     );
-                    let _ = journal_decision(&caller, host_call, "deny", Some(reason.clone()));
+                    let reason = match journal_decision(&caller, host_call, "deny", Some(reason.clone())) {
+                        Ok(()) => reason,
+                        Err(error) => format!(
+                            "{reason}; the audit record is missing because the decision could not \
+                             be journaled: {}",
+                            error.message()
+                        ),
+                    };
                     PolicyDecision::Deny { reason }
                 }
                 Err(error) => {
@@ -614,6 +642,43 @@ mod tests {
         );
     }
 
+    /// The audit trail is part of the decision: when the journal cannot record
+    /// an `allow`, the gate denies instead of passing unrecorded.
+    #[test]
+    fn an_allow_that_cannot_be_journaled_is_denied() {
+        let _guard = setup();
+        // Run one: the untrusted mark and an allowed write are journaled. It
+        // stays alive so the journal file is still there for run two.
+        let first = Fixture::new("unjournaled", "allow");
+        first.untrusted("payload from the web", "external:web");
+        let first_target = first.dir.join("first.txt");
+        assert_eq!(
+            first.dispatch_in_run(
+                "spectra.std.fs.fs_write",
+                &sink_args(&first_target.to_string_lossy()),
+            ),
+            HOST_STATUS_SUCCESS
+        );
+        assert!(first_target.exists(), "the granted sink ran");
+
+        // Run two resumes the same journal: its own effects resolve from the
+        // records, and the *different* sink it now gates diverges from the
+        // recorded decision. A decision that cannot be recorded is not an
+        // allow, so the gate denies instead of passing unrecorded.
+        let second = Fixture::resume("unjournaled", "allow");
+        second.untrusted("payload from the web", "external:web");
+        let second_target = second.dir.join("second.txt");
+        let status = second.dispatch_in_run(
+            "spectra.std.fs.fs_remove",
+            &[unsafe { abi::alloc_string(&second_target.to_string_lossy()) }],
+        );
+        assert_eq!(
+            status, HOST_STATUS_DENIED,
+            "an allow whose record cannot land must not pass"
+        );
+        assert!(!second_target.exists(), "the sink did not run");
+    }
+
     #[test]
     fn the_strictest_policy_on_the_chain_wins() {
         use UntrustedPolicy::{Allow, Approve, Block};
@@ -646,6 +711,20 @@ mod tests {
             let run_id = format!("taint-{name}");
             let dir = std::env::temp_dir().join(format!("spectra-taint-{}-{name}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
+            let json = format!(
+                r#"{{"goal":"taint-{name}","model":"mock/echo","allow":["spectra.std.fs"],"untrusted":"{policy}"}}"#
+            );
+            let spec = AgentSpec::parse(&json).expect("spec");
+            let journal = Journal::open(&run_id, &dir.to_string_lossy(), false).expect("journal");
+            let handle = alloc_run(spec, run_id.clone(), Some(journal)).expect("alloc");
+            Self { handle, dir, run_id }
+        }
+
+        /// Opens the same journal again without clearing it: the state a
+        /// resumed run sees.
+        fn resume(name: &str, policy: &str) -> Self {
+            let run_id = format!("taint-{name}");
+            let dir = std::env::temp_dir().join(format!("spectra-taint-{}-{name}", std::process::id()));
             let json = format!(
                 r#"{{"goal":"taint-{name}","model":"mock/echo","allow":["spectra.std.fs"],"untrusted":"{policy}"}}"#
             );

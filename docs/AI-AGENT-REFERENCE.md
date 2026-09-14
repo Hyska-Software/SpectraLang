@@ -2866,8 +2866,9 @@ Runnable projects: `examples/agent/01-tool-and-run`,
 `examples/agent/08-memory-and-recall`, `examples/agent/09-compensation-saga`,
 `examples/agent/10-list-payloads`, `examples/agent/11-tool-call-budget`,
 `examples/agent/12-structured-output`, `examples/agent/13-embeddings-and-ranking`,
-`examples/agent/14-acp-and-permissions` and
-`examples/agent/15-mcp-service-surface`; see `docs/book/11-agents.md`.
+`examples/agent/14-acp-and-permissions`,
+`examples/agent/15-mcp-service-surface`, `examples/agent/16-a2a-task-lifecycle`
+and `examples/agent/17-token-budgeting`; see `docs/book/11-agents.md`.
 
 ---
 

@@ -167,7 +167,13 @@ fn dispatch(run_handle: i64, request: &Value) -> Value {
         // A notification: the transport answers `202 Accepted` with no body.
         "notifications/initialized" => Value::Null,
         "ping" => wire::ok(id, json!({})),
-        "tools/list" => wire::ok(id, json!({"tools": descriptors()})),
+        // A registry that cannot be advertised is a run-level refusal, not an
+        // empty list: the client must not read "no tools" when the truth is
+        // "this tool's descriptor is broken".
+        "tools/list" => match descriptors() {
+            Ok(descriptors) => wire::ok(id, json!({"tools": descriptors})),
+            Err(error) => wire::failure(id, RUN_REFUSED, &error.message()),
+        },
         "tools/call" => call_tool(run_handle, id, &params),
         other => wire::failure(
             id,
@@ -178,12 +184,23 @@ fn dispatch(run_handle: i64, request: &Value) -> Value {
 }
 
 /// The project's derived tool surface, in the registry's deterministic order.
-fn descriptors() -> Vec<Value> {
-    tools::registered()
-        .into_iter()
-        .map(|tool| {
-            let schema = serde_json::from_str::<Value>(&tool.input_schema)
-                .unwrap_or_else(|_| json!({"type": "object"}));
+///
+/// A tool whose registered schema does not parse is refused by name rather
+/// than advertised with a permissive substitute: a client that saw
+/// `{"type":"object"}` would send arguments the tool's wrapper rejects, and the
+/// broken descriptor would never be reported. The refusal names the tool and
+/// the parse error, so the surfacing layer is fixable.
+fn descriptors() -> Result<Vec<Value>, AgentError> {
+    let mut descriptors = Vec::new();
+    for tool in tools::registered() {
+        {
+            let schema = serde_json::from_str::<Value>(&tool.input_schema).map_err(|error| {
+                AgentError::Mcp(format!(
+                    "tool '{}' has an input schema that is not JSON ({error}); it cannot be \
+                     advertised over MCP until the descriptor is fixed",
+                    tool.name
+                ))
+            })?;
             // The annotations are derived from the compiler's effect set: an
             // effect the catalog classifies as a sink is destructive, and a
             // tool with no effect is read-only.
@@ -191,7 +208,7 @@ fn descriptors() -> Vec<Value> {
                 .effects
                 .iter()
                 .any(|effect| taint::is_sink(effect));
-            json!({
+            descriptors.push(json!({
                 "name": tool.name,
                 "description": tool.description,
                 "inputSchema": schema,
@@ -199,9 +216,10 @@ fn descriptors() -> Vec<Value> {
                     "readOnlyHint": tool.effects.is_empty(),
                     "destructiveHint": destructive,
                 },
-            })
-        })
-        .collect()
+            }));
+        }
+    }
+    Ok(descriptors)
 }
 
 /// One `tools/call`, executed inside the run through the governed dispatch.
@@ -366,7 +384,7 @@ mod tests {
                 "Doubles an integer".to_string(),
                 r#"{"type":"object","properties":{"n":{"type":"integer"}}}"#.to_string(),
                 r#"["spectra.std.fs.fs_write"]"#,
-            ));
+            ).expect("register"));
             let serving = start();
             let request = wire::request(1, "tools/list", json!({}));
             let response: Value =
@@ -400,7 +418,7 @@ mod tests {
                 "Doubles an integer".to_string(),
                 r#"{"type":"object"}"#.to_string(),
                 "[]",
-            ));
+            ).expect("register"));
             let serving = start();
             let authority = serve(serving, "127.0.0.1:0").expect("served");
             assert!(authority.starts_with("127.0.0.1:"), "{authority}");
@@ -455,7 +473,7 @@ mod tests {
                 "Doubles an integer".to_string(),
                 r#"{"type":"object"}"#.to_string(),
                 "[]",
-            ));
+            ).expect("register"));
             let serving = start();
             let authority = serve(serving, "127.0.0.1:0").expect("served");
             clear_http_transport();
@@ -495,7 +513,7 @@ mod tests {
                 "Doubles an integer".to_string(),
                 r#"{"type":"object"}"#.to_string(),
                 r#"["spectra.std.fs.fs_write"]"#,
-            ));
+            ).expect("register"));
             // The run grants nothing, so the tool's derived effect is outside it.
             let spec = AgentSpec::parse(
                 r#"{"goal":"ungranted","model":"mock/echo","endpoint":"mock:","allow":[]}"#,

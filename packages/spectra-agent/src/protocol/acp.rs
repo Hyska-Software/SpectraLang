@@ -774,7 +774,7 @@ mod tests {
                 "Writes".to_string(),
                 r#"{"type":"object"}"#.to_string(),
                 r#"["spectra.std.fs.fs_write"]"#,
-            ));
+            ).expect("register"));
             let served = journalled_run(&journal_dir("denied"), "acp-denied");
             let response: Value = serde_json::from_str(
                 &handle(

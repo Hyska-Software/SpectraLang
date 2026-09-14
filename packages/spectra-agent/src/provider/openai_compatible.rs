@@ -5,12 +5,33 @@
 //! Retries are bounded and only issued for requests that are idempotent by
 //! construction: a deterministic run (`seed >= 0`) replays the identical
 //! sampled request, and the retry count is recorded on the run.
+//!
+//! Three things this provider refuses to guess:
+//!
+//! * **usage.** A response without `usage` is a typed failure, not a zero: the
+//!   run's token ceiling is enforced against the provider's own count, and a
+//!   silent zero would make that ceiling silently ineffective. Streaming asks
+//!   for `stream_options.include_usage` for the same reason.
+//! * **cost.** Prices are the operator's data, not the model's identity:
+//!   [`prices`] reads `SPECTRA_AGENT_PRICES` (JSON, micros per token), and
+//!   [`Provider::reports_cost`] is true only when the model has an entry, so a
+//!   `max_cost_micros` ceiling is either enforceable or refused at
+//!   `agent_start` — never measured as zero.
+//! * **tool schemas.** A tool whose registered schema does not parse is
+//!   refused by name rather than sent as a permissive object schema, because a
+//!   permissive schema invites arguments the tool's wrapper will reject.
+//!
+//! Embeddings and streaming are both real: `/v1/embeddings` is called for
+//! [`Provider::embed`], and [`Provider::stream`] requests `stream: true` and
+//! parses the server-sent-event frames into the chunk sequence the run streams
+//! from.
 
 use serde_json::{json, Value};
 
 use super::{
     transport::{http_transport, TransportResponse},
-    FinishReason, Provider, ProviderError, ProviderRequest, ProviderResponse, ToolCall, Usage,
+    FinishReason, Provider, ProviderError, ProviderRequest, ProviderResponse, ProviderStream,
+    ToolCall, Usage,
 };
 
 /// Maximum additional attempts for an idempotent request.
@@ -48,21 +69,44 @@ impl OpenAiCompatibleProvider {
         ))
     }
 
-    fn request_body(&self, request: &ProviderRequest) -> Value {
+    fn embeddings_url(&self) -> Result<String, ProviderError> {
+        if self.endpoint.is_empty() {
+            return Err(ProviderError::NotConfigured(
+                "no provider endpoint: set AgentSpec.endpoint, SPECTRA_AGENT_ENDPOINT or OPENAI_BASE_URL"
+                    .to_string(),
+            ));
+        }
+        Ok(format!(
+            "{}/v1/embeddings",
+            self.endpoint.trim_end_matches('/')
+        ))
+    }
+
+    /// The model a request resolves to (`request.model` wins when set).
+    fn model_of<'a>(&'a self, request_model: &'a str) -> &'a str {
+        if request_model.is_empty() {
+            self.model.as_str()
+        } else {
+            request_model
+        }
+    }
+
+    /// The request body for one turn.
+    ///
+    /// Returns an error rather than a body when a tool's schema cannot be
+    /// parsed: the model must never be offered a call the wrapper cannot
+    /// accept, and a permissive substitute would hide the broken descriptor.
+    fn request_body(&self, request: &ProviderRequest) -> Result<Value, ProviderError> {
         let messages = request
             .messages
             .iter()
             .map(|message| json!({ "role": message.role, "content": message.content }))
             .collect::<Vec<_>>();
-        let model = if request.model.is_empty() {
-            self.model.as_str()
-        } else {
-            request.model.as_str()
-        };
         let mut body = json!({
-            "model": model,
+            "model": self.model_of(&request.model),
             "messages": messages,
         });
+
         if let Some(temperature) = request.temperature {
             body["temperature"] = json!(temperature);
         }
@@ -79,23 +123,27 @@ impl OpenAiCompatibleProvider {
         }
         if !request.tools.is_empty() {
             // OpenAI `tools` array. Each tool exposes one payload argument, so
-            // the stored schema is the argument schema itself.
-            let tools = request
-                .tools
-                .iter()
-                .map(|tool| {
-                    let parameters = serde_json::from_str::<Value>(&tool.input_schema)
-                        .unwrap_or_else(|_| json!({ "type": "object" }));
-                    json!({
-                        "type": "function",
-                        "function": {
-                            "name": tool.name,
-                            "description": tool.description,
-                            "parameters": parameters,
-                        }
-                    })
-                })
-                .collect::<Vec<_>>();
+            // the stored schema is the argument schema itself. A tool whose
+            // schema does not parse is dropped from the request and reported:
+            // sending it with a permissive schema would invite arguments its
+            // wrapper rejects, and silently omitting it would hide a broken
+            // descriptor.
+            let mut tools = Vec::with_capacity(request.tools.len());
+            for tool in &request.tools {
+                let parameters = serde_json::from_str::<Value>(&tool.input_schema)
+                    .map_err(|error| ProviderError::InvalidRequest(format!(
+                        "tool '{}' has an input schema that is not JSON ({error}); the turn is                          refused rather than offering a permissive schema the tool cannot accept",
+                        tool.name
+                    )))?;
+                tools.push(json!({
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": parameters,
+                    }
+                }));
+            }
             body["tools"] = json!(tools);
         }
         // `top_k` has no OpenAI-compatible spelling; it is deliberately not
@@ -108,7 +156,7 @@ impl OpenAiCompatibleProvider {
                 });
             }
         }
-        body
+        Ok(body)
     }
 
     fn post(&self, url: &str, body: &str) -> Result<TransportResponse, String> {
@@ -144,13 +192,13 @@ impl Provider for OpenAiCompatibleProvider {
 
     fn complete(&self, request: &ProviderRequest) -> Result<ProviderResponse, ProviderError> {
         let url = self.chat_url()?;
-        let body = self.request_body(request).to_string();
+        let body = self.request_body(request)?.to_string();
         let idempotent = request.seed.is_some();
         let mut retries = 0u64;
         loop {
             match self.post(&url, &body) {
                 Ok(response) if (200..300).contains(&response.status) => {
-                    return parse_response(&response.body, retries);
+                    return parse_response(self.model_of(&request.model), &response.body, retries);
                 }
                 Ok(response) => {
                     let retryable_status = response.status >= 500 || response.status == 429;
@@ -174,16 +222,279 @@ impl Provider for OpenAiCompatibleProvider {
         }
     }
 
-    fn embed(&self, _text: &str) -> Result<Vec<f64>, ProviderError> {
-        Err(ProviderError::NotConfigured(
-            "the OpenAI-compatible provider has no embedding endpoint wired in R-3211; use the \
-             mock provider for the deterministic embedding path"
-                .to_string(),
-        ))
+    fn reports_cost(&self) -> bool {
+        // True exactly when the model has a price: a cost ceiling is then
+        // measurable rather than refused at `agent_start`.
+        prices().for_model(&self.model).is_some()
+    }
+
+    /// A real embedding request: `POST /v1/embeddings` with the model and the
+    /// input text, answered by `data[0].embedding`.
+    ///
+    /// Retries mirror `complete`: only a deterministic run (a seeded request)
+    /// replays, because the call is idempotent only then.
+    fn embed(&self, text: &str) -> Result<Vec<f64>, ProviderError> {
+        let url = self.embeddings_url()?;
+        let body = json!({ "model": self.model_of(""), "input": text }).to_string();
+        let mut attempts = 0u64;
+        loop {
+            match self.post(&url, &body) {
+                Ok(response) if (200..300).contains(&response.status) => {
+                    return parse_embedding(&response.body);
+                }
+                Ok(response) => {
+                    let retryable = response.status >= 500 || response.status == 429;
+                    if retryable && attempts < MAX_RETRIES {
+                        attempts += 1;
+                        continue;
+                    }
+                    return Err(ProviderError::Http {
+                        status: response.status,
+                        message: response.body,
+                    });
+                }
+                Err(message) => {
+                    if attempts < MAX_RETRIES {
+                        attempts += 1;
+                        continue;
+                    }
+                    return Err(ProviderError::Transport(message));
+                }
+            }
+        }
+    }
+
+    /// A streamed turn: the same chat request with `stream: true`, parsed from
+    /// the server-sent-event frames.
+    ///
+    /// The chunks are the frames' `choices[0].delta.content` in arrival order,
+    /// so a caller sees the model's own token stream rather than a
+    /// post-hoc split of the finished answer. Usage is requested explicitly
+    /// (`stream_options.include_usage`) and is required: a stream whose
+    /// accounting is unknown cannot be budgeted.
+    fn stream(&self, request: &ProviderRequest) -> Result<ProviderStream, ProviderError> {
+        let url = self.chat_url()?;
+        let mut body = self.request_body(request)?;
+        body["stream"] = json!(true);
+        body["stream_options"] = json!({ "include_usage": true });
+        let body = body.to_string();
+        let idempotent = request.seed.is_some();
+        let mut retries = 0u64;
+        loop {
+            match self.post(&url, &body) {
+                Ok(response) if (200..300).contains(&response.status) => {
+                    let (chunks, usage) = parse_stream(&response.body)?;
+                    return Ok(ProviderStream {
+                        chunks,
+                        usage,
+                        cost_micros: cost_micros(&self.model, usage),
+                        retries,
+                    });
+                }
+                Ok(response) => {
+                    let retryable = response.status >= 500 || response.status == 429;
+                    if idempotent && retryable && retries < MAX_RETRIES {
+                        retries += 1;
+                        continue;
+                    }
+                    return Err(ProviderError::Http {
+                        status: response.status,
+                        message: response.body,
+                    });
+                }
+                Err(message) => {
+                    if idempotent && retries < MAX_RETRIES {
+                        retries += 1;
+                        continue;
+                    }
+                    return Err(ProviderError::Transport(message));
+                }
+            }
+        }
     }
 }
 
-fn parse_response(body: &str, retries: u64) -> Result<ProviderResponse, ProviderError> {
+/// Micros per token for one model, as the operator configures them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Price {
+    pub input_micros_per_token: u64,
+    pub output_micros_per_token: u64,
+}
+
+/// The operator's price table.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct PriceTable {
+    entries: std::collections::BTreeMap<String, Price>,
+}
+
+impl PriceTable {
+    /// Reads `SPECTRA_AGENT_PRICES`, a JSON object of
+    /// `{"<model>":{"in":micros,"out":micros}}`.
+    ///
+    /// An unreadable table is *no* table (every cost ceiling is then refused at
+    /// `agent_start`), never a table of zeros: a zero price is a claim, and
+    /// this provider does not invent claims about money.
+    pub(crate) fn from_env() -> Self {
+        let Ok(raw) = std::env::var("SPECTRA_AGENT_PRICES") else {
+            return Self::default();
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&raw) else {
+            return Self::default();
+        };
+        let mut entries = std::collections::BTreeMap::new();
+        if let Some(object) = value.as_object() {
+            for (model, price) in object {
+                let input = price.get("in").and_then(Value::as_u64);
+                let output = price.get("out").and_then(Value::as_u64);
+                if let (Some(input), Some(output)) = (input, output) {
+                    entries.insert(
+                        model.clone(),
+                        Price {
+                            input_micros_per_token: input,
+                            output_micros_per_token: output,
+                        },
+                    );
+                }
+            }
+        }
+        Self { entries }
+    }
+
+    pub(crate) fn for_model(&self, model: &str) -> Option<Price> {
+        self.entries.get(model).copied()
+    }
+}
+
+/// The process price table, read once (the environment does not change under a
+/// running host in a way a turn should observe mid-run).
+pub(crate) fn prices() -> &'static PriceTable {
+    static PRICES: std::sync::OnceLock<PriceTable> = std::sync::OnceLock::new();
+    PRICES.get_or_init(PriceTable::from_env)
+}
+
+/// The cost of one response according to the operator's table, or zero when
+/// the model has no price (`reports_cost()` then says so, and a cost ceiling
+/// is refused at `agent_start`).
+fn cost_micros(model: &str, usage: Usage) -> u64 {
+    match prices().for_model(model) {
+        Some(price) => usage
+            .input_tokens
+            .saturating_mul(price.input_micros_per_token)
+            .saturating_add(usage.output_tokens.saturating_mul(price.output_micros_per_token)),
+        None => 0,
+    }
+}
+
+/// `POST /v1/embeddings` answers with `data[0].embedding`: the vector, and
+/// nothing else is accepted in its place.
+fn parse_embedding(body: &str) -> Result<Vec<f64>, ProviderError> {
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::InvalidResponse(format!("response is not JSON: {error}")))?;
+    let vector: Vec<f64> = value
+        .get("data")
+        .and_then(Value::as_array)
+        .and_then(|data| data.first())
+        .and_then(|first| first.get("embedding"))
+        .and_then(Value::as_array)
+        .map(|values| values.iter().filter_map(Value::as_f64).collect())
+        .unwrap_or_default();
+    if vector.is_empty() {
+        return Err(ProviderError::InvalidResponse(
+            "response has no data[0].embedding array".to_string(),
+        ));
+    }
+    Ok(vector)
+}
+
+/// Parses a server-sent-event chat stream into its chunks and usage.
+///
+/// Frames are `data: {json}` lines terminated by `data: [DONE]`; each frame's
+/// `choices[0].delta.content` is one chunk. Usage arrives in a frame of its own
+/// (the one `stream_options.include_usage` asks for) and is required: a
+/// streamed turn the run cannot account for is refused rather than budgeted as
+/// zero.
+fn parse_stream(body: &str) -> Result<(Vec<String>, Usage), ProviderError> {
+    let mut chunks = Vec::new();
+    let mut usage: Option<Usage> = None;
+    let mut frames = 0usize;
+    for line in body.lines() {
+        let line = line.trim_start();
+        let Some(payload) = line.strip_prefix("data:") else {
+            // Event names, comments and keep-alives carry no content.
+            continue;
+        };
+        let payload = payload.trim();
+        if payload.is_empty() {
+            continue;
+        }
+        if payload == "[DONE]" {
+            break;
+        }
+        let frame: Value = serde_json::from_str(payload).map_err(|error| {
+            ProviderError::InvalidResponse(format!("stream frame is not JSON: {error}"))
+        })?;
+        // A frame may carry an error instead of a delta.
+        if let Some(error) = frame.get("error") {
+            return Err(ProviderError::InvalidResponse(format!(
+                "the stream reported an error: {error}"
+            )));
+        }
+        frames += 1;
+        if let Some(delta) = frame
+            .get("choices")
+            .and_then(Value::as_array)
+            .and_then(|choices| choices.first())
+            .and_then(|choice| choice.get("delta"))
+            .and_then(|delta| delta.get("content"))
+            .and_then(Value::as_str)
+        {
+            if !delta.is_empty() {
+                chunks.push(delta.to_string());
+            }
+        }
+        if let Some(frame_usage) = frame.get("usage").filter(|usage| !usage.is_null()) {
+            usage = Some(Usage {
+                input_tokens: frame_usage
+                    .get("prompt_tokens")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| {
+                        ProviderError::InvalidResponse(
+                            "the stream's usage frame has no prompt_tokens".to_string(),
+                        )
+                    })?,
+                output_tokens: frame_usage
+                    .get("completion_tokens")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| {
+                        ProviderError::InvalidResponse(
+                            "the stream's usage frame has no completion_tokens".to_string(),
+                        )
+                    })?,
+            });
+        }
+    }
+    if frames == 0 {
+        return Err(ProviderError::InvalidResponse(
+            "the stream carried no server-sent-event frames".to_string(),
+        ));
+    }
+    let usage = usage.ok_or_else(|| {
+        ProviderError::InvalidResponse(
+            "the stream reported no usage, so the turn cannot be accounted for; the request asks \
+             for `stream_options.include_usage` and a server that ignores it would silently make \
+             every token ceiling ineffective"
+                .to_string(),
+        )
+    })?;
+    Ok((chunks, usage))
+}
+
+/// Parses one chat completion, priced by `model`.
+fn parse_response(
+    model: &str,
+    body: &str,
+    retries: u64,
+) -> Result<ProviderResponse, ProviderError> {
     let value: Value = serde_json::from_str(body)
         .map_err(|error| ProviderError::InvalidResponse(format!("response is not JSON: {error}")))?;
     let message = value
@@ -225,15 +536,28 @@ fn parse_response(body: &str, retries: u64) -> Result<ProviderResponse, Provider
             ));
         }
     };
-    let usage = value.get("usage");
+    // Usage is required: the run's token ceiling is enforced against the
+    // provider's own count, and a silent zero would make it ineffective.
+    let usage = value
+        .get("usage")
+        .filter(|usage| !usage.is_null())
+        .ok_or_else(|| {
+            ProviderError::InvalidResponse(
+                "response has no usage, so the turn cannot be accounted for".to_string(),
+            )
+        })?;
     let input_tokens = usage
-        .and_then(|usage| usage.get("prompt_tokens"))
+        .get("prompt_tokens")
         .and_then(Value::as_u64)
-        .unwrap_or(0);
+        .ok_or_else(|| {
+            ProviderError::InvalidResponse("response usage has no prompt_tokens".to_string())
+        })?;
     let output_tokens = usage
-        .and_then(|usage| usage.get("completion_tokens"))
+        .get("completion_tokens")
         .and_then(Value::as_u64)
-        .unwrap_or(0);
+        .ok_or_else(|| {
+            ProviderError::InvalidResponse("response usage has no completion_tokens".to_string())
+        })?;
     let finish = value
         .get("choices")
         .and_then(Value::as_array)
@@ -246,15 +570,17 @@ fn parse_response(body: &str, retries: u64) -> Result<ProviderResponse, Provider
             other => FinishReason::Other(other.to_string()),
         })
         .unwrap_or(FinishReason::Stop);
+    let usage = Usage {
+        input_tokens,
+        output_tokens,
+    };
     Ok(ProviderResponse {
         text,
         tool_calls,
-        usage: Usage {
-            input_tokens,
-            output_tokens,
-        },
-        // Pricing for real models is R-3216's checked-in price table.
-        cost_micros: 0,
+        usage,
+        // The operator's price table decides the cost; without an entry the
+        // provider reports that it cannot price the turn (`reports_cost`).
+        cost_micros: cost_micros(model, usage),
         retries,
         finish,
     })
@@ -386,6 +712,138 @@ mod tests {
         clear_http_transport();
     }
 
+    /// A streamed turn is the server's own chunk sequence, and its usage is
+    /// required: the run budgets on it.
+    #[test]
+    fn a_streamed_turn_parses_the_event_frames_and_requires_usage() {
+        let _guard = transport_lock();
+        clear_http_transport();
+        let calls = ScriptedTransport::install(
+            200,
+            "data: {\"choices\":[{\"delta\":{\"content\":\"mock \"}}]}\n\
+             data: {\"choices\":[{\"delta\":{\"content\":\"echo\"}}]}\n\
+             data: {\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2}}\n\
+             data: [DONE]\n",
+        );
+        let stream = provider().stream(&request(None)).expect("streamed turn");
+        assert_eq!(stream.chunks, vec!["mock ".to_string(), "echo".to_string()]);
+        assert_eq!(
+            stream.usage,
+            Usage {
+                input_tokens: 4,
+                output_tokens: 2
+            }
+        );
+        let call = calls.lock().unwrap_or_else(|e| e.into_inner())[0].clone();
+        assert!(call.contains("\"stream\":true"), "{call}");
+        assert!(call.contains("include_usage"), "{call}");
+        clear_http_transport();
+
+        // A stream without usage is refused: the turn could not be accounted.
+        clear_http_transport();
+        ScriptedTransport::install(
+            200,
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n",
+        );
+        let error = provider().stream(&request(None)).expect_err("no usage");
+        assert!(matches!(error, ProviderError::InvalidResponse(_)), "{error:?}");
+        assert!(error.to_string().contains("no usage"), "{error}");
+        clear_http_transport();
+
+        // A stream frame that carries an error is that error.
+        clear_http_transport();
+        ScriptedTransport::install(
+            200,
+            "data: {\"error\":{\"message\":\"context length exceeded\"}}\n",
+        );
+        let error = provider().stream(&request(None)).expect_err("error frame");
+        assert!(error.to_string().contains("context length exceeded"), "{error}");
+        clear_http_transport();
+    }
+
+    /// Embeddings are a real request to `/v1/embeddings`.
+    #[test]
+    fn embeddings_are_requested_from_the_embeddings_endpoint() {
+        let _guard = transport_lock();
+        clear_http_transport();
+        let calls = ScriptedTransport::install(
+            200,
+            r#"{"data":[{"embedding":[0.25,-0.5,0.75],"index":0}]}"#,
+        );
+        let vector = provider().embed("hello").expect("embedding");
+        assert_eq!(vector, vec![0.25, -0.5, 0.75]);
+        let call = calls.lock().unwrap_or_else(|e| e.into_inner())[0].clone();
+        assert!(call.starts_with("https://provider.invalid/v1/embeddings "), "{call}");
+        assert!(call.contains("\"input\":\"hello\""), "{call}");
+        clear_http_transport();
+
+        // A response without an embedding vector is refused, not zero-filled.
+        clear_http_transport();
+        ScriptedTransport::install(200, r#"{"data":[]}"#);
+        let error = provider().embed("hello").expect_err("no vector");
+        assert!(error.to_string().contains("data[0].embedding"), "{error}");
+        clear_http_transport();
+    }
+
+    /// The response's usage is required, and the price table decides the cost.
+    #[test]
+    fn usage_is_required_and_costs_come_from_the_operators_table() {
+        let _guard = transport_lock();
+        clear_http_transport();
+        ScriptedTransport::install(
+            200,
+            r#"{"choices":[{"message":{"content":"hi"},"finish_reason":"stop"}]}"#,
+        );
+        let error = provider().complete(&request(None)).expect_err("no usage");
+        assert!(matches!(error, ProviderError::InvalidResponse(_)), "{error:?}");
+        assert!(error.to_string().contains("no usage"), "{error}");
+        clear_http_transport();
+
+        // The table itself is data: an unreadable entry is no entry, and a
+        // priced model costs exactly what the operator said.
+        let table = PriceTable::from_env();
+        assert_eq!(table.for_model("gpt-test"), None);
+        let priced = PriceTable {
+            entries: std::collections::BTreeMap::from([(
+                "gpt-test".to_string(),
+                Price {
+                    input_micros_per_token: 3,
+                    output_micros_per_token: 5,
+                },
+            )]),
+        };
+        let price = priced.for_model("gpt-test").expect("priced");
+        assert_eq!(
+            price.input_micros_per_token * 4 + price.output_micros_per_token * 2,
+            22
+        );
+        // An unpriced model reports that it cannot price a turn, so a cost
+        // ceiling is refused at `agent_start` instead of measured as zero.
+        assert!(!provider().reports_cost());
+    }
+
+    /// A tool whose schema does not parse refuses the turn by name.
+    #[test]
+    fn a_broken_tool_schema_refuses_the_turn() {
+        let _guard = transport_lock();
+        clear_http_transport();
+        let calls = ScriptedTransport::install(
+            200,
+            r#"{"choices":[{"message":{"content":"hi"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}"#,
+        );
+        let mut request = request(None);
+        request.tools = vec![super::super::ToolDefinition {
+            name: "broken".to_string(),
+            description: "not a schema".to_string(),
+            input_schema: "{not json".to_string(),
+        }];
+        let error = provider().complete(&request).expect_err("refused");
+        assert!(matches!(error, ProviderError::InvalidRequest(_)), "{error:?}");
+        assert!(error.to_string().contains("broken"), "{error}");
+        assert_eq!(call_count(&calls), 0, "nothing was sent");
+        clear_http_transport();
+    }
+
     #[test]
     fn a_missing_transport_fails_closed() {
         let _guard = transport_lock();
@@ -403,7 +861,8 @@ mod tests {
             200,
             r#"{"choices":[{"message":{"content":null,"tool_calls":[
                 {"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"a.txt\"}"}}]},
-                "finish_reason":"tool_calls"}]}"#,
+                "finish_reason":"tool_calls"}],
+                "usage":{"prompt_tokens":7,"completion_tokens":3}}"#,
         );
         let response = provider().complete(&request(None)).expect("turn");
         assert_eq!(response.text, "");
@@ -435,7 +894,8 @@ mod tests {
     #[test]
     fn tool_definitions_reach_the_request_body() {
         let request = request(None);
-        assert!(provider().request_body(&request).get("tools").is_none());
+        let body = provider().request_body(&request).expect("body");
+        assert!(body.get("tools").is_none());
 
         let mut with_tools = request;
         with_tools.tools = vec![crate::provider::ToolDefinition {
@@ -443,7 +903,7 @@ mod tests {
             description: "Read a file".to_string(),
             input_schema: r#"{"type":"object","properties":{"path":{"type":"string"}}}"#.to_string(),
         }];
-        let body = provider().request_body(&with_tools);
+        let body = provider().request_body(&with_tools).expect("body");
         assert_eq!(body["tools"][0]["type"], "function");
         assert_eq!(body["tools"][0]["function"]["name"], "read_file");
         assert_eq!(body["tools"][0]["function"]["description"], "Read a file");
@@ -458,7 +918,7 @@ mod tests {
         let _guard = transport_lock();
         let mut request = request(Some(9));
         request.json_schema = Some(r#"{"type":"object","required":["count"]}"#.to_string());
-        let body = provider().request_body(&request);
+        let body = provider().request_body(&request).expect("body");
         assert_eq!(body["seed"], 9);
         assert_eq!(
             body["response_format"]["json_schema"]["schema"]["required"][0],

@@ -15,14 +15,16 @@ The checks run in order, stopping at the first failure:
       runs all of them;
   (d) surface determinism: two `spectralang surface --json` runs over
       `tests/projects/valid/integrated_agent_service` are byte-identical;
-  (e) every runnable example (`examples/agent/01..15`) in JIT and AOT
+  (e) every runnable example (`examples/agent/01..17`) in JIT and AOT
       (`compile --debug-info=none --emit-exe`, then execute);
-  (f) the verification fixtures (`tests/validation/384..403`) in JIT and AOT --
+  (f) the verification fixtures (`tests/validation/384..408`) in JIT and AOT --
       the language-surface contracts for streaming lifecycle, run-level grant
       enforcement, the journal artifact and run introspection, the
       aggregate-result lifetime regression, the dead-run guard matrix, spec
       rejection, the stream teardown boundary, provider routing, the scripted
-      directive grammar and the async scalar-slot code-generation regressions;
+      directive grammar, the async scalar-slot code-generation regressions, the
+      memory boundaries, the ceiling combinations, replay divergence, the A2A
+      task states and the taint ledger's tags;
   (g) the integrated-project validator
       (`scripts/validate_r3221_integrated_agent_service.py`).
 
@@ -99,6 +101,8 @@ EXAMPLES = {
     "13-embeddings-and-ranking": "examples/agent/13-embeddings-and-ranking",
     "14-acp-and-permissions": "examples/agent/14-acp-and-permissions",
     "15-mcp-service-surface": "examples/agent/15-mcp-service-surface",
+    "16-a2a-task-lifecycle": "examples/agent/16-a2a-task-lifecycle",
+    "17-token-budgeting": "examples/agent/17-token-budgeting",
 }
 
 # The language-surface contracts that back the example set: the streaming
@@ -126,6 +130,11 @@ VERIFICATION_FIXTURES = {
     "provider_routing": "tests/validation/401_agent_provider_routing.spectra",
     "script_directives": "tests/validation/402_agent_script_directives.spectra",
     "async_scalar_slots": "tests/validation/403_async_scalar_slots_and_float_payloads.spectra",
+    "memory_edges": "tests/validation/404_agent_memory_edges.spectra",
+    "ceiling_combinations": "tests/validation/405_agent_ceiling_combinations.spectra",
+    "replay_divergence": "tests/validation/406_agent_replay_divergence.spectra",
+    "a2a_task_states": "tests/validation/407_agent_a2a_task_states.spectra",
+    "taint_ledger_edges": "tests/validation/408_agent_taint_ledger_edges.spectra",
 }
 
 CARGO = os.environ.get("CARGO") or shutil.which("cargo") or "cargo"

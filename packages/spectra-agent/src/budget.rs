@@ -212,16 +212,21 @@ pub(crate) fn guard(
 /// Settles a completed model turn: a strictly crossed ceiling cancels the run
 /// (this turn keeps its value); a run cancelled by a sibling refuses the
 /// value with the typed error.
+///
+/// `current` is the cancellation token of the unit of work being settled, when
+/// its caller has one: `cancel_siblings` must never cancel the task that is
+/// performing the evaluation. A caller with no token of its own — an in-crate
+/// adapter driving the loop directly — passes `None`.
 pub(crate) fn settle(
     state: &mut RunState,
-    current: &CancellationToken,
+    current: Option<&CancellationToken>,
 ) -> Result<(), AgentError> {
     if state.cancelled {
         return Err(state.cancelled_error());
     }
     if let Some(ceiling) = state.budget.crossed(state) {
         state.mark_cancelled(ceiling);
-        cancel_siblings(state, Some(current));
+        cancel_siblings(state, current);
     }
     Ok(())
 }
@@ -248,7 +253,21 @@ pub(crate) fn settle_task(
     run_handle: i64,
     current: &CancellationToken,
 ) -> Result<(), AgentError> {
-    run::with_run(run_handle, |state| settle(state, current))?
+    run::with_run(run_handle, |state| settle(state, Some(current)))?
+}
+
+/// Settles one completed turn for a caller that holds no cancellation token of
+/// its own.
+///
+/// The async host entry points settle through the worker that runs them
+/// ([`write_run_task`](crate::hosts)), so a ceiling a turn crossed is marked
+/// before the value is delivered. An in-crate adapter that drives the same
+/// loop directly — the A2A task executor — has no such worker, and without
+/// this the crossing stayed unmarked: the delegated run reported `completed`
+/// with a spent budget, and the task's outcome contradicted the adapter's
+/// contract that a crossed ceiling is a `failed` task naming it.
+pub(crate) fn settle_turn(run_handle: i64) -> Result<(), AgentError> {
+    run::with_run(run_handle, |state| settle(state, None))?
 }
 
 /// Charges one tool call against `max_tool_calls`.

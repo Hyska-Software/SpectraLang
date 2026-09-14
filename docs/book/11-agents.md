@@ -137,16 +137,58 @@ is not executed again, and a failure never masks the compensations that follow
 it. The compensation fixture is
 `tests/validation/380_agent_compensation.spectra`.
 
+## Providers
+
+A run's provider is data: the spec's `model` and `endpoint` select it, and
+nothing else does.
+
+| Provider | Selected by | What it is |
+|---|---|---|
+| deterministic mock | `endpoint: "mock:"` or a `mock/` model prefix | in-process, scripted through the prompt (`spectra:tool=`, `spectra:final=`, `spectra:json`, `spectra:invalid-json`, `spectra:sleep-ms=N`); every example and fixture runs on it, so no test needs a network or a credential |
+| OpenAI-compatible HTTP | anything else | a real client over the injected transport: `chat/completions`, `embeddings`, and server-sent-event streaming (`stream: true` with `stream_options.include_usage`) |
+| local | `endpoint: "local:<model.onnx>"` or `SPECTRA_AGENT_LOCAL_MODEL` | an ONNX causal language model answering **in process** through the runtime's own generation engine — the same engine `spectra.std.ml.generate_ex` drives |
+
+Two properties of the HTTP provider matter to a governed run. Its response's
+`usage` is **required**: a provider that answers without a token count cannot be
+budgeted, so the turn fails with a typed error naming the missing field rather
+than counting the tokens as zero (streaming asks for
+`stream_options.include_usage` for the same reason). And its *cost* is the
+operator's data: `SPECTRA_AGENT_PRICES` is a JSON table of micros per token
+(`{"<model>":{"in":1,"out":2}}`), `reports_cost()` is true exactly when the
+model has an entry, and a `max_cost_micros` ceiling is therefore either
+enforceable or refused at `agent_start` — never measured as zero.
+
+The local provider is configured entirely from the spec and the environment:
+
+```text
+endpoint: "local:models/my-model.onnx"     # or SPECTRA_AGENT_LOCAL_MODEL
+SPECTRA_AGENT_LOCAL_TOKENIZER=...          # else '<model>.spar', else '<model-dir>/tokenizer.spar'
+SPECTRA_AGENT_LOCAL_EMBEDDING=...          # an embedding graph, for `embed`
+```
+
+It tokenizes the prompt with the WordPiece artifact (the same artifact
+`spectra.std.ml.tokenizer_load` accepts), samples with the request's
+`temperature`/`top_k`/`seed` (so `honors_seed()` is true and a deterministic run
+replays identically), and stops on the tokenizer's stop token. Its token
+accounting is the tokenizer's own count at both ends, which makes token ceilings
+exact. Two honest limits: local inference has no price (`reports_cost()` is
+false, so a cost ceiling is refused at `agent_start`), and a raw causal language
+model has no tool-call protocol, so a local turn answers with text and the `act`
+loop sees no tool requests. Loading, generation and streaming need the
+runtime's opt-in `onnx` feature; without it the provider refuses by naming the
+feature, exactly as `spectra.std.ml.generate_ex` does.
+
 ## Runnable Examples
 
 Every example runs against the deterministic mock provider: no network and no
 credentials. The mock is scripted through the prompt
 (`spectra:tool=<name> {json}`, `spectra:final=<text>`, `spectra:json`,
 `spectra:sleep-ms=N`), which is what makes the tool loops reproducible in CI.
-The first seven are described below; `08`–`15` cover memory across runs,
+The first seven are described below; `08`–`17` cover memory across runs,
 compensations, list payloads, the tool-call ceiling, structured output, the
-embedding primitive, the ACP surface with its permission bridge, and the MCP
-surface a project serves.
+embedding primitive, the ACP surface with its permission bridge, the MCP surface
+a project serves, the A2A task lifecycle, and budgeting a run with
+`token_count`.
 
 ### 01 — Tool and Run
 
@@ -417,8 +459,12 @@ AOT):
   run handle stays its own refusal — the two handle tables are not each other.
 - `401_agent_provider_routing.spectra` — which provider a spec selects: the
   mock by endpoint *or* model prefix (the prefix outranking a non-mock
-  endpoint), the unconfigured local bridge, the empty-endpoint fallback, and
-  the refusal of `https://` on the synchronous path.
+  endpoint), the local bridge refusing by name when no model is configured, the
+  empty-endpoint fallback, and the refusal of `https://` on the synchronous
+  path. (The *configured* local path — an ONNX model answering in process — is
+  covered by the crate's `conformance` case
+  `the_local_provider_generates_from_a_real_model`, run with `--features onnx`;
+  the default build has no inference engine to load a model with.)
 - `402_agent_script_directives.spectra` — the grammar every `act` fixture rides
   on: a tool directive with an **empty remainder means `{}`** (the tool runs, so
   the argument document decoded), a script that ends on a tool directive stops
@@ -430,6 +476,38 @@ AOT):
   call whose value is read across a suspension, and an assignment whose own
   value crosses one (`count = count + zero(await one(1))` used to evaluate to
   `-1`). See `docs/architecture/agent-async-scalar-slot-fixes.md`.
+
+- `404_agent_memory_edges.spectra` — the store's edges: `remember(run, "")` is
+  accepted and the empty entry ranks and is returned like any other; a negative
+  `top_k` is the same typed refusal as zero; the payload budget is a *fit* rule
+  (exactly 512 tokens are returned whole with `truncated: false`, one token
+  more is not returned at all) rather than a truncation rule; and provenance
+  names the writer's declared `run_id`, empty when the spec declared none.
+- `405_agent_ceiling_combinations.spectra` — ceilings together: with tokens and
+  tool calls both declared the token ceiling is evaluated first, so the
+  dispatch is refused and the tool's own record shows it never ran; the
+  tool-call ceiling crossed outside `act` refuses the call beyond it before the
+  wrapper runs; and a wall-clock cancellation leaves `budget_remaining` at the
+  sentinel when no token ceiling is declared.
+- `406_agent_replay_divergence.spectra` — replay's failure mode and its
+  bookkeeping: a resumed run asking for a different effect fails closed with a
+  typed `journal_error` naming the step and both digests (while the run's own
+  report stays untouched); a step the journal does not hold executes and is
+  appended, so a partial journal resumes forward; and a replay re-applies the
+  recorded usage, so the resumed run's headroom matches the fresh run's.
+- `407_agent_a2a_task_states.spectra` — the task states, each with the evidence
+  it must carry: `completed` with a poll that adds no journal record, `failed`
+  naming the crossed ceiling (this is the state the adapter only reports
+  because it settles the delegated run before reading its outcome), `rejected`
+  from an ungranted effect with no artifact, the coded refusals around them
+  (`-32002`, `-32001`, `-32600`, `-32602`, `-32601`), and a task delegated
+  without a journal that can be neither polled nor canceled.
+- `408_agent_taint_ledger_edges.spectra` — the ledger's audit trail: an empty or
+  control-character `origin` is a typed `taint_error`, a long tag is truncated
+  to the documented 256 characters with the truncation visible in the journal's
+  `attribution`, and provenance is content addressed, so the same value entered
+  twice is one digest recorded twice while a different value is a different
+  digest.
 
 The stress harness (`scripts/stress_agent_block_on.py`) repeats fixture 397 in
 many short-lived processes for triage; it is not part of the gate.
@@ -552,6 +630,12 @@ claims are covered by deterministic tests, not by evals.
   scripted loop that dispatches a *sink* after a tool has run needs an approver
   or `untrusted: "allow"`. Fixture 402 records this as a harness fact; the gate
   itself is fixture 377.
+- A user function is exported under its own name in AOT builds, so a name the
+  runtime already imports from the platform collides at link time (`send`,
+  `recv`, `connect`, ... on Windows: `LNK2005: send already defined`). Name
+  such a helper something else (`send_request`); mangling every user symbol is
+  its own change, tracked in
+  `docs/architecture/agent-async-scalar-slot-fixes.md`.
 - The mock's scripted mode keeps an arm that replays a trailing
   `spectra:final=`, but no language-level caller can reach it: the loop ends at
   the first final and every call consumes its script from index 0. It is

@@ -393,6 +393,7 @@ fn ml_generate_kv(
     eos_id: i64,
     sampling: Option<MlGenerateSampling>,
     rng_state: &mut u64,
+    on_token: &mut dyn FnMut(i64) -> bool,
 ) -> Result<Vec<i64>, i32> {
     use ort::value::{Tensor, Value};
 
@@ -513,8 +514,16 @@ fn ml_generate_kv(
             carried.push((past_name.clone(), tensor));
         }
 
+        // The token is handed to the caller *before* it joins the sequence:
+        // a streaming caller emits it as it is produced, and returning `false`
+        // stops generation exactly as EOS would (the token is still appended,
+        // because it was produced).
+        let keep_going = on_token(next);
         ids.push(next);
         past = Some(carried);
+        if !keep_going {
+            break;
+        }
     }
     Ok(ids)
 }
@@ -531,6 +540,27 @@ pub(crate) fn ml_generate_inner(
     max_new_tokens: usize,
     eos_id: i64,
     sampling: Option<MlGenerateSampling>,
+) -> Result<Vec<i64>, i32> {
+    ml_generate_with(session_id, input_ids, max_new_tokens, eos_id, sampling, &mut |_| true)
+}
+
+/// The same generation, reporting each produced token to `on_token` as it is
+/// selected and stopping early when the callback returns `false`.
+///
+/// This is the engine behind `std.agent`'s local provider streaming: one
+/// callback per model token, in generation order, with the token already
+/// appended to the sequence (so a caller that stops early still holds a
+/// complete prefix). Both execution modes — KV-cache and full re-feed — share
+/// this contract, so a streaming caller cannot observe a different sequence
+/// from a non-streaming one.
+#[cfg(feature = "onnx")]
+pub(crate) fn ml_generate_with(
+    session_id: u64,
+    input_ids: &[i64],
+    max_new_tokens: usize,
+    eos_id: i64,
+    sampling: Option<MlGenerateSampling>,
+    on_token: &mut dyn FnMut(i64) -> bool,
 ) -> Result<Vec<i64>, i32> {
     use ort::value::Tensor;
     if input_ids.is_empty() || max_new_tokens == 0 {
@@ -562,6 +592,7 @@ pub(crate) fn ml_generate_inner(
             eos_id,
             sampling,
             &mut rng_state,
+            on_token,
         );
     }
 
@@ -604,6 +635,10 @@ pub(crate) fn ml_generate_inner(
         let next = ml_generate_pick_token(last, vocab, sampling, &mut rng_state);
         if next == eos_id {
             // EOS terminates generation and is NOT appended.
+            break;
+        }
+        if !on_token(next) {
+            ids.push(next);
             break;
         }
         ids.push(next);

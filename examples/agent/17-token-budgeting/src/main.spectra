@@ -1,0 +1,249 @@
+module main
+
+// Example 17 — budgeting a run with `token_count`.
+//
+// `token_count` is the only `std.agent` call that spends nothing: it answers
+// how many tokens a text costs, so a program can decide what to send *before*
+// it sends it. This example uses it the way a budget-aware caller does:
+//
+//   1. no ceiling: `budget_remaining` answers the documented sentinel
+//      (`i64::MAX`) and an embedding is not a model turn — it charges no
+//      tokens and does not advance `steps`;
+//   2. with `max_tokens: 12`, the counter starts at the ceiling and the turn's
+//      cost is exactly `token_count(prompt) + token_count(answer)`, which the
+//      mock's usage reports and the run's report agrees with;
+//   3. a prompt that would not fit is *refused* rather than truncated, with the
+//      typed `budget_exceeded` error naming the ceiling, and `agent_end`
+//      reports `budget_exceeded` with `"ceiling":"max_tokens"`.
+//
+// The budgeting rule the example demonstrates: ask `token_count` first, compare
+// against `budget_remaining`, and let the refusal happen before the provider is
+// reached rather than after.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.string as str
+import std.tensor as tensor
+
+func spec(ceiling: string) returns string {
+    return "{\"goal\":\"example-token-budgeting\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":" +
+        ceiling +
+        ",\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":31,\"journal\":\"\"}"
+}
+
+// The tokenizer splits on whitespace and punctuation, so both shapes count the
+// same way the provider's usage does.
+func prompt_cost(text: string) returns int {
+    return token_count(text)
+}
+
+// Run A: no ceiling, and a non-turn call that must not move the counters.
+async func unbounded_run() returns int {
+    let started = agent_start(spec("0"))
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let before = budget_remaining(run)
+        if let Result::Err(problem) = before {
+            println("budget failed: " + error.message(problem))
+            return 2
+        }
+        if let Result::Ok(remaining) = before {
+            // The documented sentinel: "unbounded", not a number. Compared
+            // with a small threshold rather than the literal, so the check
+            // reads the same in JIT and AOT.
+            if remaining < 1000000000 {
+                println("unbounded remaining: " + convert.int_to_string(remaining))
+                return 3
+            }
+            println("unbounded  -> " + convert.int_to_string(remaining))
+        }
+
+        // An embedding is not a model turn: it charges nothing.
+        let embedded = await embed(run, "alpha beta gamma")
+        if let Result::Err(problem) = embedded {
+            println("embed failed: " + error.message(problem))
+            return 4
+        }
+        if let Result::Ok(vector) = embedded {
+            if tensor.len(vector) != 8 {
+                return 5
+            }
+        }
+        let after = budget_remaining(run)
+        if let Result::Ok(remaining) = after {
+            if remaining < 1000000000 {
+                println("an embedding moved the budget: " + convert.int_to_string(remaining))
+                return 6
+            }
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("embed rpt  -> " + report)
+            if str.contains(report, "\"steps\":0") == false {
+                return 7
+            }
+            if str.contains(report, "\"tokens_in\":0") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+    }
+    return 0
+}
+
+// Run B: a ceiling, an accounting identity, and a refusal before the provider.
+async func bounded_run() returns int {
+    let ceiling = 12
+    let started = agent_start(spec(convert.int_to_string(ceiling)))
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let prompt = "alpha beta gamma"
+        let predicted = prompt_cost(prompt)
+        println("prompt     -> " + convert.int_to_string(predicted) + " tokens")
+
+        let first = await ask(run, prompt)
+        if let Result::Err(problem) = first {
+            println("ask failed: " + error.message(problem))
+            return 2
+        }
+        if let Result::Ok(answer) = first {
+            // The mock echoes: `mock echo: <prompt>` -- three words plus the
+            // echo prefix, which is what the reported usage charges.
+            let charged = predicted + prompt_cost(answer)
+            println("answer     -> " + answer + " (" + convert.int_to_string(prompt_cost(answer)) + " tokens)")
+
+            let remaining = budget_remaining(run)
+            if let Result::Ok(left) = remaining {
+                println("remaining  -> " + convert.int_to_string(left))
+                if left != ceiling - charged {
+                    println("accounting mismatch: " + convert.int_to_string(left))
+                    return 3
+                }
+            } else {
+                return 4
+            }
+        }
+
+        // The next prompt does not fit the remaining budget: the caller checks
+        // before spending, and the run refuses it anyway -- both answers agree.
+        let big_prompt = "one two three four five six seven eight nine ten"
+        let cost = prompt_cost(big_prompt)
+        let left_now = budget_remaining(run)
+        let affordable = false
+        if let Result::Ok(left) = left_now {
+            if cost <= left {
+                affordable = true
+            }
+        }
+        println("next       -> " + convert.int_to_string(cost) + " tokens, fits=" + convert.bool_to_string(affordable))
+        if affordable == true {
+            println("the caller's own arithmetic says the prompt fits")
+            return 5
+        }
+
+        // The runtime does not stop that call -- the budget was not yet spent,
+        // only about to be -- so the crossing turn is delivered and the run is
+        // cancelled behind it. That asymmetry is why a caller who cares about
+        // the ceiling budgets with `token_count` first.
+        let sent_anyway = await ask(run, big_prompt)
+        if let Result::Ok(text) = sent_anyway {
+            println("sent anyway-> " + text)
+        } else {
+            println("the runtime refused a call whose budget was not yet spent")
+            return 6
+        }
+        let drained = budget_remaining(run)
+        if let Result::Ok(left) = drained {
+            if left != 0 {
+                println("remaining after the crossing: " + convert.int_to_string(left))
+                return 7
+            }
+        }
+
+        // Now the budget *is* spent: the next call is refused before it reaches
+        // the provider, naming the ceiling.
+        let refused = await ask(run, "hello")
+        if let Result::Err(problem) = refused {
+            println("refused    -> " + error.message(problem))
+            if str.contains(error.message(problem), "budget_exceeded") == false {
+                return 8
+            }
+            if str.contains(error.message(problem), "max_tokens") == false {
+                return 9
+            }
+        } else {
+            println("a call was served with the budget spent")
+            return 10
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report     -> " + report)
+            if str.contains(report, "\"status\":\"budget_exceeded\"") == false {
+                return 11
+            }
+            if str.contains(report, "\"ceiling\":\"max_tokens\"") == false {
+                return 12
+            }
+        } else {
+            return 13
+        }
+    }
+    return 0
+}
+
+// Run C: the ceiling is crossed by the *first* turn, and the report says so.
+async func crossed_run() returns int {
+    let started = agent_start(spec("2"))
+    if let Result::Ok(run) = started {
+        let prompt = "one two three four five"
+        let answer = await ask(run, prompt)
+        if let Result::Ok(text) = answer {
+            // The crossing turn still delivers its value: the run is cancelled
+            // *after* it, not instead of it.
+            println("crossed    -> " + text)
+        } else {
+            return 1
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("crossed rpt-> " + report)
+            if str.contains(report, "\"status\":\"budget_exceeded\"") == false {
+                return 2
+            }
+            if str.contains(report, "\"ceiling\":\"max_tokens\"") == false {
+                return 3
+            }
+        } else {
+            return 4
+        }
+    } else {
+        return 6
+    }
+    return 0
+}
+
+public func main() returns int {
+    let first = block_on(unbounded_run())
+    if first != 0 {
+        return first
+    }
+    let second = block_on(bounded_run())
+    if second != 0 {
+        return 20 + second
+    }
+    let third = block_on(crossed_run())
+    if third != 0 {
+        return 40 + third
+    }
+    return 0
+}

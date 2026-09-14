@@ -343,7 +343,7 @@ mod tests {
             "doubles n".to_string(),
             r#"{"type":"object"}"#.to_string(),
             "[]",
-        ));
+        ).expect("register"));
 
         let dir = std::env::temp_dir().join(format!(
             "spectra-replay-{}",

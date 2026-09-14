@@ -1,0 +1,305 @@
+module agent_memory_edges
+
+// The memory store's edges, at the language surface.
+//
+// 369 and 395 cover the recall shape, `top_k: 0`, an empty store, an empty
+// query and store isolation by goal. This fixture adds the boundaries those
+// leave open:
+//
+//   * `remember(run, "")` is accepted -- the smallest possible insert -- and
+//     the empty entry is a first-class entry: it ranks, it is returned with a
+//     score, and it carries the same provenance as any other;
+//   * a negative `top_k` is the same typed refusal as zero ("must be >= 1"),
+//     so the boundary is the same on both sides;
+//   * the payload budget is a *fit* rule, not a truncation rule: an entry of
+//     exactly `token_budget` tokens is returned in full with
+//     `truncated: false`, and an entry one token larger is not returned at
+//     all -- `truncated: true` with an empty selection. Cutting a memory in
+//     half would change what the model reads; dropping it is honest;
+//   * provenance: an entry names the writing run's durable `run_id`, which is
+//     empty when the spec declared none (the handle-based identity is the
+//     `run` field's job), and the store is scoped by the run's goal.
+
+from std.io import println
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.string as str
+
+const AUTO_GOAL = "memory-edges-auto"
+const NAMED_GOAL = "memory-edges-named"
+
+// A blank spec: no declared `run_id`, so the durable identity is empty.
+func spec(goal: string) returns string {
+    return "{\"goal\":\"" +
+        goal +
+        "\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"allow\",\"seed\":7,\"journal\":\"\"}"
+}
+
+func declared_spec(goal: string, run_id: string) returns string {
+    return "{\"goal\":\"" +
+        goal +
+        "\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"allow\",\"seed\":7,\"journal\":\"\",\"run_id\":\"" +
+        run_id +
+        "\"}"
+}
+
+// `count` space separated words: `token_count` counts them one by one.
+func words(count: int) returns string {
+    let text = ""
+    let index = 0
+    while index < count {
+        if index > 0 {
+            text = text + " "
+        }
+        text = text + "w" + convert.int_to_string(index)
+        index = index + 1
+    }
+    return text
+}
+
+// The empty insert, and the two sides of the `top_k` boundary.
+async func empty_insert_and_top_k() returns int {
+    let started = agent_start(spec(AUTO_GOAL))
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let stored = remember(run, "")
+        if let Result::Ok(ok) = stored {
+            if ok == false {
+                println("an empty entry was refused")
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        // The empty entry is returned: same schema, score present, text empty.
+        let payload = recall(run, "", 1)
+        if let Result::Ok(document) = payload {
+            println("empty    -> " + document)
+            if str.contains(document, "\"text\":\"\"") == false {
+                return 4
+            }
+            if str.contains(document, "\"score\":") == false {
+                return 5
+            }
+            if str.contains(document, "\"truncated\":false") == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+
+        // A negative `top_k` is the same typed refusal as zero: the boundary
+        // is one, not zero.
+        let negative = recall(run, "anything", -1)
+        if let Result::Err(problem) = negative {
+            println("top_k=-1 -> " + error.message(problem))
+            if str.contains(error.message(problem), "memory_error") == false {
+                return 8
+            }
+            if str.contains(error.message(problem), "must be >= 1") == false {
+                return 9
+            }
+        } else {
+            println("a negative top_k was accepted")
+            return 10
+        }
+        let zero = recall(run, "anything", 0)
+        if let Result::Err(problem) = zero {
+            if str.contains(error.message(problem), "must be >= 1") == false {
+                return 11
+            }
+        } else {
+            println("top_k=0 was accepted")
+            return 12
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 13
+        }
+    }
+    return 0
+}
+
+// The payload budget: 512 tokens fit, 513 do not, and the difference is
+// visible in the payload rather than in the entry's text.
+async func the_budget_is_a_fit_rule() returns int {
+    let started = agent_start(spec("memory-edges-budget"))
+    if let Result::Ok(run) = started {
+        let exact = words(512)
+        let over = words(513)
+        if token_count(exact) != 512 {
+            println("token_count(exact) = " + convert.int_to_string(token_count(exact)))
+            return 1
+        }
+        if token_count(over) != 513 {
+            println("token_count(over) = " + convert.int_to_string(token_count(over)))
+            return 2
+        }
+
+        let first = remember(run, exact)
+        let second = remember(run, over)
+        if let Result::Ok(ok) = first {
+            if ok == false {
+                return 3
+            }
+        } else {
+            return 4
+        }
+        if let Result::Ok(ok) = second {
+            if ok == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+
+        // Exactly at the budget: the entry comes back whole.
+        let at_budget = recall(run, exact, 1)
+        if let Result::Ok(document) = at_budget {
+            if str.contains(document, "\"token_count\":512") == false {
+                println("at-budget: " + document)
+                return 7
+            }
+            if str.contains(document, "\"truncated\":false") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+
+        // One token over: nothing is selected, and the payload says why.
+        let over_budget = recall(run, over, 1)
+        if let Result::Ok(document) = over_budget {
+            if str.contains(document, "\"truncated\":true") == false {
+                println("over-budget: " + document)
+                return 10
+            }
+            if str.contains(document, "\"token_count\":0") == false {
+                return 11
+            }
+            if str.contains(document, "\"token_budget\":512") == false {
+                return 12
+            }
+        } else {
+            return 13
+        }
+
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 14
+        }
+    } else {
+        return 15
+    }
+    return 0
+}
+
+// Provenance: the durable id is the spec's, and an undeclared one is empty
+// rather than invented.
+async func provenance_fields() returns int {
+    let started = agent_start(declared_spec(NAMED_GOAL, "memory-edges-run"))
+    if let Result::Ok(run) = started {
+        let stored = remember(run, "the note the named run wrote")
+        if let Result::Err(problem) = stored {
+            println("store failed: " + error.message(problem))
+            return 1
+        }
+        let payload = recall(run, "the note", 1)
+        if let Result::Ok(document) = payload {
+            println("declared -> " + document)
+            if str.contains(document, "\"run_id\":\"memory-edges-run\"") == false {
+                return 2
+            }
+            if str.contains(document, "\"scope\":\"" + NAMED_GOAL + "\"") == false {
+                return 3
+            }
+            if str.contains(document, "\"origin\":\"agent\"") == false {
+                return 4
+            }
+            if str.contains(document, "\"tier\":\"episodic\"") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 7
+        }
+    } else {
+        return 8
+    }
+
+    // The same store, read by a run whose spec declared no id: the entry is
+    // still there (the goal is the scope) and its `run_id` is the empty string
+    // the writer had -- the store never invents an identity for it.
+    let second = agent_start(spec(NAMED_GOAL))
+    if let Result::Ok(run) = second {
+        let payload = recall(run, "the note", 1)
+        if let Result::Ok(document) = payload {
+            if str.contains(document, "\"run_id\":\"memory-edges-run\"") == false {
+                println("the declared id was lost: " + document)
+                return 9
+            }
+        } else {
+            return 10
+        }
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 11
+        }
+    } else {
+        return 12
+    }
+
+    // And in the auto-id store, the same entry shape carries an empty id.
+    let third = agent_start(spec(AUTO_GOAL))
+    if let Result::Ok(run) = third {
+        let payload = recall(run, "", 1)
+        if let Result::Ok(document) = payload {
+            if str.contains(document, "\"run_id\":\"\"") == false {
+                println("the auto store named an undeclared id: " + document)
+                return 13
+            }
+            if str.contains(document, "\"scope\":\"" + AUTO_GOAL + "\"") == false {
+                return 14
+            }
+        } else {
+            return 15
+        }
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 16
+        }
+    } else {
+        return 17
+    }
+    return 0
+}
+
+public func main() returns int {
+    let first = block_on(empty_insert_and_top_k())
+    if first != 0 {
+        return first
+    }
+    let second = block_on(the_budget_is_a_fit_rule())
+    if second != 0 {
+        return 20 + second
+    }
+    let third = block_on(provenance_fields())
+    if third != 0 {
+        return 40 + third
+    }
+    return 0
+}

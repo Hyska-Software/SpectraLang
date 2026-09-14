@@ -71,8 +71,9 @@ pub(crate) fn post(url: &str, body: &str) -> Result<String, AgentError> {
         None => server::loopback_post(url, body).ok_or_else(|| {
             AgentError::Mcp(format!(
                 "no HTTP transport is installed, so the MCP request to '{url}' cannot be sent; \
-                 the embedding application installs one (spectra-api does not yet), or serve \
-                 the endpoint from this process with mcp_serve"
+                 spectra-api installs one when a Spectra program starts, and any other embedding \
+                 application installs its own, or serve the endpoint from this process with \
+                 mcp_serve"
             ))
         })?,
     };

@@ -78,15 +78,43 @@ fn lock() -> MutexGuard<'static, BTreeMap<String, RegisteredTool>> {
 /// the same address (several dispatch entry points call the registration
 /// function) is a no-op; a different address replaces the stale entry, because
 /// the newest compilation of that module is the one whose code is live.
+///
+/// A descriptor that cannot be advertised is refused, naming the field: every
+/// consumer of the registry (the MCP server's `tools/list`, the A2A card, the
+/// provider request) serves the schema as the tool's argument contract, so a
+/// permissive substitute would invite calls the wrapper rejects and hide the
+/// broken descriptor behind them.
 pub(crate) fn register(
     name: String,
     address: i64,
     description: String,
     input_schema: String,
     effects_json: &str,
-) -> bool {
-    if name.is_empty() || address == 0 {
-        return false;
+) -> Result<bool, AgentError> {
+    if name.is_empty() {
+        return Err(AgentError::ToolFailed(
+            "a tool cannot be registered without a name".to_string(),
+        ));
+    }
+    if address == 0 {
+        return Err(AgentError::ToolFailed(format!(
+            "tool '{name}' has no wrapper address; the compiler emitted an empty one"
+        )));
+    }
+    match serde_json::from_str::<serde_json::Value>(&input_schema) {
+        Ok(serde_json::Value::Object(_)) => {}
+        Ok(other) => {
+            return Err(AgentError::ToolFailed(format!(
+                "tool '{name}' has an input schema that is not a JSON object ({other}); the \
+                 descriptor cannot be advertised"
+            )))
+        }
+        Err(error) => {
+            return Err(AgentError::ToolFailed(format!(
+                "tool '{name}' has an input schema that is not JSON ({error}); the descriptor \
+                 cannot be advertised"
+            )))
+        }
     }
     let effects = parse_effects(effects_json);
     let mut tools = lock();
@@ -97,7 +125,7 @@ pub(crate) fn register(
             existing.description = description;
             existing.input_schema = input_schema;
             existing.effects = effects;
-            false
+            Ok(false)
         }
         _ => {
             tools.insert(
@@ -111,7 +139,7 @@ pub(crate) fn register(
                     remote: None,
                 },
             );
-            true
+            Ok(true)
         }
     }
 }
@@ -420,7 +448,7 @@ mod tests {
                 "adds".to_string(),
                 "{}".to_string(),
                 r#"["spectra.std.agent.token_count"]"#
-            ));
+            ).expect("register"));
             // Same name and address: no change.
             assert!(!register(
                 "add".to_string(),
@@ -428,7 +456,7 @@ mod tests {
                 "adds".to_string(),
                 "{}".to_string(),
                 "[]"
-            ));
+            ).expect("register"));
             // A new address for the same name replaces the stale entry.
             assert!(register(
                 "add".to_string(),
@@ -436,19 +464,55 @@ mod tests {
                 "adds".to_string(),
                 "{}".to_string(),
                 "[]"
-            ));
+            ).expect("register"));
             assert_eq!(registered().len(), 1);
             let tool = registered().pop().expect("registered");
             assert_eq!(tool.address, 0x2000);
-            // A zero address is never a valid wrapper.
-            assert!(!register(
+            // A zero address is never a valid wrapper, and the refusal says so
+            // instead of reporting "nothing changed".
+            let refused = register(
                 "bad".to_string(),
                 0,
                 String::new(),
                 "{}".to_string(),
-                "[]"
-            ));
-            assert_eq!(registered().len(), 1);
+                "[]",
+            )
+            .expect_err("a wrapper-less tool is refused");
+            assert_eq!(refused.kind(), "tool_failed");
+            assert!(refused.detail().contains("wrapper address"), "{refused}");
+            assert_eq!(registered().len(), 1, "the registry is unchanged");
+        });
+    }
+
+    /// A descriptor that cannot be advertised is refused at registration: no
+    /// consumer ever sees a permissive substitute for a broken schema.
+    #[test]
+    fn a_tool_with_an_unusable_input_schema_is_refused() {
+        with_registry(|| {
+            let refused = register(
+                "broken".to_string(),
+                0x1000,
+                "has a schema nobody can read".to_string(),
+                "{not json".to_string(),
+                "[]",
+            )
+            .expect_err("a broken schema is refused");
+            assert_eq!(refused.kind(), "tool_failed");
+            assert!(refused.detail().contains("not JSON"), "{refused}");
+            assert!(registered().is_empty(), "nothing entered the registry");
+
+            // Valid JSON that is not an object is refused too: the consumer
+            // needs a schema object, not any document.
+            let refused = register(
+                "array-schema".to_string(),
+                0x1000,
+                "schema is an array".to_string(),
+                "[1,2]".to_string(),
+                "[]",
+            )
+            .expect_err("a non-object schema is refused");
+            assert!(refused.detail().contains("not a JSON object"), "{refused}");
+            assert!(registered().is_empty());
         });
     }
 
@@ -466,7 +530,7 @@ mod tests {
                 "registers with an effect list nobody can read".to_string(),
                 "{}".to_string(),
                 r#"["spectra.std.fs.fs_write""#,
-            ));
+            ).expect("register"));
             let tool = registered().pop().expect("registered");
             assert_eq!(tool.effects, vec![UNREADABLE_EFFECTS.to_string()]);
 

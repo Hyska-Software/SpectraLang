@@ -9,10 +9,14 @@ module agent_provider_routing
 //      something else, so a spec cannot accidentally point a mock model at a
 //      real endpoint;
 //   2. `endpoint: "local:"` or a `local/` model prefix selects the local
-//      bridge. It is deliberately not configured in this build (the runtime
-//      does not export its ML generation entry to the agent crate), and it
-//      reports that as a typed `provider_not_configured` instead of pretending
-//      to generate;
+//      bridge, which answers from an ONNX causal language model through the
+//      runtime's own engine. With no model configured -- the spec's
+//      `local:<path>` suffix, then `SPECTRA_AGENT_LOCAL_MODEL` -- it refuses
+//      with a typed `provider_not_configured` that names the setting, instead
+//      of pretending to generate. (The configured path is exercised by the
+//      crate's `conformance` case `the_local_provider_generates_from_a_real_model`,
+//      which runs with `--features onnx`; a `.spectra` fixture cannot load a
+//      model the default build has no engine for.)
 //   3. everything else is an OpenAI-compatible HTTP endpoint, and an empty
 //      endpoint is resolved from `SPECTRA_AGENT_ENDPOINT`/`OPENAI_BASE_URL` --
 //      with neither set, the provider is unconfigured and says so;

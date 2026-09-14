@@ -2,7 +2,8 @@
 //!
 //! A provider is selected from the run's `AgentSpec` alone (a provider is
 //! data). Three implementations exist: the deterministic mock, the
-//! OpenAI-compatible HTTP client, and the `local:` bridge placeholder.
+//! OpenAI-compatible HTTP client, and the local bridge, which answers from an
+//! in-process ONNX model through `spectra_runtime::local_model`.
 
 pub mod local;
 pub mod mock;
@@ -163,6 +164,10 @@ pub(crate) enum ProviderError {
     Http { status: i64, message: String },
     /// The provider answered successfully but the payload was unusable.
     InvalidResponse(String),
+    /// The request the host assembled cannot be sent (a tool descriptor with
+    /// an unparsable schema, for instance). Not retryable: the same request
+    /// would fail again.
+    InvalidRequest(String),
 }
 
 impl std::fmt::Display for ProviderError {
@@ -170,7 +175,8 @@ impl std::fmt::Display for ProviderError {
         match self {
             Self::NotConfigured(message)
             | Self::Transport(message)
-            | Self::InvalidResponse(message) => f.write_str(message),
+            | Self::InvalidResponse(message)
+            | Self::InvalidRequest(message) => f.write_str(message),
             Self::Http { status, message } => write!(f, "HTTP {status}: {message}"),
         }
     }
@@ -180,6 +186,9 @@ impl From<ProviderError> for AgentError {
     fn from(error: ProviderError) -> Self {
         match error {
             ProviderError::NotConfigured(message) => AgentError::ProviderNotConfigured(message),
+            // A request the host cannot assemble is internal state corruption,
+            // not a provider condition: reported as such, never retried.
+            ProviderError::InvalidRequest(message) => AgentError::Internal(message),
             ProviderError::Transport(message)
             | ProviderError::Http {
                 message,
@@ -237,7 +246,8 @@ pub(crate) trait Provider: Send + Sync {
 /// Selects the provider named by the spec.
 ///
 /// `mock:`/`mock/` select the deterministic mock; `local:`/`local/` select the
-/// not-yet-configured local bridge; everything else is treated as an
+/// local bridge (`local:` / `local/`, an in-process ONNX model whose paths
+/// come from the spec and the environment); everything else is treated as an
 /// OpenAI-compatible HTTP endpoint (empty endpoint falls back to
 /// `SPECTRA_AGENT_ENDPOINT` or `OPENAI_BASE_URL`).
 pub(crate) fn provider_for(spec: &AgentSpec) -> Box<dyn Provider> {
@@ -245,7 +255,9 @@ pub(crate) fn provider_for(spec: &AgentSpec) -> Box<dyn Provider> {
         return Box::new(mock::MockProvider::new(spec.model.clone()));
     }
     if spec.endpoint.starts_with("local:") || spec.model.starts_with("local/") {
-        return Box::new(local::LocalProvider::default());
+        return Box::new(local::LocalProvider::new(local::LocalConfig::resolve(
+            &spec.endpoint,
+        )));
     }
     let endpoint = if spec.endpoint.is_empty() {
         std::env::var("SPECTRA_AGENT_ENDPOINT")

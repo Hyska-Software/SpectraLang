@@ -1,6 +1,6 @@
-# Agent-platform gap sweep: four defects found while extending the example set
+# Agent-platform gap sweep: defects found while extending the example set
 
-Status: **all four fixed 2026-09-14**; each carries a regression that fails
+Status: **five defects fixed 2026-09-14**; each carries a regression that fails
 without its fix.
 
 While adding examples `13`–`15` and fixtures `398`–`403` for the `std.agent`
@@ -168,6 +168,35 @@ assignment that used to return `-1` — and runs in JIT and AOT. Each part was
 minimized before the fix (`Result::Ok(1.5)` alone; a 12-line async function;
 `count = count + zero(await one(1))`) and fails without it.
 
+## 5. A delegated A2A task that crossed a ceiling reported `completed`
+
+**Observed.** A serving run declaring `max_tokens: 2` delegated a task whose
+prompt cost 22 tokens. The task document said
+`"state":"completed"` with `"ceiling":""`, and the run report it carried held
+`"status":"completed"` with 22 tokens spent.
+
+**Root cause.** The delegated loop runs through the *crate's* `act`
+(`protocol/a2a.rs::execute`), not through the async host that the local
+`act(...)` call uses. The host path wraps the work in `write_run_task`, whose
+worker settles the turn (`budget::settle_task`) and so marks a run that crossed
+a ceiling; the adapter path had no such worker, and `execute` read
+`state.cancelled` immediately after the loop — before anything had evaluated
+the crossing. The adapter's own contract says the opposite: "a crossed ceiling
+as a `failed` task naming it — never a silent success".
+
+**Fix.** `budget::settle` now takes `Option<&CancellationToken>` (`cancel_siblings`
+already did), `settle_task` passes its token, and a new `budget::settle_turn`
+settles a turn for a caller that has none; `execute` calls it before reading
+the outcome. Writing the regression also showed the local path was already
+covered — `agent_end` reported the ceiling because a later call's guard marked
+the run — which is exactly why the delegated path hid the defect.
+
+**Evidence.**
+`a2a::tests::a_delegated_task_that_crosses_a_ceiling_fails_naming_it` fails
+with the `settle_turn` call commented out and passes with it; the same
+behaviour is pinned from the language by fixture 407 (`failed` naming
+`max_tokens`, with the report's `ceiling` agreeing) and example 16.
+
 ## Also recorded, not changed
 
 * `ChunkStream` handles are not released by `agent_end`: a stream keeps the
@@ -184,6 +213,49 @@ minimized before the fix (`Result::Ok(1.5)` alone; a 12-line async function;
 * `budget.rs::charge_tool_call` carried a stale `#[allow(dead_code)]` and a
   comment claiming it was “dead until the dispatch path lands (R-3222)”, which
   landed. Removed; the function is live and load-bearing.
+* A tool's effects are derived from its body, so a tool that formats its own
+  errors with `error.message` must have `spectra.std.error` granted before the
+  run's first dispatch — `enforce_run_grant` refuses the whole run otherwise,
+  naming that effect. Found while writing fixture 407; documented in example
+  16's tool and in the governance section of the book chapter rather than
+  changed, because denying a run whose tool has effects outside its grant is
+  the invariant, not a bug.
+* The A2A task's request and terminal records live in the *task's* journal
+  (keyed by the task id, which is the delegated run's id), not in the serving
+  run's. A fixture that asserts "the work happened" therefore has to clear the
+  task journals, not the serving one — reusing them replays the recorded tool
+  step instead of executing it, which is correct semantics and a wrong starting
+  state.
+
+## Found and documented, not fixed: an AOT symbol collision
+
+Writing example 16 and fixture 407 turned up a linkage limitation:
+
+```
+ex-16-a2a-task-lifecycle.exe : fatal error LNK1169
+spectra_api-<hash>.lib(ws2_32.dll) : error LNK2005: send já definida no module-0000.obj
+```
+
+A user function is emitted with `Linkage::Export` under its **bare IR name**
+(`backend/src/aot.rs::declare_function`, whose only rename is
+`main` → `spectra_user_main`). A program that declares `func send(...)`
+therefore defines a symbol the runtime library already imports from winsock on
+Windows, and the link fails. The same class reaches any libc/winsock name
+(`recv`, `connect`, `bind`, `listen`, `accept`, `select`, `read`, `write`, ...).
+
+Two reasons it is documented rather than fixed here:
+
+* the faithful fix is to mangle *every* user symbol (a reserved prefix, as
+  `spectra_user_main` already does for `main`). That is a linkage-wide change,
+  and `scripts/validate_r2903_native_debug.py` pins the current names -- it
+  asserts `helper` and `spectra_user_main` appear in the PDB symbol stream --
+  so the change needs its own validation pass over the native-debug gate, not a
+  drive-by edit;
+* the failure is loud and late rather than silent and wrong: the linker names
+  the symbol and the object, and the workaround is a rename.
+
+Both new files therefore call their helper `send_request` (the naming examples
+07 and 382 already used), and the example's header says why.
 
 ## Validation
 
@@ -191,6 +263,6 @@ minimized before the fix (`Result::Ok(1.5)` alone; a 12-line async function;
 |---|---|
 | `cargo test -p spectra-agent` | 148 unit + 8 conformance tests pass |
 | `spectralang compile` over `tests/validation/*.spectra` | 408 files, 0 failures |
-| New examples `13`–`15` and fixtures `398`–`403`, JIT and AOT | pass (registered in the R-3221 gate) |
+| New examples `13`–`17` and fixtures `398`–`408`, JIT and AOT | pass (registered in the R-3221 gate) |
 | `cargo test -p spectra-agent --lib mcp::server::tests::a_stalled_connection…` | passes with the fix, fails with the pre-fix arms |
 | `cargo test -p spectra-agent --lib tools::tests::a_tool_with_an_unreadable…` | passes with the fix, fails with `unwrap_or_default()` |

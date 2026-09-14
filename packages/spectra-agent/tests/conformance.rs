@@ -688,3 +688,171 @@ fn surface_json_is_byte_identical_across_runs() {
         "two surface --json runs over the same project must be byte-identical"
     );
 }
+
+// ── the local provider, end to end ───────────────────────────────────────
+
+/// The local provider answers from a real ONNX model — the same engine
+/// `spectra.std.ml.generate_ex` drives — so this case runs the whole path: the
+/// spec selects `local:`, the provider loads the checked-in toy causal LM, a
+/// turn generates tokens, streaming reassembles the same answer, embeddings
+/// come from the embedding graph, and the token accounting the run budgets on
+/// is the tokenizer's own count.
+///
+/// Gated on `onnx` for the same reason the runtime gates its inference hosts:
+/// without the feature there is no local inference to exercise, and the
+/// provider says so by name (the refusal is covered by the unit tests).
+#[cfg(feature = "onnx")]
+#[test]
+fn the_local_provider_generates_from_a_real_model() {
+    let _guard = GLOBAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    clear_host_functions();
+    spectra_runtime::register();
+    spectra_agent::register();
+
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/r3211");
+    let model = fixtures.join("toy_causal_lm.onnx");
+    let tokenizer = fixtures.join("tokenizer.spar");
+    let embedding = fixtures.join("toy_embedding.onnx");
+    assert!(model.is_file(), "missing fixture {}", model.display());
+    assert!(tokenizer.is_file(), "missing fixture {}", tokenizer.display());
+
+    // The provider reads its paths from the spec first; the embedding model
+    // has no spec field, so it comes from the environment.
+    std::env::set_var("SPECTRA_AGENT_LOCAL_EMBEDDING", &embedding);
+    std::env::set_var("SPECTRA_AGENT_LOCAL_EMBEDDING_TOKENIZER", &tokenizer);
+
+    // The ceiling has to cover two turns: each turn feeds one prompt token and
+    // produces one continuation token (the fixture's stop token ends it), so
+    // seven tokens leave room for both turns plus the embedding (which is not
+    // a model turn and charges nothing).
+    let spec = format!(
+        "{{\"goal\":\"conformance-local\",\"model\":\"local/toy\",\"endpoint\":\"local:{}\",\"allow\":[],\"max_tokens\":7,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}}",
+        model.to_string_lossy().replace('\\', "/")
+    );
+    let start = call("spectra.std.agent.agent_start", &[s(&spec)]);
+    assert_eq!(start.0, HOST_STATUS_SUCCESS, "agent_start: {}", start.0);
+    let run = ok(start.1);
+
+    // One turn, bounded by the spec's token ceiling: the tokenizer maps "a"
+    // to id 1 and the toy model walks 1 -> 2 -> 3 -> 0, so two new tokens are
+    // produced and no more.
+    let asked = awaited("spectra.std.agent.ask", &[run, s("a")]);
+    let answer = text(ok(asked));
+    assert!(
+        answer.contains('b'),
+        "the local model's continuation: {answer:?}"
+    );
+
+    // Streaming is the same engine token by token: the chunks reassemble to
+    // the same answer the one-shot turn produced.
+    let stream = ok(awaited("spectra.std.agent.ask_stream", &[run, s("a")]));
+    let mut streamed = String::new();
+    let mut chunks = 0;
+    loop {
+        let chunk = text(ok(awaited("spectra.std.agent.stream_next", &[stream])));
+        if chunk.is_empty() {
+            break;
+        }
+        chunks += 1;
+        streamed.push_str(&chunk);
+        assert!(chunks < 64, "the stream never ended");
+    }
+    assert_eq!(streamed, answer, "streaming and one-shot agree");
+    assert!(chunks >= 1, "the answer arrived as its own chunk");
+
+    // Embeddings come from the embedding graph: normalized, four-dimensional.
+    let tensor = ok(awaited("spectra.std.agent.embed", &[run, s("a b")]));
+    // The embedding is a real tensor: read it back through the tensor host
+    // calls, which is the only surface a consumer has (the runtime's own
+    // float-tensor accessor is crate-private).
+    let (length_status, length) = call("spectra.std.tensor.len", &[tensor]);
+    assert_eq!(length_status, HOST_STATUS_SUCCESS);
+    assert_eq!(length, 4, "the fixture embeds into four dimensions");
+    let mut vector = Vec::with_capacity(4);
+    for index in 0..4 {
+        let (status, word) = call("spectra.std.tensor.get_f", &[tensor, index]);
+        assert_eq!(status, HOST_STATUS_SUCCESS, "get_f({index})");
+        vector.push(f64::from_bits(word as u64));
+    }
+    let norm: f64 = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
+    assert!((norm - 1.0).abs() < 1e-9, "L2 normalized, got {norm}");
+
+    // The run's own accounting is the tokenizer's count at both ends: the
+    // two-token turn spent its budget.
+    // Each turn costs two tokens (one prompt token in, one continuation out),
+    // and the embedding is not a model turn: four of the seven are spent.
+    let remaining = call("spectra.std.agent.budget_remaining", &[run]);
+    assert_eq!(remaining.0, HOST_STATUS_SUCCESS);
+    assert_eq!(ok(remaining.1), 3, "the accounting is the tokenizer's count");
+
+    let ended = call("spectra.std.agent.agent_end", &[run]);
+    assert_eq!(ended.0, HOST_STATUS_SUCCESS);
+    let report = text(ok(ended.1));
+    assert!(report.contains("\"status\":\"completed\""), "{report}");
+    assert!(
+        report.contains("\"ceiling\":\"\""),
+        "the turn stayed inside the ceiling: {report}"
+    );
+
+    std::env::remove_var("SPECTRA_AGENT_LOCAL_EMBEDDING");
+    std::env::remove_var("SPECTRA_AGENT_LOCAL_EMBEDDING_TOKENIZER");
+}
+
+/// A build without the inference engine refuses a *configured* local model by
+/// naming the feature: the model is there, the engine is not, and the run must
+/// not fall back to another provider or to a fabricated answer.
+///
+/// This is the default build's half of the local-provider contract; the
+/// `onnx` build runs `the_local_provider_generates_from_a_real_model` instead.
+#[cfg(not(feature = "onnx"))]
+#[test]
+fn a_configured_local_model_without_the_engine_refuses_by_name() {
+    let _guard = GLOBAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    clear_host_functions();
+    spectra_runtime::register();
+    spectra_agent::register();
+    let model = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/r3211/toy_causal_lm.onnx");
+    let spec = format!(
+        "{{\"goal\":\"conformance-local-noengine\",\"model\":\"local/toy\",\"endpoint\":\"local:{}\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":-1,\"journal\":\"\"}}",
+        model.to_string_lossy().replace('\\', "/")
+    );
+    let started = call("spectra.std.agent.agent_start", &[s(&spec)]);
+    assert_eq!(started.0, HOST_STATUS_SUCCESS);
+    let run = ok(started.1);
+    // The provider is resolved per turn, so the refusal lands on the first one:
+    // the run exists, the turn does not.
+    let asked = awaited("spectra.std.agent.ask", &[run, s("hello")]);
+    assert_eq!(tag(asked), 1, "no turn may be served without an engine");
+    let message = error_message(asked);
+    assert!(message.contains("provider_not_configured"), "{message}");
+    assert!(message.contains("local"), "{message}");
+    let ended = call("spectra.std.agent.agent_end", &[run]);
+    assert_eq!(ended.0, HOST_STATUS_SUCCESS);
+}
+
+/// Without a model the local provider refuses, naming the setting — the
+/// refusal is the *only* thing it may do, so no other provider may answer.
+#[test]
+fn an_unconfigured_local_run_refuses_before_its_first_turn() {
+    let _guard = GLOBAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    clear_host_functions();
+    spectra_runtime::register();
+    spectra_agent::register();
+    let saved = std::env::var("SPECTRA_AGENT_LOCAL_MODEL").ok();
+    std::env::remove_var("SPECTRA_AGENT_LOCAL_MODEL");
+
+    let spec = "{\"goal\":\"conformance-local-unconfigured\",\"model\":\"local/toy\",\"endpoint\":\"local:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":-1,\"journal\":\"\"}";
+    let started = call("spectra.std.agent.agent_start", &[s(spec)]);
+    assert_eq!(started.0, HOST_STATUS_SUCCESS);
+    let run = ok(started.1);
+    let asked = awaited("spectra.std.agent.ask", &[run, s("hello")]);
+    assert_eq!(tag(asked), 1, "the turn must fail, not answer");
+    let message = error_message(asked);
+    assert!(
+        message.contains("SPECTRA_AGENT_LOCAL_MODEL") || message.contains("not configured"),
+        "{message}"
+    );
+    if let Some(value) = saved {
+        std::env::set_var("SPECTRA_AGENT_LOCAL_MODEL", value);
+    }
+}

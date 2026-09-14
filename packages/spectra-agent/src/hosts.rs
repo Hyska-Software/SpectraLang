@@ -897,10 +897,20 @@ extern "C" fn register_tool_host(ctx: *mut SpectraHostCallContext) -> i32 {
     let outcome = (|| -> Result<i64, AgentError> {
         let name = abi::read_string_arg(args[0])
             .ok_or_else(|| AgentError::ToolFailed("tool registration has no name".to_string()))?;
-        let description = abi::read_string_arg(args[2]).unwrap_or_default();
-        let input_schema = abi::read_string_arg(args[3]).unwrap_or_default();
-        let effects = abi::read_string_arg(args[4]).unwrap_or_default();
-        let changed = crate::tools::register(name, args[1], description, input_schema, &effects);
+        // Every field is required: a tool whose descriptor cannot be read is
+        // not registered at all, instead of entering the registry with an
+        // empty description or a permissive schema that hides the bug.
+        let description = abi::read_string_arg(args[2]).ok_or_else(|| {
+            AgentError::ToolFailed(format!("tool '{name}' has an unreadable description"))
+        })?;
+        let input_schema = abi::read_string_arg(args[3]).ok_or_else(|| {
+            AgentError::ToolFailed(format!("tool '{name}' has an unreadable input schema"))
+        })?;
+        let effects = abi::read_string_arg(args[4]).ok_or_else(|| {
+            AgentError::ToolFailed(format!("tool '{name}' has an unreadable effect list"))
+        })?;
+        let changed =
+            crate::tools::register(name, args[1], description, input_schema, &effects)?;
         Ok(i64::from(changed))
     })();
     write_outcome(ctx, outcome)

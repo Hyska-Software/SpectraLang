@@ -261,7 +261,7 @@ mod tests {
             "test tool".to_string(),
             "{}".to_string(),
             "[]"
-        ));
+        ).expect("register"));
         let dir = temp_dir("pending");
         let dir_text = dir.to_string_lossy().to_string();
         let handle = run_with_journal(&dir_text, "compensate-pending");
@@ -284,14 +284,14 @@ mod tests {
             "test tool".to_string(),
             "{}".to_string(),
             "[]"
-        ));
+        ).expect("register"));
         assert!(tools::register(
             "failing".to_string(),
             failing_wrapper as *const () as usize as i64,
             "failing test tool".to_string(),
             "{}".to_string(),
             "[]"
-        ));
+        ).expect("register"));
         let dir = temp_dir("lifo");
         let dir_text = dir.to_string_lossy().to_string();
         let handle = run_with_journal(&dir_text, "compensate-lifo");
@@ -324,7 +324,7 @@ mod tests {
             "writes".to_string(),
             "{}".to_string(),
             r#"["spectra.std.fs.fs_write"]"#
-        ));
+        ).expect("register"));
         let dir = temp_dir("grant");
         let dir_text = dir.to_string_lossy().to_string();
         let handle = run_with_journal(&dir_text, "compensate-grant");
@@ -350,7 +350,7 @@ mod tests {
             "test tool".to_string(),
             "{}".to_string(),
             "[]"
-        ));
+        ).expect("register"));
         let dir = temp_dir("replay");
         let dir_text = dir.to_string_lossy().to_string();
         // First execution declares and rolls back.

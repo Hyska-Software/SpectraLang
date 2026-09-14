@@ -9,6 +9,12 @@ edition = "2021"
 [lib]
 crate-type = ["rlib"]
 
+[features]
+# The local provider answers from an ONNX model, so its end-to-end tests need
+# the runtime's onnx feature. Off by default for the same reason the runtime
+# keeps it off: enabling it links onnxruntime (a network fetch at build time).
+onnx = ["spectra-runtime/onnx"]
+
 [dependencies]
 # JSON crosses the host ABI for `AgentSpec`/`Report` (plan adaptation 11) and
 # provider payloads; `serde_json` is already in the workspace graph through

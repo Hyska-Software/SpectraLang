@@ -517,6 +517,12 @@ fn recorded_prompt(document: &str) -> Result<String, AgentError> {
 /// never a silent success.
 fn execute(handle: i64, task_id: &str, prompt: &str) -> Result<Value, AgentError> {
     let outcome = run::in_run_scope(handle, || crate::act::act(handle, prompt));
+    // The delegated loop runs through the crate's `act`, not through the async
+    // host the local path uses, so no worker settles its turns: without this
+    // the last turn could cross a ceiling and the task would still be reported
+    // `completed`, contradicting the contract that a crossed ceiling is a
+    // `failed` task naming it.
+    crate::budget::settle_turn(handle)?;
     let (report, cancelled) = run::with_run(handle, |state| {
         (
             state.report_json(),
@@ -709,12 +715,18 @@ mod tests {
 
     /// A serving run with the mock provider and the given grants.
     fn serving_run(journal: &str, allow: &[&str]) -> i64 {
+        serving_run_with(journal, allow, "")
+    }
+
+    /// The same, with extra spec fields (a ceiling, usually) appended.
+    fn serving_run_with(journal: &str, allow: &[&str], extra: &str) -> i64 {
         let allow: Vec<String> = allow.iter().map(|value| value.to_string()).collect();
         let spec = AgentSpec::parse(&format!(
             r#"{{"goal":"a2a-agent","model":"mock/echo","endpoint":"mock:","allow":{},
-                 "journal":{},"seed":7}}"#,
+                 "journal":{},"seed":7{}}}"#,
             serde_json::to_string(&allow).expect("grants"),
             serde_json::to_string(journal).expect("dir"),
+            extra,
         ))
         .expect("valid spec");
         run::alloc_run(spec, crate::journal::new_run_id(), None).expect("alloc")
@@ -752,7 +764,7 @@ mod tests {
             "Counts to the given integer".to_string(),
             r#"{"type":"object","properties":{"n":{"type":"integer"}}}"#.to_string(),
             "[]",
-        ));
+        ).expect("register"));
     }
 
     fn send(authority: i64, body: &str) -> Value {
@@ -779,7 +791,7 @@ mod tests {
                 "Counts to the given integer".to_string(),
                 r#"{"type":"object","properties":{"n":{"type":"integer"}}}"#.to_string(),
                 r#"["spectra.std.fs.fs_write"]"#,
-            );
+            ).expect("register");
             let serving = serving_run("", &[]);
             let document: Value = serde_json::from_str(
                 &card(serving, r#"{"name":"Counter","description":"Counts","version":"9.9.9"}"#)
@@ -812,6 +824,35 @@ mod tests {
             assert_eq!(error.kind(), "a2a_error");
             let error = card(serving, "[]").expect_err("refused");
             assert_eq!(error.kind(), "a2a_error");
+            run::take_run(serving).expect("end");
+        });
+    }
+
+    /// A ceiling the delegated loop crosses is the task's outcome: the run the
+    /// task *is* must be settled before its report is read, or the task
+    /// reports `completed` while the budget it spent is over its ceiling.
+    #[test]
+    fn a_delegated_task_that_crosses_a_ceiling_fails_naming_it() {
+        with_registry(|| {
+            let serving = serving_run_with("", &[], r#","max_tokens":1"#);
+            let task = send(
+                serving,
+                &message("task-ceiling", "one two three four five six seven eight"),
+            );
+            let state = task["result"]["task"]["status"]["state"]
+                .as_str()
+                .unwrap_or("");
+            assert_eq!(state, "failed", "{task}");
+            let reason = task["result"]["task"]["status"]["message"]["parts"][0]["text"]
+                .as_str()
+                .unwrap_or("");
+            assert!(reason.contains("budget_exceeded"), "{task}");
+            assert!(reason.contains("max_tokens"), "{task}");
+            // The report the task carries names the ceiling, so a client can
+            // see which resource the delegated work exhausted.
+            let report = &task["result"]["task"]["metadata"]["spectra"]["report"];
+            assert_eq!(report["ceiling"], "max_tokens", "{task}");
+            assert_eq!(report["status"], "budget_exceeded", "{task}");
             run::take_run(serving).expect("end");
         });
     }
@@ -872,7 +913,7 @@ mod tests {
                 "Writes".to_string(),
                 r#"{"type":"object"}"#.to_string(),
                 r#"["spectra.std.fs.fs_write"]"#,
-            ));
+            ).expect("register"));
             let serving = serving_run(&dir, &[]);
             let response = send(serving, &message("task-rejected", "spectra:final=done"));
             let task = &response["result"]["task"];

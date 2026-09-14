@@ -10,8 +10,9 @@ use super::*;
 // last hidden state [seq, hidden], applies masked mean-pooling over the
 // sequence and L2-normalizes the result.
 //
-// The lexical FNV embedding (`spectra.std.ml.text_embed`) remains available
-// as the documented no-model fallback; this host is the real model path.
+// There is no model-free fallback beside this host: embeddings come from a
+// real graph or not at all, so a build without a model reports the typed
+// error instead of a lexical hash that looks like an embedding.
 //
 // The session handle comes from `spectra.std.ml.text_embed_model_session`,
 // which commits an ONNX ModelProto from disk. Unlike
