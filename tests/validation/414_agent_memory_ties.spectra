@@ -1,0 +1,68 @@
+module agent_memory_ties
+
+// Contract: equal vector scores are ordered by insertion ordinal, and top_k
+// truncates the returned set without admitting a lower-ranked fourth entry.
+
+import std.agent
+import std.error as error
+import std.string as str
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-414-memory-ties\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":414,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let first  = remember(run, "same vector")
+        let second = remember(run, "same vector")
+        let third  = remember(run, "same vector")
+        let fourth = remember(run, "lower ranked")
+        if let Result::Err(problem) = first {
+            return 1
+        }
+        if let Result::Err(problem) = second {
+            return 2
+        }
+        if let Result::Err(problem) = third {
+            return 3
+        }
+        if let Result::Err(problem) = fourth {
+            return 4
+        }
+        let recalled = recall(run, "same vector", 3)
+        if let Result::Ok(document) = recalled {
+            if str.count_occurrences(document, "\"ordinal\":") != 3 {
+                return 5
+            }
+            let zero = str.index_of(document, "\"ordinal\":0")
+            let one  = str.index_of(document, "\"ordinal\":1")
+            let two  = str.index_of(document, "\"ordinal\":2")
+            if zero < 0 || one < 0 || two < 0 || zero >= one || one >= two {
+                return 6
+            }
+            if str.contains(document, "lower ranked") == true {
+                return 7
+            }
+        } else {
+            return 8
+        }
+        let bounded = recall(run, "same vector", 1)
+        if let Result::Ok(document) = bounded {
+            if str.count_occurrences(document, "\"ordinal\":") != 1 {
+                return 9
+            }
+        } else {
+            return 10
+        }
+        if let Result::Err(problem) = agent_end(run) {
+            return 11
+        }
+        return 0
+    }
+    return 12
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

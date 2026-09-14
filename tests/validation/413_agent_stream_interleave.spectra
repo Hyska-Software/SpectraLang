@@ -1,0 +1,111 @@
+module agent_stream_interleave
+
+// Contract: three streams keep independent cursors; closing the middle handle
+// does not truncate either neighbor.
+
+import std.agent
+import std.error as error
+import std.string as str
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-413-stream-interleave\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":413,\"journal\":\"\"}"
+}
+
+async func drain(stream: ChunkStream, prefix: string, expected: string) returns int {
+    let value = prefix
+    let done  = false
+    while done == false {
+        let next = await stream_next(stream)
+        if let Result::Ok(chunk) = next {
+            if chunk == "" {
+                done = true
+            } else {
+                value = value + chunk
+            }
+        } else {
+            return 1
+        }
+    }
+    if value != expected {
+        return 2
+    }
+    return 0
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let one   = await ask_stream(run, "alpha stream")
+        let two   = await ask_stream(run, "beta stream")
+        let three = await ask_stream(run, "gamma stream")
+        if let Result::Ok(first) = one {
+            if let Result::Ok(second) = two {
+                if let Result::Ok(third) = three {
+                    let first_chunk  = await stream_next(first)
+                    let second_chunk = await stream_next(second)
+                    let third_chunk  = await stream_next(third)
+                    if let Result::Ok(chunk) = first_chunk {
+                        if chunk != "mock echo: a" {
+                            return 1
+                        }
+                    } else {
+                        return 2
+                    }
+                    if let Result::Ok(chunk) = second_chunk {
+                        if chunk != "mock echo: b" {
+                            return 3
+                        }
+                    } else {
+                        return 4
+                    }
+                    if let Result::Ok(chunk) = third_chunk {
+                        if chunk != "mock echo: g" {
+                            return 5
+                        }
+                    } else {
+                        return 6
+                    }
+                    let closed = await stream_close(second)
+                    if let Result::Ok(ok) = closed {
+                        if ok == false {
+                            return 7
+                        }
+                    } else {
+                        return 8
+                    }
+                    let after_close = await stream_next(second)
+                    if let Result::Err(problem) = after_close {
+                        if str.contains(error.message(problem), "handle") == false {
+                            return 9
+                        }
+                    } else {
+                        return 10
+                    }
+                    if await drain(first, "mock echo: a", "mock echo: alpha stream") != 0 {
+                        return 11
+                    }
+                    if await drain(third, "mock echo: g", "mock echo: gamma stream") != 0 {
+                        return 12
+                    }
+                    let ended = agent_end(run)
+                    if let Result::Ok(report) = ended {
+                        if str.contains(report, "\"steps\":3") == false {
+                            return 13
+                        }
+                    } else {
+                        return 14
+                    }
+                    return 0
+                }
+                return 15
+            }
+            return 16
+        }
+        return 17
+    }
+    return 18
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

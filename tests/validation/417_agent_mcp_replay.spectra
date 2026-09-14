@@ -1,0 +1,164 @@
+module agent_mcp_replay
+
+// Contract: an MCP descriptor and remote result replay after the loopback
+// listener is no longer available. The serving-side local dispatch is also a
+// governed tool record, so one remote call yields two tool records in one run.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const DIR = "target/r3294-mcp-replay"
+const RUN_ID = "fixture-417-mcp-replay"
+const AUTHORITY_FILE = DIR + "/authority.txt"
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[agent_tool("Adds two integers for replay")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+func path() returns string {
+    return DIR + "/" + RUN_ID + ".jsonl"
+}
+
+func authority_path() returns string {
+    return AUTHORITY_FILE
+}
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-417-mcp-replay\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"mcp\",\"spectra.std.fs\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":417,\"journal\":\"" +
+        DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        RUN_ID +
+        "\"}"
+}
+
+func clean() returns int {
+    let exists = fs.fs_exists(path())
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(path())
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+func remote_name(authority: string) returns string {
+    let namespace = str.replace(str.replace(authority, ".", "_"), ":", "_")
+    return "mcp__" + namespace + "__add"
+}
+
+async func verify() returns int {
+    if clean() != 0 {
+        return 1
+    }
+    let old_authority = fs.fs_exists(authority_path())
+    if let Result::Ok(present) = old_authority {
+        if present == true {
+            if let Result::Err(problem) = fs.fs_remove(authority_path()) {
+                return 2
+            }
+        }
+    } else {
+        return 3
+    }
+
+    let first = agent_start(spec())
+    if let Result::Ok(run) = first {
+        let served = mcp_serve(run, "127.0.0.1:0")
+        if let Result::Ok(authority) = served {
+            if let Result::Err(problem) = fs.fs_write(authority_path(), authority) {
+                return 4
+            }
+            let discovered = await mcp_connect(run, "http://" + authority + "/mcp")
+            if let Result::Ok(document) = discovered {
+                if str.contains(document, "\"remoteName\":\"add\"") == false {
+                    return 5
+                }
+            } else {
+                return 6
+            }
+            let call = await tool_call(run, remote_name(authority), "{\"a\":10,\"b\":32}")
+            if let Result::Ok(value) = call {
+                if value != "42" {
+                    return 7
+                }
+            } else {
+                return 8
+            }
+        } else {
+            return 9
+        }
+        if let Result::Err(problem) = agent_end(run) {
+            return 10
+        }
+    } else {
+        return 11
+    }
+
+    // No mcp_serve call here: the descriptor and remote result must resolve
+    // from the existing journal instead of opening the old endpoint.
+    let saved = fs.fs_read(authority_path())
+    if let Result::Ok(authority) = saved {
+        let replay = agent_start(spec())
+        if let Result::Ok(run) = replay {
+            let discovered = await mcp_connect(run, "http://" + authority + "/mcp")
+            if let Result::Err(problem) = discovered {
+                return 12
+            }
+            let call = await tool_call(run, remote_name(authority), "{\"a\":10,\"b\":32}")
+            if let Result::Ok(value) = call {
+                if value != "42" {
+                    return 13
+                }
+            } else {
+                return 14
+            }
+            if let Result::Ok(report) = agent_end(run) {
+                if str.contains(report, "\"replay\":true") == false {
+                    return 15
+                }
+            } else {
+                return 16
+            }
+        } else {
+            return 17
+        }
+    } else {
+        return 18
+    }
+    let journal = fs.fs_read(path())
+    if let Result::Ok(document) = journal {
+        if str.count_occurrences(document, "\"kind\":\"mcp\"") != 1 {
+            return 19
+        }
+        if str.count_occurrences(document, "\"kind\":\"tool\"") != 2 {
+            return 20
+        }
+        if str.contains(document, "\"step\":3") == false || str.contains(document, "\"step\":4") == false {
+            return 21
+        }
+    } else {
+        return 22
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

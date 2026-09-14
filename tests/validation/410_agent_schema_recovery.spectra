@@ -1,0 +1,57 @@
+module agent_schema_recovery
+
+// Contract: invalid client-side schema input produces a typed schema violation,
+// and a later model turn can still complete the same run.
+
+import std.agent
+import std.error as error
+import std.string as str
+
+const VALID = "{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":0}},\"required\":[\"count\"]}"
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-410-schema-recovery\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":410,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let malformed = await ask_json(run, "spectra:json", "not a schema")
+        if let Result::Err(problem) = malformed {
+            let message = error.message(problem)
+            if str.contains(message, "schema_violation") == false {
+                return 1
+            }
+            if str.contains(message, "not valid JSON") == false {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let valid = await ask_json(run, "spectra:json", VALID)
+        if let Result::Ok(document) = valid {
+            if str.contains(document, "\"count\":3") == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"steps\":2") == false {
+                return 6
+            }
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 7
+            }
+        } else {
+            return 8
+        }
+        return 0
+    }
+    return 9
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

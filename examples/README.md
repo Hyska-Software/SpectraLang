@@ -59,9 +59,19 @@ rede), em JIT (`spectralang run`) e AOT (`compile --debug-info=none --emit-exe`)
 | `12-structured-output` | `ask_json` com o `json_schema` derivado, falha tipada de validação e o reparo alimentado de volta ao modelo |
 | `13-embeddings-and-ranking` | `embed` como primitiva de ranking (similaridade de cosseno calculada no programa), `remember`/`recall` e o embedding reconstruído pelo journal sem nova ida ao provider |
 | `14-acp-and-permissions` | a superfície ACP (`initialize`, `session/new`, `session/prompt`, `session/cancel`, método não servido) e a ponte de permissão `acp_permission` negando por padrão, com as duas decisões distintas no journal (`sem cliente ACP` vs `sem approver`) |
+| `15-mcp-service-surface` | a superfície MCP servida (`mcp_handle`): `initialize`, notificação, `ping`, `tools/list` com as anotações derivadas, `tools/call` com sucesso, falha de tool (`isError`) e recusa de run (`-32001`), além do método não servido e do documento inválido |
 | `16-a2a-task-lifecycle` | o ciclo de vida das tarefas A2A: `completed` com poll idempotente, `failed` nomeando o teto, `rejected` pela grant e as recusas codificadas (`-32002`, `-32001`, `-32600`, `-32602`, `-32601`) |
 | `17-token-budgeting` | `token_count` como primitiva de orçamento: sentinela sem teto, embedding que não é turno, a identidade `token_count(prompt) + token_count(resposta)` e as duas metades da regra (o caller decide o que cabe; o runtime recusa depois de gasto) |
-| `15-mcp-service-surface` | a superfície MCP servida (`mcp_handle`): `initialize`, notificação, `ping`, `tools/list` com as anotações derivadas, `tools/call` com sucesso, falha de tool (`isError`) e recusa de run (`-32001`), além do método não servido e do documento inválido |
+| `18-complex-tool-payloads` | payload de tool com record aninhado, lista, float, booleano e UTF-8, incluindo schema derivado e rejeição de tipo interno |
+| `19-schema-recovery` | violação de `ask_json` por limite de schema, erro tipado com caminho e continuação da mesma run até uma resposta final |
+| `20-journal-payload-policy` | `journal_payloads=false/true`: output sempre durável para replay e input capturado somente por opt-in |
+| `21-replay-tool-effects` | resultado de tool replayado pelo journal sem reexecutar o corpo, provado por contador de invocações |
+| `22-multiple-streams` | dois `ChunkStream` intercalados, fechamento independente e leitura completa do handle sobrevivente |
+| `23-memory-tie-order` | empates de embedding ordenados pelo ordinal de inserção e limitados por `top_k` |
+| `24-capability-boundaries` | grant de sink totalmente qualificado, grant de namespace pai e recusa de prefixo parecido (`fsx`) |
+| `25-compensation-failure` | rollback LIFO tolerante a compensation inválida, com sucesso e falha duráveis e sem duplicação em replay |
+| `26-mcp-replay` | descoberta MCP, chamada remota pelo loopback e replay sem reabrir o listener |
+| `27-protocol-negative-matrix` | `a2a_serve` real, lifecycle ACP e recusas para sessão errada, ação vazia e documentos malformados |
 
 Os contratos que os exemplos demonstram ficam fixados nos fixtures
 `tests/validation/384_agent_stream_lifecycle.spectra`,
@@ -97,5 +107,15 @@ codificadas), `408_agent_taint_ledger_edges.spectra` (tags obrigatórias, o cort
 em 256 caracteres e a proveniência endereçada por conteúdo) fecham a matriz de
 cobertura da superfície. Todos rodam em JIT e AOT pelo gate de certificação
 R-3221.
+
+Os fixtures `409_agent_nested_payloads.spectra`, `410_agent_schema_recovery.spectra`,
+`411_agent_journal_payloads.spectra`, `412_agent_replay_tool_once.spectra` e
+`413_agent_stream_interleave.spectra` cobrem payloads aninhados, recuperação de
+schema, privacidade do input no journal, replay idempotente de tool e três
+streams independentes. `414_agent_memory_ties.spectra` verifica a ordem de
+empates vetoriais; `415_agent_capability_boundary.spectra` verifica a fronteira
+de namespace; `416_agent_compensation_failure.spectra` verifica rollback com
+falha de wrapper; `417_agent_mcp_replay.spectra` verifica descoberta e chamada
+MCP replayadas; `418_agent_protocol_negatives.spectra` verifica recusas A2A/ACP.
 
 Ver `docs/book/11-agents.md`.

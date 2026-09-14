@@ -1,0 +1,79 @@
+module main
+
+// Example 19 — a schema violation is an ordinary typed failure. The same run
+// can handle it and continue to a later model turn without losing its report.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+const ACCEPTED = "{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":5},\"label\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":32}},\"required\":[\"count\",\"label\"],\"additionalProperties\":false}"
+const TOO_STRICT = "{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":4},\"label\":{\"type\":\"string\"}},\"required\":[\"count\",\"label\"],\"additionalProperties\":false}"
+
+func spec() returns string {
+    return "{\"goal\":\"example-schema-recovery\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":19,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let accepted = await ask_json(run, "spectra:json", ACCEPTED)
+        if let Result::Ok(document) = accepted {
+            if str.contains(document, "\"count\":3") == false {
+                return 2
+            }
+            if str.contains(document, "\"label\":\"mock-response\"") == false {
+                return 3
+            }
+        } else {
+            return 4
+        }
+
+        // The deterministic mock response is count=3, so this client-side
+        // minimum intentionally fails before compiled code sees the document.
+        let rejected = await ask_json(run, "spectra:json", TOO_STRICT)
+        if let Result::Err(problem) = rejected {
+            let message = error.message(problem)
+            if str.contains(message, "schema_violation") == false {
+                return 5
+            }
+            if str.contains(message, "$.count") == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+
+        // A later turn proves that the failure did not poison the run state.
+        let recovered = await ask(run, "spectra:final=recovered")
+        if let Result::Ok(answer) = recovered {
+            if answer != "recovered" {
+                return 8
+            }
+        } else {
+            return 9
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"steps\":3") == false {
+                return 10
+            }
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 11
+            }
+        } else {
+            return 12
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

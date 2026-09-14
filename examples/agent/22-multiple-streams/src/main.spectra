@@ -1,0 +1,128 @@
+module main
+
+// Example 22 — two live ChunkStream handles on one run are independent. One
+// can be closed early while the other still delivers its complete response.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+func spec() returns string {
+    return "{\"goal\":\"example-multiple-streams\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":22,\"journal\":\"\"}"
+}
+
+async func drain(stream: ChunkStream, prefix: string, expected: string) returns int {
+    let assembled = prefix
+    let done      = false
+    while done == false {
+        let next = await stream_next(stream)
+        if let Result::Ok(chunk) = next {
+            if chunk == "" {
+                done = true
+            } else {
+                assembled = assembled + chunk
+            }
+        } else {
+            return 1
+        }
+    }
+    if assembled != expected {
+        return 2
+    }
+    return 0
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let left  = await ask_stream(run, "left stream")
+        let right = await ask_stream(run, "right stream")
+        if let Result::Ok(left_stream) = left {
+            if let Result::Ok(right_stream) = right {
+                // Consume one chunk from each before closing only the left.
+                let left_first  = await stream_next(left_stream)
+                let right_first = await stream_next(right_stream)
+                if let Result::Ok(chunk) = left_first {
+                    if chunk != "mock echo: l" {
+                        return 2
+                    }
+                } else {
+                    return 3
+                }
+                if let Result::Ok(chunk) = right_first {
+                    if chunk != "mock echo: r" {
+                        return 4
+                    }
+                } else {
+                    return 5
+                }
+
+                let closed = await stream_close(left_stream)
+                if let Result::Ok(ok) = closed {
+                    if ok == false {
+                        return 6
+                    }
+                } else {
+                    return 7
+                }
+                let closed_read = await stream_next(left_stream)
+                if let Result::Err(problem) = closed_read {
+                    if str.contains(error.message(problem), "handle") == false {
+                        return 8
+                    }
+                } else {
+                    return 9
+                }
+
+                // The right stream retains its cursor and completes normally.
+                let right_status = await drain(
+                    right_stream,
+                    "mock echo: r",
+                    "mock echo: right stream",
+                )
+                if right_status != 0 {
+                    return 10 + right_status
+                }
+                let right_end = await stream_next(right_stream)
+                if let Result::Ok(chunk) = right_end {
+                    if chunk != "" {
+                        return 13
+                    }
+                } else {
+                    return 14
+                }
+                let right_closed = await stream_close(right_stream)
+                if let Result::Ok(ok) = right_closed {
+                    if ok == false {
+                        return 15
+                    }
+                } else {
+                    return 16
+                }
+            } else {
+                return 17
+            }
+        } else {
+            return 18
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"steps\":2") == false {
+                return 19
+            }
+        } else {
+            return 20
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

@@ -1,0 +1,83 @@
+module agent_capability_boundary
+
+// Contract: a fully qualified sink and its namespace authorize fs_read, while
+// a look-alike namespace does not match by raw string prefix.
+
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const TARGET = "examples/README.md"
+
+#[derive(Serialize, Deserialize)]
+public record ReadArgs {
+    path: string,
+}
+
+#[agent_tool("Reads one repository file")]
+public async func read_file(run: Run, args: ReadArgs) returns string {
+    let contents = fs.fs_read(args.path)
+    if let Result::Ok(body) = contents {
+        return body
+    }
+    return ""
+}
+
+func spec(id: string, allow: string) returns string {
+    return "{\"goal\":\"fixture-415-capability-boundary\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":" +
+        allow +
+        ",\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":415,\"journal\":\"\",\"run_id\":\"" +
+        id +
+        "\"}"
+}
+
+async func probe(id: string, allow: string, expected: bool) returns int {
+    let started = agent_start(spec(id, allow))
+    if let Result::Ok(run) = started {
+        let called = await tool_call(run, "read_file", "{\"path\":\"" + TARGET + "\"}")
+        if expected == true {
+            if let Result::Ok(body) = called {
+                if str.contains(body, "SpectraLang") == false {
+                    return 1
+                }
+            } else {
+                return 2
+            }
+        } else {
+            if let Result::Err(problem) = called {
+                let message = error.message(problem)
+                if str.contains(message, "capability_denied") == false {
+                    return 3
+                }
+                if str.contains(message, "spectra.std.fs.fs_read") == false {
+                    return 4
+                }
+            } else {
+                return 5
+            }
+        }
+        if let Result::Err(problem) = agent_end(run) {
+            return 6
+        }
+        return 0
+    }
+    return 7
+}
+
+async func verify() returns int {
+    if await probe("fixture-415-exact", "[\"spectra.std.fs.fs_read\"]", true) != 0 {
+        return 1
+    }
+    if await probe("fixture-415-parent", "[\"spectra.std.fs\"]", true) != 0 {
+        return 2
+    }
+    if await probe("fixture-415-lookalike", "[\"spectra.std.fsx\"]", false) != 0 {
+        return 3
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

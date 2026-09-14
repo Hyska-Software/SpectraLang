@@ -1,0 +1,94 @@
+module main
+
+// Example 24 — capability matching is exact at a sink boundary: the fully
+// qualified fs_read grant works, its parent namespace works, and a look-alike
+// namespace (`fsx`) does not authorize the tool.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const TARGET = "examples/README.md"
+
+#[derive(Serialize, Deserialize)]
+public record ReadArgs {
+    path: string,
+}
+
+#[agent_tool("Reads a repository file")]
+public async func read_file(run: Run, args: ReadArgs) returns string {
+    let contents = fs.fs_read(args.path)
+    if let Result::Ok(body) = contents {
+        return body
+    }
+    return ""
+}
+
+func spec(run_id: string, allow: string) returns string {
+    return "{\"goal\":\"example-capability-boundaries\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":" +
+        allow +
+        ",\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":24,\"journal\":\"\",\"run_id\":\"" +
+        run_id +
+        "\"}"
+}
+
+async func call_with(run_id: string, allow: string, expect_success: bool) returns int {
+    let started = agent_start(spec(run_id, allow))
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let called = await tool_call(run, "read_file", "{\"path\":\"" + TARGET + "\"}")
+        if expect_success == true {
+            if let Result::Ok(contents) = called {
+                if str.contains(contents, "SpectraLang") == false {
+                    return 2
+                }
+            } else {
+                return 3
+            }
+        } else {
+            if let Result::Err(problem) = called {
+                if str.contains(error.message(problem), "capability_denied") == false {
+                    return 4
+                }
+                if str.contains(error.message(problem), "spectra.std.fs.fs_read") == false {
+                    return 5
+                }
+            } else {
+                return 6
+            }
+        }
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 7
+        }
+        return 0
+    }
+    return 8
+}
+
+async func verify() returns int {
+    // A fully qualified grant authorizes only this sink.
+    if await call_with("cap-exact", "[\"spectra.std.fs.fs_read\"]", true) != 0 {
+        return 1
+    }
+    // A namespace grant authorizes descendants, but matching is on a dot
+    // boundary rather than a string prefix.
+    if await call_with("cap-parent", "[\"spectra.std.fs\"]", true) != 0 {
+        return 2
+    }
+    if await call_with("cap-lookalike", "[\"spectra.std.fsx\"]", false) != 0 {
+        return 3
+    }
+    println("capability boundary -> exact and parent accepted, look-alike refused")
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

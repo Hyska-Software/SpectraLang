@@ -1,0 +1,10 @@
+[project]
+name = "example_27_protocol_negative_matrix"
+version = "0.1.0"
+src_dirs = ["src"]
+
+[release]
+channel = "nightly"
+compatibility = "spectralang-0.1"
+
+[dependencies]

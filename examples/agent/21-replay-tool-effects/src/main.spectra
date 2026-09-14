@@ -1,0 +1,115 @@
+module main
+
+// Example 21 — a replayed tool result is returned without running the tool
+// body a second time. The counter is process-local, making duplicate effects
+// visible without relying on an external service.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+const DIR = ".spectra/example-21-replay"
+const RUN_ID = "tool-once"
+static INVOCATIONS: int = 0
+
+#[derive(Serialize, Deserialize)]
+public record IncrementArgs {
+    label: string,
+}
+
+#[agent_tool("Increments the process-local counter")]
+public async func increment(run: Run, args: IncrementArgs) returns int {
+    INVOCATIONS = INVOCATIONS + 1
+    return INVOCATIONS
+}
+
+func spec() returns string {
+    return "{\"goal\":\"example-replay-tool-effects\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":21,\"journal\":\"" +
+        DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        RUN_ID +
+        "\"}"
+}
+
+func journal_path() returns string {
+    return DIR + "/" + RUN_ID + ".jsonl"
+}
+
+func clean() returns int {
+    let exists = std.fs.fs_exists(journal_path())
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = std.fs.fs_remove(journal_path())
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+async func verify() returns int {
+    if clean() != 0 {
+        return 1
+    }
+
+    let first = agent_start(spec())
+    if let Result::Ok(run) = first {
+        let result = await tool_call(run, "increment", "{\"label\":\"first\"}")
+        if let Result::Ok(value) = result {
+            if value != "1" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        if let Result::Err(problem) = agent_end(run) {
+            println("first end failed: " + error.message(problem))
+            return 4
+        }
+    } else {
+        return 5
+    }
+
+    if INVOCATIONS != 1 {
+        return 6
+    }
+
+    // Same run id and effect sequence: resolve returns the durable result.
+    let replay = agent_start(spec())
+    if let Result::Ok(run) = replay {
+        let result = await tool_call(run, "increment", "{\"label\":\"first\"}")
+        if let Result::Ok(value) = result {
+            if value != "1" {
+                return 7
+            }
+        } else {
+            return 8
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"replay\":true") == false {
+                return 9
+            }
+        } else {
+            return 10
+        }
+    } else {
+        return 11
+    }
+
+    if INVOCATIONS != 1 {
+        return 12
+    }
+    println("tool replay -> one body execution")
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

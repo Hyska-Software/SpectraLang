@@ -12,13 +12,16 @@ module main
 //   2. with `max_tokens: 12`, the counter starts at the ceiling and the turn's
 //      cost is exactly `token_count(prompt) + token_count(answer)`, which the
 //      mock's usage reports and the run's report agrees with;
-//   3. a prompt that would not fit is *refused* rather than truncated, with the
-//      typed `budget_exceeded` error naming the ceiling, and `agent_end`
-//      reports `budget_exceeded` with `"ceiling":"max_tokens"`.
+//   3. `token_count` lets the caller refuse a prompt that would not fit before
+//      sending it. If the caller sends it anyway, the provider turn still
+//      delivers its value; the run is then canceled and the *next* call is
+//      refused with a typed `budget_exceeded` error naming the ceiling.
+//      `agent_end` reports `budget_exceeded` with `"ceiling":"max_tokens"`.
 //
 // The budgeting rule the example demonstrates: ask `token_count` first, compare
-// against `budget_remaining`, and let the refusal happen before the provider is
-// reached rather than after.
+// against `budget_remaining`, and refuse locally when it does not fit. The
+// runtime cannot undo a provider turn that already ran, so it settles the run
+// after that turn and refuses subsequent effects.
 
 from std.io import println
 import std.agent

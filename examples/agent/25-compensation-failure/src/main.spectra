@@ -1,0 +1,139 @@
+module main
+
+// Example 25 — rollback is LIFO but failure-tolerant. A malformed deferred
+// compensation is recorded as failed; the valid compensation before it still
+// runs, and replay never runs either body a second time.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+const DIR = ".spectra/example-25-compensation"
+const RUN_ID = "compensation-failure"
+static RELEASED: int = 0
+
+#[derive(Serialize, Deserialize)]
+public record ReleaseArgs {
+    label: string,
+}
+
+#[agent_tool("Records a successful release")]
+public async func release(run: Run, args: ReleaseArgs) returns string {
+    RELEASED = RELEASED + 1
+    return "released " + args.label
+}
+
+func spec() returns string {
+    return "{\"goal\":\"example-compensation-failure\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":25,\"journal\":\"" +
+        DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        RUN_ID +
+        "\"}"
+}
+
+func clean() returns int {
+    let path   = DIR + "/" + RUN_ID + ".jsonl"
+    let exists = std.fs.fs_exists(path)
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = std.fs.fs_remove(path)
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+func defer_compensations(run: Run) returns int {
+    // The first payload is invalid. Rollback invokes the second (valid) entry
+    // first, then records this one as a failed compensation.
+    let failed = compensate(run, "release", "{\"label\":7}")
+    if let Result::Err(problem) = failed {
+        println("defer failed: " + error.message(problem))
+        return 1
+    }
+    let valid = compensate(run, "release", "{\"label\":\"undo\"}")
+    if let Result::Err(problem) = valid {
+        println("defer valid failed: " + error.message(problem))
+        return 2
+    }
+    return 0
+}
+
+async func verify() returns int {
+    if clean() != 0 {
+        return 1
+    }
+    let first = agent_start(spec())
+    if let Result::Ok(run) = first {
+        if defer_compensations(run) != 0 {
+            return 2
+        }
+        let rolled = rollback(run, "one compensation payload is malformed")
+        if let Result::Ok(count) = rolled {
+            if count != 2 {
+                return 3
+            }
+        } else {
+            return 4
+        }
+        if RELEASED != 1 {
+            return 5
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"status\":\"rolled_back\"") == false {
+                return 6
+            }
+            if str.contains(report, "\"compensations_pending\":0") == false {
+                return 7
+            }
+        } else {
+            return 8
+        }
+    } else {
+        return 9
+    }
+
+    // Replay the same declarations and rollback. The recorded failure and
+    // success are returned positionally; the release body is not re-entered.
+    let replay = agent_start(spec())
+    if let Result::Ok(run) = replay {
+        if defer_compensations(run) != 0 {
+            return 10
+        }
+        let rolled = rollback(run, "one compensation payload is malformed")
+        if let Result::Ok(count) = rolled {
+            if count != 2 {
+                return 11
+            }
+        } else {
+            return 12
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"replay\":true") == false {
+                return 13
+            }
+        } else {
+            return 14
+        }
+    } else {
+        return 15
+    }
+    if RELEASED != 1 {
+        return 16
+    }
+    println("rollback -> one success, one recorded failure, no replay duplicate")
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

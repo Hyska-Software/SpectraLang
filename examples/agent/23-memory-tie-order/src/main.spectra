@@ -1,0 +1,93 @@
+module main
+
+// Example 23 — equal embeddings still have a deterministic recall order. Two
+// identical memories tie on cosine score, and insertion ordinal breaks that
+// tie instead of exposing vector-index iteration order.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+func spec() returns string {
+    return "{\"goal\":\"example-memory-tie-order\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":23,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let first  = remember(run, "identical memory")
+        let second = remember(run, "identical memory")
+        let third  = remember(run, "different memory")
+        if let Result::Ok(ok) = first {
+            if ok == false {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        if let Result::Ok(ok) = second {
+            if ok == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+        if let Result::Ok(ok) = third {
+            if ok == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+
+        let recalled = recall(run, "identical memory", 2)
+        if let Result::Ok(document) = recalled {
+            println("ties -> " + document)
+            if str.contains(document, "\"entries\":[") == false {
+                return 8
+            }
+            if str.contains(document, "\"text\":\"identical memory\"") == false {
+                return 9
+            }
+            let first_ordinal  = str.index_of(document, "\"ordinal\":0")
+            let second_ordinal = str.index_of(document, "\"ordinal\":1")
+            if first_ordinal < 0 || second_ordinal < 0 || first_ordinal >= second_ordinal {
+                return 10
+            }
+            if str.count_occurrences(document, "\"ordinal\":") != 2 {
+                return 11
+            }
+        } else {
+            return 12
+        }
+
+        // top_k still limits the deterministic ranking to one entry.
+        let bounded = recall(run, "identical memory", 1)
+        if let Result::Ok(document) = bounded {
+            if str.count_occurrences(document, "\"ordinal\":") != 1 {
+                return 13
+            }
+        } else {
+            return 14
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 15
+            }
+        } else {
+            return 16
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

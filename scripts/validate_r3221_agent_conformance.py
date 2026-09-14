@@ -15,16 +15,18 @@ The checks run in order, stopping at the first failure:
       runs all of them;
   (d) surface determinism: two `spectralang surface --json` runs over
       `tests/projects/valid/integrated_agent_service` are byte-identical;
-  (e) every runnable example (`examples/agent/01..17`) in JIT and AOT
+  (e) every runnable example (`examples/agent/01..27`) in JIT and AOT
       (`compile --debug-info=none --emit-exe`, then execute);
-  (f) the verification fixtures (`tests/validation/384..408`) in JIT and AOT --
+  (f) the verification fixtures (`tests/validation/384..418`) in JIT and AOT --
       the language-surface contracts for streaming lifecycle, run-level grant
       enforcement, the journal artifact and run introspection, the
       aggregate-result lifetime regression, the dead-run guard matrix, spec
       rejection, the stream teardown boundary, provider routing, the scripted
-      directive grammar, the async scalar-slot code-generation regressions, the
-      memory boundaries, the ceiling combinations, replay divergence, the A2A
-      task states and the taint ledger's tags;
+      directive grammar, the async scalar-slot code-generation regressions,
+      memory boundaries, ceiling combinations, replay divergence, A2A task
+      states, taint ledger tags, nested payloads, schema recovery, payload
+      privacy, tool replay, stream interleaving, memory ties, capability
+      boundaries, compensation failure, MCP replay and protocol negatives;
   (g) the integrated-project validator
       (`scripts/validate_r3221_integrated_agent_service.py`).
 
@@ -103,6 +105,16 @@ EXAMPLES = {
     "15-mcp-service-surface": "examples/agent/15-mcp-service-surface",
     "16-a2a-task-lifecycle": "examples/agent/16-a2a-task-lifecycle",
     "17-token-budgeting": "examples/agent/17-token-budgeting",
+    "18-complex-tool-payloads": "examples/agent/18-complex-tool-payloads",
+    "19-schema-recovery": "examples/agent/19-schema-recovery",
+    "20-journal-payload-policy": "examples/agent/20-journal-payload-policy",
+    "21-replay-tool-effects": "examples/agent/21-replay-tool-effects",
+    "22-multiple-streams": "examples/agent/22-multiple-streams",
+    "23-memory-tie-order": "examples/agent/23-memory-tie-order",
+    "24-capability-boundaries": "examples/agent/24-capability-boundaries",
+    "25-compensation-failure": "examples/agent/25-compensation-failure",
+    "26-mcp-replay": "examples/agent/26-mcp-replay",
+    "27-protocol-negative-matrix": "examples/agent/27-protocol-negative-matrix",
 }
 
 # The language-surface contracts that back the example set: the streaming
@@ -135,6 +147,16 @@ VERIFICATION_FIXTURES = {
     "replay_divergence": "tests/validation/406_agent_replay_divergence.spectra",
     "a2a_task_states": "tests/validation/407_agent_a2a_task_states.spectra",
     "taint_ledger_edges": "tests/validation/408_agent_taint_ledger_edges.spectra",
+    "nested_payloads": "tests/validation/409_agent_nested_payloads.spectra",
+    "schema_recovery": "tests/validation/410_agent_schema_recovery.spectra",
+    "journal_payloads": "tests/validation/411_agent_journal_payloads.spectra",
+    "replay_tool_once": "tests/validation/412_agent_replay_tool_once.spectra",
+    "stream_interleave": "tests/validation/413_agent_stream_interleave.spectra",
+    "memory_ties": "tests/validation/414_agent_memory_ties.spectra",
+    "capability_boundary": "tests/validation/415_agent_capability_boundary.spectra",
+    "compensation_failure": "tests/validation/416_agent_compensation_failure.spectra",
+    "mcp_replay": "tests/validation/417_agent_mcp_replay.spectra",
+    "protocol_negatives": "tests/validation/418_agent_protocol_negatives.spectra",
 }
 
 CARGO = os.environ.get("CARGO") or shutil.which("cargo") or "cargo"

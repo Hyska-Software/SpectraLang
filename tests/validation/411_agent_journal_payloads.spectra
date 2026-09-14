@@ -1,0 +1,112 @@
+module agent_journal_payloads
+
+// Contract: request payload capture is opt-in. The durable output remains
+// available in both modes because replay needs it.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const DIR = "target/r3291-journal-payloads"
+const PRIVATE_ID = "fixture-411-private"
+const CAPTURED_ID = "fixture-411-captured"
+
+func journal_path(run_id: string) returns string {
+    return DIR + "/" + run_id + ".jsonl"
+}
+
+func spec(run_id: string, captured: bool) returns string {
+    let flag = "false"
+    if captured == true {
+        flag = "true"
+    }
+    return "{\"goal\":\"fixture-411-journal-payloads\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":411,\"journal\":\"" +
+        DIR +
+        "\",\"journal_payloads\":" +
+        flag +
+        ",\"run_id\":\"" +
+        run_id +
+        "\"}"
+}
+
+func remove(pathname: string) returns int {
+    let exists = fs.fs_exists(pathname)
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(pathname)
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+func contents(pathname: string) returns string {
+    let read = fs.fs_read(pathname)
+    if let Result::Ok(body) = read {
+        return body
+    }
+    return ""
+}
+
+async func run_once(run_id: string, captured: bool) returns int {
+    let started = agent_start(spec(run_id, captured))
+    if let Result::Ok(run) = started {
+        let answer = await ask(run, "fixture secret " + run_id)
+        if let Result::Err(problem) = answer {
+            println(error.message(problem))
+            return 1
+        }
+        if let Result::Err(problem) = agent_end(run) {
+            println(error.message(problem))
+            return 2
+        }
+        return 0
+    }
+    return 3
+}
+
+async func verify() returns int {
+    if let Result::Err(problem) = fs.create_dir_all(DIR) {
+        println(error.message(problem))
+        return 1
+    }
+    if remove(journal_path(PRIVATE_ID)) != 0 || remove(journal_path(CAPTURED_ID)) != 0 {
+        return 2
+    }
+    if await run_once(PRIVATE_ID, false) != 0 {
+        return 3
+    }
+    if await run_once(CAPTURED_ID, true) != 0 {
+        return 4
+    }
+    let private_journal  = contents(journal_path(PRIVATE_ID))
+    let captured_journal = contents(journal_path(CAPTURED_ID))
+    if private_journal == "" || captured_journal == "" {
+        return 5
+    }
+    if str.contains(private_journal, "\"input\":") == true {
+        return 6
+    }
+    if str.contains(private_journal, "mock echo: fixture secret " + PRIVATE_ID) == false {
+        return 7
+    }
+    if str.contains(captured_journal, "\"input\":") == false {
+        return 8
+    }
+    if str.contains(captured_journal, "fixture secret " + CAPTURED_ID) == false {
+        return 9
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

@@ -1,0 +1,106 @@
+module main
+
+// Example 18 — a derived tool schema carrying nested records and collections.
+// The round trip checks that the public agent surface preserves integer, float,
+// boolean, UTF-8 text, nested objects, and arrays without flattening them.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record Metadata {
+    label: string,
+    enabled: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+public record Payload {
+    id: int,
+    score: float,
+    metadata: Metadata,
+    tags: List<string>,
+}
+
+#[agent_tool("Returns a structured payload unchanged")]
+public async func echo_payload(run: Run, args: Payload) returns Payload {
+    return args
+}
+
+func spec() returns string {
+    return "{\"goal\":\"example-complex-tool-payloads\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":18,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    // The derived schema is part of the callable surface, not documentation
+    // maintained separately from the record definition.
+    let schema = Payload::json_schema()
+    if str.contains(schema, "\"metadata\":{\"type\":\"object\"") == false {
+        return 1
+    }
+    if str.contains(schema, "\"tags\":{\"type\":\"array\"") == false {
+        return 2
+    }
+    if str.contains(schema, "\"score\":{\"type\":\"number\"") == false {
+        return 3
+    }
+
+    let started = agent_start(spec())
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 4
+    }
+    if let Result::Ok(run) = started {
+        let payload = "{\"id\":7,\"score\":3.5,\"metadata\":{\"label\":\"café equipe\",\"enabled\":true},\"tags\":[\"one\",\"two\"]}"
+        let called = await tool_call(run, "echo_payload", payload)
+        if let Result::Ok(output) = called {
+            if str.contains(output, "\"id\":7") == false {
+                return 10
+            }
+            if str.contains(output, "\"score\":3.5") == false {
+                return 11
+            }
+            if str.contains(output, "\"enabled\":true") == false {
+                return 12
+            }
+            if str.contains(output, "\"tags\":[\"one\",\"two\"]") == false {
+                return 13
+            }
+        } else {
+            return 14
+        }
+
+        // A nested type error is rejected by the generated decoder before the
+        // function body runs.
+        let invalid = await tool_call(
+            run,
+            "echo_payload",
+            "{\"id\":7,\"score\":\"bad\",\"metadata\":{\"label\":\"x\",\"enabled\":true},\"tags\":[]}",
+        )
+        if let Result::Err(problem) = invalid {
+            if str.contains(error.message(problem), "score") == false {
+                return 15
+            }
+        } else {
+            return 16
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"tool_calls\":2") == false {
+                return 17
+            }
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 18
+            }
+        } else {
+            return 19
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

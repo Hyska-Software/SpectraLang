@@ -1,0 +1,104 @@
+module agent_protocol_negatives
+
+// Contract: A2A and ACP expose their valid lifecycle but reject malformed
+// values, empty permission actions, and requests for another session.
+
+import std.agent
+import std.error as error
+import std.string as str
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-418-protocol-negatives\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":418,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let served = a2a_serve(
+            run,
+            "127.0.0.1:0",
+            "{\"name\":\"fixture protocol\",\"version\":\"1\"}",
+        )
+        if let Result::Ok(authority) = served {
+            if str.contains(authority, ":") == false {
+                return 1
+            }
+        } else {
+            return 2
+        }
+        let card = a2a_card(run, "{\"name\":\"fixture protocol\",\"version\":\"1\"}")
+        if let Result::Ok(document) = card {
+            if str.contains(document, "fixture protocol") == false {
+                return 3
+            }
+        } else {
+            return 4
+        }
+        let empty_permission = acp_permission(run, "")
+        if let Result::Err(problem) = empty_permission {
+            if str.contains(error.message(problem), "acp") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+        let initialized = acp_handle(
+            run,
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}",
+        )
+        if let Result::Ok(document) = initialized {
+            if str.contains(document, "\"permissionRequests\":true") == false {
+                return 7
+            }
+        } else {
+            return 8
+        }
+        let created = acp_handle(
+            run,
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{}}",
+        )
+        if let Result::Ok(document) = created {
+            if str.contains(document, "\"sessionId\":\"run-") == false {
+                return 9
+            }
+        } else {
+            return 10
+        }
+        let wrong_session = acp_handle(
+            run,
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/prompt\",\"params\":{\"sessionId\":\"wrong\",\"prompt\":[{\"type\":\"text\",\"text\":\"ignored\"}]}}",
+        )
+        if let Result::Ok(document) = wrong_session {
+            if str.contains(document, "\"code\":-32602") == false {
+                return 11
+            }
+        } else {
+            return 12
+        }
+        let bad_acp = acp_handle(run, "[]")
+        if let Result::Err(problem) = bad_acp {
+            if str.contains(error.message(problem), "acp_error") == false {
+                return 13
+            }
+        } else {
+            return 14
+        }
+        let bad_a2a = a2a_handle(run, "[]")
+        if let Result::Err(problem) = bad_a2a {
+            if str.contains(error.message(problem), "a2a_error") == false {
+                return 15
+            }
+        } else {
+            return 16
+        }
+        if let Result::Err(problem) = agent_end(run) {
+            return 17
+        }
+        return 0
+    }
+    return 18
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

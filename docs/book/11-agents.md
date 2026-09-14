@@ -99,7 +99,7 @@ drift:
 
 ## The Surface
 
-Twenty free functions are the phase's surface; `register_tool` is
+Twenty-seven free functions are the phase's surface; `register_tool` is
 compiler-emitted and internal, and `T::json_schema()` on a derived record is the
 associated entry point that emits the JSON Schema used for tool payloads.
 
@@ -184,11 +184,12 @@ Every example runs against the deterministic mock provider: no network and no
 credentials. The mock is scripted through the prompt
 (`spectra:tool=<name> {json}`, `spectra:final=<text>`, `spectra:json`,
 `spectra:sleep-ms=N`), which is what makes the tool loops reproducible in CI.
-The first seven are described below; `08`–`17` cover memory across runs,
-compensations, list payloads, the tool-call ceiling, structured output, the
-embedding primitive, the ACP surface with its permission bridge, the MCP surface
-a project serves, the A2A task lifecycle, and budgeting a run with
-`token_count`.
+The first seven are described below; `08`–`27` cover memory across runs,
+compensations, list and nested payloads, the tool-call ceiling, structured
+output, embeddings, ACP permissions, the MCP service surface, A2A task
+lifecycle, token budgeting, schema recovery, journal privacy, idempotent tool
+replay, independent streams, deterministic memory ties, capability boundaries,
+compensation failure handling, MCP replay and protocol-negative handling.
 
 ### 01 — Tool and Run
 
@@ -508,6 +509,29 @@ AOT):
   `attribution`, and provenance is content addressed, so the same value entered
   twice is one digest recorded twice while a different value is a different
   digest.
+- `409_agent_nested_payloads.spectra` — generated tool schemas and wrappers
+  preserve nested records, arrays, floats, booleans and UTF-8 text, while a
+  nested type mismatch remains a typed wrapper error.
+- `410_agent_schema_recovery.spectra` — an invalid authored schema is reported
+  as `schema_violation`, and a later `ask_json` still completes the same run.
+- `411_agent_journal_payloads.spectra` — request payloads are absent by default
+  and captured only with `journal_payloads: true`; durable outputs remain in
+  both files for replay.
+- `412_agent_replay_tool_once.spectra` — the same tool result is returned from
+  a resumed journal without entering the compiled tool body twice.
+- `413_agent_stream_interleave.spectra` — three stream cursors are independent;
+  closing the middle handle does not affect either neighboring stream.
+- `414_agent_memory_ties.spectra` — equal vector scores use insertion ordinal
+  ordering and `top_k` excludes a lower-ranked fourth entry.
+- `415_agent_capability_boundary.spectra` — exact sink grants and parent
+  namespaces authorize `fs_read`, while the look-alike `fsx` namespace does not.
+- `416_agent_compensation_failure.spectra` — rollback is LIFO and continues
+  after a malformed compensation, recording both the success and the failure.
+- `417_agent_mcp_replay.spectra` — MCP discovery and a remote result replay
+  after the loopback listener is no longer needed.
+- `418_agent_protocol_negatives.spectra` — A2A/ACP lifecycle remains usable
+  while malformed values, empty permission actions and wrong sessions fail
+  closed.
 
 The stress harness (`scripts/stress_agent_block_on.py`) repeats fixture 397 in
 many short-lived processes for triage; it is not part of the gate.
@@ -548,6 +572,11 @@ The record is flushed before the call returns, which is what makes a re-run a
 resume rather than a re-execution: a run with the same `run_id` resolves each
 step from the journal, returns the recorded output and appends nothing, so
 nothing is asked or executed twice and the report says `"replay":true`.
+Nested transports can complete a server-side effect before the awaiting client
+effect commits, so a raw JSONL file may append records in completion order
+rather than numeric `step` order. This is not replay ambiguity: the runtime
+indexes records by `step`, and `read_records` returns them sorted. Consumers
+must use the step field instead of treating physical line position as sequence.
 
 ## The Integrated Service
 
@@ -646,9 +675,12 @@ claims are covered by deterministic tests, not by evals.
 Each example is an ordinary project and is reproduced by the two commands
 above: `spectralang run` for JIT, then `compile --debug-info=none --emit-exe`
 and the produced binary for AOT. Both modes run with the deterministic mock
-provider and need no credentials or network. The formatter check
-(`spectralang fmt --check examples/agent`) is clean, `spectralang check --json`
-reports no diagnostics for any example, and the LSP crate's suite
+provider and need no credentials or external network. The ten examples and ten
+fixtures added by this matrix pass their individual formatter checks. A
+repository-wide `spectralang fmt --check examples/agent` still reports
+formatting drift in legacy examples `08`, `10`, `13`, `15`, `16` and `17`;
+those files are intentionally outside this change. `spectralang check --json`
+reports no diagnostics for the new examples, and the LSP crate's suite
 (`cargo test -p spectra-lsp`) passes.
 
 The Phase 32 validators (`scripts/validate_r32*.py`) are registered in

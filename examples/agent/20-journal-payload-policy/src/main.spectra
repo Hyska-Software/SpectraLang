@@ -1,0 +1,122 @@
+module main
+
+// Example 20 — journal_payloads is an explicit privacy choice. Digests and
+// outputs remain durable for replay, while request text is captured only when
+// the run opts in.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const DIR = ".spectra/example-20-journal"
+const PRIVATE_ID = "payload-private"
+const CAPTURED_ID = "payload-captured"
+
+func spec(run_id: string, capture: bool) returns string {
+    let enabled = "false"
+    if capture == true {
+        enabled = "true"
+    }
+    return "{\"goal\":\"example-journal-payload-policy\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":20,\"journal\":\"" +
+        DIR +
+        "\",\"journal_payloads\":" +
+        enabled +
+        ",\"run_id\":\"" +
+        run_id +
+        "\"}"
+}
+
+func path(run_id: string) returns string {
+    return DIR + "/" + run_id + ".jsonl"
+}
+
+func remove(pathname: string) returns int {
+    let exists = fs.fs_exists(pathname)
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(pathname)
+            if let Result::Ok(ok) = removed {
+                if ok == true {
+                    return 0
+                }
+            }
+            return 1
+        }
+        return 0
+    }
+    return 1
+}
+
+async func run_once(run_id: string, capture: bool) returns int {
+    let started = agent_start(spec(run_id, capture))
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let answered = await ask(run, "private prompt for " + run_id)
+        if let Result::Err(problem) = answered {
+            println("ask failed: " + error.message(problem))
+            return 2
+        }
+        let ended = agent_end(run)
+        if let Result::Err(problem) = ended {
+            println("end failed: " + error.message(problem))
+            return 3
+        }
+        return 0
+    }
+    return 4
+}
+
+func read(pathname: string) returns string {
+    let contents = fs.fs_read(pathname)
+    if let Result::Ok(body) = contents {
+        return body
+    }
+    return ""
+}
+
+async func verify() returns int {
+    if remove(path(PRIVATE_ID)) != 0 {
+        return 1
+    }
+    if remove(path(CAPTURED_ID)) != 0 {
+        return 2
+    }
+
+    if await run_once(PRIVATE_ID, false) != 0 {
+        return 3
+    }
+    if await run_once(CAPTURED_ID, true) != 0 {
+        return 4
+    }
+
+    let private_journal  = read(path(PRIVATE_ID))
+    let captured_journal = read(path(CAPTURED_ID))
+    if private_journal == "" || captured_journal == "" {
+        return 5
+    }
+    // The output is replay material in both modes, but the request payload
+    // field is absent from the private journal and present in the opted-in one.
+    if str.contains(private_journal, "\"input\":") == true {
+        return 6
+    }
+    if str.contains(captured_journal, "\"input\":") == false {
+        return 7
+    }
+    if str.contains(captured_journal, "private prompt for " + CAPTURED_ID) == false {
+        return 8
+    }
+    if str.contains(private_journal, "mock echo: private prompt for " + PRIVATE_ID) == false {
+        return 9
+    }
+    println("payload policy -> private digests, captured input only when enabled")
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

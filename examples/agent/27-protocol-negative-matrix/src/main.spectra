@@ -1,0 +1,128 @@
+module main
+
+// Example 27 — protocol adapters fail closed on malformed requests and wrong
+// sessions, while their valid lifecycle remains available on the same run.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+func spec() returns string {
+    return "{\"goal\":\"example-protocol-negative-matrix\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":27,\"journal\":\"\"}"
+}
+
+func has_code(document: string, code: string) returns bool {
+    return str.contains(document, "\"code\":" + code)
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        // The actual socket bind returns a usable authority and is stopped by
+        // agent_end; no third-party client is needed for this lifecycle check.
+        let served = a2a_serve(
+            run,
+            "127.0.0.1:0",
+            "{\"name\":\"negative matrix\",\"version\":\"1\"}",
+        )
+        if let Result::Ok(authority) = served {
+            if str.contains(authority, ":") == false {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let card = a2a_card(run, "{\"name\":\"negative matrix\",\"version\":\"1\"}")
+        if let Result::Ok(document) = card {
+            if str.contains(document, "negative matrix") == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        // ACP creates one session per run; a different session id is invalid.
+        let created = acp_handle(
+            run,
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session/new\",\"params\":{}}",
+        )
+        if let Result::Ok(document) = created {
+            if str.contains(document, "\"sessionId\":\"run-") == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+        let wrong_session = acp_handle(
+            run,
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/prompt\",\"params\":{\"sessionId\":\"other\",\"prompt\":[{\"type\":\"text\",\"text\":\"ignored\"}]}}",
+        )
+        if let Result::Ok(document) = wrong_session {
+            if has_code(document, "-32602") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+        let missing_prompt = acp_handle(
+            run,
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/prompt\",\"params\":{\"sessionId\":\"other\"}}",
+        )
+        if let Result::Ok(document) = missing_prompt {
+            if has_code(document, "-32602") == false {
+                return 10
+            }
+        } else {
+            return 11
+        }
+        let notification = acp_handle(
+            run,
+            "{\"jsonrpc\":\"2.0\",\"method\":\"session/cancel\",\"params\":{\"sessionId\":\"other\"}}",
+        )
+        if let Result::Ok(document) = notification {
+            if document != "" {
+                return 12
+            }
+        } else {
+            return 13
+        }
+
+        // Both adapters reject a syntactically valid JSON value that is not a
+        // request object with a typed protocol error.
+        let bad_acp = acp_handle(run, "[]")
+        if let Result::Err(problem) = bad_acp {
+            if str.contains(error.message(problem), "acp_error") == false {
+                return 14
+            }
+        } else {
+            return 15
+        }
+        let bad_a2a = a2a_handle(run, "[]")
+        if let Result::Err(problem) = bad_a2a {
+            if str.contains(error.message(problem), "a2a_error") == false {
+                return 16
+            }
+        } else {
+            return 17
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 18
+            }
+        } else {
+            return 19
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}
