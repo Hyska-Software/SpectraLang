@@ -1,0 +1,80 @@
+module agent_corrupt_journal
+
+// Journal parsing fails closed twice: malformed JSON is rejected before any
+// run exists, and a JSON object missing the signed record fields is rejected
+// with the missing field named.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const DIR = ".spectra/fixture-422-corrupt-journal"
+const RUN_ID = "fixture-422-corrupt"
+const PATH = DIR + "/" + RUN_ID + ".jsonl"
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-422-corrupt-journal\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":422,\"journal\":\"" +
+        DIR +
+        "\",\"run_id\":\"" +
+        RUN_ID +
+        "\"}"
+}
+
+func remove_file() returns int {
+    let exists = fs.fs_exists(PATH)
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(PATH)
+            if let Result::Err(_problem) = removed {
+                return 1
+            }
+        }
+    }
+    return 0
+}
+
+func reject(body: string, expected: string) returns int {
+    if remove_file() != 0 {
+        return 1
+    }
+    let written = fs.fs_write(PATH, body)
+    if let Result::Err(_problem) = written {
+        return 2
+    }
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let _ = agent_end(run)
+        return 3
+    }
+    if let Result::Err(problem) = started {
+        let message = error.message(problem)
+        if str.contains(message, "journal_error") == false or str.contains(message, expected) == false {
+            println("unexpected journal error -> " + message)
+            return 4
+        }
+        println("journal rejection -> " + message)
+    }
+    return 0
+}
+
+public func main() returns int {
+    let prepared = fs.create_dir_all(DIR)
+    if let Result::Err(_problem) = prepared {
+        return 20
+    }
+    let malformed = reject("{not-json}\n", "not valid JSON")
+    if malformed != 0 {
+        return malformed
+    }
+    let incomplete = reject("{\"run\":\"fixture-422-corrupt\",\"step\":0}\n", "kind")
+    if incomplete != 0 {
+        return 10 + incomplete
+    }
+    if remove_file() != 0 {
+        return 30
+    }
+    println("fixture 422 -> journal integrity failures are typed and fail closed")
+    return 0
+}

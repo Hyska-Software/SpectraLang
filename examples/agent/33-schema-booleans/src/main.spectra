@@ -1,0 +1,75 @@
+module main
+
+// Example 33 — JSON Schema boolean documents are first-class: `true` accepts,
+// `false` rejects, and ordinary keywords such as `enum` still identify a
+// precise violation before a later valid turn succeeds.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+const ENUM_BAD = "{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\",\"enum\":[1,2]}},\"required\":[\"count\"]}"
+const ENUM_GOOD = "{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\",\"enum\":[3]}},\"required\":[\"count\"]}"
+
+func spec() returns string {
+    return "{\"goal\":\"example-schema-booleans\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":33,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(_problem) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let any_document = await ask_json(run, "spectra:json", "true")
+        if let Result::Ok(document) = any_document {
+            if str.contains(document, "\"count\":3") == false {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        let no_document = await ask_json(run, "spectra:json", "false")
+        if let Result::Ok(_document) = no_document {
+            return 4
+        }
+        if let Result::Err(problem) = no_document {
+            let message = error.message(problem)
+            if str.contains(message, "false schema") == false {
+                return 5
+            }
+        }
+
+        let wrong_enum = await ask_json(run, "spectra:json", ENUM_BAD)
+        if let Result::Ok(_document) = wrong_enum {
+            return 6
+        }
+        if let Result::Err(problem) = wrong_enum {
+            if str.contains(error.message(problem), "enum members") == false {
+                return 7
+            }
+        }
+
+        let right_enum = await ask_json(run, "spectra:json", ENUM_GOOD)
+        if let Result::Err(problem) = right_enum {
+            println("valid enum failed: " + error.message(problem))
+            return 8
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"steps\":4") == false {
+                return 9
+            }
+            println("schema booleans -> " + report)
+        } else {
+            return 10
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

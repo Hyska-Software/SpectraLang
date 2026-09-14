@@ -193,8 +193,8 @@ def validate_behavior() -> None:
     run_command([str(SPECTRALANG), "run", FIXTURE])
 
     executable = ROOT / "target" / "r3216-agent-budget.exe"
-    # --debug-info=none: the default PDB path hits a pre-existing MSVC LNK1318
-    # limit on larger fixtures and is unrelated to this item.
+    # AOT behavior validation intentionally uses --debug-info=none; native
+    # debug metadata has a separate linker gate.
     run_command(
         [str(SPECTRALANG), "compile", "--debug-info=none", "--emit-exe", str(executable), FIXTURE]
     )

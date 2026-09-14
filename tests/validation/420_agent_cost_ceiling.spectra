@@ -1,0 +1,67 @@
+module agent_cost_ceiling
+
+// The mock price table is observable through the run report: two input tokens
+// plus four output tokens cost exactly ten micros, and the next boundary is
+// refused by max_cost_micros.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-420-cost\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":10,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":420,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        if token_count("cost, check!") != 2 {
+            return 1
+        }
+        let first = await ask(run, "cost check")
+        if let Result::Ok(answer) = first {
+            if answer != "mock echo: cost check" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let remaining = budget_remaining(run)
+        if let Result::Ok(value) = remaining {
+            if value < 1000000000 {
+                return 4
+            }
+        } else {
+            return 5
+        }
+        let next = await ask(run, "after ceiling")
+        if let Result::Ok(_answer) = next {
+            return 6
+        }
+        if let Result::Err(problem) = next {
+            let message = error.message(problem)
+            if str.contains(message, "budget_exceeded") == false or str.contains(message, "max_cost_micros") == false {
+                return 7
+            }
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"status\":\"budget_exceeded\"") == false or str.contains(report, "\"ceiling\":\"max_cost_micros\"") == false {
+                return 8
+            }
+            if str.contains(report, "\"steps\":1") == false or str.contains(report, "\"cost_micros\":10") == false {
+                return 9
+            }
+            println("cost report -> " + report)
+        } else {
+            return 10
+        }
+        return 0
+    }
+    return 11
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

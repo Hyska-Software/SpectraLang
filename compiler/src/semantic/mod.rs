@@ -539,6 +539,8 @@ pub struct SemanticAnalyzer {
     // Struct metadata for validation and lookup
     struct_infos: HashMap<String, StructInfo>,
     json_struct_derives: HashMap<String, JsonDerivedStructInfo>,
+    /// Wire names for unit-only enums participating in JSON derives.
+    json_enum_names: HashMap<String, Vec<String>>,
     // `#[agent_tool]` descriptors keyed by function name, mirroring
     // `json_struct_derives`: the semantic pass owns validation and the
     // midend/CLI read the derived metadata from the module registry.

@@ -131,6 +131,28 @@ impl ASTLowering {
             "did not quote a field name",
         )
     }
+    /// Wire names in declaration order, including `#[json(rename = "...")]`.
+    fn json_enum_wire_names(&self, enum_name: &str) -> Option<Vec<String>> {
+        let variants = self.enum_definitions.get(enum_name)?;
+        let renames = self
+            .json_enum_schemas
+            .get(enum_name)
+            .cloned()
+            .unwrap_or_default();
+        Some(
+            variants
+                .iter()
+                .map(|(variant_name, _, _)| {
+                    renames
+                        .iter()
+                        .find(|(name, _)| name == variant_name)
+                        .map(|(_, json_name)| json_name.clone())
+                        .unwrap_or_else(|| variant_name.clone())
+                })
+                .collect(),
+        )
+    }
+
 
     /// Lower one field value to its `encode_struct` kind token and raw value.
     /// Aggregate (struct/array) values arrive as pointers and are consumed
@@ -184,6 +206,20 @@ impl ASTLowering {
                     .builder
                     .build_load_typed(ir_func, field_ptr, IRType::Char);
                 Some(("char", value))
+            }
+            IRType::Enum { name, variants } => {
+                let enum_value = if name == "ErrorCode" {
+                    self.builder.build_load_typed(ir_func, field_ptr, IRType::Int)
+                } else {
+                    let enum_type = IRType::Enum {
+                        name: name.clone(),
+                        variants,
+                    };
+                    self.builder
+                        .build_load_typed(ir_func, field_ptr, enum_type)
+                };
+                let encoded = self.lower_enum_to_json(&name, enum_value, ir_func);
+                Some(("raw", encoded))
             }
             IRType::Struct { name, .. } => {
                 // Struct-typed fields store an 8-byte pointer (see
@@ -465,6 +501,50 @@ impl ASTLowering {
                 ));
                 None
             }
+            IRType::Enum { name, variants } => {
+                if variants.iter().any(|(_, data)| data.is_some()) {
+                    self.error(format!(
+                        "JSON from_json on '{}.{}': enum '{name}' carries variant data; only unit-only enums are supported",
+                        path, field.source_name
+                    ));
+                    return None;
+                }
+                let Some(wire_names) = self.json_enum_wire_names(&name) else {
+                    self.error(format!(
+                        "JSON from_json on '{}.{}': enum '{name}' has no derive schema",
+                        path, field.source_name
+                    ));
+                    return None;
+                };
+                let descriptor = format!(
+                    "enum:[{}]",
+                    wire_names
+                        .iter()
+                        .map(|wire_name| json_quote_text(wire_name))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+                let path_lit = self.lower_string_literal(path, ir_func);
+                let type_lit = self.lower_string_literal(&descriptor, ir_func);
+                let required = self.builder.build_const_int(ir_func, 0);
+                let tag = self.json_host(
+                    ir_func,
+                    "spectra.api.json.decode_field_by_key",
+                    vec![obj, key, path_lit, type_lit, required, required],
+                    IRType::Int,
+                    "did not decode a JSON enum field",
+                );
+                let enum_ptr = self.builder.build_alloca(
+                    ir_func,
+                    IRType::Tuple {
+                        elements: vec![IRType::Int],
+                    },
+                );
+                let tag_ptr = self.builder.build_field_ptr(ir_func, enum_ptr, 0);
+                self.builder.build_store(ir_func, tag_ptr, tag);
+                self.builder.build_store(ir_func, field_ptr, enum_ptr);
+                Some(())
+            }
             IRType::Struct { name, .. } => {
                 let type_lit = self.lower_string_literal(&name, ir_func);
                 let path_lit = self.lower_string_literal(path, ir_func);
@@ -585,7 +665,17 @@ impl ASTLowering {
                     .get(&name)
                     .is_some_and(|variants| variants.iter().all(|(_, _, data)| data.is_none()));
                 if unit_only {
-                    Ok("{\"type\":\"string\"}".to_string())
+                    let wire_names = self
+                        .json_enum_wire_names(&name)
+                        .unwrap_or_default();
+                    let values = wire_names
+                        .iter()
+                        .map(|wire_name| json_quote_text(wire_name))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    Ok(format!(
+                        "{{\"type\":\"string\",\"enum\":[{values}]}}"
+                    ))
                 } else {
                     Err(format!(
                         "enum '{name}' carries variant data; only unit-only enums are serializable"
@@ -713,6 +803,22 @@ impl ASTLowering {
             IRType::Bool => Some("bool".to_string()),
             IRType::String => Some("string".to_string()),
             IRType::Char => Some("char".to_string()),
+            IRType::Enum { name, .. } => {
+                let unit_only = self
+                    .enum_definitions
+                    .get(&name)
+                    .is_some_and(|variants| variants.iter().all(|(_, _, data)| data.is_none()));
+                if !unit_only {
+                    return None;
+                }
+                let wire_names = self.json_enum_wire_names(&name)?;
+                let values = wire_names
+                    .iter()
+                    .map(|wire_name| json_quote_text(wire_name))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                Some(format!("enum({values})"))
+            }
             IRType::Struct { name, .. } => {
                 let inner = self.derive_schema_string(&name, stack).ok()?;
                 Some(inner.replacen(&name.to_string(), "", 1))

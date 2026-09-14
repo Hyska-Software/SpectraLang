@@ -133,9 +133,11 @@ checked again at runtime, so a computed name cannot declare an unexecutable
 compensation). `rollback` runs the pending compensations in LIFO order through
 the same governed dispatch as `act`/`tool_call`, so capabilities, taint gating
 and budget still apply. The rollback is replay-safe: an executed compensation
-is not executed again, and a failure never masks the compensations that follow
-it. The compensation fixture is
-`tests/validation/380_agent_compensation.spectra`.
+is not executed again, a declaration nested in a replayed outer tool is
+restored from its journal attribution, and a failure never masks the
+compensations that follow it. The compensation fixtures are
+`tests/validation/380_agent_compensation.spectra` and
+`tests/validation/426_agent_nested_compensation.spectra`.
 
 ## Providers
 
@@ -184,12 +186,15 @@ Every example runs against the deterministic mock provider: no network and no
 credentials. The mock is scripted through the prompt
 (`spectra:tool=<name> {json}`, `spectra:final=<text>`, `spectra:json`,
 `spectra:sleep-ms=N`), which is what makes the tool loops reproducible in CI.
-The first seven are described below; `08`–`27` cover memory across runs,
+The first seven are described below; `08`–`37` cover memory across runs,
 compensations, list and nested payloads, the tool-call ceiling, structured
 output, embeddings, ACP permissions, the MCP service surface, A2A task
 lifecycle, token budgeting, schema recovery, journal privacy, idempotent tool
 replay, independent streams, deterministic memory ties, capability boundaries,
-compensation failure handling, MCP replay and protocol-negative handling.
+compensation failure handling, MCP replay, protocol-negative handling, taint
+policy decisions, cost ceilings, unsafe run identities, corrupt journals,
+stream replay, boolean schemas, enum payloads, nested compensation replay,
+remote MCP errors and A2A idempotency.
 
 ### 01 — Tool and Run
 
@@ -203,8 +208,8 @@ prints the report.
 .\target\example-01-agent.exe
 ```
 
-Both paths print the same lines and exit `0` (`--debug-info=none` avoids a
-pre-existing MSVC PDB limit; it does not change the program):
+Both paths print the same lines and exit `0` (`--debug-info=none` keeps this
+behavioral smoke test independent of optional native debug metadata):
 
 ```text
 ask    -> mock echo: hello
@@ -532,6 +537,33 @@ AOT):
 - `418_agent_protocol_negatives.spectra` — A2A/ACP lifecycle remains usable
   while malformed values, empty permission actions and wrong sessions fail
   closed.
+- `419_agent_taint_policy_matrix.spectra` — a sink with `untrusted: "allow"`
+  records an allow decision; `untrusted: "block"` proceeds only after
+  `trust` with the exact value and a non-blank reason.
+- `420_agent_cost_ceiling.spectra` — cost accounting crosses
+  `max_cost_micros`, refuses the next turn, and reports the cost ceiling with
+  the recorded usage.
+- `421_agent_unsafe_run_id.spectra` — unsafe run-id characters are sanitized
+  into a safe journal filename with a collision-resistant suffix, and the
+  same identity replays.
+- `422_agent_corrupt_journal.spectra` — malformed JSON and incomplete records
+  are typed `journal_error` failures; neither is silently skipped.
+- `423_agent_stream_replay.spectra` — streamed model chunks are persisted in
+  the model output and replayed without another provider turn.
+- `424_agent_schema_booleans.spectra` — JSON Schema documents `true` and
+  `false` select acceptance/rejection, and an `enum` violation is isolated
+  before a later valid turn.
+- `425_agent_option_enum_tool.spectra` — optional scalar omission, renamed
+  unit-enum wire values, standard JSON Schema enum values and unknown-enum
+  rejection at the generated tool boundary.
+- `426_agent_nested_compensation.spectra` — a compensation declared inside a
+  tool survives replay of the outer result and its recorded rollback runs
+  once.
+- `427_agent_mcp_remote_errors.spectra` — a remote MCP `isError` envelope
+  becomes a typed `ToolFailed` result while a later valid call still works.
+- `428_agent_a2a_idempotency.spectra` — repeating a message id returns the
+  recorded task, while different text with that id returns JSON-RPC
+  `-32600`.
 
 The stress harness (`scripts/stress_agent_block_on.py`) repeats fixture 397 in
 many short-lived processes for triage; it is not part of the gate.
@@ -659,12 +691,13 @@ claims are covered by deterministic tests, not by evals.
   scripted loop that dispatches a *sink* after a tool has run needs an approver
   or `untrusted: "allow"`. Fixture 402 records this as a harness fact; the gate
   itself is fixture 377.
-- A user function is exported under its own name in AOT builds, so a name the
-  runtime already imports from the platform collides at link time (`send`,
-  `recv`, `connect`, ... on Windows: `LNK2005: send already defined`). Name
-  such a helper something else (`send_request`); mangling every user symbol is
-  its own change, tracked in
-  `docs/architecture/agent-async-scalar-slot-fixes.md`.
+- AOT now prefixes every non-entry user symbol with `spectra_user_`, while
+  keeping the IR name for compiler lookups and applying the same mapping to
+  imported definitions. This prevents platform collisions such as `send`,
+  `recv`, and `connect` on Windows; native debug attachment resolves the
+  prefixed symbols back to source metadata. Object-only `main` remains `main`
+  and executable `main` remains `spectra_user_main`. Example 37 and fixture
+  428 exercise the former collision case.
 - The mock's scripted mode keeps an arm that replays a trailing
   `spectra:final=`, but no language-level caller can reach it: the loop ends at
   the first final and every call consumes its script from index 0. It is
@@ -682,6 +715,8 @@ formatting drift in legacy examples `08`, `10`, `13`, `15`, `16` and `17`;
 those files are intentionally outside this change. `spectralang check --json`
 reports no diagnostics for the new examples, and the LSP crate's suite
 (`cargo test -p spectra-lsp`) passes.
+Native debug metadata and the MSVC PDB link path are covered separately by
+`python scripts\validate_r2903_native_debug.py`.
 
 The Phase 32 validators (`scripts/validate_r32*.py`) are registered in
 `run_tests.ps1` as the items land. `R-3221` adds the crate conformance suite

@@ -78,6 +78,35 @@ impl PendingCompensation {
         })
     }
 }
+/// Rebuilds declarations that were nested inside a replayed tool body.
+///
+/// `tools::invoke` returns a recorded outer result without entering the
+/// wrapper, so a direct `compensate` call in that body is otherwise invisible
+/// to the live run. Consume only contiguous recorded declarations: their
+/// attribution is the durable tool/argument pair, and no compensation body is
+/// executed while the pending stack is restored.
+pub(crate) fn restore_recorded_declarations(run_handle: i64) -> Result<(), AgentError> {
+    loop {
+        let record = run::with_run(run_handle, |state| {
+            state.journal.as_mut().and_then(|journal| {
+                journal.take_next_if_kind(Kind::Compensation.name())
+            })
+        })?;
+        let Some(record) = record else {
+            return Ok(());
+        };
+        let attribution = record.attribution.as_deref().ok_or_else(|| {
+            AgentError::Journal(
+                "recorded nested compensation declaration has no attribution".to_string(),
+            )
+        })?;
+        let pending = PendingCompensation::from_attribution(attribution)?;
+        run::with_run(run_handle, |state| {
+            state.pending_compensations.push(pending);
+        })?;
+    }
+}
+
 
 /// `compensate(run, tool, arguments_json) -> Result<bool, Error>`.
 ///
@@ -139,6 +168,10 @@ pub(crate) fn rollback(run_handle: i64, reason: &str) -> Result<i64, AgentError>
     // the run's grant must cover the tools it exposes — the check `act` and
     // `tool_call` perform before their first dispatch.
     tools::enforce_run_grant(run_handle)?;
+    // An outer replay may have skipped a direct declaration in the tool body.
+    // Rebuild it only after the caller has reached the explicit rollback, so
+    // an explicit `compensate` in the caller still consumes its own record.
+    restore_recorded_declarations(run_handle)?;
     run::with_run(run_handle, |state| state.mark_rolled_back())?;
 
     let pending = run::with_run(run_handle, |state| {

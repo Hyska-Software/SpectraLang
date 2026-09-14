@@ -1,0 +1,87 @@
+module main
+
+// Example 34 — tool wrappers preserve an optional scalar field and a renamed
+// unit enum across the JSON boundary, while an unknown enum wire value fails.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public enum Priority {
+    #[json(rename = "urgent")]
+    Urgent,
+    Normal,
+}
+
+#[derive(Serialize, Deserialize)]
+public record JobArgs {
+    id: int,
+    priority: Priority,
+    #[json(optional)]
+    note: string,
+}
+
+#[agent_tool("Echoes an optional note and priority")]
+public async func inspect_job(run: Run, args: JobArgs) returns JobArgs {
+    return args
+}
+
+func spec() returns string {
+    return "{\"goal\":\"example-option-enum-tool\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":34,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let schema = JobArgs::json_schema()
+    if str.contains(schema, "\"priority\"") == false or str.contains(schema, "\"urgent\"") == false {
+        return 1
+    }
+    if str.contains(schema, "\"note\"") == false {
+        return 2
+    }
+
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let omitted = await tool_call(run, "inspect_job", "{\"id\":7,\"priority\":\"urgent\"}")
+        if let Result::Ok(document) = omitted {
+            if str.contains(document, "\"id\":7") == false or str.contains(document, "\"priority\":\"urgent\"") == false {
+                return 3
+            }
+        } else {
+            return 4
+        }
+        let present = await tool_call(
+            run,
+            "inspect_job",
+            "{\"id\":8,\"priority\":\"Normal\",\"note\":\"ready\"}",
+        )
+        if let Result::Ok(document) = present {
+            if str.contains(document, "\"note\":\"ready\"") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+        let invalid = await tool_call(run, "inspect_job", "{\"id\":9,\"priority\":\"unknown\"}")
+        if let Result::Ok(_document) = invalid {
+            return 7
+        }
+        if let Result::Err(problem) = invalid {
+            if str.contains(error.message(problem), "priority") == false {
+                return 8
+            }
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 9
+        }
+    } else {
+        return 10
+    }
+    println("optional enum payload -> decoded, encoded and rejected")
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

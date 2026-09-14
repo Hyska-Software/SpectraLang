@@ -233,7 +233,8 @@ def validate_behavior() -> None:
     run_command([str(SPECTRALANG), "run", FIXTURE])
     run_command([str(SPECTRALANG), "run", PROJECT])
 
-    # AOT parity: --debug-info=none avoids the pre-existing MSVC PDB limit.
+    # AOT behavior validation intentionally uses --debug-info=none; native
+    # debug metadata has a separate linker gate.
     for fixture, executable in [
         (FIXTURE, ROOT / "target" / "r3222-agent-act.exe"),
         (PROJECT, ROOT / "target" / "r3222-agent-act-project.exe"),

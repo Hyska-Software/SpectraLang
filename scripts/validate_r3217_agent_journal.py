@@ -288,7 +288,8 @@ def validate_behavior() -> None:
     run_command([str(SPECTRALANG), "run", FIXTURE])
     validate_journal_file()
 
-    # AOT parity: --debug-info=none avoids the pre-existing MSVC PDB limit.
+    # AOT behavior validation intentionally uses --debug-info=none; native
+    # debug metadata has a separate linker gate.
     executable = ROOT / "target" / "r3217-agent-journal.exe"
     run_command(
         [str(SPECTRALANG), "compile", "--debug-info=none", "--emit-exe", str(executable), FIXTURE]

@@ -226,6 +226,7 @@ impl SemanticAnalyzer {
         }
 
         let mut json_names = HashSet::new();
+        let mut wire_names = Vec::with_capacity(enum_def.variants.len());
         for variant in &enum_def.variants {
             let options =
                 self.json_field_options(&variant.attributes, &enum_def.name, &variant.name);
@@ -247,7 +248,10 @@ impl SemanticAnalyzer {
                     variant.span,
                 );
             }
+            wire_names.push(options.json_name);
         }
+        self.json_enum_names
+            .insert(enum_def.name.clone(), wire_names);
 
         self.register_json_derived_methods(
             &enum_def.name,

@@ -38,7 +38,11 @@ const LF_POINTER: u16 = 0x1002;
 const LF_STRUCTURE: u16 = 0x1505;
 const LF_FIELDLIST: u16 = 0x1203;
 const LF_MEMBER: u16 = 0x150D;
-const CV_IS_FWDREF: u8 = 0x80;
+const CV_IS_FWDREF: u16 = 0x0080;
+const LF_NUMERIC: u16 = 0x8000;
+const LF_USHORT: u16 = 0x8002;
+const LF_ULONG: u16 = 0x8004;
+const LF_UQUADWORD: u16 = 0x800A;
 /// First type index available for `.debug$T` user records; everything below
 /// is reserved for simple types.
 const FIRST_USER_TYPE_INDEX: u32 = 0x1000;
@@ -303,11 +307,10 @@ impl CodeViewTypeTable {
     fn push_pointer(&mut self, pointee: u32) -> u32 {
         let index = self.next_index;
         self.next_index += 1;
-        let mut payload = Vec::with_capacity(10);
+        let mut payload = Vec::with_capacity(8);
         payload.extend_from_slice(&pointee.to_le_bytes());
-        // Attributes: pointer mode Near64 (11) in bits 6..12; near pointer
-        // kind, no const/volatile qualifiers.
-        payload.extend_from_slice(&0x0000_02C0u32.to_le_bytes());
+        // Near64 pointer, 8-byte size, no qualifiers.
+        payload.extend_from_slice(&0x0001_000Cu32.to_le_bytes());
         push_type_record(&mut self.records, LF_POINTER, &payload);
         index
     }
@@ -316,13 +319,12 @@ impl CodeViewTypeTable {
         let index = self.next_index;
         self.next_index += 1;
         let mut payload = Vec::new();
-        payload.extend_from_slice(&0u16.to_le_bytes()); // member count
-        payload.push(CV_IS_FWDREF); // properties: forward reference
-        payload.push(0); // padding
-        payload.extend_from_slice(&0u32.to_le_bytes()); // field list
-        payload.extend_from_slice(&0u32.to_le_bytes()); // derivation list
-        payload.extend_from_slice(&0u32.to_le_bytes()); // vshape table
-        payload.extend_from_slice(&0u64.to_le_bytes()); // size unknown
+        push_u16(&mut payload, 0); // member count
+        push_u16(&mut payload, CV_IS_FWDREF); // forward reference
+        push_u32(&mut payload, 0); // field list
+        push_u32(&mut payload, 0); // derivation list
+        push_u32(&mut payload, 0); // vshape table
+        push_numeric_leaf(&mut payload, 0); // size unknown
         payload.extend_from_slice(name.as_bytes());
         payload.push(0);
         push_type_record(&mut self.records, LF_STRUCTURE, &payload);
@@ -340,14 +342,14 @@ impl CodeViewTypeTable {
         let mut fieldlist_payload = Vec::new();
         for ((field_name, field_ty), &offset) in fields.iter().zip(&layout.offsets) {
             let member_type = self.index_for(field_ty);
-            let mut payload = Vec::new();
-            payload.extend_from_slice(&3u16.to_le_bytes()); // attr: public access
-            payload.extend_from_slice(&0u16.to_le_bytes()); // padding
-            payload.extend_from_slice(&member_type.to_le_bytes());
-            payload.extend_from_slice(&(offset as u16).to_le_bytes());
-            payload.extend_from_slice(field_name.as_bytes());
-            payload.push(0);
-            push_type_record(&mut fieldlist_payload, LF_MEMBER, &payload);
+            let member_start = fieldlist_payload.len();
+            push_u16(&mut fieldlist_payload, LF_MEMBER);
+            push_u16(&mut fieldlist_payload, 3); // public access
+            push_u32(&mut fieldlist_payload, member_type);
+            push_numeric_leaf(&mut fieldlist_payload, offset as u64);
+            fieldlist_payload.extend_from_slice(field_name.as_bytes());
+            fieldlist_payload.push(0);
+            append_codeview_padding(&mut fieldlist_payload, member_start);
         }
         let fieldlist_index = self.next_index;
         self.next_index += 1;
@@ -356,13 +358,12 @@ impl CodeViewTypeTable {
         let structure_index = self.next_index;
         self.next_index += 1;
         let mut payload = Vec::new();
-        payload.extend_from_slice(&(fields.len() as u16).to_le_bytes()); // member count
-        payload.push(0); // properties: fully defined, not a forward reference
-        payload.push(0); // padding
-        payload.extend_from_slice(&fieldlist_index.to_le_bytes());
-        payload.extend_from_slice(&0u32.to_le_bytes()); // derivation list
-        payload.extend_from_slice(&0u32.to_le_bytes()); // vshape table
-        payload.extend_from_slice(&(layout.size as u64).to_le_bytes());
+        push_u16(&mut payload, fields.len() as u16); // member count
+        push_u16(&mut payload, 0); // fully defined, no special properties
+        push_u32(&mut payload, fieldlist_index);
+        push_u32(&mut payload, 0); // derivation list
+        push_u32(&mut payload, 0); // vshape table
+        push_numeric_leaf(&mut payload, layout.size as u64);
         payload.extend_from_slice(name.as_bytes());
         payload.push(0);
         push_type_record(&mut self.records, LF_STRUCTURE, &payload);
@@ -505,15 +506,42 @@ pub fn ir_type_debug_name(ty: &IRType) -> String {
     }
 }
 
-/// Append one `.debug$T` leaf record: 16-bit length (excluding the length
-/// field), leaf id, payload, padded to a 4-byte stream boundary.
+/// Append one `.debug$T` leaf record. CodeView stores padding as `LF_PADn`
+/// records inside the record length; `.debug$T` has no external alignment
+/// bytes between records.
 fn push_type_record(out: &mut Vec<u8>, leaf: u16, payload: &[u8]) {
-    let length = 2usize.saturating_add(payload.len());
+    let padding = (4 - ((4 + payload.len()) % 4)) % 4;
+    let length = 2usize.saturating_add(payload.len()).saturating_add(padding);
     push_u16(out, length as u16);
     push_u16(out, leaf);
     out.extend_from_slice(payload);
-    while !out.len().is_multiple_of(4) {
-        out.push(0);
+    for pad_len in (1..=padding).rev() {
+        out.push(0xF0 + pad_len as u8); // LF_PADn, descending to LF_PAD1
+    }
+}
+
+/// Align an embedded CodeView member record with the canonical `LF_PADn`
+/// sequence. Field-list members do not have their own length prefix.
+fn append_codeview_padding(out: &mut Vec<u8>, record_start: usize) {
+    let padding = (4 - ((out.len() - record_start) % 4)) % 4;
+    for pad_len in (1..=padding).rev() {
+        out.push(0xF0 + pad_len as u8);
+    }
+}
+
+/// Encode a CodeView numeric leaf as an immediate value or a typed wide value.
+fn push_numeric_leaf(out: &mut Vec<u8>, value: u64) {
+    if value < LF_NUMERIC as u64 {
+        push_u16(out, value as u16);
+    } else if value <= u16::MAX as u64 {
+        push_u16(out, LF_USHORT);
+        push_u16(out, value as u16);
+    } else if value <= u32::MAX as u64 {
+        push_u16(out, LF_ULONG);
+        push_u32(out, value as u32);
+    } else {
+        push_u16(out, LF_UQUADWORD);
+        push_u64(out, value);
     }
 }
 
@@ -521,6 +549,9 @@ fn push_u16(out: &mut Vec<u8>, value: u16) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 fn push_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+fn push_u64(out: &mut Vec<u8>, value: u64) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
@@ -594,12 +625,11 @@ fn md5(input: &[u8]) -> [u8; 16] {
 }
 
 fn subsection(out: &mut Vec<u8>, kind: u32, payload: &[u8]) {
+    let padding = (4 - (payload.len() % 4)) % 4;
     push_u32(out, kind);
-    push_u32(out, payload.len() as u32);
+    push_u32(out, (payload.len() + padding) as u32);
     out.extend_from_slice(payload);
-    while !out.len().is_multiple_of(4) {
-        out.push(0);
-    }
+    out.resize(out.len() + padding, 0);
 }
 
 fn symbol_record(out: &mut Vec<u8>, kind: u16, payload: &[u8]) {
@@ -662,15 +692,15 @@ fn function_symbols(
     symbol_record(&mut symbols, S_GPROC32, &proc);
 
     let mut frame = Vec::new();
-    // cbFrame: real stack-frame size captured from Cranelift's finalized
-    // layout (explicit allocas + spill slots).
+    // S_FRAMEPROC: frame size, padding, saved-register bytes, exception
+    // handler offset/section, and flags selecting RSP as both base pointers.
     push_u32(&mut frame, function.frame_size);
     push_u32(&mut frame, 0); // padding size
     push_u32(&mut frame, 0); // padding offset
-    push_u32(&mut frame, 0); // reserved
-    push_u32(&mut frame, 0); // exception handler
-    push_u32(&mut frame, 0); // handler data
-    push_u32(&mut frame, 0x0000_0140); // uses RSP as frame/parameter base
+    push_u32(&mut frame, 0); // callee-saved register bytes
+    push_u32(&mut frame, 0); // exception handler offset
+    push_u16(&mut frame, 0); // exception handler section
+    push_u32(&mut frame, 0x0001_4000); // local/parameter base: RSP
     symbol_record(&mut symbols, 0x1012, &frame); // S_FRAMEPROC
 
     for (local_index, local_name) in function.locals.iter().enumerate() {
@@ -697,8 +727,8 @@ fn function_symbols(
                 NativeValueLocation::CfaOffset(offset) => {
                     push_u32(&mut defrange, offset as u32);
                     push_u32(&mut defrange, start);
+                    push_u16(&mut defrange, function.section);
                     push_u16(&mut defrange, length);
-                    push_u16(&mut defrange, 0); // no gaps
                     symbol_record(&mut symbols, S_DEFRANGE_FRAMEPOINTER_REL, &defrange);
                 }
                 NativeValueLocation::Register(hw_enc) => {
@@ -786,7 +816,7 @@ fn codeview_debug_s(
     let mut checksums = Vec::new();
     push_u32(&mut checksums, 0); // offset of source_file in the string table
     checksums.push(16); // checksum size
-    checksums.push(0); // MD5 checksum kind
+    checksums.push(1); // MD5 checksum kind
     checksums.extend_from_slice(&md5(source.as_bytes()));
     while checksums.len() % 4 != 0 {
         checksums.push(0);
@@ -832,14 +862,11 @@ fn codeview_debug_s(
         push_u16(&mut lines, 0);
         push_u32(&mut lines, function.size.max(1));
         push_u32(&mut lines, 0); // file checksum record offset
+        push_u32(&mut lines, rows.len() as u32);
         push_u32(&mut lines, 12 + rows.len() as u32 * 8);
         for (relative, line) in &rows {
             push_u32(&mut lines, *relative);
             push_u32(&mut lines, line & 0x00FF_FFFF);
-        }
-        if source.is_empty() {
-            push_u32(&mut lines, 0);
-            push_u32(&mut lines, 1);
         }
         subsection(&mut result, DEBUG_S_LINES, &lines);
     }
@@ -1175,6 +1202,23 @@ mod tests {
         }
         records
     }
+    fn c13_subsections(bytes: &[u8]) -> Vec<(u32, Vec<u8>)> {
+        let mut result = Vec::new();
+        let mut cursor = 4usize; // C13 version signature
+        while cursor + 8 <= bytes.len() {
+            let kind = u32::from_le_bytes(bytes[cursor..cursor + 4].try_into().unwrap());
+            let length =
+                u32::from_le_bytes(bytes[cursor + 4..cursor + 8].try_into().unwrap()) as usize;
+            let payload_start = cursor + 8;
+            let payload_end = payload_start + length;
+            assert!(payload_end <= bytes.len(), "subsection exceeds C13 stream");
+            result.push((kind, bytes[payload_start..payload_end].to_vec()));
+            cursor = payload_end;
+        }
+        assert_eq!(cursor, bytes.len(), "C13 stream has trailing bytes");
+        result
+    }
+
     /// Walk the `.debug$T` stream (after its version signature) and return
     /// every type record as `(leaf id, payload)`.
     fn debug_t_records(bytes: &[u8]) -> Vec<(u16, Vec<u8>)> {
@@ -1187,7 +1231,9 @@ mod tests {
             }
             let leaf = u16::from_le_bytes([bytes[cursor + 2], bytes[cursor + 3]]);
             records.push((leaf, bytes[cursor + 4..cursor + 2 + length].to_vec()));
-            cursor = (cursor + 2 + length).div_ceil(4) * 4;
+            // `.debug$T` records carry their own LF_PADn bytes in `length`;
+            // there are no external alignment bytes between records.
+            cursor += 2 + length;
         }
         records
     }
@@ -1226,18 +1272,23 @@ mod tests {
 
         let records = debug_t_records(type_stream);
 
-        // Defining LF_STRUCTURE named "Point": 3 members, defined properties,
+        // Defining LF_STRUCTURE named "Point": 3 members, fully defined,
         // real field-list back-reference, padded size 8+8+4 -> 24.
         let point_structure = records
             .iter()
-            .find(|(leaf, payload)| *leaf == super::LF_STRUCTURE && payload.ends_with(b"Point\0"))
+            .find(|(leaf, payload)| {
+                *leaf == super::LF_STRUCTURE
+                    && payload.len() >= 24
+                    && payload[18..].starts_with(b"Point\0")
+            })
             .map(|(_, payload)| payload)
             .expect("defining LF_STRUCTURE for Point must be present");
         assert_eq!(
             u16::from_le_bytes([point_structure[0], point_structure[1]]),
             3
         );
-        assert_eq!(point_structure[2] & super::CV_IS_FWDREF, 0);
+        let properties = u16::from_le_bytes([point_structure[2], point_structure[3]]);
+        assert_eq!(properties & super::CV_IS_FWDREF, 0);
         let fieldlist_index = u32::from_le_bytes([
             point_structure[4],
             point_structure[5],
@@ -1245,11 +1296,14 @@ mod tests {
             point_structure[7],
         ]);
         assert_ne!(fieldlist_index, 0);
-        let size = u64::from_le_bytes(point_structure[16..24].try_into().unwrap());
-        assert_eq!(size, 24);
+        assert_eq!(
+            u16::from_le_bytes([point_structure[16], point_structure[17]]),
+            24
+        );
 
-        // The referenced LF_FIELDLIST carries one LF_MEMBER per field with
-        // mid-end layout offsets 0/8/16 and stored-representation types.
+        // The referenced LF_FIELDLIST carries one embedded LF_MEMBER per
+        // field. Embedded members have no length prefix; their names and
+        // LF_PADn bytes determine the next 4-byte-aligned member.
         let fieldlist = records
             .iter()
             .find(|(leaf, _)| *leaf == super::LF_FIELDLIST)
@@ -1262,23 +1316,23 @@ mod tests {
         ];
         let mut members = Vec::new();
         let mut cursor = 0usize;
-        while cursor + 4 <= fieldlist.len() {
-            let length = u16::from_le_bytes([fieldlist[cursor], fieldlist[cursor + 1]]) as usize;
-            if length < 2 || cursor + 2 + length > fieldlist.len() {
+        while cursor + 10 <= fieldlist.len() {
+            let leaf = u16::from_le_bytes([fieldlist[cursor], fieldlist[cursor + 1]]);
+            if leaf != super::LF_MEMBER {
                 break;
             }
-            let leaf = u16::from_le_bytes([fieldlist[cursor + 2], fieldlist[cursor + 3]]);
-            let payload = fieldlist[cursor + 4..cursor + 2 + length].to_vec();
-            cursor = (cursor + 2 + length).div_ceil(4) * 4;
-            if leaf != super::LF_MEMBER {
-                continue;
-            }
-            let name = String::from_utf8_lossy(&payload[10..])
-                .trim_end_matches('\0')
-                .to_string();
-            let member_type = u32::from_le_bytes(payload[4..8].try_into().unwrap());
-            let offset = u16::from_le_bytes([payload[8], payload[9]]);
+            let member_type =
+                u32::from_le_bytes(fieldlist[cursor + 4..cursor + 8].try_into().unwrap());
+            let offset = u16::from_le_bytes([fieldlist[cursor + 8], fieldlist[cursor + 9]]);
+            let name_start = cursor + 10;
+            let name_end = fieldlist[name_start..]
+                .iter()
+                .position(|byte| *byte == 0)
+                .map(|end| name_start + end)
+                .expect("LF_MEMBER name must be NUL terminated");
+            let name = String::from_utf8_lossy(&fieldlist[name_start..name_end]).to_string();
             members.push((name, member_type, offset));
+            cursor = (name_end + 1).div_ceil(4) * 4;
         }
         assert_eq!(
             members,
@@ -1288,7 +1342,7 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         // Member attributes: public access.
-        assert_eq!(u16::from_le_bytes([fieldlist[4], fieldlist[5]]), 3);
+        assert_eq!(u16::from_le_bytes([fieldlist[2], fieldlist[3]]), 3);
 
         // The `.debug$S` S_LOCAL for `origin` references the pointer record
         // that points at the defining structure.
@@ -1319,6 +1373,69 @@ mod tests {
             fieldlist_index.wrapping_add(1),
             "the pointer must target the defining LF_STRUCTURE"
         );
+        assert_eq!(
+            u32::from_le_bytes(pointer_payload[4..8].try_into().unwrap()),
+            0x0001_000C,
+            "pointer must be a valid 64-bit near pointer",
+        );
+    }
+    #[test]
+    fn native_codeview_records_match_c13_layout() {
+        let mut function = function_with_types();
+        function.line_rows = vec![(2, 7), (10, 9)];
+        let sections = codeview_sections("x.spectra", &[function], "fn typed() {}\n");
+        let debug_s = sections
+            .iter()
+            .find(|(name, _)| *name == ".debug$S")
+            .map(|(_, bytes)| bytes)
+            .expect("C13 symbols stream must be present");
+
+        let subsections = c13_subsections(debug_s);
+        let lines = subsections
+            .iter()
+            .find(|(kind, _)| *kind == super::DEBUG_S_LINES)
+            .map(|(_, payload)| payload)
+            .expect("C13 line subsection must be present");
+        assert_eq!(lines.len(), 12 + 12 + 2 * 8);
+        assert_eq!(u32::from_le_bytes(lines[12..16].try_into().unwrap()), 0);
+        assert_eq!(u32::from_le_bytes(lines[16..20].try_into().unwrap()), 2);
+        assert_eq!(u32::from_le_bytes(lines[20..24].try_into().unwrap()), 28);
+        assert_eq!(u32::from_le_bytes(lines[24..28].try_into().unwrap()), 2);
+        assert_eq!(u32::from_le_bytes(lines[28..32].try_into().unwrap()), 7);
+        assert_eq!(u32::from_le_bytes(lines[32..36].try_into().unwrap()), 10);
+        assert_eq!(u32::from_le_bytes(lines[36..40].try_into().unwrap()), 9);
+
+        let checksums = subsections
+            .iter()
+            .find(|(kind, _)| *kind == super::DEBUG_S_FILECHKSMS)
+            .map(|(_, payload)| payload)
+            .expect("C13 checksum subsection must be present");
+        assert_eq!(checksums[4], 16);
+        assert_eq!(checksums[5], 1, "checksum bytes must be tagged as MD5");
+
+        let symbols = c13_symbol_records(debug_s);
+        let frame = symbols
+            .iter()
+            .find(|(kind, _)| *kind == 0x1012)
+            .map(|(_, payload)| payload)
+            .expect("S_FRAMEPROC must be present");
+        assert_eq!(u32::from_le_bytes(frame[0..4].try_into().unwrap()), 24);
+        assert_eq!(u16::from_le_bytes(frame[20..22].try_into().unwrap()), 0);
+        assert_eq!(
+            u32::from_le_bytes(frame[22..26].try_into().unwrap()),
+            0x0001_4000
+        );
+
+        let defrange = symbols
+            .iter()
+            .find(|(kind, _)| *kind == super::S_DEFRANGE_FRAMEPOINTER_REL)
+            .map(|(_, payload)| payload)
+            .expect("frame-pointer local range must be present");
+        assert_eq!(defrange.len(), 12);
+        assert_eq!(i32::from_le_bytes(defrange[0..4].try_into().unwrap()), -8);
+        assert_eq!(u32::from_le_bytes(defrange[4..8].try_into().unwrap()), 0);
+        assert_eq!(u16::from_le_bytes(defrange[8..10].try_into().unwrap()), 1);
+        assert_eq!(u16::from_le_bytes(defrange[10..12].try_into().unwrap()), 32);
     }
 
     #[test]

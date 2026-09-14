@@ -2647,8 +2647,8 @@ Runtime diagnostic baseline:
 
 - `spectralang run` emits `error[runtime]` with the source location of `func main` when the program exits with a non-zero status.
 - The diagnostic includes stack frame `0: main()` for the current runtime entrypoint failure path.
-- `spectralang compile --emit-object` and `--emit-exe` write a sibling `.spectra-debug.json` map for native debugger workflows with `gdb`/`lldb` symbols.
-- Native DWARF/PDB source stepping is not claimed by the current baseline.
+- `spectralang compile --emit-object` and `--emit-exe` write a sibling `.spectra-debug.json` map for native debugger workflows with `gdb`/`lldb` symbols; `--debug-info=native` also emits native DWARF or CodeView/PDB metadata.
+- Native source-level stepping depends on the platform debugger and linker consuming that metadata; the emitted native artifact is validated independently from the JSON sidecar.
 
 For the full tooling contract, see `docs/tooling.md`.
 

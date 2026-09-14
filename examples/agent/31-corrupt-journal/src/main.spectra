@@ -1,0 +1,80 @@
+module main
+
+// Example 31 — a journal is an integrity boundary. Malformed JSON and a
+// structurally incomplete record both fail closed at `agent_start`.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const DIR = ".spectra/example-31-corrupt-journal"
+const RUN_ID = "corrupt-journal"
+const PATH = DIR + "/" + RUN_ID + ".jsonl"
+
+func spec() returns string {
+    return "{\"goal\":\"example-corrupt-journal\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":31,\"journal\":\"" +
+        DIR +
+        "\",\"run_id\":\"" +
+        RUN_ID +
+        "\"}"
+}
+
+func remove_journal() returns int {
+    let exists = fs.fs_exists(PATH)
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(PATH)
+            if let Result::Err(_problem) = removed {
+                return 1
+            }
+        }
+    }
+    return 0
+}
+
+func expect_rejection(label: string, body: string, expected: string) returns int {
+    if remove_journal() != 0 {
+        return 1
+    }
+    let written = fs.fs_write(PATH, body)
+    if let Result::Err(_problem) = written {
+        return 2
+    }
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let _ = agent_end(run)
+        println(label + " was accepted")
+        return 3
+    }
+    if let Result::Err(problem) = started {
+        let message = error.message(problem)
+        if str.contains(message, "journal_error") == false or str.contains(message, expected) == false {
+            println(label + " -> " + message)
+            return 4
+        }
+        println(label + " -> " + message)
+    }
+    return 0
+}
+
+public func main() returns int {
+    let prepared = fs.create_dir_all(DIR)
+    if let Result::Err(_problem) = prepared {
+        return 20
+    }
+    let syntax = expect_rejection("malformed", "{not-json}\n", "not valid JSON")
+    if syntax != 0 {
+        return syntax
+    }
+    let shape = expect_rejection("incomplete", "{\"run\":\"corrupt-journal\",\"step\":0}\n", "kind")
+    if shape != 0 {
+        return 10 + shape
+    }
+    if remove_journal() != 0 {
+        return 30
+    }
+    println("journal integrity -> malformed records rejected")
+    return 0
+}

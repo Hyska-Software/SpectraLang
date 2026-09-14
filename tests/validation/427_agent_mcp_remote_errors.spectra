@@ -1,0 +1,71 @@
+module agent_mcp_remote_errors
+
+// A remote MCP tool failure is returned as an `isError` tool result and mapped
+// back to ToolFailed; a later valid call still reaches the same server.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[agent_tool("Adds integers for the MCP error fixture")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-427-mcp-errors\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"mcp\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"allow\",\"seed\":427,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let served = mcp_serve(run, "127.0.0.1:0")
+        if let Result::Ok(authority) = served {
+            let discovered = await mcp_connect(run, "http://" + authority + "/mcp")
+            if let Result::Err(_problem) = discovered {
+                return 1
+            }
+            let namespace = str.replace(str.replace(authority, ".", "_"), ":", "_")
+            let remote    = "mcp__" + namespace + "__add"
+            // The request is an object, so the error is produced by the remote
+            // wrapper and transported as MCP `isError`, not rejected locally.
+            let malformed = await tool_call(run, remote, "{\"a\":\"bad\",\"b\":1}")
+            if let Result::Ok(_value) = malformed {
+                return 2
+            }
+            if let Result::Err(problem) = malformed {
+                if str.contains(error.message(problem), "a") == false {
+                    return 3
+                }
+            }
+            let valid = await tool_call(run, remote, "{\"a\":19,\"b\":23}")
+            if let Result::Ok(value) = valid {
+                if value != "42" {
+                    return 4
+                }
+            } else {
+                return 5
+            }
+        } else {
+            return 6
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 7
+        }
+    } else {
+        return 8
+    }
+    println("fixture 427 -> MCP tool error envelope passed")
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

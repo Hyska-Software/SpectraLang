@@ -1,0 +1,121 @@
+module main
+
+// Example 30 — run identities may contain path separators without escaping the
+// journal directory. The runtime sanitizes the filename and keeps a digest
+// suffix, while the original identity still selects replay.
+
+from std.io import println
+import std.agent
+import std.collections as collections
+import std.fs as fs
+import std.option as option
+import std.string as str
+
+const DIR = ".spectra/example-30-run-id"
+const RUN_ID = "unsafe/run id"
+
+func spec() returns string {
+    return "{\"goal\":\"example-unsafe-run-id\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":30,\"journal\":\"" +
+        DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        RUN_ID +
+        "\"}"
+}
+
+func clear_journal_directory() returns int {
+    let listed = fs.read_dir(DIR)
+    if let Result::Ok(names) = listed {
+        let count = collections.list_len(names)
+        let index = 0
+        while index < count {
+            let entry = collections.list_get(names, index)
+            if let Option::Some(name) = entry {
+                let removed = fs.fs_remove(DIR + "/" + name)
+                if let Result::Err(_problem) = removed {
+                    collections.list_free(names)
+                    return 1
+                }
+            }
+            index = index + 1
+        }
+        collections.list_free(names)
+    }
+    return 0
+}
+
+func has_sanitized_journal() returns bool {
+    let listed = fs.read_dir(DIR)
+    if let Result::Ok(names) = listed {
+        let count = collections.list_len(names)
+        let index = 0
+        while index < count {
+            let entry = collections.list_get(names, index)
+            if let Option::Some(name) = entry {
+                if str.starts_with(name, "unsafe_run_id-") and str.ends_with(name, ".jsonl") {
+                    collections.list_free(names)
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        collections.list_free(names)
+    }
+    return false
+}
+
+async func verify() returns int {
+    if clear_journal_directory() != 0 {
+        return 1
+    }
+    let first = agent_start(spec())
+    if let Result::Ok(run) = first {
+        let answer = await ask(run, "stable identity")
+        if let Result::Ok(value) = answer {
+            if value != "mock echo: stable identity" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 4
+        }
+    } else {
+        return 5
+    }
+    if has_sanitized_journal() == false {
+        return 6
+    }
+
+    let replay = agent_start(spec())
+    if let Result::Ok(run) = replay {
+        let answer = await ask(run, "stable identity")
+        if let Result::Ok(value) = answer {
+            if value != "mock echo: stable identity" {
+                return 7
+            }
+        } else {
+            return 8
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"replay\":true") == false {
+                return 9
+            }
+            println("unsafe run id -> sanitized journal and replay")
+        } else {
+            return 10
+        }
+    } else {
+        return 11
+    }
+    return 0
+}
+
+public func main() returns int {
+    let prepared = fs.create_dir_all(DIR)
+    if let Result::Err(_problem) = prepared {
+        return 20
+    }
+    return block_on(verify())
+}

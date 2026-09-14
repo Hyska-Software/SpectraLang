@@ -294,6 +294,23 @@ impl Journal {
     pub(crate) fn get(&self, step: u64) -> Option<&Record> {
         self.records.get(&step)
     }
+    /// Consumes the next recorded step only when it has the requested kind.
+    ///
+    /// Replay normally validates the full input digest through
+    /// [`crate::replay::resolve`]. Compensation declarations are different:
+    /// an outer tool result can be replayed without re-entering its body, so
+    /// rollback needs a narrow way to recover declarations that were nested
+    /// inside that skipped body without pretending to execute them.
+    pub(crate) fn take_next_if_kind(&mut self, kind: &str) -> Option<Record> {
+        let step = self.next_step;
+        let record = self.records.get(&step)?;
+        if record.kind != kind {
+            return None;
+        }
+        self.next_step += 1;
+        Some(record.clone())
+    }
+
 
     /// Number of recorded (or loaded) steps; test/support accessor.
     #[cfg(test)]

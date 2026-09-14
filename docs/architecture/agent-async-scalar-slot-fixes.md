@@ -227,7 +227,7 @@ behaviour is pinned from the language by fixture 407 (`failed` naming
   step instead of executing it, which is correct semantics and a wrong starting
   state.
 
-## Found and documented, not fixed: an AOT symbol collision
+## Found, documented, and fixed: an AOT symbol collision
 
 Writing example 16 and fixture 407 turned up a linkage limitation:
 
@@ -236,26 +236,24 @@ ex-16-a2a-task-lifecycle.exe : fatal error LNK1169
 spectra_api-<hash>.lib(ws2_32.dll) : error LNK2005: send já definida no module-0000.obj
 ```
 
-A user function is emitted with `Linkage::Export` under its **bare IR name**
-(`backend/src/aot.rs::declare_function`, whose only rename is
-`main` → `spectra_user_main`). A program that declares `func send(...)`
-therefore defines a symbol the runtime library already imports from winsock on
-Windows, and the link fails. The same class reaches any libc/winsock name
-(`recv`, `connect`, `bind`, `listen`, `accept`, `select`, `read`, `write`, ...).
+A user function was emitted with `Linkage::Export` under its **bare IR name**
+(`backend/src/aot.rs::declare_function`, whose only previous rename was
+`main` → `spectra_user_main`). A program that declared `func send(...)`
+therefore defined a symbol the runtime library already imports from Winsock on
+Windows. The same class reached libc/Winsock names such as `recv`, `connect`,
+`bind`, `listen`, `accept`, `select`, `read`, and `write`.
 
-Two reasons it is documented rather than fixed here:
+The backend now applies `spectra_user_` to every non-entry AOT user symbol.
+The compiler still addresses functions by their IR names, while definitions
+and external declarations use the same linker-safe mapping. Native CodeView
+and DWARF attachment maps the emitted symbol back to source-level debug
+metadata, so the namespace fix does not discard locals or line rows. The
+object-only `main` entry remains `main`; an executable's entry remains
+`spectra_user_main`.
 
-* the faithful fix is to mangle *every* user symbol (a reserved prefix, as
-  `spectra_user_main` already does for `main`). That is a linkage-wide change,
-  and `scripts/validate_r2903_native_debug.py` pins the current names -- it
-  asserts `helper` and `spectra_user_main` appear in the PDB symbol stream --
-  so the change needs its own validation pass over the native-debug gate, not a
-  drive-by edit;
-* the failure is loud and late rather than silent and wrong: the linker names
-  the symbol and the object, and the workaround is a rename.
-
-Both new files therefore call their helper `send_request` (the naming examples
-07 and 382 already used), and the example's header says why.
+Example 37 and fixture 428 deliberately keep a helper named `send`; both now
+compile and execute through AOT without the Winsock collision. The historical
+`send_request` workaround remains valid but is no longer required.
 
 ## Validation
 

@@ -155,6 +155,16 @@ fn debug_map_path_for_artifact(artifact_path: &Path) -> PathBuf {
     PathBuf::from(debug_map_path)
 }
 
+fn find_native_debug_metadata<'a>(
+    debug_metadata: &'a NativeDebugMetadata,
+    native_name: &str,
+) -> Option<&'a NativeDebugFunction> {
+    debug_metadata.functions.iter().find(|metadata| {
+        metadata.name == native_name
+            || spectra_backend::aot::user_function_symbol(&metadata.name) == native_name
+    })
+}
+
 /// Add compiler-owned CodeView records to a COFF object.  The backend owns
 /// both the records and the COFF container rewrite; the sidecar is not used
 /// to synthesize native debug information.
@@ -163,25 +173,21 @@ fn attach_native_codeview(
     source_path: &Path,
     debug_metadata: &NativeDebugMetadata,
 ) -> CliResult<()> {
-    let functions = debug_metadata.functions.iter().map(|function| function.name.clone()).collect::<Vec<_>>();
     let object_bytes = fs::read(object_path)
         .map_err(|e| CliError::io(format!("Cannot read object for debug ranges: {}", e)))?;
     let mut ranged_functions = spectra_backend::debug::coff_function_ranges(&object_bytes);
-    // Only symbols present in the object are eligible for native debug
-    // records.  This prevents a sidecar/source name from becoming a fake PDB
-    // procedure.  The wrapper is present only for executable objects.
-    ranged_functions.retain(|function| functions.iter().any(|name| name == &function.name));
+    // Object symbols carry the backend's linker-safe prefix. Match them back
+    // to source-level metadata without changing the emitted native name.
+    ranged_functions.retain(|function| {
+        find_native_debug_metadata(debug_metadata, &function.name).is_some()
+    });
     if ranged_functions.is_empty() {
         return Err(CliError::compilation(
             "--debug-info=native found no user function symbols in the COFF object",
         ));
     }
     for function in &mut ranged_functions {
-        if let Some(metadata) = debug_metadata
-            .functions
-            .iter()
-            .find(|metadata| metadata.name == function.name)
-        {
+        if let Some(metadata) = find_native_debug_metadata(debug_metadata, &function.name) {
             function.locals = metadata.locals.clone();
             function.local_offsets = metadata.local_offsets.clone();
             function.local_locations = metadata.local_locations.clone();
@@ -219,20 +225,17 @@ fn attach_native_debug(object_path: &Path, source_path: &Path, debug_metadata: &
 fn attach_native_dwarf(object_path: &Path, source_path: &Path, debug_metadata: &NativeDebugMetadata) -> CliResult<()> {
     let object_bytes = fs::read(object_path)
         .map_err(|e| CliError::io(format!("Cannot read object for DWARF attachment: {e}")))?;
-    let source_functions = debug_metadata.functions.iter().map(|function| function.name.clone()).collect::<Vec<_>>();
     let mut functions = spectra_backend::debug::native_function_ranges(&object_bytes);
-    functions.retain(|function| source_functions.iter().any(|name| name == &function.name));
+    functions.retain(|function| {
+        find_native_debug_metadata(debug_metadata, &function.name).is_some()
+    });
     if functions.is_empty() {
         return Err(CliError::compilation(
             "--debug-info=native found no user function symbols in the Unix object",
         ));
     }
     for function in &mut functions {
-        if let Some(metadata) = debug_metadata
-            .functions
-            .iter()
-            .find(|metadata| metadata.name == function.name)
-        {
+        if let Some(metadata) = find_native_debug_metadata(debug_metadata, &function.name) {
             function.locals = metadata.locals.clone();
             function.local_offsets = metadata.local_offsets.clone();
             function.local_locations = metadata.local_locations.clone();

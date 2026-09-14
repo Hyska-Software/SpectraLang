@@ -730,9 +730,9 @@ fn decode_failure(path: &str, reason: &str) -> i32 {
 /// Arguments: `(child_handle, path, type_name, optional, default_value)`.
 /// `child_handle` is the total-lookup result (`value_get`/`value_at`/`parse`):
 /// 0 (or an unknown handle, or JSON null) means absent. `type_name` is one of
-/// `int`, `float`, `bool`, `string`, `char`, or `list:<element>` for a
-/// `List<element>` built from a JSON array; anything else selects object mode
-/// for nested derived structs and returns the child handle unchanged.
+/// `int`, `float`, `bool`, `string`, `char`, `list:<element>`, or
+/// `enum:[<JSON string values>]`; anything else selects object mode for nested
+/// derived structs and returns the child handle unchanged.
 /// Absent `optional` fields yield `default_value`; any other violation fails
 /// loudly instead of synthesizing a silent zero.
 pub extern "C" fn json_decode_field(ctx: *mut SpectraHostCallContext) -> i32 {
@@ -757,9 +757,9 @@ pub extern "C" fn json_decode_field(ctx: *mut SpectraHostCallContext) -> i32 {
 ///
 /// Arguments: `(obj_handle, key, path, type_name, optional, default_value)`.
 /// Looks the member up by key without cloning the parent and without
-/// creating a child handle. Scalar fields are extracted directly; nested
-/// objects (any other `type_name`) are moved into a fresh handle which the
-/// caller must release with `value_free`.
+/// creating a child handle. Scalar, list and unit-enum fields are extracted
+/// directly; nested objects (any other `type_name`) are moved into a fresh
+/// handle which the caller must release with `value_free`.
 pub extern "C" fn json_decode_field_by_key(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = read_args(ctx, 6) else {
         return HOST_STATUS_INVALID_ARGUMENT;
@@ -909,6 +909,27 @@ fn write_decoded_field(
                 Err(code) => code,
             }
         }
+        enum_mode if enum_mode.starts_with("enum:") => {
+            let descriptor = &enum_mode["enum:".len()..];
+            let Ok(variants) = serde_json::from_str::<Vec<String>>(descriptor) else {
+                return missing("invalid unit-enum descriptor".to_string());
+            };
+            let Some(text) = field.as_str() else {
+                return missing(format!(
+                    "expected enum string, found {}",
+                    json_kind_name(&field)
+                ));
+            };
+            let Some(tag) = variants.iter().position(|variant| variant == text) else {
+                let expected = variants
+                    .iter()
+                    .map(|variant| format!("'{variant}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return missing(format!("expected one of [{expected}], found '{text}'"));
+            };
+            write_result(ctx, tag as i64)
+        }
         _ => {
             if !field.is_object() {
                 return missing("expected object".to_string());
@@ -935,6 +956,7 @@ enum DeriveSchemaType {
     Bool,
     String,
     Char,
+    Enum(Vec<String>),
     Object(Vec<DeriveSchemaField>),
     Array(Box<DeriveSchemaType>),
 }
@@ -986,6 +1008,30 @@ impl<'a> SchemaParser<'a> {
         Some(String::from_utf8_lossy(&self.bytes[start..self.pos]).into_owned())
     }
 
+    fn parse_quoted_string(&mut self) -> Option<String> {
+        let start = self.pos;
+        if !self.eat(b'"') {
+            return None;
+        }
+        let mut escaped = false;
+        while let Some(byte) = self.peek() {
+            self.pos += 1;
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if byte == b'\\' {
+                escaped = true;
+                continue;
+            }
+            if byte == b'"' {
+                let raw = std::str::from_utf8(&self.bytes[start..self.pos]).ok()?;
+                return serde_json::from_str(raw).ok();
+            }
+        }
+        None
+    }
+
     fn parse_type(&mut self) -> Option<DeriveSchemaType> {
         match self.peek() {
             Some(b'{') => {
@@ -1032,6 +1078,25 @@ impl<'a> SchemaParser<'a> {
             }
             _ => {
                 let name = self.parse_name()?;
+                if name == "enum" {
+                    if !self.eat(b'(') {
+                        return None;
+                    }
+                    let mut variants = Vec::new();
+                    if self.eat(b')') {
+                        return Some(DeriveSchemaType::Enum(variants));
+                    }
+                    loop {
+                        variants.push(self.parse_quoted_string()?);
+                        if self.eat(b',') {
+                            continue;
+                        }
+                        if self.eat(b')') {
+                            return Some(DeriveSchemaType::Enum(variants));
+                        }
+                        return None;
+                    }
+                }
                 match name.as_str() {
                     "int" => Some(DeriveSchemaType::Int),
                     "float" => Some(DeriveSchemaType::Float),
@@ -1111,6 +1176,16 @@ fn check_schema_type(value: &Value, ty: &DeriveSchemaType, path: &str) -> Option
                 .map(|text| text.chars().count() == 1)
                 .unwrap_or(false);
             if single {
+                None
+            } else {
+                Some(path.to_string())
+            }
+        }
+        DeriveSchemaType::Enum(variants) => {
+            if value
+                .as_str()
+                .is_some_and(|text| variants.iter().any(|variant| variant == text))
+            {
                 None
             } else {
                 Some(path.to_string())
@@ -1333,6 +1408,21 @@ mod tests {
             Some("tags")
         );
     }
+    #[test]
+    fn derive_schema_checks_unit_enum_wire_values() {
+        let mut parser =
+            SchemaParser::new(r#"Job{priority:enum("urgent","Normal")!;}"#);
+        let fields = parser.parse_schema().expect("enum schema parses");
+        let root = DeriveSchemaType::Object(fields);
+        let valid: Value = serde_json::from_str(r#"{"priority":"urgent"}"#).unwrap();
+        assert_eq!(check_schema_type(&valid, &root, "$"), None);
+        let invalid: Value = serde_json::from_str(r#"{"priority":"unknown"}"#).unwrap();
+        assert_eq!(
+            check_schema_type(&invalid, &root, "$").as_deref(),
+            Some("$.priority")
+        );
+    }
+
 
     #[test]
     fn derive_schema_rejects_malformed_schemas_and_non_objects() {

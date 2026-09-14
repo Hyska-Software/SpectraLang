@@ -284,7 +284,8 @@ def validate_behavior() -> None:
     require("approver" in approved.stdout, approved.stdout)
     validate_denial_journal("fixture-377-approve")
 
-    # AOT parity: --debug-info=none avoids the pre-existing MSVC PDB limit.
+    # AOT behavior validation intentionally uses --debug-info=none; native
+    # debug metadata has a separate linker gate.
     executable = ROOT / "target" / "r3223-agent-taint.exe"
     run_command(
         [str(SPECTRALANG), "compile", "--debug-info=none", "--emit-exe", str(executable), FIXTURE]

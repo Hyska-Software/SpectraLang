@@ -1,0 +1,126 @@
+module agent_stream_replay
+
+// A streamed model response is one model journal record containing its chunks.
+// The resumed run reconstructs the same chunk sequence and reports replay.
+
+from std.io import println
+import std.agent
+import std.fs as fs
+import std.string as str
+
+const DIR = ".spectra/fixture-423-stream"
+const RUN_ID = "fixture-423-stream"
+const PATH = DIR + "/" + RUN_ID + ".jsonl"
+const PROMPT = "fixture stream replay"
+const EXPECTED = "mock echo: fixture stream replay"
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-423-stream-replay\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":423,\"journal\":\"" +
+        DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        RUN_ID +
+        "\"}"
+}
+
+func clean() returns int {
+    let exists = fs.fs_exists(PATH)
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(PATH)
+            if let Result::Err(_problem) = removed {
+                return 1
+            }
+        }
+    }
+    return 0
+}
+
+async func drain(stream: ChunkStream) returns int {
+    let text = ""
+    let done = false
+    while done == false {
+        let next = await stream_next(stream)
+        if let Result::Ok(chunk) = next {
+            if chunk == "" {
+                done = true
+            } else {
+                text = text + chunk
+            }
+        } else {
+            return 1
+        }
+    }
+    if text != EXPECTED {
+        return 2
+    }
+    let closed = await stream_close(stream)
+    if let Result::Ok(ok) = closed {
+        if ok == false {
+            return 3
+        }
+    } else {
+        return 4
+    }
+    return 0
+}
+
+async func verify() returns int {
+    if clean() != 0 {
+        return 1
+    }
+    let first = agent_start(spec())
+    if let Result::Ok(run) = first {
+        let opened = await ask_stream(run, PROMPT)
+        if let Result::Ok(stream) = opened {
+            if await drain(stream) != 0 {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 4
+        }
+    } else {
+        return 5
+    }
+    let replay = agent_start(spec())
+    if let Result::Ok(run) = replay {
+        let opened = await ask_stream(run, PROMPT)
+        if let Result::Ok(stream) = opened {
+            if await drain(stream) != 0 {
+                return 6
+            }
+        } else {
+            return 7
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"replay\":true") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+    } else {
+        return 10
+    }
+    let journal = fs.fs_read(PATH)
+    if let Result::Ok(body) = journal {
+        if str.count_occurrences(body, "\"kind\":\"model\"") != 1 or str.contains(body, "chunks") == false {
+            return 11
+        }
+    } else {
+        return 12
+    }
+    println("fixture 423 -> stream chunks replayed without a provider call")
+    return 0
+}
+
+public func main() returns int {
+    let prepared = fs.create_dir_all(DIR)
+    if let Result::Err(_problem) = prepared {
+        return 20
+    }
+    return block_on(verify())
+}

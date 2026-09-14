@@ -1,0 +1,69 @@
+module agent_schema_booleans
+
+// Boolean schemas and enum constraints are checked by the client-side
+// validator, and a failed structured turn does not poison the following turn.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+const BAD_ENUM = "{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\",\"enum\":[1,2]}},\"required\":[\"count\"]}"
+const GOOD_ENUM = "{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\",\"enum\":[3]}},\"required\":[\"count\"]}"
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-424-schema-booleans\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":424,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let any_schema = await ask_json(run, "spectra:json", "true")
+        if let Result::Ok(document) = any_schema {
+            if str.contains(document, "\"label\":\"mock-response\"") == false {
+                return 1
+            }
+        } else {
+            return 2
+        }
+        let false_schema = await ask_json(run, "spectra:json", "false")
+        if let Result::Ok(_document) = false_schema {
+            return 3
+        }
+        if let Result::Err(problem) = false_schema {
+            if str.contains(error.message(problem), "false schema") == false {
+                return 4
+            }
+        }
+        let bad_enum = await ask_json(run, "spectra:json", BAD_ENUM)
+        if let Result::Ok(_document) = bad_enum {
+            return 5
+        }
+        if let Result::Err(problem) = bad_enum {
+            if str.contains(error.message(problem), "enum members") == false {
+                return 6
+            }
+        }
+        let good_enum = await ask_json(run, "spectra:json", GOOD_ENUM)
+        if let Result::Err(problem) = good_enum {
+            println("enum recovery failed: " + error.message(problem))
+            return 7
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"steps\":4") == false or str.contains(report, "\"status\":\"completed\"") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+    } else {
+        return 10
+    }
+    println("fixture 424 -> boolean and enum schema checks passed")
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

@@ -1,0 +1,115 @@
+module agent_unsafe_run_id
+
+// A run id with a slash and a space remains the durable identity, but the
+// journal filename is sanitized and receives a digest suffix to avoid aliases.
+
+from std.io import println
+import std.agent
+import std.collections as collections
+import std.fs as fs
+import std.option as option
+import std.string as str
+
+const DIR = ".spectra/fixture-421-run-id"
+const RUN_ID = "fixture/unsafe id"
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-421-run-id\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":421,\"journal\":\"" +
+        DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        RUN_ID +
+        "\"}"
+}
+
+func clear_directory() returns int {
+    let listed = fs.read_dir(DIR)
+    if let Result::Ok(names) = listed {
+        let count = collections.list_len(names)
+        let index = 0
+        while index < count {
+            let item = collections.list_get(names, index)
+            if let Option::Some(name) = item {
+                let removed = fs.fs_remove(DIR + "/" + name)
+                if let Result::Err(_problem) = removed {
+                    collections.list_free(names)
+                    return 1
+                }
+            }
+            index = index + 1
+        }
+        collections.list_free(names)
+    }
+    return 0
+}
+
+func sanitized_file_exists() returns bool {
+    let listed = fs.read_dir(DIR)
+    if let Result::Ok(names) = listed {
+        let count = collections.list_len(names)
+        let index = 0
+        while index < count {
+            let item = collections.list_get(names, index)
+            if let Option::Some(name) = item {
+                if str.starts_with(name, "fixture_unsafe_id-") and str.ends_with(name, ".jsonl") {
+                    collections.list_free(names)
+                    return true
+                }
+            }
+            index = index + 1
+        }
+        collections.list_free(names)
+    }
+    return false
+}
+
+async func verify() returns int {
+    if clear_directory() != 0 {
+        return 1
+    }
+    let first = agent_start(spec())
+    if let Result::Ok(run) = first {
+        let answer = await ask(run, "same durable identity")
+        if let Result::Ok(value) = answer {
+            if value != "mock echo: same durable identity" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 4
+        }
+    } else {
+        return 5
+    }
+    if sanitized_file_exists() == false {
+        return 6
+    }
+    let replay = agent_start(spec())
+    if let Result::Ok(run) = replay {
+        let answer = await ask(run, "same durable identity")
+        if let Result::Err(_problem) = answer {
+            return 7
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"replay\":true") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+    } else {
+        return 10
+    }
+    println("fixture 421 -> unsafe identity mapped to a safe replay file")
+    return 0
+}
+
+public func main() returns int {
+    let prepared = fs.create_dir_all(DIR)
+    if let Result::Err(_problem) = prepared {
+        return 20
+    }
+    return block_on(verify())
+}

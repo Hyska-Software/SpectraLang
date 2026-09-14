@@ -15,9 +15,9 @@ The checks run in order, stopping at the first failure:
       runs all of them;
   (d) surface determinism: two `spectralang surface --json` runs over
       `tests/projects/valid/integrated_agent_service` are byte-identical;
-  (e) every runnable example (`examples/agent/01..27`) in JIT and AOT
+  (e) every runnable example (`examples/agent/01..37`) in JIT and AOT
       (`compile --debug-info=none --emit-exe`, then execute);
-  (f) the verification fixtures (`tests/validation/384..418`) in JIT and AOT --
+  (f) the verification fixtures (`tests/validation/384..428`) in JIT and AOT --
       the language-surface contracts for streaming lifecycle, run-level grant
       enforcement, the journal artifact and run introspection, the
       aggregate-result lifetime regression, the dead-run guard matrix, spec
@@ -26,7 +26,10 @@ The checks run in order, stopping at the first failure:
       memory boundaries, ceiling combinations, replay divergence, A2A task
       states, taint ledger tags, nested payloads, schema recovery, payload
       privacy, tool replay, stream interleaving, memory ties, capability
-      boundaries, compensation failure, MCP replay and protocol negatives;
+      boundaries, compensation failure, MCP replay, protocol negatives, taint
+      policy decisions, cost ceilings, unsafe run identities, corrupt journals,
+      stream replay, boolean schemas, enum payloads, nested compensation,
+      remote MCP errors and A2A idempotency;
   (g) the integrated-project validator
       (`scripts/validate_r3221_integrated_agent_service.py`).
 
@@ -115,6 +118,16 @@ EXAMPLES = {
     "25-compensation-failure": "examples/agent/25-compensation-failure",
     "26-mcp-replay": "examples/agent/26-mcp-replay",
     "27-protocol-negative-matrix": "examples/agent/27-protocol-negative-matrix",
+    "28-taint-policy-matrix": "examples/agent/28-taint-policy-matrix",
+    "29-cost-ceiling": "examples/agent/29-cost-ceiling",
+    "30-unsafe-run-id": "examples/agent/30-unsafe-run-id",
+    "31-corrupt-journal": "examples/agent/31-corrupt-journal",
+    "32-stream-replay": "examples/agent/32-stream-replay",
+    "33-schema-booleans": "examples/agent/33-schema-booleans",
+    "34-option-enum-tool": "examples/agent/34-option-enum-tool",
+    "35-nested-compensation": "examples/agent/35-nested-compensation",
+    "36-mcp-remote-errors": "examples/agent/36-mcp-remote-errors",
+    "37-a2a-idempotency": "examples/agent/37-a2a-idempotency",
 }
 
 # The language-surface contracts that back the example set: the streaming
@@ -157,6 +170,16 @@ VERIFICATION_FIXTURES = {
     "compensation_failure": "tests/validation/416_agent_compensation_failure.spectra",
     "mcp_replay": "tests/validation/417_agent_mcp_replay.spectra",
     "protocol_negatives": "tests/validation/418_agent_protocol_negatives.spectra",
+    "taint_policy_matrix": "tests/validation/419_agent_taint_policy_matrix.spectra",
+    "cost_ceiling": "tests/validation/420_agent_cost_ceiling.spectra",
+    "unsafe_run_id": "tests/validation/421_agent_unsafe_run_id.spectra",
+    "corrupt_journal": "tests/validation/422_agent_corrupt_journal.spectra",
+    "stream_replay": "tests/validation/423_agent_stream_replay.spectra",
+    "schema_booleans": "tests/validation/424_agent_schema_booleans.spectra",
+    "option_enum_tool": "tests/validation/425_agent_option_enum_tool.spectra",
+    "nested_compensation": "tests/validation/426_agent_nested_compensation.spectra",
+    "mcp_remote_errors": "tests/validation/427_agent_mcp_remote_errors.spectra",
+    "a2a_idempotency": "tests/validation/428_agent_a2a_idempotency.spectra",
 }
 
 CARGO = os.environ.get("CARGO") or shutil.which("cargo") or "cargo"

@@ -344,8 +344,15 @@ operator or author might otherwise infer them.
 | A sensitive sink is not reached silently while untrusted content is in context. | Digest-keyed provenance ledger + catalog sinks + the run's `untrusted` policy; every decision is journaled (`taint_decision`). |
 | Declassification is explicit and attributable. | `trust(run, value, reason)` requires a non-blank reason and names the digest it declassifies. |
 | Tool metadata exposed to a model is derived, never hand-declared except the description. | `surface --json` reads the compiler's view; tool name, schema, effects and capabilities come from the declaration and the IR call graph. |
-| Compensations never execute twice and never implicitly on the fatal path. | LIFO pending list, replay-safe `rollback`, `compensations_pending` in the report. |
+| Compensations never execute twice and never implicitly on the fatal path; declarations nested in a replayed tool are restored before an explicit rollback. | LIFO pending list, journaled declaration attribution, replay-safe `rollback`, `compensations_pending` in the report. |
 | A program with no active run behaves exactly as before the workstream. | The run is active only for the dynamic extent of run-scoped hosts; I5 pins the unchanged behaviour. |
+
+The replay boundary is explicit: a journaled outer tool result is returned
+without re-entering its wrapper. If that wrapper declared a compensation,
+replay consumes the contiguous recorded declaration and rebuilds the pending
+entry from its attribution; a later explicit `rollback` therefore resolves the
+recorded compensation attempt without executing either the tool or its
+compensation body again. This is still not automatic rollback.
 
 ### Not promised
 

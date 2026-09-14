@@ -63,17 +63,18 @@ returning `int`; handles must be released with `value_free`.
 - `spectra.api.json.encode_number(float_bits) -> int-as-string` — canonical
   JSON number text; rejects non-finite values with an error status
 - `spectra.api.json.decode_field(child, path, type_name, optional, default) -> int` —
-  typed field extraction for derive lowering: `child` is a total-lookup
-  result (`value_get`/`value_at`/`parse`), `type_name` is one of `int`,
-  `float`, `bool`, `string`, `char` (anything else selects object mode and
-  returns the handle), absent `optional` fields yield `default`; any other
-  violation prints `decode error at '<path>'` and fails the host call
+  typed field extraction for derive lowering: `child` is a total-lookup result
+  (`value_get`/`value_at`/`parse`), and `type_name` is one of `int`, `float`,
+  `bool`, `string`, `char`, `list:<element>`, or `enum:[<JSON string values>]`.
+  Anything else selects object mode and returns the handle; absent `optional`
+  fields yield `default`; any other violation prints `decode error at '<path>'`
+  and fails the host call
 - `spectra.api.json.decode_field_by_key(obj, key, path, type_name, optional, default) -> int` —
-  collapsed `value_get` + `decode_field` for derive lowering: looks the
-  member up by key without cloning the parent and without creating a child
-  handle. Scalars extract directly (no store entry, nothing to free); object
-  mode moves the nested object into a fresh handle the caller releases with
-  `value_free`
+  collapsed `value_get` + `decode_field` for derive lowering: looks the member
+  up by key without cloning the parent and without creating a child handle.
+  Scalars, lists and unit enums extract directly (no store entry, nothing to
+  free); object mode moves the nested object into a fresh handle the caller
+  releases with `value_free`
 - `spectra.api.json.encode_struct(kinds, name_1, value_1, ..., name_n, value_n) -> string` —
   whole-struct encode for derive lowering in one host call: `kinds` is a
   `;`-separated list parallel to the field pairs (`int`, `float`, `bool`,

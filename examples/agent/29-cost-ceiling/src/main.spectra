@@ -1,0 +1,72 @@
+module main
+
+// Example 29 — provider-reported cost is accounted independently from tokens.
+// The first mock turn costs exactly ten micros; the next boundary refuses it
+// with the cost ceiling and the report preserves the accrued amount.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+func spec() returns string {
+    return "{\"goal\":\"example-cost-ceiling\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":10,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":29,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let first = await ask(run, "cost check")
+        if let Result::Ok(answer) = first {
+            if answer != "mock echo: cost check" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let remaining = budget_remaining(run)
+        if let Result::Ok(value) = remaining {
+            if value < 1000000000 {
+                return 4
+            }
+        } else {
+            return 5
+        }
+
+        let second = await ask(run, "must wait")
+        if let Result::Ok(_answer) = second {
+            return 6
+        }
+        if let Result::Err(problem) = second {
+            let message = error.message(problem)
+            if str.contains(message, "budget_exceeded") == false or str.contains(message, "max_cost_micros") == false {
+                return 7
+            }
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"status\":\"budget_exceeded\"") == false {
+                return 8
+            }
+            if str.contains(report, "\"ceiling\":\"max_cost_micros\"") == false {
+                return 9
+            }
+            if str.contains(report, "\"cost_micros\":10") == false {
+                return 10
+            }
+            println("cost ceiling -> " + report)
+        } else {
+            return 11
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

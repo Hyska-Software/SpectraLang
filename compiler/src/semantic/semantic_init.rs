@@ -78,6 +78,7 @@ impl SemanticAnalyzer {
             trait_type_params: HashMap::new(),
             struct_infos: HashMap::new(),
             json_struct_derives: HashMap::new(),
+            json_enum_names: HashMap::new(),
             agent_tools: HashMap::new(),
             imported_agent_tools: Vec::new(),
             enum_infos: HashMap::new(),

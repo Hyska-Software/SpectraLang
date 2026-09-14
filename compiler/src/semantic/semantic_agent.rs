@@ -523,7 +523,20 @@ impl SemanticAnalyzer {
                         .values()
                         .all(|variant| variant.data.is_none() && variant.struct_data.is_none()) =>
                 {
-                    Ok("{\"type\":\"string\"}".to_string())
+                    let wire_names = self
+                        .json_enum_names
+                        .get(name)
+                        .cloned()
+                        .or_else(|| self.enum_definitions.get(name).cloned())
+                        .unwrap_or_default();
+                    let values = wire_names
+                        .iter()
+                        .map(|wire_name| json_quote(wire_name))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    Ok(format!(
+                        "{{\"type\":\"string\",\"enum\":[{values}]}}"
+                    ))
                 }
                 Some(_) => Err(format!(
                     "enum '{name}' carries variant data; only unit-only enums are decodable"

@@ -72,6 +72,16 @@ rede), em JIT (`spectralang run`) e AOT (`compile --debug-info=none --emit-exe`)
 | `25-compensation-failure` | rollback LIFO tolerante a compensation inválida, com sucesso e falha duráveis e sem duplicação em replay |
 | `26-mcp-replay` | descoberta MCP, chamada remota pelo loopback e replay sem reabrir o listener |
 | `27-protocol-negative-matrix` | `a2a_serve` real, lifecycle ACP e recusas para sessão errada, ação vazia e documentos malformados |
+| `28-taint-policy-matrix` | matriz de taint em sink real: `allow`, trust explícito e bloqueio fail-closed |
+| `29-cost-ceiling` | teto `max_cost_micros`, charge de custo e report de orçamento |
+| `30-unsafe-run-id` | sanitização de `run_id` no nome do journal e replay |
+| `31-corrupt-journal` | registros JSON malformados/incompletos rejeitados como `journal_error` |
+| `32-stream-replay` | chunks de `ask_stream` duráveis e replayados sem nova chamada |
+| `33-schema-booleans` | schemas booleanos `true`/`false` e violação de `enum` |
+| `34-option-enum-tool` | campo opcional, enum unitário renomeado e erro de wire value |
+| `35-nested-compensation` | compensation declarada dentro de tool e restaurada no replay externo |
+| `36-mcp-remote-errors` | envelope MCP `isError` convertido em `ToolFailed` sem perder a próxima chamada |
+| `37-a2a-idempotency` | replay por `messageId` e recusa de conflito por `-32600` |
 
 Os contratos que os exemplos demonstram ficam fixados nos fixtures
 `tests/validation/384_agent_stream_lifecycle.spectra`,
@@ -117,5 +127,10 @@ empates vetoriais; `415_agent_capability_boundary.spectra` verifica a fronteira
 de namespace; `416_agent_compensation_failure.spectra` verifica rollback com
 falha de wrapper; `417_agent_mcp_replay.spectra` verifica descoberta e chamada
 MCP replayadas; `418_agent_protocol_negatives.spectra` verifica recusas A2A/ACP.
+
+Os fixtures `419`–`428` espelham esses limites: taint e custo, identidade
+insegura e integridade do journal, chunks em replay, schemas booleanos e
+enums em payloads de tool, compensation aninhada, erro remoto MCP e
+idempotência A2A.
 
 Ver `docs/book/11-agents.md`.

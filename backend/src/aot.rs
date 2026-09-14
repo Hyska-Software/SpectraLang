@@ -70,6 +70,34 @@ pub type DebugLineRow = (String, u32, u32);
 /// layout: `(function name, total sized-stack-slot bytes)`. Covers explicit
 /// allocas plus register-allocator spill slots.
 pub type DebugFrameSize = (String, u32);
+/// Returns the linker-safe native symbol for a non-entry Spectra function.
+///
+/// AOT objects are linked with platform and runtime libraries, so exporting a
+/// source-level name such as `send` can collide with a libc or Winsock symbol.
+/// Internal IR lookups still use the source-level name; only the native linker
+/// symbol is namespaced.
+pub fn user_function_symbol(name: &str) -> String {
+    let mut symbol = String::from("spectra_user_");
+    for character in name.chars() {
+        symbol.push(if character.is_ascii_alphanumeric() || character == '_' {
+            character
+        } else {
+            '_'
+        });
+    }
+    symbol
+}
+fn native_function_symbol(name: &str, rename_main: bool) -> String {
+    if name == "main" {
+        if rename_main {
+            "spectra_user_main".to_string()
+        } else {
+            "main".to_string()
+        }
+    } else {
+        user_function_symbol(name)
+    }
+}
 
 type AotCompileOutput = (
     Vec<u8>,
@@ -87,6 +115,8 @@ pub struct AotOptions {
     /// calls `spectra_rt_startup_with_args` followed by `spectra_user_main`.
     /// Use this when producing a self-contained executable.
     ///
+    /// Non-entry user functions are exported with the `spectra_user_` prefix
+    /// in both modes; object-only builds keep `main` as the native entry name.
     /// When `false` (the default), `main` is exported as-is and no shim is
     /// generated. Use this when producing an object file for manual linking.
     pub emit_executable: bool,
@@ -246,7 +276,7 @@ impl AotCodeGenerator {
             {
                 continue;
             }
-            self.declare_external_function(external)?;
+            self.declare_external_function(external, rename_main)?;
         }
 
         // First pass: declare all functions.
@@ -304,7 +334,11 @@ impl AotCodeGenerator {
         ))
     }
 
-    fn declare_external_function(&mut self, external: &ExternalFunction) -> BackendResult<FuncId> {
+    fn declare_external_function(
+        &mut self,
+        external: &ExternalFunction,
+        rename_main: bool,
+    ) -> BackendResult<FuncId> {
         let mut sig = self.module.make_signature();
         for param in &external.params {
             sig.params
@@ -314,9 +348,10 @@ impl AotCodeGenerator {
         if return_type != types::I8 || external.return_type != IRType::Void {
             sig.returns.push(AbiParam::new(return_type));
         }
+        let native_name = native_function_symbol(&external.name, rename_main);
         let func_id = self
             .module
-            .declare_function(&external.name, Linkage::Import, &sig)
+            .declare_function(&native_name, Linkage::Import, &sig)
             .map_err(|error| {
                 BackendCodegenError::cranelift(format!(
                     "Failed to declare imported function '{}': {}",
@@ -394,18 +429,14 @@ impl AotCodeGenerator {
             sig.returns.push(AbiParam::new(return_type));
         }
 
-        // When building an executable, rename `main` to `spectra_user_main` so
-        // that the synthesised C-compatible `main` shim can call it without a
-        // symbol clash.
-        let exported_name: &str = if rename_main && ir_func.name == "main" {
-            "spectra_user_main"
-        } else {
-            ir_func.name.as_str()
-        };
+        // Keep the IR name private to the compiler and namespace every native
+        // user symbol. The only deliberate exception is object-only `main`,
+        // which remains the manual-link entry point.
+        let exported_name = native_function_symbol(&ir_func.name, rename_main);
 
         let func_id = self
             .module
-            .declare_function(exported_name, Linkage::Export, &sig)
+            .declare_function(&exported_name, Linkage::Export, &sig)
             .map_err(|e| {
                 BackendCodegenError::cranelift(format!(
                     "Failed to declare '{}': {}",
@@ -846,11 +877,7 @@ impl AotCodeGenerator {
             literal_sig.params.push(AbiParam::new(types::I64)); // len
             let literal_func_id = self
                 .module
-                .declare_function(
-                    "spectra_rt_register_literal",
-                    Linkage::Import,
-                    &literal_sig,
-                )
+                .declare_function("spectra_rt_register_literal", Linkage::Import, &literal_sig)
                 .map_err(|e| {
                     BackendCodegenError::cranelift(format!(
                         "Failed to declare 'spectra_rt_register_literal': {}",
@@ -1159,6 +1186,15 @@ mod tests {
     use spectra_midend::ir::{
         Function as IRFunction, InstructionKind, Parameter, SourceSpan, Terminator, Type as IRType,
     };
+
+    #[test]
+    fn aot_user_function_symbols_are_linker_namespaced() {
+        assert_eq!(user_function_symbol("send"), "spectra_user_send");
+        assert_eq!(
+            user_function_symbol("tools::send"),
+            "spectra_user_tools__send"
+        );
+    }
 
     #[test]
     fn r3104_aot_preinterns_duplicate_host_names_once() {

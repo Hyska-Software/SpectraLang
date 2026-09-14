@@ -1,0 +1,98 @@
+module main
+
+// Example 37 — an A2A message id is the durable task identity. Repeating the
+// same request returns the recorded task; reusing it with different text is a
+// typed protocol refusal instead of a second delegated run.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const DIR = ".spectra/example-37-a2a"
+const TASK = "example-37-task"
+const TASK_PATH = DIR + "/" + TASK + ".jsonl"
+
+func spec() returns string {
+    return "{\"goal\":\"example-a2a-idempotency\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"allow\",\"seed\":37,\"journal\":\"" +
+        DIR +
+        "\",\"journal_payloads\":true}"
+}
+
+func send(text: string) returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"message/send\",\"params\":{\"message\":{\"messageId\":\"" +
+        TASK +
+        "\",\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":\"" +
+        text +
+        "\"}]}}}"
+}
+
+func clean() returns int {
+    let exists = fs.fs_exists(TASK_PATH)
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(TASK_PATH)
+            if let Result::Err(_problem) = removed {
+                return 1
+            }
+        }
+    }
+    return 0
+}
+
+async func verify() returns int {
+    if clean() != 0 {
+        return 1
+    }
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let first = a2a_handle(run, send("spectra:final=durable task"))
+        if let Result::Ok(document) = first {
+            if str.contains(document, "\"state\":\"completed\"") == false or str.contains(document, "durable task") == false {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        let repeated = a2a_handle(run, send("spectra:final=durable task"))
+        if let Result::Ok(document) = repeated {
+            if str.contains(document, "\"state\":\"completed\"") == false or str.contains(document, "durable task") == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+        let conflict = a2a_handle(run, send("spectra:final=different task"))
+        if let Result::Ok(document) = conflict {
+            if str.contains(document, "\"code\":-32600") == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 8
+        }
+    } else {
+        return 9
+    }
+    let journal = fs.fs_read(TASK_PATH)
+    if let Result::Ok(body) = journal {
+        if str.count_occurrences(body, "\"kind\":\"task\"") != 2 {
+            return 10
+        }
+    } else {
+        return 11
+    }
+    println("A2A idempotency -> same task replayed, conflicting text refused")
+    return 0
+}
+
+public func main() returns int {
+    let prepared = fs.create_dir_all(DIR)
+    if let Result::Err(_problem) = prepared {
+        return 20
+    }
+    return block_on(verify())
+}

@@ -54,9 +54,12 @@ descobertos pelo fixture de superfície do agente (`tests/validation/366`).
 Observações:
 - Os três defeitos eram latentes: nenhum fixture existente combinava `await`
   com mutação de estado em loop (verificado: apenas o fixture 366 o fazia).
-- A limitação de PDB do MSVC (`LNK1318`) em fixtures grandes no `--emit-exe`
-  padrão é pré-existente e independente do std.agent (fixtures 127/185 também
-  falham); a aceitação de AOT desta fase usa `--debug-info=none`.
+- A falha histórica de PDB do MSVC (`LNK1103`/`LNK1318`) foi corrigida na
+  emissão CodeView: registros `S_FRAMEPROC`, intervalos de locals, tipos
+  `.debug$T`, linhas C13 e checksums agora seguem o layout aceito pelo linker.
+  O fixture 191 e o exemplo 37 fazem link e executam com `--debug-info=native`;
+  a inspeção por `llvm-pdbutil` e o smoke test interativo continuam dependentes
+  das ferramentas instaladas no ambiente.
 
 ## Reproductions
 
