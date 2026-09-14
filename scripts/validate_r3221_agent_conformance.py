@@ -17,7 +17,7 @@ The checks run in order, stopping at the first failure:
       `tests/projects/valid/integrated_agent_service` are byte-identical;
   (e) every runnable example (`examples/agent/01..12`) in JIT and AOT
       (`compile --debug-info=none --emit-exe`, then execute);
-  (f) the verification fixtures (`tests/validation/384..396`) in JIT and AOT --
+  (f) the verification fixtures (`tests/validation/384..397`) in JIT and AOT --
       the language-surface contracts for streaming lifecycle, run-level grant
       enforcement, the journal artifact and run introspection, plus the
       aggregate-result lifetime regression;
@@ -114,6 +114,7 @@ VERIFICATION_FIXTURES = {
     "structured_output": "tests/validation/394_agent_structured_output.spectra",
     "memory_limits": "tests/validation/395_agent_memory_limits.spectra",
     "stream_in_tool": "tests/validation/396_agent_stream_in_tool.spectra",
+    "nested_dispatch_stress": "tests/validation/397_agent_nested_dispatch_stress.spectra",
 }
 
 CARGO = os.environ.get("CARGO") or shutil.which("cargo") or "cargo"

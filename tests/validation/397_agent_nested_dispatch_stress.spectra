@@ -1,0 +1,141 @@
+module agent_nested_dispatch_stress
+
+// R-3222 stress fixture: the nested dispatch shape, repeated many times in one
+// run. Each iteration runs `parent` (which nests a `tool_call` on the same run)
+// and `spawn` (which starts and ends a second run inside its body).
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.string as str
+
+const JOURNAL_DIR = ".spectra/r3297-stress"
+const OUTER_RUN = "fixture-397-outer"
+const INNER_RUN = "fixture-397-inner"
+
+#[derive(Serialize, Deserialize)]
+public record TextArgs {
+    text: string,
+}
+
+func spec(run_id: string) returns string {
+    return "{\"goal\":\"nested-dispatch\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":13,\"journal\":\"" +
+        JOURNAL_DIR +
+        "\",\"journal_payloads\":true,\"run_id\":\"" +
+        run_id +
+        "\"}"
+}
+
+// The innermost tool: no dispatch of its own.
+#[agent_tool("Returns the leaf reply")]
+public async func leaf(run: Run, args: TextArgs) returns string {
+    return "leaf:" + args.text
+}
+
+// Dispatches on the run it was handed. A failed nested call is reported as a
+// marker rather than through `error.message`, so the derived effect set stays
+// inside the excluded agent primitives and the fixture needs no grant.
+#[agent_tool("Dispatches a nested tool call on the same run")]
+public async func parent(run: Run, args: TextArgs) returns string {
+    let inner = await tool_call(run, "leaf", "{\"text\":\"" + args.text + "\"}")
+    if let Result::Ok(value) = inner {
+        return "parent(" + value + ")"
+    }
+    if let Result::Err(_nested_error) = inner {
+        return "parent-nested-error"
+    }
+    return "parent-unreachable"
+}
+
+// Starts a run of its own and dispatches in it: the inner run has its own
+// journal file and its own counters.
+#[agent_tool("Starts an independent run and dispatches in it")]
+public async func spawn(run: Run, args: TextArgs) returns string {
+    let started = agent_start(spec(INNER_RUN))
+    if let Result::Ok(inner_run) = started {
+        let reply = await tool_call(inner_run, "leaf", "{\"text\":\"" + args.text + "\"}")
+        let ended = agent_end(inner_run)
+        let _ignored = ended
+        if let Result::Ok(value) = reply {
+            return "spawn(" + value + ")"
+        }
+        return "spawn-error"
+    }
+    return "spawn-start-error"
+}
+
+// Repeats the race-prone shape 50 times on one run (150 dispatches: each
+// iteration runs `parent` plus its nested `leaf`, and `spawn`).
+//
+// Every iteration dispatches `parent`, whose body nests a `tool_call`, and then
+// `spawn`, whose body starts and ends a second run: both run as background tool
+// dispatches while this caller waits on the same task tree, which is the shape
+// where a poll conflict used to be reported as a failure
+// (`docs/architecture/agent-block-on-flake-known-failure.md`).
+async func repeated_nested_dispatch() returns int {
+    let started = agent_start(spec(OUTER_RUN))
+    if let Result::Err(_start_error) = started {
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let iteration = 0
+        while iteration < 50 {
+            let nested = await tool_call(run, "parent", "{\"text\":\"x\"}")
+            if let Result::Ok(value) = nested {
+                if str.contains(value, "leaf:x") == false {
+                    return 2
+                }
+                if str.contains(value, "parent(") == false {
+                    return 3
+                }
+            } else {
+                return 4
+            }
+
+            let spawned = await tool_call(run, "spawn", "{\"text\":\"y\"}")
+            if let Result::Ok(value) = spawned {
+                if str.contains(value, "spawn(\\\"leaf:y\\\")") == false {
+                    return 5
+                }
+            } else {
+                return 6
+            }
+            iteration = iteration + 1
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if str.contains(report, "\"tool_calls\":150") == false {
+                return 7
+            }
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 8
+            }
+        } else {
+            return 9
+        }
+    } else {
+        return 10
+    }
+    return 0
+}
+
+func clean() returns bool {
+    let exists = fs.fs_exists(JOURNAL_DIR + "/" + OUTER_RUN + ".jsonl")
+    if let Result::Ok(present) = exists {
+        if present == true {
+            let removed = fs.fs_remove(JOURNAL_DIR + "/" + OUTER_RUN + ".jsonl")
+            if let Result::Err(_remove_error) = removed {
+                return false
+            }
+        }
+        return true
+    }
+    return false
+}
+
+public func main() returns int {
+    if clean() == false {
+        return 90
+    }
+    return block_on(repeated_nested_dispatch())
+}

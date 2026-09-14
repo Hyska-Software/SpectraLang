@@ -592,10 +592,67 @@ pub fn wait_task_terminal_status(task_id: SpectraHostValue) -> Result<SpectraHos
     }
 }
 
+/// The line a `block_on` failure prints, or `None` when the wait succeeded.
+///
+/// Pure so the wording is testable: the backend's panic line names only the
+/// host call, and a run has one `block_on` per tool wrapper plus its own, so
+/// this text is the only thing that localises a failure. See
+/// `docs/architecture/agent-block-on-flake-known-failure.md`.
+fn block_on_terminal_message(
+    task_id: SpectraHostValue,
+    status: SpectraHostValue,
+    recorded_error: Option<SpectraHostValue>,
+) -> Option<String> {
+    match status {
+        0 => None,
+        1 => Some(format!(
+            "spectra.async.task.block_on: task {task_id} cancelled"
+        )),
+        2 => Some(match recorded_error {
+            Some(value) => format!(
+                "spectra.async.task.block_on: task {task_id} failed error value {value}"
+            ),
+            None => format!("spectra.async.task.block_on: task {task_id} failed"),
+        }),
+        other => Some(format!(
+            "spectra.async.task.block_on: task {task_id} unknown terminal status {other}"
+        )),
+    }
+}
+
+/// The line printed when the task handle is gone before its value is read.
+fn block_on_missing_message(task_id: SpectraHostValue) -> String {
+    format!("spectra.async.task.block_on: task {task_id} missing")
+}
+
+/// Reports why a `block_on` wait cannot produce a value, naming the task and
+/// its terminal status.
+///
+/// Written to stderr before the host call returns its failure status, because
+/// the backend's panic line names only the host call (`host call
+/// 'spectra.async.task.block_on' failed`).
+fn report_block_on_terminal(task_id: SpectraHostValue, status: SpectraHostValue) {
+    let recorded = if status == 2 {
+        lock_async_task_registry()
+            .ok()
+            .and_then(|registry| registry.coroutine_frames.error_host_value(task_id))
+    } else {
+        None
+    };
+    if let Some(message) = block_on_terminal_message(task_id, status, recorded) {
+        eprintln!("{message}");
+    }
+}
+
 /// Blocks a non-event-loop caller until a task completes.
 pub fn block_on_task_value(task_id: SpectraHostValue) -> Result<SpectraHostValue, i32> {
-    if wait_task_terminal_status(task_id)? != 0 {
-        return Err(HOST_STATUS_INVALID_ARGUMENT);
+    match wait_task_terminal_status(task_id) {
+        Ok(0) => {}
+        Ok(status) => {
+            report_block_on_terminal(task_id, status);
+            return Err(HOST_STATUS_INVALID_ARGUMENT);
+        }
+        Err(status) => return Err(status),
     }
     task_result_value(task_id)
 }
@@ -623,7 +680,10 @@ pub(crate) extern "C" fn std_async_task_block_on(ctx: *mut SpectraHostCallContex
     // spinning; see `TASK_WAIT_PARK` for the wakeup contract.
     match wait_task_terminal_status(args[0]) {
         Ok(0) => {}
-        Ok(_) => return HOST_STATUS_INVALID_ARGUMENT,
+        Ok(status) => {
+            report_block_on_terminal(args[0], status);
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
         Err(status) => return status,
     }
     let registry = match lock_async_task_registry() {
@@ -631,6 +691,7 @@ pub(crate) extern "C" fn std_async_task_block_on(ctx: *mut SpectraHostCallContex
         Err(status) => return status,
     };
     let Some(task) = registry.tasks.get(args[0]) else {
+        eprintln!("{}", block_on_missing_message(args[0]));
         return HOST_STATUS_NOT_FOUND;
     };
     results[0] = task.value;
@@ -1411,8 +1472,9 @@ pub(crate) extern "C" fn std_async_stream_fuse(ctx: *mut SpectraHostCallContext)
 #[cfg(test)]
 mod coroutine_tests {
     use super::{
-        async_task_registry, cancel_coroutine_task, create_coroutine_task, drop_coroutine_task,
-        lock_async_task_registry, poll_coroutine_task, take_coroutine_result, task_result_value,
+        async_task_registry, block_on_missing_message, block_on_terminal_message,
+        cancel_coroutine_task, create_coroutine_task, drop_coroutine_task, lock_async_task_registry,
+        poll_coroutine_task, take_coroutine_result, task_result_value,
     };
     use crate::async_frame::{
         AsyncAffinity, AsyncFrame, AsyncOwnedValue, AsyncPollContext, AsyncPollOutcome,
@@ -1580,5 +1642,32 @@ mod coroutine_tests {
             matches!(result.as_value(), AsyncOwnedValue::Aggregate(value) if value == &vec![11, 22])
         );
         assert!(drop_coroutine_task(aggregate_task).expect("drop"));
+    }
+
+    #[test]
+    fn block_on_failure_messages_name_the_task_and_the_status() {
+        // The wording is the only thing that localises a failed `block_on`:
+        // the backend's panic line names just the host call.
+        assert_eq!(block_on_terminal_message(7, 0, None), None);
+        assert_eq!(
+            block_on_terminal_message(7, 1, None).as_deref(),
+            Some("spectra.async.task.block_on: task 7 cancelled")
+        );
+        assert_eq!(
+            block_on_terminal_message(7, 2, None).as_deref(),
+            Some("spectra.async.task.block_on: task 7 failed")
+        );
+        assert_eq!(
+            block_on_terminal_message(7, 2, Some(41)).as_deref(),
+            Some("spectra.async.task.block_on: task 7 failed error value 41")
+        );
+        assert_eq!(
+            block_on_terminal_message(7, 9, None).as_deref(),
+            Some("spectra.async.task.block_on: task 7 unknown terminal status 9")
+        );
+        assert_eq!(
+            block_on_missing_message(7),
+            "spectra.async.task.block_on: task 7 missing"
+        );
     }
 }

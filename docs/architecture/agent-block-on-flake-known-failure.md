@@ -1,9 +1,8 @@
-# Known flake: `block_on` failure inside a fixture (observed once, not reproduced)
+# Known flake: `block_on` failure from a contended nested dispatch (fixed)
 
-Status: **open observation, recorded 2026-09-13**. Reproduced once, in the R-3221
-gate, and not since.
+Status: **root cause fixed 2026-09-13**; the flake has not been observed since.
 
-## Observation
+## What was observed
 
 One certification-gate run stopped the fixture set with:
 
@@ -12,42 +11,92 @@ fixture set stopped at item 7: fixture nested_dispatch (AOT) exited 101:
 runtime error: host call 'spectra.async.task.block_on' failed
 ```
 
-The same fixture passed its JIT half in that run, and the next gate run passed
-all seven checks. The fixture is
-`tests/validation/390_agent_nested_dispatch.spectra`, whose AOT half drives three
-tool calls through `block_on`, one of which starts a second run (`spawn`) and
-ends it inside the tool body.
+The same fixture passed its JIT half in that run, and later gate runs passed. The
+message is a single interned literal, so the failure could not be localised: the
+AOT binary of the fixture has five `block_on` call sites (its flow plus one per
+tool wrapper).
 
-## Reproduction attempts (all clean)
+## Root cause
 
-- 20 sequential AOT runs of the compiled fixture: 0 failures.
-- 24 AOT runs with 12-way parallelism, each in its own working directory: 0
-  failures.
-- 2 further full gate runs (`--jobs 4`): both passed.
+`spectra_rt_coroutine_poll_child` (`runtime/src/async_abi.rs`) mapped
+`AsyncPollOutcome::AlreadyPolling` — and `AffinityRejected` — to
+`AsyncPollStatus::Failed`:
 
-So the trigger is either racy at a rate below roughly 1 in 50, or it depends on
-machine state (the failing run overlapped other validator processes on the same
-box).
+```rust
+Ok(AsyncPollOutcome::Failed | AsyncPollOutcome::AlreadyPolling) => Failed,
+Ok(AsyncPollOutcome::Stale | AsyncPollOutcome::AffinityRejected) => Failed,
+```
+
+`AlreadyPolling` is not failure: it means another context is *inside* the child
+right now. That is expected in this runtime, because a tool dispatch always runs
+as a background task on a four-worker pool
+(`packages/spectra-agent/src/hosts.rs`, `write_run_task`) whose body drives the
+tool's coroutine with `block_on`, while the caller waits on the same task tree.
+When the caller's poll arrived while the worker was inside the child, the parent
+saw "failed", the awaiting coroutine failed, the flow's `block_on` returned a
+failure status, and the backend printed the uninformative message above.
+
+The neighbouring paths already treat it as contention: `std_async_task_join` and
+`std_async_task_join_status` both map `AlreadyPolling` to "pending" (3). The ABI
+was the outlier.
+
+## Fix
+
+- `runtime/src/async_abi.rs`: the mapping is now the pure function
+  `child_poll_status`; `AlreadyPolling` and `AffinityRejected` map to
+  `AsyncPollStatus::Pending`, `Stale` stays terminal, and
+  `spectra_rt_coroutine_poll_child` calls it. The wait loop needs no change: it
+  parks at most `TASK_WAIT_PARK` (50 ms) and re-polls, and the parent is woken by
+  the child's subscription.
+- `runtime/src/stdlib/async_task_stream.rs`: a failure now names itself.
+  `block_on_task_value` and `std_async_task_block_on` print one line to stderr
+  before returning the failing status —
+  `spectra.async.task.block_on: task <id> failed error value <i64>` / `cancelled`
+  / `missing` — and `spectra_rt_coroutine_poll_child` prints
+  `spectra.async.task.poll_child: task <id> outcome failed|stale|unavailable`.
+  The error value is read from the frame registry
+  (`AsyncFrameRegistry::error_host_value`, new; `FrameRecord.error` was recorded
+  by the coroutine ABI and never read) and printed as a plain scalar.
+- `tests/validation/397_agent_nested_dispatch_stress.spectra`: repeats the
+  nested-dispatch shape 50 times in one run (150 dispatches) as a standing
+  regression case; registered in the R-3221 gate's fixture set.
+
+## Evidence
+
+Falsification, run before the fix was kept (the two arms temporarily reverted to
+the old mapping): the new unit test
+`runtime::async_abi::tests::concurrent_polls_report_contention_not_failure`
+failed in several threads at once with
+
+```
+assertion `left != right` failed: a contended poll was reported as a failure
+  left: 2
+ right: 2
+```
+
+With the fix in place the same test passes, and so does
+`child_poll_status_maps_every_outcome` (all eight outcomes).
+
+Fixture-level reproduction, independently of the unit test: the fixture compiled
+and run with the pre-fix binary exited 101 with exactly the observed line
+(`runtime error: host call 'spectra.async.task.block_on' failed`), and after the
+rebuild it exits 0 in both engines (JIT ≈ 7.8 s, AOT ≈ 7.6 s).
+
+The observed gate failure matches this defect in every respect the report
+preserves: same fixture, same engine, same message, and a shape whose whole point
+is nesting a run inside a tool dispatch. The 44 clean standalone runs recorded
+earlier are consistent with a race that needs the tool-dispatch worker to be
+inside the child at the moment the caller polls.
 
 ## Triage when it recurs
 
-`block_on` reports a failure when the task it drives does not reach completion:
-the runtime protocol returns a failure status instead of a value. Collect, in
-this order:
+`python scripts/stress_agent_block_on.py --iterations 300` repeats the fixture in
+many processes (each in its own working directory) and saves the full output of
+the first failing iteration under `target/r3290-stress/`. The runtime's new
+`spectra.async.task.*` stderr lines name the task handle and whether it was
+cancelled, failed (with the recorded error value) or missing, and the gate's
+report keeps the last 25 lines of each engine's output.
 
-1. the gate report (`target/r3221-agent-conformance/report.json`), which holds
-   the fixture's stdout for both engines;
-2. whether the JIT half of the same fixture failed too (it did not, here);
-3. `SPECTRA_TRACE=1` (the agent trace sink) around the failing run to see which
-   task never completed.
-
-The most likely place to look is the run registry while a tool body starts and
-ends a second run: `spawn` is the only shape in this fixture that nests run
-lifecycles inside a dispatch.
-
-## Why it is recorded rather than fixed
-
-The failure is not reproducible on demand, and the code path involved (task
-protocol + run registry) has no candidate defect visible from the surface
-contracts the other fixtures pin. Recording it keeps the observation available
-without pretending a fix was validated.
+There is no `SPECTRA_TRACE` environment variable in this repository — an earlier
+version of this note said otherwise. Tracing is programmatic
+(`set_trace_sink`), and its events do not cover task or run lifecycle.

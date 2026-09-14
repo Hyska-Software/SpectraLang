@@ -168,19 +168,41 @@ pub extern "C" fn spectra_rt_coroutine_create(frame_ptr: i64, poll_ptr: i64, dro
     create_coroutine_task_boxed(frame, None, crate::async_frame::AsyncAffinity::Any).unwrap_or(0)
 }
 
+/// Maps one `poll_coroutine_task` outcome to the status the parent's `await`
+/// observes.
+///
+/// Extracted so the mapping is testable and so the two "someone else is inside
+/// the child" outcomes cannot drift back into failures:
+///
+/// * `AlreadyPolling` — another context (the tool-dispatch worker drives the
+///   same tree as the waiting caller) is inside the child right now. The parent
+///   must wait for it: it is woken by the task's subscription, so reporting a
+///   terminal failure here turns a healthy concurrent poll into a failed run.
+/// * `AffinityRejected` — unreachable for coroutines created with
+///   `AsyncAffinity::Any` (every frame this ABI creates), but a wrong-thread
+///   poll must not be reported as a failure either.
+///
+/// `Stale` is the opposite case: the task is gone, so no wait can succeed.
+fn child_poll_status(outcome: Result<AsyncPollOutcome, i32>) -> AsyncPollStatus {
+    match outcome {
+        Ok(AsyncPollOutcome::Ready) => AsyncPollStatus::Ready,
+        Ok(AsyncPollOutcome::Pending | AsyncPollOutcome::AlreadyPolling) => {
+            AsyncPollStatus::Pending
+        }
+        Ok(AsyncPollOutcome::Failed | AsyncPollOutcome::Stale) => AsyncPollStatus::Failed,
+        Ok(AsyncPollOutcome::Cancelled) => AsyncPollStatus::Cancelled,
+        Ok(AsyncPollOutcome::AffinityRejected) => AsyncPollStatus::Pending,
+        Err(_) => AsyncPollStatus::Failed,
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn spectra_rt_coroutine_poll_child(task: i64) -> i64 {
-    match poll_coroutine_task(task) {
-        Ok(AsyncPollOutcome::Pending) => AsyncPollStatus::Pending as i64,
-        Ok(AsyncPollOutcome::Ready) => AsyncPollStatus::Ready as i64,
-        Ok(AsyncPollOutcome::Failed | AsyncPollOutcome::AlreadyPolling) => {
-            AsyncPollStatus::Failed as i64
-        }
-        Ok(AsyncPollOutcome::Cancelled) => AsyncPollStatus::Cancelled as i64,
-        Ok(AsyncPollOutcome::Stale | AsyncPollOutcome::AffinityRejected) => {
-            AsyncPollStatus::Failed as i64
-        }
-        Err(HOST_STATUS_NOT_FOUND) => match poll_task_once(task) {
+    let outcome = poll_coroutine_task(task);
+    if let Err(HOST_STATUS_NOT_FOUND) = outcome {
+        // Not a coroutine this registry owns: fall back to the scalar task
+        // registry, which is the only other family of tasks in the table.
+        return match poll_task_once(task) {
             Ok(true) => AsyncPollStatus::Ready as i64,
             Ok(false) => {
                 let status = crate::stdlib::lock_async_task_registry()
@@ -200,9 +222,23 @@ pub extern "C" fn spectra_rt_coroutine_poll_child(task: i64) -> i64 {
                 status as i64
             }
             Err(_) => AsyncPollStatus::Failed as i64,
-        },
-        Err(_) => AsyncPollStatus::Failed as i64,
+        };
     }
+    // Name the outcome before the parent collapses it: without this line a
+    // failed run says only that `block_on` failed, never which child failed or
+    // why (see docs/architecture/agent-block-on-flake-known-failure.md).
+    if matches!(
+        outcome,
+        Ok(AsyncPollOutcome::Failed | AsyncPollOutcome::Stale) | Err(_)
+    ) {
+        let outcome_name = match outcome {
+            Ok(AsyncPollOutcome::Failed) => "failed",
+            Ok(AsyncPollOutcome::Stale) => "stale",
+            _ => "unavailable",
+        };
+        eprintln!("spectra.async.task.poll_child: task {task} outcome {outcome_name}");
+    }
+    child_poll_status(outcome) as i64
 }
 
 #[no_mangle]
@@ -306,5 +342,127 @@ mod tests {
         assert_eq!(spectra_rt_coroutine_poll_result(task), 42);
         assert!(crate::stdlib::drop_coroutine_task(task).expect("drop task"));
         assert_eq!(spectra_rt_coroutine_frame_load(frame, 0), -1);
+    }
+
+    #[test]
+    fn child_poll_status_maps_every_outcome() {
+        // The mapping is what the parent's `await` observes. `AlreadyPolling`
+        // and `AffinityRejected` are contention, not failure: a background tool
+        // worker drives the same task tree as the waiting caller, so treating
+        // them as terminal turns a healthy concurrent poll into a failed run
+        // (`docs/architecture/agent-block-on-flake-known-failure.md`).
+        assert_eq!(
+            child_poll_status(Ok(AsyncPollOutcome::Ready)),
+            AsyncPollStatus::Ready
+        );
+        assert_eq!(
+            child_poll_status(Ok(AsyncPollOutcome::Pending)),
+            AsyncPollStatus::Pending
+        );
+        assert_eq!(
+            child_poll_status(Ok(AsyncPollOutcome::Failed)),
+            AsyncPollStatus::Failed
+        );
+        assert_eq!(
+            child_poll_status(Ok(AsyncPollOutcome::Cancelled)),
+            AsyncPollStatus::Cancelled
+        );
+        assert_eq!(
+            child_poll_status(Ok(AsyncPollOutcome::AlreadyPolling)),
+            AsyncPollStatus::Pending
+        );
+        assert_eq!(
+            child_poll_status(Ok(AsyncPollOutcome::Stale)),
+            AsyncPollStatus::Failed
+        );
+        assert_eq!(
+            child_poll_status(Ok(AsyncPollOutcome::AffinityRejected)),
+            AsyncPollStatus::Pending
+        );
+        assert_eq!(
+            child_poll_status(Err(HOST_STATUS_NOT_FOUND)),
+            AsyncPollStatus::Failed
+        );
+    }
+
+    #[test]
+    fn concurrent_polls_report_contention_not_failure() {
+        // The shape the flake came from: a background tool worker and the
+        // waiting caller touch the same task tree, so one of them can arrive
+        // while the other is inside the frame. Pre-fix that collision was
+        // mapped to `Failed`; here it must stay contention.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static POLLS: AtomicUsize = AtomicUsize::new(0);
+        static CONTENTION: AtomicUsize = AtomicUsize::new(0);
+        static CONTENTION_CHECKED: AtomicUsize = AtomicUsize::new(0);
+
+        unsafe extern "C" fn slow_poll(_: i64, _: i64, _: i64) -> i64 {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            if POLLS.fetch_add(1, Ordering::SeqCst) + 1 >= 40 {
+                return AsyncPollStatus::Ready as i64;
+            }
+            AsyncPollStatus::Pending as i64
+        }
+        unsafe extern "C" fn slow_drop(_: i64, _: i64, _: i64) {}
+
+        let _guard = crate::runtime_test_guard();
+        POLLS.store(0, Ordering::SeqCst);
+        CONTENTION.store(0, Ordering::SeqCst);
+        CONTENTION_CHECKED.store(0, Ordering::SeqCst);
+        let frame = spectra_rt_coroutine_frame_alloc(0);
+        assert_ne!(frame, 0);
+        let task = spectra_rt_coroutine_create(
+            frame,
+            slow_poll as *const () as usize as i64,
+            slow_drop as *const () as usize as i64,
+        );
+        assert_ne!(task, 0);
+
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                scope.spawn(|| {
+                    for _ in 0..40 {
+                        match crate::stdlib::poll_coroutine_task(task) {
+                            Ok(AsyncPollOutcome::AlreadyPolling) => {
+                                CONTENTION.fetch_add(1, Ordering::SeqCst);
+                                // The raw outcome says another thread is inside
+                                // the child; the status this ABI hands the
+                                // parent's `await` must not call that failure.
+                                let mapped = spectra_rt_coroutine_poll_child(task);
+                                CONTENTION_CHECKED.fetch_add(1, Ordering::SeqCst);
+                                assert_ne!(
+                                    mapped,
+                                    AsyncPollStatus::Failed as i64,
+                                    "a contended poll was reported as a failure"
+                                );
+                            }
+                            Ok(AsyncPollOutcome::Failed) => {
+                                panic!("a concurrent poll reported failure")
+                            }
+                            _ => {}
+                        }
+                    }
+                });
+            }
+        });
+
+        // The test is only meaningful if the threads actually collided.
+        assert!(
+            CONTENTION.load(Ordering::SeqCst) > 0,
+            "no thread observed contention; the collision never happened"
+        );
+        assert!(
+            CONTENTION_CHECKED.load(Ordering::SeqCst) > 0,
+            "contention was observed but never mapped through the ABI"
+        );
+        assert!(crate::stdlib::drop_coroutine_task(task).expect("drop task"));
+    }
+
+    #[test]
+    fn child_poll_status_keeps_contention_pending() {
+        // Direct check of the mapping the ABI applies to the outcomes above.
+        for outcome in [AsyncPollOutcome::AlreadyPolling, AsyncPollOutcome::AffinityRejected] {
+            assert_eq!(child_poll_status(Ok(outcome)), AsyncPollStatus::Pending);
+        }
     }
 }

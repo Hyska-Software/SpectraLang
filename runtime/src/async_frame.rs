@@ -890,6 +890,25 @@ impl AsyncFrameRegistry {
         })
     }
 
+    /// Reads the value a failed coroutine recorded, without taking it.
+    ///
+    /// Recorded by the `spectra_rt_coroutine_error` ABI and never read in
+    /// production before: a failed child was reported as a bare status. The
+    /// `block_on`/`poll_child` diagnostics read it so a failed run names the
+    /// value its coroutine stored, as a plain scalar (never dereferenced).
+    pub(crate) fn error_host_value(&self, task: SpectraHostValue) -> Option<SpectraHostValue> {
+        let inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        inner.frames.get(&task).and_then(|record| {
+            record
+                .error
+                .as_ref()
+                .and_then(AsyncResultStorage::host_value)
+        })
+    }
+
     pub(crate) fn take_wakes(&self) -> Vec<SpectraHostValue> {
         let mut inner = self
             .inner

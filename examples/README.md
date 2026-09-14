@@ -67,7 +67,10 @@ Os contratos que os exemplos demonstram ficam fixados nos fixtures
 `390_agent_nested_dispatch.spectra`, `391_agent_concurrent_runs.spectra`,
 `392_agent_payload_scale.spectra`, `393_agent_tool_call_ceiling.spectra`,
 `394_agent_structured_output.spectra`, `395_agent_memory_limits.spectra` e
-`396_agent_stream_in_tool.spectra`
-(rodados em JIT e AOT pelo gate de certificação R-3221).
+`396_agent_stream_in_tool.spectra` e
+`397_agent_nested_dispatch_stress.spectra` — esta última repete o dispatch
+aninhado 50 vezes numa run, a forma em que um worker de tool em background e o
+chamador que espera compartilham a mesma árvore de tasks (rodados em JIT e AOT
+pelo gate de certificação R-3221).
 
 Ver `docs/book/11-agents.md`.

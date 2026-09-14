@@ -387,6 +387,14 @@ the first mismatch (the certification gate runs all four in JIT and AOT):
   chunks cross the wrapper boundary and reassemble intact, a stream closed
   without draining refuses later reads as a typed failure inside the tool, and
   the run keeps streaming afterwards.
+- `397_agent_nested_dispatch_stress.spectra` — the nested dispatch shape repeated
+  50 times in one run (150 dispatches), the shape where a background tool worker
+  and the waiting caller share a task tree; it pins the fix for the contended
+  poll that used to be reported as a failure
+  (`docs/architecture/agent-block-on-flake-known-failure.md`).
+
+The stress harness (`scripts/stress_agent_block_on.py`) repeats that fixture in
+many short-lived processes for triage; it is not part of the gate.
 
 ## Governance
 
