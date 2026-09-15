@@ -1,0 +1,54 @@
+module agent_unicode_tool_payload
+
+// Contract: derived tool JSON preserves Unicode and JSON-significant escape
+// characters when a record crosses the wrapper ABI and returns unchanged.
+
+import std.agent
+import std.error as error
+
+#[derive(Serialize, Deserialize)]
+public record EscapedArgs {
+    text: string,
+    note: string,
+}
+
+#[agent_tool("Returns escaped text fields unchanged")]
+public async func echo_escaped(run: Run, args: EscapedArgs) returns EscapedArgs {
+    return args
+}
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-432-unicode-payload\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":432,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let sample = EscapedArgs {
+        text: "café \"quoted\"",
+        note: "line\nnext\\path",
+    }
+    let payload = sample.to_json()
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let called = await tool_call(run, "echo_escaped", payload)
+        if let Result::Ok(output) = called {
+            if output != payload {
+                return 2
+            }
+        } else {
+            if let Result::Err(problem) = called {
+                let _ = error.message(problem)
+            }
+            return 3
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 4
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

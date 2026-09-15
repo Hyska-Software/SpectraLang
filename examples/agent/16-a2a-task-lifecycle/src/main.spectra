@@ -28,11 +28,9 @@ module main
 //
 // Everything runs in-process against the deterministic mock provider.
 
-// Note: the helper below is `send_request`, not `send`. A user function
-// exported under a name the runtime library already imports (winsock's `send`,
-// `recv`, `connect`, ... on Windows) collides at link time -- `LNK2005: send
-// already defined` -- which is a limitation of the AOT linkage, not of this
-// program. `docs/architecture/agent-async-scalar-slot-fixes.md` records it.
+// User-defined helpers keep ordinary names: AOT prefixes non-entry symbols so
+// platform imports such as `send`, `recv` and `connect` cannot collide with
+// authored functions.
 
 from std.io import println
 import std.agent

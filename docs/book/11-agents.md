@@ -186,7 +186,7 @@ Every example runs against the deterministic mock provider: no network and no
 credentials. The mock is scripted through the prompt
 (`spectra:tool=<name> {json}`, `spectra:final=<text>`, `spectra:json`,
 `spectra:sleep-ms=N`), which is what makes the tool loops reproducible in CI.
-The first seven are described below; `08`–`37` cover memory across runs,
+The first seven are described below; `08`–`42` cover memory across runs,
 compensations, list and nested payloads, the tool-call ceiling, structured
 output, embeddings, ACP permissions, the MCP service surface, A2A task
 lifecycle, token budgeting, schema recovery, journal privacy, idempotent tool
@@ -194,7 +194,22 @@ replay, independent streams, deterministic memory ties, capability boundaries,
 compensation failure handling, MCP replay, protocol-negative handling, taint
 policy decisions, cost ceilings, unsafe run identities, corrupt journals,
 stream replay, boolean schemas, enum payloads, nested compensation replay,
-remote MCP errors and A2A idempotency.
+remote MCP errors, A2A idempotency, cross-module wrappers, remote-tool run
+isolation, empty-stream termination, A2A card defaults and escaped Unicode
+tool payloads.
+
+The latest additions are intentionally boundary-focused:
+
+- `38-cross-module-tools` keeps the tool declarations in an imported module and
+  proves both direct wrapper dispatch and an `act` chain.
+- `39-remote-scope-isolation` proves that MCP descriptors discovered by one run
+  do not enter a later run's model surface or grant check.
+- `40-empty-stream-boundary` pins a stream whose provider response has no
+  non-empty chunk, including repeated end reads and close.
+- `41-a2a-card-defaults` checks authored identity defaults, omitted URLs and
+  typed field validation.
+- `42-unicode-tool-payload` round-trips Unicode and JSON-significant escapes
+  through a derived tool wrapper.
 
 ### 01 — Tool and Run
 
@@ -564,6 +579,16 @@ AOT):
 - `428_agent_a2a_idempotency.spectra` — repeating a message id returns the
   recorded task, while different text with that id returns JSON-RPC
   `-32600`.
+- `429_agent_remote_scope.spectra` — a remote descriptor discovered by one run
+  is absent from a later run's model/dispatch surface, so its local tool still
+  works with an empty MCP grant.
+- `430_agent_empty_stream.spectra` — an empty provider response returns the
+  sticky end marker and supports idempotent close.
+- `431_agent_a2a_card_defaults.spectra` — A2A defaults the goal identity and
+  empty description without inventing a URL, while rejecting a non-string
+  authored field.
+- `432_agent_unicode_tool_payload.spectra` — derived record JSON preserves
+  Unicode, quotes, newlines and backslashes through tool dispatch.
 
 The stress harness (`scripts/stress_agent_block_on.py`) repeats fixture 397 in
 many short-lived processes for triage; it is not part of the gate.
@@ -631,10 +656,12 @@ interrupt/resume proof.
 
 Two integration rules the project also exercises are worth remembering when
 splitting tools across modules: the module that *dispatches* (`act`/`tool_call`)
-must import the module that *declares* the tools, and `tools::enforce_run_grant`
-checks every registered tool's derived effects against `AgentSpec.allow` before
-the first dispatch, so a run's grant must cover the whole registered tool set
-it can dispatch, not only the tool it happens to call (ADR 0019).
+must import the module that *declares* the tools, and
+`tools::enforce_run_grant` checks every tool visible to that run before the
+first dispatch. Local compiled tools are process-wide; a remote MCP descriptor
+is visible only to the run that discovered it, is removed when that generational
+run handle is released, and therefore unrelated runs do not inherit its grant
+requirement or model-facing definition.
 
 ## The Machine-Readable Surface
 
@@ -702,15 +729,21 @@ claims are covered by deterministic tests, not by evals.
   `spectra:final=`, but no language-level caller can reach it: the loop ends at
   the first final and every call consumes its script from index 0. It is
   documented rather than pinned.
+- Remote MCP descriptors live in a process-local registry while at least one
+  discovering run handle is live. Model definitions, protocol advertisements,
+  grant checks and dispatch filter by that handle; releasing the last
+  discovering run removes the descriptor, so a later run cannot inherit a
+  prior server's descriptor or capability requirement.
 
 ## Validation
 
 Each example is an ordinary project and is reproduced by the two commands
 above: `spectralang run` for JIT, then `compile --debug-info=none --emit-exe`
 and the produced binary for AOT. Both modes run with the deterministic mock
-provider and need no credentials or external network. The ten examples and ten
-fixtures added by this matrix pass their individual formatter checks. A
-repository-wide `spectralang fmt --check examples/agent` still reports
+provider and need no credentials or external network. The R-3221 acceptance
+gate executes examples `01..42` and verification fixtures `384..432` in both
+modes, alongside the crate, surface-determinism and integrated-project checks.
+The repository-wide `spectralang fmt --check examples/agent` still reports
 formatting drift in legacy examples `08`, `10`, `13`, `15`, `16` and `17`;
 those files are intentionally outside this change. `spectralang check --json`
 reports no diagnostics for the new examples, and the LSP crate's suite

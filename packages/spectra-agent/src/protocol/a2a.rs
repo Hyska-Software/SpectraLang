@@ -5,10 +5,11 @@
 //!
 //! * **Discovery.** [`card`] renders an AgentCard from an authored description
 //!   record (name, description, version, url — the strings a human writes) plus
-//!   the **derived** tool surface: every registered `#[agent_tool]` becomes a
-//!   skill whose id, description and tags come from the compiler's own
-//!   descriptor and effect set. Nothing about a skill is re-derived here, so
-//!   the advertised surface and the compiled surface cannot drift.
+//!   the **derived** tool surface visible to the serving run: every visible
+//!   registered `#[agent_tool]` becomes a skill whose id, description and tags
+//!   come from the compiler's own descriptor and effect set. Nothing about a
+//!   skill is re-derived here, so the advertised surface and the compiled
+//!   surface cannot drift.
 //! * **Task lifecycle.** A delegated task *is* a run: the task id is the run
 //!   id of a run created with the serving run's spec (the host's grants, model
 //!   and ceilings), and the task's request and terminal state are journaled as
@@ -92,9 +93,11 @@ fn card_for(
     let version = string_field(&authored, "version")?
         .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
 
-    // The skill list is the derived `#[agent_tool]` surface: the compiler's
-    // name, description and effect set, exactly what the process dispatches.
-    let skills: Vec<Value> = tools::registered()
+    // The skill list is the derived `#[agent_tool]` surface visible to this
+    // run: the compiler's name, description and effect set, exactly what the
+    // process dispatches. Remote MCP skills remain scoped to their discovery
+    // run, just like their governed tool calls.
+    let skills: Vec<Value> = tools::registered_for(run_handle)?
         .into_iter()
         .map(|tool| {
             let tags: Vec<String> = if tool.effects.is_empty() {

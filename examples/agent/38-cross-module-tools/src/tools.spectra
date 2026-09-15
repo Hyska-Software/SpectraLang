@@ -1,0 +1,35 @@
+module tools
+
+// The tool wrappers and their registration function are synthesized in this
+// module, not in `main`.
+
+import std.agent
+
+#[derive(Serialize, Deserialize)]
+public record ScaleArgs {
+    value: int,
+    factor: int,
+}
+
+#[derive(Serialize, Deserialize)]
+public record EchoArgs {
+    text: string,
+}
+
+#[agent_tool("Multiplies an integer by a factor")]
+public async func scale(run: Run, args: ScaleArgs) returns int {
+    return args.value * args.factor
+}
+
+#[agent_tool("Echoes text through the run's model provider")]
+public async func echo(run: Run, args: EchoArgs) returns string {
+    let reply = await ask(run, args.text)
+    if let Result::Ok(text) = reply {
+        return text
+    }
+    return "provider error"
+}
+
+public func triple(value: int) returns int {
+    return value * 3
+}

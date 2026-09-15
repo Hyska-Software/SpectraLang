@@ -3,8 +3,11 @@
 //! The compiler synthesizes one marshalling wrapper per `#[agent_tool]`
 //! function and a per-module registration function that hands each wrapper's
 //! address to `spectra.std.agent.register_tool`. This module owns the
-//! resulting process-wide registry and the single invocation path every
-//! dispatcher (`act`, `tool_call`, and later the MCP/A2A adapters) uses.
+//! process-local registry and the single invocation path every dispatcher
+//! (`act`, `tool_call`, and later the MCP/A2A adapters) uses. Compiled local
+//! tools are visible to every live run; remote MCP descriptors retain the run
+//! that discovered them and are filtered at every model, protocol and dispatch
+//! boundary.
 //!
 //! Invocation reuses the proven callback ABI (ADR 0019): a wrapper is an
 //! `extern "C" fn(run: i64, args_json: *const u8, out_slot: *mut i64) -> i64`
@@ -13,7 +16,7 @@
 //! `to_json`, and writes a packed string (the JSON result on success, the
 //! typed error message on failure) into the out-slot.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 
 use crate::abi;
@@ -58,6 +61,9 @@ pub(crate) struct RegisteredTool {
     pub(crate) effects: Vec<String>,
     /// Set when the tool is served by a remote MCP server (R-3218).
     pub(crate) remote: Option<RemoteTool>,
+    /// Live run handles whose MCP discovery installed this remote descriptor.
+    /// Local compiled tools leave this empty and are visible to every run.
+    pub(crate) remote_runs: BTreeSet<i64>,
 }
 
 fn registry() -> &'static Mutex<BTreeMap<String, RegisteredTool>> {
@@ -137,6 +143,7 @@ pub(crate) fn register(
                     input_schema,
                     effects,
                     remote: None,
+                    remote_runs: BTreeSet::new(),
                 },
             );
             Ok(true)
@@ -149,12 +156,14 @@ pub(crate) fn register(
 ///
 /// The entry's effect is the per-server capability `mcp.<authority>`, so
 /// `enforce_run_grant` refuses a run whose grant does not name that server:
-/// a tool discovered by one run is never callable by a run that did not grant
-/// its server. Re-registering the same name refreshes the peer metadata; a
-/// name already owned by a compiled local tool is never replaced, because the
-/// local wrapper is this process's own code and a remote peer must not be able
-/// to shadow it.
+/// a tool discovered by one run is visible only to runs that discovered it and
+/// is never callable by a run that did not grant its server. Re-registering the
+/// same name refreshes the peer metadata and adds the discovering run; a name
+/// already owned by a compiled local tool is never replaced, because the local
+/// wrapper is this process's own code and a remote peer must not be able to
+/// shadow it.
 pub(crate) fn register_remote(
+    run_handle: i64,
     name: String,
     remote: RemoteTool,
     description: String,
@@ -164,6 +173,8 @@ pub(crate) fn register_remote(
         return false;
     }
     let effects = vec![remote.server.clone()];
+    let mut remote_runs = BTreeSet::new();
+    remote_runs.insert(run_handle);
     let mut tools = lock();
     match tools.get_mut(&name) {
         Some(existing) if existing.remote.is_none() => false,
@@ -172,6 +183,7 @@ pub(crate) fn register_remote(
             existing.input_schema = input_schema;
             existing.effects = effects;
             existing.remote = Some(remote);
+            existing.remote_runs.insert(run_handle);
             false
         }
         None => {
@@ -184,6 +196,7 @@ pub(crate) fn register_remote(
                     input_schema,
                     effects,
                     remote: Some(remote),
+                    remote_runs,
                 },
             );
             true
@@ -192,20 +205,22 @@ pub(crate) fn register_remote(
 }
 
 /// Registered tools in deterministic (name) order.
+#[cfg(test)]
 pub(crate) fn registered() -> Vec<RegisteredTool> {
     lock().values().cloned().collect()
 }
-
-/// The model-facing descriptions of every registered tool.
-pub(crate) fn definitions() -> Vec<ToolDefinition> {
-    registered()
-        .into_iter()
-        .map(|tool| ToolDefinition {
-            name: tool.name,
-            description: tool.description,
-            input_schema: tool.input_schema,
-        })
-        .collect()
+/// The model-facing descriptions of tools visible to `run_handle`.
+pub(crate) fn definitions_for(run_handle: i64) -> Result<Vec<ToolDefinition>, AgentError> {
+    registered_for(run_handle).map(|tools| {
+        tools
+            .into_iter()
+            .map(|tool| ToolDefinition {
+                name: tool.name,
+                description: tool.description,
+                input_schema: tool.input_schema,
+            })
+            .collect()
+    })
 }
 
 /// Empties the registry. Used by tests that must observe a fresh process.
@@ -260,6 +275,23 @@ pub(crate) fn lookup(name: &str) -> Result<RegisteredTool, AgentError> {
         }
     }
 }
+/// Resolves a tool that is visible to `run_handle`.
+///
+/// Local compiled tools are process-wide. A remote descriptor is installed by
+/// MCP discovery for a specific run and must not be callable, advertised, or
+/// grant-checked from an unrelated run.
+pub(crate) fn lookup_for_run(run_handle: i64, name: &str) -> Result<RegisteredTool, AgentError> {
+    // Preserve the dispatcher contract: an unknown name is reported before
+    // validating the run handle, just as the unscoped lookup did.
+    let tool = lookup(name)?;
+    let run_id = run::with_run(run_handle, |state| state.run_id.clone())?;
+    if !visible_to_run(&tool, run_handle) {
+        return Err(AgentError::UnknownTool(format!(
+            "remote tool '{name}' was not discovered for run '{run_id}'"
+        )));
+    }
+    Ok(tool)
+}
 
 /// Invokes `name` through its marshalling wrapper.
 ///
@@ -273,7 +305,7 @@ pub(crate) fn lookup(name: &str) -> Result<RegisteredTool, AgentError> {
 /// run twice — while the charge is still applied, so a replayed run's report
 /// and ceiling behavior are identical to the original.
 pub(crate) fn invoke(run_handle: i64, name: &str, arguments: &str) -> Result<String, AgentError> {
-    let tool = lookup(name)?;
+    let tool = lookup_for_run(run_handle, name)?;
     budget::charge_tool_call(run_handle)?;
     let (run_id, goal) = run::with_run(run_handle, |state| {
         (state.run_id.clone(), state.spec.goal.clone())
@@ -328,12 +360,8 @@ pub(crate) fn invoke(run_handle: i64, name: &str, arguments: &str) -> Result<Str
 /// replay resolution: `rollback` reserves its own step so a *failed*
 /// compensation is recorded (unlike a model-driven tool call, which R-3222
 /// leaves unrecorded on failure).
-pub(crate) fn dispatch(
-    run_handle: i64,
-    name: &str,
-    arguments: &str,
-) -> Result<String, AgentError> {
-    let tool = lookup(name)?;
+pub(crate) fn dispatch(run_handle: i64, name: &str, arguments: &str) -> Result<String, AgentError> {
+    let tool = lookup_for_run(run_handle, name)?;
     budget::charge_tool_call(run_handle)?;
     call_wrapper(run_handle, &tool, arguments)
 }
@@ -402,7 +430,7 @@ fn call_wrapper(
 /// [`crate::policy::is_compiler_emitted`].
 pub(crate) fn enforce_run_grant(run_handle: i64) -> Result<(), AgentError> {
     let grants = run::with_run(run_handle, |state| state.spec.allow.clone())?;
-    for tool in registered() {
+    for tool in registered_for(run_handle)? {
         for effect in &tool.effects {
             if policy::is_compiler_emitted(effect) {
                 continue;
@@ -421,6 +449,39 @@ pub(crate) fn enforce_run_grant(run_handle: i64) -> Result<(), AgentError> {
         }
     }
     Ok(())
+}
+fn visible_to_run(tool: &RegisteredTool, run_handle: i64) -> bool {
+    tool.remote
+        .as_ref()
+        .map(|_| tool.remote_runs.contains(&run_handle))
+        .unwrap_or(true)
+}
+
+/// Registered tools visible to `run_handle` in deterministic (name) order.
+pub(crate) fn registered_for(run_handle: i64) -> Result<Vec<RegisteredTool>, AgentError> {
+    run::with_run(run_handle, |_| ())?;
+    Ok(lock()
+        .values()
+        .filter(|tool| visible_to_run(tool, run_handle))
+        .cloned()
+        .collect())
+}
+
+/// Removes a run's remote descriptors after its generational handle is released.
+///
+/// A replayed run gets its descriptors back when MCP journal replay calls
+/// `register_remote` with the new live handle. Removing the last visible run
+/// also drops the stale process-global entry instead of retaining unbounded
+/// run identities.
+pub(crate) fn forget_run(run_handle: i64) {
+    let mut tools = lock();
+    tools.retain(|_, tool| {
+        if tool.remote.is_none() {
+            return true;
+        }
+        tool.remote_runs.remove(&run_handle);
+        !tool.remote_runs.is_empty()
+    });
 }
 
 #[cfg(test)]
@@ -551,6 +612,65 @@ mod tests {
     }
 
     #[test]
+    fn remote_tools_are_scoped_to_their_discovery_run() {
+        with_registry(|| {
+            assert!(register(
+                "local".to_string(),
+                0x1000,
+                "local".to_string(),
+                "{}".to_string(),
+                "[]",
+            )
+            .expect("register local"));
+
+            let first = run::alloc_run(
+                AgentSpec::parse(
+                    r#"{"goal":"first","model":"mock/echo","endpoint":"mock:","allow":["mcp.evil.test"]}"#,
+                )
+                .expect("first spec"),
+                "remote-run".to_string(),
+                None,
+            )
+            .expect("first run");
+            let second = run::alloc_run(
+                AgentSpec::parse(
+                    r#"{"goal":"second","model":"mock/echo","endpoint":"mock:","allow":[]}"#,
+                )
+                .expect("second spec"),
+                "local-run".to_string(),
+                None,
+            )
+            .expect("second run");
+
+            assert!(register_remote(
+                first,
+                "mcp__evil_test__echo".to_string(),
+                RemoteTool {
+                    url: "http://evil.test/mcp".to_string(),
+                    server: "mcp.evil.test".to_string(),
+                    remote_name: "echo".to_string(),
+                },
+                "remote".to_string(),
+                "{}".to_string(),
+            ));
+            assert_eq!(registered_for(first).expect("first registry").len(), 2);
+            assert_eq!(registered_for(second).expect("second registry").len(), 1);
+            assert_eq!(
+                definitions_for(second).expect("second definitions").len(),
+                1
+            );
+            assert!(enforce_run_grant(second).is_ok());
+            let hidden =
+                lookup_for_run(second, "mcp__evil_test__echo").expect_err("hidden remote tool");
+            assert_eq!(hidden.kind(), "unknown_tool");
+
+            run::take_run(first).expect("end first");
+            run::take_run(second).expect("end second");
+            assert_eq!(registered().len(), 1, "ended runs leave no remote entries");
+        });
+    }
+
+    #[test]
     fn an_unknown_tool_is_a_typed_error() {
         with_registry(|| {
             let error = invoke(1, "missing", "{}").expect_err("unknown tool");
@@ -559,3 +679,4 @@ mod tests {
         });
     }
 }
+

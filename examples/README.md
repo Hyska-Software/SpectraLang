@@ -82,6 +82,11 @@ rede), em JIT (`spectralang run`) e AOT (`compile --debug-info=none --emit-exe`)
 | `35-nested-compensation` | compensation declarada dentro de tool e restaurada no replay externo |
 | `36-mcp-remote-errors` | envelope MCP `isError` convertido em `ToolFailed` sem perder a próxima chamada |
 | `37-a2a-idempotency` | replay por `messageId` e recusa de conflito por `-32600` |
+| `38-cross-module-tools` | tools declaradas em módulo importado, dispatch direto do wrapper e cadeia `act` |
+| `39-remote-scope-isolation` | descoberta MCP remota isolada na run de origem; uma run local posterior continua chamável |
+| `40-empty-stream-boundary` | stream vazio do provider, marcador de fim persistente e close idempotente |
+| `41-a2a-card-defaults` | defaults de identidade A2A, URL omitida e rejeição tipada de campo authored |
+| `42-unicode-tool-payload` | round-trip JSON derivado para Unicode, aspas, novas linhas e barras invertidas |
 
 Os contratos que os exemplos demonstram ficam fixados nos fixtures
 `tests/validation/384_agent_stream_lifecycle.spectra`,
@@ -132,5 +137,12 @@ Os fixtures `419`–`428` espelham esses limites: taint e custo, identidade
 insegura e integridade do journal, chunks em replay, schemas booleanos e
 enums em payloads de tool, compensation aninhada, erro remoto MCP e
 idempotência A2A.
+
+Os fixtures `429_agent_remote_scope.spectra` até
+`432_agent_unicode_tool_payload.spectra` fixam, respectivamente, isolamento de
+descoberta MCP entre runs, o marcador de fim de stream vazio, defaults e
+validação de campos do cartão A2A e round-trip de payload JSON com escapes. O
+fixture 429 também protege contra a falha corrigida em que um descriptor remoto
+registrado por uma run contaminava o grant check de outra.
 
 Ver `docs/book/11-agents.md`.

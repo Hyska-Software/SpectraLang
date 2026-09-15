@@ -1,0 +1,84 @@
+module main
+
+// Example 38 — tools can live in a separate source module. The imported
+// module's synthesized registration function supplies wrappers to both direct
+// `tool_call` and the model-driven `act` loop.
+
+from std.io import println
+import std.agent
+import std.string as str
+import tools
+
+func spec() returns string {
+    return "{\"goal\":\"example-cross-module-tools\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":38,\"journal\":\"\"}"
+}
+
+func direct_call() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let scaled = block_on(tool_call(run, "scale", "{\"value\":6,\"factor\":7}"))
+        if let Result::Ok(value) = scaled {
+            if value != "42" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+
+        let echoed = block_on(tool_call(run, "echo", "{\"text\":\"cross-module\"}"))
+        if let Result::Ok(value) = echoed {
+            if value != "\"mock echo: cross-module\"" {
+                return 4
+            }
+        } else {
+            return 5
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 6
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+func act_chain() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let script = "spectra:tool=scale {\"value\":5,\"factor\":5}\nspectra:tool=echo {\"text\":\"chain\"}\nspectra:final=cross-module chain complete"
+        let answer = block_on(act(run, script))
+        if let Result::Ok(text) = answer {
+            if text != "cross-module chain complete" {
+                return 2
+            }
+        } else {
+            return 3
+        }
+        if let Result::Ok(report) = agent_end(run) {
+            if str.contains(report, "\"tool_calls\":2") == false {
+                return 4
+            }
+        } else {
+            return 5
+        }
+    } else {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    if tools::triple(2) != 6 {
+        return 1
+    }
+    let direct = direct_call()
+    if direct != 0 {
+        return 100 + direct
+    }
+    let chain = act_chain()
+    if chain != 0 {
+        return 200 + chain
+    }
+    println("cross-module tools -> direct wrapper and act chain succeeded")
+    return 0
+}

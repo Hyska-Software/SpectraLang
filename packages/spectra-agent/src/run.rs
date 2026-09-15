@@ -273,11 +273,17 @@ pub(crate) fn with_run<R>(
     Ok(work(state))
 }
 
-/// Releases a run and returns its final state.
+/// Releases a run and returns its final state. Remote MCP descriptors tied to
+/// the generational handle are forgotten before the state leaves the table.
 pub(crate) fn take_run(handle: i64) -> Result<RunState, AgentError> {
     let id = decode(handle, HandleKind::AgentRun)?;
     let mut table = lock(runs());
-    table.remove(id).map_err(|error| unknown(handle, error))
+    let result = table.remove(id).map_err(|error| unknown(handle, error));
+    drop(table);
+    if result.is_ok() {
+        crate::tools::forget_run(handle);
+    }
+    result
 }
 
 /// Runs `work` with `run_handle` entered on the active run chain.

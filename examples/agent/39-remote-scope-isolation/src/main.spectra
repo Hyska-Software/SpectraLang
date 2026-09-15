@@ -1,0 +1,111 @@
+module main
+
+// Example 39 — remote MCP descriptors are scoped to the run that discovered
+// them. A later run with no MCP grant still sees and calls its local tool.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record ValueArgs {
+    value: int,
+}
+
+#[agent_tool("Returns the supplied value")]
+public async func local_value(run: Run, args: ValueArgs) returns int {
+    return args.value
+}
+
+func discovery_spec() returns string {
+    return "{\"goal\":\"example-remote-discovery\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"mcp\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"allow\",\"seed\":39,\"journal\":\"\"}"
+}
+
+func local_spec() returns string {
+    return "{\"goal\":\"example-local-only\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"allow\",\"seed\":39,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let first = agent_start(discovery_spec())
+    if let Result::Ok(run) = first {
+        let served = mcp_serve(run, "127.0.0.1:0")
+        if let Result::Ok(authority) = served {
+            let discovered = await mcp_connect(run, "http://" + authority + "/mcp")
+            if let Result::Ok(document) = discovered {
+                if str.contains(document, "remoteName") == false {
+                    return 2
+                }
+            } else {
+                return 3
+            }
+        } else {
+            return 1
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 4
+        }
+    } else {
+        return 5
+    }
+
+    // This call is intentionally unrelated to the previous MCP discovery.
+    let second = agent_start(local_spec())
+    if let Result::Ok(run) = second {
+        let called = await tool_call(run, "local_value", "{\"value\":42}")
+        if let Result::Ok(value) = called {
+            if value != "42" {
+                return 6
+            }
+        } else {
+            if let Result::Err(problem) = called {
+                println("isolated local call failed: " + error.message(problem))
+            }
+            let _ = agent_end(run)
+            return 7
+        }
+        let surface = mcp_handle(
+            run,
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}",
+        )
+        if let Result::Ok(document) = surface {
+            if str.contains(document, "mcp__") {
+                return 10
+            }
+            if str.contains(document, "local_value") == false {
+                return 11
+            }
+        } else {
+            return 12
+        }
+        let card = a2a_card(run, "{}")
+        if let Result::Ok(document) = card {
+            if str.contains(document, "mcp__") {
+                return 13
+            }
+            if str.contains(document, "local_value") == false {
+                return 14
+            }
+        } else {
+            return 15
+        }
+        if let Result::Ok(report) = agent_end(run) {
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 16
+            }
+            if str.contains(report, "\"tool_calls\":1") == false {
+                return 17
+            }
+        } else {
+            return 18
+        }
+    } else {
+        return 11
+    }
+    println("remote scope -> prior MCP discovery did not affect local-only run")
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

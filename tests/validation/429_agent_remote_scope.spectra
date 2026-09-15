@@ -1,0 +1,98 @@
+module agent_remote_scope
+
+// Contract: a remote descriptor discovered by one run must not enter another
+// run's model surface or grant check. The later run can still call its local
+// compiled tool with an empty MCP grant.
+
+import std.agent
+import std.error as error
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record ValueArgs {
+    value: int,
+}
+
+#[agent_tool("Returns the supplied value")]
+public async func local_value(run: Run, args: ValueArgs) returns int {
+    return args.value
+}
+
+func spec(goal: string, allow: string) returns string {
+    return "{\"goal\":\"" + goal + "\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":" + allow + ",\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"allow\",\"seed\":429,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let first = agent_start(spec("fixture-429-discovery", "[\"mcp\"]"))
+    if let Result::Ok(run) = first {
+        let served = mcp_serve(run, "127.0.0.1:0")
+        if let Result::Ok(authority) = served {
+            let discovered = await mcp_connect(run, "http://" + authority + "/mcp")
+            if let Result::Ok(document) = discovered {
+                if str.contains(document, "remoteName") == false {
+                    return 2
+                }
+            } else {
+                return 3
+            }
+        } else {
+            return 1
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 4
+        }
+    } else {
+        return 5
+    }
+
+    let second = agent_start(spec("fixture-429-local", "[]"))
+    if let Result::Ok(run) = second {
+        let called = await tool_call(run, "local_value", "{\"value\":42}")
+        if let Result::Ok(value) = called {
+            if value != "42" {
+                return 6
+            }
+        } else {
+            if let Result::Err(problem) = called {
+                let _ = error.message(problem)
+            }
+            let _ = agent_end(run)
+            return 7
+        }
+        let surface = mcp_handle(
+            run,
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}",
+        )
+        if let Result::Ok(document) = surface {
+            if str.contains(document, "mcp__") {
+                return 10
+            }
+            if str.contains(document, "local_value") == false {
+                return 11
+            }
+        } else {
+            return 12
+        }
+        let card = a2a_card(run, "{}")
+        if let Result::Ok(document) = card {
+            if str.contains(document, "mcp__") {
+                return 13
+            }
+            if str.contains(document, "local_value") == false {
+                return 14
+            }
+        } else {
+            return 15
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 16
+        }
+    } else {
+        return 9
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

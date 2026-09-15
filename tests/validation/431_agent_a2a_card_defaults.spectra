@@ -1,0 +1,50 @@
+module agent_a2a_card_defaults
+
+// Contract: a card defaults name/description without inventing a URL, and a
+// present non-string identity field is a typed A2A error.
+
+import std.agent
+import std.error as error
+import std.string as str
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-431-a2a-defaults\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":431,\"journal\":\"\"}"
+}
+
+func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let defaults = a2a_card(run, "{}")
+        if let Result::Ok(document) = defaults {
+            if str.contains(document, "\"name\":\"fixture-431-a2a-defaults\"") == false {
+                return 2
+            }
+            if str.contains(document, "\"description\":\"\"") == false {
+                return 3
+            }
+            if str.contains(document, "\"url\":") {
+                return 4
+            }
+        } else {
+            return 1
+        }
+        let invalid = a2a_card(run, "{\"version\":false}")
+        if let Result::Err(problem) = invalid {
+            if str.contains(error.message(problem), "a2a_error") == false {
+                return 5
+            }
+        } else {
+            return 6
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 7
+        }
+    } else {
+        return 8
+    }
+    return 0
+}
+
+public func main() returns int {
+    return verify()
+}

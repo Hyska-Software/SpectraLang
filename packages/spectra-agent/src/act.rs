@@ -39,7 +39,7 @@ pub(crate) fn act(run_handle: i64, prompt: &str) -> Result<String, AgentError> {
     let run_id = run::with_run(run_handle, |state| state.run_id.clone())?;
     trace::emit_plan(&run_id, &spec.goal, Some(prompt));
 
-    let definitions = tools::definitions();
+    let definitions = tools::definitions_for(run_handle)?;
     let mut messages = vec![Message::user(prompt)];
     for _ in 0..MAX_ACT_STEPS {
         let response = model_turn_with(run_handle, messages.clone(), None, definitions.clone())?;

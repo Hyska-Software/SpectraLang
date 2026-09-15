@@ -1,0 +1,82 @@
+module main
+
+// Example 40 — a provider may complete a stream without emitting a non-empty
+// chunk. The end marker, repeated reads, and close remain deterministic.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+func spec() returns string {
+    return "{\"goal\":\"example-empty-stream\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":40,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let opened = await ask_stream(run, "spectra:final=")
+        if let Result::Ok(stream) = opened {
+            let first = await stream_next(stream)
+            if let Result::Ok(chunk) = first {
+                if chunk != "" {
+                    return 2
+                }
+            } else {
+                return 3
+            }
+            let repeated = await stream_next(stream)
+            if let Result::Ok(chunk) = repeated {
+                if chunk != "" {
+                    return 4
+                }
+            } else {
+                return 5
+            }
+            let closed = await stream_close(stream)
+            if let Result::Ok(ok) = closed {
+                if ok == false {
+                    return 6
+                }
+            } else {
+                return 7
+            }
+            let closed_again = await stream_close(stream)
+            if let Result::Ok(ok) = closed_again {
+                if ok == false {
+                    return 8
+                }
+            } else {
+                return 9
+            }
+            let after_close = await stream_next(stream)
+            if let Result::Err(problem) = after_close {
+                if str.contains(error.message(problem), "handle") == false {
+                    return 10
+                }
+            } else {
+                return 11
+            }
+        } else {
+            return 1
+        }
+        if let Result::Ok(report) = agent_end(run) {
+            if str.contains(report, "\"steps\":1") == false {
+                return 12
+            }
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 13
+            }
+        } else {
+            return 14
+        }
+    } else {
+        return 15
+    }
+    println("empty stream -> stable end marker and idempotent close")
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

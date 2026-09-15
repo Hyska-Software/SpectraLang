@@ -4,11 +4,9 @@ module agent_budget
 // public surface is crossed here, plus the `budget_remaining` introspection
 // binding and the report that names the ceiling that was hit.
 //
-// The mock provider makes the runs deterministic: fixed usage numbers drive
-// the token and cost ceilings, and `spectra:sleep-ms=N` drives the wall-clock
-// ceiling. The tool-call ceiling is exercised by the crate tests, because the
-// governed tool dispatch (`act`) is R-3222 and no source-visible call path
-// exists yet.
+// The token, cost and wall-clock ceilings are exercised below. The tool-call
+// ceiling is covered by fixture 393 and the same source-visible `act`/`tool_call`
+// path used by the agent examples.
 
 import std.agent
 import std.string as str

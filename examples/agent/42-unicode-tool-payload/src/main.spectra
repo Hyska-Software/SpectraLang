@@ -1,0 +1,61 @@
+module main
+
+// Example 42 — derived JSON wrappers preserve Unicode, quotes, newlines and
+// backslashes across the source-visible `tool_call` boundary.
+
+from std.io import println
+import std.agent
+import std.error as error
+
+#[derive(Serialize, Deserialize)]
+public record EscapedArgs {
+    text: string,
+    note: string,
+}
+
+#[agent_tool("Returns escaped text fields unchanged")]
+public async func echo_escaped(run: Run, args: EscapedArgs) returns EscapedArgs {
+    return args
+}
+
+func spec() returns string {
+    return "{\"goal\":\"example-unicode-tool-payload\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":42,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let sample = EscapedArgs {
+        text: "café \"quoted\"",
+        note: "line\nnext\\path",
+    }
+    let payload = sample.to_json()
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let called = await tool_call(run, "echo_escaped", payload)
+        if let Result::Ok(output) = called {
+            if output != payload {
+                println("payload changed: " + output)
+                return 2
+            }
+        } else {
+            if let Result::Err(problem) = called {
+                println("escaped payload failed: " + error.message(problem))
+            }
+            return 3
+        }
+        if let Result::Ok(report) = agent_end(run) {
+            if report == "" {
+                return 4
+            }
+        } else {
+            return 5
+        }
+    } else {
+        return 1
+    }
+    println("Unicode payload -> quotes, newlines and backslashes round-tripped")
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

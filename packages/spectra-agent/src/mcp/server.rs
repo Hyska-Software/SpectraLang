@@ -1,8 +1,8 @@
 //! MCP server: expose a Spectra project's tools to any MCP client (R-3218 T2).
 //!
-//! `tools/list` is the project's derived `#[agent_tool]` surface: the name,
-//! the authored description, the JSON Schema the compiler derived from the
-//! payload type, and the standard MCP annotations derived from the
+//! `tools/list` is the serving run's filtered `#[agent_tool]` surface: the
+//! name, the authored description, the JSON Schema the compiler derived from
+//! the payload type, and the standard MCP annotations derived from the
 //! compiler-derived effect set ([`taint::is_sink`] classifies a destructive
 //! effect). Nothing is re-derived here, so the served surface and the compiled
 //! surface cannot drift.
@@ -170,7 +170,7 @@ fn dispatch(run_handle: i64, request: &Value) -> Value {
         // A registry that cannot be advertised is a run-level refusal, not an
         // empty list: the client must not read "no tools" when the truth is
         // "this tool's descriptor is broken".
-        "tools/list" => match descriptors() {
+        "tools/list" => match descriptors(run_handle) {
             Ok(descriptors) => wire::ok(id, json!({"tools": descriptors})),
             Err(error) => wire::failure(id, RUN_REFUSED, &error.message()),
         },
@@ -183,16 +183,17 @@ fn dispatch(run_handle: i64, request: &Value) -> Value {
     }
 }
 
-/// The project's derived tool surface, in the registry's deterministic order.
+/// The project's derived tool surface visible to the serving run, in the
+/// registry's deterministic order.
 ///
 /// A tool whose registered schema does not parse is refused by name rather
 /// than advertised with a permissive substitute: a client that saw
-/// `{"type":"object"}` would send arguments the tool's wrapper rejects, and the
-/// broken descriptor would never be reported. The refusal names the tool and
+/// `{"type":"object"}` would send arguments the tool's wrapper rejects, and
+/// the broken descriptor would never be reported. The refusal names the tool and
 /// the parse error, so the surfacing layer is fixable.
-fn descriptors() -> Result<Vec<Value>, AgentError> {
+fn descriptors(run_handle: i64) -> Result<Vec<Value>, AgentError> {
     let mut descriptors = Vec::new();
-    for tool in tools::registered() {
+    for tool in tools::registered_for(run_handle)? {
         {
             let schema = serde_json::from_str::<Value>(&tool.input_schema).map_err(|error| {
                 AgentError::Mcp(format!(

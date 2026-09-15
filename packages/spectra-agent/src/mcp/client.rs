@@ -1,13 +1,14 @@
 //! MCP client: discover and invoke a remote server's tools over HTTP
 //! (R-3218 T1).
 //!
-//! Discovery registers every remote tool in this process's tool registry under
-//! a name namespaced by the server identity, with the per-server capability as
-//! its derived effect. From then on the tool is an ordinary registry entry:
-//! `tool_call` and `act` reach it through the single governed dispatch
-//! ([`crate::tools::invoke`]), which charges the run's tool-call ceiling,
-//! journals the invocation with the R-3217 discipline, and invokes
-//! [`call_tool`] in place of a compiled wrapper.
+//! Discovery registers every remote tool in the process-local registry under a
+//! name namespaced by the server identity, but records the discovering run so
+//! only that run can advertise or dispatch the descriptor. The per-server
+//! capability remains its derived effect. From then on the visible tool is an
+//! ordinary registry entry: `tool_call` and `act` reach it through the single
+//! governed dispatch ([`crate::tools::invoke`]), which charges the run's
+//! tool-call ceiling, journals the invocation with the R-3217 discipline, and
+//! invokes [`call_tool`] in place of a compiled wrapper.
 //!
 //! Discovery is itself a journaled effect ([`Kind::Mcp`]): a resumed run
 //! re-registers exactly the descriptors it originally discovered without
@@ -75,12 +76,9 @@ pub(crate) fn connect(run_handle: i64, url: &str) -> Result<String, AgentError> 
         }
     }
 }
-
-/// One `tools/call` to a registered remote tool.
-///
 /// Called by the governed dispatch in place of a compiled wrapper. The
 /// capability is re-checked here, so even an entry registered by another run
-/// cannot be invoked outside its own server's grant.
+/// cannot be invoked by a run that did not discover it and grant its server.
 pub(crate) fn call_tool(
     run_handle: i64,
     remote: &RemoteTool,
@@ -302,6 +300,7 @@ fn install(
         taint::mark_untrusted(run_handle, &schema, &endpoint.capability)?;
         let name = endpoint.tool_name(remote_name);
         tools::register_remote(
+            run_handle,
             name.clone(),
             RemoteTool {
                 url: endpoint.url.clone(),
