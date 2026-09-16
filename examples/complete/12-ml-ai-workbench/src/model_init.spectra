@@ -1,0 +1,20 @@
+// Parameter initialization for the small supervised reference model.
+module model_init
+
+import std.tensor as tensor
+
+public func mlai_new_weights() returns int {
+    return tensor.requires_grad(tensor.reshape(tensor.full_f(2, 0.0), 2, 1), true)
+}
+
+public func mlai_new_bias() returns int {
+    return tensor.requires_grad(tensor.full_f(1, 0.0), true)
+}
+
+public func mlai_new_weight_moment() returns int {
+    return tensor.reshape(tensor.full_f(2, 0.0), 2, 1)
+}
+
+public func mlai_new_bias_moment() returns int {
+    return tensor.full_f(1, 0.0)
+}

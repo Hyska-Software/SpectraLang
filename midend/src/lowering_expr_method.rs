@@ -49,6 +49,20 @@ impl ASTLowering {
                     };
                 }
 
+                if let Some(function_name) =
+                    self.imported_user_function_name(object, method_name)
+                {
+                    let call_args = arguments
+                        .iter()
+                        .map(|argument| self.lower_expression(argument, ir_func))
+                        .collect();
+                    return self.require_value(
+                        self.builder
+                            .build_call(ir_func, function_name, call_args, true),
+                        "qualified user-module function call did not produce its declared result",
+                    );
+                }
+
                 // Lower method call to function call: obj.method(args) -> Type_method(obj, args)
 
                 // 1. Lower o objeto (self será o primeiro argumento)

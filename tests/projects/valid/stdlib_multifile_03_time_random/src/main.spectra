@@ -1,0 +1,12 @@
+module main
+
+import std.io as io
+import verification_clock
+
+public func main() returns int {
+    if verification_clock.check() != 0 {
+        return 1
+    }
+    io.println("verification time random -> ok")
+    return 0
+}

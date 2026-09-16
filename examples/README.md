@@ -83,6 +83,26 @@ até `tests/validation/495_stdlib_serve_multi_model_routing.spectra`.
 | `59-ml-tokenizer-direct.spectra` | WordPiece direto, encode/decode e tokens desconhecidos |
 | `60-serve-multi-model-routing.spectra` | roteamento por nome e métricas por modelo |
 
+## examples/projects/multi_file — projetos stdlib multi-arquivo
+
+Dez projetos executáveis que atravessam módulos de usuário e a biblioteca
+padrão. O tamanho varia deliberadamente entre 2 e 5 arquivos `.spectra`; cada
+projeto possui uma verificação correspondente em
+`tests/projects/valid/stdlib_multifile_01_*` até `stdlib_multifile_10_*`.
+
+| Projeto | Arquivos `.spectra` | Superfície exercitada |
+|---|---:|---|
+| `p5_collections_pipeline` | 2 | `collections`, `option`, iteradores e namespaces de módulos |
+| `p6_filesystem_report` | 3 | filesystem, `Result`, erros e composição de caminhos |
+| `p7_time_random_config` | 4 | ambiente, opções, aleatoriedade determinística e UTC |
+| `p8_tensor_shapes` | 5 | aritmética tensorial, views, concatenação, stack e cleanup |
+| `p9_ml_dataset_pipeline` | 2 | datasets CSV/JSONL/diretório e dataframe |
+| `p10_ml_metrics_report` | 3 | métricas ML e relatório persistido |
+| `p11_ml_tokenizer_rag` | 4 | WordPiece, RAG, ranking, geração e serving |
+| `p12_ml_artifact_experiment` | 5 | artefatos, manifests e reprodutibilidade |
+| `p13_concurrent_tasks` | 2 | tasks, canais FIFO, contadores e reset |
+| `p14_serve_models` | 4 | modelos nomeados, políticas e monitoramento |
+
 ## examples/api — servidor HTTP e banco
 
 | Arquivo | O que demonstra |

@@ -1,0 +1,38 @@
+module metrics
+
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+
+public func ops_quality_score() returns int {
+    tensor.free_all()
+    let score          = 0
+    let labels         = tensor.arange(0, 4, 1)
+    let predicted      = tensor.arange(0, 4, 1)
+    let classification = ml.metrics_classification(labels, predicted)
+    if string.contains(classification, "\"accuracy\":1.000000") {
+        score = score + 1
+    }
+    let expected   = tensor.full_f(4, 1.0)
+    let actual     = tensor.full_f(4, 1.0)
+    let regression = ml.metrics_regression(expected, actual)
+    if string.contains(regression, "\"mse\":0.000000") {
+        score = score + 1
+    }
+    let relevance = tensor.arange(0, 4, 1)
+    let scores    = tensor.full_f(4, 1.0)
+    let ranking   = ml.metrics_ranking(relevance, scores, 3)
+    if string.contains(ranking, "\"ndcg_at_k\"") {
+        score = score + 1
+    }
+    let generation = ml.metrics_generation("indexed retrieval", "indexed retrieval")
+    if string.contains(generation, "\"perplexity\"") {
+        score = score + 1
+    }
+    let serving = ml.serving_metrics(tensor.arange(10, 50, 10), 4, 0)
+    if string.contains(serving, "\"throughput_per_second\"") {
+        score = score + 1
+    }
+    tensor.free_all()
+    return score
+}

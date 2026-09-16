@@ -82,3 +82,34 @@
 - **Correction:** the functions are now part of the generated tensor lowering group and are removed from the exclusion list; `storage_device` is registered on CPU builds as well and reports CPU residency as `0`.
 - **Regression:** the paired example and validation fixture exercise storage residence, kernel diagnostics, GPU error counters, tolerances, and the memory report.
 - **Verification:** `python scripts/generate_lowering_tables.py --check`, `cargo build -p spectra-cli`, and both `spectralang check --json` and `spectralang run` pass for the example and validation fixture.
+
+## STD-009: qualified user-module calls reached semantic analysis but not lowering
+
+- **Status:** fixed and verified
+- **Discovered by:** `examples/projects/multi_file/p5_collections_pipeline/`
+- **Observed evidence:** `collection_ops.sum_list(values)` and its paired project fixture passed semantic resolution but lowering tried to materialize `collection_ops` as a runtime value and reported an unresolved identifier.
+- **Cause:** the midend handled dotted standard-library host calls, but had no branch for a dotted call whose receiver was an imported user-module namespace.
+- **Impact:** multi-file projects could not use qualified calls to public functions from an imported user module even though the semantic registry resolved their signatures.
+- **Correction:** the midend now recognizes imported user-module namespaces, lowers only the function arguments, and calls the imported function using its registered signature and return type.
+- **Regression:** the example and validation project call collection helpers through a module namespace across list, map, set, iterator, and option operations.
+- **Verification:** `cargo build -p spectra-cli`, and both `spectralang check --json` and `spectralang run` pass for the example and validation project.
+
+## STD-010: multi-file experiment cleanup used the wrong manifest filename
+
+- **Status:** fixed and verified
+- **Discovered by:** `examples/projects/multi_file/p12_ml_artifact_experiment/`
+- **Observed evidence:** the project ran successfully but left its experiment directories and JSON manifests behind during the post-run cleanup audit.
+- **Cause:** the cleanup helper targeted `manifest.json`, while the experiment API writes `experiment-manifest.json`.
+- **Correction:** both the example and its verification project now remove the emitted filename before removing the run directories.
+- **Verification:** both projects pass `spectralang check --json` and `spectralang run`, and the `target/stdlib-multifile*` roots are absent afterward.
+
+## STD-011: generated lambda symbols collided across independently lowered modules
+
+- **Status:** fixed and verified
+- **Discovered by:** `examples/complete/11-ops-workbench/`, when its planner and worker modules both used closure callbacks.
+- **Observed evidence:** semantic checking succeeded, but JIT codegen rejected `__lambda_1` because one module declared it as returning `bool` and another declared it as returning `int`; the generated application then failed to resolve `ops_parallel_checksum`.
+- **Cause:** each `ASTLowering` instance reset its lambda counter to zero, while the backend links generated lambda functions from all user modules into one symbol namespace.
+- **Impact:** valid multi-file applications could not use closures with different signatures in more than one module.
+- **Correction:** generated lambda, async-block, and named-function wrapper symbols now include a sanitized module prefix in addition to the local counter.
+- **Regression:** the complete workbench and its paired validation project use collection callbacks, worker callbacks, and cross-module calls; the planner and worker lambdas now coexist without a symbol collision.
+- **Verification:** `cargo build -p spectra-cli`, plus `spectralang check --json` and `spectralang run` for the workbench, pass after the correction.

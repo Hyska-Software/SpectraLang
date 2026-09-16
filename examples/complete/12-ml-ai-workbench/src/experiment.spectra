@@ -1,0 +1,36 @@
+// Records the run inputs, checkpoint, monitoring export, and reproducibility data.
+module experiment
+
+import std.fs as fs
+import std.ml as ml
+import std.result as result
+import std.string as string
+
+public func mlai_record_experiment(root: string, checkpoint: string, monitoring: string, report: string) returns string {
+    let lockfile = root + "/experiment.lock"
+    if result.is_err(fs.fs_write(lockfile, "spectralang-stdlib=20260916\nml-workbench-contract=v1\n")) {
+        return ""
+    }
+    if result.is_err(fs.fs_write(root + "/experiment-note.txt", "checkpoint=" + checkpoint + "\n")) {
+        return ""
+    }
+    let run = ml.experiment_start("ml-ai-workbench", root + "/experiment", 20260916)
+    if run == 0 {
+        return ""
+    }
+    ml.experiment_set_config(run, "dataset", "tabular.csv")
+    ml.experiment_set_config(run, "optimizer", "adam")
+    ml.experiment_set_config(run, "retrieval", "hnsw-cosine")
+    ml.experiment_set_lockfile(run, lockfile)
+    ml.experiment_log_metric(run, "training_steps", 8.0, 8)
+    ml.experiment_log_metric(run, "retrieval_score", 0.889, 1)
+    ml.experiment_set_model_output(run, checkpoint)
+    ml.experiment_log_artifact(run, monitoring)
+    ml.experiment_log_artifact(run, report)
+    ml.experiment_finish(run)
+    let manifest = ml.experiment_manifest_path(run)
+    if string.is_empty(manifest) {
+        return ""
+    }
+    return manifest
+}

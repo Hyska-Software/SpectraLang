@@ -1,0 +1,27 @@
+module request_checks
+
+import std.serve as serve
+import std.tensor as tensor
+
+public func check_policies() returns int {
+    serve.reset()
+    let server = serve.server_new(46)
+    let weights = tensor.full2_f(1, 1, 2.0)
+    let bias = tensor.full_f(1, 0.0)
+    if serve.server_register_named_model_linear(server, "bounded", weights, bias, 0) != 1 {
+        return 1
+    }
+    if not serve.server_set_input_policy(server, 0, 4) or not serve.server_set_output_policy(server, 0, 4) {
+        return 2
+    }
+    if not serve.server_set_rate_limit(server, 3) or not serve.server_set_fallback(server, -1) {
+        return 3
+    }
+    let request = serve.server_infer(server, "bounded", tensor.full_f(1, 2.0))
+    if serve.server_result(server, request) != 4 {
+        return 4
+    }
+    tensor.free_all()
+    serve.reset()
+    return 0
+}

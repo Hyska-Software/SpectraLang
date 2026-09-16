@@ -1,0 +1,42 @@
+module model
+
+import std.fs as fs
+import std.ml as ml
+import std.result as result
+import std.tensor as tensor
+
+public func ops_checkpoint_roundtrip(workspace: string) returns bool {
+    tensor.free_all()
+    let root = workspace + "/model"
+    let path = root + "/weights.spar"
+    if result.is_err(fs.create_dir_all(root)) {
+        return false
+    }
+    let weights  = tensor.full_f(4, 1.25)
+    let bias     = tensor.full_f(2, -0.5)
+    let artifact = ml.artifact_new("ops-workbench", "v1", "checkpoint")
+    if artifact == 0 {
+        fs.remove_dir(root)
+        tensor.free_all()
+        return false
+    }
+    let configured    = ml.artifact_set_metadata(artifact, "owner", "platform")
+    let attached      = ml.artifact_add_tensor(artifact, "weights", weights)
+    let attached_bias = ml.artifact_add_tensor(artifact, "bias", bias)
+    let saved         = ml.artifact_save(artifact, path)
+    let valid         = ml.artifact_validate(path)
+    let loaded        = ml.artifact_load(path)
+    let roundtrip     = loaded != 0
+    let dimensions    = false
+    if roundtrip {
+        let loaded_weights = ml.artifact_tensor(loaded, "weights")
+        let loaded_bias    = ml.artifact_tensor(loaded, "bias")
+        dimensions = tensor.len(loaded_weights) == 4 and tensor.len(loaded_bias) == 2
+        ml.artifact_free(loaded)
+    }
+    ml.artifact_free(artifact)
+    fs.fs_remove(path)
+    fs.remove_dir(root)
+    tensor.free_all()
+    return configured and attached and attached_bias and saved and valid and roundtrip and dimensions
+}

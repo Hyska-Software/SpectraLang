@@ -1,6 +1,27 @@
 use super::*;
 
 impl ASTLowering {
+    pub(crate) fn imported_user_function_name(
+        &self,
+        object: &Expression,
+        method_name: &str,
+    ) -> Option<String> {
+        let ExpressionKind::Identifier(root) = &object.kind else {
+            return None;
+        };
+        if self.value_map.get(root).is_some() || self.variable_types.get(root).is_some() {
+            return None;
+        }
+        let path = qualified_namespace_path(object)?;
+        let qualified_name = format!("{path}.{method_name}");
+        if self.function_return_types.contains_key(&qualified_name) {
+            return Some(qualified_name);
+        }
+        self.function_return_types
+            .contains_key(method_name)
+            .then(|| method_name.to_string())
+    }
+
     pub(crate) fn source_span(&self, span: Span) -> SourceSpan {
         SourceSpan {
             file: self.source_file.clone(),
@@ -43,6 +64,7 @@ impl ASTLowering {
             function_parameter_types: HashMap::new(),
             std_import_aliases: HashMap::new(),
             lambda_counter: 0,
+            lambda_prefix: "module".to_string(),
             pending_lambdas: Vec::new(),
             closure_var_map: HashMap::new(),
             pending_coroutines: Vec::new(),

@@ -1,0 +1,25 @@
+module config
+
+import std.env as env
+import std.option as option
+
+const MODE_KEY = "SPECTRA_OPS_WORKBENCH_MODE"
+
+public record AppConfig {
+    public name: string,
+    public workspace: string,
+    public seed: int,
+    public mode: string,
+}
+
+public func ops_load_config() returns AppConfig {
+    if env.env_set(MODE_KEY, "integration") != true {
+        return AppConfig { name: "Spectra Ops Workbench", workspace: "target/complete-ops-workbench-fixture", seed: 11011, mode: "fallback" }
+    }
+    let configured = env.env_get_option(MODE_KEY)
+    let mode       = "fallback"
+    if option.is_some(configured) {
+        mode = option.option_unwrap(configured)
+    }
+    return AppConfig { name: "Spectra Ops Workbench", workspace: "target/complete-ops-workbench-fixture", seed: 11011, mode: mode }
+}

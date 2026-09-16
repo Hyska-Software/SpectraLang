@@ -1,0 +1,13 @@
+module main
+
+import std.io as io
+import verification_metrics
+
+public func main() returns int {
+    if verification_metrics.check() != 0 {
+        return 1
+    }
+    verification_metrics.cleanup()
+    io.println("verification metrics -> ok")
+    return 0
+}

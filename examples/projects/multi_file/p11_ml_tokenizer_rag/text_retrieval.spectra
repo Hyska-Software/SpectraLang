@@ -1,0 +1,19 @@
+module text_retrieval
+
+import std.ml as ml
+import std.string as string
+
+public func verify_text() returns int {
+    let chunks = ml.rag_chunk_text("RAG retrieval uses indexed chunks.", 12, 3)
+    if not string.contains(chunks, "spectra.ml.rag_chunks.v1") {
+        return 1
+    }
+    let prompt = ml.rag_build_prompt(chunks, "What does RAG retrieval use?")
+    if not string.contains(prompt, "Context:") or not string.contains(prompt, "Question:") {
+        return 2
+    }
+    if ml.rag_evaluate_answer("RAG retrieval uses indexed chunks", "retrieval uses indexed chunks") < 700 {
+        return 3
+    }
+    return 0
+}

@@ -1,0 +1,17 @@
+module file_paths
+
+public func root_path() returns string {
+    return "target/stdlib-multifile/p6-files"
+}
+
+public func source_path() returns string {
+    return root_path() + "/source.txt"
+}
+
+public func copied_path() returns string {
+    return root_path() + "/copied.txt"
+}
+
+public func renamed_path() returns string {
+    return root_path() + "/renamed.txt"
+}

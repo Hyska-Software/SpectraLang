@@ -1,0 +1,8 @@
+// Differentiable loss boundary.
+module model_loss
+
+import std.ml as ml
+
+public func mlai_mse_loss(prediction: int, target: int) returns int {
+    return ml.mse_loss(prediction, target)
+}

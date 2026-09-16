@@ -1,0 +1,45 @@
+module verification_experiment
+
+import std.fs as fs
+import std.ml as ml
+import std.string as string
+
+const ROOT = "target/stdlib-multifile-verification/08-experiment"
+
+public func check_experiment() returns int {
+    let first = ml.experiment_start("verification", ROOT + "/one", 9)
+    let second = ml.experiment_start("verification", ROOT + "/two", 9)
+    if first == 0 or second == 0 {
+        return 1
+    }
+    ml.experiment_set_config(first, "dataset", "same.csv")
+    ml.experiment_set_config(second, "dataset", "same.csv")
+    ml.experiment_log_metric(first, "loss", 0.1, 1)
+    ml.experiment_log_metric(second, "loss", 0.1, 1)
+    ml.experiment_finish(first)
+    ml.experiment_finish(second)
+    let left = ml.experiment_manifest_path(first)
+    let right = ml.experiment_manifest_path(second)
+    if ml.experiment_compare_manifests(left, right) != 1 {
+        return 2
+    }
+    let text = fs.fs_read(left)
+    if let Result::Ok(body) = text {
+        if not string.contains(body, "spectra.ml.experiment.v1") {
+            return 3
+        }
+    } else {
+        return 3
+    }
+    return 0
+}
+
+public func cleanup() returns int {
+    fs.fs_remove(ROOT + "/one/experiment-manifest.json")
+    fs.fs_remove(ROOT + "/two/experiment-manifest.json")
+    fs.remove_dir(ROOT + "/one")
+    fs.remove_dir(ROOT + "/two")
+    fs.remove_dir(ROOT)
+    fs.remove_dir("target/stdlib-multifile-verification")
+    return 0
+}

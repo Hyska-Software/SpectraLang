@@ -1,0 +1,28 @@
+module serve_metrics
+
+import std.serve as serve
+import std.string as string
+import std.tensor as tensor
+
+public func check_monitoring() returns int {
+    serve.reset()
+    let server = serve.server_new(47)
+    let weights = tensor.full2_f(1, 1, 1.5)
+    let bias = tensor.full_f(1, 0.5)
+    if serve.server_register_named_model_linear(server, "observed", weights, bias, 0) != 1 {
+        return 1
+    }
+    let request = serve.server_infer(server, "observed", tensor.full_f(1, 2.0))
+    if tensor.len(serve.server_result_vector(server, request)) != 1 {
+        return 2
+    }
+    let snapshot = serve.server_monitoring_snapshot(server)
+    let distribution = serve.server_distribution_summary(server)
+    let audit = serve.server_audit_log(server)
+    if not string.contains(snapshot, "observed") or not string.contains(distribution, "distribution_summary.v1") or not string.contains(audit, "spectra.serve.audit.v1") {
+        return 3
+    }
+    tensor.free_all()
+    serve.reset()
+    return 0
+}

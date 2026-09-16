@@ -1,0 +1,21 @@
+module verification_text
+
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+
+public func check() returns int {
+    tensor.free_all()
+    let chunks = ml.rag_chunk_text("one two three four", 8, 2)
+    let prompt = ml.rag_build_prompt(chunks, "What is indexed?")
+    if not string.contains(prompt, "Context:") or ml.rag_evaluate_answer("indexed", "indexed") < 900 {
+        return 1
+    }
+    let tokenizer = ml.tokenizer_wordpiece("[UNK]:0\nindexed:1")
+    let encoded = ml.tokenizer_encode(tokenizer, "indexed")
+    if tensor.len(encoded) != 1 or ml.tokenizer_decode(tokenizer, encoded) != "indexed" {
+        return 2
+    }
+    tensor.free_all()
+    return 0
+}

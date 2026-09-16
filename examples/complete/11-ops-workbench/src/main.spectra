@@ -1,0 +1,106 @@
+// 11-ops-workbench: an integrated local operations application.
+// This first vertical slice loads configuration, round-trips a domain item,
+// and ingests a deterministic CSV event stream.
+module main
+
+import std.convert as convert
+import std.io as io
+import std.string as string
+import clock
+import config
+import domain
+import ingest
+import metrics
+import model
+import planner
+import reporting
+import storage
+import workers
+
+public func main() returns int {
+    let settings = config.ops_load_config()
+    if settings.mode != "integration" or settings.seed != 11011 {
+        return 1
+    }
+
+    let item      = domain.ops_make_item(7, "rotate credentials", "platform", 5)
+    let completed = domain.ops_complete_item(item)
+    let raw       = domain.ops_item_to_json(completed)
+    let restored  = domain.ops_item_from_json(raw)
+    if not domain.ops_same_item(completed, restored) or not restored.done {
+        return 2
+    }
+
+    let events = [
+        "1,platform,5,98",
+        "2,data,3,82",
+        "3,security,4,91",
+        "4,platform,2,77",
+        "5,ml,3,88",
+        "6,security,5,96",
+        "bad,row",
+    ]
+    let valid       = 0
+    let invalid     = 0
+    let score_total = 0
+    let critical    = 0
+    let index       = 0
+    while index < 7 {
+        let score = ingest.ops_event_score(events[index])
+        if score < 0 {
+            invalid = invalid + 1
+        } else {
+            valid = valid + 1
+            score_total = score_total + score
+            if ingest.ops_event_severity(events[index]) >= 5 {
+                critical = critical + 1
+            }
+        }
+        index = index + 1
+    }
+    if valid != 6 or invalid != 1 or score_total != 532 or critical != 2 {
+        return 3
+    }
+
+    let plan_a = planner.ops_plan_checksum(settings.seed, critical)
+    let plan_b = planner.ops_plan_checksum(settings.seed, critical)
+    if plan_a != plan_b or plan_a <= 0 {
+        return 4
+    }
+    let parallel_checksum = workers.ops_parallel_checksum()
+    if parallel_checksum != 420 {
+        return 5
+    }
+    let schedule = clock.ops_schedule_stamp(settings.seed)
+    if not string.contains(schedule, "2024-02-29T12:34:56Z") or not string.contains(schedule, "lane=") {
+        return 6
+    }
+    let quality = metrics.ops_quality_score()
+    if quality != 5 {
+        return 7
+    }
+    if not model.ops_checkpoint_roundtrip(settings.workspace) {
+        return 8
+    }
+
+    let average = score_total / valid
+    let report = reporting.ops_render_report(
+        settings.name,
+        valid,
+        average,
+        plan_a,
+        parallel_checksum,
+        quality,
+        schedule
+    )
+    let report_path = string.concat(settings.workspace, "/ops-report.txt")
+    if not storage.ops_persist_and_validate(report_path, report) {
+        return 9
+    }
+    io.println(report)
+    if storage.ops_cleanup(report_path, settings.workspace) != 0 {
+        return 10
+    }
+    io.println(string.concat("OPS WORKBENCH ok events=", convert.int_to_string(valid)))
+    return 0
+}

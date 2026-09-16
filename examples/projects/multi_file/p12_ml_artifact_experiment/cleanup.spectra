@@ -1,0 +1,9 @@
+module cleanup
+
+import std.fs as fs
+
+public func remove_path(path: string) returns int {
+    fs.fs_remove(path)
+    fs.remove_dir(path)
+    return 0
+}

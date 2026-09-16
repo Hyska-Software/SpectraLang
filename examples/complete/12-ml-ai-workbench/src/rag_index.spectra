@@ -1,0 +1,34 @@
+// Persisted vector retrieval for the local RAG path.
+module rag_index
+
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+
+public func mlai_build_vector_index(chunks: string, path: string) returns int {
+    if not string.contains(chunks, "spectra.ml.rag_chunks.v1") {
+        return 0
+    }
+    let index = ml.vector_index_new(2)
+    if index == 0 or not ml.vector_index_set_metadata(index, "model_version", "ml-ai-workbench-v1") {
+        return 0
+    }
+    if ml.vector_index_insert(index, "chunk-0", tensor.vector_f(2, 1.0)) != 1 {
+        return 0
+    }
+    if ml.vector_index_insert(index, "chunk-1", tensor.vector_f(2, 2.0)) != 2 {
+        return 0
+    }
+    if ml.vector_index_persist(index, path) != path {
+        return 0
+    }
+    return ml.vector_index_load(path)
+}
+
+public func mlai_query_vector_index(index: int) returns string {
+    let query = ml.vector_index_query(index, tensor.vector_f(2, 1.0), 1)
+    if not string.contains(query, "chunk-0") {
+        return ""
+    }
+    return query
+}

@@ -1,0 +1,14 @@
+module main
+
+import std.io as io
+import model_registry
+import request_checks
+import serve_metrics
+
+public func main() returns int {
+    if model_registry.check_models() != 0 or request_checks.check_policies() != 0 or serve_metrics.check_monitoring() != 0 {
+        return 1
+    }
+    io.println("multi-file serving -> named models policies monitoring")
+    return 0
+}

@@ -1,0 +1,26 @@
+// Trains two public tokenizer implementations and checks their text round-trip.
+module tokenizer
+
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+
+public func mlai_tokenizer_score(corpus: string) returns int {
+    tensor.free_all()
+    let bpe       = ml.train_bpe(corpus, 64)
+    let wordpiece = ml.train_wordpiece(corpus, 64)
+    if bpe == 0 or wordpiece == 0 {
+        return-1
+    }
+    let bpe_ids        = ml.tokenizer_encode(bpe, "spectra library")
+    let wordpiece_ids  = ml.tokenizer_encode(wordpiece, "runtime language")
+    let bpe_text       = ml.tokenizer_decode(bpe, bpe_ids)
+    let wordpiece_text = ml.tokenizer_decode(wordpiece, wordpiece_ids)
+    if tensor.len(bpe_ids) <= 0 or tensor.len(wordpiece_ids) <= 0 {
+        return-2
+    }
+    if string.is_empty(bpe_text) or string.is_empty(wordpiece_text) {
+        return-3
+    }
+    return tensor.len(bpe_ids) + tensor.len(wordpiece_ids)
+}

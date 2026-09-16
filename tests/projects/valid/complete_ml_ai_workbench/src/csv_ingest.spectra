@@ -1,0 +1,7 @@
+module csv_ingest
+
+import std.ml as ml
+
+public func mlai_load_csv_dataset(path: string) returns int {
+    return ml.dataset_from_csv(path, 2, 1)
+}

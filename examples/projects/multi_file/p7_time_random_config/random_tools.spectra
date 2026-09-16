@@ -1,0 +1,18 @@
+module random_tools
+
+import std.random as random
+
+public func verify_random() returns int {
+    random.random_seed(70707)
+    let first_bool = random.random_bool()
+    let first_float = random.random_float()
+    let first_int = random.random_int(-3, 4)
+    random.random_seed(70707)
+    if random.random_bool() != first_bool or random.random_float() != first_float or random.random_int(-3, 4) != first_int {
+        return 1
+    }
+    if first_float < 0.0 or first_float > 1.0 or first_int < -3 or first_int >= 4 {
+        return 2
+    }
+    return 0
+}

@@ -51,6 +51,19 @@ fn operator_overload_method(op: &BinaryOperator) -> Option<&'static str> {
     }
 }
 
+pub(crate) fn qualified_namespace_path(expr: &Expression) -> Option<String> {
+    match &expr.kind {
+        ExpressionKind::Identifier(name) => Some(name.clone()),
+        ExpressionKind::FieldAccess { object, field } => {
+            let mut prefix = qualified_namespace_path(object)?;
+            prefix.push('.');
+            prefix.push_str(field);
+            Some(prefix)
+        }
+        _ => None,
+    }
+}
+
 /// Stack-based scope system for variable shadowing support
 #[derive(Clone)]
 struct ScopeStack {
@@ -428,6 +441,10 @@ pub struct ASTLowering {
     std_import_aliases: HashMap<String, Vec<String>>,
     /// Counter for generating unique lambda function names.
     lambda_counter: usize,
+    /// Module-specific prefix for generated closure symbols. User modules are
+    /// lowered independently and their local counters must not collide when
+    /// the backend links the resulting IR modules together.
+    lambda_prefix: String,
     /// Lambdas collected during lowering that will be emitted as top-level IR functions.
     pending_lambdas: Vec<IRFunction>,
     /// Maps variables that hold closures to their generated function metadata.

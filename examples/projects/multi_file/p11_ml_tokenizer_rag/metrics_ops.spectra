@@ -1,0 +1,28 @@
+module metrics_ops
+
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+
+public func verify_metrics() returns int {
+    tensor.free_all()
+    let expected = tensor.full_f(4, 1.0)
+    let predicted = tensor.full_f(4, 1.0)
+    let regression = ml.metrics_regression(expected, predicted)
+    if not string.contains(regression, "\"mse\":0.000000") or not string.contains(regression, "\"mae\":0.000000") {
+        return 1
+    }
+    let relevance = tensor.arange(0, 4, 1)
+    let scores = tensor.full_f(4, 1.0)
+    let ranking = ml.metrics_ranking(relevance, scores, 3)
+    let generation = ml.metrics_generation("the answer uses indexed retrieval", "answer uses retrieval")
+    let serving = ml.serving_metrics(tensor.arange(10, 50, 10), 4, 0)
+    if not string.contains(ranking, "\"ndcg_at_k\"") or not string.contains(generation, "\"token_f1\"") {
+        return 2
+    }
+    if not string.contains(serving, "\"latency_p95_ms\"") or not string.contains(serving, "\"throughput_per_second\"") {
+        return 3
+    }
+    tensor.free_all()
+    return 0
+}

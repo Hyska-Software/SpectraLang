@@ -1,0 +1,42 @@
+// All application artifacts stay under one isolated workspace.
+module paths
+
+public func mlai_csv_path(root: string) returns string {
+    return root + "/tabular.csv"
+}
+
+public func mlai_jsonl_path(root: string) returns string {
+    return root + "/rows.jsonl"
+}
+
+public func mlai_directory_path(root: string) returns string {
+    return root + "/directory"
+}
+
+public func mlai_report_path(root: string) returns string {
+    return root + "/workbench-report.txt"
+}
+
+public func mlai_checkpoint_path(root: string) returns string {
+    return root + "/model/weights.spar"
+}
+
+public func mlai_vector_index_path(root: string) returns string {
+    return root + "/rag/index.spar"
+}
+
+public func mlai_monitoring_path(root: string) returns string {
+    return root + "/monitoring/serving.json"
+}
+
+public func mlai_experiment_root(root: string) returns string {
+    return root + "/experiment"
+}
+
+public func mlai_manifest_path(root: string) returns string {
+    return root + "/experiment/experiment-manifest.json"
+}
+
+public func mlai_report_text_path(root: string) returns string {
+    return mlai_report_path(root) + ".txt"
+}

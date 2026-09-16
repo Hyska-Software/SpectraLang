@@ -1,0 +1,49 @@
+// Domain model for work items processed by the workbench.
+module domain
+
+#[derive(Serialize, Deserialize)]
+public record WorkItem {
+    public id: int,
+    public title: string,
+    public owner: string,
+    public severity: int,
+    public done: bool,
+}
+
+public func ops_make_item(id: int, title: string, owner: string, severity: int) returns WorkItem {
+    return WorkItem {
+        id: id,
+        title: title,
+        owner: owner,
+        severity: severity,
+        done: false,
+    }
+}
+
+public func ops_complete_item(item: WorkItem) returns WorkItem {
+    return WorkItem {
+        id: item.id,
+        title: item.title,
+        owner: item.owner,
+        severity: item.severity,
+        done: true,
+    }
+}
+
+public func ops_item_to_json(item: WorkItem) returns string {
+    return item.to_json()
+}
+
+public func ops_item_from_json(raw: string) returns WorkItem {
+    return WorkItem::from_json(raw)
+}
+
+public func ops_same_item(left: WorkItem, right: WorkItem) returns bool {
+    if left.id != right.id or left.title != right.title or left.owner != right.owner {
+        return false
+    }
+    if left.severity != right.severity or left.done != right.done {
+        return false
+    }
+    return true
+}

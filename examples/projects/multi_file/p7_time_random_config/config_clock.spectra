@@ -1,0 +1,42 @@
+module config_clock
+
+import std.convert as convert
+import std.env as env
+import std.option as option
+import std.string as string
+import calendar_tools
+import random_tools
+
+const KEY = "SPECTRALANG_MULTIFILE_P7"
+
+public func verify() returns int {
+    if env.env_set(KEY, "ready") != true {
+        return 1
+    }
+    let configured = env.env_get_option(KEY)
+    if option.is_none(configured) or option.option_unwrap(configured) != "ready" {
+        return 2
+    }
+    let missing = env.env_get_option(KEY + "_MISSING")
+    if option.is_some(missing) or option.option_unwrap_or(missing, "fallback") != "fallback" {
+        return 3
+    }
+    if env.env_args_count() < 1 {
+        return 4
+    }
+    let first = env.env_arg_option(0)
+    if option.is_none(first) or string.is_empty(option.option_unwrap(first)) {
+        return 5
+    }
+
+    if random_tools.verify_random() != 0 {
+        return 7
+    }
+    if calendar_tools.verify_calendar() != 0 {
+        return 8
+    }
+    if convert.bool_to_string(true) == "" {
+        return 10
+    }
+    return 0
+}

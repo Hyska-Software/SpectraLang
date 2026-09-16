@@ -1,0 +1,19 @@
+// Evaluation uses token-overlap metrics; it does not pretend to be a model judge.
+module rag_eval
+
+import std.ml as ml
+import std.string as string
+
+public func mlai_evaluate_answer(prompt: string) returns int {
+    if string.is_empty(prompt) {
+        return-1
+    }
+    let answer     = "retrieval uses indexed chunks"
+    let reference  = "RAG retrieval uses indexed chunks"
+    let overlap    = ml.rag_evaluate_answer(answer, reference)
+    let generation = ml.metrics_generation(answer, reference)
+    if overlap < 700 or not string.contains(generation, "\"token_f1\"") {
+        return-2
+    }
+    return overlap
+}

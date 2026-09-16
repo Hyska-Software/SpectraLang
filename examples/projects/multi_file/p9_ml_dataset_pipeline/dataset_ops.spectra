@@ -1,0 +1,73 @@
+module dataset_ops
+
+import std.fs as fs
+import std.ml as ml
+import std.result as result
+import std.tensor as tensor
+
+const ROOT = "target/stdlib-multifile/p9-data"
+const CSV = ROOT + "/tabular.csv"
+const JSONL = ROOT + "/rows.jsonl"
+const DIRECTORY = ROOT + "/directory"
+
+public func cleanup() returns int {
+    fs.fs_remove(CSV)
+    fs.fs_remove(JSONL)
+    fs.fs_remove(DIRECTORY + "/features.csv")
+    fs.fs_remove(DIRECTORY + "/labels.csv")
+    fs.remove_dir(DIRECTORY)
+    fs.remove_dir(ROOT)
+    fs.remove_dir("target/stdlib-multifile")
+    return 0
+}
+
+public func verify_files() returns int {
+    cleanup()
+    if result.is_err(fs.create_dir_all(ROOT)) {
+        return 1
+    }
+    if result.is_err(fs.fs_write(CSV, "f0,f1,label\n1.0,2.0,0.0\n2.0,3.0,1.0\n3.0,4.0,1.0\n4.0,5.0,0.0\n")) {
+        return 2
+    }
+    if result.is_err(fs.fs_write(JSONL, "{\"features\":[1.0,2.0],\"label\":0.0}\n{\"features\":[2.0,3.0],\"label\":1.0}\n")) {
+        return 3
+    }
+    if result.is_err(fs.create_dir_all(DIRECTORY)) {
+        return 4
+    }
+    if result.is_err(fs.fs_write(DIRECTORY + "/features.csv", "x0,x1\n1.0,2.0\n2.0,3.0\n3.0,4.0\n")) {
+        return 5
+    }
+    if result.is_err(fs.fs_write(DIRECTORY + "/labels.csv", "y\n0.0\n1.0\n1.0\n")) {
+        return 6
+    }
+
+    let dataset = ml.dataset_from_csv(CSV, 2, 1)
+    if ml.dataset_len(dataset) != 4 {
+        return 7
+    }
+    let filtered = ml.dataset_filter_label_min(dataset, 1.0)
+    if ml.dataset_len(filtered) != 2 {
+        return 8
+    }
+    let loader = ml.dataloader_new(filtered, 1, 905)
+    if ml.dataloader_batch_count(loader) != 2 {
+        return 9
+    }
+    if tensor.len(ml.dataloader_batch_features(loader, 0)) != 2 {
+        return 10
+    }
+
+    let jsonl_dataset = ml.dataset_from_jsonl(JSONL)
+    let directory_dataset = ml.dataset_from_directory(DIRECTORY)
+    if ml.dataset_len(jsonl_dataset) != 2 or ml.dataset_len(directory_dataset) != 3 {
+        return 11
+    }
+    let frame = ml.dataframe_from_csv(CSV, 1)
+    let column = ml.dataframe_column(frame, 1)
+    if ml.dataframe_rows(frame) != 4 or ml.dataframe_cols(frame) != 3 or tensor.sum_f(column) != 14.0 {
+        return 12
+    }
+    tensor.free_all()
+    return 0
+}

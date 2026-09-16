@@ -1,0 +1,17 @@
+// Keeps the handoff contracts between data, model, and retrieval stages explicit.
+module schema
+
+import std.string as string
+
+public func mlai_validate_stage_schemas(evaluation: string, chunks: string, prompt: string) returns int {
+    if not string.contains(evaluation, "spectra.ml.metric.v1") {
+        return 1
+    }
+    if not string.contains(chunks, "spectra.ml.rag_chunks.v1") {
+        return 2
+    }
+    if not string.contains(prompt, "Context:") or not string.contains(prompt, "Question:") {
+        return 3
+    }
+    return 0
+}

@@ -1,0 +1,29 @@
+// Exports serving evidence after inference and guardrail events are recorded.
+module serving_monitor
+
+import std.serve as serve
+import std.string as string
+
+public func mlai_export_monitoring(server: int, path: string) returns int {
+    let snapshot     = serve.server_monitoring_snapshot(server)
+    let distribution = serve.server_distribution_summary(server)
+    let drift        = serve.drift_check(distribution, distribution, 0)
+    let audit        = serve.server_audit_log(server)
+    let exported     = serve.export_monitoring(server, path, distribution, drift, audit)
+    if not string.contains(snapshot, "ml-ai-workbench-v1") {
+        return 1
+    }
+    if not string.contains(distribution, "distribution_summary.v1") {
+        return 2
+    }
+    if not string.contains(drift, "\"drifted\":false") {
+        return 3
+    }
+    if not string.contains(audit, "spectra.serve.audit.v1") {
+        return 4
+    }
+    if not string.contains(exported, path) {
+        return 5
+    }
+    return 0
+}

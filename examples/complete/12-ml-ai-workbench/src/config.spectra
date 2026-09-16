@@ -1,0 +1,36 @@
+// Deterministic local configuration for the ML/AI workbench.
+module config
+
+import std.env as env
+import std.option as option
+
+const MODE_KEY = "SPECTRA_ML_AI_WORKBENCH_MODE"
+
+public record MlAiConfig {
+    public name: string,
+    public workspace: string,
+    public seed: int,
+    public mode: string,
+}
+
+public func mlai_load_config() returns MlAiConfig {
+    if env.env_set(MODE_KEY, "integration") != true {
+        return MlAiConfig {
+            name: "Spectra ML AI Workbench",
+            workspace: "target/complete-ml-ai-workbench",
+            seed: 20260916,
+            mode: "fallback",
+        }
+    }
+    let configured = env.env_get_option(MODE_KEY)
+    let mode       = "fallback"
+    if option.is_some(configured) {
+        mode = option.option_unwrap(configured)
+    }
+    return MlAiConfig {
+        name: "Spectra ML AI Workbench",
+        workspace: "target/complete-ml-ai-workbench",
+        seed: 20260916,
+        mode: mode,
+    }
+}

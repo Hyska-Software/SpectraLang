@@ -1,0 +1,27 @@
+module verification_clock
+
+import std.env as env
+import std.option as option
+import std.random as random
+import std.time as time
+
+const KEY = "SPECTRALANG_MULTIFILE_TEST_03"
+
+public func check() returns int {
+    env.env_set(KEY, "ok")
+    let value = env.env_get_option(KEY)
+    if option.is_none(value) or option.option_unwrap(value) != "ok" {
+        return 1
+    }
+    random.random_seed(30303)
+    let first = random.random_int(10, 20)
+    random.random_seed(30303)
+    if random.random_int(10, 20) != first {
+        return 2
+    }
+    let leap = time.unix_to_utc(1582934400)
+    if time.utc_year(leap) != 2020 or time.utc_month(leap) != 2 or time.utc_day(leap) != 29 {
+        return 3
+    }
+    return 0
+}

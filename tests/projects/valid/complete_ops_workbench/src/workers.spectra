@@ -1,0 +1,38 @@
+module workers
+
+import std.concurrent as concurrent
+
+func ops_partition_sum(low: int, high: int) returns int {
+    let total = 0
+    let value = low
+    while value <= high {
+        total = total + value
+        value = value + 1
+    }
+    return total
+}
+
+public func ops_parallel_checksum() returns int {
+    concurrent.reset()
+    let first  = concurrent.task_spawn_fn( | start: int | ops_partition_sum(start, start + 9), 1)
+    let second = concurrent.task_spawn_fn( | start: int | ops_partition_sum(start, start + 9), 11)
+    let left   = concurrent.task_join(first)
+    let right  = concurrent.task_join(second)
+    if concurrent.stats_tasks_spawned() != 2 {
+        concurrent.reset()
+        return-1
+    }
+    let counter = concurrent.counter_new(0)
+    concurrent.counter_add(counter, left)
+    concurrent.counter_add(counter, right)
+    let channel = concurrent.channel_new()
+    if not concurrent.channel_send(channel, left) or not concurrent.channel_send(channel, right) {
+        concurrent.reset()
+        return-1
+    }
+    let mirrored = concurrent.channel_recv(channel) + concurrent.channel_recv(channel)
+    let checksum = concurrent.counter_get(counter) + mirrored
+    concurrent.channel_close(channel)
+    concurrent.reset()
+    return checksum
+}

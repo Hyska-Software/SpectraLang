@@ -339,6 +339,16 @@ impl ASTLowering {
                     return descriptor.return_type.clone();
                 }
 
+                if let Some(function_name) =
+                    self.imported_user_function_name(object, method_name)
+                {
+                    return self
+                        .function_return_types
+                        .get(&function_name)
+                        .cloned()
+                        .unwrap_or(IRType::Unknown);
+                }
+
                 if let IRType::DynTrait { trait_name, .. } = self.infer_expr_ir_type(object) {
                     if let Some((_, return_type)) = self
                         .trait_method_signatures

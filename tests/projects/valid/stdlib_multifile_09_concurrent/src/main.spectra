@@ -1,0 +1,12 @@
+module main
+
+import std.io as io
+import verification_tasks
+
+public func main() returns int {
+    if verification_tasks.check() != 0 {
+        return 1
+    }
+    io.println("verification concurrent -> ok")
+    return 0
+}

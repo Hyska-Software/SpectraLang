@@ -1,0 +1,37 @@
+module verification_dataset
+
+import std.fs as fs
+import std.ml as ml
+import std.result as result
+import std.tensor as tensor
+
+const ROOT = "target/stdlib-multifile-verification/05-data"
+const CSV = ROOT + "/rows.csv"
+
+public func cleanup() returns int {
+    fs.fs_remove(CSV)
+    fs.remove_dir(ROOT)
+    fs.remove_dir("target/stdlib-multifile-verification")
+    return 0
+}
+
+public func check() returns int {
+    cleanup()
+    if result.is_err(fs.create_dir_all(ROOT)) or result.is_err(fs.fs_write(CSV, "a,b,label\n1.0,2.0,0.0\n2.0,3.0,1.0\n")) {
+        return 1
+    }
+    let dataset = ml.dataset_from_csv(CSV, 2, 1)
+    if ml.dataset_len(dataset) != 2 {
+        return 2
+    }
+    let loader = ml.dataloader_new(dataset, 1, 505)
+    if ml.dataloader_batch_count(loader) != 2 or tensor.len(ml.dataloader_batch_labels(loader, 1)) != 1 {
+        return 3
+    }
+    let frame = ml.dataframe_from_csv(CSV, 1)
+    if ml.dataframe_rows(frame) != 2 or ml.dataframe_cols(frame) != 3 {
+        return 4
+    }
+    tensor.free_all()
+    return 0
+}

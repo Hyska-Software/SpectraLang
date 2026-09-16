@@ -1,0 +1,8 @@
+// Feature transforms remain dataset handles so later stages consume real data.
+module feature_engineering
+
+import std.ml as ml
+
+public func mlai_prepare_dataset(dataset: int) returns int {
+    return ml.dataset_map_features(dataset, 1.0, 0.0)
+}

@@ -1,0 +1,19 @@
+module calendar_tools
+
+import std.time as time
+
+public func verify_calendar() returns int {
+    let epoch = time.unix_to_utc(0)
+    if time.utc_year(epoch) != 1970 or time.utc_month(epoch) != 1 or time.utc_day(epoch) != 1 {
+        return 1
+    }
+    let leap = time.unix_to_utc(1582934400)
+    if time.utc_year(leap) != 2020 or time.utc_month(leap) != 2 or time.utc_day(leap) != 29 {
+        return 2
+    }
+    let duration = time.duration_add(time.duration_ms(500), time.duration_secs(2))
+    if time.duration_millis(duration) != 2500 or time.duration_secs_value(duration) != 2 {
+        return 3
+    }
+    return 0
+}

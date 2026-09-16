@@ -1,0 +1,42 @@
+// CSV event ingestion. The accepted shape is id,owner,severity,score.
+module ingest
+
+import std.collections as collections
+import std.convert as convert
+import std.option as option
+import std.string as string
+
+func ops_event_field(line: string, index: int) returns string {
+    let parts = string.split_by(line, ",")
+    let value = ""
+    let found = collections.list_get(parts, index)
+    if option.is_some(found) {
+        value = option.option_unwrap(found)
+    }
+    collections.list_free(parts)
+    return value
+}
+
+public func ops_event_score(line: string) returns int {
+    let parts = string.split_by(line, ",")
+    if collections.list_len(parts) != 4 {
+        collections.list_free(parts)
+        return-1
+    }
+    let found = collections.list_get(parts, 3)
+    if option.is_none(found) {
+        collections.list_free(parts)
+        return-1
+    }
+    let score = convert.string_to_int(option.option_unwrap(found))
+    collections.list_free(parts)
+    return score
+}
+
+public func ops_event_owner(line: string) returns string {
+    return ops_event_field(line, 1)
+}
+
+public func ops_event_severity(line: string) returns int {
+    return convert.string_to_int(ops_event_field(line, 2))
+}

@@ -1,0 +1,29 @@
+module reporting
+
+import std.convert as convert
+import std.string as string
+
+public func ops_render_report(
+    name: string,
+    valid: int,
+    average: int,
+    plan: int,
+    parallel: int,
+    quality: int,
+    schedule: string
+) returns string {
+    let report = string.builder_new(14)
+    string.builder_push(report, "Spectra Ops Workbench\n")
+    string.builder_push(report, string.concat("name=", name))
+    string.builder_push(report, string.concat("\nevents.valid=", convert.int_to_string(valid)))
+    string.builder_push(report, string.concat("\nevents.average=", convert.int_to_string(average)))
+    string.builder_push(report, string.concat("\nplan.checksum=", convert.int_to_string(plan)))
+    string.builder_push(
+        report,
+        string.concat("\nworkers.checksum=", convert.int_to_string(parallel)),
+    )
+    string.builder_push(report, string.concat("\nquality.gates=", convert.int_to_string(quality)))
+    string.builder_push(report, string.concat("\nschedule=", schedule))
+    string.builder_push(report, "\nstatus=validated\n")
+    return string.builder_finish(report)
+}

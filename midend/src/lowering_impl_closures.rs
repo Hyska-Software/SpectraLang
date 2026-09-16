@@ -93,7 +93,10 @@ impl ASTLowering {
                 }
             })
             .collect();
-        let wrapper_name = format!("__function_value_{}_{}", label, self.lambda_counter);
+        let wrapper_name = format!(
+            "__function_value_{}_{}_{}",
+            self.lambda_prefix, label, self.lambda_counter
+        );
         self.lambda_counter = self.lambda_counter.saturating_add(1);
 
         let mut params = Vec::with_capacity(public_params.len() + 1);

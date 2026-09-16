@@ -1,0 +1,19 @@
+module verification_tensor
+
+import std.tensor as tensor
+
+public func check() returns int {
+    tensor.free_all()
+    let matrix = tensor.full2_f(2, 2, 3.0)
+    let other = tensor.full2_f(2, 2, 1.0)
+    let added = tensor.add(matrix, other)
+    if tensor.rows(added) != 2 or tensor.cols(added) != 2 or tensor.get2_f(added, 1, 1) != 4.0 {
+        return 1
+    }
+    let stacked = tensor.stack(matrix, other)
+    if tensor.rank(stacked) != 3 or tensor.dim(stacked, 0) != 2 {
+        return 2
+    }
+    tensor.free_all()
+    return 0
+}

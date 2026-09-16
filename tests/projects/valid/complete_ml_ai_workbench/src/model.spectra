@@ -1,0 +1,45 @@
+// Independent checkpoint round-trip for the fixture project.
+module model
+
+import std.ml as ml
+import std.tensor as tensor
+import paths
+
+public func mlai_train_checkpoint(root: string, dataset: int) returns int {
+    let train    = ml.dataset_train_split(dataset, 3)
+    let loader   = ml.dataloader_new(train, 3, 20260916)
+    let features = tensor.reshape(ml.dataloader_batch_features(loader, 0), 3, 2)
+    let labels   = tensor.reshape(ml.dataloader_batch_labels(loader, 0), 3, 1)
+    tensor.set_grad_enabled( true)
+    let weights = tensor.requires_grad(tensor.reshape(tensor.full_f(2, 0.0), 2, 1), true)
+    let bias    = tensor.requires_grad(tensor.full_f(1, 0.0), true)
+    let loss    = ml.mse_loss(ml.linear(features, weights, bias), labels)
+    tensor.backward(loss)
+    ml.sgd_step(weights, 0.01)
+    ml.sgd_step(bias, 0.01)
+    let artifact = ml.artifact_new("fixture", "v1", "checkpoint")
+    if artifact == 0 or not ml.artifact_add_tensor(artifact, "weights", weights) or not ml.artifact_add_tensor(artifact, "bias", bias) {
+        tensor.free_all()
+        return 1
+    }
+    if not ml.artifact_save(artifact, paths.mlai_checkpoint_path(root)) or not ml.artifact_validate(paths.mlai_checkpoint_path(root)) {
+        ml.artifact_free(artifact)
+        tensor.free_all()
+        return 2
+    }
+    let loaded         = ml.artifact_load(paths.mlai_checkpoint_path(root))
+    let loaded_weights = ml.artifact_tensor(loaded, "weights")
+    let loaded_bias    = ml.artifact_tensor(loaded, "bias")
+    let ok             = loaded !=
+        0 and loaded_weights !=
+        0 and loaded_bias !=
+        0 and tensor.len(loaded_bias) ==
+        1
+    ml.artifact_free(loaded)
+    ml.artifact_free(artifact)
+    tensor.free_all()
+    if not ok {
+        return 3
+    }
+    return 0
+}

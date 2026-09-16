@@ -1,0 +1,22 @@
+// Verifies that the persisted experiment manifest can reproduce its own identity.
+module reproducibility
+
+import std.fs as fs
+import std.ml as ml
+import std.result as result
+import std.string as string
+
+public func mlai_verify_manifest(manifest: string) returns int {
+    let loaded = fs.fs_read(manifest)
+    if result.is_err(loaded) {
+        return 1
+    }
+    let text = result.result_unwrap(loaded)
+    if not string.contains(text, "spectra.ml.experiment.v1") {
+        return 2
+    }
+    if ml.experiment_compare_manifests(manifest, manifest) != 1 {
+        return 3
+    }
+    return 0
+}

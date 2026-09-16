@@ -1,0 +1,47 @@
+// Registers the checkpoint as a real named serving model and a scalar gateway model.
+module serving_registry
+
+import std.ml as ml
+import std.serve as serve
+import std.tensor as tensor
+
+public func mlai_register_checkpoint(path: string) returns int {
+    serve.reset()
+    let server   = serve.server_new(12)
+    let artifact = ml.artifact_load(path)
+    if artifact == 0 {
+        return 0
+    }
+    let weights = ml.artifact_tensor(artifact, "weights")
+    let bias    = ml.artifact_tensor(artifact, "bias")
+    if weights == 0 or bias == 0 {
+        ml.artifact_free(artifact)
+        return 0
+    }
+    // std.ml.linear stores [in_features, out_features]; ServeReal consumes [out, in].
+    let serving_weights = tensor.reshape(weights, 1, 2)
+    if serve.server_register_named_model_linear(server, "workbench", serving_weights, bias, 0) != 1 {
+        ml.artifact_free(artifact)
+        return 0
+    }
+
+    // The scalar default is only the queue gateway used to exercise policies.
+    let gateway_weights = tensor.full2_f(1, 1, 1.0)
+    let gateway_bias    = tensor.full_f(1, 0.0)
+    if serve.server_register_model_linear(server, gateway_weights, gateway_bias, 0) != 1 {
+        ml.artifact_free(artifact)
+        return 0
+    }
+    if not serve.server_set_model_version(server, "ml-ai-workbench-v1") or not serve.server_warmup(server) {
+        ml.artifact_free(artifact)
+        return 0
+    }
+
+    let request = serve.server_infer(server, "workbench", tensor.vector_f(2, 1.0))
+    let result  = serve.server_result_vector(server, request)
+    ml.artifact_free(artifact)
+    if tensor.len(result) != 1 {
+        return 0
+    }
+    return server
+}

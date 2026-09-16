@@ -1,6 +1,6 @@
 # Spectra complete example projects
 
-10 complete, self-validating `.spectra` projects. Each prints an `ok` line
+12 complete, self-validating `.spectra` projects. Each prints an `ok` line
 and exits `0`; any broken invariant exits with a distinct non-zero code.
 
 Run any project (from the repo root):
@@ -19,6 +19,8 @@ spectralang run examples/complete/<project>
 | 04 | `04-site-generator` | Markdown subset to HTML for 3 pages plus index (`SITE ok pages=3`) |
 | 05 | `05-lru-cache` | Capacity-3 LRU over `std.collections` map + recency array (`LRU ok hits=1 evicts=2`) |
 | 06 | `06-fanout-pipeline` | 4 spawned workers summing 1..1000 (`PIPELINE ok total=500500 mode=spawn`) |
+| 11 | `11-ops-workbench` | Full operations workbench: CSV ingestion, JSON domain roundtrip, collection planning, concurrent workers, tensor/ML quality gates, checkpoint artifact, filesystem report and deterministic scheduling (`OPS WORKBENCH ok events=6`) |
+| 12 | `12-ml-ai-workbench` | End-to-end local ML/AI lifecycle: CSV/JSONL ingestion, autodiff training, checkpoint reload, tokenizer/RAG retrieval, guarded serving, monitoring, experiment manifest, report, and cleanup (`ML AI WORKBENCH ok`) |
 
 ## Performance comparisons (Spectra vs Go vs Rust)
 

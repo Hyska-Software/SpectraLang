@@ -1,0 +1,37 @@
+// Renders and reads back the standard evaluation report and its human view.
+module report_render
+
+import std.fs as fs
+import std.ml as ml
+import std.result as result
+import std.string as string
+import report_metrics
+
+public func mlai_render_report(path: string) returns string {
+    let classification = report_metrics.mlai_classification_metrics()
+    let regression     = report_metrics.mlai_regression_metrics()
+    let ranking        = report_metrics.mlai_ranking_metrics()
+    let generation     = report_metrics.mlai_generation_metrics()
+    let serving        = report_metrics.mlai_serving_metrics()
+    let written = ml.evaluation_report(
+        path,
+        "ml-ai-workbench",
+        classification,
+        regression,
+        ranking,
+        generation,
+        serving,
+    )
+    if written != path {
+        return ""
+    }
+    let loaded = fs.fs_read(path)
+    if result.is_err(loaded) or not string.contains(result.result_unwrap(loaded), "spectra.ml.evaluation_report.v1") {
+        return ""
+    }
+    let human = fs.fs_read(path + ".txt")
+    if result.is_err(human) or not string.contains(result.result_unwrap(human), "ml-ai-workbench") {
+        return ""
+    }
+    return written
+}

@@ -1,0 +1,22 @@
+// Secondary readers verify JSONL, directory, and dataframe interoperability.
+module jsonl_ingest
+
+import std.ml as ml
+import std.tensor as tensor
+
+public func mlai_verify_secondary_readers(root: string) returns int {
+    let jsonl     = ml.dataset_from_jsonl(root + "/rows.jsonl")
+    let directory = ml.dataset_from_directory(root + "/directory")
+    let frame     = ml.dataframe_from_csv(root + "/tabular.csv", 1)
+    let column    = ml.dataframe_column(frame, 1)
+    if ml.dataset_len(jsonl) != 2 or ml.dataset_len(directory) != 3 {
+        return 1
+    }
+    if ml.dataframe_rows(frame) != 4 or ml.dataframe_cols(frame) != 3 {
+        return 2
+    }
+    if tensor.sum_f(column) != 14.0 {
+        return 3
+    }
+    return 0
+}

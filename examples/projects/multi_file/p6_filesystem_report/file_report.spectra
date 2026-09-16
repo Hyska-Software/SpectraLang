@@ -1,0 +1,64 @@
+module file_report
+
+import std.collections as collections
+import std.error as error
+import std.fs as fs
+import std.result as result
+import file_paths
+
+public func cleanup() returns int {
+    fs.fs_remove(file_paths.source_path())
+    fs.fs_remove(file_paths.renamed_path())
+    fs.remove_dir(file_paths.root_path())
+    fs.remove_dir("target/stdlib-multifile")
+    return 0
+}
+
+public func write_report() returns int {
+    cleanup()
+    if result.is_err(fs.create_dir_all(file_paths.root_path())) {
+        return 1
+    }
+    if result.is_err(fs.fs_write(file_paths.source_path(), "first")) {
+        return 2
+    }
+    let appended = fs.fs_append(file_paths.source_path(), "\nsecond")
+    if result.is_err(appended) or result.result_unwrap(appended) != true {
+        return 3
+    }
+    let copied = fs.copy(file_paths.source_path(), file_paths.copied_path())
+    if result.is_err(copied) or result.result_unwrap(copied) != 12 {
+        return 4
+    }
+    let entries = fs.read_dir(file_paths.root_path())
+    if result.is_err(entries) {
+        return 5
+    }
+    let listing = result.result_unwrap(entries)
+    let count = collections.list_len(listing)
+    collections.list_free(listing)
+    if count != 2 {
+        return 6
+    }
+    if result.is_err(fs.rename(file_paths.copied_path(), file_paths.renamed_path())) {
+        return 7
+    }
+    let loaded = fs.fs_read(file_paths.renamed_path())
+    if result.is_err(loaded) or result.result_unwrap(loaded) != "first\nsecond" {
+        return 8
+    }
+    return 12
+}
+
+public func verify_missing_error() returns int {
+    let missing = fs.fs_read(file_paths.root_path() + "/missing.txt")
+    if result.is_ok(missing) {
+        return 0
+    }
+    if let Result::Err(problem) = missing {
+        if error.code(problem) == 1 and error.operation(problem) == "fs_read" {
+            return 1
+        }
+    }
+    return 0
+}

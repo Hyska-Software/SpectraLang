@@ -1,0 +1,13 @@
+module main
+
+import std.io as io
+import metrics_ops
+
+public func main() returns int {
+    if metrics_ops.write_report() != 0 {
+        return 1
+    }
+    metrics_ops.cleanup()
+    io.println("multi-file ML metrics -> classification ranking serving report")
+    return 0
+}

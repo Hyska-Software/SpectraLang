@@ -1,0 +1,17 @@
+module paths
+
+public func mlai_csv_path(root: string) returns string {
+    return root + "/tabular.csv"
+}
+
+public func mlai_checkpoint_path(root: string) returns string {
+    return root + "/model/weights.spar"
+}
+
+public func mlai_index_path(root: string) returns string {
+    return root + "/rag/index.spar"
+}
+
+public func mlai_report_path(root: string) returns string {
+    return root + "/report.json"
+}

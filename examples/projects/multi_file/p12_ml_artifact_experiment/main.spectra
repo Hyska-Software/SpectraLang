@@ -1,0 +1,16 @@
+module main
+
+import std.io as io
+import artifact_ops
+import experiment_ops
+import paths
+
+public func main() returns int {
+    if artifact_ops.verify_artifact() != 0 or experiment_ops.verify_experiment() != 0 {
+        paths.cleanup_all()
+        return 1
+    }
+    paths.cleanup_all()
+    io.println("multi-file ML artifact -> experiment reproducibility")
+    return 0
+}

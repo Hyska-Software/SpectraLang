@@ -23,6 +23,18 @@ impl ASTLowering {
     pub fn lower_module(&mut self, ast_module: &ASTModule) -> Result<IRModule, Vec<MidendError>> {
         let mut ir_module = IRModule::new(&ast_module.name);
         ir_module.source_file = Some(self.source_file.clone());
+        self.lambda_prefix = ast_module
+            .name
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || ch == '_' {
+                    ch
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        self.lambda_counter = 0;
 
         // Populate stdlib alias map for unqualified call resolution.
         self.std_import_aliases = ast_module.std_import_aliases.iter().cloned().collect();

@@ -1,0 +1,33 @@
+module storage
+
+import std.fs as fs
+import std.result as result
+import std.string as string
+
+public func ops_persist_and_validate(path: string, report: string) returns bool {
+    let separator = string.repeat_str("-", 8)
+    let root      = "target/complete-ops-workbench-fixture"
+    if result.is_err(fs.create_dir_all(root)) {
+        return false
+    }
+    if result.is_err(fs.fs_write(path, report)) {
+        return false
+    }
+    let appended = fs.fs_append(path, separator)
+    if result.is_err(appended) or result.result_unwrap(appended) != true {
+        return false
+    }
+    let loaded = fs.fs_read(path)
+    if result.is_err(loaded) {
+        return false
+    }
+    let content = result.result_unwrap(loaded)
+    return string.contains(content, report) and string.ends_with(content, separator)
+}
+
+public func ops_cleanup(path: string, workspace: string) returns int {
+    fs.fs_remove(path)
+    fs.remove_dir(workspace + "/model")
+    fs.remove_dir(workspace)
+    return 0
+}

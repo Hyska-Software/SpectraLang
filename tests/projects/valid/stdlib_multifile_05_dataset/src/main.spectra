@@ -1,0 +1,13 @@
+module main
+
+import std.io as io
+import verification_dataset
+
+public func main() returns int {
+    if verification_dataset.check() != 0 {
+        return 1
+    }
+    verification_dataset.cleanup()
+    io.println("verification dataset -> ok")
+    return 0
+}

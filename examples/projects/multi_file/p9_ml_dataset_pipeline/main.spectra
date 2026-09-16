@@ -1,0 +1,13 @@
+module main
+
+import std.io as io
+import dataset_ops
+
+public func main() returns int {
+    if dataset_ops.verify_files() != 0 {
+        return 1
+    }
+    dataset_ops.cleanup()
+    io.println("multi-file ML dataset -> CSV JSONL directory dataframe")
+    return 0
+}

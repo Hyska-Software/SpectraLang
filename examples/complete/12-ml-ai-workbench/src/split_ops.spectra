@@ -1,0 +1,12 @@
+// Deterministic train/test split handles.
+module split_ops
+
+import std.ml as ml
+
+public func mlai_train_dataset(dataset: int) returns int {
+    return ml.dataset_train_split(dataset, 3)
+}
+
+public func mlai_test_dataset(dataset: int) returns int {
+    return ml.dataset_test_split(dataset, 3)
+}

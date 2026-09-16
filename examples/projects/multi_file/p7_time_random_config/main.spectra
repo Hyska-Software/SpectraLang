@@ -1,0 +1,12 @@
+module main
+
+import std.io as io
+import config_clock
+
+public func main() returns int {
+    if config_clock.verify() != 0 {
+        return 1
+    }
+    io.println("multi-file time random -> environment option and UTC")
+    return 0
+}

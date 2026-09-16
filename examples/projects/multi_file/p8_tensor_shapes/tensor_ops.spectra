@@ -1,0 +1,21 @@
+module tensor_ops
+
+import std.tensor as tensor
+import tensor_cleanup
+import tensor_math
+import tensor_views
+
+public func verify() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled(false)
+    if tensor_math.verify_elementwise() != 0 {
+        tensor_cleanup.reset()
+        return 1
+    }
+    if tensor_views.verify_views() != 0 {
+        tensor_cleanup.reset()
+        return 2
+    }
+    tensor_cleanup.reset()
+    return 0
+}

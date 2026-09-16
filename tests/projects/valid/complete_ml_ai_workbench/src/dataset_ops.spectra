@@ -1,0 +1,15 @@
+module dataset_ops
+
+import std.ml as ml
+
+public func mlai_verify_dataset(dataset: int) returns int {
+    if ml.dataset_len(dataset) != 4 {
+        return 1
+    }
+    let mapped   = ml.dataset_map_features(dataset, 2.0, 1.0)
+    let filtered = ml.dataset_filter_label_min(dataset, 1.0)
+    if ml.dataset_len(mapped) != 4 or ml.dataset_len(filtered) != 2 {
+        return 2
+    }
+    return 0
+}

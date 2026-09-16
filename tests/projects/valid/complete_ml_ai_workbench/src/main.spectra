@@ -1,0 +1,8 @@
+module fixture_main
+
+import app
+
+public func main() returns int {
+    let result = app.mlai_fixture_run()
+    return result
+}

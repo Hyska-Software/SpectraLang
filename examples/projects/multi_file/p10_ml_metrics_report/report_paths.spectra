@@ -1,0 +1,15 @@
+module report_paths
+
+import std.fs as fs
+
+public func report_path() returns string {
+    return "target/stdlib-multifile/p10-metrics/report.json"
+}
+
+public func cleanup_report() returns int {
+    fs.fs_remove(report_path())
+    fs.fs_remove(report_path() + ".txt")
+    fs.remove_dir("target/stdlib-multifile/p10-metrics")
+    fs.remove_dir("target/stdlib-multifile")
+    return 0
+}

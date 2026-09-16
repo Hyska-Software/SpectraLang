@@ -1,0 +1,13 @@
+// Prompt assembly stays explicit so the report can inspect the final context.
+module rag_prompt
+
+import std.ml as ml
+import std.string as string
+
+public func mlai_build_prompt(chunks: string, question: string) returns string {
+    let prompt = ml.rag_build_prompt(chunks, question)
+    if not string.contains(prompt, "Context:") or not string.contains(prompt, "Question:") {
+        return ""
+    }
+    return prompt
+}

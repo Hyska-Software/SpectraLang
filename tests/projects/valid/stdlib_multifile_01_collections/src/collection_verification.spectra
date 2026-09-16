@@ -1,0 +1,26 @@
+module collection_verification
+
+from std.collections import Iterator, List, Map, Set
+import std.collections as collections
+import std.option as option
+
+public func sum_iterator(values: Iterator<int>) returns int {
+    let total = 0
+    for value in values {
+        total = total + value
+    }
+    collections.iterator_free(values)
+    return total
+}
+
+public func sum_list(values: List<int>) returns int {
+    return sum_iterator(collections.list_iter(values))
+}
+
+public func lookup_score(scores: Map<string, int>, key: string) returns int {
+    return option.option_unwrap_or(collections.map_get_option(scores, key), -1)
+}
+
+public func sum_set(values: Set<int>) returns int {
+    return sum_iterator(collections.set_iter(values))
+}

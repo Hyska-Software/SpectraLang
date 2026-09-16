@@ -1,0 +1,183 @@
+// First vertical slice: local data -> public ML readers -> observable marker.
+module app
+
+import std.convert as convert
+import std.io as io
+import std.serve as serve
+import std.string as string
+import std.tensor as tensor
+import batch_ops
+import checkpoint
+import cleanup
+import concurrency
+import config
+import csv_ingest
+import dataset_ops
+import experiment
+import feature_engineering
+import jsonl_ingest
+import model_eval
+import model_init
+import model_train
+import paths
+import rag_chunks
+import rag_eval
+import rag_index
+import rag_prompt
+import report_metrics
+import report_render
+import reproducibility
+import run_context
+import schema
+import seed_data
+import serving_guardrails
+import serving_monitor
+import serving_registry
+import split_ops
+import tokenizer
+import validation
+
+public func mlai_run() returns int {
+    let settings = config.mlai_load_config()
+    if settings.mode != "integration" or settings.seed != 20260916 {
+        return 1
+    }
+    cleanup.mlai_remove_workspace(settings.workspace)
+    if seed_data.mlai_seed_workspace(settings.workspace) != 0 {
+        return 2
+    }
+    if run_context.mlai_prepare_run(settings.workspace, settings.seed) != 0 {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        return 3
+    }
+    let dataset = csv_ingest.mlai_load_csv_dataset(paths.mlai_csv_path(settings.workspace))
+    if dataset_ops.mlai_verify_dataset(dataset) != 0 {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        return 4
+    }
+    if jsonl_ingest.mlai_verify_secondary_readers(settings.workspace) != 0 {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        return 5
+    }
+    let prepared = feature_engineering.mlai_prepare_dataset(dataset)
+    let train    = split_ops.mlai_train_dataset(prepared)
+    let test     = split_ops.mlai_test_dataset(prepared)
+    if batch_ops.mlai_batch_count(train) != 1 or batch_ops.mlai_batch_count(test) != 1 {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        return 6
+    }
+    let train_features = batch_ops.mlai_batch_features(train, 3)
+    let train_labels   = batch_ops.mlai_batch_labels(train, 3)
+    let test_features  = batch_ops.mlai_batch_features(test, 1)
+    let test_labels    = batch_ops.mlai_batch_labels(test, 1)
+    let weights        = model_init.mlai_new_weights()
+    let bias           = model_init.mlai_new_bias()
+    let trained = model_train.mlai_train_steps(
+        train_features,
+        train_labels,
+        weights,
+        bias,
+        model_init.mlai_new_weight_moment(),
+        model_init.mlai_new_weight_moment(),
+        model_init.mlai_new_bias_moment(),
+        model_init.mlai_new_bias_moment(),
+        8
+    )
+    if trained != 8 or not checkpoint.mlai_save_checkpoint(settings.workspace, weights, bias) {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        return 7
+    }
+    let evaluation = model_eval.mlai_evaluate_checkpoint(
+        paths.mlai_checkpoint_path(settings.workspace),
+        test_features,
+        test_labels
+    )
+    if not string.contains(evaluation, "\"mse\"") {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        return 8
+    }
+    let corpus      = "spectra language spectra runtime runtime library library retrieval retrieval"
+    let context     = "Retrieval uses indexed chunks for grounded answers."
+    let token_count = tokenizer.mlai_tokenizer_score(corpus)
+    let chunks      = rag_chunks.mlai_chunk_context(context)
+    let index = rag_index.mlai_build_vector_index(
+        chunks,
+        paths.mlai_vector_index_path(settings.workspace),
+    )
+    let retrieved = rag_index.mlai_query_vector_index(index)
+    let prompt    = rag_prompt.mlai_build_prompt(chunks, "What does retrieval use?")
+    let rag_score = rag_eval.mlai_evaluate_answer(prompt)
+    if token_count <= 0 or index == 0 or string.is_empty(retrieved) or rag_score < 700 or schema.mlai_validate_stage_schemas(evaluation, chunks, prompt) != 0 {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        return 9
+    }
+
+    let server = serving_registry.mlai_register_checkpoint(paths.mlai_checkpoint_path(settings.workspace))
+    if server == 0 or serving_guardrails.mlai_check_guardrails(server) != 0 {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        serve.reset()
+        tensor.free_all()
+        return 10
+    }
+    if serving_monitor.mlai_export_monitoring(server, paths.mlai_monitoring_path(settings.workspace)) != 0 {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        serve.reset()
+        tensor.free_all()
+        return 11
+    }
+    if report_metrics.mlai_classification_metrics() == "" or report_metrics.mlai_regression_metrics() == "" {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        serve.reset()
+        tensor.free_all()
+        return 12
+    }
+    let report = report_render.mlai_render_report(paths.mlai_report_path(settings.workspace))
+    if string.is_empty(report) {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        serve.reset()
+        tensor.free_all()
+        return 13
+    }
+    let manifest = experiment.mlai_record_experiment(
+        settings.workspace,
+        paths.mlai_checkpoint_path(settings.workspace),
+        paths.mlai_monitoring_path(settings.workspace),
+        report
+    )
+    if string.is_empty(manifest) or reproducibility.mlai_verify_manifest(manifest) != 0 {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        serve.reset()
+        tensor.free_all()
+        return 14
+    }
+    let parallel_score = concurrency.mlai_parallel_validation()
+    if parallel_score != 50 {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        serve.reset()
+        tensor.free_all()
+        return 15
+    }
+    if validation.mlai_validate_outputs(
+        paths.mlai_checkpoint_path(settings.workspace),
+        paths.mlai_vector_index_path(settings.workspace),
+        paths.mlai_monitoring_path(settings.workspace),
+        manifest,
+        report
+    ) != 0 {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        serve.reset()
+        tensor.free_all()
+        return 16
+    }
+    let rows = convert.int_to_string(4)
+    io.println("ML AI TRACE data rows=" + rows + " trained_steps=" + convert.int_to_string(trained))
+    io.println("ML AI TRACE evaluation=" + evaluation)
+    io.println("ML AI TRACE retrieval tokens=" + convert.int_to_string(token_count) + " score=" + convert.int_to_string(rag_score))
+    io.println("ML AI TRACE serving server=" + convert.int_to_string(server) + " parallel_score=" + convert.int_to_string(parallel_score))
+    io.println("ML AI TRACE artifacts checkpoint=valid report=valid experiment=valid")
+    io.println("ML AI WORKBENCH ok")
+    cleanup.mlai_remove_workspace(settings.workspace)
+    serve.reset()
+    tensor.free_all()
+    return 0
+}

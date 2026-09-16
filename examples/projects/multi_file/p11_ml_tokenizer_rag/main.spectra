@@ -1,0 +1,14 @@
+module main
+
+import std.io as io
+import metrics_ops
+import text_retrieval
+import token_ops
+
+public func main() returns int {
+    if text_retrieval.verify_text() != 0 or token_ops.verify_tokens() != 0 or metrics_ops.verify_metrics() != 0 {
+        return 1
+    }
+    io.println("multi-file ML tokenizer -> RAG prompt and evaluation")
+    return 0
+}

@@ -1,0 +1,26 @@
+// Final artifact and schema gate for the complete application run.
+module validation
+
+import std.fs as fs
+import std.ml as ml
+import std.result as result
+import std.string as string
+
+public func mlai_validate_outputs(checkpoint: string, index: string, monitoring: string, manifest: string, report: string) returns int {
+    if not ml.artifact_validate(checkpoint) or ml.vector_index_load(index) == 0 {
+        return 1
+    }
+    let monitoring_text = fs.fs_read(monitoring)
+    if result.is_err(monitoring_text) or not string.contains(result.result_unwrap(monitoring_text), "spectra.serve.monitoring_export.v1") {
+        return 2
+    }
+    let manifest_text = fs.fs_read(manifest)
+    if result.is_err(manifest_text) or not string.contains(result.result_unwrap(manifest_text), "spectra.ml.experiment.v1") {
+        return 3
+    }
+    let report_text = fs.fs_read(report)
+    if result.is_err(report_text) or not string.contains(result.result_unwrap(report_text), "spectra.ml.evaluation_report.v1") {
+        return 4
+    }
+    return 0
+}

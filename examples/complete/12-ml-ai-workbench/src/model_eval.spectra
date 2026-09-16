@@ -1,0 +1,31 @@
+// Evaluation deliberately loads tensors back from the artifact container.
+module model_eval
+
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+import model_forward
+import model_loss
+
+public func mlai_evaluate_checkpoint(path: string, features: int, labels: int) returns string {
+    let loaded = ml.artifact_load(path)
+    if loaded == 0 {
+        return "checkpoint-load-error"
+    }
+    let weights = ml.artifact_tensor(loaded, "weights")
+    let bias    = ml.artifact_tensor(loaded, "bias")
+    if weights == 0 or bias == 0 {
+        ml.artifact_free(loaded)
+        return "checkpoint-tensor-error"
+    }
+    let prediction = model_forward.mlai_forward_linear(features, weights, bias)
+    let loss       = model_loss.mlai_mse_loss(prediction, labels)
+    let metrics    = ml.metrics_regression(prediction, labels)
+    let loss_text  = string.contains(metrics, "\"mse\"")
+    let finite     = tensor.get_f(loss, 0) >= 0.0
+    ml.artifact_free(loaded)
+    if not loss_text or not finite {
+        return "evaluation-invalid"
+    }
+    return metrics
+}

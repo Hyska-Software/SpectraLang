@@ -1,0 +1,28 @@
+module token_ops
+
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+
+public func verify_tokens() returns int {
+    tensor.free_all()
+    let vocabulary = "[UNK]:0\nhello:1\nworld:2\n##s:3"
+    let tokenizer = ml.tokenizer_wordpiece(vocabulary)
+    let encoded = ml.tokenizer_encode(tokenizer, "hello world")
+    if tensor.len(encoded) != 2 {
+        return 1
+    }
+    if ml.tokenizer_decode(tokenizer, encoded) != "hello world" {
+        return 2
+    }
+    let unknown = ml.tokenizer_encode(tokenizer, "missing")
+    if tensor.len(unknown) != 1 or ml.tokenizer_decode(tokenizer, unknown) != "[UNK]" {
+        return 3
+    }
+    let rendered = ml.tokenizer_vocab(tokenizer)
+    if not string.contains(rendered, "hello:1") or not string.contains(rendered, "##s:3") {
+        return 4
+    }
+    tensor.free_all()
+    return 0
+}

@@ -1,0 +1,13 @@
+// RAG context is chunked by the standard library before indexing.
+module rag_chunks
+
+import std.ml as ml
+import std.string as string
+
+public func mlai_chunk_context(text: string) returns string {
+    let chunks = ml.rag_chunk_text(text, 24, 4)
+    if not string.contains(chunks, "spectra.ml.rag_chunks.v1") {
+        return ""
+    }
+    return chunks
+}

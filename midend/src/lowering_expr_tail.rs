@@ -145,7 +145,10 @@ impl ASTLowering {
                 body,
             } => {
                 // Lower as a top-level IR function with a generated unique name.
-                let lambda_name = format!("__lambda_{}", self.lambda_counter);
+                let lambda_name = format!(
+                    "__lambda_{}_{}",
+                    self.lambda_prefix, self.lambda_counter
+                );
                 self.lambda_counter += 1;
 
                 let captures = self.collect_lambda_captures(params, body);
@@ -242,7 +245,10 @@ impl ASTLowering {
                 // An async block is a lazy closure, not an eager body splice.
                 // Lowering it as a generated async function preserves captures
                 // and ensures no Await marker reaches the backend.
-                let lambda_name = format!("__async_block_{}", self.lambda_counter);
+                let lambda_name = format!(
+                    "__async_block_{}_{}",
+                    self.lambda_prefix, self.lambda_counter
+                );
                 self.lambda_counter += 1;
                 let body_expression = Expression {
                     span: expr.span,

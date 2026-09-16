@@ -1,0 +1,33 @@
+// Independent evaluation report round-trip for the fixture project.
+module report
+
+import std.fs as fs
+import std.ml as ml
+import std.result as result
+import std.string as string
+import std.tensor as tensor
+import paths
+
+public func mlai_write_report(root: string) returns int {
+    let labels         = tensor.arange(0, 4, 1)
+    let classification = ml.metrics_classification(labels, tensor.arange(0, 4, 1))
+    let regression     = ml.metrics_regression(tensor.full_f(4, 1.0), tensor.full_f(4, 1.0))
+    let ranking        = ml.metrics_ranking(labels, tensor.full_f(4, 1.0), 3)
+    let generation     = ml.metrics_generation("fixture retrieval", "retrieval")
+    let serving        = ml.serving_metrics(tensor.arange(10, 50, 10), 4, 0)
+    let report = ml.evaluation_report(
+        paths.mlai_report_path(root),
+        "fixture",
+        classification,
+        regression,
+        ranking,
+        generation,
+        serving,
+    )
+    let loaded = fs.fs_read(report)
+    tensor.free_all()
+    if result.is_err(loaded) or not string.contains(result.result_unwrap(loaded), "spectra.ml.evaluation_report.v1") {
+        return 1
+    }
+    return 0
+}

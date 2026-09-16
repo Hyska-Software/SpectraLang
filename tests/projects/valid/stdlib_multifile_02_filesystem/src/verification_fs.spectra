@@ -1,0 +1,40 @@
+module verification_fs
+
+import std.fs as fs
+import std.result as result
+
+const ROOT = "target/stdlib-multifile-verification/02-files"
+
+public func cleanup() returns int {
+    fs.fs_remove(ROOT + "/source.txt")
+    fs.fs_remove(ROOT + "/renamed.txt")
+    fs.remove_dir(ROOT)
+    fs.remove_dir("target/stdlib-multifile-verification")
+    return 0
+}
+
+public func round_trip() returns int {
+    cleanup()
+    if result.is_err(fs.create_dir_all(ROOT)) {
+        return 1
+    }
+    if result.is_err(fs.fs_write(ROOT + "/source.txt", "abc")) {
+        return 2
+    }
+    let copied = fs.copy(ROOT + "/source.txt", ROOT + "/copy.txt")
+    if result.is_err(copied) or result.result_unwrap(copied) != 3 {
+        return 3
+    }
+    if result.is_err(fs.rename(ROOT + "/copy.txt", ROOT + "/renamed.txt")) {
+        return 4
+    }
+    let loaded = fs.fs_read(ROOT + "/renamed.txt")
+    if result.is_err(loaded) or result.result_unwrap(loaded) != "abc" {
+        return 5
+    }
+    let missing = fs.fs_read(ROOT + "/missing.txt")
+    if result.is_ok(missing) {
+        return 6
+    }
+    return 7
+}

@@ -1,0 +1,38 @@
+// Real reverse-mode training over a dataloader batch and Adam state.
+module model_train
+
+import std.ml as ml
+import std.tensor as tensor
+import model_forward
+import model_loss
+
+public func mlai_train_steps(
+    features: int,
+    labels: int,
+    weights: int,
+    bias: int,
+    weight_first: int,
+    weight_second: int,
+    bias_first: int,
+    bias_second: int,
+    steps: int
+) returns int {
+    tensor.set_grad_enabled( true)
+    let step       = 0
+    let final_loss = 1000000.0
+    while step < steps {
+        tensor.zero_grad(weights)
+        tensor.zero_grad(bias)
+        let prediction = model_forward.mlai_forward_linear(features, weights, bias)
+        let loss       = model_loss.mlai_mse_loss(prediction, labels)
+        tensor.backward(loss)
+        ml.adam_step(weights, weight_first, weight_second, 0.05, 0.9, 0.999, 0.00000001, step + 1)
+        ml.adam_step(bias, bias_first, bias_second, 0.05, 0.9, 0.999, 0.00000001, step + 1)
+        final_loss = tensor.get_f(loss, 0)
+        step = step + 1
+    }
+    if final_loss >= 1000000.0 {
+        return-1
+    }
+    return step
+}

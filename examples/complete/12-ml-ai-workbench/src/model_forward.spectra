@@ -1,0 +1,8 @@
+// Differentiable dense forward pass owned by the application model boundary.
+module model_forward
+
+import std.ml as ml
+
+public func mlai_forward_linear(input: int, weights: int, bias: int) returns int {
+    return ml.linear(input, weights, bias)
+}

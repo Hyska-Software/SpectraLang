@@ -1,0 +1,9 @@
+module tensor_cleanup
+
+import std.tensor as tensor
+
+public func reset() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled(false)
+    return 0
+}

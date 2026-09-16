@@ -1,0 +1,8 @@
+// Entry point for the end-to-end ML/AI workbench.
+module main
+
+import app
+
+public func main() returns int {
+    return app.mlai_run()
+}

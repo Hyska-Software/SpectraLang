@@ -1,0 +1,19 @@
+module cleanup
+
+import std.fs as fs
+
+public func mlai_remove_workspace(root: string) returns int {
+    fs.fs_remove(root + "/tabular.csv")
+    fs.fs_remove(root + "/rows.jsonl")
+    fs.fs_remove(root + "/directory/features.csv")
+    fs.fs_remove(root + "/directory/labels.csv")
+    fs.fs_remove(root + "/model/weights.spar")
+    fs.fs_remove(root + "/rag/index.spar")
+    fs.fs_remove(root + "/report.json")
+    fs.fs_remove(root + "/report.json.txt")
+    fs.remove_dir(root + "/directory")
+    fs.remove_dir(root + "/model")
+    fs.remove_dir(root + "/rag")
+    fs.remove_dir(root)
+    return 0
+}

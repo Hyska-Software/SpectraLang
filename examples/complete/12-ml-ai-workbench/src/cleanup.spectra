@@ -1,0 +1,27 @@
+// Cleanup is intentionally idempotent so every stage can start cleanly.
+module cleanup
+
+import std.fs as fs
+
+public func mlai_remove_workspace(root: string) returns int {
+    fs.fs_remove(root + "/tabular.csv")
+    fs.fs_remove(root + "/rows.jsonl")
+    fs.fs_remove(root + "/directory/features.csv")
+    fs.fs_remove(root + "/directory/labels.csv")
+    fs.fs_remove(root + "/workbench-report.txt")
+    fs.fs_remove(root + "/workbench-report.txt.txt")
+    fs.fs_remove(root + "/model/weights.spar")
+    fs.fs_remove(root + "/rag/index.spar")
+    fs.fs_remove(root + "/experiment/experiment-manifest.json")
+    fs.fs_remove(root + "/monitoring/serving.json")
+    fs.fs_remove(root + "/run-context.txt")
+    fs.fs_remove(root + "/experiment.lock")
+    fs.fs_remove(root + "/experiment-note.txt")
+    fs.remove_dir(root + "/monitoring")
+    fs.remove_dir(root + "/directory")
+    fs.remove_dir(root + "/rag")
+    fs.remove_dir(root + "/model")
+    fs.remove_dir(root + "/experiment")
+    fs.remove_dir(root)
+    return 0
+}

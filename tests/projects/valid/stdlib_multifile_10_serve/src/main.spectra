@@ -1,0 +1,12 @@
+module main
+
+import std.io as io
+import verification_serve
+
+public func main() returns int {
+    if verification_serve.check() != 0 {
+        return 1
+    }
+    io.println("verification serve -> ok")
+    return 0
+}

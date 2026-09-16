@@ -1,0 +1,20 @@
+module verification_tasks
+
+import std.concurrent as concurrent
+
+public func check() returns int {
+    concurrent.reset()
+    let batch = concurrent.task_spawn_batch(3, 4)
+    if concurrent.task_join_batch_sum(batch) != 18 or concurrent.stats_tasks_spawned() != 4 {
+        return 1
+    }
+    let channel = concurrent.channel_new()
+    concurrent.channel_send(channel, 101)
+    concurrent.channel_send(channel, 202)
+    if concurrent.channel_recv(channel) != 101 or concurrent.channel_recv(channel) != 202 {
+        return 2
+    }
+    concurrent.channel_close(channel)
+    concurrent.reset()
+    return 0
+}

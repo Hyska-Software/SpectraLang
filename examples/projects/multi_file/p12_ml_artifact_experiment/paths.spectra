@@ -1,0 +1,25 @@
+module paths
+
+import cleanup
+
+public func artifact_path() returns string {
+    return "target/stdlib-multifile/p12-artifacts/weights.spar"
+}
+
+public func experiment_root() returns string {
+    return "target/stdlib-multifile/p12-experiments"
+}
+
+public func cleanup_all() returns int {
+    cleanup.remove_path(artifact_path())
+    cleanup.remove_path("target/stdlib-multifile/p12-artifacts")
+    cleanup.remove_path(experiment_root() + "/run-a/experiment-manifest.json")
+    cleanup.remove_path(experiment_root() + "/run-b/experiment-manifest.json")
+    cleanup.remove_path(experiment_root() + "/run-c/experiment-manifest.json")
+    cleanup.remove_path(experiment_root() + "/run-a")
+    cleanup.remove_path(experiment_root() + "/run-b")
+    cleanup.remove_path(experiment_root() + "/run-c")
+    cleanup.remove_path(experiment_root())
+    cleanup.remove_path("target/stdlib-multifile")
+    return 0
+}

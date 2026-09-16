@@ -1,0 +1,22 @@
+// Records the deterministic run contract before data enters the pipeline.
+module run_context
+
+import std.convert as convert
+import std.fs as fs
+import std.result as result
+
+public func mlai_prepare_run(root: string, seed: int) returns int {
+    if result.is_err(fs.create_dir_all(root + "/monitoring")) {
+        return 1
+    }
+    if result.is_err(fs.create_dir_all(root + "/experiment")) {
+        return 2
+    }
+    let context = "application=ml-ai-workbench\nseed=" +
+        convert.int_to_string(seed) +
+        "\nmode=integration\n"
+    if result.is_err(fs.fs_write(root + "/run-context.txt", context)) {
+        return 3
+    }
+    return 0
+}

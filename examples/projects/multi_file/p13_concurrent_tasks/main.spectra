@@ -1,0 +1,12 @@
+module main
+
+import std.io as io
+import task_ops
+
+public func main() returns int {
+    if task_ops.run_concurrency() != 0 {
+        return 1
+    }
+    io.println("multi-file concurrent -> tasks channels counters")
+    return 0
+}

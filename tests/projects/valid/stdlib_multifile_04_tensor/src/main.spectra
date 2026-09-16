@@ -1,0 +1,12 @@
+module main
+
+import std.io as io
+import verification_tensor
+
+public func main() returns int {
+    if verification_tensor.check() != 0 {
+        return 1
+    }
+    io.println("verification tensor -> ok")
+    return 0
+}

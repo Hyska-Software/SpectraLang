@@ -1,0 +1,35 @@
+module main
+
+from std.collections import List, Map, Set
+import std.collections as collections
+import std.io as io
+import collection_verification
+
+public func main() returns int {
+    let values: List<int> = collections.list_new()
+    collections.list_push(values, 3)
+    collections.list_push(values, 6)
+    collections.list_push(values, 9)
+    if collection_verification.sum_list(values) != 18 {
+        return 1
+    }
+
+    let scores: Map<string, int> = collections.map_new()
+    collections.map_set(scores, "Ada", 10)
+    if collection_verification.lookup_score(scores, "Ada") != 10 or collection_verification.lookup_score(scores, "Missing") != -1 {
+        return 2
+    }
+
+    let labels: Set<int> = collections.set_new()
+    collections.set_insert(labels, 4)
+    collections.set_insert(labels, 5)
+    if collection_verification.sum_set(labels) != 9 {
+        return 3
+    }
+
+    collections.list_free(values)
+    collections.map_free(scores)
+    collections.set_free(labels)
+    io.println("verification collections -> ok")
+    return 0
+}

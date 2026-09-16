@@ -1,0 +1,20 @@
+// Extracts a real minibatch as tensors for the differentiable model.
+module batch_ops
+
+import std.ml as ml
+import std.tensor as tensor
+
+public func mlai_batch_count(dataset: int) returns int {
+    let loader = ml.dataloader_new(dataset, 3, 20260916)
+    return ml.dataloader_batch_count(loader)
+}
+
+public func mlai_batch_features(dataset: int, rows: int) returns int {
+    let loader = ml.dataloader_new(dataset, 3, 20260916)
+    return tensor.reshape(ml.dataloader_batch_features(loader, 0), rows, 2)
+}
+
+public func mlai_batch_labels(dataset: int, rows: int) returns int {
+    let loader = ml.dataloader_new(dataset, 3, 20260916)
+    return tensor.reshape(ml.dataloader_batch_labels(loader, 0), rows, 1)
+}

@@ -1,0 +1,14 @@
+module main
+
+import std.io as io
+import verification_artifact
+import verification_experiment
+
+public func main() returns int {
+    if verification_artifact.check_artifact() != 0 or verification_experiment.check_experiment() != 0 {
+        return 1
+    }
+    verification_experiment.cleanup()
+    io.println("verification artifact experiment -> ok")
+    return 0
+}

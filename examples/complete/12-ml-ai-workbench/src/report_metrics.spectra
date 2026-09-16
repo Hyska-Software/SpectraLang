@@ -1,0 +1,26 @@
+// Builds the metric payloads used by the machine-readable evaluation report.
+module report_metrics
+
+import std.ml as ml
+import std.tensor as tensor
+
+public func mlai_classification_metrics() returns string {
+    return ml.metrics_classification(tensor.arange(0, 4, 1), tensor.arange(0, 4, 1))
+}
+
+public func mlai_regression_metrics() returns string {
+    let expected = tensor.full_f(4, 1.0)
+    return ml.metrics_regression(expected, tensor.full_f(4, 1.0))
+}
+
+public func mlai_ranking_metrics() returns string {
+    return ml.metrics_ranking(tensor.arange(0, 4, 1), tensor.full_f(4, 1.0), 3)
+}
+
+public func mlai_generation_metrics() returns string {
+    return ml.metrics_generation("grounded retrieval answer", "retrieval answer")
+}
+
+public func mlai_serving_metrics() returns string {
+    return ml.serving_metrics(tensor.arange(10, 50, 10), 4, 0)
+}

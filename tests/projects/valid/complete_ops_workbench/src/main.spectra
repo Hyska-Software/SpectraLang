@@ -1,0 +1,61 @@
+// Verification fixture for the first complete workbench slice.
+module fixture_main
+
+import std.convert as convert
+import std.io
+import std.string as string
+import clock
+import config
+import domain
+import ingest
+import metrics
+import model
+import planner
+import reporting
+import storage
+import workers
+
+public func main() returns int {
+    let settings = config.ops_load_config()
+    if settings.mode != "integration" {
+        return 1
+    }
+    let item     = domain.ops_make_item(11, "verify queue", "qa", 4)
+    let restored = domain.ops_item_from_json(domain.ops_item_to_json(item))
+    if not domain.ops_same_item(item, restored) {
+        return 2
+    }
+    if ingest.ops_event_score("11,qa,4,87") != 87 or ingest.ops_event_score("broken") != -1 {
+        return 3
+    }
+    if ingest.ops_event_owner("11,qa,4,87") != "qa" or ingest.ops_event_severity("11,qa,4,87") != 4 {
+        return 4
+    }
+    let plan = planner.ops_plan_checksum(settings.seed, 4)
+    if plan != planner.ops_plan_checksum(settings.seed, 4) or plan <= 0 {
+        return 5
+    }
+    if workers.ops_parallel_checksum() != 420 {
+        return 6
+    }
+    let schedule = clock.ops_schedule_stamp(settings.seed)
+    if not string.contains(schedule, "2024-02-29T12:34:56Z") {
+        return 7
+    }
+    if metrics.ops_quality_score() != 5 {
+        return 8
+    }
+    if not model.ops_checkpoint_roundtrip(settings.workspace) {
+        return 9
+    }
+    let report = reporting.ops_render_report(settings.name, 1, 87, plan, 420, 5, schedule)
+    let path   = settings.workspace + "/fixture-report.txt"
+    if not storage.ops_persist_and_validate(path, report) {
+        return 10
+    }
+    if storage.ops_cleanup(path, settings.workspace) != 0 {
+        return 11
+    }
+    println("COMPLETE OPS FIXTURE ok modules=11")
+    return 0
+}

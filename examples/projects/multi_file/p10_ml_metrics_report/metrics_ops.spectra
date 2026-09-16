@@ -1,0 +1,46 @@
+module metrics_ops
+
+import std.fs as fs
+import std.ml as ml
+import std.result as result
+import std.string as string
+import std.tensor as tensor
+import report_paths
+
+public func cleanup() returns int {
+    return report_paths.cleanup_report()
+}
+
+public func write_report() returns int {
+    cleanup()
+    tensor.free_all()
+    let labels = tensor.arange(0, 4, 1)
+    let predicted = tensor.arange(0, 4, 1)
+    let classification = ml.metrics_classification(labels, predicted)
+    if not string.contains(classification, "\"accuracy\":1.000000") {
+        return 1
+    }
+    let expected = tensor.full_f(4, 1.0)
+    let actual = tensor.full_f(4, 1.0)
+    let regression = ml.metrics_regression(expected, actual)
+    let relevance = tensor.arange(0, 4, 1)
+    let scores = tensor.full_f(4, 1.0)
+    let ranking = ml.metrics_ranking(relevance, scores, 3)
+    let generation = ml.metrics_generation("repeatable answer", "repeatable answer")
+    let serving = ml.serving_metrics(tensor.arange(10, 50, 10), 4, 0)
+    if not string.contains(regression, "\"mse\":0.000000") or not string.contains(ranking, "\"ndcg_at_k\"") {
+        return 2
+    }
+    if not string.contains(generation, "\"perplexity\"") or not string.contains(serving, "\"throughput_per_second\"") {
+        return 3
+    }
+    let path = ml.evaluation_report(report_paths.report_path(), "multi-file-evaluation", classification, regression, ranking, generation, serving)
+    if path != report_paths.report_path() {
+        return 4
+    }
+    let loaded = fs.fs_read(report_paths.report_path())
+    if result.is_err(loaded) or not string.contains(result.result_unwrap(loaded), "spectra.ml.evaluation_report.v1") {
+        return 5
+    }
+    return 0
+}

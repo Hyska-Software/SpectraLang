@@ -1,0 +1,12 @@
+module main
+
+import std.io as io
+import verification_text
+
+public func main() returns int {
+    if verification_text.check() != 0 {
+        return 1
+    }
+    io.println("verification tokenizer rag -> ok")
+    return 0
+}

@@ -1,0 +1,13 @@
+module main
+
+import std.io as io
+import verification_fs
+
+public func main() returns int {
+    if verification_fs.round_trip() != 7 {
+        return 1
+    }
+    verification_fs.cleanup()
+    io.println("verification filesystem -> ok")
+    return 0
+}

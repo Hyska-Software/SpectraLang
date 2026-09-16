@@ -1,0 +1,27 @@
+// Artifact container round-trip for the trained parameter tensors.
+module checkpoint
+
+import std.fs as fs
+import std.ml as ml
+import std.result as result
+import paths
+
+public func mlai_save_checkpoint(root: string, weights: int, bias: int) returns bool {
+    let model_root = root + "/model"
+    if result.is_err(fs.create_dir_all(model_root)) {
+        return false
+    }
+    let artifact = ml.artifact_new("ml-ai-workbench", "v1", "checkpoint")
+    if artifact == 0 {
+        return false
+    }
+    let configured    = ml.artifact_set_metadata(artifact, "dataset", "tabular.csv")
+    let optimizer     = ml.artifact_set_metadata(artifact, "optimizer", "adam")
+    let attached      = ml.artifact_add_tensor(artifact, "weights", weights)
+    let attached_bias = ml.artifact_add_tensor(artifact, "bias", bias)
+    let path          = paths.mlai_checkpoint_path(root)
+    let saved         = ml.artifact_save(artifact, path)
+    let valid         = ml.artifact_validate(path)
+    ml.artifact_free(artifact)
+    return configured and optimizer and attached and attached_bias and saved and valid
+}

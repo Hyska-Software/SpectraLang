@@ -1,0 +1,17 @@
+module clock
+
+import std.convert as convert
+import std.random as random
+import std.string as string
+import std.time as time
+
+public func ops_schedule_stamp(seed: int) returns string {
+    random.random_seed(seed)
+    let lane    = random.random_int(1, 5)
+    let instant = time.unix_to_utc(1709210096)
+    if time.utc_year(instant) != 2024 or time.utc_month(instant) != 2 or time.utc_day(instant) != 29 {
+        return "invalid-calendar"
+    }
+    let suffix = string.concat(" lane=", convert.int_to_string(lane))
+    return string.concat("2024-02-29T12:34:56Z", suffix)
+}

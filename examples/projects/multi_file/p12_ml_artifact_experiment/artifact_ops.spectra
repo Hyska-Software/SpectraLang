@@ -1,0 +1,31 @@
+module artifact_ops
+
+import std.ml as ml
+import std.tensor as tensor
+import paths
+
+public func verify_artifact() returns int {
+    let weights = tensor.full_f(6, 1.5)
+    let bias = tensor.full_f(2, -0.25)
+    let artifact = ml.artifact_new("multi-file-weights", "v1", "checkpoint")
+    if artifact == 0 {
+        return 1
+    }
+    if not ml.artifact_set_metadata(artifact, "framework", "spectralang") or not ml.artifact_set_metadata(artifact, "purpose", "multi-file") {
+        return 2
+    }
+    if not ml.artifact_add_tensor(artifact, "weights", weights) or not ml.artifact_add_tensor(artifact, "bias", bias) {
+        return 3
+    }
+    if not ml.artifact_save(artifact, paths.artifact_path()) or not ml.artifact_validate(paths.artifact_path()) {
+        return 4
+    }
+    let loaded = ml.artifact_load(paths.artifact_path())
+    let loaded_weights = ml.artifact_tensor(loaded, "weights")
+    if loaded == 0 or loaded_weights == 0 or tensor.len(loaded_weights) != 6 {
+        return 5
+    }
+    ml.artifact_free(loaded)
+    ml.artifact_free(artifact)
+    return 0
+}

@@ -1,0 +1,38 @@
+module main
+
+from std.collections import List, Map, Set
+import std.collections as collections
+import std.io as io
+import collection_ops
+
+public func main() returns int {
+    let values: List<int> = collections.list_new()
+    collections.list_push(values, 5)
+    collections.list_push(values, 7)
+    collections.list_push(values, 11)
+    collections.list_push(values, 13)
+    if collection_ops.sum_list(values) != 36 {
+        return 1
+    }
+
+    let scores: Map<string, int> = collections.map_new()
+    collections.map_set(scores, "Ada", 10)
+    collections.map_set(scores, "Grace", 20)
+    if collection_ops.lookup_score(scores, "Grace") != 20 or collection_ops.lookup_score(scores, "Unknown") != -1 {
+        return 2
+    }
+
+    let labels: Set<int> = collections.set_new()
+    collections.set_insert(labels, 2)
+    collections.set_insert(labels, 4)
+    collections.set_insert(labels, 8)
+    if collection_ops.sum_set(labels) != 14 {
+        return 3
+    }
+
+    collections.list_free(values)
+    collections.map_free(scores)
+    collections.set_free(labels)
+    io.println("multi-file collections -> list map set iterator")
+    return 0
+}

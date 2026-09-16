@@ -1,0 +1,12 @@
+module main
+
+import std.io as io
+import tensor_ops
+
+public func main() returns int {
+    if tensor_ops.verify() != 0 {
+        return 1
+    }
+    io.println("multi-file tensor -> elementwise views concat stack")
+    return 0
+}

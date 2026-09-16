@@ -1,0 +1,37 @@
+module app
+
+import std.io as io
+import cleanup
+import config
+import csv_ingest
+import dataset_ops
+import jsonl_ingest
+import model
+import paths
+import rag
+import report
+import seed_data
+
+public func mlai_fixture_run() returns int {
+    let settings = config.mlai_load_config()
+    cleanup.mlai_remove_workspace(settings.workspace)
+    if settings.mode != "integration" or seed_data.mlai_seed_workspace(settings.workspace) != 0 {
+        return 1
+    }
+    let dataset = csv_ingest.mlai_load_csv_dataset(paths.mlai_csv_path(settings.workspace))
+    if dataset_ops.mlai_verify_dataset(dataset) != 0 or jsonl_ingest.mlai_verify_secondary_readers(settings.workspace) != 0 {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        return 2
+    }
+    if model.mlai_train_checkpoint(settings.workspace, dataset) != 0 {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        return 3
+    }
+    if rag.mlai_verify_rag(settings.workspace) != 0 or report.mlai_write_report(settings.workspace) != 0 {
+        cleanup.mlai_remove_workspace(settings.workspace)
+        return 4
+    }
+    cleanup.mlai_remove_workspace(settings.workspace)
+    io.println("ML AI FIXTURE TRACE data=ok")
+    return 0
+}

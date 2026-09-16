@@ -1,0 +1,16 @@
+module main
+
+import std.io as io
+import file_report
+
+public func main() returns int {
+    if file_report.write_report() != 12 {
+        return 1
+    }
+    if file_report.verify_missing_error() != 1 {
+        return 2
+    }
+    file_report.cleanup()
+    io.println("multi-file filesystem -> append copy rename result")
+    return 0
+}

@@ -1,0 +1,26 @@
+// Independent persisted retrieval check for the fixture project.
+module rag
+
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+import paths
+
+public func mlai_verify_rag(root: string) returns int {
+    tensor.free_all()
+    let index = ml.vector_index_new(2)
+    if index == 0 or not ml.vector_index_set_metadata(index, "model_version", "fixture-v1") {
+        return 1
+    }
+    if ml.vector_index_insert(index, "fixture-doc", tensor.vector_f(2, 1.0)) != 1 {
+        return 2
+    }
+    let persisted = ml.vector_index_persist(index, paths.mlai_index_path(root))
+    let loaded    = ml.vector_index_load(persisted)
+    let query     = ml.vector_index_query(loaded, tensor.vector_f(2, 1.0), 1)
+    if not string.contains(query, "fixture-doc") {
+        return 3
+    }
+    tensor.free_all()
+    return 0
+}

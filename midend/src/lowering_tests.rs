@@ -15,6 +15,47 @@ mod tests {
     }
 
     #[test]
+    fn generated_lambda_names_include_module_identity() {
+        let first = lower_source(
+            r#"
+            module alpha_lambda
+
+            from std.collections import List
+            import std.collections as collections
+
+            func apply() returns int {
+                let values: List<int> = collections.list_new()
+                collections.list_push(values, 1)
+                let mapped = collections.list_map(values, |value: int| value + 1)
+                return collections.list_len(mapped)
+            }
+            "#,
+        );
+        let second = lower_source(
+            r#"
+            module beta_lambda
+
+            from std.collections import List
+            import std.collections as collections
+
+            func apply() returns int {
+                let values: List<int> = collections.list_new()
+                collections.list_push(values, 1)
+                let mapped = collections.list_map(values, |value: int| value + 1)
+                return collections.list_len(mapped)
+            }
+            "#,
+        );
+
+        let first_text = crate::ir::pretty::format_module(&first);
+        let second_text = crate::ir::pretty::format_module(&second);
+        assert!(first_text.contains("__lambda_alpha_lambda_0"), "{first_text}");
+        assert!(second_text.contains("__lambda_beta_lambda_0"), "{second_text}");
+        assert!(!first_text.contains("__lambda_beta_lambda_0"));
+        assert!(!second_text.contains("__lambda_alpha_lambda_0"));
+    }
+
+    #[test]
     fn r2103_async_await_lowers_to_lazy_coroutine() {
         let ir = lower_source(
             r#"

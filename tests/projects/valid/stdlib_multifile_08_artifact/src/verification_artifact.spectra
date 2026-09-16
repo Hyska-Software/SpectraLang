@@ -1,0 +1,28 @@
+module verification_artifact
+
+import std.fs as fs
+import std.ml as ml
+import std.tensor as tensor
+
+const PATH = "target/stdlib-multifile-verification/08-artifact/weights.spar"
+
+public func check_artifact() returns int {
+    let artifact = ml.artifact_new("verification", "v1", "checkpoint")
+    let weights = tensor.full_f(2, 2.0)
+    if artifact == 0 or not ml.artifact_add_tensor(artifact, "weights", weights) {
+        return 1
+    }
+    if not ml.artifact_save(artifact, PATH) or not ml.artifact_validate(PATH) {
+        return 2
+    }
+    let loaded = ml.artifact_load(PATH)
+    if loaded == 0 or tensor.len(ml.artifact_tensor(loaded, "weights")) != 2 {
+        return 3
+    }
+    ml.artifact_free(loaded)
+    ml.artifact_free(artifact)
+    tensor.free_all()
+    fs.fs_remove(PATH)
+    fs.remove_dir("target/stdlib-multifile-verification/08-artifact")
+    return 0
+}
