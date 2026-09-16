@@ -16,9 +16,9 @@ Demonstrações gerais da linguagem e fixtures de regressão históricas:
 
 ## examples/stdlib — biblioteca padrão
 
-Quarenta e cinco exemplos executáveis que exercitam as APIs `std.*`; cada um
+Sessenta exemplos executáveis que exercitam as APIs `std.*`; cada um
 tem um fixture correspondente em `tests/validation/436_stdlib_collections_snapshot.spectra`
-até `tests/validation/480_stdlib_serve_named_model.spectra`.
+até `tests/validation/495_stdlib_serve_multi_model_routing.spectra`.
 
 | Arquivo | O que demonstra |
 |---|---|
@@ -67,6 +67,21 @@ até `tests/validation/480_stdlib_serve_named_model.spectra`.
 | `43-ml-vector-index.spectra` | índice HNSW, consulta, métricas e persistência |
 | `44-ml-optimizer-schedule.spectra` | gradiente escalado, SGD momentum, Adam, AdamW e schedule |
 | `45-serve-named-model.spectra` | inferência linear nomeada, vetor de resultado e monitoramento |
+| `46-collections-iterator-cleanup.spectra` | iteradores, aliases opcionais e limpeza de coleções |
+| `47-environment-argument-options.spectra` | variáveis de ambiente e argumentos como `Option` |
+| `48-math-integer-rounding.spectra` | `gcd`, `lcm`, clamp, sinais, arredondamento e valores especiais |
+| `49-random-stream.spectra` | sequência determinística de booleanos, floats e inteiros |
+| `50-time-utc-calendar.spectra` | conversão Unix/UTC e campos de calendário, incluindo bissexto |
+| `51-tensor-elementwise.spectra` | aritmética elementwise e ativações transcendentais |
+| `52-tensor-shape-views.spectra` | dimensões, `permute`, `concat` e `stack` |
+| `53-tensor-diagnostics.spectra` | estratégia de kernel, tolerâncias, residência e relatório |
+| `54-ml-modules-layers-losses.spectra` | módulos, camadas, pooling, dropout e losses |
+| `55-ml-dataset-files.spectra` | datasets CSV/JSONL/diretório, dataloader e dataframe |
+| `56-ml-rag-metrics.spectra` | chunking/prompt RAG e métricas de ranking, geração e serving |
+| `57-ml-onnx-contract.spectra` | exportação, validação, resumo e round-trip ONNX |
+| `58-serve-http-lifecycle.spectra` | bind HTTP efêmero, stop/restart e benchmark real |
+| `59-ml-tokenizer-direct.spectra` | WordPiece direto, encode/decode e tokens desconhecidos |
+| `60-serve-multi-model-routing.spectra` | roteamento por nome e métricas por modelo |
 
 ## examples/api — servidor HTTP e banco
 

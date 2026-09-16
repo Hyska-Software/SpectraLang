@@ -1,0 +1,43 @@
+module validation_stdlib_ml_rag_metrics
+
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    let chunks = ml.rag_chunk_text("RAG retrieval uses indexed chunks.", 12, 3)
+    if not string.contains(chunks, "spectra.ml.rag_chunks.v1") {
+        return 1
+    }
+    let prompt = ml.rag_build_prompt(chunks, "What does RAG retrieval use?")
+    if not string.contains(prompt, "Context:") or not string.contains(prompt, "Question:") {
+        return 2
+    }
+    if ml.rag_evaluate_answer("RAG retrieval uses indexed chunks", "retrieval uses indexed chunks") < 700 {
+        return 3
+    }
+    let expected = tensor.full_f(4, 1.0)
+    let predicted = tensor.full_f(4, 1.0)
+    let regression = ml.metrics_regression(expected, predicted)
+    if not string.contains(regression, "\"mse\":0.000000") or not string.contains(regression, "\"mae\":0.000000") {
+        return 4
+    }
+    let relevance = tensor.arange(0, 4, 1)
+    let scores = tensor.full_f(4, 1.0)
+    let ranking = ml.metrics_ranking(relevance, scores, 3)
+    if not string.contains(ranking, "\"ndcg_at_k\"") or not string.contains(ranking, "\"hit_rate_at_k\"") {
+        return 5
+    }
+    let generation = ml.metrics_generation("the answer uses indexed retrieval", "answer uses retrieval")
+    if not string.contains(generation, "\"token_f1\"") or not string.contains(generation, "\"perplexity\"") {
+        return 6
+    }
+    let latencies = tensor.arange(10, 50, 10)
+    let serving = ml.serving_metrics(latencies, 4, 0)
+    if not string.contains(serving, "\"latency_p95_ms\"") or not string.contains(serving, "\"throughput_per_second\"") {
+        return 7
+    }
+    tensor.free_all()
+    return 0
+}

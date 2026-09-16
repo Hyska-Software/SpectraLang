@@ -1,0 +1,33 @@
+module validation_stdlib_serve_multi_model_routing
+
+import std.serve as serve
+import std.string as string
+import std.tensor as tensor
+
+public func main() returns int {
+    serve.reset()
+    let server = serve.server_new(495)
+    let zero = tensor.full_f(1, 0.0)
+    if serve.server_register_named_model_linear(server, "double", tensor.full2_f(1, 1, 2.0), zero, 0) != 1 {
+        return 1
+    }
+    if serve.server_register_named_model_linear(server, "shift", tensor.full2_f(1, 1, 3.0), tensor.full_f(1, 0.25), 2) != 1 {
+        return 2
+    }
+    if serve.server_register_model_linear(server, tensor.full2_f(1, 1, 1.0), zero, 0) != 1 {
+        return 3
+    }
+    let double_request = serve.server_infer(server, "double", tensor.full_f(1, 3.0))
+    let shift_request = serve.server_infer(server, "shift", tensor.full_f(1, 3.0))
+    let default_request = serve.server_infer(server, "default", tensor.full_f(1, 3.0))
+    if serve.server_result(server, double_request) != 6 or serve.server_result(server, shift_request) != 1 or serve.server_result(server, default_request) != 3 {
+        return 4
+    }
+    let snapshot = serve.server_monitoring_snapshot(server)
+    if not string.contains(snapshot, "\"model\":\"double\"") or not string.contains(snapshot, "\"model\":\"shift\"") or not string.contains(snapshot, "\"model\":\"default\"") {
+        return 5
+    }
+    tensor.free_all()
+    serve.reset()
+    return 0
+}

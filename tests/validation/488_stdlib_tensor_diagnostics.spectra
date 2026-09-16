@@ -1,0 +1,31 @@
+module validation_stdlib_tensor_diagnostics
+
+import std.string as string
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.reset_stats()
+    let source = tensor.full_f(8, 2.0)
+    let activated = tensor.relu(source)
+    if tensor.kernel_strategy() < 0 or tensor.tolerance_abs() < 0.0 or tensor.tolerance_rel() < 0.0 {
+        return 1
+    }
+    if tensor.storage_device(source) != 0 or tensor.device(source) != 0 or tensor.device_available(0) != true {
+        return 2
+    }
+    if tensor.stats_allocations() < 2 or tensor.stats_kernel_ops() < 1 or tensor.stats_kernel_elements() < 8 {
+        return 3
+    }
+    if tensor.stats_gpu_errors(999) != 0 or tensor.stats_gpu_errors(-1) != 0 {
+        return 4
+    }
+    let report = tensor.memory_report()
+    if string.len(report) < 200 or string.contains(report, "active") != true {
+        return 5
+    }
+    tensor.free(activated)
+    tensor.free(source)
+    tensor.free_all()
+    return 0
+}

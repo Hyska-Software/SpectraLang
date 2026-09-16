@@ -550,7 +550,6 @@ pub(crate) extern "C" fn std_tensor_stats_device_pool_bytes_resident(
     }
 }
 
-#[cfg(feature = "gpu")]
 pub(crate) extern "C" fn std_tensor_storage_device(ctx: *mut SpectraHostCallContext) -> i32 {
     unsafe {
         let Ok((ctx_ref, args)) = tensor_args(ctx, 1) else {

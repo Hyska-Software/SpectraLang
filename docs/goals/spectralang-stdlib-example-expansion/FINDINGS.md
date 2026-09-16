@@ -71,3 +71,14 @@
 - **Correction:** the runtime now validates worker/sample identifiers and finite loss values, records step/sample/loss state, returns the worker step count, and is registered under the catalog binding.
 - **Regression:** the example and validation fixture record a step for every worker, advance the global step, save and resume a checkpoint, and inspect the summary.
 - **Verification:** `cargo build -p spectra-cli`, and both `spectralang check --json` and `spectralang run` pass for the example and validation fixture.
+
+## STD-008: tensor diagnostics were catalogued but omitted from generated lowering
+
+- **Status:** fixed and verified
+- **Discovered by:** `examples/stdlib/53-tensor-diagnostics.spectra`
+- **Observed evidence:** semantic analysis accepted `std.tensor.storage_device` and `std.tensor.stats_gpu_errors`, but the midend reported unresolved `tensor` calls during lowering.
+- **Cause:** the catalog-driven lowering generator kept both stable host functions in the tensor exclusion list without emitting dispatcher arms.
+- **Impact:** source programs could not reach runtime device diagnostics even though the compiler contract, catalog, and runtime registrations exposed them.
+- **Correction:** the functions are now part of the generated tensor lowering group and are removed from the exclusion list; `storage_device` is registered on CPU builds as well and reports CPU residency as `0`.
+- **Regression:** the paired example and validation fixture exercise storage residence, kernel diagnostics, GPU error counters, tolerances, and the memory report.
+- **Verification:** `python scripts/generate_lowering_tables.py --check`, `cargo build -p spectra-cli`, and both `spectralang check --json` and `spectralang run` pass for the example and validation fixture.

@@ -1,0 +1,38 @@
+module validation_stdlib_tensor_shape_views
+
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    let matrix = tensor.full2_f(2, 3, 0.0)
+    tensor.set2_f(matrix, 0, 0, 1.0)
+    tensor.set2_f(matrix, 0, 1, 2.0)
+    tensor.set2_f(matrix, 0, 2, 3.0)
+    tensor.set2_f(matrix, 1, 0, 4.0)
+    tensor.set2_f(matrix, 1, 1, 5.0)
+    tensor.set2_f(matrix, 1, 2, 6.0)
+    if tensor.rank(matrix) != 2 or tensor.dim(matrix, 0) != 2 or tensor.dim(matrix, 1) != 3 {
+        return 1
+    }
+    if tensor.get2_f(matrix, 1, 2) != 6.0 or tensor.is_valid(matrix) != true {
+        return 2
+    }
+    let swapped = tensor.permute(matrix, 0, 1)
+    if tensor.rows(swapped) != 3 or tensor.cols(swapped) != 2 {
+        return 3
+    }
+    if tensor.get2_f(swapped, 0, 1) != 4.0 or tensor.get2_f(swapped, 2, 0) != 3.0 {
+        return 4
+    }
+    let extra = tensor.full2_f(1, 3, 7.0)
+    let joined = tensor.concat(matrix, extra)
+    if tensor.rows(joined) != 3 or tensor.cols(joined) != 3 or tensor.get2_f(joined, 2, 1) != 7.0 {
+        return 5
+    }
+    let stacked = tensor.stack(matrix, matrix)
+    if tensor.rank(stacked) != 3 or tensor.dim(stacked, 0) != 2 or tensor.dim(stacked, 1) != 2 {
+        return 6
+    }
+    tensor.free_all()
+    return 0
+}

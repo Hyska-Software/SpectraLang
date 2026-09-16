@@ -1,0 +1,81 @@
+module validation_stdlib_collections_iterator_cleanup
+
+from std.collections import Iterator, List, Map, Set
+import std.collections as collections
+import std.option as option
+
+func sum_iterator(values: Iterator<int>) returns int {
+    let total = 0
+    for value in values {
+        total = total + value
+    }
+    collections.iterator_free(values)
+    return total
+}
+
+public func main() returns int {
+    let values: List<int> = collections.list_new()
+    collections.list_push(values, 4)
+    collections.list_push(values, 8)
+    collections.list_push(values, 15)
+    collections.list_push(values, 16)
+    let direct: Iterator<int> = collections.list_iter(values)
+    if collections.iterator_remaining(direct) != 4 or sum_iterator(direct) != 43 {
+        return 1
+    }
+
+    collections.list_push(values, 3)
+    collections.list_push(values, 5)
+    collections.list_push(values, 7)
+    let removed_last = collections.list_pop_option(values)
+    let removed_first = collections.list_pop_front_option(values)
+    if option.is_none(removed_last) or option.option_unwrap(removed_last) != 7 {
+        return 2
+    }
+    if option.is_none(removed_first) or option.option_unwrap(removed_first) != 4 {
+        return 3
+    }
+    collections.list_push(values, 11)
+    let removed_middle = collections.list_remove_at_option(values, 0)
+    if option.is_none(removed_middle) or option.option_unwrap(removed_middle) != 8 {
+        return 4
+    }
+    collections.list_clear(values)
+    if collections.list_len(values) != 0 or option.is_some(collections.list_pop_option(values)) {
+        return 5
+    }
+
+    let scores: Map<string, int> = collections.map_new()
+    collections.map_set(scores, "Ada", 10)
+    collections.map_set(scores, "Grace", 20)
+    let grace = collections.map_get_option(scores, "Grace")
+    let removed = collections.map_remove_option(scores, "Ada")
+    if option.is_none(grace) or option.option_unwrap(grace) != 20 {
+        return 6
+    }
+    if option.is_none(removed) or option.option_unwrap(removed) != 10 or collections.map_len(scores) != 1 {
+        return 7
+    }
+
+    let tags: Set<int> = collections.set_new()
+    collections.set_insert(tags, 6)
+    collections.set_insert(tags, 9)
+    let snapshot = collections.set_iter(tags)
+    if collections.iterator_remaining(snapshot) != 2 {
+        return 8
+    }
+    collections.set_clear(tags)
+    if collections.set_len(tags) != 0 or sum_iterator(snapshot) != 15 {
+        return 9
+    }
+
+    collections.list_free(values)
+    let scratch: List<int> = collections.list_new()
+    collections.list_push(scratch, 1)
+    if collections.list_free_all() < 1 {
+        return 10
+    }
+    collections.map_free(scores)
+    collections.set_free(tags)
+    return 0
+}

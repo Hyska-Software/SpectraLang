@@ -1,0 +1,26 @@
+module stdlib_random_stream
+
+import std.convert as convert
+import std.io as io
+import std.random as random
+
+public func main() returns int {
+    random.random_seed(49049)
+    let first_bool = random.random_bool()
+    let first_float = random.random_float()
+    let first_int = random.random_int(-7, 8)
+    if first_float < 0.0 or first_float > 1.0 or first_int < -7 or first_int >= 8 {
+        return 1
+    }
+
+    random.random_seed(49049)
+    if random.random_bool() != first_bool or random.random_float() != first_float or random.random_int(-7, 8) != first_int {
+        return 2
+    }
+    if random.random_int(5, 5) != 5 {
+        return 3
+    }
+
+    io.println("random stream -> " + convert.bool_to_string(first_bool))
+    return 0
+}

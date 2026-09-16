@@ -115,6 +115,7 @@ pub(crate) fn lookup_std_host_group_tensor_ml(
             returns_value: true,
         }),
         ("tensor", "device_status") => Some(host_int("spectra.std.tensor.device_status")),
+        ("tensor", "storage_device") => Some(host_int("spectra.std.tensor.storage_device")),
         ("tensor", "to_device") => Some(host_int("spectra.std.tensor.to_device")),
         ("tensor", "cpu") => Some(host_int("spectra.std.tensor.cpu")),
         ("tensor", "sync") => Some(host_void("spectra.std.tensor.sync")),
@@ -143,6 +144,7 @@ pub(crate) fn lookup_std_host_group_tensor_ml(
         ("tensor", "stats_gpu_kernel_ops") => {
             Some(host_int("spectra.std.tensor.stats_gpu_kernel_ops"))
         }
+        ("tensor", "stats_gpu_errors") => Some(host_int("spectra.std.tensor.stats_gpu_errors")),
         ("tensor", "stats_cpu_fallbacks") => {
             Some(host_int("spectra.std.tensor.stats_cpu_fallbacks"))
         }

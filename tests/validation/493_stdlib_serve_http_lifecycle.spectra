@@ -1,0 +1,25 @@
+module validation_stdlib_serve_http_lifecycle
+
+import std.serve as serve
+import std.tensor as tensor
+
+public func main() returns int {
+    serve.reset()
+    let server = serve.server_new(493)
+    if serve.server_register_named_model_linear(server, "default", tensor.full2_f(1, 1, 2.0), tensor.full_f(1, 0.0), 0) != 1 {
+        return 1
+    }
+    let port = serve.http_start(server, 0)
+    if port <= 0 or port > 65535 {
+        return 2
+    }
+    if serve.http_stop(server) != true {
+        return 3
+    }
+    if serve.server_benchmark(server, 2, 1) != 2 {
+        return 4
+    }
+    tensor.free_all()
+    serve.reset()
+    return 0
+}

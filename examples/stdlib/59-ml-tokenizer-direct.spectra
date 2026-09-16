@@ -1,0 +1,31 @@
+module stdlib_ml_tokenizer_direct
+
+import std.io as io
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    let vocabulary = "[UNK]:0\nhello:1\nworld:2\n##s:3"
+    let tokenizer = ml.tokenizer_wordpiece(vocabulary)
+    let encoded = ml.tokenizer_encode(tokenizer, "hello world")
+    if tensor.len(encoded) != 2 {
+        return 1
+    }
+    let decoded = ml.tokenizer_decode(tokenizer, encoded)
+    if decoded != "hello world" {
+        return 2
+    }
+    let unknown = ml.tokenizer_encode(tokenizer, "missing")
+    if tensor.len(unknown) != 1 or ml.tokenizer_decode(tokenizer, unknown) != "[UNK]" {
+        return 3
+    }
+    let rendered_vocab = ml.tokenizer_vocab(tokenizer)
+    if not string.contains(rendered_vocab, "hello:1") or not string.contains(rendered_vocab, "##s:3") {
+        return 4
+    }
+    io.println("ML tokenizer direct -> WordPiece encode decode unknown")
+    tensor.free_all()
+    return 0
+}

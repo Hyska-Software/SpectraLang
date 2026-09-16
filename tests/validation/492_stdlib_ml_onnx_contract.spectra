@@ -1,0 +1,42 @@
+module validation_stdlib_ml_onnx_contract
+
+from std.collections import List
+import std.collections as collections
+import std.fs as fs
+import std.ml as ml
+import std.result as result
+import std.string as string
+import std.tensor as tensor
+
+const ROOT = "target/stdlib-examples/onnx-57-validation"
+const MODEL = ROOT + "/linear.onnx"
+const ROUNDTRIP = ROOT + "/linear-roundtrip.onnx"
+
+public func main() returns int {
+    tensor.free_all()
+    fs.remove_dir(ROOT)
+    if result.is_err(fs.create_dir_all(ROOT)) {
+        return 1
+    }
+    let weights: List<int> = collections.list_new()
+    collections.list_push(weights, tensor.full2_f(2, 3, 0.25))
+    collections.list_push(weights, tensor.full_f(3, 0.5))
+    let exported = ml.onnx_export_weights(MODEL, "linear", weights)
+    if string.is_empty(exported) or ml.onnx_validate(exported) != 1 {
+        return 2
+    }
+    let summary = ml.onnx_import_summary(exported)
+    if not string.contains(summary, "spectra.onnx.subset.v1") or not string.contains(summary, "Gemm") {
+        return 3
+    }
+    let roundtripped = ml.onnx_roundtrip(exported, ROUNDTRIP)
+    if string.is_empty(roundtripped) or ml.onnx_validate(roundtripped) != 1 {
+        return 4
+    }
+    collections.list_free(weights)
+    tensor.free_all()
+    fs.fs_remove(MODEL)
+    fs.fs_remove(ROUNDTRIP)
+    fs.remove_dir(ROOT)
+    return 0
+}

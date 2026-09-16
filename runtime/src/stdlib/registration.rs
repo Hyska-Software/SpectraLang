@@ -655,8 +655,8 @@ pub(crate) fn register_tensor() {
             TENSOR_STATS_DEVICE_POOL_BYTES_RESIDENT,
             std_tensor_stats_device_pool_bytes_resident,
         );
-        register_host_function(TENSOR_STORAGE_DEVICE, std_tensor_storage_device);
     }
+    register_host_function(TENSOR_STORAGE_DEVICE, std_tensor_storage_device);
     register_host_function(TENSOR_STATS_GRAPH_NODES, std_tensor_stats_graph_nodes);
     register_host_function(
         TENSOR_STATS_LIFETIME_RECORDS,

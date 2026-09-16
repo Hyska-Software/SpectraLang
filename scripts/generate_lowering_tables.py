@@ -229,11 +229,9 @@ EXCLUDED = {
             "literal2",
             "literal2_f",
             "literal_f",
-            "storage_device",
             "stats_device_pool_bytes_resident",
             "stats_device_pool_hits",
             "stats_device_pool_misses",
-            "stats_gpu_errors",
         }
     ),
 }
@@ -702,11 +700,11 @@ LAYOUT: tuple[FileLayout, ...] = (
                 "sum_t@host_tensor_rank0 mean_f mean_t max min argmax matmul matmul_batched transpose dot "
                 "dot_t neg exp_f log_f sqrt_f relu sigmoid_f tanh_f seed uniform uniform_f normal_f "
                 "bernoulli categorical set_deterministic_mode deterministic_mode tolerance_abs "
-                "tolerance_rel device device_available@struct device_status to_device cpu sync precision "
+                "tolerance_rel device device_available@struct device_status storage_device to_device cpu sync precision "
                 "to_precision stats_allocations stats_active stats_peak_bytes stats_reused_buffers "
                 "stats_pool_hits stats_pool_misses stats_active_bytes stats_scratch_reuses "
                 "kernel_strategy stats_kernel_ops stats_kernel_elements stats_device_transfers "
-                "stats_gpu_kernel_ops stats_cpu_fallbacks stats_device_resident_tensors "
+                "stats_gpu_kernel_ops stats_gpu_errors stats_cpu_fallbacks stats_device_resident_tensors "
                 "stats_gpu_backward_ops stats_graph_nodes stats_lifetime_records stats_released_lifetimes "
                 "stats_allocation_sites stats_reuse_rate_per_mille memory_report reset_stats "
                 "requires_grad@host_tensor_dynamic diff backward grad@host_tensor_dynamic zero_grad "

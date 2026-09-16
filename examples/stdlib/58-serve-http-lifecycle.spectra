@@ -1,0 +1,33 @@
+module stdlib_serve_http_lifecycle
+
+import std.io as io
+import std.serve as serve
+import std.tensor as tensor
+
+public func main() returns int {
+    serve.reset()
+    let server = serve.server_new(58)
+    let weights = tensor.full2_f(1, 1, 2.0)
+    let bias = tensor.full_f(1, 0.0)
+    if serve.server_register_named_model_linear(server, "default", weights, bias, 0) != 1 {
+        return 1
+    }
+    let port = serve.http_start(server, 0)
+    if port <= 0 or port > 65535 {
+        return 2
+    }
+    if serve.http_stop(server) != true {
+        return 3
+    }
+    let restarted_port = serve.http_start(server, 0)
+    if restarted_port <= 0 or serve.http_stop(server) != true {
+        return 4
+    }
+    if serve.server_benchmark(server, 4, 2) != 4 {
+        return 5
+    }
+    io.println("serve HTTP lifecycle -> ephemeral bind stop restart benchmark")
+    tensor.free_all()
+    serve.reset()
+    return 0
+}

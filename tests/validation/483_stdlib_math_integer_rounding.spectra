@@ -1,0 +1,27 @@
+module validation_stdlib_math_integer_rounding
+
+import std.convert as convert
+import std.math as math
+
+public func main() returns int {
+    if math.sign(-9) != -1 or math.sign(0) != 0 or math.sign(12) != 1 {
+        return 1
+    }
+    if math.gcd(-84, 30) != 6 or math.lcm(6, 8) != 24 or math.lcm(0, 5) != 0 {
+        return 2
+    }
+    if math.clamp(-5, 0, 10) != 0 or math.clamp(7, 0, 10) != 7 or math.clamp(20, 0, 10) != 10 {
+        return 3
+    }
+    if math.floor_f(-2.25) as int != -3 or math.ceil_f(-2.25) as int != -2 {
+        return 4
+    }
+    if math.round_f(3.6) as int != 4 {
+        return 5
+    }
+    let nan = convert.string_to_float("NaN")
+    if math.is_nan_f(nan) != true or math.is_infinite_f(1.0) != false {
+        return 6
+    }
+    return 0
+}

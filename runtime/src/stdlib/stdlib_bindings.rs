@@ -346,7 +346,6 @@ pub(crate) const TENSOR_STATS_DEVICE_POOL_MISSES: &str =
 #[cfg(feature = "gpu")]
 pub(crate) const TENSOR_STATS_DEVICE_POOL_BYTES_RESIDENT: &str =
     "spectra.std.tensor.stats_device_pool_bytes_resident";
-#[cfg(feature = "gpu")]
 pub(crate) const TENSOR_STORAGE_DEVICE: &str = "spectra.std.tensor.storage_device";
 pub(crate) const TENSOR_STATS_CPU_FALLBACKS: &str = "spectra.std.tensor.stats_cpu_fallbacks";
 pub(crate) const TENSOR_STATS_GPU_ERRORS: &str = "spectra.std.tensor.stats_gpu_errors";

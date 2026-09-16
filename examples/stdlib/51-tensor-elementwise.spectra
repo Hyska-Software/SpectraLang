@@ -1,0 +1,51 @@
+module stdlib_tensor_elementwise
+
+import std.io as io
+import std.math as math
+import std.tensor as tensor
+
+func close_to(actual: float, expected: float) returns bool {
+    return math.abs_f(actual - expected) < 0.0001
+}
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled(false)
+    let left = tensor.full_f(4, 6.0)
+    let right = tensor.full_f(4, 2.0)
+    let added = tensor.add(left, right)
+    let subtracted = tensor.sub(left, right)
+    let multiplied = tensor.mul(left, right)
+    let divided = tensor.div(left, right)
+    let negated = tensor.neg(right)
+    if not close_to(tensor.get_f(added, 0), 8.0) or not close_to(tensor.get_f(subtracted, 0), 4.0) {
+        return 1
+    }
+    if not close_to(tensor.get_f(multiplied, 0), 12.0) or not close_to(tensor.get_f(divided, 0), 3.0) {
+        return 2
+    }
+    if not close_to(tensor.get_f(negated, 0), -2.0) {
+        return 3
+    }
+
+    let zeros = tensor.full_f(3, 0.0)
+    let exp_zero = tensor.exp_f(zeros)
+    let log_one = tensor.log_f(tensor.full_f(3, 1.0))
+    let sqrt_four = tensor.sqrt_f(tensor.full_f(3, 4.0))
+    let sigmoid_zero = tensor.sigmoid_f(zeros)
+    let tanh_zero = tensor.tanh_f(zeros)
+    if not close_to(tensor.get_f(exp_zero, 0), 1.0) or not close_to(tensor.get_f(log_one, 0), 0.0) {
+        return 4
+    }
+    if not close_to(tensor.get_f(sqrt_four, 0), 2.0) or not close_to(tensor.get_f(sigmoid_zero, 0), 0.5) {
+        return 5
+    }
+    if not close_to(tensor.get_f(tanh_zero, 0), 0.0) or tensor.len(tanh_zero) != 3 {
+        return 6
+    }
+
+    io.println("tensor elementwise -> arithmetic and activations")
+    tensor.free_all()
+    tensor.set_grad_enabled(true)
+    return 0
+}

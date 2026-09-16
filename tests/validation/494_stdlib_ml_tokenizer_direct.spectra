@@ -1,0 +1,25 @@
+module validation_stdlib_ml_tokenizer_direct
+
+import std.ml as ml
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    let tokenizer = ml.tokenizer_wordpiece("[UNK]:0\nhello:1\nworld:2\n##s:3")
+    let encoded = ml.tokenizer_encode(tokenizer, "hello world")
+    if tensor.len(encoded) != 2 {
+        return 1
+    }
+    if ml.tokenizer_decode(tokenizer, encoded) != "hello world" {
+        return 2
+    }
+    let unknown = ml.tokenizer_encode(tokenizer, "missing")
+    if tensor.len(unknown) != 1 or ml.tokenizer_decode(tokenizer, unknown) != "[UNK]" {
+        return 3
+    }
+    if ml.tokenizer_vocab(tokenizer) == "" {
+        return 4
+    }
+    tensor.free_all()
+    return 0
+}

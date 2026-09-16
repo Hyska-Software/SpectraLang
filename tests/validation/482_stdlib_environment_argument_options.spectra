@@ -1,0 +1,34 @@
+module validation_stdlib_environment_argument_options
+
+import std.env as env
+import std.option as option
+import std.string as string
+
+const KEY = "SPECTRALANG_STDLIB_VALIDATION_47"
+
+public func main() returns int {
+    if env.env_set(KEY, "ready") != true {
+        return 1
+    }
+    let configured = env.env_get_option(KEY)
+    if option.is_none(configured) or option.option_unwrap(configured) != "ready" {
+        return 2
+    }
+    let missing = env.env_get_option(KEY + "_MISSING")
+    if option.is_some(missing) or option.option_unwrap_or(missing, "fallback") != "fallback" {
+        return 3
+    }
+    let argument_count = env.env_args_count()
+    if argument_count < 1 {
+        return 4
+    }
+    let first_argument = env.env_arg_option(0)
+    if option.is_none(first_argument) or string.is_empty(option.option_unwrap(first_argument)) {
+        return 5
+    }
+    let absent_argument = env.env_arg_option(argument_count + 100)
+    if option.is_some(absent_argument) {
+        return 6
+    }
+    return 0
+}

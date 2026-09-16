@@ -1,0 +1,25 @@
+module validation_stdlib_time_utc_calendar
+
+import std.time as time
+
+public func main() returns int {
+    let epoch = time.unix_to_utc(0)
+    if time.utc_year(epoch) != 1970 or time.utc_month(epoch) != 1 or time.utc_day(epoch) != 1 {
+        return 1
+    }
+    if time.utc_hour(epoch) != 0 or time.utc_minute(epoch) != 0 or time.utc_second(epoch) != 0 {
+        return 2
+    }
+    let leap_day = time.unix_to_utc(1582934400)
+    if time.utc_year(leap_day) != 2020 or time.utc_month(leap_day) != 2 or time.utc_day(leap_day) != 29 {
+        return 3
+    }
+    let precise = time.unix_to_utc(1709210096)
+    if time.utc_year(precise) != 2024 or time.utc_month(precise) != 2 or time.utc_day(precise) != 29 {
+        return 4
+    }
+    if time.utc_hour(precise) != 12 or time.utc_minute(precise) != 34 or time.utc_second(precise) != 56 {
+        return 5
+    }
+    return 0
+}
