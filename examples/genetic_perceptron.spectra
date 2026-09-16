@@ -1,0 +1,440 @@
+// Genetic search for a small perceptron network.
+//
+// The genome contains the weights and biases of a 4-3-3 network. The genetic
+// algorithm tries to reproduce the expected diagnosis for every symptom row.
+module genetic_perceptron
+
+from std.collections import List
+import std.collections as collections
+import std.convert as convert
+import std.io as io
+import std.option as option
+import std.random as random
+
+const INPUTS = 4
+const HIDDEN = 3
+const OUTPUTS = 3
+const INPUT_GENES = 8
+const HIDDEN_GENES = 15
+const OUTPUT_GENES = 12
+const GENES = INPUT_GENES + HIDDEN_GENES + OUTPUT_GENES
+const ROWS = 16
+const MAX_SCORE = ROWS * OUTPUTS
+
+// These values keep the example quick enough to run from the command line.
+const POPULATION_SIZE = 60
+const GENERATIONS = 500
+const MUTATION_RATE = 0.05
+const TOURNAMENT_SIZE = 3
+const MIN_WEIGHT = -2.0
+const MAX_WEIGHT = 2.0
+
+func random_gene() returns float {
+    return MIN_WEIGHT + random.random_float() * (MAX_WEIGHT - MIN_WEIGHT)
+}
+
+// Every function that receives an array returns a value, so it can mutate the
+// array in-place without relying on a special void convention.
+func fill_random_genome(genome: [float]) returns int {
+    let index = 0
+    while index<GENES {
+        genome[index] = random_gene()
+        index = index + 1
+    }
+    return GENES
+}
+
+func population_at(population: List<float>, index: int) returns float {
+    let value = collections.list_get_option(population, index)
+    return option.option_unwrap(value)
+}
+
+func copy_population_genome(population: List<float>, source: int, genome: [float]) returns int {
+    let base = source * GENES
+    let gene = 0
+    while gene<GENES {
+        genome[gene] = population_at(population, base + gene)
+        gene = gene + 1
+    }
+    return GENES
+}
+
+func store_population_genome(population: List<float>, destination: int, genome: [float]) returns int {
+    let base = destination * GENES
+    let gene = 0
+    while gene<GENES {
+        collections.list_set(population, base + gene, genome[gene])
+        gene = gene + 1
+    }
+    return GENES
+}
+
+func activate(value: float) returns int {
+    if value > 0.0 {
+        return 1
+    }
+    return 0
+}
+
+// Propagates one symptom row through the 4-3-3 threshold network.
+func propagate(
+    genome: [float],
+    row: [int],
+    input_activation: [int],
+    hidden_activation: [int],
+    output: [int]
+) returns int {
+    let input_index = 0
+    while input_index<INPUTS {
+        let gene   = input_index * 2
+        let signal = genome[gene + 1] +
+            genome[gene] * convert.int_to_float(row[input_index])
+        input_activation[input_index] = activate(signal)
+        input_index = input_index + 1
+    }
+
+    let hidden_index = 0
+    while hidden_index<HIDDEN {
+        let base   = INPUT_GENES + hidden_index * (INPUTS + 1)
+        let signal = genome[base]
+        let input  = 0
+        while input<INPUTS {
+            signal = signal + genome[base + 1 + input] *
+                convert.int_to_float(input_activation[input])
+            input = input + 1
+        }
+        hidden_activation[hidden_index] = activate(signal)
+        hidden_index = hidden_index + 1
+    }
+
+    let output_index = 0
+    while output_index<OUTPUTS {
+        let base   = INPUT_GENES + HIDDEN_GENES + output_index * (HIDDEN + 1)
+        let signal = genome[base]
+        let hidden = 0
+        while hidden<HIDDEN {
+            signal = signal + genome[base + 1 + hidden] *
+                convert.int_to_float(hidden_activation[hidden])
+            hidden = hidden + 1
+        }
+        output[output_index] = activate(signal)
+        output_index = output_index + 1
+    }
+    return 0
+}
+
+func score_genome(genome: [float], inputs: [int], targets: [int]) returns int {
+    let row               = [0, 0, 0, 0]
+    let input_activation  = [0, 0, 0, 0]
+    let hidden_activation = [0, 0, 0]
+    let output            = [0, 0, 0]
+    let score             = 0
+    let row_index         = 0
+
+    while row_index<ROWS {
+        let column = 0
+        while column<INPUTS {
+            row[column] = inputs[row_index * INPUTS + column]
+            column = column + 1
+        }
+
+        propagate(genome, row, input_activation, hidden_activation, output)
+
+        let output_index = 0
+        while output_index<OUTPUTS {
+            if output[output_index] == targets[row_index * OUTPUTS + output_index] {
+                score = score + 1
+            }
+            output_index = output_index + 1
+        }
+        row_index = row_index + 1
+    }
+    return score
+}
+
+func evaluate_population(
+    population: List<float>,
+    fitness: [int],
+    inputs: [int],
+    targets: [int]
+) returns int {
+    let genome = [
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0
+    ]
+    let individual = 0
+    while individual<POPULATION_SIZE {
+        copy_population_genome(population, individual, genome)
+        fitness[individual] = score_genome(genome, inputs, targets)
+        individual = individual + 1
+    }
+    return POPULATION_SIZE
+}
+
+func generate_population(
+    population: List<float>,
+    fitness: [int],
+    inputs: [int],
+    targets: [int]
+) returns int {
+    let genome = [
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0
+    ]
+    let individual = 0
+    while individual<POPULATION_SIZE {
+        fill_random_genome(genome)
+        let gene = 0
+        while gene<GENES {
+            collections.list_push(population, genome[gene])
+            gene = gene + 1
+        }
+        individual = individual + 1
+    }
+    evaluate_population(population, fitness, inputs, targets)
+    return POPULATION_SIZE
+}
+
+func best_index(fitness: [int]) returns int {
+    let best  = 0
+    let index = 1
+    while index<POPULATION_SIZE {
+        if fitness[index] > fitness[best] {
+            best = index
+        }
+        index = index + 1
+    }
+    return best
+}
+
+func best_score(fitness: [int]) returns int {
+    return fitness[best_index(fitness)]
+}
+
+func average_score(fitness: [int]) returns float {
+    let total = 0
+    let index = 0
+    while index<POPULATION_SIZE {
+        total = total + fitness[index]
+        index = index + 1
+    }
+    return convert.int_to_float(total) / convert.int_to_float(POPULATION_SIZE)
+}
+
+func tournament_winner(fitness: [int]) returns int {
+    let winner = random.random_int(0, POPULATION_SIZE)
+    let round  = 1
+    while round<TOURNAMENT_SIZE {
+        let challenger = random.random_int(0, POPULATION_SIZE)
+        if fitness[challenger] > fitness[winner] {
+            winner = challenger
+        }
+        round = round + 1
+    }
+    return winner
+}
+
+func append_population_genome(population: List<float>, genome: [float]) returns int {
+    let gene = 0
+    while gene<GENES {
+        collections.list_push(population, genome[gene])
+        gene = gene + 1
+    }
+    return GENES
+}
+
+func next_generation(
+    population: List<float>,
+    next_population: List<float>,
+    fitness: [int]
+) returns int {
+    let elite = [
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0
+    ]
+    let child = [
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0
+    ]
+
+    // Build the next generation separately so parent selection always reads
+    // the complete previous generation, just like the Python implementation.
+    collections.list_clear(next_population)
+    let elite_index = best_index(fitness)
+    copy_population_genome(population, elite_index, elite)
+    append_population_genome(next_population, elite)
+
+    let child_index = 1
+    while child_index<POPULATION_SIZE {
+        let father      = tournament_winner(fitness)
+        let mother      = tournament_winner(fitness)
+        let father_base = father * GENES
+        let mother_base = mother * GENES
+        let cut         = random.random_int(0, GENES)
+        let gene        = 0
+        while gene<GENES {
+            if gene < cut {
+                child[gene] = population_at(population, father_base + gene)
+            } else {
+                child[gene] = population_at(population, mother_base + gene)
+            }
+            if random.random_float() < MUTATION_RATE {
+                child[gene] = random_gene()
+            }
+            gene = gene + 1
+        }
+        append_population_genome(next_population, child)
+        child_index = child_index + 1
+    }
+
+    collections.list_clear(population)
+    let value_index = 0
+    while value_index<POPULATION_SIZE * GENES {
+        collections.list_push(population, population_at(next_population, value_index))
+        value_index = value_index + 1
+    }
+    return POPULATION_SIZE
+}
+
+func integers_to_text(values: [int], length: int) returns string {
+    let text  = ""
+    let index = 0
+    while index < length {
+        if index > 0 {
+            text = text + " "
+        }
+        text = text + convert.int_to_string(values[index])
+        index = index + 1
+    }
+    return text
+}
+
+func show_network(genome: [float], inputs: [int], targets: [int]) returns int {
+    let row               = [0, 0, 0, 0]
+    let input_activation  = [0, 0, 0, 0]
+    let hidden_activation = [0, 0, 0]
+    let output            = [0, 0, 0]
+    let correct           = 0
+    let row_index         = 0
+
+    io.println("V B D C | entrada | oculta | G R D | alvo")
+    while row_index<ROWS {
+        let column = 0
+        while column<INPUTS {
+            row[column] = inputs[row_index * INPUTS + column]
+            column = column + 1
+        }
+        propagate(genome, row, input_activation, hidden_activation, output)
+
+        let output_index = 0
+        while output_index<OUTPUTS {
+            if output[output_index] == targets[row_index * OUTPUTS + output_index] {
+                correct = correct + 1
+            }
+            output_index = output_index + 1
+        }
+
+        io.println(
+            integers_to_text(row, INPUTS) + " | " +
+                integers_to_text(input_activation, INPUTS) + " | " +
+                integers_to_text(hidden_activation, HIDDEN) + " | " +
+                integers_to_text(output, OUTPUTS) + " | " +
+                integers_to_text(targets_slice(targets, row_index), OUTPUTS)
+        )
+        row_index = row_index + 1
+    }
+    io.println("acertos = " + convert.int_to_string(correct) + "/" +
+        convert.int_to_string(MAX_SCORE))
+return correct
+}
+
+func targets_slice(targets: [int], row: int) returns[int] {
+    let result = [0, 0, 0]
+    let index  = 0
+    while index<OUTPUTS {
+        result[index] = targets[row * OUTPUTS + index]
+        index = index + 1
+    }
+    return result
+}
+
+public func main() returns int {
+    // V = virus, B = bacteria, D = headache, C = runny nose.
+    let inputs = [
+        0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1,
+        0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1,
+        1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1,
+        1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1
+    ]
+    let targets = [
+        0, 0, 0,
+        0, 1, 1,
+        0, 0, 0,
+        0, 1, 1,
+        0, 1, 1,
+        0, 1, 1,
+        1, 0, 1,
+        1, 0, 1,
+        1, 0, 1,
+        1, 0, 1,
+        1, 0, 1,
+        1, 0, 1,
+        1, 0, 1,
+        1, 0, 1,
+        1, 0, 1,
+        1, 0, 1
+    ]
+    let population: List<float>      = collections.list_new()
+    let next_population: List<float> = collections.list_new()
+    let fitness                      = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let best_genome = [
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0
+    ]
+
+    random.random_seed(2)
+    generate_population(population, fitness, inputs, targets)
+    let best = best_score(fitness)
+    io.println("rede 4-3-3 | genes=" + convert.int_to_string(GENES) +
+        " | populacao=" + convert.int_to_string(POPULATION_SIZE))
+io.println("geracao 0 | media=" + convert.float_to_string(average_score(fitness)) +
+    " | melhor=" + convert.int_to_string(best))
+
+let generation = 0
+while generation<GENERATIONS and best<MAX_SCORE {
+    next_generation(population, next_population, fitness)
+    evaluate_population(population, fitness, inputs, targets)
+    let current = best_score(fitness)
+    if current > best {
+        best = current
+        io.println("geracao " + convert.int_to_string(generation + 1) +
+            " | media=" + convert.float_to_string(average_score(fitness)) +
+            " | melhor=" + convert.int_to_string(best))
+}
+generation = generation + 1
+}
+
+copy_population_genome(population, best_index(fitness), best_genome)
+io.println("fim em " + convert.int_to_string(generation) +
+    " geracoes | melhor aptidao=" + convert.int_to_string(best) + "/" +
+    convert.int_to_string(MAX_SCORE))
+show_network(best_genome, inputs, targets)
+
+collections.list_free(population)
+collections.list_free(next_population)
+return 0
+}
