@@ -1,0 +1,20 @@
+module main
+
+import left
+import right as right_mod
+
+public func main() returns int {
+    if left::render(1) != 2 {
+        return 1
+    }
+    if right::render(1) != "right" {
+        return 2
+    }
+    if left.render(1) != 2 {
+        return 3
+    }
+    if right_mod.render(1) != "right" {
+        return 4
+    }
+    return 0
+}

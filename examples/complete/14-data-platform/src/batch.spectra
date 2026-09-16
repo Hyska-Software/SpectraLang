@@ -1,0 +1,14 @@
+module batch
+
+import std.collections as collections
+import std.string as string
+
+public func data_batch_count(csv: string) returns int {
+    let rows    = string.split_by(csv, "\n")
+    let records = collections.list_len(rows) - 2
+    collections.list_free(rows)
+    if records <= 3 {
+        return 1
+    }
+    return 2
+}

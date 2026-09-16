@@ -34,7 +34,18 @@ impl SemanticAnalyzer {
                 self.validate_static_tensor_method_call(object, method_name, arguments, expr.span);
                 self.validate_static_ml_method_call(object, method_name, arguments, expr.span);
 
-                if let Some(path) = namespace_path(object) {
+                // A lexical value takes precedence over a module namespace
+                // with the same spelling.
+                let local_namespace_shadow = matches!(
+                    &object.kind,
+                    ExpressionKind::Identifier(name) if self.lookup_symbol(name).is_some()
+                );
+                let namespace = if local_namespace_shadow {
+                    None
+                } else {
+                    namespace_path(object)
+                };
+                if let Some(path) = namespace {
                     let qualified_name = format!("{}.{}", path, method_name);
                     let exports_cloned: Option<ModuleExports> = self
                         .registry

@@ -37,6 +37,12 @@ impl SemanticAnalyzer {
                                 );
                             }
                         }
+                    } else if self.ambiguous_imported_functions.contains(name) {
+                        self.error_with_hint(
+                            format!("Ambiguous imported function '{}'", name),
+                            callee.span,
+                            "Call the function with its module-qualified name, such as `module::function(...)`, or import it with a unique alias.",
+                        );
                     } else if let Some(signature) = self.functions.get(name).cloned() {
                         let signature = self.specialize_std_call_signature(
                             name,

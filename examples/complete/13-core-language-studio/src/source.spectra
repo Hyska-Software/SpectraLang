@@ -1,0 +1,17 @@
+// Materializes and reads the source program consumed by later stages.
+module source
+
+import std.fs as fs
+import std.result as result
+
+public func core_materialize_source(path: string) returns string {
+    let program = "let total = 0\nfor value in 1..5 { total = total + value }\nreturn total\n"
+    if result.is_err(fs.fs_write(path, program)) {
+        return ""
+    }
+    let loaded = fs.fs_read(path)
+    if result.is_err(loaded) {
+        return ""
+    }
+    return result.result_unwrap(loaded)
+}

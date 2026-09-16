@@ -87,7 +87,7 @@ impl ASTLowering {
                 }
             }
             ExpressionKind::EnumVariant {
-                module_path: _,
+                module_path,
                 enum_name,
                 type_args,
                 variant_name,
@@ -126,6 +126,14 @@ impl ASTLowering {
                 // EnumVariant nodes. Imported function returns are registered under the
                 // exported function name, so resolve them before enum refinement.
                 if looks_like_call && !is_known_type {
+                    let module_name = module_path
+                        .as_deref()
+                        .map(|path| format!("{}::{}", path, enum_name))
+                        .unwrap_or_else(|| enum_name.clone());
+                    let qualified_name = format!("{}::{}", module_name, variant_name);
+                    if let Some(ret) = self.function_return_types.get(&qualified_name) {
+                        return ret.clone();
+                    }
                     if let Some(ret) = self.function_return_types.get(variant_name) {
                         return ret.clone();
                     }

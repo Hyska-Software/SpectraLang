@@ -439,6 +439,9 @@ pub struct ASTLowering {
     /// Populated from `Module::std_import_aliases` at the start of `lower_module()`.
     /// e.g. "print" → ["std", "io", "print"]
     std_import_aliases: HashMap<String, Vec<String>>,
+    /// Maps source-level imported function spellings to canonical module
+    /// symbols used by JIT and AOT linking.
+    imported_function_symbols: HashMap<String, String>,
     /// Counter for generating unique lambda function names.
     lambda_counter: usize,
     /// Module-specific prefix for generated closure symbols. User modules are

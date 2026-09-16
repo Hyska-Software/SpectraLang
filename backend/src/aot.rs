@@ -99,6 +99,14 @@ fn native_function_symbol(name: &str, rename_main: bool) -> String {
     }
 }
 
+fn is_module_scoped_synthetic_function(name: &str) -> bool {
+    // Agent registration functions already carry their sanitized declaring
+    // module in the source-level name. Imported callers use that exact name,
+    // so adding a second module prefix here would break the relocatable
+    // symbol pair.
+    name.starts_with("__spectra_agent_register_tools_")
+}
+
 type AotCompileOutput = (
     Vec<u8>,
     Vec<DebugLocation>,
@@ -281,7 +289,7 @@ impl AotCodeGenerator {
 
         // First pass: declare all functions.
         for func in &ir_module.functions {
-            self.declare_function(func, rename_main)?;
+            self.declare_function(&ir_module.name, func, rename_main)?;
         }
 
         // Function parameter types for call-site argument coercion.
@@ -385,6 +393,7 @@ impl AotCodeGenerator {
 
     fn declare_function(
         &mut self,
+        module_name: &str,
         ir_func: &IRFunction,
         rename_main: bool,
     ) -> BackendResult<FuncId> {
@@ -432,7 +441,17 @@ impl AotCodeGenerator {
         // Keep the IR name private to the compiler and namespace every native
         // user symbol. The only deliberate exception is object-only `main`,
         // which remains the manual-link entry point.
-        let exported_name = native_function_symbol(&ir_func.name, rename_main);
+        // Keep the executable entry-point convention for `main`, but qualify
+        // every ordinary function with its source module so two relocatable
+        // objects may export the same source-level name safely.
+        let logical_name = if ir_func.name == "main"
+            || is_module_scoped_synthetic_function(&ir_func.name)
+        {
+            ir_func.name.clone()
+        } else {
+            format!("{}::{}", module_name, ir_func.name)
+        };
+        let exported_name = native_function_symbol(&logical_name, rename_main);
 
         let func_id = self
             .module

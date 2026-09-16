@@ -1,0 +1,97 @@
+module app
+
+import std.convert as convert
+import std.io as io
+import std.string as string
+import api_client
+import audit
+import auth
+import cleanup
+import config
+import domain
+import errors
+import events
+import filesystem
+import handlers
+import health
+import integration
+import lifecycle
+import metrics
+import middleware
+import migrations
+import models
+import openapi
+import pagination
+import paths
+import queries
+import report
+import repository
+import router
+import security
+import seed_data
+import serialization
+import validation
+import verify
+
+public func api_platform_run() returns int {
+    let settings = config.api_platform_config()
+    cleanup.api_platform_clean(settings.workspace)
+    if seed_data.api_platform_seed(settings.workspace) != 0 {
+        cleanup.api_platform_clean(settings.workspace)
+        return 1
+    }
+    if domain.api_platform_domain_roundtrip() != 0 or models.api_platform_model_roundtrip() != 0 {
+        cleanup.api_platform_clean(settings.workspace)
+        return 2
+    }
+    if migrations.api_platform_migration_plan() != 0 or repository.api_platform_repository_check(paths.api_platform_db_path(settings.workspace)) != 0 {
+        cleanup.api_platform_clean(settings.workspace)
+        return 3
+    }
+    let page  = queries.api_platform_query_page("/accounts?page=2&limit=10")
+    let paged = pagination.api_platform_page_size("/accounts?page=2&limit=10")
+    if page != 2 or paged != 10 or auth.api_platform_authorize("Bearer spectra-demo") != true {
+        cleanup.api_platform_clean(settings.workspace)
+        return 4
+    }
+    if validation.api_platform_validate_payload("{\"username\":\"ada\",\"age\":30,\"email\":\"ada@example.test\"}") != 0 {
+        cleanup.api_platform_clean(settings.workspace)
+        return 5
+    }
+    let routes      = router.api_platform_new_routes()
+    let route_count = router.api_platform_register_routes(routes)
+    if route_count != 5 or handlers.api_platform_register_handlers(routes) != 0 {
+        cleanup.api_platform_clean(settings.workspace)
+        return 6
+    }
+    if middleware.api_platform_middleware_check() != 0 or errors.api_platform_error_check() != 0 or serialization.api_platform_json_check() != 0 {
+        cleanup.api_platform_clean(settings.workspace)
+        return 7
+    }
+    if handlers.api_platform_dispatch_check(routes) != 0 or health.api_platform_health_check() != 0 or api_client.api_platform_client_check() != 0 {
+        cleanup.api_platform_clean(settings.workspace)
+        return 8
+    }
+    if security.api_platform_security_check() != 0 or events.api_platform_event_check() != 0 {
+        cleanup.api_platform_clean(settings.workspace)
+        return 9
+    }
+    let openapi_text       = openapi.api_platform_documentation()
+    let metric_text        = metrics.api_platform_metrics(route_count, page)
+    let audit_text         = audit.api_platform_audit_entry("POST", "/accounts", 201)
+    let integration_status = integration.api_platform_integration_check(route_count, metric_text)
+    let port               = lifecycle.api_platform_server_check(routes)
+    if port <= 0 or integration_status != 0 {
+        cleanup.api_platform_clean(settings.workspace)
+        return 10
+    }
+    let report_text = report.api_platform_render_report(openapi_text, metric_text, audit_text, port)
+    if filesystem.api_platform_write_report(settings.workspace, report_text) != 0 or verify.api_platform_verify_report(settings.workspace, report_text) != 0 {
+        cleanup.api_platform_clean(settings.workspace)
+        return 11
+    }
+    io.println("API SERVICE PLATFORM ok routes=" + convert.int_to_string(route_count) + " port=" + convert.int_to_string(port) + " page=" + convert.int_to_string(page))
+    io.println("API SERVICE PLATFORM storage=sqlite middleware=ready security=ready")
+    cleanup.api_platform_clean(settings.workspace)
+    return 0
+}

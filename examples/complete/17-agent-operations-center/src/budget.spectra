@@ -1,0 +1,11 @@
+module budget
+
+import std.agent
+
+public func aoc_budget_remaining(run: Run) returns int {
+    let remaining = budget_remaining(run)
+    if let Result::Ok(value) = remaining {
+        return value
+    }
+    return-1
+}

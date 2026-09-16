@@ -1,0 +1,11 @@
+// Checks the bound program's inferred primitive vocabulary.
+module types
+
+import std.string as string
+
+public func core_check(bound: string) returns int {
+    if not string.contains(bound, "symbol:total") or not string.contains(bound, "loop") {
+        return 1
+    }
+    return 0
+}

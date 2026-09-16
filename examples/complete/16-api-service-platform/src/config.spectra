@@ -1,0 +1,13 @@
+module config
+
+public record ApiPlatformConfig {
+    public name: string,
+    public workspace: string,
+}
+
+public func api_platform_config() returns ApiPlatformConfig {
+    return ApiPlatformConfig {
+        name: "Spectra API Service Platform",
+        workspace: "target/complete-api-service-platform",
+    }
+}

@@ -61,6 +61,7 @@ def run(args: list[str]) -> tuple[int, str]:
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        encoding="utf-8",
         check=False,
     )
     return completed.returncode, completed.stdout

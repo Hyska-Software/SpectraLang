@@ -1,0 +1,9 @@
+module paths
+
+public func api_platform_db_path(root: string) returns string {
+    return root + "/service.sqlite"
+}
+
+public func api_platform_report_path(root: string) returns string {
+    return root + "/service-report.txt"
+}

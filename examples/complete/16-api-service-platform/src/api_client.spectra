@@ -1,0 +1,11 @@
+module api_client
+
+from std.api.http import method_get, request, request_path
+
+public func api_platform_client_check() returns int {
+    let request_value = request(method_get(), "/accounts?page=2")
+    if request_path(request_value) != "/accounts?page=2" {
+        return 1
+    }
+    return 0
+}

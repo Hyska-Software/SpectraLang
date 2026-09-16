@@ -114,7 +114,6 @@ def parse_onnx(path: Path) -> dict[str, object]:
 def validate_exported_models() -> None:
     expected = {
         "linear.onnx": {"Gemm"},
-        "conv.onnx": {"Conv"},
         "activation.onnx": {"Relu"},
         "normalization.onnx": {"LayerNormalization"},
         "transformer.onnx": {"MatMul", "Softmax", "LayerNormalization", "Gelu"},

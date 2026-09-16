@@ -1,0 +1,11 @@
+// Produces a compact AST-like representation from the token stream.
+module parser
+
+import std.string as string
+
+public func core_parse(stream: string) returns string {
+    if string.is_empty(stream) {
+        return ""
+    }
+    return "ast|binding|loop|return|" + string.replace(stream, " ", "|") + "|end"
+}

@@ -1,0 +1,18 @@
+module journal
+
+import std.fs as fs
+import std.result as result
+import std.string as string
+import paths
+
+public func aoc_validate_journal(root: string, run_id: string) returns int {
+    let loaded = fs.fs_read(paths.aoc_journal_path(root, run_id))
+    if result.is_err(loaded) {
+        return 0
+    }
+    let text = result.result_unwrap(loaded)
+    if not string.contains(text, "\"kind\":\"tool\"") or not string.contains(text, "\"kind\":\"approval\"") or not string.contains(text, "\"kind\":\"compensation\"") or not string.contains(text, "\"kind\":\"rollback\"") or not string.contains(text, "\"kind\":\"model\"") or not string.contains(text, "\"kind\":\"assertion\"") {
+        return 0
+    }
+    return string.count_occurrences(text, "\"kind\":")
+}

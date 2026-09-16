@@ -1,0 +1,10 @@
+module audit
+
+import std.string as string
+
+public func data_audit_report(report: string) returns int {
+    if not string.contains(report, "status=ready") or not string.contains(report, "metrics:") {
+        return 1
+    }
+    return 0
+}

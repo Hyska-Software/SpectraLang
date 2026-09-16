@@ -1,0 +1,22 @@
+module index_ops
+
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+
+public func mltrain_build_index(chunks: string, path: string) returns int {
+    if not string.contains(chunks, "spectra.ml.rag_chunks.v1") {
+        return 0
+    }
+    let index = ml.vector_index_new(2)
+    if index == 0 or not ml.vector_index_set_metadata(index, "model_version", "ml-training-v1") {
+        return 0
+    }
+    if ml.vector_index_insert(index, "train-chunk", tensor.vector_f(2, 1.0)) != 1 {
+        return 0
+    }
+    if ml.vector_index_persist(index, path) != path {
+        return 0
+    }
+    return ml.vector_index_load(path)
+}

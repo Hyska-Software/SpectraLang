@@ -1,0 +1,16 @@
+module retry
+
+public func aoc_retry_plan() returns int {
+    let attempts  = 0
+    let completed = false
+    while attempts < 3 and not completed {
+        attempts = attempts + 1
+        if attempts == 3 {
+            completed = true
+        }
+    }
+    if completed {
+        return attempts
+    }
+    return 0
+}

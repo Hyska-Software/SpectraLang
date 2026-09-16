@@ -1,0 +1,10 @@
+module evaluation
+
+import std.string as string
+
+public func aoc_evaluate_report(report: string) returns int {
+    if not string.contains(report, "status=completed") or not string.contains(report, "governance=verified") {
+        return 1
+    }
+    return 0
+}

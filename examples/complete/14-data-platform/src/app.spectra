@@ -1,0 +1,95 @@
+module app
+
+import std.convert as convert
+import std.io as io
+import std.string as string
+import aggregate
+import audit
+import batch
+import cache
+import catalog
+import cleanup
+import config
+import filesystem
+import filter
+import index
+import join_ops
+import lineage
+import metrics
+import normalize
+import partition
+import paths
+import quality
+import query
+import raw_csv
+import raw_json
+import report
+import retry
+import scheduler
+import schema
+import seed_data
+import validation
+
+public func data_run() returns int {
+    let settings = config.data_load_config()
+    cleanup.data_clean(settings.workspace)
+    if seed_data.data_seed_workspace(settings.workspace) != 0 {
+        cleanup.data_clean(settings.workspace)
+        return 1
+    }
+    let csv  = raw_csv.data_read_csv(paths.data_csv_path(settings.workspace))
+    let json = raw_json.data_read_json(paths.data_json_path(settings.workspace))
+    if string.is_empty(csv) or string.is_empty(json) {
+        cleanup.data_clean(settings.workspace)
+        return 2
+    }
+    let schema_status = schema.data_validate_schema(csv, json)
+    let normalized    = normalize.data_normalize_csv(csv)
+    let active        = filter.data_count_active(normalized)
+    let amount        = aggregate.data_sum_amount(normalized)
+    let joined        = join_ops.data_join_dimensions(normalized, json)
+    let partition_key = partition.data_partition_key(joined)
+    let batches       = batch.data_batch_count(normalized)
+    if schema_status != 0 or active != 4 or amount != 57 or partition_key != 3 or batches != 2 {
+        cleanup.data_clean(settings.workspace)
+        return 3
+    }
+    let catalog_entry = catalog.data_catalog_entry(
+        paths.data_csv_path(settings.workspace),
+        normalized,
+    )
+    let index_size   = index.data_build_index(normalized)
+    let query_result = query.data_query_index(index_size, joined)
+    let cached       = cache.data_cache_roundtrip(query_result)
+    let retry_status = retry.data_retry_read(paths.data_csv_path(settings.workspace))
+    let scheduled    = scheduler.data_schedule_batches(batches)
+    if index_size != 3 or cached != query_result or retry_status != 0 or scheduled != 3 {
+        cleanup.data_clean(settings.workspace)
+        return 4
+    }
+    let quality_status = quality.data_quality_gate(schema_status, active, amount)
+    let lineage_text   = lineage.data_lineage_entry(catalog_entry, query_result)
+    let metric_text    = metrics.data_metrics(amount, active, batches)
+    let report_text = report.data_render_report(
+        metric_text,
+        catalog_entry,
+        lineage_text,
+        query_result,
+    )
+    if quality_status != 0 or audit.data_audit_report(report_text) != 0 {
+        cleanup.data_clean(settings.workspace)
+        return 5
+    }
+    if filesystem.data_write_report(settings.workspace, report_text) != 0 {
+        cleanup.data_clean(settings.workspace)
+        return 6
+    }
+    if validation.data_validate_outputs(settings.workspace, report_text, query_result, lineage_text) != 0 {
+        cleanup.data_clean(settings.workspace)
+        return 7
+    }
+    io.println("DATA PLATFORM ok rows=5 active=" + convert.int_to_string(active) + " amount=" + convert.int_to_string(amount) + " batches=" + convert.int_to_string(batches))
+    io.println("DATA PLATFORM query=" + query_result + " lineage=" + lineage_text)
+    cleanup.data_clean(settings.workspace)
+    return 0
+}

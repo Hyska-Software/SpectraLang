@@ -58,7 +58,12 @@ impl ASTLowering {
                         .collect();
                     return self.require_value(
                         self.builder
-                            .build_call(ir_func, function_name, call_args, true),
+                            .build_call(
+                                ir_func,
+                                self.resolve_user_function_symbol(&function_name),
+                                call_args,
+                                true,
+                            ),
                         "qualified user-module function call did not produce its declared result",
                     );
                 }
@@ -152,7 +157,12 @@ impl ASTLowering {
                 // 5. Fazer a chamada de função
                 self.require_value(
                     self.builder
-                        .build_call(ir_func, function_name, call_args, true),
+                        .build_call(
+                            ir_func,
+                            self.resolve_user_function_symbol(&function_name),
+                            call_args,
+                            true,
+                        ),
                     "method call did not produce its declared result",
                 )
             }

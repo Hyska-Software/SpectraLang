@@ -1,0 +1,21 @@
+module domain
+
+#[derive(Serialize, Deserialize)]
+record Account {
+    id: int,
+    username: string,
+    active: bool,
+}
+
+public func api_platform_domain_roundtrip() returns int {
+    let account: Account = Account {
+        id: 1,
+        username: "ada",
+        active: true,
+    }
+    let loaded: Account = Account::from_json(account.to_json())
+    if loaded.id != 1 or loaded.username != "ada" or loaded.active != true {
+        return 1
+    }
+    return 0
+}

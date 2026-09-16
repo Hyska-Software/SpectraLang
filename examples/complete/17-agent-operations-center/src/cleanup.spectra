@@ -1,0 +1,15 @@
+module cleanup
+
+import std.fs as fs
+import paths
+
+public func aoc_clean(root: string) returns int {
+    fs.fs_remove(paths.aoc_journal_path(root, "aoc-main"))
+    fs.fs_remove(paths.aoc_journal_path(root, "aoc-replay"))
+    fs.fs_remove(paths.aoc_note_path(root))
+    fs.fs_remove(paths.aoc_report_path(root))
+    fs.fs_remove(root + "/fixture.txt")
+    fs.remove_dir(paths.aoc_journal_dir(root))
+    fs.remove_dir(root)
+    return 0
+}

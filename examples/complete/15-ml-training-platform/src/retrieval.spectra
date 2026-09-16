@@ -1,0 +1,13 @@
+module retrieval
+
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+
+public func mltrain_retrieve(index: int) returns string {
+    let result = ml.vector_index_query(index, tensor.vector_f(2, 1.0), 1)
+    if not string.contains(result, "train-chunk") {
+        return ""
+    }
+    return result
+}

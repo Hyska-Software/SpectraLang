@@ -38,6 +38,11 @@ impl ASTLowering {
 
         // Populate stdlib alias map for unqualified call resolution.
         self.std_import_aliases = ast_module.std_import_aliases.iter().cloned().collect();
+        self.imported_function_symbols = ast_module
+            .imported_function_symbols
+            .iter()
+            .cloned()
+            .collect();
         self.type_aliases.clear();
         for item in &ast_module.items {
             if let Item::TypeAlias(alias) = item {
@@ -231,7 +236,7 @@ impl ASTLowering {
                 continue;
             }
             let external = ExternalFunction {
-                name: name.clone(),
+                name: self.resolve_user_function_symbol(name),
                 params: params.iter().map(|param| self.lower_type(param)).collect(),
                 return_type: self.lower_type(return_type),
             };

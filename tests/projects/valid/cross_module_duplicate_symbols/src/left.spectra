@@ -1,0 +1,5 @@
+module left
+
+public func render(value: int) returns int {
+    return value + 1
+}

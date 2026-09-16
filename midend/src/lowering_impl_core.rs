@@ -17,6 +17,9 @@ impl ASTLowering {
         if self.function_return_types.contains_key(&qualified_name) {
             return Some(qualified_name);
         }
+        if self.imported_function_symbols.contains_key(&qualified_name) {
+            return Some(qualified_name);
+        }
         self.function_return_types
             .contains_key(method_name)
             .then(|| method_name.to_string())
@@ -63,6 +66,7 @@ impl ASTLowering {
             function_return_types: HashMap::new(),
             function_parameter_types: HashMap::new(),
             std_import_aliases: HashMap::new(),
+            imported_function_symbols: HashMap::new(),
             lambda_counter: 0,
             lambda_prefix: "module".to_string(),
             pending_lambdas: Vec::new(),
@@ -85,6 +89,16 @@ impl ASTLowering {
         lowering.register_builtin_async_traits();
         lowering.register_builtin_api_traits();
         lowering
+    }
+
+    pub(crate) fn resolve_user_function_symbol(&self, name: &str) -> String {
+        if name.contains("::") {
+            return name.to_string();
+        }
+        self.imported_function_symbols
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| name.to_string())
     }
 
     pub fn set_source_file(&mut self, file: impl Into<String>) {

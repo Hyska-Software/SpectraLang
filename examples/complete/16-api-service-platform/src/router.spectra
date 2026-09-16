@@ -1,0 +1,19 @@
+module router
+
+from std.api.routing import Router, Route, router, get, post, put, delete, route_id
+
+public func api_platform_new_routes() returns Router {
+    return router()
+}
+
+public func api_platform_register_routes(routes: Router) returns int {
+    let list_route: Route   = get(routes, "/accounts")
+    let create_route: Route = post(routes, "/accounts")
+    let read_route: Route   = get(routes, "/accounts/{id:\\d+}")
+    let update_route: Route = put(routes, "/accounts/{id:\\d+}")
+    let delete_route: Route = delete(routes, "/accounts/{id:\\d+}")
+    if route_id(list_route) == 0 or route_id(create_route) == 0 or route_id(read_route) == 0 or route_id(update_route) == 0 or route_id(delete_route) == 0 {
+        return 0
+    }
+    return 5
+}

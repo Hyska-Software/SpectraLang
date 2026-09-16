@@ -202,7 +202,7 @@ impl ASTLowering {
 
                     mangled
                 } else {
-                    function_name
+                    self.resolve_user_function_symbol(&function_name)
                 };
 
                 self.require_value(

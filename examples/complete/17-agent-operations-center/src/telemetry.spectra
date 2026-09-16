@@ -1,0 +1,10 @@
+module telemetry
+
+import std.string as string
+
+public func aoc_trace_report(report: string) returns int {
+    if string.contains(report, "AGENT OPERATIONS REPORT") {
+        return 1
+    }
+    return 0
+}

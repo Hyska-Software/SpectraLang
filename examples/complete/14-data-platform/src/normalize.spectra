@@ -1,0 +1,8 @@
+module normalize
+
+import std.string as string
+
+public func data_normalize_csv(csv: string) returns string {
+    let without_cr = string.replace(csv, "\r", "")
+    return string.replace(without_cr, "segment", "group")
+}

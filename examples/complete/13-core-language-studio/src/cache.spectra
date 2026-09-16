@@ -1,0 +1,18 @@
+// Exercises a typed map as the compiler cache boundary.
+module cache
+
+from std.collections import Map
+import std.collections as collections
+import std.option as option
+
+public func core_cache_roundtrip(key: string, value: int) returns int {
+    let cache: Map<int, int> = collections.map_new()
+    collections.map_set(cache, value, value)
+    let hit    = collections.map_get(cache, value)
+    let result = -1
+    if option.is_some(hit) {
+        result = option.option_unwrap(hit)
+    }
+    collections.map_free(cache)
+    return result
+}

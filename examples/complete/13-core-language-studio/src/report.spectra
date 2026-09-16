@@ -1,0 +1,16 @@
+// Renders the observable compiler report.
+module report
+
+import std.convert as convert
+
+public func core_report_render(package_id: string, token_count: int, nodes: int, result: int) returns string {
+    return "core-language-report\npackage=" +
+        package_id +
+        "\ntokens=" +
+        convert.int_to_string(token_count) +
+        "\nnodes=" +
+        convert.int_to_string(nodes) +
+        "\nresult=" +
+        convert.int_to_string(result) +
+        "\nstatus=ready\n"
+}

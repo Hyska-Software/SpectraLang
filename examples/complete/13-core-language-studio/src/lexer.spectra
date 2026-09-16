@@ -1,0 +1,10 @@
+// Converts source text to a normalized token stream.
+module lexer
+
+import std.string as string
+
+public func core_lex(source: string) returns string {
+    let flat   = string.replace(source, "\n", " ")
+    let braces = string.replace(string.replace(flat, "{", " { "), "}", " } ")
+    return string.replace(braces, "  ", " ")
+}

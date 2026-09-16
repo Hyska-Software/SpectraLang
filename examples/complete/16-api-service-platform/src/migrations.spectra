@@ -1,0 +1,11 @@
+module migrations
+
+import std.string as string
+
+public func api_platform_migration_plan() returns int {
+    let plan = "v1:create_accounts;v2:add_audit_events;rollback=v2"
+    if not string.contains(plan, "create_accounts") or not string.contains(plan, "rollback=v2") {
+        return 1
+    }
+    return 0
+}

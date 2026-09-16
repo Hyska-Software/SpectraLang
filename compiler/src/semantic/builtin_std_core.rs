@@ -183,6 +183,7 @@ fn agent_async_fn(params: Vec<Type>, output: Type) -> ExportedFunction {
         },
         visibility: ExportVisibility::Public,
         is_async: true,
+        qualified_name: None,
     }
 }
 
@@ -392,6 +393,7 @@ pub(crate) fn make_std_agent() -> ModuleExports {
             return_type: result_of(Type::Bool),
             visibility: ExportVisibility::Internal,
             is_async: false,
+            qualified_name: None,
         },
     );
     // approve(run: Run, action: string) -> Result<bool, Error> (sync; R-3217)

@@ -1,0 +1,5 @@
+module right
+
+public func render(value: int) returns string {
+    return "right"
+}

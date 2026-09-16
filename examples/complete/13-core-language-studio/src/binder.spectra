@@ -1,0 +1,8 @@
+// Adds binding information to the parsed representation.
+module binder
+
+import std.string as string
+
+public func core_bind(tree: string) returns string {
+    return string.replace(tree, "ast|", "bound|symbol:total|")
+}

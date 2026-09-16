@@ -1,6 +1,6 @@
 # Spectra complete example projects
 
-12 complete, self-validating `.spectra` projects. Each prints an `ok` line
+17 complete, self-validating `.spectra` projects. Each prints an `ok` line
 and exits `0`; any broken invariant exits with a distinct non-zero code.
 
 Run any project (from the repo root):
@@ -21,6 +21,11 @@ spectralang run examples/complete/<project>
 | 06 | `06-fanout-pipeline` | 4 spawned workers summing 1..1000 (`PIPELINE ok total=500500 mode=spawn`) |
 | 11 | `11-ops-workbench` | Full operations workbench: CSV ingestion, JSON domain roundtrip, collection planning, concurrent workers, tensor/ML quality gates, checkpoint artifact, filesystem report and deterministic scheduling (`OPS WORKBENCH ok events=6`) |
 | 12 | `12-ml-ai-workbench` | End-to-end local ML/AI lifecycle: CSV/JSONL ingestion, autodiff training, checkpoint reload, tokenizer/RAG retrieval, guarded serving, monitoring, experiment manifest, report, and cleanup (`ML AI WORKBENCH ok`) |
+| 13 | `13-core-language-studio` | Core-language product slice: source materialization, lexing, parsing, AST walking, binding, inference, diagnostics, optimization, evaluation, packaging, cache, scheduling, report and cleanup (`CORE LANGUAGE STUDIO ok`) |
+| 14 | `14-data-platform` | Data platform slice: CSV/JSONL ingestion, schema, normalization, filtering, aggregation, join, partitioning, batching, catalog/index/query/cache, quality, lineage, report and cleanup (`DATA PLATFORM ok`) |
+| 15 | `15-ml-training-platform` | Training platform: dataset readers, feature transforms, autodiff/Adam training, checkpoint artifacts, tokenizer/RAG index, guarded serving, monitoring, experiment reproducibility, report and cleanup (`ML TRAINING PLATFORM ok`) |
+| 16 | `16-api-service-platform` | API service: domain JSON, SQLite repository/migrations, query validation, routing, handlers, middleware, security policy, events, OpenAPI, server lifecycle, report and cleanup (`API SERVICE PLATFORM ok`) |
+| 17 | `17-agent-operations-center` | Agent operations: governed tools, capability policy, memory, journal, approval, budget, taint, compensation/rollback, MCP surface, telemetry, and durable replay (`AGENT OPERATIONS CENTER ok`) |
 
 ## Performance comparisons (Spectra vs Go vs Rust)
 

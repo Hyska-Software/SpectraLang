@@ -1,0 +1,137 @@
+module app
+
+import std.convert as convert
+import std.io as io
+import std.serve as serve
+import std.string as string
+import std.tensor as tensor
+import batches
+import checkpoint
+import chunks
+import cleanup
+import config
+import dataset
+import evaluation
+import experiment
+import features
+import index_ops
+import ingest
+import loss
+import metrics
+import model
+import monitor
+import paths
+import prompt
+import report
+import repro
+import retrieval
+import seed_data
+import serve_policy
+import serve_registry
+import split_ops
+import tokenizer
+import trainer
+import validation
+
+public func mltrain_run() returns int {
+    let settings = config.mltrain_load_config()
+    cleanup.mltrain_clean(settings.workspace)
+    if seed_data.mltrain_seed_workspace(settings.workspace) != 0 {
+        return 1
+    }
+    let dataset_handle = ingest.mltrain_load_csv(paths.mltrain_csv_path(settings.workspace))
+    if dataset.mltrain_validate_dataset(dataset_handle) != 0 {
+        cleanup.mltrain_clean(settings.workspace)
+        return 2
+    }
+    if ingest.mltrain_validate_jsonl(settings.workspace) != 0 {
+        cleanup.mltrain_clean(settings.workspace)
+        return 3
+    }
+    let prepared       = features.mltrain_prepare_features(dataset_handle)
+    let train          = split_ops.mltrain_train_split(prepared)
+    let test           = split_ops.mltrain_test_split(prepared)
+    let batch_count    = batches.mltrain_batch_count(train)
+    let train_features = batches.mltrain_batch_features(train, 3)
+    let train_labels   = batches.mltrain_batch_labels(train, 3)
+    let test_features  = batches.mltrain_batch_features(test, 1)
+    let test_labels    = batches.mltrain_batch_labels(test, 1)
+    if batch_count != 1 or tensor.len(train_features) != 6 or tensor.len(train_labels) != 3 {
+        cleanup.mltrain_clean(settings.workspace)
+        return 4
+    }
+    let weights   = model.mltrain_new_weights()
+    let bias      = model.mltrain_new_bias()
+    let trained   = trainer.mltrain_fit(train_features, train_labels, weights, bias, 8)
+    let eval_text = evaluation.mltrain_evaluate(test_features, test_labels, weights, bias)
+    if trained != 8 or not string.contains(eval_text, "evaluation:mse=") {
+        cleanup.mltrain_clean(settings.workspace)
+        tensor.free_all()
+        return 5
+    }
+    if not checkpoint.mltrain_save_checkpoint(settings.workspace, weights, bias) {
+        cleanup.mltrain_clean(settings.workspace)
+        tensor.free_all()
+        return 6
+    }
+    let token_score = tokenizer.mltrain_tokenizer_score("spectra runtime model training")
+    let context = chunks.mltrain_chunk_context("Spectra trains a model and serves grounded predictions.")
+    let index = index_ops.mltrain_build_index(context, paths.mltrain_index_path(settings.workspace))
+    let retrieved = retrieval.mltrain_retrieve(index)
+    let built_prompt = prompt.mltrain_build_prompt(retrieved, "How is the model served?")
+    if token_score <= 0 or index == 0 or string.is_empty(built_prompt) {
+        cleanup.mltrain_clean(settings.workspace)
+        tensor.free_all()
+        return 7
+    }
+    let server = serve_registry.mltrain_register(paths.mltrain_checkpoint_path(settings.workspace))
+    if server == 0 or serve_policy.mltrain_guard(server) != 0 {
+        cleanup.mltrain_clean(settings.workspace)
+        serve.reset()
+        tensor.free_all()
+        return 8
+    }
+    if serve_policy.mltrain_monitor(server, paths.mltrain_monitor_path(settings.workspace)) != 0 {
+        cleanup.mltrain_clean(settings.workspace)
+        serve.reset()
+        tensor.free_all()
+        return 9
+    }
+    if monitor.mltrain_snapshot(server) != 1 {
+        cleanup.mltrain_clean(settings.workspace)
+        serve.reset()
+        tensor.free_all()
+        return 10
+    }
+    let run_manifest = experiment.mltrain_record_run(
+        settings.workspace,
+        paths.mltrain_checkpoint_path(settings.workspace),
+        eval_text,
+    )
+    if string.is_empty(run_manifest) or repro.mltrain_verify_run(run_manifest) != 0 {
+        cleanup.mltrain_clean(settings.workspace)
+        serve.reset()
+        tensor.free_all()
+        return 11
+    }
+    let metric_text = metrics.mltrain_metrics(trained, token_score, index)
+    let report_text = report.mltrain_render_report(
+        metric_text,
+        eval_text,
+        built_prompt,
+        run_manifest,
+    )
+    if validation.mltrain_validate_report(settings.workspace, report_text, retrieved) != 0 {
+        cleanup.mltrain_clean(settings.workspace)
+        serve.reset()
+        tensor.free_all()
+        return 12
+    }
+    io.println("ML TRAINING PLATFORM ok rows=4 steps=" + convert.int_to_string(trained) + " tokens=" + convert.int_to_string(token_score))
+    io.println("ML TRAINING PLATFORM evaluation=" + eval_text + " index=" + convert.int_to_string(index))
+    io.println("ML TRAINING PLATFORM serving=guarded artifacts=checkpoint,experiment")
+    cleanup.mltrain_clean(settings.workspace)
+    serve.reset()
+    tensor.free_all()
+    return 0
+}

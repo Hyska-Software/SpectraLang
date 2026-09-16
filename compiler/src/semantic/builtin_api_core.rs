@@ -37,6 +37,7 @@ pub(crate) fn pub_fn(params: Vec<Type>, return_type: Type) -> ExportedFunction {
         return_type,
         visibility: ExportVisibility::Public,
         is_async: false,
+        qualified_name: None,
     }
 }
 

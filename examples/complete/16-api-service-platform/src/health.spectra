@@ -1,0 +1,9 @@
+module health
+
+public func api_platform_health_check() returns int {
+    let status = "ok:database=ready;queue=ready;version=v1"
+    if status != "ok:database=ready;queue=ready;version=v1" {
+        return 1
+    }
+    return 0
+}

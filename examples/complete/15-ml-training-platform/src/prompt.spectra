@@ -1,0 +1,10 @@
+module prompt
+
+import std.string as string
+
+public func mltrain_build_prompt(context: string, question: string) returns string {
+    if string.is_empty(context) or string.is_empty(question) {
+        return ""
+    }
+    return "context=" + context + "\nquestion=" + question
+}

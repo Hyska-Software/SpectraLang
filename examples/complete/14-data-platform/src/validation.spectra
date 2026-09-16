@@ -1,0 +1,18 @@
+module validation
+
+import std.fs as fs
+import std.result as result
+import std.string as string
+import paths
+
+public func data_validate_outputs(root: string, report: string, query: string, lineage: string) returns int {
+    let loaded = fs.fs_read(paths.data_report_path(root))
+    if result.is_err(loaded) {
+        return 1
+    }
+    let saved = result.result_unwrap(loaded)
+    if saved != report or not string.contains(query, "beta=24") or not string.contains(lineage, "index->query") {
+        return 2
+    }
+    return 0
+}

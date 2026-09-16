@@ -585,6 +585,12 @@ pub struct SemanticAnalyzer {
     // Functions discovered via qualified paths (module::fn) during expression analysis.
     // Flushed to module.imported_function_return_types at the end of analyze_module.
     qualified_fn_types: Vec<(String, crate::ast::Type)>,
+    // Signatures discovered via qualified paths (module::fn), including their
+    // canonical module-qualified linker symbols.
+    qualified_fn_signatures: Vec<(String, Vec<crate::ast::Type>, crate::ast::Type)>,
+    // Unqualified spellings exported by more than one imported user module.
+    // Qualified calls remain valid; a bare call receives an ambiguity error.
+    ambiguous_imported_functions: HashSet<String>,
     const_values: HashMap<String, ConstValue>,
     // Flow-sensitive use-after-free tracking (E034), active only inside a
     // function body. See semantic_use_after_free.rs for the documented design.

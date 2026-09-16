@@ -22,6 +22,7 @@ impl SemanticAnalyzer {
         let mut new_user_fn_types: Vec<(String, crate::ast::Type)> = Vec::new();
         let mut new_user_fn_signatures: Vec<(String, Vec<crate::ast::Type>, crate::ast::Type)> =
             Vec::new();
+        let mut new_user_fn_symbols: Vec<(String, String)> = Vec::new();
         let mut new_static_globals: Vec<(String, String, crate::ast::Type)> = Vec::new();
         let mut new_enum_defs: Vec<crate::ast::Enum> = Vec::new();
         let mut new_struct_defs: Vec<crate::ast::Struct> = Vec::new();
@@ -33,6 +34,7 @@ impl SemanticAnalyzer {
                 import,
                 &mut new_user_fn_types,
                 &mut new_user_fn_signatures,
+                &mut new_user_fn_symbols,
                 &mut new_static_globals,
                 &mut new_enum_defs,
                 &mut new_struct_defs,
@@ -49,6 +51,7 @@ impl SemanticAnalyzer {
         module
             .imported_function_signatures
             .extend(new_user_fn_signatures);
+        module.imported_function_symbols.extend(new_user_fn_symbols);
         module.imported_static_globals.extend(new_static_globals);
         module.imported_enum_defs.extend(new_enum_defs);
         module.imported_struct_defs.extend(new_struct_defs);
@@ -376,6 +379,9 @@ impl SemanticAnalyzer {
         module
             .imported_function_return_types
             .append(&mut self.qualified_fn_types);
+        module
+            .imported_function_signatures
+            .append(&mut self.qualified_fn_signatures);
 
         // Return collected errors
         std::mem::take(&mut self.errors)

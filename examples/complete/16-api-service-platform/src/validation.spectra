@@ -1,0 +1,19 @@
+module validation
+
+from std.api.validation import ValidationSchema, ValidationResult, schema, field, min_length, max_length, range, regex, validate_json, result_ok
+
+public func api_platform_validate_payload(payload: string) returns int {
+    let s0: ValidationSchema     = schema()
+    let s1: ValidationSchema     = field(s0, "username", 1, true)
+    let s2: ValidationSchema     = min_length(s1, "username", 3)
+    let s3: ValidationSchema     = max_length(s2, "username", 20)
+    let s4: ValidationSchema     = field(s3, "age", 2, true)
+    let s5: ValidationSchema     = range(s4, "age", 0, 150)
+    let s6: ValidationSchema     = field(s5, "email", 1, true)
+    let s7: ValidationSchema     = regex(s6, "email", "^[^@]+@[^@]+$")
+    let result: ValidationResult = validate_json(s7, payload)
+    if result_ok(result) != true {
+        return 1
+    }
+    return 0
+}

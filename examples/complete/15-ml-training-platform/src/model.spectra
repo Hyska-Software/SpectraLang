@@ -1,0 +1,19 @@
+module model
+
+import std.tensor as tensor
+
+public func mltrain_new_weights() returns int {
+    return tensor.requires_grad(tensor.reshape(tensor.full_f(2, 0.0), 2, 1), true)
+}
+
+public func mltrain_new_bias() returns int {
+    return tensor.requires_grad(tensor.full_f(1, 0.0), true)
+}
+
+public func mltrain_new_moment_weights() returns int {
+    return tensor.reshape(tensor.full_f(2, 0.0), 2, 1)
+}
+
+public func mltrain_new_moment_bias() returns int {
+    return tensor.full_f(1, 0.0)
+}

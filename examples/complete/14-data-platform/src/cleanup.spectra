@@ -1,0 +1,13 @@
+module cleanup
+
+import std.fs as fs
+
+public func data_clean(root: string) returns int {
+    fs.fs_remove(root + "/lake/events.csv")
+    fs.fs_remove(root + "/lake/dimensions.jsonl")
+    fs.fs_remove(root + "/reports/data-report.txt")
+    fs.remove_dir(root + "/lake")
+    fs.remove_dir(root + "/reports")
+    fs.remove_dir(root)
+    return 0
+}

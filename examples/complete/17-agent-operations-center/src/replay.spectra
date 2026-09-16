@@ -1,0 +1,42 @@
+module replay
+
+import std.agent
+import std.fs as fs
+import std.result as result
+import std.string as string
+import model
+import paths
+
+async func aoc_one_run(root: string, run_id: string) returns string {
+    let started = agent_start(model.aoc_spec(root, run_id))
+    if let Result::Ok(run) = started {
+        let payload = "{\"path\":\"" + paths.aoc_note_path(root) + "\",\"body\":\"replay-safe\"}"
+        let called  = await tool_call(run, "aoc_persist_note", payload)
+        if let Result::Err(_) = called {
+            return ""
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            return report
+        }
+    }
+    return ""
+}
+
+public func aoc_replay_check(root: string) returns int {
+    let path = paths.aoc_journal_path(root, "aoc-replay")
+    fs.fs_remove(path)
+    let first = block_on(aoc_one_run(root, "aoc-replay"))
+    if first == "" or not string.contains(first, "\"replay\":false") {
+        return 1
+    }
+    let second = block_on(aoc_one_run(root, "aoc-replay"))
+    if second == "" or not string.contains(second, "\"replay\":true") {
+        return 2
+    }
+    let journal = fs.fs_read(path)
+    if result.is_err(journal) or string.count_occurrences(result.result_unwrap(journal), "\"kind\":\"tool\"") != 1 {
+        return 3
+    }
+    return 0
+}

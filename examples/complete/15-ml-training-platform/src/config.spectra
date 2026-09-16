@@ -1,0 +1,15 @@
+module config
+
+public record MlTrainConfig {
+    public name: string,
+    public workspace: string,
+    public seed: int,
+}
+
+public func mltrain_load_config() returns MlTrainConfig {
+    return MlTrainConfig {
+        name: "Spectra ML Training Platform",
+        workspace: "target/complete-ml-training-platform",
+        seed: 20260916,
+    }
+}

@@ -1,0 +1,7 @@
+module audit
+
+import std.convert as convert
+
+public func api_platform_audit_entry(method: string, path: string, status: int) returns string {
+    return "audit:method=" + method + ";path=" + path + ";status=" + convert.int_to_string(status)
+}

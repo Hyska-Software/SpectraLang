@@ -1,0 +1,13 @@
+module verify
+
+import std.fs as fs
+import std.result as result
+import paths
+
+public func api_platform_verify_report(root: string, expected: string) returns int {
+    let loaded = fs.fs_read(paths.api_platform_report_path(root))
+    if result.is_err(loaded) or result.result_unwrap(loaded) != expected {
+        return 1
+    }
+    return 0
+}

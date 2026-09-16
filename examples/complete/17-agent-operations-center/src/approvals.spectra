@@ -1,0 +1,14 @@
+module approvals
+
+import std.agent
+
+public func aoc_default_approval(run: Run) returns int {
+    let decision = approve(run, "spectra.std.fs.fs_write")
+    if let Result::Ok(allowed) = decision {
+        if allowed == true {
+            return 1
+        }
+        return 0
+    }
+    return 2
+}

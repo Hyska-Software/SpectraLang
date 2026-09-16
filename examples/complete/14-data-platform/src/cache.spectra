@@ -1,0 +1,17 @@
+module cache
+
+from std.collections import Map
+import std.collections as collections
+import std.option as option
+
+public func data_cache_roundtrip(value: string) returns string {
+    let values: Map<string, string> = collections.map_new()
+    collections.map_set(values, "latest", value)
+    let found  = collections.map_get_option(values, "latest")
+    let loaded = ""
+    if option.is_some(found) {
+        loaded = option.option_unwrap(found)
+    }
+    collections.map_free(values)
+    return loaded
+}

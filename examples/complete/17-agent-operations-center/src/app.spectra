@@ -1,0 +1,59 @@
+module app
+
+import std.convert as convert
+import std.io as io
+import cleanup
+import config
+import evaluation
+import fixtures
+import journal
+import ledger
+import policy
+import replay
+import report
+import retry
+import scheduler
+import service
+import telemetry
+import validation
+
+public func aoc_run() returns int {
+    let settings = config.aoc_load_config()
+    cleanup.aoc_clean(settings.workspace)
+    if fixtures.aoc_prepare(settings.workspace) != 0 or policy.aoc_static_policy_check() != 0 {
+        cleanup.aoc_clean(settings.workspace)
+        return 1
+    }
+    if retry.aoc_retry_plan() != 3 or scheduler.aoc_schedule_check() != 12 {
+        cleanup.aoc_clean(settings.workspace)
+        return 2
+    }
+    let run_status = block_on(service.aoc_execute(settings.workspace, settings.run_id))
+    if run_status != 0 {
+        cleanup.aoc_clean(settings.workspace)
+        return 3
+    }
+    let journal_count = journal.aoc_validate_journal(settings.workspace, settings.run_id)
+    let ledger_count  = ledger.aoc_count_events(settings.workspace, settings.run_id)
+    if journal_count < 5 or ledger_count < 5 {
+        cleanup.aoc_clean(settings.workspace)
+        return 4
+    }
+    if replay.aoc_replay_check(settings.workspace) != 0 {
+        cleanup.aoc_clean(settings.workspace)
+        return 5
+    }
+    let report_text = report.aoc_render_report(journal_count, ledger_count)
+    if evaluation.aoc_evaluate_report(report_text) != 0 or telemetry.aoc_trace_report(report_text) != 1 {
+        cleanup.aoc_clean(settings.workspace)
+        return 6
+    }
+    if validation.aoc_validate_artifacts(settings.workspace, report_text) != 0 {
+        cleanup.aoc_clean(settings.workspace)
+        return 7
+    }
+    io.println("AGENT OPERATIONS CENTER ok journal=" + convert.int_to_string(journal_count) + " events=" + convert.int_to_string(ledger_count) + " replay=verified")
+    io.println("AGENT OPERATIONS CENTER governance=capability,approval,budget,taint,compensation")
+    cleanup.aoc_clean(settings.workspace)
+    return 0
+}

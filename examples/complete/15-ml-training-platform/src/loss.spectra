@@ -1,0 +1,7 @@
+module loss
+
+import std.ml as ml
+
+public func mltrain_loss(prediction: int, labels: int) returns int {
+    return ml.mse_loss(prediction, labels)
+}

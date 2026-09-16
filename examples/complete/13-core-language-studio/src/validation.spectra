@@ -1,0 +1,21 @@
+// Verifies report content from the target user's perspective.
+module validation
+
+import std.fs as fs
+import std.result as result
+import std.string as string
+
+public func core_validate_report(path: string, package_id: string, result_value: int) returns int {
+    let loaded = fs.fs_read(path)
+    if result.is_err(loaded) {
+        return 1
+    }
+    let text = result.result_unwrap(loaded)
+    if not string.contains(text, package_id) or not string.contains(text, "status=ready") {
+        return 2
+    }
+    if not string.contains(text, "result=" + "31") or result_value != 31 {
+        return 3
+    }
+    return 0
+}

@@ -1,0 +1,13 @@
+module schema
+
+import std.string as string
+
+public func data_validate_schema(csv: string, json: string) returns int {
+    if not string.contains(csv, "id,segment,amount,active") {
+        return 1
+    }
+    if not string.contains(json, "\"segment\"") or not string.contains(json, "\"limit\"") {
+        return 2
+    }
+    return 0
+}

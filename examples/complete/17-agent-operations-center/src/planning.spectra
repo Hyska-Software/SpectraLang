@@ -1,0 +1,5 @@
+module planning
+
+public func aoc_plan() returns string {
+    return "plan:write-note->recall->approve->taint-review->rollback"
+}

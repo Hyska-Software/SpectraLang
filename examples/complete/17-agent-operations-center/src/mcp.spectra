@@ -1,0 +1,16 @@
+module mcp
+
+import std.agent
+import std.string as string
+import protocol
+
+public func aoc_mcp_surface(run: Run) returns int {
+    let listed = mcp_handle(run, protocol.aoc_tools_list_request())
+    if let Result::Ok(document) = listed {
+        if string.contains(document, "aoc_persist_note") {
+            return 0
+        }
+        return 1
+    }
+    return 2
+}

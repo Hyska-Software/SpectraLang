@@ -1,0 +1,13 @@
+module filesystem
+
+import std.fs as fs
+import std.result as result
+import paths
+
+public func api_platform_write_report(root: string, report: string) returns int {
+    let written = fs.fs_write(paths.api_platform_report_path(root), report)
+    if result.is_err(written) {
+        return 1
+    }
+    return 0
+}

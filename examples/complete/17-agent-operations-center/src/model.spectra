@@ -1,0 +1,9 @@
+module model
+
+public func aoc_spec(root: string, run_id: string) returns string {
+    return "{\"goal\":\"agent-operations-center\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"spectra.std.fs\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":8,\"untrusted\":\"approve\",\"seed\":17,\"journal\":\"" +
+        root +
+        "/journal\",\"journal_payloads\":true,\"run_id\":\"" +
+        run_id +
+        "\"}"
+}

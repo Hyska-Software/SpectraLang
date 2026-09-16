@@ -1,0 +1,91 @@
+// Orchestrates the complete source-to-report language toolchain.
+module app
+
+import std.convert as convert
+import std.io as io
+import std.string as string
+import ast
+import ast_walk
+import binder
+import cache
+import cleanup
+import compiler
+import config
+import diagnostics
+import evaluator
+import filesystem
+import formatter
+import infer
+import interpreter
+import lexer
+import linter
+import optimizer
+import package
+import parser
+import report
+import scheduler
+import source
+import source_map
+import token_rules
+import tokens
+import types
+import validation
+
+public func core_run() returns int {
+    let settings = config.core_load_config()
+    cleanup.core_clean(settings.workspace)
+    let program = source.core_materialize_source(settings.source_path)
+    if string.is_empty(program) {
+        cleanup.core_clean(settings.workspace)
+        return 1
+    }
+    let token_count  = tokens.core_count(program)
+    let token_stream = lexer.core_lex(program)
+    if token_count <= 0 or token_rules.core_validate(token_stream) != 0 {
+        cleanup.core_clean(settings.workspace)
+        return 2
+    }
+    let parsed = parser.core_parse(token_stream)
+    let nodes  = ast.core_node_count(parsed)
+    let walked = ast_walk.core_walk(parsed)
+    let bound  = binder.core_bind(parsed)
+    if nodes <= 0 or walked <= 0 or types.core_check(bound) != 0 {
+        cleanup.core_clean(settings.workspace)
+        return 3
+    }
+    let inferred         = infer.core_infer(bound)
+    let diagnostics_text = diagnostics.core_diagnostics_render(inferred)
+    let source_offset    = source_map.core_offset(program)
+    if source_offset < 0 or string.contains(diagnostics_text, "diagnostics=0") != true {
+        cleanup.core_clean(settings.workspace)
+        return 4
+    }
+    let optimized   = optimizer.core_optimize(inferred)
+    let evaluated   = evaluator.core_evaluate(optimized)
+    let interpreted = interpreter.core_interpret(evaluated)
+    let formatted   = formatter.core_format(program)
+    if linter.core_warning_count(formatted) != 0 or interpreted != 30 {
+        cleanup.core_clean(settings.workspace)
+        return 5
+    }
+    let artifact   = compiler.core_compile(optimized, interpreted)
+    let package_id = package.core_package_id(artifact)
+    let cached     = cache.core_cache_roundtrip(package_id, interpreted)
+    let scheduled  = scheduler.core_schedule(cached)
+    if cached != interpreted or scheduled != interpreted + 1 {
+        cleanup.core_clean(settings.workspace)
+        return 6
+    }
+    let report_text = report.core_report_render(package_id, token_count, nodes, scheduled)
+    if filesystem.core_write_report(settings.report_path, report_text) != 0 {
+        cleanup.core_clean(settings.workspace)
+        return 7
+    }
+    if validation.core_validate_report(settings.report_path, package_id, scheduled) != 0 {
+        cleanup.core_clean(settings.workspace)
+        return 8
+    }
+    io.println("CORE LANGUAGE STUDIO ok tokens=" + convert.int_to_string(token_count) + " nodes=" + convert.int_to_string(nodes) + " result=" + convert.int_to_string(interpreted))
+    cleanup.core_clean(settings.workspace)
+    return 0
+}

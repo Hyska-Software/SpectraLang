@@ -1,0 +1,12 @@
+// Counts source tokens using stable lexical markers.
+module tokens
+
+import std.string as string
+
+public func core_count(source: string) returns int {
+    return string.count_occurrences(source, "let") +
+        string.count_occurrences(source, "for") +
+        string.count_occurrences(source, "return") +
+        string.count_occurrences(source, "=") +
+        string.count_occurrences(source, "+")
+}

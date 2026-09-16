@@ -1,0 +1,14 @@
+module seed_data
+
+import std.fs as fs
+import std.result as result
+
+public func api_platform_seed(root: string) returns int {
+    if result.is_err(fs.create_dir_all(root)) {
+        return 1
+    }
+    if result.is_err(fs.fs_write(root + "/seed.txt", "api-platform=v1\ntransport=http1\n")) {
+        return 2
+    }
+    return 0
+}

@@ -1,0 +1,28 @@
+module tools
+
+import std.agent
+import std.fs as fs
+
+#[derive(Serialize, Deserialize)]
+public record NoteArgs {
+    path: string,
+    body: string,
+}
+
+#[agent_tool("Persists a governed operational note")]
+public async func aoc_persist_note(run: Run, args: NoteArgs) returns bool {
+    let written = fs.fs_write(args.path, args.body)
+    if let Result::Ok(ok) = written {
+        return ok
+    }
+    return false
+}
+
+#[agent_tool("Reads a governed operational note")]
+public async func aoc_lookup_note(run: Run, args: NoteArgs) returns string {
+    let loaded = fs.fs_read(args.path)
+    if let Result::Ok(text) = loaded {
+        return text
+    }
+    return "missing"
+}

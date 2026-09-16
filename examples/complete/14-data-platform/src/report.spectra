@@ -1,0 +1,18 @@
+module report
+
+import std.string as string
+
+public func data_render_report(metrics: string, catalog: string, lineage: string, query: string) returns string {
+    if string.is_empty(metrics) or string.is_empty(catalog) or string.is_empty(lineage) {
+        return ""
+    }
+    return "DATA PLATFORM REPORT\n" +
+        metrics +
+        "\n" +
+        catalog +
+        "\n" +
+        lineage +
+        "\n" +
+        query +
+        "\nstatus=ready"
+}

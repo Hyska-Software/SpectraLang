@@ -1,0 +1,22 @@
+module compensation
+
+import std.agent
+import tools
+
+public func aoc_register_compensation(run: Run, payload: string) returns int {
+    let registered = compensate(run, "aoc_persist_note", payload)
+    if let Result::Ok(ok) = registered {
+        if ok == true {
+            return 0
+        }
+    }
+    return 1
+}
+
+public func aoc_rollback(run: Run) returns int {
+    let rolled = rollback(run, "operator requested cleanup after the governed write")
+    if let Result::Ok(count) = rolled {
+        return count
+    }
+    return-1
+}

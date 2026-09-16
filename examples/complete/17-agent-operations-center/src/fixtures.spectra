@@ -1,0 +1,15 @@
+module fixtures
+
+import std.fs as fs
+import std.result as result
+import paths
+
+public func aoc_prepare(root: string) returns int {
+    if result.is_err(fs.create_dir_all(paths.aoc_journal_dir(root))) {
+        return 1
+    }
+    if result.is_err(fs.fs_write(root + "/fixture.txt", "fixture=agent-operations-v1\n")) {
+        return 2
+    }
+    return 0
+}

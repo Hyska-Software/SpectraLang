@@ -1,0 +1,17 @@
+// Configuration and isolated paths for the language workbench.
+module config
+
+public record CoreConfig {
+    public workspace: string,
+    public source_path: string,
+    public report_path: string,
+}
+
+public func core_load_config() returns CoreConfig {
+    let root = "target/complete-core-language-studio"
+    return CoreConfig {
+        workspace: root,
+        source_path: root + "/program.spectra",
+        report_path: root + "/compile-report.txt",
+    }
+}

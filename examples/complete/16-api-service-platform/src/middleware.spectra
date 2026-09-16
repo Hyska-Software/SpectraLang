@@ -1,0 +1,15 @@
+module middleware
+
+from std.api.handler import text
+from std.api.http import method_get, request, response_status
+from std.api.middleware import MiddlewareChain, MiddlewareHandle, chain_len, chain_new, execute_sync, register_logging, use_sync
+
+public func api_platform_middleware_check() returns int {
+    let logging: MiddlewareHandle = register_logging("text")
+    let chain: MiddlewareChain = use_sync(chain_new(), logging)
+    let response = execute_sync(chain, request(method_get(), "/health"), text("ok"))
+    if chain_len(chain) != 1 or response_status(response) != 200 {
+        return 1
+    }
+    return 0
+}

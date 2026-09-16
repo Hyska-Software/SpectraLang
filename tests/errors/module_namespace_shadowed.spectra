@@ -1,0 +1,8 @@
+module module_namespace_shadowed
+
+import std.string as text
+
+public func main() returns int {
+    let text = 1
+    return text.len("abc")
+}

@@ -1,0 +1,12 @@
+module raw_csv
+
+import std.fs as fs
+import std.result as result
+
+public func data_read_csv(path: string) returns string {
+    let loaded = fs.fs_read(path)
+    if result.is_err(loaded) {
+        return ""
+    }
+    return result.result_unwrap(loaded)
+}

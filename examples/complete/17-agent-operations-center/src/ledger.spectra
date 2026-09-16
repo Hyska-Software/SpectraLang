@@ -1,0 +1,14 @@
+module ledger
+
+import std.fs as fs
+import std.result as result
+import std.string as string
+import paths
+
+public func aoc_count_events(root: string, run_id: string) returns int {
+    let loaded = fs.fs_read(paths.aoc_journal_path(root, run_id))
+    if result.is_err(loaded) {
+        return 0
+    }
+    return string.count_occurrences(result.result_unwrap(loaded), "\"kind\":")
+}

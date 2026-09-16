@@ -415,7 +415,19 @@ impl SemanticAnalyzer {
                 arguments,
                 ..
             } => {
-                if let Some(path) = namespace_path(object) {
+                // A lexical binding shadows a module namespace with the same
+                // spelling. This keeps semantic analysis aligned with the
+                // lowering rule for `let name = ...; name.method(...)`.
+                let local_namespace_shadow = matches!(
+                    &object.kind,
+                    ExpressionKind::Identifier(name) if self.lookup_symbol(name).is_some()
+                );
+                let namespace = if local_namespace_shadow {
+                    None
+                } else {
+                    namespace_path(object)
+                };
+                if let Some(path) = namespace {
                     let qualified_name = format!("{}.{}", path, method_name);
                     if let Some(return_type) =
                         self.std_generic_unwrap_return(&qualified_name, arguments)

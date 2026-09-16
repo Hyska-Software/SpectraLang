@@ -99,6 +99,8 @@ impl SemanticAnalyzer {
             symbol_resolutions: HashMap::new(),
             module_namespaces: HashSet::new(),
             qualified_fn_types: Vec::new(),
+            qualified_fn_signatures: Vec::new(),
+            ambiguous_imported_functions: HashSet::new(),
             const_values: HashMap::new(),
             uaf_frame: None,
             uaf_suspend_use_checks: 0,

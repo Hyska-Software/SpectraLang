@@ -1,0 +1,10 @@
+module dataset
+
+import std.ml as ml
+
+public func mltrain_validate_dataset(dataset: int) returns int {
+    if dataset == 0 or ml.dataset_len(dataset) != 4 {
+        return 1
+    }
+    return 0
+}

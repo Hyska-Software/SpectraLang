@@ -1,0 +1,8 @@
+// Counts actionable lint markers in formatted source.
+module linter
+
+import std.string as string
+
+public func core_warning_count(source: string) returns int {
+    return string.count_occurrences(source, "TODO") + string.count_occurrences(source, "unsafe")
+}

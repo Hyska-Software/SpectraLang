@@ -1,0 +1,21 @@
+module validation
+
+import std.fs as fs
+import std.result as result
+import std.string as string
+import paths
+
+public func aoc_validate_artifacts(root: string, report: string) returns int {
+    let written = fs.fs_write(paths.aoc_report_path(root), report)
+    if result.is_err(written) {
+        return 1
+    }
+    let loaded = fs.fs_read(paths.aoc_report_path(root))
+    if result.is_err(loaded) or result.result_unwrap(loaded) != report {
+        return 2
+    }
+    if not string.contains(report, "status=completed") {
+        return 3
+    }
+    return 0
+}

@@ -1,0 +1,23 @@
+module filter
+
+import std.collections as collections
+import std.option as option
+import std.string as string
+
+public func data_count_active(csv: string) returns int {
+    let rows  = string.split_by(csv, "\n")
+    let total = 0
+    let index = 1
+    while index < collections.list_len(rows) {
+        let maybe_row = collections.list_get_option(rows, index)
+        if option.is_some(maybe_row) {
+            let row = option.option_unwrap(maybe_row)
+            if string.ends_with(row, ",1") {
+                total = total + 1
+            }
+        }
+        index = index + 1
+    }
+    collections.list_free(rows)
+    return total
+}

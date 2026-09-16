@@ -372,7 +372,14 @@ impl CodeGenerator {
         name: &str,
         ir_module: &IRModule,
     ) -> BackendResult<Option<i64>> {
-        let ptr = self.get_function_ptr(name)?;
+        let canonical_name = format!("{}::{}", ir_module.name, name);
+        let ptr = self
+            .function_map
+            .get(&canonical_name)
+            .or_else(|| self.function_map.get(name))
+            .copied()
+            .map(|func_id| self.module.get_finalized_function(func_id))
+            .ok_or_else(|| BackendCodegenError::missing_function(name))?;
 
         let return_type = ir_module
             .get_function(name)

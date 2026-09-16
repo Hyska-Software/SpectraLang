@@ -1,0 +1,25 @@
+module paths
+
+public func mltrain_csv_path(root: string) returns string {
+    return root + "/data/train.csv"
+}
+
+public func mltrain_jsonl_path(root: string) returns string {
+    return root + "/data/metadata.jsonl"
+}
+
+public func mltrain_checkpoint_path(root: string) returns string {
+    return root + "/artifacts/model.spar"
+}
+
+public func mltrain_index_path(root: string) returns string {
+    return root + "/artifacts/index.spar"
+}
+
+public func mltrain_monitor_path(root: string) returns string {
+    return root + "/artifacts/monitoring.json"
+}
+
+public func mltrain_report_path(root: string) returns string {
+    return root + "/artifacts/report.txt"
+}

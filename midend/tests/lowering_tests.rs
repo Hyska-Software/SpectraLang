@@ -190,6 +190,7 @@ fn make_module(name: &str, items: Vec<Item>) -> Module {
         std_import_aliases: Vec::new(),
         imported_function_return_types: Vec::new(),
         imported_function_signatures: Vec::new(),
+        imported_function_symbols: Vec::new(),
         imported_struct_defs: Vec::new(),
         imported_enum_defs: Vec::new(),
         imported_trait_impls: Vec::new(),

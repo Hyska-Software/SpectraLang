@@ -1,0 +1,8 @@
+// Resolves a source location used by diagnostics and reports.
+module source_map
+
+import std.string as string
+
+public func core_offset(source: string) returns int {
+    return string.index_of(source, "for")
+}

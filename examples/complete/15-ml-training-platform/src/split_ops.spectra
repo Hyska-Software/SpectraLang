@@ -1,0 +1,11 @@
+module split_ops
+
+import std.ml as ml
+
+public func mltrain_train_split(dataset: int) returns int {
+    return ml.dataset_train_split(dataset, 3)
+}
+
+public func mltrain_test_split(dataset: int) returns int {
+    return ml.dataset_test_split(dataset, 3)
+}

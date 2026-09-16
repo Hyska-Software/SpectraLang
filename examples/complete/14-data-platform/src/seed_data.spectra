@@ -1,0 +1,19 @@
+module seed_data
+
+import std.fs as fs
+import std.result as result
+
+public func data_seed_workspace(root: string) returns int {
+    if result.is_err(fs.create_dir_all(root + "/lake")) or result.is_err(fs.create_dir_all(root + "/reports")) {
+        return 1
+    }
+    let csv = "id,segment,amount,active\n1,alpha,10,1\n2,beta,20,1\n3,alpha,5,0\n4,beta,15,1\n5,gamma,7,1\n"
+    let json = "{\"segment\":\"alpha\",\"limit\":12}\n{\"segment\":\"beta\",\"limit\":24}\n{\"segment\":\"gamma\",\"limit\":8}\n"
+    if result.is_err(fs.fs_write(root + "/lake/events.csv", csv)) {
+        return 2
+    }
+    if result.is_err(fs.fs_write(root + "/lake/dimensions.jsonl", json)) {
+        return 3
+    }
+    return 0
+}

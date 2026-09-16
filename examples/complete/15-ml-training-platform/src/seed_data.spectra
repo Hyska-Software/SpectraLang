@@ -1,0 +1,16 @@
+module seed_data
+
+import std.fs as fs
+import std.result as result
+
+public func mltrain_seed_workspace(root: string) returns int {
+    if result.is_err(fs.create_dir_all(root + "/data")) or result.is_err(fs.create_dir_all(root + "/artifacts")) {
+        return 1
+    }
+    let csv   = "f0,f1,label\n1.0,2.0,0.0\n2.0,3.0,1.0\n3.0,4.0,1.0\n4.0,5.0,0.0\n"
+    let jsonl = "{\"features\":[1.0,2.0],\"label\":0.0}\n{\"features\":[2.0,3.0],\"label\":1.0}\n"
+    if result.is_err(fs.fs_write(root + "/data/train.csv", csv)) or result.is_err(fs.fs_write(root + "/data/metadata.jsonl", jsonl)) {
+        return 2
+    }
+    return 0
+}

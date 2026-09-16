@@ -1,0 +1,17 @@
+module paths
+
+public func aoc_journal_dir(root: string) returns string {
+    return root + "/journal"
+}
+
+public func aoc_journal_path(root: string, run_id: string) returns string {
+    return aoc_journal_dir(root) + "/" + run_id + ".jsonl"
+}
+
+public func aoc_note_path(root: string) returns string {
+    return root + "/note.txt"
+}
+
+public func aoc_report_path(root: string) returns string {
+    return root + "/report.txt"
+}

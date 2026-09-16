@@ -111,6 +111,10 @@ pub struct Module {
     /// AOT objects, where an imported call must be declared as an external
     /// symbol before the native linker resolves it from another module object.
     pub imported_function_signatures: Vec<(String, Vec<Type>, Type)>,
+    /// Maps each source-level imported function spelling to its canonical
+    /// module-qualified symbol. This keeps two modules that export the same
+    /// function name distinct in the midend and backend.
+    pub imported_function_symbols: Vec<(String, String)>,
     /// Imported module-level statics: `(local_name, qualified_global_key, type)`.
     pub imported_static_globals: Vec<(String, String, Type)>,
     /// Enum AST definitions from imported user modules.
@@ -160,6 +164,7 @@ impl Module {
             std_import_aliases: Vec::new(),
             imported_function_return_types: Vec::new(),
             imported_function_signatures: Vec::new(),
+            imported_function_symbols: Vec::new(),
             imported_static_globals: Vec::new(),
             imported_enum_defs: Vec::new(),
             imported_struct_defs: Vec::new(),

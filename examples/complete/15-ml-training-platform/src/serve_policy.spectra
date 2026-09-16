@@ -1,0 +1,30 @@
+module serve_policy
+
+import std.serve as serve
+import std.string as string
+
+public func mltrain_guard(server: int) returns int {
+    if not serve.server_set_fallback(server, -99) or not serve.server_set_input_policy(server, 0, 10) or not serve.server_set_output_policy(server, -1000, 1000) {
+        return 1
+    }
+    let accepted = serve.server_enqueue(server, 5)
+    let rejected = serve.server_enqueue(server, 50)
+    if serve.server_result(server, rejected) != -99 or serve.server_process_batch(server, 1) != 1 or serve.server_result(server, accepted) != 5 {
+        return 2
+    }
+    if not string.contains(serve.server_last_diagnostic(server), "range") {
+        return 3
+    }
+    return 0
+}
+
+public func mltrain_monitor(server: int, path: string) returns int {
+    let distribution = serve.server_distribution_summary(server)
+    let drift        = serve.drift_check(distribution, distribution, 0)
+    let audit        = serve.server_audit_log(server)
+    let exported     = serve.export_monitoring(server, path, distribution, drift, audit)
+    if not string.contains(distribution, "distribution_summary.v1") or not string.contains(drift, "\"drifted\":false") or not string.contains(exported, path) {
+        return 1
+    }
+    return 0
+}

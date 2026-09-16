@@ -1,0 +1,24 @@
+module memory
+
+import std.agent
+import std.string as string
+
+public func aoc_memory_cycle(run: Run, plan: string) returns int {
+    let stored = remember(run, plan)
+    if let Result::Ok(ok) = stored {
+        if ok != true {
+            return 1
+        }
+    } else {
+        return 2
+    }
+    let recalled = recall(run, "what is the operational plan", 1)
+    if let Result::Ok(payload) = recalled {
+        if not string.contains(payload, plan) or not string.contains(payload, "episodic") {
+            return 3
+        }
+    } else {
+        return 4
+    }
+    return 0
+}

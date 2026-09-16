@@ -1,0 +1,10 @@
+module lineage
+
+import std.string as string
+
+public func data_lineage_entry(catalog: string, query: string) returns string {
+    if not string.contains(catalog, "format=csv") or not string.contains(query, "query:") {
+        return ""
+    }
+    return "lineage:lake.events.csv->normalize->join->index->query"
+}

@@ -1,0 +1,9 @@
+// Normalizes source whitespace for the formatter/linter boundary.
+module formatter
+
+import std.string as string
+
+public func core_format(source: string) returns string {
+    let compact = string.replace(source, "  ", " ")
+    return string.replace(compact, " = ", "=")
+}

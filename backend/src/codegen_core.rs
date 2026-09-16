@@ -67,24 +67,39 @@ impl CodeGenerator {
         let _tensor_ir = validate_tensor_ir(ir_module)?;
         self.pre_intern_host_names(ir_module);
         self.define_globals(ir_module)?;
-        let function_params: HashMap<String, Vec<IRType>> = ir_module
-            .functions
-            .iter()
-            .map(|func| {
-                (
-                    func.name.clone(),
-                    func.params.iter().map(|param| param.ty.clone()).collect(),
-                )
-            })
-            .collect();
         // First pass: declare all functions
         for func in &ir_module.functions {
-            self.declare_function(func)?;
+            self.declare_function_in_module(&ir_module.name, func)?;
+        }
+
+        // Calls inside this module use local IR spellings, while imported
+        // calls use canonical `module::function` spellings. Keep a per-module
+        // view so a local function named `render` never resolves to the local
+        // alias left behind by a previously generated module.
+        let mut function_map = self.function_map.clone();
+        let mut function_params = HashMap::new();
+        for func in &ir_module.functions {
+            let canonical = Self::qualified_function_name(&ir_module.name, &func.name);
+            let func_id = *self
+                .function_map
+                .get(&canonical)
+                .ok_or_else(|| BackendCodegenError::missing_function(&canonical))?;
+            function_map.insert(func.name.clone(), func_id);
+            function_map.insert(canonical.clone(), func_id);
+            let params: Vec<IRType> = func.params.iter().map(|param| param.ty.clone()).collect();
+            function_params.insert(func.name.clone(), params.clone());
+            function_params.insert(canonical, params);
         }
 
         // Second pass: define all functions
         for func in &ir_module.functions {
-            self.define_function(func, &function_params)?;
+            let canonical = Self::qualified_function_name(&ir_module.name, &func.name);
+            self.define_function_with_context(
+                func,
+                &canonical,
+                &function_map,
+                &function_params,
+            )?;
         }
 
         // Finalize all functions
@@ -93,10 +108,15 @@ impl CodeGenerator {
         })?;
 
         for func in &ir_module.functions {
-            let Some(&func_id) = self.function_map.get(&func.name) else {
+            let canonical = Self::qualified_function_name(&ir_module.name, &func.name);
+            let Some(&func_id) = self.function_map.get(&canonical) else {
                 continue;
             };
             let ptr = self.module.get_finalized_function(func_id) as usize as i64;
+            self.finalized_function_ptrs.insert(canonical, ptr);
+            // Preserve the source-level alias for the most recently generated
+            // module; already-emitted functions have direct addresses in their
+            // generated code and are unaffected by this compatibility alias.
             self.finalized_function_ptrs.insert(func.name.clone(), ptr);
         }
 
@@ -122,6 +142,29 @@ impl CodeGenerator {
             format!("{}::{}", module_name, global_name)
         };
         format!(".__spectra_global_{}", sanitize(&qualified_name))
+    }
+
+    fn qualified_function_name(module_name: &str, function_name: &str) -> String {
+        if function_name.contains("::") {
+            function_name.to_string()
+        } else {
+            format!("{}::{}", module_name, function_name)
+        }
+    }
+
+    fn jit_function_symbol(module_name: &str, function_name: &str) -> String {
+        let qualified = Self::qualified_function_name(module_name, function_name);
+        let sanitized: String = qualified
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || ch == '_' {
+                    ch
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        format!("spectra_user_{}", sanitized)
     }
 
     pub(crate) fn global_initializer_bytes(global: &Global) -> BackendResult<Vec<u8>> {
@@ -294,6 +337,7 @@ impl CodeGenerator {
     }
 
     /// Declare a function signature
+    #[allow(dead_code)]
     fn declare_function(&mut self, ir_func: &IRFunction) -> BackendResult<FuncId> {
         let mut sig = self.module.make_signature();
         if Self::uses_tail_call_convention(ir_func) {
@@ -342,16 +386,99 @@ impl CodeGenerator {
         Ok(func_id)
     }
 
+    /// Declare a function with a module-qualified native symbol. The legacy
+    /// `declare_function` helper remains available to focused backend tests
+    /// that construct a single unqualified IR function directly.
+    fn declare_function_in_module(
+        &mut self,
+        module_name: &str,
+        ir_func: &IRFunction,
+    ) -> BackendResult<FuncId> {
+        let mut sig = self.module.make_signature();
+        if Self::uses_tail_call_convention(ir_func) {
+            sig.call_conv = isa::CallConv::Tail;
+        }
+
+        let callback = Self::async_callback_kind(ir_func);
+        let callback_params = if callback.is_some() {
+            &ir_func.params[..ir_func.params.len().min(3)]
+        } else {
+            &ir_func.params[..]
+        };
+        for param in callback_params {
+            let cl_type = if callback.is_some() {
+                types::I64
+            } else {
+                Self::ir_type_to_cranelift(&param.ty)?
+            };
+            sig.params.push(AbiParam::new(cl_type));
+        }
+        if callback.is_some() && sig.params.len() != 3 {
+            while sig.params.len() < 3 {
+                sig.params.push(AbiParam::new(types::I64));
+            }
+        }
+
+        let return_type = if matches!(callback, Some(false)) {
+            types::I8
+        } else if matches!(callback, Some(true)) {
+            types::I64
+        } else {
+            Self::ir_type_to_cranelift(&ir_func.return_type)?
+        };
+        if return_type != types::I8
+            || ir_func.return_type != IRType::Void
+            || matches!(callback, Some(true))
+        {
+            sig.returns.push(AbiParam::new(return_type));
+        }
+
+        let canonical = Self::qualified_function_name(module_name, &ir_func.name);
+        let native_name = Self::jit_function_symbol(module_name, &ir_func.name);
+        let func_id = self
+            .module
+            .declare_function(&native_name, Linkage::Export, &sig)
+            .map_err(|e| {
+                BackendCodegenError::cranelift(format!(
+                    "Failed to declare function '{}': {}",
+                    canonical, e
+                ))
+            })?;
+
+        self.function_map.insert(canonical, func_id);
+        self.function_map
+            .entry(ir_func.name.clone())
+            .or_insert(func_id);
+
+        Ok(func_id)
+    }
+
     /// Define a function body
+    #[allow(dead_code)]
     fn define_function(
         &mut self,
         ir_func: &IRFunction,
         function_params: &HashMap<String, Vec<IRType>>,
     ) -> BackendResult<()> {
-        let func_id = *self
-            .function_map
-            .get(&ir_func.name)
-            .ok_or_else(|| BackendCodegenError::missing_function(&ir_func.name))?;
+        let function_map = self.function_map.clone();
+        self.define_function_with_context(
+            ir_func,
+            &ir_func.name,
+            &function_map,
+            function_params,
+        )
+    }
+
+    fn define_function_with_context(
+        &mut self,
+        ir_func: &IRFunction,
+        function_key: &str,
+        function_map: &HashMap<String, FuncId>,
+        function_params: &HashMap<String, Vec<IRType>>,
+    ) -> BackendResult<()> {
+        let func_id = *function_map
+            .get(function_key)
+            .ok_or_else(|| BackendCodegenError::missing_function(function_key))?;
 
         // Clear context
         self.ctx.func.clear();
@@ -494,7 +621,7 @@ impl CodeGenerator {
         for ir_block in &blocks {
             Self::generate_block(
                 &mut self.module,
-                &self.function_map,
+                function_map,
                 function_params,
                 &mut hostcall,
                 &mut builder,

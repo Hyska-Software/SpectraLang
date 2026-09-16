@@ -1,0 +1,8 @@
+module quality
+
+public func data_quality_gate(schema_status: int, active: int, amount: int) returns int {
+    if schema_status != 0 or active < 1 or amount <= 0 {
+        return 1
+    }
+    return 0
+}

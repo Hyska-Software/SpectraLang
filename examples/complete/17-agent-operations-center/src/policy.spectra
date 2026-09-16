@@ -1,0 +1,11 @@
+module policy
+
+import std.string as string
+
+public func aoc_static_policy_check() returns int {
+    let grants = "capability=spectra.std.fs;untrusted=approve;ceiling=max_tool_calls:8"
+    if not string.contains(grants, "spectra.std.fs") or not string.contains(grants, "untrusted=approve") {
+        return 1
+    }
+    return 0
+}

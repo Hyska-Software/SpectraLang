@@ -1,0 +1,11 @@
+module openapi
+
+import std.string as string
+
+public func api_platform_documentation() returns string {
+    let document = "openapi=3.1.0;path=/accounts;methods=GET,POST,PUT,DELETE;schema=Account"
+    if not string.contains(document, "openapi=3.1.0") or not string.contains(document, "schema=Account") {
+        return ""
+    }
+    return document
+}

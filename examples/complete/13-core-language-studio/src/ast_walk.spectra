@@ -1,0 +1,13 @@
+// Walks the parsed node count with a core-language loop.
+module ast_walk
+
+import std.string as string
+
+public func core_walk(tree: string) returns int {
+    let nodes   = string.count_occurrences(tree, "|")
+    let visited = 0
+    for node in 1 .. nodes {
+        visited = visited + node
+    }
+    return visited
+}

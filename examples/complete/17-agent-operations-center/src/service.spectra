@@ -1,0 +1,74 @@
+module service
+
+import std.agent
+import std.error as error
+import std.fs as fs
+import std.result as result
+import std.string as string
+import approvals
+import budget
+import compensation
+import mcp
+import memory
+import model
+import paths
+import planning
+import prompt
+import taint
+import tools
+
+public async func aoc_execute(root: string, run_id: string) returns int {
+    let started = agent_start(model.aoc_spec(root, run_id))
+    if let Result::Err(problem) = started {
+        let _ = error.message(problem)
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let plan = planning.aoc_plan()
+        if memory.aoc_memory_cycle(run, plan) != 0 {
+            return 2
+        }
+        let payload = "{\"path\":\"" +
+            paths.aoc_note_path(root) +
+            "\",\"body\":\"governed operational note\"}"
+        let called = await tool_call(run, "aoc_persist_note", payload)
+        if let Result::Ok(value) = called {
+            if value != "true" {
+                return 3
+            }
+        } else {
+            return 4
+        }
+        let contents = fs.fs_read(paths.aoc_note_path(root))
+        if result.is_err(contents) or result.result_unwrap(contents) != "governed operational note" {
+            return 5
+        }
+        if approvals.aoc_default_approval(run) != 0 or taint.aoc_taint_cycle(run) != 0 {
+            return 6
+        }
+        if compensation.aoc_register_compensation(run, payload) != 0 or compensation.aoc_rollback(run) != 1 {
+            return 7
+        }
+        if mcp.aoc_mcp_surface(run) != 0 or budget.aoc_budget_remaining(run) < 0 {
+            return 8
+        }
+        let answer = await ask(run, prompt.aoc_prompt())
+        if let Result::Err(_) = answer {
+            return 9
+        }
+        let assertion = require(run, true, "agent operations completed")
+        if let Result::Err(_) = assertion {
+            return 10
+        }
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            if not string.contains(report, "\"status\":\"rolled_back\"") or not string.contains(report, "\"tool_calls\":2") {
+                return 11
+            }
+        } else {
+            return 12
+        }
+        return 0
+    }
+    return 13
+}

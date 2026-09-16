@@ -49,6 +49,7 @@ impl SemanticAnalyzer {
         import: &crate::ast::Import,
         user_fn_types: &mut Vec<(String, crate::ast::Type)>,
         user_fn_signatures: &mut Vec<(String, Vec<crate::ast::Type>, crate::ast::Type)>,
+        user_fn_symbols: &mut Vec<(String, String)>,
         imported_static_globals: &mut Vec<(String, String, crate::ast::Type)>,
         user_enum_defs: &mut Vec<crate::ast::Enum>,
         user_struct_defs: &mut Vec<crate::ast::Struct>,
@@ -356,10 +357,41 @@ impl SemanticAnalyzer {
                         .to_string();
                     user_fn_types.push((bare, func_export.return_type.clone()));
                     user_fn_signatures.push((
-                        local_name,
+                        local_name.clone(),
                         func_export.params.clone(),
                         func_export.return_type.clone(),
                     ));
+                    let canonical_name = func_export
+                        .qualified_name
+                        .clone()
+                        .unwrap_or_else(|| format!("{}::{}", module_path, name));
+                    if let Some((_, existing)) = user_fn_symbols
+                        .iter()
+                        .find(|(local, _)| local == &local_name)
+                    {
+                        if existing != &canonical_name {
+                            self.ambiguous_imported_functions.insert(local_name.clone());
+                        }
+                    } else {
+                        user_fn_symbols.push((local_name.clone(), canonical_name.clone()));
+                    }
+                    // Keep the module-qualified spelling available for the
+                    // `module::function(...)` form even when the function was
+                    // imported directly.
+                    let namespace_prefix = alias.as_deref().unwrap_or(module_path.as_str());
+                    let qualified_local = format!("{}.{}", namespace_prefix, name);
+                    user_fn_types.push((qualified_local.clone(), func_export.return_type.clone()));
+                    user_fn_signatures.push((
+                        qualified_local.clone(),
+                        func_export.params.clone(),
+                        func_export.return_type.clone(),
+                    ));
+                    if !user_fn_symbols
+                        .iter()
+                        .any(|(local, _)| local == &qualified_local)
+                    {
+                        user_fn_symbols.push((qualified_local, canonical_name));
+                    }
                 }
 
                 // Record stdlib alias for the midend.
@@ -516,9 +548,15 @@ impl SemanticAnalyzer {
                             user_fn_types
                                 .push((imported_name.clone(), method_export.return_type.clone()));
                             user_fn_signatures.push((
-                                imported_name,
+                                imported_name.clone(),
                                 method_export.params.clone(),
                                 method_export.return_type.clone(),
+                            ));
+                            user_fn_symbols.push((
+                                imported_name,
+                                method_export.qualified_name.clone().unwrap_or_else(|| {
+                                    format!("{}::{}_{}", module_path, name, method_name)
+                                }),
                             ));
                         }
                     }
@@ -647,9 +685,15 @@ impl SemanticAnalyzer {
                     let imported_name = format!("{}_{}", type_name, method_name);
                     user_fn_types.push((imported_name.clone(), method_export.return_type.clone()));
                     user_fn_signatures.push((
-                        imported_name,
+                        imported_name.clone(),
                         method_export.params.clone(),
                         method_export.return_type.clone(),
+                    ));
+                    user_fn_symbols.push((
+                        imported_name.clone(),
+                        method_export.qualified_name.clone().unwrap_or_else(|| {
+                            format!("{}::{}", module_path, imported_name)
+                        }),
                     ));
                 }
             }

@@ -1,0 +1,8 @@
+// CLI entrypoint for the core-language pipeline.
+module main
+
+import app
+
+public func main() returns int {
+    return app.core_run()
+}

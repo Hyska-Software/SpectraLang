@@ -1,0 +1,8 @@
+module optimizer
+
+import std.ml as ml
+
+public func mltrain_adam(parameter: int, first: int, second: int, step: int) returns int {
+    ml.adam_step(parameter, first, second, 0.05, 0.9, 0.999, 0.00000001, step)
+    return 0
+}

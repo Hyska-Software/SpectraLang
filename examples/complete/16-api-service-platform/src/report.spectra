@@ -1,0 +1,15 @@
+module report
+
+import std.convert as convert
+
+public func api_platform_render_report(openapi: string, metrics: string, audit: string, port: int) returns string {
+    return "API SERVICE REPORT\n" +
+        openapi +
+        "\n" +
+        metrics +
+        "\n" +
+        audit +
+        "\nport=" +
+        convert.int_to_string(port) +
+        "\nstatus=ready"
+}

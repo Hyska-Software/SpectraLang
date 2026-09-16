@@ -43,6 +43,7 @@ impl SemanticAnalyzer {
                             return_type,
                             visibility: vis,
                             is_async: func.is_async,
+                            qualified_name: Some(format!("{}::{}", module.name, func.name)),
                         },
                     );
                     if !func.type_params.is_empty() {
@@ -262,6 +263,10 @@ impl SemanticAnalyzer {
                                     visibility: vis,
                                     self_kind,
                                     is_async: method.is_async,
+                                    qualified_name: Some(format!(
+                                        "{}::{}_{}",
+                                        module.name, impl_block.type_name, method.name
+                                    )),
                                 },
                             );
                     }
@@ -355,6 +360,10 @@ impl SemanticAnalyzer {
                         visibility,
                         self_kind,
                         is_async: method.is_async,
+                        qualified_name: Some(format!(
+                            "{}::{}_{}",
+                            module.name, type_name, method.name
+                        )),
                     });
             }
         }
@@ -520,6 +529,7 @@ impl SemanticAnalyzer {
                         visibility: vis,
                         self_kind: signature.self_kind.map(ExportedSelfParamKind::from),
                         is_async: signature.is_async,
+                        qualified_name: None,
                     });
             }
         }

@@ -1,0 +1,14 @@
+module report
+
+import std.string as string
+
+public func mltrain_render_report(metrics: string, evaluation: string, prompt: string, manifest: string) returns string {
+    if string.is_empty(metrics) or string.is_empty(evaluation) or string.is_empty(prompt) or string.is_empty(manifest) {
+        return ""
+    }
+    return "ML TRAINING REPORT\n" +
+        metrics +
+        "\n" +
+        evaluation +
+        "\nretrieval=grounded\nstatus=ready"
+}

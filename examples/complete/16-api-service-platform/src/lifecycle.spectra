@@ -1,0 +1,19 @@
+module lifecycle
+
+from std.api.routing import Router
+from std.api.server import Server, new, listen, serve, shutdown, local_port, state
+
+public func api_platform_server_check(routes: Router) returns int {
+    let server: Server = new()
+    if listen(server, 0) != true {
+        return 0
+    }
+    if block_on(serve(server, routes)) != 1 or state(server) != 2 {
+        return 0
+    }
+    let port = local_port(server)
+    if port <= 0 or shutdown(server) != true or state(server) != 3 {
+        return 0
+    }
+    return port
+}

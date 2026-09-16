@@ -1,0 +1,13 @@
+module paths
+
+public func data_csv_path(root: string) returns string {
+    return root + "/lake/events.csv"
+}
+
+public func data_json_path(root: string) returns string {
+    return root + "/lake/dimensions.jsonl"
+}
+
+public func data_report_path(root: string) returns string {
+    return root + "/reports/data-report.txt"
+}

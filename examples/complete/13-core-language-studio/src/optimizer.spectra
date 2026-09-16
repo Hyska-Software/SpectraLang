@@ -1,0 +1,9 @@
+// Applies constant simplification to the intermediate representation.
+module optimizer
+
+import std.string as string
+
+public func core_optimize(ir: string) returns string {
+    let folded = string.replace(ir, "= 0", "= zero")
+    return string.replace(folded, "severity=none", "severity=none;optimized=true")
+}

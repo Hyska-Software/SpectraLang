@@ -1,0 +1,8 @@
+// Measures AST nodes produced by parsing.
+module ast
+
+import std.string as string
+
+public func core_node_count(tree: string) returns int {
+    return string.count_occurrences(tree, "|") + 1
+}

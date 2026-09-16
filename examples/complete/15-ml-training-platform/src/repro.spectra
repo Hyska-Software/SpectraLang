@@ -1,0 +1,17 @@
+module repro
+
+import std.fs as fs
+import std.ml as ml
+import std.result as result
+import std.string as string
+
+public func mltrain_verify_run(manifest: string) returns int {
+    let loaded = fs.fs_read(manifest)
+    if result.is_err(loaded) or not string.contains(result.result_unwrap(loaded), "spectra.ml.experiment.v1") {
+        return 1
+    }
+    if ml.experiment_compare_manifests(manifest, manifest) != 1 {
+        return 2
+    }
+    return 0
+}

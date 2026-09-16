@@ -1,0 +1,12 @@
+// Emits a small compiler artifact descriptor from optimized IR.
+module compiler
+
+import std.convert as convert
+import std.string as string
+
+public func core_compile(ir: string, value: int) returns string {
+    return "core-artifact:v1;value=" +
+        convert.int_to_string(value) +
+        ";ir=" +
+        string.substring(ir, 0, 24)
+}

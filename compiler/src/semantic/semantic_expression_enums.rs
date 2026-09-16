@@ -96,6 +96,15 @@ impl SemanticAnalyzer {
                             // Register for the midend so lowering knows the return type.
                             self.qualified_fn_types
                                 .push((item_name.clone(), func.return_type.clone()));
+                            self.qualified_fn_types.push((
+                                format!("{}::{}", module_name, item_name),
+                                func.return_type.clone(),
+                            ));
+                            self.qualified_fn_signatures.push((
+                                format!("{}::{}", module_name, item_name),
+                                func.params.clone(),
+                                func.return_type.clone(),
+                            ));
                             return;
                         }
 
@@ -171,6 +180,13 @@ impl SemanticAnalyzer {
                                     );
                                     self.qualified_fn_types.push((
                                         format!("{}_{}", item_name, inner_variant),
+                                        method_export.return_type.clone(),
+                                    ));
+                                    self.qualified_fn_types.push((
+                                        format!(
+                                            "{}::{}_{}",
+                                            module_name, item_name, inner_variant
+                                        ),
                                         method_export.return_type.clone(),
                                     ));
                                     return;

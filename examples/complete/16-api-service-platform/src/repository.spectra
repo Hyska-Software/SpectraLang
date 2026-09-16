@@ -1,0 +1,36 @@
+module repository
+
+from std.api.db.sqlite import SqliteConnection, SqliteStatement, open, close, prepare, step, column_int, column_text, finalize
+
+public func api_platform_repository_check(path: string) returns int {
+    let database: SqliteConnection = open(path)
+    let schema: SqliteStatement = prepare(
+        database,
+        "CREATE TABLE IF NOT EXISTS accounts(id INTEGER PRIMARY KEY, username TEXT NOT NULL, active INTEGER NOT NULL)",
+    )
+    if step(schema) != 2 or finalize(schema) != true {
+        close(database)
+        return 1
+    }
+    let insert: SqliteStatement = prepare(
+        database,
+        "INSERT INTO accounts(id,username,active) VALUES(1,'ada',1)",
+    )
+    if step(insert) != 2 or finalize(insert) != true {
+        close(database)
+        return 2
+    }
+    let query: SqliteStatement = prepare(
+        database,
+        "SELECT id,username,active FROM accounts ORDER BY id",
+    )
+    if step(query) != 1 or column_int(query, 0) != 1 or column_text(query, 1) != "ada" or column_int(query, 2) != 1 {
+        finalize(query)
+        close(database)
+        return 3
+    }
+    if finalize(query) != true or close(database) != true {
+        return 4
+    }
+    return 0
+}

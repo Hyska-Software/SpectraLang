@@ -1,0 +1,16 @@
+// Persists the report and reads it back through Result-aware filesystem APIs.
+module filesystem
+
+import std.fs as fs
+import std.result as result
+
+public func core_write_report(path: string, body: string) returns int {
+    if result.is_err(fs.fs_write(path, body)) {
+        return 1
+    }
+    let readback = fs.fs_read(path)
+    if result.is_err(readback) or result.result_unwrap(readback) != body {
+        return 2
+    }
+    return 0
+}

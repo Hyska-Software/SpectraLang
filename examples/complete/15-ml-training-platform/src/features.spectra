@@ -1,0 +1,7 @@
+module features
+
+import std.ml as ml
+
+public func mltrain_prepare_features(dataset: int) returns int {
+    return ml.dataset_map_features(dataset, 1.0, 0.0)
+}

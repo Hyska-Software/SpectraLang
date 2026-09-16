@@ -1,0 +1,7 @@
+module auth
+
+import std.string as string
+
+public func api_platform_authorize(token: string) returns bool {
+    return string.starts_with(token, "Bearer ") and string.ends_with(token, "spectra-demo")
+}

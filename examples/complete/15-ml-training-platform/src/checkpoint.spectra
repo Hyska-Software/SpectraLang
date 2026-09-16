@@ -1,0 +1,18 @@
+module checkpoint
+
+import std.ml as ml
+
+public func mltrain_save_checkpoint(root: string, weights: int, bias: int) returns bool {
+    let artifact = ml.artifact_new("ml-training-platform", "v1", "checkpoint")
+    if artifact == 0 {
+        return false
+    }
+    let metadata      = ml.artifact_set_metadata(artifact, "optimizer", "adam")
+    let data          = ml.artifact_set_metadata(artifact, "dataset", "train.csv")
+    let attached      = ml.artifact_add_tensor(artifact, "weights", weights)
+    let attached_bias = ml.artifact_add_tensor(artifact, "bias", bias)
+    let saved         = ml.artifact_save(artifact, root + "/artifacts/model.spar")
+    let valid         = ml.artifact_validate(root + "/artifacts/model.spar")
+    ml.artifact_free(artifact)
+    return metadata and data and attached and attached_bias and saved and valid
+}

@@ -1,0 +1,27 @@
+module trainer
+
+import std.tensor as tensor
+import forward
+import loss
+import model
+import optimizer
+
+public func mltrain_fit(features: int, labels: int, weights: int, bias: int, steps: int) returns int {
+    tensor.set_grad_enabled( true)
+    let weight_first  = model.mltrain_new_moment_weights()
+    let weight_second = model.mltrain_new_moment_weights()
+    let bias_first    = model.mltrain_new_moment_bias()
+    let bias_second   = model.mltrain_new_moment_bias()
+    let step          = 0
+    while step < steps {
+        tensor.zero_grad(weights)
+        tensor.zero_grad(bias)
+        let prediction   = forward.mltrain_forward(features, weights, bias)
+        let current_loss = loss.mltrain_loss(prediction, labels)
+        tensor.backward(current_loss)
+        optimizer.mltrain_adam(weights, weight_first, weight_second, step + 1)
+        optimizer.mltrain_adam(bias, bias_first, bias_second, step + 1)
+        step = step + 1
+    }
+    return step
+}

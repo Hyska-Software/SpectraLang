@@ -1,0 +1,11 @@
+module scheduler
+
+import std.concurrent as concurrent
+
+public func aoc_schedule_check() returns int {
+    concurrent.reset()
+    let task   = concurrent.task_spawn_fn( | value: int | value + 10, 2)
+    let result = concurrent.task_join(task)
+    concurrent.reset()
+    return result
+}

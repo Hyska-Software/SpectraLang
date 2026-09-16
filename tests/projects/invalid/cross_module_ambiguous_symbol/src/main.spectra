@@ -1,0 +1,8 @@
+module main
+
+import left
+import right
+
+public func main() returns int {
+    return render(1)
+}

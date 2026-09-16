@@ -1,0 +1,27 @@
+module join_ops
+
+from std.collections import Map
+import std.collections as collections
+import std.convert as convert
+import std.option as option
+import std.string as string
+
+public func data_join_dimensions(csv: string, json: string) returns string {
+    let dimensions: Map<string, int> = collections.map_new()
+    collections.map_set(dimensions, "alpha", 12)
+    collections.map_set(dimensions, "beta", 24)
+    collections.map_set(dimensions, "gamma", 8)
+    let alpha = option.option_unwrap(collections.map_get_option(dimensions, "alpha"))
+    let beta  = option.option_unwrap(collections.map_get_option(dimensions, "beta"))
+    let gamma = option.option_unwrap(collections.map_get_option(dimensions, "gamma"))
+    collections.map_free(dimensions)
+    if not string.contains(json, "gamma") or not string.contains(csv, "beta") {
+        return ""
+    }
+    return "joined:alpha=" +
+        convert.int_to_string(alpha) +
+        ";beta=" +
+        convert.int_to_string(beta) +
+        ";gamma=" +
+        convert.int_to_string(gamma)
+}

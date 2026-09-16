@@ -1,0 +1,12 @@
+module evaluation
+
+import std.convert as convert
+import std.tensor as tensor
+import forward
+import loss
+
+public func mltrain_evaluate(features: int, labels: int, weights: int, bias: int) returns string {
+    let prediction = forward.mltrain_forward(features, weights, bias)
+    let error      = loss.mltrain_loss(prediction, labels)
+    return "evaluation:mse=" + convert.float_to_string(tensor.get_f(error, 0))
+}

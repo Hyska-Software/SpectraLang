@@ -1,0 +1,8 @@
+// Attaches an integer type to the bound accumulator.
+module infer
+
+import std.string as string
+
+public func core_infer(bound: string) returns string {
+    return string.replace(bound, "return", "return:type=int") + "|inferred:total=int"
+}

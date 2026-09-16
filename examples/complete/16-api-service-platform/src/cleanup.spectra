@@ -1,0 +1,11 @@
+module cleanup
+
+import std.fs as fs
+
+public func api_platform_clean(root: string) returns int {
+    fs.fs_remove(root + "/service.sqlite")
+    fs.fs_remove(root + "/service-report.txt")
+    fs.fs_remove(root + "/seed.txt")
+    fs.remove_dir(root)
+    return 0
+}

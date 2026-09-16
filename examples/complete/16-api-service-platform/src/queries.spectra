@@ -1,0 +1,15 @@
+module queries
+
+import std.api.query as query
+
+public func api_platform_query_page(raw: string) returns int {
+    let parsed  = query.parse(raw)
+    let schema0 = query.schema()
+    let schema1 = query.schema_field(schema0, "page", query.type_int(), true, false)
+    let schema2 = query.schema_field(schema1, "limit", query.type_int(), true, false)
+    let binding = query.bind(parsed, schema2)
+    if query.binding_ok(binding) != true {
+        return 0
+    }
+    return query.binding_int(binding, "page", 0)
+}

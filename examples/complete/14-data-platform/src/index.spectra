@@ -1,0 +1,15 @@
+module index
+
+from std.collections import Map
+import std.collections as collections
+import std.string as string
+
+public func data_build_index(csv: string) returns int {
+    let segments: Map<string, int> = collections.map_new()
+    collections.map_set(segments, "alpha", string.index_of(csv, "alpha"))
+    collections.map_set(segments, "beta", string.index_of(csv, "beta"))
+    collections.map_set(segments, "gamma", string.index_of(csv, "gamma"))
+    let size = collections.map_len(segments)
+    collections.map_free(segments)
+    return size
+}

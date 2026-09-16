@@ -1,0 +1,12 @@
+// Schedules a post-compile task through the concurrency runtime.
+module scheduler
+
+import std.concurrent as concurrent
+
+public func core_schedule(value: int) returns int {
+    concurrent.reset()
+    let task   = concurrent.task_spawn_fn( | input: int | input + 1, value)
+    let result = concurrent.task_join(task)
+    concurrent.reset()
+    return result
+}

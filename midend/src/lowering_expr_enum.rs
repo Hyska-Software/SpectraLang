@@ -8,7 +8,7 @@ impl ASTLowering {
     ) -> Value {
         match &expr.kind {
             ExpressionKind::EnumVariant {
-                module_path: _,
+                module_path,
                 enum_name,
                 type_args,
                 variant_name,
@@ -71,7 +71,12 @@ impl ASTLowering {
                     let mut args = vec![receiver];
                     args.extend(call_args);
                     return self.require_value(
-                        self.builder.build_call(ir_func, function_name, args, true),
+                        self.builder.build_call(
+                            ir_func,
+                            self.resolve_user_function_symbol(&function_name),
+                            args,
+                            true,
+                        ),
                         "UFCS call did not produce its declared result",
                     );
                 }
@@ -137,8 +142,12 @@ impl ASTLowering {
                         }
                     }
                     return self.require_value(
-                        self.builder
-                            .build_call(ir_func, function_name, call_args, true),
+                        self.builder.build_call(
+                            ir_func,
+                            self.resolve_user_function_symbol(&function_name),
+                            call_args,
+                            true,
+                        ),
                         "associated function call did not produce its declared result",
                     );
                 }
@@ -151,7 +160,13 @@ impl ASTLowering {
                 let looks_like_call = data.is_some() || struct_data.is_some();
                 if !is_known_type && looks_like_call {
                     let callee = variant_name.clone();
-                    if self.function_return_types.contains_key(&callee)
+                    let module_name = module_path
+                        .as_deref()
+                        .map(|path| format!("{}::{}", path, enum_name))
+                        .unwrap_or_else(|| enum_name.clone());
+                    let qualified_callee = format!("{}::{}", module_name, callee);
+                    if self.function_return_types.contains_key(&qualified_callee)
+                        || self.function_return_types.contains_key(&callee)
                         || self.generic_functions.contains_key(&callee)
                     {
                         let mut call_args: Vec<Value> = Vec::new();
@@ -177,7 +192,7 @@ impl ASTLowering {
                             }
                             mangled
                         } else {
-                            callee
+                            self.resolve_user_function_symbol(&qualified_callee)
                         };
                         return self.require_value(
                             self.builder

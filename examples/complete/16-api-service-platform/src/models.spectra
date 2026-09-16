@@ -1,0 +1,19 @@
+module models
+
+#[derive(Serialize, Deserialize)]
+record ApiEnvelope {
+    status: string,
+    count: int,
+}
+
+public func api_platform_model_roundtrip() returns int {
+    let envelope: ApiEnvelope = ApiEnvelope {
+        status: "ready",
+        count: 5,
+    }
+    let loaded: ApiEnvelope = ApiEnvelope::from_json(envelope.to_json())
+    if loaded.status != "ready" or loaded.count != 5 {
+        return 1
+    }
+    return 0
+}

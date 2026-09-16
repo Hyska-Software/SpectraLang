@@ -1,0 +1,34 @@
+module handlers
+
+from std.api.handler import HandlerHandle, json, register_sync, dispatch_sync
+from std.api.http import Request, Response, method_get, request, response_body_len, response_status
+from std.api.routing import Router, get, route_id, route_match, match_param_int, match_route_id
+
+public func api_platform_register_handlers(routes: Router) returns int {
+    let health_route = get(routes, "/health")
+    if route_id(health_route) == 0 {
+        return 1
+    }
+    let handler: HandlerHandle = register_sync(route_id(health_route), json("{\"status\":\"ok\"}"))
+    let response: Response     = dispatch_sync(handler, request(method_get(), "/health"))
+    if response_status(response) != 200 or response_body_len(response) <= 0 {
+        return 2
+    }
+    return 0
+}
+
+public func api_platform_dispatch_check(routes: Router) returns int {
+    let account_route = route_match(routes, method_get(), "/accounts/1")
+    if match_param_int(account_route, "id") != 1 {
+        return 1
+    }
+    let handler: HandlerHandle = register_sync(
+        match_route_id(account_route),
+        json("{\"id\":1,\"username\":\"ada\"}"),
+    )
+    let response = dispatch_sync(handler, request(method_get(), "/accounts/1"))
+    if response_status(response) != 200 {
+        return 2
+    }
+    return 0
+}

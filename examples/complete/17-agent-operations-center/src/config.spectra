@@ -1,0 +1,15 @@
+module config
+
+public record AgentOpsConfig {
+    public name: string,
+    public workspace: string,
+    public run_id: string,
+}
+
+public func aoc_load_config() returns AgentOpsConfig {
+    return AgentOpsConfig {
+        name: "Spectra Agent Operations Center",
+        workspace: "target/complete-agent-operations-center",
+        run_id: "aoc-main",
+    }
+}

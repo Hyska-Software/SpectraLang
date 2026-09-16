@@ -1,0 +1,10 @@
+module partition
+
+import std.string as string
+
+public func data_partition_key(joined: string) returns int {
+    if string.index_of(joined, "alpha") < 0 or string.index_of(joined, "beta") < 0 or string.index_of(joined, "gamma") < 0 {
+        return 0
+    }
+    return 3
+}

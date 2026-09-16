@@ -1,0 +1,5 @@
+module protocol
+
+public func aoc_tools_list_request() returns string {
+    return "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}"
+}

@@ -1,0 +1,11 @@
+// Produces the package identity used by cache and report stages.
+module package
+
+import std.string as string
+
+public func core_package_id(artifact: string) returns string {
+    if string.contains(artifact, "core-artifact:v1") {
+        return "core-language-studio@0.1.0"
+    }
+    return "invalid-package"
+}

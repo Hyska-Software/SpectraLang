@@ -1,0 +1,21 @@
+module validation
+
+import std.fs as fs
+import std.result as result
+import std.string as string
+import paths
+
+public func mltrain_validate_report(root: string, report: string, retrieved: string) returns int {
+    if not string.contains(report, "ML TRAINING REPORT") or not string.contains(report, "status=ready") or string.is_empty(retrieved) {
+        return 1
+    }
+    let saved = fs.fs_write(paths.mltrain_report_path(root), report)
+    if result.is_err(saved) {
+        return 2
+    }
+    let loaded = fs.fs_read(paths.mltrain_report_path(root))
+    if result.is_err(loaded) or result.result_unwrap(loaded) != report {
+        return 3
+    }
+    return 0
+}

@@ -22,6 +22,10 @@ pub struct ExportedFunction {
     pub return_type: Type,
     pub visibility: ExportVisibility,
     pub is_async: bool,
+    /// Fully-qualified IR symbol that owns the implementation. This survives
+    /// public re-exports, where the importer's module name is not the symbol's
+    /// defining module.
+    pub qualified_name: Option<String>,
 }
 
 /// A module-level mutable static exported to downstream modules.
@@ -48,6 +52,8 @@ pub struct ExportedMethod {
     pub visibility: ExportVisibility,
     pub self_kind: Option<ExportedSelfParamKind>,
     pub is_async: bool,
+    /// Fully-qualified IR symbol that owns the implementation.
+    pub qualified_name: Option<String>,
 }
 
 /// A method exported from a trait declaration.

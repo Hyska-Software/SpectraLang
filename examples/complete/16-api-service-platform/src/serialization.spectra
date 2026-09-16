@@ -1,0 +1,11 @@
+module serialization
+
+import std.string as string
+
+public func api_platform_json_check() returns int {
+    let body = "{\"id\":1,\"username\":\"ada\",\"active\":true}"
+    if not string.contains(body, "username") or not string.contains(body, "active") {
+        return 1
+    }
+    return 0
+}

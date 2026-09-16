@@ -1,0 +1,15 @@
+module security
+
+from std.api.security import SsrfPolicy, ssrf_policy, ssrf_allow_private_networks, ssrf_allows
+
+public func api_platform_security_check() returns int {
+    let base: SsrfPolicy = ssrf_policy()
+    if ssrf_allows(base, "127.0.0.1") != false or ssrf_allows(base, "8.8.8.8") != true {
+        return 1
+    }
+    let local: SsrfPolicy = ssrf_allow_private_networks(base, true)
+    if ssrf_allows(local, "127.0.0.1") != true {
+        return 2
+    }
+    return 0
+}

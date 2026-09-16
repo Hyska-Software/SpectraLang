@@ -1,0 +1,12 @@
+module monitor
+
+import std.serve as serve
+import std.string as string
+
+public func mltrain_snapshot(server: int) returns int {
+    let snapshot = serve.server_monitoring_snapshot(server)
+    if string.is_empty(snapshot) {
+        return 0
+    }
+    return string.count_occurrences(snapshot, "ml-training-platform-v1")
+}

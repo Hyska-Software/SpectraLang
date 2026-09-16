@@ -1,0 +1,13 @@
+module config
+
+public record DataConfig {
+    public name: string,
+    public workspace: string,
+}
+
+public func data_load_config() returns DataConfig {
+    return DataConfig {
+        name: "Spectra Data Platform",
+        workspace: "target/complete-data-platform",
+    }
+}

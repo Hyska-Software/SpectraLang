@@ -1,0 +1,35 @@
+module aggregate
+
+import std.collections as collections
+import std.convert as convert
+import std.option as option
+import std.string as string
+
+func data_field(line: string, position: int) returns string {
+    let fields = string.split_by(line, ",")
+    let value  = ""
+    let found  = collections.list_get_option(fields, position)
+    if option.is_some(found) {
+        value = option.option_unwrap(found)
+    }
+    collections.list_free(fields)
+    return value
+}
+
+public func data_sum_amount(csv: string) returns int {
+    let rows  = string.split_by(csv, "\n")
+    let total = 0
+    let index = 1
+    while index < collections.list_len(rows) {
+        let maybe_row = collections.list_get_option(rows, index)
+        if option.is_some(maybe_row) {
+            let row = option.option_unwrap(maybe_row)
+            if not string.is_empty(row) {
+                total = total + convert.string_to_int(data_field(row, 2))
+            }
+        }
+        index = index + 1
+    }
+    collections.list_free(rows)
+    return total
+}

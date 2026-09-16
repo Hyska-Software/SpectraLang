@@ -1,0 +1,11 @@
+module query
+
+import std.convert as convert
+import std.string as string
+
+public func data_query_index(index_size: int, joined: string) returns string {
+    if index_size != 3 or not string.contains(joined, "beta=24") {
+        return "query:empty"
+    }
+    return "query:beta=24;records=" + convert.int_to_string(index_size)
+}

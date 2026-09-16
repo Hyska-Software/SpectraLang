@@ -1,0 +1,12 @@
+module errors
+
+from std.api.handler import status
+from std.api.http import Response, response_status
+
+public func api_platform_error_check() returns int {
+    let response: Response = status(400)
+    if response_status(response) != 400 {
+        return 1
+    }
+    return 0
+}

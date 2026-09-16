@@ -1,0 +1,10 @@
+module integration
+
+import std.string as string
+
+public func api_platform_integration_check(routes: int, metrics: string) returns int {
+    if routes != 5 or not string.contains(metrics, "requests=5") {
+        return 1
+    }
+    return 0
+}

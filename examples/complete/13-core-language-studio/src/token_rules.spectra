@@ -1,0 +1,14 @@
+// Validates the required token vocabulary before parsing.
+module token_rules
+
+import std.string as string
+
+public func core_validate(stream: string) returns int {
+    if not string.contains(stream, "let") or not string.contains(stream, "for") {
+        return 1
+    }
+    if not string.contains(stream, "return") or not string.contains(stream, "{") {
+        return 2
+    }
+    return 0
+}

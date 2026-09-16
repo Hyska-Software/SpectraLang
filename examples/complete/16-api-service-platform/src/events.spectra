@@ -1,0 +1,15 @@
+module events
+
+import std.concurrent as concurrent
+
+public func api_platform_event_check() returns int {
+    concurrent.reset()
+    let task    = concurrent.task_spawn_fn( | value: int | value + 10, 2)
+    let value   = concurrent.task_join(task)
+    let spawned = concurrent.stats_tasks_spawned()
+    concurrent.reset()
+    if spawned != 1 or value != 12 {
+        return 1
+    }
+    return 0
+}

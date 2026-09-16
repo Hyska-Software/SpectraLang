@@ -1,0 +1,19 @@
+module cleanup
+
+import std.fs as fs
+
+public func mltrain_clean(root: string) returns int {
+    fs.fs_remove(root + "/data/train.csv")
+    fs.fs_remove(root + "/data/metadata.jsonl")
+    fs.fs_remove(root + "/artifacts/model.spar")
+    fs.fs_remove(root + "/artifacts/index.spar")
+    fs.fs_remove(root + "/artifacts/monitoring.json")
+    fs.fs_remove(root + "/artifacts/report.txt")
+    fs.fs_remove(root + "/experiment.lock")
+    fs.fs_remove(root + "/experiments/experiment-manifest.json")
+    fs.remove_dir(root + "/data")
+    fs.remove_dir(root + "/artifacts")
+    fs.remove_dir(root + "/experiments")
+    fs.remove_dir(root)
+    return 0
+}

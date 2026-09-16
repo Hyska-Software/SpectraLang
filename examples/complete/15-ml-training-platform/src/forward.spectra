@@ -1,0 +1,7 @@
+module forward
+
+import std.ml as ml
+
+public func mltrain_forward(features: int, weights: int, bias: int) returns int {
+    return ml.linear(features, weights, bias)
+}

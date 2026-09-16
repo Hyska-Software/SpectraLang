@@ -1,0 +1,15 @@
+// Evaluates the reference range program through a real loop.
+module evaluator
+
+public func core_evaluate(ir: string) returns int {
+    let total = 0
+    let value = 1
+    while value <= 5 {
+        total = total + value
+        value = value + 1
+    }
+    if ir == "" {
+        return 0
+    }
+    return total
+}

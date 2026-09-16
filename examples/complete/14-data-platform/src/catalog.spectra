@@ -1,0 +1,9 @@
+module catalog
+
+import std.convert as convert
+import std.string as string
+
+public func data_catalog_entry(path: string, csv: string) returns string {
+    let rows = string.count_occurrences(csv, "\n") - 2
+    return "catalog:path=" + path + ";rows=" + convert.int_to_string(rows) + ";format=csv"
+}

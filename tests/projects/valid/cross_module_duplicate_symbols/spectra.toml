@@ -1,0 +1,5 @@
+[project]
+name = "cross_module_duplicate_symbols"
+version = "0.1.0"
+entry = "src/main.spectra"
+src_dirs = ["src"]

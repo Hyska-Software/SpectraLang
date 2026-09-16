@@ -1,0 +1,11 @@
+// Removes all generated files so repeated runs are isolated.
+module cleanup
+
+import std.fs as fs
+
+public func core_clean(root: string) returns int {
+    fs.fs_remove(root + "/program.spectra")
+    fs.fs_remove(root + "/compile-report.txt")
+    fs.remove_dir(root)
+    return 0
+}

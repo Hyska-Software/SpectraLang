@@ -210,7 +210,9 @@ impl ASTLowering {
 
             for (slot, method_name) in methods.iter().enumerate() {
                 let fn_name = format!("{}_{}", name, method_name);
-                let fn_addr = self.builder.build_func_addr(ir_func, fn_name);
+                let fn_addr = self
+                    .builder
+                    .build_func_addr(ir_func, self.resolve_user_function_symbol(&fn_name));
                 let slot_index = self.builder.build_const_int(ir_func, slot as i64);
                 let slot_ptr = self.builder.build_getelementptr(
                     ir_func,

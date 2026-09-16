@@ -1,0 +1,12 @@
+module metrics
+
+import std.convert as convert
+
+public func mltrain_metrics(steps: int, tokens: int, index: int) returns string {
+    return "metrics:steps=" +
+        convert.int_to_string(steps) +
+        ";tokens=" +
+        convert.int_to_string(tokens) +
+        ";index=" +
+        convert.int_to_string(index)
+}

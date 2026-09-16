@@ -1,0 +1,10 @@
+// Executes the interpreted value through a second semantic pass.
+module interpreter
+
+public func core_interpret(value: int) returns int {
+    let result = value
+    if result > 10 {
+        return result * 2
+    }
+    return result
+}
