@@ -5,6 +5,7 @@ pub fn register() {
     register_numeric();
     register_io();
     register_collections();
+    register_stack_queue();
     register_set();
     register_iterator();
     register_map();

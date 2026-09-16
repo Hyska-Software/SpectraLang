@@ -125,6 +125,10 @@ pub enum HandleKind {
     AgentChunkStream = 110,
     /// `std.agent` tool registry handle reserved for the R-3222 dispatch table.
     AgentToolRegistry = 111,
+    /// `std.collections.Stack` storage handle.
+    Stack = 112,
+    /// `std.collections.Queue` storage handle.
+    Queue = 113,
     User = 255,
 }
 
@@ -225,6 +229,8 @@ impl HandleKind {
             109 => Self::AgentRun,
             110 => Self::AgentChunkStream,
             111 => Self::AgentToolRegistry,
+            112 => Self::Stack,
+            113 => Self::Queue,
             255 => Self::User,
             81 => Self::ApiWebSocketServer,
             82 => Self::ApiWebSocket,

@@ -666,6 +666,12 @@ pub(crate) fn make_std_collections() -> ModuleExports {
     let iterator = Type::Struct {
         name: "Iterator".to_string(),
     };
+    let stack = Type::Struct {
+        name: "Stack".to_string(),
+    };
+    let queue = Type::Struct {
+        name: "Queue".to_string(),
+    };
 
     exports
         .functions
@@ -800,18 +806,104 @@ pub(crate) fn make_std_collections() -> ModuleExports {
     );
     exports.functions.insert(
         "map_remove_option".to_string(),
-        pub_fn(vec![map.clone(), key], option),
+        pub_fn(vec![map.clone(), key], option.clone()),
     );
     exports
         .functions
         .insert("map_len".to_string(), pub_fn(vec![map.clone()], Type::Int));
+    exports.functions.insert(
+        "map_is_empty".to_string(),
+        pub_fn(vec![map.clone()], Type::Bool),
+    );
     exports.functions.insert(
         "map_clear".to_string(),
         pub_fn(vec![map.clone()], Type::Unit),
     );
     exports
         .functions
+        .insert("map_free_all".to_string(), pub_fn(vec![], Type::Int));
+    exports
+        .functions
         .insert("map_free".to_string(), pub_fn(vec![map], Type::Unit));
+
+    // ── stack and queue APIs ─────────────────────────────────────────────
+    exports
+        .functions
+        .insert("stack_new".to_string(), pub_fn(vec![], stack.clone()));
+    exports.functions.insert(
+        "stack_push".to_string(),
+        pub_fn(vec![stack.clone(), element.clone()], Type::Unit),
+    );
+    exports.functions.insert(
+        "stack_pop".to_string(),
+        pub_fn(vec![stack.clone()], option.clone()),
+    );
+    exports.functions.insert(
+        "stack_peek".to_string(),
+        pub_fn(vec![stack.clone()], option.clone()),
+    );
+    exports.functions.insert(
+        "stack_len".to_string(),
+        pub_fn(vec![stack.clone()], Type::Int),
+    );
+    exports.functions.insert(
+        "stack_is_empty".to_string(),
+        pub_fn(vec![stack.clone()], Type::Bool),
+    );
+    exports.functions.insert(
+        "stack_clear".to_string(),
+        pub_fn(vec![stack.clone()], Type::Unit),
+    );
+    exports.functions.insert(
+        "stack_free".to_string(),
+        pub_fn(vec![stack.clone()], Type::Unit),
+    );
+    exports
+        .functions
+        .insert("stack_free_all".to_string(), pub_fn(vec![], Type::Int));
+    exports.functions.insert(
+        "stack_iter".to_string(),
+        pub_fn(vec![stack.clone()], iterator.clone()),
+    );
+
+    exports
+        .functions
+        .insert("queue_new".to_string(), pub_fn(vec![], queue.clone()));
+    exports.functions.insert(
+        "queue_enqueue".to_string(),
+        pub_fn(vec![queue.clone(), element.clone()], Type::Unit),
+    );
+    exports.functions.insert(
+        "queue_dequeue".to_string(),
+        pub_fn(vec![queue.clone()], option.clone()),
+    );
+    exports.functions.insert(
+        "queue_peek".to_string(),
+        pub_fn(vec![queue.clone()], option.clone()),
+    );
+    exports.functions.insert(
+        "queue_len".to_string(),
+        pub_fn(vec![queue.clone()], Type::Int),
+    );
+    exports.functions.insert(
+        "queue_is_empty".to_string(),
+        pub_fn(vec![queue.clone()], Type::Bool),
+    );
+    exports.functions.insert(
+        "queue_clear".to_string(),
+        pub_fn(vec![queue.clone()], Type::Unit),
+    );
+    exports.functions.insert(
+        "queue_free".to_string(),
+        pub_fn(vec![queue.clone()], Type::Unit),
+    );
+    exports
+        .functions
+        .insert("queue_free_all".to_string(), pub_fn(vec![], Type::Int));
+    exports.functions.insert(
+        "queue_iter".to_string(),
+        pub_fn(vec![queue], iterator.clone()),
+    );
 
     // ── set API ───────────────────────────────────────────────────────────
     exports
@@ -873,6 +965,15 @@ pub(crate) fn make_std_collections() -> ModuleExports {
         ),
     );
     exports.functions.insert(
+        "map_values_iter".to_string(),
+        pub_fn(
+            vec![Type::Struct {
+                name: "Map".to_string(),
+            }],
+            iterator.clone(),
+        ),
+    );
+    exports.functions.insert(
         "iterator_next".to_string(),
         pub_fn(
             vec![iterator.clone()],
@@ -913,6 +1014,22 @@ pub(crate) fn make_std_collections() -> ModuleExports {
             enum_struct_variants: None,
         },
     );
+    for (name, members) in [
+        ("Stack", vec!["new", "push", "pop", "len"]),
+        ("Queue", vec!["new", "enqueue", "dequeue", "len"]),
+    ] {
+        exports.types.insert(
+            name.to_string(),
+            ExportedType {
+                members: members.into_iter().map(|member| member.to_string()).collect(),
+                visibility: ExportVisibility::Public,
+                is_enum: false,
+                struct_fields: None,
+                enum_variants: None,
+                enum_struct_variants: None,
+            },
+        );
+    }
     for name in ["Set", "Iterator"] {
         exports.types.insert(
             name.to_string(),

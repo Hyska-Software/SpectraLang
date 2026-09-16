@@ -61,9 +61,16 @@ A process-wide cleanup remains available for shutdown and test isolation.
 | `spectra.std.collections.list_free` | Drops the list allocation associated with the handle. | `handle` | `0` when `results` provided |
 | `spectra.std.collections.list_free_all` | Drops every list managed by the runtime. | *(none)* | number of freed lists |
 | `spectra.std.collections.list_get` / `list_pop` / `list_pop_front` / `list_remove_at` | Absence-safe reads/removals for the public `std.collections` surface. | list handle, optional index | tagged `Option<T>` payload |
+| `spectra.std.collections.map_is_empty` | Reports whether a map has no entries. | map handle | bool |
+| `spectra.std.collections.map_free_all` | Drops every map managed by the runtime. | *(none)* | number of freed maps |
+| `spectra.std.collections.map_values_iter` | Creates a snapshot iterator over map values in the same key order as `map_iter`. | map handle | iterator handle |
 | `spectra.std.collections.set_new` / `set_insert` / `set_contains` / `set_remove` | Creates and mutates an insertion-ordered typed set. | handle, optional value | handle or bool |
 | `spectra.std.collections.set_len` / `set_get` / `set_clear` / `set_free` | Reads, clears, and releases a set. | handle, optional index/value | length, tagged `Option<T>`, or `0` |
-| `spectra.std.collections.list_iter` / `set_iter` / `map_iter` | Creates deterministic snapshot iterators for collections. Map iteration yields keys. | collection handle | iterator handle |
+| `spectra.std.collections.stack_new` / `stack_push` / `stack_pop` / `stack_peek` | Creates and uses a generational LIFO stack. Empty reads return `Option<T>`. | handle, optional value | handle or tagged `Option<T>` |
+| `spectra.std.collections.stack_len` / `stack_is_empty` / `stack_clear` / `stack_free` / `stack_free_all` | Inspects, clears, and releases stack handles. | handle or none | length, bool, `0`, or freed count |
+| `spectra.std.collections.queue_new` / `queue_enqueue` / `queue_dequeue` / `queue_peek` | Creates and uses a generational FIFO queue. Empty reads return `Option<T>`. | handle, optional value | handle or tagged `Option<T>` |
+| `spectra.std.collections.queue_len` / `queue_is_empty` / `queue_clear` / `queue_free` / `queue_free_all` | Inspects, clears, and releases queue handles. | handle or none | length, bool, `0`, or freed count |
+| `spectra.std.collections.list_iter` / `set_iter` / `map_iter` / `map_values_iter` / `stack_iter` / `queue_iter` | Creates deterministic snapshot iterators for collections. Map iteration yields keys or values. | collection handle | iterator handle |
 | `spectra.std.collections.iterator_next` / `iterator_remaining` / `iterator_free` | Consumes, inspects, and releases an `Iterator<T>`. | iterator handle | tagged `Option<T>`, length, or `0` |
 | `spectra.std.range.iter` | Adapts an integer range to the common iterator protocol. | range handle | `Iterator<int>` handle |
 

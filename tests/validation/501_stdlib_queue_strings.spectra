@@ -1,0 +1,34 @@
+module validation_501_stdlib_queue_strings
+
+from std.collections import Iterator, Queue
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let words: Queue<string> = collections.queue_new()
+    collections.queue_enqueue(words, "alpha")
+    collections.queue_enqueue(words, "beta")
+    collections.queue_enqueue(words, "gamma")
+
+    let snapshot: Iterator<string> = collections.queue_iter(words)
+    let first = collections.iterator_next(snapshot)
+    let second = collections.iterator_next(snapshot)
+    let third = collections.iterator_next(snapshot)
+    if option.is_none(first) or option.option_unwrap(first) != "alpha" {
+        return 1
+    }
+    if option.is_none(second) or option.option_unwrap(second) != "beta" {
+        return 2
+    }
+    if option.is_none(third) or option.option_unwrap(third) != "gamma" {
+        return 3
+    }
+    collections.iterator_free(snapshot)
+
+    let removed = collections.queue_dequeue(words)
+    if option.is_none(removed) or option.option_unwrap(removed) != "alpha" {
+        return 4
+    }
+    collections.queue_free(words)
+    return 0
+}

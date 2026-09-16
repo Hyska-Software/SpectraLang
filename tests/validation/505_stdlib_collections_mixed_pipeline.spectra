@@ -1,0 +1,36 @@
+module validation_505_stdlib_collections_mixed_pipeline
+
+from std.collections import Map, Queue, Stack
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let priorities: Map<string, int> = collections.map_new()
+    collections.map_set(priorities, "low", 1)
+    collections.map_set(priorities, "high", 3)
+
+    let work: Queue<int> = collections.queue_new()
+    collections.queue_enqueue(work, 10)
+    collections.queue_enqueue(work, 20)
+    let next = collections.queue_dequeue(work)
+    if option.is_none(next) or option.option_unwrap(next) != 10 {
+        return 1
+    }
+
+    let history: Stack<int> = collections.stack_new()
+    collections.stack_push(history, option.option_unwrap(next))
+    collections.stack_push(history, 30)
+    let latest = collections.stack_pop(history)
+    if option.is_none(latest) or option.option_unwrap(latest) != 30 {
+        return 2
+    }
+    let high = collections.map_get(priorities, "high")
+    if option.is_none(high) or option.option_unwrap(high) != 3 {
+        return 3
+    }
+
+    collections.queue_free(work)
+    collections.stack_free(history)
+    collections.map_free(priorities)
+    return 0
+}

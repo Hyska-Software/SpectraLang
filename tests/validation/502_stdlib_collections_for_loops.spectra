@@ -1,0 +1,45 @@
+module validation_502_stdlib_collections_for_loops
+
+from std.collections import Map, Queue, Stack
+import std.collections as collections
+
+public func main() returns int {
+    let stack: Stack<int> = collections.stack_new()
+    collections.stack_push(stack, 1)
+    collections.stack_push(stack, 2)
+    collections.stack_push(stack, 3)
+    let stack_sum = 0
+    for value in stack {
+        stack_sum = stack_sum + value
+    }
+    if stack_sum != 6 or collections.stack_len(stack) != 3 {
+        return 1
+    }
+
+    let queue: Queue<int> = collections.queue_new()
+    collections.queue_enqueue(queue, 4)
+    collections.queue_enqueue(queue, 5)
+    let queue_sum = 0
+    for value in queue {
+        queue_sum = queue_sum + value
+    }
+    if queue_sum != 9 or collections.queue_len(queue) != 2 {
+        return 2
+    }
+
+    let table: Map<int, int> = collections.map_new()
+    collections.map_set(table, 7, 70)
+    collections.map_set(table, 11, 110)
+    let key_sum = 0
+    for key in table {
+        key_sum = key_sum + key
+    }
+    if key_sum != 18 {
+        return 3
+    }
+
+    collections.stack_free(stack)
+    collections.queue_free(queue)
+    collections.map_free(table)
+    return 0
+}

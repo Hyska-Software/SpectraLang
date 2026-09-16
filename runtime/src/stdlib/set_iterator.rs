@@ -13,6 +13,9 @@ pub(crate) const SET_FREE: &str = "spectra.std.collections.set_free";
 pub(crate) const ITER_LIST: &str = "spectra.std.collections.list_iter";
 pub(crate) const ITER_SET: &str = "spectra.std.collections.set_iter";
 pub(crate) const ITER_MAP: &str = "spectra.std.collections.map_iter";
+pub(crate) const ITER_MAP_VALUES: &str = "spectra.std.collections.map_values_iter";
+pub(crate) const ITER_STACK: &str = "spectra.std.collections.stack_iter";
+pub(crate) const ITER_QUEUE: &str = "spectra.std.collections.queue_iter";
 pub(crate) const ITER_NEXT: &str = "spectra.std.collections.iterator_next";
 pub(crate) const ITER_REMAINING: &str = "spectra.std.collections.iterator_remaining";
 pub(crate) const ITER_FREE: &str = "spectra.std.collections.iterator_free";
@@ -33,6 +36,9 @@ pub(crate) fn register_iterator() {
     register_host_function(ITER_LIST, std_list_iter);
     register_host_function(ITER_SET, std_set_iter);
     register_host_function(ITER_MAP, std_map_iter);
+    register_host_function(ITER_MAP_VALUES, std_map_values_iter);
+    register_host_function(ITER_STACK, std_stack_iter);
+    register_host_function(ITER_QUEUE, std_queue_iter);
     register_host_function(ITER_NEXT, std_iterator_next);
     register_host_function(ITER_REMAINING, std_iterator_remaining);
     register_host_function(ITER_FREE, std_iterator_free);
@@ -453,6 +459,54 @@ pub(crate) extern "C" fn std_map_iter(ctx: *mut SpectraHostCallContext) -> i32 {
         return HOST_STATUS_INVALID_ARGUMENT;
     };
     let items = match with_map_registry(|registry| registry.keys_snapshot(args[0] as usize)) {
+        Ok(items) => items,
+        Err(code) => return code,
+    };
+    let handle = match insert_iterator(items) {
+        Ok(handle) => handle,
+        Err(code) => return code,
+    };
+    results[0] = handle as i64;
+    HOST_STATUS_SUCCESS
+}
+
+pub(crate) extern "C" fn std_map_values_iter(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok((args, results)) = host_call_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let items = match with_map_registry(|registry| registry.values_snapshot(args[0] as usize)) {
+        Ok(items) => items,
+        Err(code) => return code,
+    };
+    let handle = match insert_iterator(items) {
+        Ok(handle) => handle,
+        Err(code) => return code,
+    };
+    results[0] = handle as i64;
+    HOST_STATUS_SUCCESS
+}
+
+pub(crate) extern "C" fn std_stack_iter(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok((args, results)) = host_call_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let items = match with_stack_registry(|registry| registry.snapshot(args[0] as usize)) {
+        Ok(items) => items,
+        Err(code) => return code,
+    };
+    let handle = match insert_iterator(items) {
+        Ok(handle) => handle,
+        Err(code) => return code,
+    };
+    results[0] = handle as i64;
+    HOST_STATUS_SUCCESS
+}
+
+pub(crate) extern "C" fn std_queue_iter(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok((args, results)) = host_call_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let items = match with_queue_registry(|registry| registry.snapshot(args[0] as usize)) {
         Ok(items) => items,
         Err(code) => return code,
     };

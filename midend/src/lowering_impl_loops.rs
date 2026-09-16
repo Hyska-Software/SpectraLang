@@ -402,6 +402,46 @@ impl ASTLowering {
                     true,
                 )
             }
+            IRType::Generic { name, args, .. } if name == "Stack" => {
+                let Some(element_type) = args.first().cloned() else {
+                    self.error("cannot iterate Stack<T> without its element type");
+                    return;
+                };
+                (
+                    self.require_value(
+                        self.builder.build_typed_host_call(
+                            ir_func,
+                            "spectra.std.collections.stack_iter".to_string(),
+                            vec![iterable_value],
+                            iterator_type(&element_type),
+                            true,
+                        ),
+                        "stack.iter host call did not produce its declared iterator",
+                    ),
+                    element_type,
+                    true,
+                )
+            }
+            IRType::Generic { name, args, .. } if name == "Queue" => {
+                let Some(element_type) = args.first().cloned() else {
+                    self.error("cannot iterate Queue<T> without its element type");
+                    return;
+                };
+                (
+                    self.require_value(
+                        self.builder.build_typed_host_call(
+                            ir_func,
+                            "spectra.std.collections.queue_iter".to_string(),
+                            vec![iterable_value],
+                            iterator_type(&element_type),
+                            true,
+                        ),
+                        "queue.iter host call did not produce its declared iterator",
+                    ),
+                    element_type,
+                    true,
+                )
+            }
             IRType::Generic { name, args, .. } if name == "Map" => {
                 let Some(element_type) = args.first().cloned() else {
                     self.error("cannot iterate Map<K, V> without its key type");
@@ -466,6 +506,48 @@ impl ASTLowering {
                             true,
                         ),
                         "set.iter host call did not produce its declared iterator",
+                    ),
+                    element_type,
+                    true,
+                )
+            }
+            IRType::Struct { name, .. } if name.starts_with("Stack_") => {
+                let suffix = &name["Stack_".len()..];
+                let element_type = mangle_type(suffix);
+                (
+                    self.require_value(
+                        self.builder.build_typed_host_call(
+                            ir_func,
+                            "spectra.std.collections.stack_iter".to_string(),
+                            vec![iterable_value],
+                            IRType::Struct {
+                                name: format!("Iterator_{suffix}"),
+                                fields: Vec::new(),
+                            },
+                            true,
+                        ),
+                        "stack.iter host call did not produce its declared iterator",
+                    ),
+                    element_type,
+                    true,
+                )
+            }
+            IRType::Struct { name, .. } if name.starts_with("Queue_") => {
+                let suffix = &name["Queue_".len()..];
+                let element_type = mangle_type(suffix);
+                (
+                    self.require_value(
+                        self.builder.build_typed_host_call(
+                            ir_func,
+                            "spectra.std.collections.queue_iter".to_string(),
+                            vec![iterable_value],
+                            IRType::Struct {
+                                name: format!("Iterator_{suffix}"),
+                                fields: Vec::new(),
+                            },
+                            true,
+                        ),
+                        "queue.iter host call did not produce its declared iterator",
                     ),
                     element_type,
                     true,

@@ -4,7 +4,7 @@
 // Regenerate:      python scripts/generate_lowering_tables.py
 // Verify:          python scripts/generate_lowering_tables.py --check
 //
-// `std.collections` (map/set/iterator) and `std.string` descriptors.
+// `std.collections` (map/stack/queue/set/iterator) and `std.string` descriptors.
 //
 // Arm order, section comments and the helper-vs-literal rendering style are
 // presentation data owned by the generator (see LAYOUT); runtime names, IR
@@ -61,6 +61,11 @@ pub(crate) fn lookup_std_host_group_collections_string(
             return_type: IRType::Int,
             returns_value: true,
         }),
+        ("collections", "map_is_empty") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.map_is_empty",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
         ("collections", "map_clear") => Some(HostFunctionDescriptor {
             runtime_name: "spectra.std.collections.map_clear",
             return_type: IRType::Int,
@@ -70,6 +75,19 @@ pub(crate) fn lookup_std_host_group_collections_string(
             runtime_name: "spectra.std.collections.map_free",
             return_type: IRType::Void,
             returns_value: false,
+        }),
+        ("collections", "map_free_all") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.map_free_all",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "map_values_iter") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.map_values_iter",
+            return_type: IRType::Struct {
+                name: "Iterator_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
         }),
         // ── std.collections set/iterator ──────────────────────────────
         ("collections", "set_new") => Some(HostFunctionDescriptor {
@@ -144,6 +162,102 @@ pub(crate) fn lookup_std_host_group_collections_string(
         ("collections", "iterator_free") => {
             Some(host_void("spectra.std.collections.iterator_free"))
         }
+        ("collections", "stack_new") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.stack_new",
+            return_type: IRType::Struct {
+                name: "Stack_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "stack_push") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.stack_push",
+            return_type: IRType::Void,
+            returns_value: false,
+        }),
+        ("collections", "stack_pop") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.stack_pop",
+            return_type: IRType::Unknown,
+            returns_value: true,
+        }),
+        ("collections", "stack_peek") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.stack_peek",
+            return_type: IRType::Unknown,
+            returns_value: true,
+        }),
+        ("collections", "stack_len") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.stack_len",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "stack_is_empty") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.stack_is_empty",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
+        ("collections", "stack_clear") => Some(host_void("spectra.std.collections.stack_clear")),
+        ("collections", "stack_free") => Some(host_void("spectra.std.collections.stack_free")),
+        ("collections", "stack_free_all") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.stack_free_all",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "stack_iter") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.stack_iter",
+            return_type: IRType::Struct {
+                name: "Iterator_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "queue_new") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.queue_new",
+            return_type: IRType::Struct {
+                name: "Queue_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "queue_enqueue") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.queue_enqueue",
+            return_type: IRType::Void,
+            returns_value: false,
+        }),
+        ("collections", "queue_dequeue") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.queue_dequeue",
+            return_type: IRType::Unknown,
+            returns_value: true,
+        }),
+        ("collections", "queue_peek") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.queue_peek",
+            return_type: IRType::Unknown,
+            returns_value: true,
+        }),
+        ("collections", "queue_len") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.queue_len",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "queue_is_empty") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.queue_is_empty",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
+        ("collections", "queue_clear") => Some(host_void("spectra.std.collections.queue_clear")),
+        ("collections", "queue_free") => Some(host_void("spectra.std.collections.queue_free")),
+        ("collections", "queue_free_all") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.queue_free_all",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "queue_iter") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.queue_iter",
+            return_type: IRType::Struct {
+                name: "Iterator_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
         // ── std.string ────────────────────────────────────────────────
         ("string", "len") => Some(HostFunctionDescriptor {
             runtime_name: "spectra.std.string.len",

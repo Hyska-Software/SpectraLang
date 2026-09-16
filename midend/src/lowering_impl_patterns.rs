@@ -391,7 +391,7 @@ impl ASTLowering {
                     );
                 }
 
-                if matches!(name.as_str(), "Set" | "Iterator") {
+                if matches!(name.as_str(), "Set" | "Iterator" | "Stack" | "Queue") {
                     let element_name = type_args
                         .first()
                         .map(|ann| self.type_annotation_to_string(ann))

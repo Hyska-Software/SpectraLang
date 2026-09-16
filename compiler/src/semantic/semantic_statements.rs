@@ -301,6 +301,26 @@ impl SemanticAnalyzer {
                             Type::Unknown
                         })
                     }
+                    Type::Applied { name, args } if name == "Stack" => {
+                        args.first().cloned().unwrap_or_else(|| {
+                            self.error(
+                                "Stack<T> for-loop iterable is missing its element type"
+                                    .to_string(),
+                                for_loop.span,
+                            );
+                            Type::Unknown
+                        })
+                    }
+                    Type::Applied { name, args } if name == "Queue" => {
+                        args.first().cloned().unwrap_or_else(|| {
+                            self.error(
+                                "Queue<T> for-loop iterable is missing its element type"
+                                    .to_string(),
+                                for_loop.span,
+                            );
+                            Type::Unknown
+                        })
+                    }
                     Type::Applied { name, args } if name == "Iterator" => {
                         args.first().cloned().unwrap_or_else(|| {
                             self.error(
@@ -332,6 +352,18 @@ impl SemanticAnalyzer {
                     Type::Struct { name } if name.starts_with("Set_") => {
                         self.type_from_mangle_part(&name["Set_".len()..])
                     }
+                    Type::Struct { name } if name == "Stack" => Type::TypeParameter {
+                        name: "T".to_string(),
+                    },
+                    Type::Struct { name } if name.starts_with("Stack_") => {
+                        self.type_from_mangle_part(&name["Stack_".len()..])
+                    }
+                    Type::Struct { name } if name == "Queue" => Type::TypeParameter {
+                        name: "T".to_string(),
+                    },
+                    Type::Struct { name } if name.starts_with("Queue_") => {
+                        self.type_from_mangle_part(&name["Queue_".len()..])
+                    }
                     Type::Struct { name } if name == "Iterator" => Type::TypeParameter {
                         name: "T".to_string(),
                     },
@@ -350,7 +382,7 @@ impl SemanticAnalyzer {
                             self.error_with_hint(
                                 "Cannot determine the type of the for-loop iterable",
                                 for_loop.iterable.span,
-                                "Use a typed array, Range, List<T>, Set<T>, Map<K,V>, or Iterator<T>; unresolved expressions cannot reach lowering.",
+                                "Use a typed array, Range, List<T>, Set<T>, Stack<T>, Queue<T>, Map<K,V>, or Iterator<T>; unresolved expressions cannot reach lowering.",
                             );
                         }
                         Type::Unknown
@@ -358,7 +390,7 @@ impl SemanticAnalyzer {
                     other => {
                         self.error(
                             format!(
-                                "For-loop iterable must be an array, Range, List<T>, Set<T>, Map<K,V>, or Iterator<T>, found {}",
+                                "For-loop iterable must be an array, Range, List<T>, Set<T>, Stack<T>, Queue<T>, Map<K,V>, or Iterator<T>, found {}",
                                 type_name(&other)
                             ),
                             for_loop.span,
@@ -593,14 +625,16 @@ impl SemanticAnalyzer {
             return false;
         }
 
-        ["List", "Map", "Set", "Iterator"].iter().any(|base| {
-            let actual_is_base = actual_name == *base;
-            let actual_is_application = actual_name.starts_with(&format!("{base}_"));
-            let expected_is_base = expected_name == *base;
-            let expected_is_application = expected_name.starts_with(&format!("{base}_"));
-            (actual_is_base && (expected_is_base || expected_is_application))
-                || (expected_is_base && actual_is_application)
-        })
+        ["List", "Map", "Set", "Iterator", "Stack", "Queue"]
+            .iter()
+            .any(|base| {
+                let actual_is_base = actual_name == *base;
+                let actual_is_application = actual_name.starts_with(&format!("{base}_"));
+                let expected_is_base = expected_name == *base;
+                let expected_is_application = expected_name.starts_with(&format!("{base}_"));
+                (actual_is_base && (expected_is_base || expected_is_application))
+                    || (expected_is_base && actual_is_application)
+            })
     }
 
     fn collection_type_arguments(&self, ty: &Type) -> Option<(&'static str, Vec<Type>)> {
@@ -610,6 +644,8 @@ impl SemanticAnalyzer {
                 "Map" if args.len() == 2 => Some(("Map", args.clone())),
                 "Set" if args.len() == 1 => Some(("Set", args.clone())),
                 "Iterator" if args.len() == 1 => Some(("Iterator", args.clone())),
+                "Stack" if args.len() == 1 => Some(("Stack", args.clone())),
+                "Queue" if args.len() == 1 => Some(("Queue", args.clone())),
                 _ => None,
             };
         }
@@ -650,6 +686,20 @@ impl SemanticAnalyzer {
                 name.strip_prefix("Iterator_")
                     .map(|suffix| ("Iterator", vec![self.type_from_mangle_part(suffix)]))
             })
+            .or_else(|| {
+                if name == "Stack" {
+                    return Some(("Stack", vec![Type::Int]));
+                }
+                name.strip_prefix("Stack_")
+                    .map(|suffix| ("Stack", vec![self.type_from_mangle_part(suffix)]))
+            })
+            .or_else(|| {
+                if name == "Queue" {
+                    return Some(("Queue", vec![Type::Int]));
+                }
+                name.strip_prefix("Queue_")
+                    .map(|suffix| ("Queue", vec![self.type_from_mangle_part(suffix)]))
+            })
     }
 
     pub(crate) fn specialize_std_call_signature(
@@ -670,7 +720,12 @@ impl SemanticAnalyzer {
                     substitutions.insert("K".to_string(), values[0].clone());
                     substitutions.insert("V".to_string(), values[1].clone());
                 }
-                Some(("Set", values)) | Some(("Iterator", values)) if values.len() == 1 => {
+                Some(("Set", values))
+                | Some(("Iterator", values))
+                | Some(("Stack", values))
+                | Some(("Queue", values))
+                    if values.len() == 1 =>
+                {
                     substitutions.insert("T".to_string(), values[0].clone());
                 }
                 _ => {}
@@ -703,7 +758,10 @@ impl SemanticAnalyzer {
         // Constructors have no value from which to infer T/K/V. Use the
         // expected binding type when present and the int default as
         // the deterministic default for unannotated source.
-        if matches!(operation, "list_new" | "map_new" | "set_new") {
+        if matches!(
+            operation,
+            "list_new" | "map_new" | "set_new" | "stack_new" | "queue_new"
+        ) {
             if let Some(expected) = self.current_expected_type.clone() {
                 if self.collection_type_arguments(&expected).is_some() {
                     specialized.return_type = expected;
@@ -718,9 +776,19 @@ impl SemanticAnalyzer {
                     name: "Map".to_string(),
                     args: vec![Type::Int, Type::Int],
                 };
-            } else {
+            } else if operation == "set_new" {
                 specialized.return_type = Type::Applied {
                     name: "Set".to_string(),
+                    args: vec![Type::Int],
+                };
+            } else if operation == "stack_new" {
+                specialized.return_type = Type::Applied {
+                    name: "Stack".to_string(),
+                    args: vec![Type::Int],
+                };
+            } else {
+                specialized.return_type = Type::Applied {
+                    name: "Queue".to_string(),
                     args: vec![Type::Int],
                 };
             }
@@ -750,7 +818,7 @@ impl SemanticAnalyzer {
                     args: vec![Type::Int],
                 };
             }
-            "list_iter" | "set_iter" => {
+            "list_iter" | "set_iter" | "stack_iter" | "queue_iter" => {
                 if let Some((_, values)) = first_collection.as_ref() {
                     if let Some(element) = values.first() {
                         specialized.return_type = Type::Applied {
@@ -760,18 +828,23 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            "map_iter" => {
+            "map_iter" | "map_values_iter" => {
                 if let Some(("Map", values)) = first_collection.as_ref() {
-                    if let Some(key) = values.first() {
+                    let payload = if operation == "map_values_iter" {
+                        values.get(1)
+                    } else {
+                        values.first()
+                    };
+                    if let Some(payload) = payload {
                         specialized.return_type = Type::Applied {
                             name: "Iterator".to_string(),
-                            args: vec![key.clone()],
+                            args: vec![payload.clone()],
                         };
                     }
                 }
             }
             "list_get" | "list_pop" | "list_pop_front" | "list_remove_at" | "set_get"
-            | "iterator_next" => {
+            | "stack_pop" | "stack_peek" | "queue_dequeue" | "queue_peek" | "iterator_next" => {
                 if let Some((_, values)) = first_collection.as_ref() {
                     if let Some(element) = values.first() {
                         specialized.return_type = option_type(self, element.clone());

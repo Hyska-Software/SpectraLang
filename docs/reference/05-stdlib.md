@@ -736,14 +736,14 @@ let i2 = std.convert.bool_to_int(false)
 ## 5. std.collections — Coleções / Collections
 
 **PT-BR:**  
-O contrato de fonte de `std.collections` usa `List<T>`, `Map<K,V>`, `Set<T>` e
-`Iterator<T>` tipados. A implementação atual transporta esses valores como
+O contrato de fonte de `std.collections` usa `List<T>`, `Map<K,V>`, `Set<T>`,
+`Stack<T>`, `Queue<T>` e `Iterator<T>` tipados. A implementação atual transporta esses valores como
 handles opacos na ABI do runtime; esse detalhe não faz parte do tipo que o
 programa SpectraLang deve manipular.
 
 **EN-US:**  
 The source contract of `std.collections` uses typed `List<T>`, `Map<K,V>`,
-`Set<T>`, and `Iterator<T>`. The current runtime ABI transports those values as
+`Set<T>`, `Stack<T>`, `Queue<T>`, and `Iterator<T>`. The current runtime ABI transports those values as
 opaque handles; that representation is not a source-level type to manipulate
 directly.
 
@@ -905,6 +905,90 @@ col.list_free(lista)
 let liberadas = col.list_free_all()
 ```
 
+### Mapas / Maps
+
+`Map<K,V>` armazena uma associação entre chaves e valores. `map_set` insere ou
+atualiza uma chave; leituras e remoções retornam `Option<V>`, portanto `0`, `-1`
+e a string vazia continuam sendo valores válidos. `map_iter` produz um snapshot
+de `Iterator<K>` e `map_values_iter` produz o snapshot correspondente de
+`Iterator<V>`.
+
+`Map<K,V>` stores key/value associations. `map_set` inserts or updates a key;
+reads and removals return `Option<V>`, so `0`, `-1`, and the empty string remain
+valid values. `map_iter` creates an `Iterator<K>` key snapshot and
+`map_values_iter` creates the matching `Iterator<V>` value snapshot.
+
+| Função / Function | Assinatura / Signature | Resultado / Result |
+|---|---|---|
+| `map_new` | `map_new<K,V>() -> Map<K,V>` | mapa vazio / empty map |
+| `map_set` | `map_set<K,V>(map: Map<K,V>, key: K, value: V) -> unit` | insere ou atualiza / insert or update |
+| `map_get` / `map_get_option` | `Map<K,V>, K -> Option<V>` | valor ou `None` / value or `None` |
+| `map_contains` | `Map<K,V>, K -> bool` | presença / membership |
+| `map_len` / `map_is_empty` | `Map<K,V> -> int` / `bool` | tamanho / emptiness |
+| `map_remove` / `map_remove_option` | `Map<K,V>, K -> Option<V>` | remove e retorna / remove and return |
+| `map_clear` | `Map<K,V> -> unit` | remove as entradas / clear entries |
+| `map_free` / `map_free_all` | `Map<K,V> -> unit` / `() -> int` | libera handles / release handles |
+
+```spectra
+from std.collections import Map, Iterator
+import std.collections as col
+import std.option as option
+
+let scores: Map<string, int> = col.map_new()
+col.map_set(scores, "Ada", 10)
+let maybe_score = col.map_get(scores, "Ada")
+if option.is_some(maybe_score) {
+    let score = option.option_unwrap(maybe_score)
+}
+let keys: Iterator<string> = col.map_iter(scores)
+let values: Iterator<int> = col.map_values_iter(scores)
+col.iterator_free(keys)
+col.iterator_free(values)
+col.map_free(scores)
+```
+
+### Pilha e fila / Stack and Queue
+
+`Stack<T>` implementa LIFO: `stack_push` coloca no topo, enquanto `stack_pop`
+e `stack_peek` retornam `Option<T>`. `stack_iter` captura os valores em ordem
+de inserção, do fundo ao topo.
+
+`Stack<T>` is LIFO: `stack_push` adds at the top, while `stack_pop` and
+`stack_peek` return `Option<T>`. `stack_iter` snapshots values from bottom to
+top.
+
+`Queue<T>` implementa FIFO com `queue_enqueue`, `queue_dequeue` e `queue_peek`.
+Seu iterador captura os valores na ordem FIFO. `stack_free_all` e
+`queue_free_all` retornam quantos handles foram liberados.
+
+`Queue<T>` is FIFO with `queue_enqueue`, `queue_dequeue`, and `queue_peek`.
+Its iterator snapshots values in FIFO order. `stack_free_all` and
+`queue_free_all` return the number of released handles.
+
+| Tipo / Type | Operações / Operations |
+|---|---|
+| `Stack<T>` | `stack_new`, `stack_push`, `stack_pop`, `stack_peek`, `stack_len`, `stack_is_empty`, `stack_clear`, `stack_free`, `stack_free_all`, `stack_iter` |
+| `Queue<T>` | `queue_new`, `queue_enqueue`, `queue_dequeue`, `queue_peek`, `queue_len`, `queue_is_empty`, `queue_clear`, `queue_free`, `queue_free_all`, `queue_iter` |
+
+```spectra
+from std.collections import Queue, Stack
+import std.collections as col
+import std.option as option
+
+let stack: Stack<int> = col.stack_new()
+col.stack_push(stack, 1)
+let last = col.stack_pop(stack)
+
+let queue: Queue<string> = col.queue_new()
+col.queue_enqueue(queue, "first")
+let first = col.queue_dequeue(queue)
+if option.is_some(first) {
+    let word = option.option_unwrap(first)
+}
+col.stack_free(stack)
+col.queue_free(queue)
+```
+
 ### Set e Iterator / Set and Iterator (beta)
 
 `Set<T>` preserva a ordem de inserção para tornar snapshots e iteração
@@ -935,14 +1019,16 @@ col.iterator_free(ids_iter)
 col.set_free(ids)
 ```
 
-As funções `list_iter`, `set_iter` e `map_iter` criam iteradores snapshot;
-`map_iter` percorre as chaves em uma ordem estável para o snapshot atual. A expressão `for`
-consome o mesmo protocolo para ranges, arrays, listas, sets, mapas e iteradores
+As funções `list_iter`, `set_iter`, `map_iter`, `map_values_iter`, `stack_iter`
+e `queue_iter` criam iteradores snapshot; `map_iter` percorre as chaves em uma
+ordem estável para o snapshot atual. A expressão `for` consome o mesmo
+protocolo para ranges, arrays, listas, sets, pilhas, filas, mapas e iteradores
 explícitos. `std.range.iter` é o adaptador público para ranges.
 
-The `list_iter`, `set_iter`, and `map_iter` functions create snapshot
-iterators; `map_iter` visits keys in a stable order for the current snapshot. The `for` expression
-uses the same protocol for ranges, arrays, lists, sets, maps, and explicit
+The `list_iter`, `set_iter`, `map_iter`, `map_values_iter`, `stack_iter`, and
+`queue_iter` functions create snapshot iterators; `map_iter` visits keys in a
+stable order for the current snapshot. The `for` expression uses the same
+protocol for ranges, arrays, lists, sets, stacks, queues, maps, and explicit
 iterators. `std.range.iter` is the public range adapter.
 
 | Função / Function | Assinatura / Signature | Resultado / Result |
@@ -955,6 +1041,9 @@ iterators. `std.range.iter` is the public range adapter.
 | `set_get` | `set_get<T>(set: Set<T>, index: int) -> Option<T>` | snapshot posicional |
 | `list_iter` / `set_iter` | `List<T>` / `Set<T> -> Iterator<T>` | snapshot iterator |
 | `map_iter` | `Map<K,V> -> Iterator<K>` | iterator de chaves / key iterator |
+| `map_values_iter` | `Map<K,V> -> Iterator<V>` | iterator de valores / value iterator |
+| `stack_iter` | `Stack<T> -> Iterator<T>` | snapshot do fundo ao topo / bottom-to-top snapshot |
+| `queue_iter` | `Queue<T> -> Iterator<T>` | snapshot FIFO |
 | `iterator_next` | `iterator_next<T>(iterator: Iterator<T>) -> Option<T>` | próximo valor / next value |
 | `iterator_remaining` | `iterator_remaining<T>(iterator: Iterator<T>) -> int` | itens restantes / remaining |
 | `iterator_free` | `iterator_free<T>(iterator: Iterator<T>) -> unit` | libera o handle / drops handle |

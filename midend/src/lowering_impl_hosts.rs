@@ -299,7 +299,7 @@ impl ASTLowering {
                     },
                 }
             };
-            ["List_", "Set_", "Iterator_"]
+            ["List_", "Set_", "Iterator_", "Stack_", "Queue_"]
                 .iter()
                 .find_map(|prefix| name.strip_prefix(prefix).map(part))
         };
@@ -386,17 +386,26 @@ impl ASTLowering {
                     descriptor.return_type = accumulator;
                 }
             }
-        } else if matches!(operation, "list_iter" | "set_iter" | "map_iter") {
+        } else if matches!(
+            operation,
+            "list_iter" | "set_iter" | "stack_iter" | "queue_iter" | "map_iter" | "map_values_iter"
+        ) {
             if let Some(first_type) = first_type.as_ref() {
-                let collection = if operation == "map_iter" {
+                let collection = if matches!(operation, "map_iter" | "map_values_iter") {
                     "Map"
                 } else if operation == "set_iter" {
                     "Set"
+                } else if operation == "stack_iter" {
+                    "Stack"
+                } else if operation == "queue_iter" {
+                    "Queue"
                 } else {
                     "List"
                 };
                 let payload = if operation == "map_iter" {
                     map_types_for_type(first_type).map(|(key, _)| key)
+                } else if operation == "map_values_iter" {
+                    map_types_for_type(first_type).map(|(_, value)| value)
                 } else {
                     collection_element_for_type(first_type, collection)
                 };
@@ -411,10 +420,22 @@ impl ASTLowering {
                     };
                 }
             }
-        } else if matches!(operation, "set_get" | "iterator_next") {
+        } else if matches!(
+            operation,
+            "set_get"
+                | "stack_pop"
+                | "stack_peek"
+                | "queue_dequeue"
+                | "queue_peek"
+                | "iterator_next"
+        ) {
             if let Some(first_type) = first_type.as_ref() {
                 let collection = if operation == "set_get" {
                     "Set"
+                } else if matches!(operation, "stack_pop" | "stack_peek") {
+                    "Stack"
+                } else if matches!(operation, "queue_dequeue" | "queue_peek") {
+                    "Queue"
                 } else {
                     "Iterator"
                 };
@@ -438,7 +459,7 @@ impl ASTLowering {
                     descriptor.return_type = option_type(element_type);
                 }
             }
-        } else if operation == "map_new" {
+        } else if matches!(operation, "map_new" | "stack_new" | "queue_new") {
             if let Some(annotation) = self.current_expected_annotation.as_ref() {
                 let expected = self.lower_type_annotation(annotation);
                 if !Self::ir_type_contains_unknown(&expected) {

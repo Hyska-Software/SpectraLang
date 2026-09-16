@@ -1,0 +1,45 @@
+module validation_500_stdlib_queue_lifecycle
+
+from std.collections import Queue
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let values: Queue<int> = collections.queue_new()
+    if collections.queue_is_empty(values) != true or collections.queue_len(values) != 0 {
+        return 1
+    }
+    collections.queue_enqueue(values, 1)
+    collections.queue_enqueue(values, 2)
+    collections.queue_enqueue(values, 3)
+    if collections.queue_len(values) != 3 {
+        return 2
+    }
+
+    let front = collections.queue_peek(values)
+    if option.is_none(front) or option.option_unwrap(front) != 1 {
+        return 3
+    }
+    let first = collections.queue_dequeue(values)
+    let second = collections.queue_dequeue(values)
+    if option.is_none(first) or option.option_unwrap(first) != 1 {
+        return 4
+    }
+    if option.is_none(second) or option.option_unwrap(second) != 2 {
+        return 5
+    }
+    if collections.queue_len(values) != 1 {
+        return 6
+    }
+
+    collections.queue_clear(values)
+    if collections.queue_is_empty(values) != true {
+        return 7
+    }
+    let empty = collections.queue_dequeue(values)
+    if option.is_some(empty) {
+        return 8
+    }
+    collections.queue_free(values)
+    return 0
+}

@@ -1,0 +1,35 @@
+module validation_497_stdlib_map_iteration
+
+from std.collections import Iterator, Map
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let entries: Map<int, string> = collections.map_new()
+    collections.map_set(entries, 5, "five")
+    collections.map_set(entries, 2, "two")
+
+    let keys: Iterator<int> = collections.map_iter(entries)
+    collections.map_set(entries, 9, "nine")
+    if collections.iterator_remaining(keys) != 2 {
+        return 1
+    }
+    let first_key = collections.iterator_next(keys)
+    let second_key = collections.iterator_next(keys)
+    if option.is_none(first_key) or option.is_none(second_key) {
+        return 2
+    }
+    if option.option_unwrap(first_key) != 2 or option.option_unwrap(second_key) != 5 {
+        return 3
+    }
+    collections.iterator_free(keys)
+
+    let values: Iterator<string> = collections.map_values_iter(entries)
+    let first_value = collections.iterator_next(values)
+    if option.is_none(first_value) or option.option_unwrap(first_value) != "two" {
+        return 4
+    }
+    collections.iterator_free(values)
+    collections.map_free(entries)
+    return 0
+}

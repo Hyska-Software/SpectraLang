@@ -555,13 +555,13 @@ LAYOUT: tuple[FileLayout, ...] = (
         path='midend/src/lowering_std_host_collections_string.rs',
         function='lookup_std_host_group_collections_string',
         style=STYLE_STRUCT,
-        summary="`std.collections` (map/set/iterator) and `std.string` descriptors.",
+        summary="`std.collections` (map/stack/queue/set/iterator) and `std.string` descriptors.",
         groups=(
             Group(
                 module='collections',
                 names=(
                 "map_new map_set map_get map_get_option map_contains map_remove map_remove_option map_len "
-                "map_clear map_free"
+                "map_is_empty map_clear map_free map_free_all map_values_iter"
                 ),
                 comment='        // ── std.collections map ──────────────────────────────────────',
             ),
@@ -570,7 +570,10 @@ LAYOUT: tuple[FileLayout, ...] = (
                 names=(
                 "set_new set_insert set_contains set_remove set_len set_get set_clear@host_void "
                 "set_free@host_void list_iter set_iter map_iter iterator_next iterator_remaining "
-                "iterator_free@host_void"
+                "iterator_free@host_void stack_new stack_push stack_pop stack_peek stack_len "
+                "stack_is_empty stack_clear@host_void stack_free@host_void stack_free_all stack_iter "
+                "queue_new queue_enqueue queue_dequeue queue_peek queue_len queue_is_empty "
+                "queue_clear@host_void queue_free@host_void queue_free_all queue_iter"
                 ),
                 comment='        // ── std.collections set/iterator ──────────────────────────────',
             ),
@@ -838,7 +841,7 @@ def render_ir(ir_return: str, indent: int) -> list[str]:
             pad + "    ],",
             pad + "}",
         ]
-    if re.fullmatch(r"(List|Map|Set|Iterator)<.*>", ir_return):
+    if re.fullmatch(r"(List|Map|Set|Iterator|Stack|Queue)<.*>", ir_return):
         name = re.sub(r"[<>,]", "_", ir_return).rstrip("_")
         return [
             pad + "IRType::Struct {",

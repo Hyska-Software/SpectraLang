@@ -1,0 +1,51 @@
+module validation_496_stdlib_map_full
+
+from std.collections import Iterator, Map
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let scores: Map<string, int> = collections.map_new()
+    if collections.map_is_empty(scores) != true or collections.map_len(scores) != 0 {
+        return 1
+    }
+
+    collections.map_set(scores, "Ada", 10)
+    collections.map_set(scores, "Grace", 20)
+    collections.map_set(scores, "Grace", 30)
+    if collections.map_is_empty(scores) or collections.map_len(scores) != 2 {
+        return 2
+    }
+
+    let grace = collections.map_get(scores, "Grace")
+    if option.is_none(grace) or option.option_unwrap(grace) != 30 {
+        return 3
+    }
+    let missing = collections.map_get_option(scores, "Unknown")
+    if option.is_some(missing) {
+        return 4
+    }
+
+    let removed = collections.map_remove(scores, "Ada")
+    if option.is_none(removed) or option.option_unwrap(removed) != 10 {
+        return 5
+    }
+    if collections.map_contains(scores, "Ada") or collections.map_len(scores) != 1 {
+        return 6
+    }
+
+    let keys: Iterator<string> = collections.map_iter(scores)
+    let values: Iterator<int> = collections.map_values_iter(scores)
+    if collections.iterator_remaining(keys) != 1 or collections.iterator_remaining(values) != 1 {
+        return 7
+    }
+    collections.iterator_free(keys)
+    collections.iterator_free(values)
+
+    collections.map_clear(scores)
+    if collections.map_is_empty(scores) != true {
+        return 8
+    }
+    collections.map_free(scores)
+    return 0
+}

@@ -395,7 +395,7 @@ genericos     = "<" IDENT (":" IDENT ("+" IDENT)*)? ("," ...)* ">" ;
 | `std.string` | `len`, `contains`, `to_upper`, `to_lower`, `trim`, `substring`, `replace`, `split_first`, `split_last`, `index_of`, `concat`, `is_empty`, `reverse_str`, `pad_left`, `pad_right` |
 | `std.math` | `abs`, `min`, `max`, `clamp`, `sign`, `gcd`, `lcm`, `sqrt_f`, `pow_f`, `floor_f`, `ceil_f`, `round_f`, `sin_f`, `cos_f`, `tan_f`, `log_f`, `pi`, `e_const` |
 | `std.convert` | `int_to_string`, `float_to_string`, `bool_to_string`, `string_to_int`, `string_to_float`, `int_to_float`, `float_to_int`, `string_to_int_or`, `bool_to_int` |
-| `std.collections` | `list_new`, `list_push`, `list_len`, `list_get`/`list_pop`/`list_remove_at` (`Option<T>`), `list_set`, `list_sort`, `list_contains`, `list_index_of`, `list_free` |
+| `std.collections` | `List<T>`, `Map<K,V>`, `Set<T>`, `Stack<T>`, `Queue<T>`, `Iterator<T>`; `map_get`/`map_remove`, `stack_pop`/`stack_peek`, `queue_dequeue`/`queue_peek` retornam `Option<T>` |
 | `std.compat.collections` | `list_get`, `list_pop`, `list_pop_front`, `list_remove_at`, `map_get`, `map_remove` com sentinelas legados |
 | `std.random` | `random_seed`, `random_int`, `random_float`, `random_bool` |
 | `std.fs` | `fs_read`, `fs_write`, `fs_append`, `fs_exists`, `fs_remove` retornando `Result<T, Error>` |

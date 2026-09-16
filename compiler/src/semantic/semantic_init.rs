@@ -408,7 +408,7 @@ impl SemanticAnalyzer {
                 },
             );
 
-            for name in ["Set", "Iterator"] {
+            for name in ["Set", "Iterator", "Stack", "Queue"] {
                 let params = vec![make_type_param("T")];
                 self.generic_structs
                     .insert(name.to_string(), (params, Vec::new()));

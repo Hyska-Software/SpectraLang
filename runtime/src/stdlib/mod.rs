@@ -226,6 +226,10 @@ pub(crate) use set_iterator::*;
 mod map;
 pub(crate) use map::*;
 
+#[path = "stack_queue.rs"]
+mod stack_queue;
+pub(crate) use stack_queue::*;
+
 #[path = "async_types.rs"]
 mod async_types;
 pub(crate) use async_types::*;

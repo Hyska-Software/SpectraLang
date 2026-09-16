@@ -24,7 +24,8 @@ use super::*;
 // - Free-all calls mark every *live* tracked binding whose type belongs to the
 //   arena family of the call: `tensor.free_all()`/`free_all()` -> Tensor,
 //   `list_free_all()` -> List, `map_free_all()` -> Map, `set_free_all()` ->
-//   Set. Handles of unrelated families (e.g. ml int-handles) are unaffected,
+//   Set, `stack_free_all()` -> Stack, and `queue_free_all()` -> Queue. Handles
+//   of unrelated families (e.g. ml int-handles) are unaffected,
 //   so handles obtained after another variable's free_all stay Alive.
 //
 // Sanctioned exception (release-state introspection): `value_kind` deliberately
@@ -43,6 +44,8 @@ const UAF_DIRECT_FREE_FUNCTIONS: &[&str] = &[
     "list_free",
     "map_free",
     "set_free",
+    "stack_free",
+    "queue_free",
 ];
 
 /// Arena-wide release calls mapped to the handle family they release.
@@ -52,6 +55,8 @@ fn uaf_free_all_family(name: &str) -> Option<&'static str> {
         "list_free_all" => Some("List"),
         "map_free_all" => Some("Map"),
         "set_free_all" => Some("Set"),
+        "stack_free_all" => Some("Stack"),
+        "queue_free_all" => Some("Queue"),
         _ => None,
     }
 }
@@ -76,6 +81,10 @@ impl UafFrame {
                 (family == "List" && (name == "List" || name.starts_with("List_")))
                     || (family == "Map" && (name == "Map" || name.starts_with("Map_")))
                     || (family == "Set" && (name == "Set" || name.starts_with("Set_")))
+                    || (family == "Stack"
+                        && (name == "Stack" || name.starts_with("Stack_")))
+                    || (family == "Queue"
+                        && (name == "Queue" || name.starts_with("Queue_")))
                     || (family == "Iterator"
                         && (name == "Iterator" || name.starts_with("Iterator_")))
             }

@@ -10,8 +10,10 @@ pub(crate) const MAP_REMOVE: &str = spectra_contract::STD_COLLECTIONS_MAP_REMOVE
 pub(crate) const MAP_REMOVE_OPTION: &str =
     spectra_contract::STD_COLLECTIONS_MAP_REMOVE_OPTION_BINDING;
 pub(crate) const MAP_LEN: &str = "spectra.std.collections.map_len";
+pub(crate) const MAP_IS_EMPTY: &str = "spectra.std.collections.map_is_empty";
 pub(crate) const MAP_CLEAR: &str = "spectra.std.collections.map_clear";
 pub(crate) const MAP_FREE: &str = "spectra.std.collections.map_free";
+pub(crate) const MAP_FREE_ALL: &str = "spectra.std.collections.map_free_all";
 
 pub(crate) fn register_map() {
     register_host_function(MAP_NEW, std_map_new);
@@ -22,8 +24,10 @@ pub(crate) fn register_map() {
     register_host_function(MAP_REMOVE, std_map_remove_option);
     register_host_function(MAP_REMOVE_OPTION, std_map_remove_option);
     register_host_function(MAP_LEN, std_map_len);
+    register_host_function(MAP_IS_EMPTY, std_map_is_empty);
     register_host_function(MAP_CLEAR, std_map_clear);
     register_host_function(MAP_FREE, std_map_free);
+    register_host_function(MAP_FREE_ALL, std_map_free_all);
 }
 
 pub(crate) struct MapRegistry {
@@ -77,6 +81,18 @@ impl MapRegistry {
         Ok(keys)
     }
 
+    pub(crate) fn values_snapshot(&self, handle: usize) -> Result<Vec<SpectraHostValue>, i32> {
+        let id = Self::id(handle)?;
+        let map = self.maps.get(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
+        let mut values = lock_unpoisoned(map)
+            .data
+            .iter()
+            .map(|(key, value)| (key.raw_value(), *value))
+            .collect::<Vec<_>>();
+        values.sort_unstable_by_key(|(key, _)| *key);
+        Ok(values.into_iter().map(|(_, value)| value).collect())
+    }
+
     pub(crate) fn remove(&mut self, handle: usize) -> Result<Arc<Mutex<StdMap>>, i32> {
         let id = Self::id(handle)?;
         self.maps.remove(id).map_err(|_| HOST_STATUS_NOT_FOUND)
@@ -90,6 +106,10 @@ impl MapRegistry {
         let id = Self::id(handle)?;
         let map = self.maps.get(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
         Ok(lock_unpoisoned(map).data.remove(&collection_key(key)))
+    }
+
+    pub(crate) fn clear_all(&mut self) -> usize {
+        self.maps.clear()
     }
 }
 
@@ -245,6 +265,19 @@ pub(crate) extern "C" fn std_map_len(ctx: *mut SpectraHostCallContext) -> i32 {
     HOST_STATUS_SUCCESS
 }
 
+/// Returns whether the map contains no entries.
+pub(crate) extern "C" fn std_map_is_empty(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok((args, results)) = host_call_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let map_arc = with_map_registry(|registry| registry.get(args[0] as usize));
+    let Some(map_arc) = map_arc else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    results[0] = lock_unpoisoned(&map_arc).data.is_empty() as SpectraHostValue;
+    HOST_STATUS_SUCCESS
+}
+
 /// Removes all entries from the map without freeing the handle.
 /// Args: [handle]. Returns 0.
 pub(crate) extern "C" fn std_map_clear(ctx: *mut SpectraHostCallContext) -> i32 {
@@ -288,4 +321,13 @@ pub(crate) extern "C" fn std_map_free(ctx: *mut SpectraHostCallContext) -> i32 {
             Err(code) => code,
         }
     }
+}
+
+/// Frees every live map and returns the number of released handles.
+pub(crate) extern "C" fn std_map_free_all(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok((_, results)) = host_call_args(ctx, 0) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    results[0] = with_map_registry(|registry| registry.clear_all()) as SpectraHostValue;
+    HOST_STATUS_SUCCESS
 }

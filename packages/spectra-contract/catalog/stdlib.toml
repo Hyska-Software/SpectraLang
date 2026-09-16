@@ -12932,6 +12932,20 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.collections.Queue"
+kind = "type"
+namespace = "std.collections"
+signature = "record Queue {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.collections.Queue"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
 path = "std.collections.Set"
 kind = "type"
 namespace = "std.collections"
@@ -12940,6 +12954,20 @@ abi = "semantic descriptor"
 effects = []
 error_model = "none"
 binding = "spectra.type.std.collections.Set"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.Stack"
+kind = "type"
+namespace = "std.collections"
+signature = "record Stack {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.collections.Stack"
 maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
@@ -13510,6 +13538,25 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.collections.map_free_all"
+kind = "function"
+namespace = "std.collections"
+signature = "fn() -> int"
+params = []
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host", "mutation"]
+sink = true
+error_model = "host status + typed return"
+binding = "spectra.std.collections.map_free_all"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/496_stdlib_map_full.spectra"
+
+[[entry]]
 path = "std.collections.map_get"
 kind = "function"
 namespace = "std.collections"
@@ -13544,6 +13591,24 @@ maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/stability_typed_option_accessors.spectra"
+
+[[entry]]
+path = "std.collections.map_is_empty"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Map) -> bool"
+params = [{ name = "arg0", ty = "Map" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.map_is_empty"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/496_stdlib_map_full.spectra"
 
 [[entry]]
 path = "std.collections.map_iter"
@@ -13654,6 +13719,24 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.map_values_iter"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Map) -> Iterator"
+params = [{ name = "arg0", ty = "Map" }]
+returns = "Iterator"
+ir_return = "Iterator<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.map_values_iter"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/497_stdlib_map_iteration.spectra"
 
 [[entry]]
 path = "std.collections.set_clear"
@@ -13816,6 +13899,376 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.queue_clear"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Queue) -> unit"
+params = [{ name = "arg0", ty = "Queue" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host", "mutation"]
+sink = true
+error_model = "host status + typed return"
+binding = "spectra.std.collections.queue_clear"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/500_stdlib_queue_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.queue_dequeue"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Queue) -> Option"
+params = [{ name = "arg0", ty = "Queue" }]
+returns = "Option"
+ir_return = "unknown"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["allocation", "mutation"]
+sink = true
+error_model = "Result<Option<T>, Error>"
+binding = "spectra.std.collections.queue_dequeue"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/500_stdlib_queue_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.queue_enqueue"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Queue, T) -> unit"
+params = [{ name = "arg0", ty = "Queue" }, { name = "arg1", ty = "T" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host", "mutation"]
+sink = true
+error_model = "host status + typed return"
+binding = "spectra.std.collections.queue_enqueue"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/500_stdlib_queue_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.queue_free"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Queue) -> unit"
+params = [{ name = "arg0", ty = "Queue" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host", "mutation"]
+sink = true
+error_model = "host status + typed return"
+binding = "spectra.std.collections.queue_free"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/504_stdlib_collections_handle_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.queue_free_all"
+kind = "function"
+namespace = "std.collections"
+signature = "fn() -> int"
+params = []
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host", "mutation"]
+sink = true
+error_model = "host status + typed return"
+binding = "spectra.std.collections.queue_free_all"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/504_stdlib_collections_handle_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.queue_is_empty"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Queue) -> bool"
+params = [{ name = "arg0", ty = "Queue" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.queue_is_empty"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/500_stdlib_queue_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.queue_iter"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Queue) -> Iterator"
+params = [{ name = "arg0", ty = "Queue" }]
+returns = "Iterator"
+ir_return = "Iterator<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.queue_iter"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/501_stdlib_queue_strings.spectra"
+
+[[entry]]
+path = "std.collections.queue_len"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Queue) -> int"
+params = [{ name = "arg0", ty = "Queue" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.queue_len"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/500_stdlib_queue_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.queue_new"
+kind = "function"
+namespace = "std.collections"
+signature = "fn() -> Queue"
+params = []
+returns = "Queue"
+ir_return = "Queue<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.queue_new"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/500_stdlib_queue_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.queue_peek"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Queue) -> Option"
+params = [{ name = "arg0", ty = "Queue" }]
+returns = "Option"
+ir_return = "unknown"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["allocation"]
+error_model = "Result<Option<T>, Error>"
+binding = "spectra.std.collections.queue_peek"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/503_stdlib_collections_empty_options.spectra"
+
+[[entry]]
+path = "std.collections.stack_clear"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Stack) -> unit"
+params = [{ name = "arg0", ty = "Stack" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host", "mutation"]
+sink = true
+error_model = "host status + typed return"
+binding = "spectra.std.collections.stack_clear"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/498_stdlib_stack_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.stack_free"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Stack) -> unit"
+params = [{ name = "arg0", ty = "Stack" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host", "mutation"]
+sink = true
+error_model = "host status + typed return"
+binding = "spectra.std.collections.stack_free"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/504_stdlib_collections_handle_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.stack_free_all"
+kind = "function"
+namespace = "std.collections"
+signature = "fn() -> int"
+params = []
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host", "mutation"]
+sink = true
+error_model = "host status + typed return"
+binding = "spectra.std.collections.stack_free_all"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/504_stdlib_collections_handle_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.stack_is_empty"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Stack) -> bool"
+params = [{ name = "arg0", ty = "Stack" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.stack_is_empty"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/498_stdlib_stack_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.stack_iter"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Stack) -> Iterator"
+params = [{ name = "arg0", ty = "Stack" }]
+returns = "Iterator"
+ir_return = "Iterator<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.stack_iter"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/499_stdlib_stack_strings.spectra"
+
+[[entry]]
+path = "std.collections.stack_len"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Stack) -> int"
+params = [{ name = "arg0", ty = "Stack" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.stack_len"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/498_stdlib_stack_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.stack_new"
+kind = "function"
+namespace = "std.collections"
+signature = "fn() -> Stack"
+params = []
+returns = "Stack"
+ir_return = "Stack<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.stack_new"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/498_stdlib_stack_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.stack_peek"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Stack) -> Option"
+params = [{ name = "arg0", ty = "Stack" }]
+returns = "Option"
+ir_return = "unknown"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["allocation"]
+error_model = "Result<Option<T>, Error>"
+binding = "spectra.std.collections.stack_peek"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/503_stdlib_collections_empty_options.spectra"
+
+[[entry]]
+path = "std.collections.stack_pop"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Stack) -> Option"
+params = [{ name = "arg0", ty = "Stack" }]
+returns = "Option"
+ir_return = "unknown"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["allocation", "mutation"]
+sink = true
+error_model = "Result<Option<T>, Error>"
+binding = "spectra.std.collections.stack_pop"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/498_stdlib_stack_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.stack_push"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Stack, T) -> unit"
+params = [{ name = "arg0", ty = "Stack" }, { name = "arg1", ty = "T" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host", "mutation"]
+sink = true
+error_model = "host status + typed return"
+binding = "spectra.std.collections.stack_push"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/498_stdlib_stack_lifecycle.spectra"
 
 [[entry]]
 path = "std.concurrent"

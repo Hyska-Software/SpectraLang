@@ -1,0 +1,45 @@
+module validation_498_stdlib_stack_lifecycle
+
+from std.collections import Stack
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let values: Stack<int> = collections.stack_new()
+    if collections.stack_is_empty(values) != true or collections.stack_len(values) != 0 {
+        return 1
+    }
+    collections.stack_push(values, 1)
+    collections.stack_push(values, 2)
+    collections.stack_push(values, 3)
+    if collections.stack_len(values) != 3 {
+        return 2
+    }
+
+    let top = collections.stack_peek(values)
+    if option.is_none(top) or option.option_unwrap(top) != 3 {
+        return 3
+    }
+    let first = collections.stack_pop(values)
+    let second = collections.stack_pop(values)
+    if option.is_none(first) or option.option_unwrap(first) != 3 {
+        return 4
+    }
+    if option.is_none(second) or option.option_unwrap(second) != 2 {
+        return 5
+    }
+    if collections.stack_len(values) != 1 {
+        return 6
+    }
+
+    collections.stack_clear(values)
+    if collections.stack_is_empty(values) != true {
+        return 7
+    }
+    let empty = collections.stack_pop(values)
+    if option.is_some(empty) {
+        return 8
+    }
+    collections.stack_free(values)
+    return 0
+}

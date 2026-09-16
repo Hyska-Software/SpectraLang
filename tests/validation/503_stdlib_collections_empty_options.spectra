@@ -1,0 +1,33 @@
+module validation_503_stdlib_collections_empty_options
+
+from std.collections import Map, Queue, Stack
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let stack: Stack<int> = collections.stack_new()
+    let stack_peek = collections.stack_peek(stack)
+    let stack_pop = collections.stack_pop(stack)
+    if option.is_some(stack_peek) or option.is_some(stack_pop) {
+        return 1
+    }
+
+    let queue: Queue<int> = collections.queue_new()
+    let queue_peek = collections.queue_peek(queue)
+    let queue_dequeue = collections.queue_dequeue(queue)
+    if option.is_some(queue_peek) or option.is_some(queue_dequeue) {
+        return 2
+    }
+
+    let table: Map<int, int> = collections.map_new()
+    let missing = collections.map_get(table, 42)
+    let removed = collections.map_remove(table, 42)
+    if option.is_some(missing) or option.is_some(removed) {
+        return 3
+    }
+
+    collections.stack_free(stack)
+    collections.queue_free(queue)
+    collections.map_free(table)
+    return 0
+}

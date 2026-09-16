@@ -1,0 +1,42 @@
+module validation_504_stdlib_collections_handle_lifecycle
+
+from std.collections import Map, Queue, Stack
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let stack_a: Stack<int> = collections.stack_new()
+    let stack_b: Stack<int> = collections.stack_new()
+    if collections.stack_free_all() != 2 {
+        return 1
+    }
+    let replacement: Stack<int> = collections.stack_new()
+    collections.stack_push(replacement, 9)
+    let replacement_value = collections.stack_pop(replacement)
+    if option.is_none(replacement_value) or option.option_unwrap(replacement_value) != 9 {
+        return 2
+    }
+    collections.stack_free(replacement)
+
+    let queue_a: Queue<int> = collections.queue_new()
+    let queue_b: Queue<int> = collections.queue_new()
+    if collections.queue_free_all() != 2 {
+        return 3
+    }
+    let queue: Queue<int> = collections.queue_new()
+    collections.queue_enqueue(queue, 4)
+    collections.queue_free(queue)
+
+    let map_a: Map<int, int> = collections.map_new()
+    let map_b: Map<int, int> = collections.map_new()
+    if collections.map_free_all() != 2 {
+        return 4
+    }
+    let map: Map<int, int> = collections.map_new()
+    collections.map_set(map, 1, 10)
+    if collections.map_len(map) != 1 {
+        return 5
+    }
+    collections.map_free(map)
+    return 0
+}

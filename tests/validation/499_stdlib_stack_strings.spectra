@@ -1,0 +1,33 @@
+module validation_499_stdlib_stack_strings
+
+from std.collections import Iterator, Stack
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let words: Stack<string> = collections.stack_new()
+    collections.stack_push(words, "bottom")
+    collections.stack_push(words, "top")
+
+    let snapshot: Iterator<string> = collections.stack_iter(words)
+    collections.stack_push(words, "last")
+    let first = collections.iterator_next(snapshot)
+    let second = collections.iterator_next(snapshot)
+    if option.is_none(first) or option.option_unwrap(first) != "bottom" {
+        return 1
+    }
+    if option.is_none(second) or option.option_unwrap(second) != "top" {
+        return 2
+    }
+    if collections.iterator_remaining(snapshot) != 0 {
+        return 3
+    }
+    collections.iterator_free(snapshot)
+
+    let last = collections.stack_pop(words)
+    if option.is_none(last) or option.option_unwrap(last) != "last" {
+        return 4
+    }
+    collections.stack_free(words)
+    return 0
+}
