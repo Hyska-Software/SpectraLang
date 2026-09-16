@@ -1,0 +1,17 @@
+module validation_stdlib_ml_experiment_repro
+
+import std.ml as ml
+import std.string as string
+
+public func main() returns int {
+    let run = ml.experiment_start("validation", "target/stdlib-examples/validation-run", 9)
+    ml.experiment_set_config(run, "mode", "check")
+    ml.experiment_log_metric(run, "accuracy", 1.0, 1)
+    ml.experiment_finish(run)
+    let manifest = ml.experiment_manifest_path(run)
+    let command = ml.experiment_repro_command(run)
+    if !string.contains(manifest, "experiment-manifest.json") or !string.contains(command, "spectralang run") {
+        return 1
+    }
+    return 0
+}

@@ -1,0 +1,46 @@
+module validation_456_stdlib_map_set_lifecycle
+
+// Contract: maps and sets expose deterministic ownership and absence-safe reads.
+from std.collections import Map, Set
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let counts: Map<int, int> = collections.map_new()
+    collections.map_set(counts, 1, 100)
+    collections.map_set(counts, 2, 200)
+    let value = collections.map_get(counts, 2)
+    if option.is_none(value) or option.option_unwrap(value) != 200 {
+        return 1
+    }
+    let erased = collections.map_remove(counts, 9)
+    if option.is_some(erased) or collections.map_len(counts) != 2 {
+        return 2
+    }
+    let removed = collections.map_remove(counts, 1)
+    if option.is_none(removed) or option.option_unwrap(removed) != 100 {
+        return 3
+    }
+    collections.map_clear(counts)
+    if collections.map_len(counts) != 0 {
+        return 4
+    }
+
+    let modes: Set<int> = collections.set_new()
+    collections.set_insert(modes, 3)
+    collections.set_insert(modes, 5)
+    collections.set_insert(modes, 7)
+    let middle = collections.set_get(modes, 1)
+    if option.is_none(middle) or option.option_unwrap(middle) != 5 {
+        return 5
+    }
+    if collections.set_remove(modes, 5) != true or collections.set_contains(modes, 5) {
+        return 6
+    }
+    if collections.set_len(modes) != 2 {
+        return 7
+    }
+    collections.map_free(counts)
+    collections.set_free(modes)
+    return 0
+}

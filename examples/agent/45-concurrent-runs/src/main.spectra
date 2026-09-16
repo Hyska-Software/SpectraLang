@@ -1,0 +1,120 @@
+module main
+
+// Example 45 — two live runs can interleave tool work without sharing their
+// counters or model-turn attribution.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[derive(Serialize, Deserialize)]
+public record EchoArgs {
+    text: string,
+}
+
+#[agent_tool("Adds two integers")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+#[agent_tool("Echoes through the run provider")]
+public async func echo(run: Run, args: EchoArgs) returns string {
+    let reply = await ask(run, args.text)
+    if let Result::Ok(text) = reply {
+        return text
+    }
+    return "provider error"
+}
+
+func spec(goal: string) returns string {
+    return "{\"goal\":\"" +
+        goal +
+        "\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":45,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let first = agent_start(spec("example-concurrent-a"))
+    if let Result::Err(problem) = first {
+        println("first start failed: " + error.message(problem))
+        return 1
+    }
+    let second = agent_start(spec("example-concurrent-b"))
+    if let Result::Err(problem) = second {
+        println("second start failed: " + error.message(problem))
+        return 2
+    }
+
+    if let Result::Ok(run_a) = first {
+        if let Result::Ok(run_b) = second {
+            let first_call = await tool_call(run_a, "add", "{\"a\":1,\"b\":2}")
+            if let Result::Ok(value) = first_call {
+                if value != "3" {
+                    return 3
+                }
+            } else {
+                return 4
+            }
+
+            let provider_call = await tool_call(run_b, "echo", "{\"text\":\"b\"}")
+            if let Result::Ok(value) = provider_call {
+                if str.contains(value, "mock echo: b") == false {
+                    return 5
+                }
+            } else {
+                return 6
+            }
+
+            let second_b = await tool_call(run_b, "add", "{\"a\":10,\"b\":32}")
+            if let Result::Ok(value) = second_b {
+                if value != "42" {
+                    return 7
+                }
+            } else {
+                return 8
+            }
+
+            let second_a = await tool_call(run_a, "add", "{\"a\":40,\"b\":2}")
+            if let Result::Ok(value) = second_a {
+                if value != "42" {
+                    return 9
+                }
+            } else {
+                return 10
+            }
+
+            let report_a = agent_end(run_a)
+            let report_b = agent_end(run_b)
+            if let Result::Ok(report) = report_a {
+                if str.contains(report, "\"tool_calls\":2") == false or str.contains(report, "\"steps\":0") == false {
+                    return 11
+                }
+            } else {
+                return 12
+            }
+            if let Result::Ok(report) = report_b {
+                if str.contains(report, "\"tool_calls\":2") == false or str.contains(report, "\"steps\":1") == false {
+                    return 13
+                }
+            } else {
+                return 14
+            }
+        } else {
+            return 15
+        }
+    } else {
+        return 16
+    }
+    println("concurrent runs -> counters and model turns stayed attributed")
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

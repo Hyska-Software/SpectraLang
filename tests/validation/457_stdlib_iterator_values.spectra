@@ -1,0 +1,44 @@
+module validation_457_stdlib_iterator_values
+
+// Contract: collection iterators are typed, consumable snapshots.
+from std.collections import Iterator, Map, List
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let values: List<int> = collections.list_new()
+    collections.list_push(values, 11)
+    collections.list_push(values, 22)
+    let cursor: Iterator<int> = collections.list_iter(values)
+    if collections.iterator_remaining(cursor) != 2 {
+        return 1
+    }
+    let first = collections.iterator_next(cursor)
+    if option.is_none(first) or option.option_unwrap(first) != 11 {
+        return 2
+    }
+    if collections.iterator_remaining(cursor) != 1 {
+        return 3
+    }
+    let second = collections.iterator_next(cursor)
+    if option.is_none(second) or option.option_unwrap(second) != 22 {
+        return 4
+    }
+    if option.is_some(collections.iterator_next(cursor)) or collections.iterator_remaining(cursor) != 0 {
+        return 5
+    }
+    collections.iterator_free(cursor)
+
+    let table: Map<int, int> = collections.map_new()
+    collections.map_set(table, 5, 50)
+    collections.map_set(table, 9, 90)
+    let keys: Iterator<int> = collections.map_iter(table)
+    let key = collections.iterator_next(keys)
+    if option.is_none(key) or option.option_unwrap(key) != 5 {
+        return 6
+    }
+    collections.iterator_free(keys)
+    collections.list_free(values)
+    collections.map_free(table)
+    return 0
+}

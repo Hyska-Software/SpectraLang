@@ -1,0 +1,45 @@
+module stdlib_tensor_algebra
+
+import std.io as io
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    let values = tensor.arange(1, 5, 1)
+    if tensor.dot(values, values) != 30 or tensor.argmax(values) != 3 {
+        return 1
+    }
+    if tensor.max(values) != 4 or tensor.min(values) != 1 {
+        return 2
+    }
+
+    let scalar = tensor.dot_t(values, values)
+    let mean = tensor.mean_t(values)
+    if tensor.get_f(scalar, 0) as int != 30 or tensor.get_f(mean, 0) as int != 2 {
+        return 3
+    }
+
+    let left = tensor.reshape(tensor.full_f(4, 1.0), 2, 2)
+    let right = tensor.reshape(tensor.full_f(4, 2.0), 2, 2)
+    let product = tensor.matmul(left, right)
+    if tensor.rank(product) != 2 or tensor.rows(product) != 2 or tensor.cols(product) != 2 {
+        return 4
+    }
+    if tensor.get_f(product, 0) as int != 4 or tensor.get_f(product, 3) as int != 4 {
+        return 5
+    }
+
+    let batch_left = tensor.stack(left, left)
+    let batch_right = tensor.stack(right, right)
+    let batched = tensor.matmul_batched(batch_left, batch_right)
+    if tensor.rank(batched) != 3 or tensor.dim(batched, 0) != 2 or tensor.len(batched) != 8 {
+        return 6
+    }
+    if tensor.get_f(batched, 7) as int != 4 {
+        return 7
+    }
+
+    io.println("tensor algebra -> reductions matmul and batched matmul")
+    tensor.free_all()
+    return 0
+}

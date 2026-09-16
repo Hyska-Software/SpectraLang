@@ -1,0 +1,20 @@
+module validation_stdlib_ml_evaluation_report
+
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    let labels = tensor.arange(0, 3, 1)
+    let classification = ml.metrics_classification(labels, labels)
+    let generation = ml.metrics_generation("same output", "same output")
+    if !string.contains(classification, "\"accuracy\":1.000000") {
+        return 1
+    }
+    if !string.contains(generation, "\"exact_match\":1.000000") {
+        return 2
+    }
+    tensor.free_all()
+    return 0
+}

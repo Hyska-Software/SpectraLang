@@ -1,0 +1,58 @@
+module stdlib_ml_evaluation_report
+
+import std.fs as fs
+import std.io as io
+import std.ml as ml
+import std.result as result
+import std.string as string
+import std.tensor as tensor
+
+const REPORT = "target/stdlib-examples/ml-evaluation/report.json"
+
+public func main() returns int {
+    tensor.free_all()
+    let labels = tensor.arange(0, 4, 1)
+    let predicted = tensor.arange(0, 4, 1)
+    let classification = ml.metrics_classification(labels, predicted)
+    if !string.contains(classification, "\"accuracy\":1.000000") {
+        return 1
+    }
+
+    let expected = tensor.full_f(4, 1.0)
+    let actual = tensor.full_f(4, 1.0)
+    let regression = ml.metrics_regression(expected, actual)
+    if !string.contains(regression, "\"mse\":0.000000") {
+        return 2
+    }
+
+    let relevance = tensor.arange(0, 4, 1)
+    let scores = tensor.full_f(4, 1.0)
+    let ranking = ml.metrics_ranking(relevance, scores, 3)
+    let generation = ml.metrics_generation("reproducible evaluation", "reproducible evaluation")
+    let serving = ml.serving_metrics(tensor.arange(10, 50, 10), 4, 0)
+    if !string.contains(ranking, "\"ndcg_at_k\"") or !string.contains(generation, "\"perplexity\"") {
+        return 3
+    }
+    if !string.contains(serving, "\"throughput_per_second\"") {
+        return 4
+    }
+
+    let path = ml.evaluation_report(REPORT, "stdlib-evaluation", classification, regression, ranking, generation, serving)
+    if path != REPORT {
+        return 5
+    }
+    let loaded = fs.fs_read(REPORT)
+    if result.is_err(loaded) or !string.contains(result.result_unwrap(loaded), "spectra.ml.evaluation_report.v1") {
+        return 6
+    }
+    let human = fs.fs_read(REPORT + ".txt")
+    if result.is_err(human) or !string.contains(result.result_unwrap(human), "stdlib-evaluation") {
+        return 7
+    }
+
+    fs.fs_remove(REPORT)
+    fs.fs_remove(REPORT + ".txt")
+    tensor.free_all()
+    io.println("ml evaluation -> metrics and JSON report round trip")
+    return 0
+}

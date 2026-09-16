@@ -1,0 +1,41 @@
+module validation_454_stdlib_collection_mutation
+
+// Contract: List<T> mutations preserve order and return Option<T> for every
+// operation whose result may be absent.
+from std.collections import List
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let values: List<int> = collections.list_new()
+    collections.list_push(values, 10)
+    collections.list_push(values, 30)
+    collections.list_insert_at(values, 1, 20)
+    collections.list_set(values, 2, 25)
+    collections.list_sort(values)
+
+    if collections.list_index_of(values, 20) != 1 or collections.list_index_of(values, 99) != -1 {
+        return 1
+    }
+    let removed = collections.list_remove_at(values, 1)
+    if option.is_none(removed) or option.option_unwrap(removed) != 20 {
+        return 2
+    }
+    let missing = collections.list_remove_at(values, 99)
+    if option.is_some(missing) {
+        return 3
+    }
+    let tail = collections.list_pop(values)
+    let head = collections.list_pop_front(values)
+    if option.is_none(tail) or option.option_unwrap(tail) != 25 {
+        return 4
+    }
+    if option.is_none(head) or option.option_unwrap(head) != 10 {
+        return 5
+    }
+    if collections.list_len(values) != 0 or option.is_some(collections.list_pop_front(values)) {
+        return 6
+    }
+    collections.list_free(values)
+    return 0
+}

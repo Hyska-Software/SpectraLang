@@ -1,0 +1,103 @@
+module main
+
+// Example 43 — an MCP-discovered tool is available to both the A2A card and
+// the model-driven `act` loop of the same governed run.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[agent_tool("Adds two integers over MCP")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+func spec() returns string {
+    return "{\"goal\":\"example-remote-act-card\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[\"mcp\"],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"allow\",\"seed\":43,\"journal\":\"\"}"
+}
+
+func remote_name(authority: string) returns string {
+    let namespace = str.replace(str.replace(authority, ".", "_"), ":", "_")
+    return "mcp__" + namespace + "__add"
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let served    = mcp_serve(run, "127.0.0.1:0")
+        let authority = ""
+        if let Result::Ok(bound) = served {
+            authority = bound
+        } else {
+            return 2
+        }
+
+        let discovered = await mcp_connect(run, "http://" + authority + "/mcp")
+        if let Result::Ok(document) = discovered {
+            if str.contains(document, "\"remoteName\":\"add\"") == false {
+                return 3
+            }
+        } else {
+            return 4
+        }
+
+        let remote = remote_name(authority)
+        let card   = a2a_card(run, "{\"name\":\"Remote arithmetic\",\"version\":\"1\"}")
+        if let Result::Ok(document) = card {
+            if str.contains(document, "Remote arithmetic") == false {
+                return 5
+            }
+            if str.contains(document, remote) == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+
+        // The model sees the same discovered descriptor that the A2A card
+        // advertises, and the call still crosses the governed remote path.
+        let script = "spectra:tool=" +
+            remote +
+            " {\"a\":20,\"b\":22}\nspectra:final=remote act completed"
+        let acted = await act(run, script)
+        if let Result::Ok(answer) = acted {
+            if answer != "remote act completed" {
+                return 8
+            }
+        } else {
+            return 9
+        }
+
+        let ended = agent_end(run)
+        if let Result::Ok(report) = ended {
+            println("report -> " + report)
+            if str.contains(report, "\"status\":\"completed\"") == false {
+                return 10
+            }
+            // The loopback server and the client each pass through governed
+            // dispatch, so one remote model tool call charges two tool calls.
+            if str.contains(report, "\"tool_calls\":2") == false {
+                return 11
+            }
+        } else {
+            return 12
+        }
+    }
+    println("remote act -> A2A card and model loop share the discovered tool")
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

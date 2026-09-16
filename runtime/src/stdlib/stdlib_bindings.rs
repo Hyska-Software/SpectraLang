@@ -424,6 +424,7 @@ pub(crate) const ML_EXPERIMENT_REPRO_COMMAND: &str = "spectra.std.ml.experiment_
 pub(crate) const ML_EXPERIMENT_COMPARE_MANIFESTS: &str =
     "spectra.std.ml.experiment_compare_manifests";
 pub(crate) const ML_DISTRIBUTED_SESSION_START: &str = "spectra.std.ml.distributed_session_start";
+pub(crate) const ML_DISTRIBUTED_WORKER_STEP: &str = "spectra.std.ml.distributed_worker_step";
 pub(crate) const ML_DISTRIBUTED_GLOBAL_STEP: &str = "spectra.std.ml.distributed_global_step";
 pub(crate) const ML_DISTRIBUTED_WORKER_STEP_COUNT: &str =
     "spectra.std.ml.distributed_worker_step_count";

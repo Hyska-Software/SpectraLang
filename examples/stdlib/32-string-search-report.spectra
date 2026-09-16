@@ -1,0 +1,51 @@
+module stdlib_string_search_report
+
+import std.collections as collections
+import std.convert as convert
+import std.io as io
+import std.option as option
+import std.string as string
+
+public func main() returns int {
+    let raw = "  key=value;key=value  "
+    let text = string.trim(raw)
+    if not string.starts_with(text, "key") or not string.ends_with(text, "value") {
+        return 1
+    }
+    if not string.contains(text, "value") or string.index_of(text, "=") != 3 {
+        return 2
+    }
+    if string.count_occurrences(text, "=") != 2 or string.is_empty(text) {
+        return 3
+    }
+    if string.split_first(text, "=") != "key" or string.split_last(text, "=") != "value" {
+        return 4
+    }
+    if string.substring(text, 0, 9) != "key=value" {
+        return 5
+    }
+    if string.replace(text, "value", "ready") != "key=ready;key=ready" {
+        return 6
+    }
+    if string.concat("id:", convert.int_to_string(7)) != "id:7" {
+        return 7
+    }
+    if string.pad_left("7", 3, 48) != "007" or string.pad_right("ok", 4, 46) != "ok.." {
+        return 8
+    }
+    if string.repeat_str("-", 3) != "---" or string.reverse_str("abc") != "cba" {
+        return 9
+    }
+
+    let fields = string.split_by(text, ";")
+    if collections.list_len(fields) != 2 {
+        return 10
+    }
+    let first = collections.list_get_option(fields, 0)
+    if option.is_none(first) or option.option_unwrap(first) != "key=value" {
+        return 11
+    }
+    collections.list_free(fields)
+    io.println("string search -> " + convert.int_to_string(string.count_occurrences(text, "=")))
+    return 0
+}

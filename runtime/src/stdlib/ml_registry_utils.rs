@@ -214,6 +214,20 @@ pub(crate) fn ml_tensor_float_data(handle: usize) -> Option<(Vec<usize>, Vec<f64
     })
 }
 
+/// Read either numeric tensor dtype as f64 for dataset materialization.
+/// Dataset transforms produce float tensors, but their public constructors
+/// also accept integer tensor handles, so read paths must share this adapter.
+pub(crate) fn ml_tensor_numeric_data(handle: usize) -> Option<(Vec<usize>, Vec<f64>, bool)> {
+    with_tensor_registry(|registry| {
+        let tensor = registry.get(handle)?;
+        Some((
+            tensor.shape.clone(),
+            tensor_values_as_f64(tensor),
+            tensor.requires_grad,
+        ))
+    })
+}
+
 pub(crate) fn ml_tensor_int_data(handle: usize) -> Option<Vec<i64>> {
     with_tensor_registry(|registry| {
         let tensor = registry.get(handle)?;

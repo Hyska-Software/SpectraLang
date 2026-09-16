@@ -1,0 +1,39 @@
+module stdlib_tensor_autodiff
+
+import std.io as io
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled(true)
+    let input = tensor.requires_grad(tensor.full_f(3, 2.0), true)
+    let loss = tensor.sum_t(tensor.mul(input, input))
+    tensor.backward(loss)
+    let gradient = tensor.grad(input)
+    if tensor.len(gradient) != 3 or tensor.sum_f(gradient) as int != 12 {
+        return 1
+    }
+    tensor.zero_grad(input)
+    let second_loss = tensor.sum_t(tensor.mul(input, input))
+    tensor.backward(second_loss)
+    if tensor.sum_f(tensor.grad(input)) as int != 12 {
+        return 2
+    }
+
+    let left = tensor.requires_grad(tensor.full_f(2, 1.5), true)
+    let right = tensor.full_f(2, 4.0)
+    let dot_loss = tensor.dot_t(left, right)
+    tensor.backward(dot_loss)
+    let dot_gradient = tensor.grad(left)
+    if tensor.get_f(dot_gradient, 0) as int != 4 or tensor.get_f(dot_gradient, 1) as int != 4 {
+        return 3
+    }
+    if tensor.grad_enabled() != true {
+        return 4
+    }
+
+    io.println("tensor autodiff -> backward grad zero_grad")
+    tensor.free_all()
+    tensor.set_grad_enabled(false)
+    return 0
+}

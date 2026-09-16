@@ -1,0 +1,54 @@
+module stdlib_typed_collections
+
+from std.collections import List, Map, Set
+import std.collections as collections
+import std.option as option
+import std.string as string
+
+public func main() returns int {
+    let names: List<string> = collections.list_new()
+    collections.list_push(names, "Ada")
+    collections.list_push(names, string.concat("Grace", " Hopper"))
+    if collections.list_len(names) != 2 or collections.list_contains(names, "Ada") != true {
+        return 1
+    }
+    let second = collections.list_get_option(names, 1)
+    if option.is_none(second) or option.option_unwrap(second) != "Grace Hopper" {
+        return 2
+    }
+    let missing = collections.list_get_option(names, 99)
+    if option.is_some(missing) or option.option_unwrap_or(missing, "missing") != "missing" {
+        return 3
+    }
+
+    let scores: Map<string, int> = collections.map_new()
+    collections.map_set(scores, "Ada", 10)
+    collections.map_set(scores, "Grace", 20)
+    let grace = collections.map_get_option(scores, "Grace")
+    if option.is_none(grace) or option.option_unwrap(grace) != 20 {
+        return 4
+    }
+    let removed = collections.map_remove_option(scores, "Ada")
+    if option.is_none(removed) or option.option_unwrap(removed) != 10 {
+        return 5
+    }
+    if collections.map_contains(scores, "Ada") or collections.map_len(scores) != 1 {
+        return 6
+    }
+
+    let tags: Set<string> = collections.set_new()
+    if collections.set_insert(tags, "compiler") != true {
+        return 7
+    }
+    if collections.set_insert(tags, "compiler") != false or collections.set_insert(tags, "runtime") != true {
+        return 8
+    }
+    if collections.set_len(tags) != 2 or collections.set_contains(tags, "runtime") != true {
+        return 9
+    }
+
+    collections.list_free(names)
+    collections.map_free(scores)
+    collections.set_free(tags)
+    return 0
+}

@@ -1,0 +1,121 @@
+module agent_concurrent_runs_followup
+
+// Contract: two live runs keep independent tool-call counts and token
+// accounting while their async work is interleaved.
+
+import std.agent
+import std.convert as convert
+import std.error as error
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[derive(Serialize, Deserialize)]
+public record EchoArgs {
+    text: string,
+}
+
+#[agent_tool("Adds two integers")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+#[agent_tool("Echoes through the provider")]
+public async func echo(run: Run, args: EchoArgs) returns string {
+    let reply = await ask(run, args.text)
+    if let Result::Ok(text) = reply {
+        return text
+    }
+    return "provider error"
+}
+
+func spec(goal: string, max_tokens: int) returns string {
+    return "{\"goal\":\"" + goal + "\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":" + convert.int_to_string(max_tokens) + ",\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":435,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let capped = agent_start(spec("fixture-435-capped", 12))
+    let uncapped = agent_start(spec("fixture-435-uncapped", 0))
+    if let Result::Ok(run_a) = capped {
+        if let Result::Ok(run_b) = uncapped {
+            let before = budget_remaining(run_a)
+            if let Result::Ok(value) = before {
+                if value != 12 {
+                    return 1
+                }
+            } else {
+                return 2
+            }
+
+            let add_a = await tool_call(run_a, "add", "{\"a\":1,\"b\":2}")
+            if let Result::Err(_problem) = add_a {
+                return 3
+            }
+            let echo_b = await tool_call(run_b, "echo", "{\"text\":\"independent\"}")
+            if let Result::Ok(value) = echo_b {
+                if str.contains(value, "mock echo: independent") == false {
+                    return 4
+                }
+            } else {
+                return 5
+            }
+
+            // The provider turn on B does not spend A's token budget.
+            let after = budget_remaining(run_a)
+            if let Result::Ok(value) = after {
+                if value != 12 {
+                    return 6
+                }
+            } else {
+                return 7
+            }
+
+            let add_b = await tool_call(run_b, "add", "{\"a\":40,\"b\":2}")
+            if let Result::Ok(value) = add_b {
+                if value != "42" {
+                    return 8
+                }
+            } else {
+                return 9
+            }
+            let add_again = await tool_call(run_a, "add", "{\"a\":10,\"b\":32}")
+            if let Result::Ok(value) = add_again {
+                if value != "42" {
+                    return 10
+                }
+            } else {
+                return 11
+            }
+
+            let report_a = agent_end(run_a)
+            let report_b = agent_end(run_b)
+            if let Result::Ok(report) = report_a {
+                if str.contains(report, "\"tool_calls\":2") == false or str.contains(report, "\"steps\":0") == false {
+                    return 12
+                }
+            } else {
+                return 13
+            }
+            if let Result::Ok(report) = report_b {
+                if str.contains(report, "\"tool_calls\":2") == false or str.contains(report, "\"steps\":1") == false {
+                    return 14
+                }
+            } else {
+                return 15
+            }
+        } else {
+            return 16
+        }
+    } else {
+        return 17
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

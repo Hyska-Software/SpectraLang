@@ -1,0 +1,21 @@
+module validation_469_stdlib_numeric_checked
+
+import std.numeric as numeric
+
+public func main() returns int {
+    let a: i8 = numeric.checked_i8(12)
+    let b: u16 = numeric.checked_u16(600)
+    let c: i32 = numeric.checked_add_i32(2000 as i32, 3 as i32)
+    let d: i64 = numeric.checked_mul_i64(1000 as i64, 20 as i64)
+    let e: f32 = numeric.checked_f32(2.5 as f64)
+    if a as int != 12 or b as int != 600 or c as int != 2003 or d as int != 20000 {
+        return 1
+    }
+    if e as f64 != 2.5 {
+        return 2
+    }
+    if numeric.checked_float_i8(-7.0) as int != -7 or numeric.checked_float_u8(9.0) as int != 9 {
+        return 3
+    }
+    return 0
+}

@@ -1,0 +1,34 @@
+module validation_455_stdlib_collection_hof
+
+// Contract: higher-order collection functions compose without changing the source list.
+from std.collections import List
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let source: List<int> = collections.list_new()
+    collections.list_push(source, 2)
+    collections.list_push(source, 4)
+    collections.list_push(source, 6)
+
+    let shifted = collections.list_map(source, | value: int | value + 10)
+    if collections.list_len(source) != 3 or collections.list_len(shifted) != 3 {
+        return 1
+    }
+    let filtered = collections.list_filter(shifted, | value: int | value >= 14)
+    if collections.list_len(filtered) != 2 {
+        return 2
+    }
+    if collections.list_reduce(filtered, 0, | acc: int, value: int | acc + value) != 30 {
+        return 3
+    }
+    collections.list_sort_by(shifted, | left: int, right: int | right - left)
+    let first = collections.list_get(shifted, 0)
+    if option.is_none(first) or option.option_unwrap(first) != 16 {
+        return 4
+    }
+    collections.list_free(source)
+    collections.list_free(shifted)
+    collections.list_free(filtered)
+    return 0
+}

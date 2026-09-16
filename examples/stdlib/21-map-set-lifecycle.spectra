@@ -1,0 +1,50 @@
+module stdlib_map_set_lifecycle
+
+from std.collections import Map, Set
+import std.collections as collections
+import std.io as io
+import std.option as option
+
+public func main() returns int {
+    let scores: Map<string, int> = collections.map_new()
+    collections.map_set(scores, "Ada", 10)
+    collections.map_set(scores, "Grace", 20)
+    collections.map_set(scores, "Ada", 12)
+    let ada = collections.map_get(scores, "Ada")
+    let missing = collections.map_get(scores, "Unknown")
+    if collections.map_len(scores) != 2 or option.is_none(ada) or option.option_unwrap(ada) != 12 {
+        return 1
+    }
+    if option.is_some(missing) or collections.map_contains(scores, "Unknown") {
+        return 2
+    }
+    let removed = collections.map_remove(scores, "Grace")
+    if option.is_none(removed) or option.option_unwrap(removed) != 20 or collections.map_len(scores) != 1 {
+        return 3
+    }
+    collections.map_clear(scores)
+    if collections.map_len(scores) != 0 {
+        return 4
+    }
+
+    let tags: Set<string> = collections.set_new()
+    if collections.set_insert(tags, "stdlib") != true or collections.set_insert(tags, "stdlib") != false {
+        return 5
+    }
+    collections.set_insert(tags, "runtime")
+    let first = collections.set_get(tags, 0)
+    if collections.set_len(tags) != 2 or option.is_none(first) or option.option_unwrap(first) != "stdlib" {
+        return 6
+    }
+    if collections.set_remove(tags, "stdlib") != true or collections.set_remove(tags, "missing") != false {
+        return 7
+    }
+    if collections.set_len(tags) != 1 or collections.set_contains(tags, "runtime") != true {
+        return 8
+    }
+
+    io.println("map/set lifecycle -> update remove clear")
+    collections.map_free(scores)
+    collections.set_free(tags)
+    return 0
+}

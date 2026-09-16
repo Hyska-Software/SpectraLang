@@ -1,0 +1,89 @@
+module stdlib_filesystem_tree
+
+from std.collections import List
+import std.collections as collections
+import std.error as error
+import std.fs as fs
+import std.io as io
+import std.string as string
+
+const ROOT = "target/stdlib-examples/fs-tree/level1/level2"
+
+public func main() returns int {
+    // Keep repeated example runs idempotent after an interrupted validation.
+    fs.fs_remove(ROOT + "/first.txt")
+    fs.fs_remove(ROOT + "/second.txt")
+    fs.fs_remove(ROOT + "/renamed.txt")
+    fs.fs_remove(ROOT + "/copy.txt")
+    fs.remove_dir(ROOT)
+    fs.remove_dir("target/stdlib-examples/fs-tree/level1")
+    fs.remove_dir("target/stdlib-examples/fs-tree")
+    fs.remove_dir("target/stdlib-examples")
+
+    let created = fs.create_dir_all(ROOT)
+    if let Result::Err(problem) = created {
+        io.eprintln("create_dir_all: " + error.message(problem))
+        return 1
+    }
+
+    let first_path = ROOT + "/first.txt"
+    let second_path = ROOT + "/second.txt"
+    let renamed_path = ROOT + "/renamed.txt"
+    let copied_path = ROOT + "/copy.txt"
+    fs.fs_write(first_path, "alpha")
+    fs.fs_write(second_path, "beta")
+    fs.fs_append(first_path, "-one")
+
+    let listed = fs.read_dir(ROOT)
+    if let Result::Ok(entries) = listed {
+        let seen = 0
+        for entry in entries {
+            if string.ends_with(entry, ".txt") {
+                seen = seen + 1
+            }
+        }
+        if seen != 2 {
+            collections.list_free(entries)
+            return 2
+        }
+        collections.list_free(entries)
+    } else {
+        return 2
+    }
+
+    let moved = fs.rename(second_path, renamed_path)
+    if let Result::Ok(ok) = moved {
+        if ok != true {
+            return 3
+        }
+    } else {
+        return 3
+    }
+    let copied = fs.copy(first_path, copied_path)
+    if let Result::Ok(bytes) = copied {
+        if bytes != 9 {
+            return 4
+        }
+    } else {
+        return 4
+    }
+
+    let content = fs.fs_read(first_path)
+    if let Result::Ok(text) = content {
+        if text != "alpha-one" {
+            return 5
+        }
+    } else {
+        return 5
+    }
+
+    fs.fs_remove(first_path)
+    fs.fs_remove(renamed_path)
+    fs.fs_remove(copied_path)
+    fs.remove_dir(ROOT)
+    fs.remove_dir("target/stdlib-examples/fs-tree/level1")
+    fs.remove_dir("target/stdlib-examples/fs-tree")
+    fs.remove_dir("target/stdlib-examples")
+    io.println("filesystem tree -> copied and renamed files safely")
+    return 0
+}

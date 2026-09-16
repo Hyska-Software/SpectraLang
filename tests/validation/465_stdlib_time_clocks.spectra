@@ -1,0 +1,42 @@
+module validation_465_stdlib_time_clocks
+
+// Contract: wall and monotonic clocks, durations, instants, and UTC stay coherent.
+import std.time as time
+
+public func main() returns int {
+    let wall_ms = time.time_now_millis()
+    let wall_secs = time.time_now_secs()
+    if wall_ms < 0 or wall_secs < 0 or wall_ms / 1000 < wall_secs - 1 or wall_secs < wall_ms / 1000 {
+        return 1
+    }
+    let before = time.monotonic_millis()
+    let before_ns = time.monotonic_nanos()
+    time.sleep_ms(0)
+    if time.monotonic_millis() < before or time.monotonic_nanos() < before_ns {
+        return 2
+    }
+
+    let first = time.duration_ms(1500)
+    let second = time.duration_secs(2)
+    let combined = time.duration_add(first, second)
+    if time.duration_millis(combined) != 3500 or time.duration_secs_value(combined) != 3 {
+        return 3
+    }
+    if time.duration_millis(time.duration_sub(combined, second)) != 1500 {
+        return 4
+    }
+    let instant = time.instant_now()
+    let deadline = time.instant_add(instant, time.duration_ms(500))
+    if time.instant_has_elapsed(deadline) or time.instant_elapsed_ms(instant) < 0 {
+        return 5
+    }
+
+    let epoch = time.unix_to_utc(0)
+    if time.utc_year(epoch) != 1970 or time.utc_month(epoch) != 1 or time.utc_day(epoch) != 1 {
+        return 6
+    }
+    if time.utc_hour(epoch) != 0 or time.utc_minute(epoch) != 0 or time.utc_second(epoch) != 0 {
+        return 7
+    }
+    return 0
+}

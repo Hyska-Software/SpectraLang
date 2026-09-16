@@ -1,0 +1,85 @@
+module stdlib_filesystem_tree
+
+// Contract: the filesystem API can create nested directories, enumerate
+// entries as a typed List<string>, copy bytes, rename a file, and remove the
+// resulting empty tree through tagged Result values.
+
+from std.collections import List
+import std.collections as collections
+import std.error as error
+import std.fs as fs
+import std.string as string
+
+const ROOT = "target/stdlib-validation/fs-tree/a/b"
+
+public func main() returns int {
+    let created = fs.create_dir_all(ROOT)
+    if let Result::Err(problem) = created {
+        if error.operation(problem) != "fs_create_dir_all" {
+            return 1
+        }
+        return 1
+    }
+
+    let source = ROOT + "/source.txt"
+    let other = ROOT + "/other.txt"
+    let moved = ROOT + "/moved.txt"
+    let duplicate = ROOT + "/duplicate.txt"
+    let first_write = fs.fs_write(source, "12345")
+    let second_write = fs.fs_write(other, "xyz")
+    if let Result::Err(_problem) = first_write {
+        return 2
+    }
+    if let Result::Err(_problem) = second_write {
+        return 3
+    }
+
+    let entries = fs.read_dir(ROOT)
+    if let Result::Ok(names) = entries {
+        let count = 0
+        let sources = 0
+        for name in names {
+            count = count + 1
+            if string.ends_with(name, ".txt") {
+                sources = sources + 1
+            }
+        }
+        collections.list_free(names)
+        if count != 2 or sources != 2 {
+            return 4
+        }
+    } else {
+        return 4
+    }
+
+    let copied = fs.copy(source, duplicate)
+    if let Result::Ok(bytes) = copied {
+        if bytes != 5 {
+            return 5
+        }
+    } else {
+        return 5
+    }
+    let renamed = fs.rename(other, moved)
+    if let Result::Ok(ok) = renamed {
+        if ok != true {
+            return 6
+        }
+    } else {
+        return 6
+    }
+
+    let non_empty = fs.remove_dir(ROOT)
+    if let Result::Ok(_ok) = non_empty {
+        return 7
+    }
+
+    fs.fs_remove(source)
+    fs.fs_remove(duplicate)
+    fs.fs_remove(moved)
+    fs.remove_dir(ROOT)
+    fs.remove_dir("target/stdlib-validation/fs-tree/a")
+    fs.remove_dir("target/stdlib-validation/fs-tree")
+    fs.remove_dir("target/stdlib-validation")
+    return 0
+}

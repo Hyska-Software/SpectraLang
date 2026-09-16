@@ -499,7 +499,7 @@ impl SemanticAnalyzer {
     /// Their exported signatures carry generic parameters
     /// (`option_unwrap: Option<T> -> T`), and unlike `option_map`/`result_map`
     /// the payload comes from the *input's* enum application, not from another
-    /// argument, so `specialize_std_collection_signature` cannot infer it from
+    /// argument, so `specialize_std_call_signature` cannot infer it from
     /// a closure. This resolves the payload from the first argument's
     /// specialized/mangled enum type; when the input is itself unresolved it
     /// falls back to the signature's type parameter, which the strict
@@ -652,7 +652,7 @@ impl SemanticAnalyzer {
             })
     }
 
-    pub(crate) fn specialize_std_collection_signature(
+    pub(crate) fn specialize_std_call_signature(
         &mut self,
         qualified_name: &str,
         signature: &FunctionSignature,
@@ -685,6 +685,20 @@ impl SemanticAnalyzer {
             .collect();
         specialized.return_type =
             self.substitute_type_parameters(&signature.return_type, &substitutions);
+
+        // `std.serve.server_register_model_linear` is backed by a variadic
+        // host call: one server handle followed by one or more
+        // `(weights, biases, activation)` groups. The builtin export keeps
+        // the one-layer signature as its minimum contract, while the runtime
+        // accepts additional complete groups. Expand the checked signature
+        // for valid call sites so semantic validation and lowering agree.
+        if operation == "server_register_model_linear"
+            && signature.params.len() == 4
+            && arguments.len() >= 4
+            && (arguments.len() - 1) % 3 == 0
+        {
+            specialized.params = vec![Type::Int; arguments.len()];
+        }
 
         // Constructors have no value from which to infer T/K/V. Use the
         // expected binding type when present and the int default as

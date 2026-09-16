@@ -4,9 +4,10 @@
 // Regenerate:      python scripts/generate_lowering_tables.py
 // Verify:          python scripts/generate_lowering_tables.py --check
 //
-// `std.numeric` dispatcher: the `checked_f32` conversion and the `wrapping_add`,
-// `wrapping_sub` and `wrapping_mul` width table, all derived from the catalog
-// entries of that namespace, followed by the hand-written group fallthrough.
+// `std.numeric` dispatcher: checked scalar conversions, checked scalar arithmetic,
+// and the `wrapping_add`, `wrapping_sub` and `wrapping_mul` width table, all
+// derived from the catalog entries of that namespace, followed by the
+// hand-written group fallthrough.
 //
 // Arm order, section comments and the helper-vs-literal rendering style are
 // presentation data owned by the generator (see LAYOUT); runtime names, IR
@@ -24,6 +25,406 @@ pub(crate) fn lookup_std_host_module_function(
                 runtime_name: "spectra.std.numeric.checked_f32",
                 return_type: IRType::ExactFloat {
                     width: IRFloatWidth::F32,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_add_i16" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_add_i16",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I16,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_add_i32" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_add_i32",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I32,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_add_i64" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_add_i64",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I64,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_add_i8" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_add_i8",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I8,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_add_u16" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_add_u16",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I16,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_add_u32" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_add_u32",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I32,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_add_u64" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_add_u64",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I64,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_add_u8" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_add_u8",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I8,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_float_i16" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_float_i16",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I16,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_float_i32" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_float_i32",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I32,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_float_i64" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_float_i64",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I64,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_float_i8" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_float_i8",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I8,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_float_u16" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_float_u16",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I16,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_float_u32" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_float_u32",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I32,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_float_u64" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_float_u64",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I64,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_float_u8" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_float_u8",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I8,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_i16" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_i16",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I16,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_i32" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_i32",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I32,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_i64" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_i64",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I64,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_i8" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_i8",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I8,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_mul_i16" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_mul_i16",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I16,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_mul_i32" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_mul_i32",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I32,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_mul_i64" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_mul_i64",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I64,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_mul_i8" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_mul_i8",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I8,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_mul_u16" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_mul_u16",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I16,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_mul_u32" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_mul_u32",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I32,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_mul_u64" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_mul_u64",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I64,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_mul_u8" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_mul_u8",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I8,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_sub_i16" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_sub_i16",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I16,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_sub_i32" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_sub_i32",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I32,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_sub_i64" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_sub_i64",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I64,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_sub_i8" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_sub_i8",
+                return_type: IRType::ExactInt {
+                    signed: true,
+                    width: IRIntWidth::I8,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_sub_u16" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_sub_u16",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I16,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_sub_u32" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_sub_u32",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I32,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_sub_u64" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_sub_u64",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I64,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_sub_u8" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_sub_u8",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I8,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_u16" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_u16",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I16,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_u32" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_u32",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I32,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_u64" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_u64",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I64,
+                },
+                returns_value: true,
+            });
+        }
+        if function == "checked_u8" {
+            return Some(HostFunctionDescriptor {
+                runtime_name: "spectra.std.numeric.checked_u8",
+                return_type: IRType::ExactInt {
+                    signed: false,
+                    width: IRIntWidth::I8,
                 },
                 returns_value: true,
             });

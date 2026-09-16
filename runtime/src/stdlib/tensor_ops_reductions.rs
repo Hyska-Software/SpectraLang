@@ -645,11 +645,7 @@ pub(crate) extern "C" fn std_tensor_dot_t(ctx: *mut SpectraHostCallContext) -> i
         let Some((value, requires_grad, creator)) = with_tensor_registry(|registry| {
             let left = registry.get(args[0] as usize)?;
             let right = registry.get(args[1] as usize)?;
-            if left.shape.len() != 1
-                || left.shape != right.shape
-                || left.dtype != TensorDType::Float
-                || right.dtype != TensorDType::Float
-            {
+            if left.shape.len() != 1 || left.shape != right.shape || left.dtype != right.dtype {
                 return None;
             }
             let left_values = tensor_values_as_f64(left);

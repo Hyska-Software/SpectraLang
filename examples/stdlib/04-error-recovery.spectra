@@ -1,0 +1,52 @@
+module stdlib_error_recovery
+
+from std.error import ErrorCode
+import std.convert as convert
+import std.error as error
+import std.fs as fs
+import std.io as io
+import std.result as result
+import std.string as string
+
+public func main() returns int {
+    let authored = error.new(
+        ErrorCode::NotFound,
+        "cache entry is absent",
+        "cache_read",
+        "target/cache/item",
+        "stdlib_error_recovery",
+        true
+    )
+    if error.code(authored) != 1 or error.retryable(authored) != true {
+        return 1
+    }
+    if error.message(authored) != "cache entry is absent" or error.context(authored) != "target/cache/item" {
+        return 2
+    }
+
+    let missing = fs.fs_read("")
+    if let Result::Ok(_content) = missing {
+        return 3
+    }
+    if let Result::Err(problem) = missing {
+        if error.code(problem) != 0 or error.operation(problem) != "fs_read" {
+            return 4
+        }
+        if error.retryable(problem) != false {
+            return 5
+        }
+    }
+
+    let absent_path = "target/stdlib-error-recovery/missing.txt"
+    let exists = fs.fs_exists(absent_path)
+    if result.is_err(exists) or result.result_unwrap(exists) != false {
+        return 6
+    }
+
+    let summary = string.concat(
+        error.operation(authored),
+        ":" + convert.int_to_string(error.code(authored))
+    )
+    io.println("error recovery -> " + summary)
+    return 0
+}

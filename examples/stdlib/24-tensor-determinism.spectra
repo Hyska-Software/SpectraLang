@@ -1,0 +1,48 @@
+module stdlib_tensor_determinism
+
+import std.io as io
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    if tensor.set_deterministic_mode(1) != 0 or tensor.deterministic_mode() != 1 {
+        return 1
+    }
+    tensor.seed(24024)
+    let ints_a = tensor.uniform(5, -10, 10)
+    let floats_a = tensor.uniform_f(3, 0.0, 1.0)
+    let normal = tensor.normal_f(4, 0.0, 1.0)
+    let certain = tensor.bernoulli(4, 1.0)
+    let weights = tensor.full(3, 0)
+    tensor.set(weights, 2, 1)
+    let categories = tensor.categorical(4, weights)
+
+    tensor.seed(24024)
+    let ints_b = tensor.uniform(5, -10, 10)
+    let floats_b = tensor.uniform_f(3, 0.0, 1.0)
+    let index = 0
+    while index < 5 {
+        if tensor.get(ints_a, index) != tensor.get(ints_b, index) {
+            return 2
+        }
+        index = index + 1
+    }
+    let float_index = 0
+    while float_index < 3 {
+        if tensor.get_f(floats_a, float_index) != tensor.get_f(floats_b, float_index) {
+            return 3
+        }
+        float_index = float_index + 1
+    }
+    if tensor.len(normal) != 4 or tensor.sum(certain) != 4 or tensor.sum(categories) != 8 {
+        return 4
+    }
+    if tensor.tolerance_abs() <= 0.0 or tensor.tolerance_rel() <= 0.0 {
+        return 5
+    }
+
+    io.println("tensor determinism -> seeded distributions and tolerances")
+    tensor.set_deterministic_mode(0)
+    tensor.free_all()
+    return 0
+}

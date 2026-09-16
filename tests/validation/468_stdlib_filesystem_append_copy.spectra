@@ -1,0 +1,49 @@
+module validation_468_stdlib_filesystem_append_copy
+
+import std.collections as collections
+import std.fs as fs
+import std.result as result
+
+const ROOT = "target/stdlib-validation/fs-append-copy"
+
+public func main() returns int {
+    let source = ROOT + "/source.txt"
+    let copy = ROOT + "/copy.txt"
+    fs.fs_remove(source)
+    fs.fs_remove(copy)
+    fs.remove_dir(ROOT)
+    fs.remove_dir("target/stdlib-validation")
+
+    if result.is_err(fs.create_dir_all(ROOT)) {
+        return 1
+    }
+    if result.is_err(fs.fs_write(source, "a")) {
+        return 2
+    }
+    if result.is_err(fs.fs_append(source, "b")) {
+        return 3
+    }
+    let copied = fs.copy(source, copy)
+    if result.is_err(copied) or result.result_unwrap(copied) != 2 {
+        return 4
+    }
+    let entries = fs.read_dir(ROOT)
+    if result.is_err(entries) {
+        return 5
+    }
+    let values = result.result_unwrap(entries)
+    if collections.list_len(values) != 2 {
+        collections.list_free(values)
+        return 6
+    }
+    collections.list_free(values)
+    let content = fs.fs_read(copy)
+    if result.is_err(content) or result.result_unwrap(content) != "ab" {
+        return 7
+    }
+    fs.fs_remove(source)
+    fs.fs_remove(copy)
+    fs.remove_dir(ROOT)
+    fs.remove_dir("target/stdlib-validation")
+    return 0
+}

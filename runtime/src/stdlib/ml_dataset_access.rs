@@ -144,11 +144,11 @@ pub(crate) extern "C" fn std_ml_dataset_map_features(ctx: *mut SpectraHostCallCo
         let Some(dataset) = dataset else {
             return HOST_STATUS_NOT_FOUND;
         };
-        let (feature_shape, feature_data, _) = match ml_tensor_float_data(dataset.features) {
+        let (feature_shape, feature_data, _) = match ml_tensor_numeric_data(dataset.features) {
             Some(parts) => parts,
             None => return HOST_STATUS_INVALID_ARGUMENT,
         };
-        let (_label_shape, label_data, _) = match ml_tensor_float_data(dataset.labels) {
+        let (_label_shape, label_data, _) = match ml_tensor_numeric_data(dataset.labels) {
             Some(parts) => parts,
             None => return HOST_STATUS_INVALID_ARGUMENT,
         };
@@ -181,11 +181,11 @@ pub(crate) extern "C" fn std_ml_dataset_filter_label_min(ctx: *mut SpectraHostCa
         let Some(dataset) = dataset else {
             return HOST_STATUS_NOT_FOUND;
         };
-        let (feature_shape, feature_data, _) = match ml_tensor_float_data(dataset.features) {
+        let (feature_shape, feature_data, _) = match ml_tensor_numeric_data(dataset.features) {
             Some(parts) => parts,
             None => return HOST_STATUS_INVALID_ARGUMENT,
         };
-        let (_label_shape, label_data, _) = match ml_tensor_float_data(dataset.labels) {
+        let (_label_shape, label_data, _) = match ml_tensor_numeric_data(dataset.labels) {
             Some(parts) => parts,
             None => return HOST_STATUS_INVALID_ARGUMENT,
         };
@@ -342,7 +342,7 @@ pub(crate) fn std_ml_dataloader_batch(ctx: *mut SpectraHostCallContext, labels: 
             return HOST_STATUS_NOT_FOUND;
         };
         let indices = ml_batch_indices(len, batch_size, args[1] as usize, seed);
-        let Some((shape, data, _requires_grad)) = ml_tensor_float_data(tensor_handle) else {
+        let Some((shape, data, _requires_grad)) = ml_tensor_numeric_data(tensor_handle) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
         if shape.is_empty() || shape[0] != len {

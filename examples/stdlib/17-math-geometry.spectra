@@ -1,0 +1,47 @@
+module stdlib_math_geometry
+
+import std.io as io
+import std.math as math
+
+func close_to(actual: float, expected: float, tolerance: float) returns bool {
+    return math.abs_f(actual - expected) < tolerance
+}
+
+public func main() returns int {
+    let pi = math.pi()
+    if pi < 3.14 or pi > 3.15 or math.e_const() < 2.71 or math.e_const() > 2.72 {
+        return 1
+    }
+    if not close_to(math.sin_f(pi / 2.0), 1.0, 0.0001) {
+        return 2
+    }
+    if not close_to(math.cos_f(0.0), 1.0, 0.0001) or not close_to(math.tan_f(pi / 4.0), 1.0, 0.0001) {
+        return 3
+    }
+    if not close_to(math.atan2_f(1.0, 1.0), pi / 4.0, 0.0001) {
+        return 4
+    }
+    if not close_to(math.sqrt_f(81.0), 9.0, 0.0001) or not close_to(math.pow_f(2.0, 8.0), 256.0, 0.0001) {
+        return 5
+    }
+    if not close_to(math.log2_f(32.0), 5.0, 0.0001) or not close_to(math.log10_f(1000.0), 3.0, 0.0001) {
+        return 6
+    }
+    if not close_to(math.log_f(math.e_const()), 1.0, 0.0001) {
+        return 7
+    }
+    if math.round_f(4.6) != 5.0 or math.floor_f(-2.2) != -3.0 or math.ceil_f(-2.2) != -2.0 {
+        return 8
+    }
+    if math.abs(-17) != 17 or math.min(8, 3) != 3 or math.max(8, 3) != 8 {
+        return 9
+    }
+    if math.sign(-9) != -1 or math.sign(0) != 0 or math.sign(9) != 1 {
+        return 10
+    }
+    if math.gcd(84, 30) != 6 or math.lcm(8, 12) != 24 or math.clamp(19, 0, 10) != 10 {
+        return 11
+    }
+    io.println("math geometry -> trigonometry and integer boundaries")
+    return 0
+}

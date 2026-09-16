@@ -1,0 +1,34 @@
+module validation_467_stdlib_string_search_report
+
+import std.collections as collections
+import std.option as option
+import std.string as string
+
+public func main() returns int {
+    let text = string.trim("  alpha=42;beta=9  ")
+    if not string.starts_with(text, "alpha") or not string.ends_with(text, "9") {
+        return 1
+    }
+    if string.index_of(text, "=") != 5 or string.count_occurrences(text, "=") != 2 {
+        return 2
+    }
+    if string.split_first(text, "=") != "alpha" or string.split_last(text, "=") != "9" {
+        return 3
+    }
+    if string.substring(text, 0, 8) != "alpha=42" {
+        return 4
+    }
+    if string.replace(text, "beta", "gamma") != "alpha=42;gamma=9" {
+        return 5
+    }
+    let fields = string.split_by(text, ";")
+    let second = collections.list_get_option(fields, 1)
+    if option.is_none(second) or option.option_unwrap(second) != "beta=9" {
+        return 6
+    }
+    collections.list_free(fields)
+    if string.pad_left("x", 2, 48) != "0x" or string.pad_right("x", 2, 46) != "x." {
+        return 7
+    }
+    return 0
+}

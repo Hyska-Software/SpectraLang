@@ -1,0 +1,22 @@
+module validation_stdlib_ml_distributed_checkpoint
+
+import std.ml as ml
+import std.string as string
+
+public func main() returns int {
+    let session = ml.distributed_session_start("validation", "target/stdlib-examples/dist-validation", 2, 17)
+    if ml.distributed_worker_step(session, 0, 2, 0.5) != 1 {
+        return 1
+    }
+    if ml.distributed_worker_step(session, 1, 2, 0.5) != 1 {
+        return 2
+    }
+    if ml.distributed_global_step(session) != 1 {
+        return 3
+    }
+    let summary = ml.distributed_summary(session)
+    if !string.contains(summary, "\"total_samples\":4") {
+        return 4
+    }
+    return 0
+}

@@ -1,0 +1,52 @@
+module stdlib_time_deadlines
+
+import std.time as time
+
+public func main() returns int {
+    let now_ms = time.time_now_millis()
+    let now_secs = time.time_now_secs()
+    if now_ms < 0 or now_secs < 0 or now_ms / 1000 < now_secs - 1 or now_secs < now_ms / 1000 {
+        return 1
+    }
+
+    let one_and_half = time.duration_ms(1500)
+    let two_seconds = time.duration_secs(2)
+    if time.duration_millis(one_and_half) != 1500 or time.duration_secs_value(one_and_half) != 1 {
+        return 2
+    }
+    if time.duration_millis(two_seconds) != 2000 or time.duration_secs_value(two_seconds) != 2 {
+        return 3
+    }
+    let total = time.duration_add(one_and_half, two_seconds)
+    let remainder = time.duration_sub(total, one_and_half)
+    if time.duration_millis(total) != 3500 or time.duration_millis(remainder) != 2000 {
+        return 4
+    }
+
+    let instant = time.instant_now()
+    if time.instant_elapsed_ms(instant) < 0 {
+        return 5
+    }
+    let deadline = time.instant_add(instant, time.duration_ms(500))
+    if time.instant_has_elapsed(deadline) != false {
+        return 6
+    }
+    time.sleep_ms(0)
+    time.sleep(time.duration_ms(0))
+
+    let before_epoch = time.unix_to_utc(-1)
+    if time.utc_year(before_epoch) != 1969 or time.utc_month(before_epoch) != 12 or time.utc_day(before_epoch) != 31 {
+        return 7
+    }
+    if time.utc_hour(before_epoch) != 23 or time.utc_minute(before_epoch) != 59 or time.utc_second(before_epoch) != 59 {
+        return 8
+    }
+    let new_year = time.unix_to_utc(1609459200)
+    if time.utc_year(new_year) != 2021 or time.utc_month(new_year) != 1 or time.utc_day(new_year) != 1 {
+        return 9
+    }
+    if time.utc_hour(new_year) != 0 or time.utc_minute(new_year) != 0 or time.utc_second(new_year) != 0 {
+        return 10
+    }
+    return 0
+}

@@ -186,7 +186,7 @@ Every example runs against the deterministic mock provider: no network and no
 credentials. The mock is scripted through the prompt
 (`spectra:tool=<name> {json}`, `spectra:final=<text>`, `spectra:json`,
 `spectra:sleep-ms=N`), which is what makes the tool loops reproducible in CI.
-The first seven are described below; `08`–`42` cover memory across runs,
+The first seven are described below; `08`–`45` cover memory across runs,
 compensations, list and nested payloads, the tool-call ceiling, structured
 output, embeddings, ACP permissions, the MCP service surface, A2A task
 lifecycle, token budgeting, schema recovery, journal privacy, idempotent tool
@@ -195,8 +195,9 @@ compensation failure handling, MCP replay, protocol-negative handling, taint
 policy decisions, cost ceilings, unsafe run identities, corrupt journals,
 stream replay, boolean schemas, enum payloads, nested compensation replay,
 remote MCP errors, A2A idempotency, cross-module wrappers, remote-tool run
-isolation, empty-stream termination, A2A card defaults and escaped Unicode
-tool payloads.
+isolation, empty-stream termination, A2A card defaults, escaped Unicode tool
+payloads, remote model-loop dispatch, post-run stream ownership and concurrent
+runs.
 
 The latest additions are intentionally boundary-focused:
 
@@ -210,6 +211,13 @@ The latest additions are intentionally boundary-focused:
   typed field validation.
 - `42-unicode-tool-payload` round-trips Unicode and JSON-significant escapes
   through a derived tool wrapper.
+
+- `43-remote-act-and-card` proves that an MCP-discovered tool appears in the
+  same run's A2A card and can be selected by the model-driven `act` loop.
+- `44-stream-after-run-end` proves that buffered stream output survives
+  `agent_end` and remains independent until `stream_close`.
+- `45-concurrent-runs` interleaves two live runs and checks their tool counters
+  and model-turn attribution separately.
 
 ### 01 — Tool and Run
 
@@ -589,6 +597,13 @@ AOT):
   authored field.
 - `432_agent_unicode_tool_payload.spectra` — derived record JSON preserves
   Unicode, quotes, newlines and backslashes through tool dispatch.
+- `433_agent_remote_act.spectra` — the discovering run's remote tool is
+  advertised in its A2A card and callable through `act`, while an overlapping
+  run does not inherit it and the final run sees no stale descriptor.
+- `434_agent_stream_after_run.spectra` — two stream handles remain independent
+  after run teardown; closing one makes only that handle reject later reads.
+- `435_agent_concurrent_runs.spectra` — interleaved live runs retain separate
+  tool counts and token budgets, including a provider turn on only one run.
 
 The stress harness (`scripts/stress_agent_block_on.py`) repeats fixture 397 in
 many short-lived processes for triage; it is not part of the gate.
@@ -741,7 +756,7 @@ Each example is an ordinary project and is reproduced by the two commands
 above: `spectralang run` for JIT, then `compile --debug-info=none --emit-exe`
 and the produced binary for AOT. Both modes run with the deterministic mock
 provider and need no credentials or external network. The R-3221 acceptance
-gate executes examples `01..42` and verification fixtures `384..432` in both
+gate executes examples `01..45` and verification fixtures `384..435` in both
 modes, alongside the crate, surface-determinism and integrated-project checks.
 The repository-wide `spectralang fmt --check examples/agent` still reports
 formatting drift in legacy examples `08`, `10`, `13`, `15`, `16` and `17`;

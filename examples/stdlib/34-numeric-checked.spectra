@@ -1,0 +1,39 @@
+module stdlib_numeric_checked
+
+import std.convert as convert
+import std.io as io
+import std.numeric as numeric
+
+public func main() returns int {
+    let signed8: i8 = numeric.checked_i8(127)
+    let signed16: i16 = numeric.checked_i16(300)
+    let signed32: i32 = numeric.checked_i32(70000)
+    let signed64: i64 = numeric.checked_i64(9000000000)
+    if signed8 as int != 127 or signed16 as int != 300 or signed32 as int != 70000 or signed64 as int != 9000000000 {
+        return 1
+    }
+
+    let unsigned8: u8 = numeric.checked_u8(255)
+    let unsigned16: u16 = numeric.checked_u16(60000)
+    let unsigned32: u32 = numeric.checked_u32(4000000000)
+    let unsigned64: u64 = numeric.checked_u64(9000000000)
+    if unsigned8 as int != 255 or unsigned16 as int != 60000 or unsigned32 as int != 4000000000 or unsigned64 as int != 9000000000 {
+        return 2
+    }
+
+    let added: i8 = numeric.checked_add_i8(100 as i8, 27 as i8)
+    let subtracted: i16 = numeric.checked_sub_i16(300 as i16, 100 as i16)
+    let multiplied: u8 = numeric.checked_mul_u8(12 as u8, 3 as u8)
+    if added as int != 127 or subtracted as int != 200 or multiplied as int != 36 {
+        return 3
+    }
+    let from_float: i8 = numeric.checked_float_i8(-12.0)
+    let from_unsigned_float: u16 = numeric.checked_float_u16(42.0)
+    let narrow: f32 = numeric.checked_f32(1.25 as f64)
+    if from_float as int != -12 or from_unsigned_float as int != 42 or narrow as f64 != 1.25 {
+        return 4
+    }
+
+    io.println("checked numeric -> " + convert.int_to_string(added as int))
+    return 0
+}

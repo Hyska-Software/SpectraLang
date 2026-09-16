@@ -423,7 +423,7 @@ impl SemanticAnalyzer {
                         return return_type;
                     }
                     if let Some(signature) = self.functions.get(&qualified_name).cloned() {
-                        let specialized = self.specialize_std_collection_signature(
+                        let specialized = self.specialize_std_call_signature(
                             &qualified_name,
                             &signature,
                             arguments,
@@ -445,7 +445,7 @@ impl SemanticAnalyzer {
                                 self_kind: None,
                                 is_async: func.is_async,
                             };
-                            let specialized = self.specialize_std_collection_signature(
+                            let specialized = self.specialize_std_call_signature(
                                 &qualified_name,
                                 &signature,
                                 arguments,

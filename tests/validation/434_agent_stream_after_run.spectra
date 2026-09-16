@@ -1,0 +1,91 @@
+module agent_stream_after_run
+
+// Contract: stream handles have their own lifetime. Two streams opened by a
+// run remain independent after that run ends; closing one does not affect the
+// other, and a released stream rejects reads with a typed handle error.
+
+import std.agent
+import std.error as error
+import std.string as str
+
+func spec() returns string {
+    return "{\"goal\":\"fixture-434-stream-after-run\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":434,\"journal\":\"\"}"
+}
+
+async func drain(stream: ChunkStream, expected: string) returns int {
+    let total = ""
+    let done = false
+    while done == false {
+        let next = await stream_next(stream)
+        if let Result::Ok(chunk) = next {
+            if chunk == "" {
+                done = true
+            } else {
+                total = total + chunk
+            }
+        } else {
+            return 1
+        }
+    }
+    if total != expected {
+        return 2
+    }
+    return 0
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Ok(run) = started {
+        let first = await ask_stream(run, "first survives")
+        let second = await ask_stream(run, "second closes")
+        if let Result::Ok(stream_a) = first {
+            if let Result::Ok(stream_b) = second {
+                if let Result::Err(_problem) = agent_end(run) {
+                    return 1
+                }
+                if await drain(stream_a, "mock echo: first survives") != 0 {
+                    return 2
+                }
+                let closed_b = await stream_close(stream_b)
+                if let Result::Ok(ok) = closed_b {
+                    if ok == false {
+                        return 3
+                    }
+                } else {
+                    return 4
+                }
+                let read_b = await stream_next(stream_b)
+                if let Result::Err(problem) = read_b {
+                    if str.contains(error.message(problem), "unknown_handle") == false {
+                        return 5
+                    }
+                } else {
+                    return 6
+                }
+                let end_a = await stream_next(stream_a)
+                if let Result::Ok(chunk) = end_a {
+                    if chunk != "" {
+                        return 7
+                    }
+                } else {
+                    return 8
+                }
+                let closed_a = await stream_close(stream_a)
+                if let Result::Err(_problem) = closed_a {
+                    return 9
+                }
+            } else {
+                return 10
+            }
+        } else {
+            return 11
+        }
+    } else {
+        return 12
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

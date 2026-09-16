@@ -1,0 +1,55 @@
+module stdlib_char_classifier
+
+import std.char as char
+import std.convert as convert
+import std.io as io
+import std.string as string
+
+func count_kind(text: string, kind: int) returns int {
+    let count = 0
+    let index = 0
+    while index < string.len(text) {
+        let code = string.char_at(text, index)
+        if kind == 0 and char.is_alpha(code) {
+            count = count + 1
+        }
+        if kind == 1 and char.is_digit_char(code) {
+            count = count + 1
+        }
+        if kind == 2 and char.is_whitespace_char(code) {
+            count = count + 1
+        }
+        if kind == 3 and char.is_upper_char(code) {
+            count = count + 1
+        }
+        if kind == 4 and char.is_lower_char(code) {
+            count = count + 1
+        }
+        if kind == 5 and char.is_alphanumeric(code) {
+            count = count + 1
+        }
+        index = index + 1
+    }
+    return count
+}
+
+public func main() returns int {
+    let sample = "A7 z"
+    if count_kind(sample, 0) != 2 or count_kind(sample, 1) != 1 {
+        return 1
+    }
+    if count_kind(sample, 2) != 1 or count_kind(sample, 3) != 1 {
+        return 2
+    }
+    if count_kind(sample, 4) != 1 or count_kind(sample, 5) != 3 {
+        return 3
+    }
+    if char.to_lower_char(string.char_at(sample, 0)) != 97 {
+        return 4
+    }
+    if char.to_upper_char(string.char_at(sample, 3)) != 90 {
+        return 5
+    }
+    io.println("char classifier -> " + convert.int_to_string(count_kind(sample, 5)))
+    return 0
+}

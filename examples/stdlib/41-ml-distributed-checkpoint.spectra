@@ -1,0 +1,56 @@
+module stdlib_ml_distributed_checkpoint
+
+import std.fs as fs
+import std.io as io
+import std.ml as ml
+import std.string as string
+
+const ROOT = "target/stdlib-examples/distributed"
+const CHECKPOINT = ROOT + "/checkpoint.json"
+
+public func main() returns int {
+    let session = ml.distributed_session_start("stdlib-distributed", ROOT + "/run", 2, 41041)
+    if session == 0 or ml.distributed_global_step(session) != 0 {
+        return 1
+    }
+    if ml.distributed_worker_step(session, 0, 4, 0.75) != 1 {
+        return 2
+    }
+    if ml.distributed_global_step(session) != 0 {
+        return 3
+    }
+    if ml.distributed_worker_step(session, 1, 4, 0.65) != 1 {
+        return 4
+    }
+    if ml.distributed_global_step(session) != 1 {
+        return 5
+    }
+
+    let checkpoint = ml.distributed_checkpoint_save(session, CHECKPOINT, 1)
+    let checkpoint_text = fs.fs_read(checkpoint)
+    if let Result::Ok(text) = checkpoint_text {
+        if !string.contains(text, "spectra.ml.distributed_checkpoint.v2") or !string.contains(text, "\"interrupted_worker\":1") {
+            return 6
+        }
+    } else {
+        return 6
+    }
+
+    let resumed = ml.distributed_resume(checkpoint)
+    if ml.distributed_worker_step_count(resumed, 0) != 1 or ml.distributed_worker_step_count(resumed, 1) != 1 {
+        return 7
+    }
+    if ml.distributed_global_step(resumed) != 1 {
+        return 8
+    }
+    let summary = ml.distributed_summary(resumed)
+    if !string.contains(summary, "\"topology\":\"multi-thread\"") or !string.contains(summary, "\"total_samples\":8") {
+        return 9
+    }
+
+    fs.fs_remove(checkpoint)
+    fs.remove_dir(ROOT + "/run")
+    fs.remove_dir(ROOT)
+    io.println("ml distributed -> worker steps checkpoint and resume")
+    return 0
+}

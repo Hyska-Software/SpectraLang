@@ -1,0 +1,38 @@
+module stdlib_tensor_device_precision
+
+import std.io as io
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    let source = tensor.full_f(4, 1.25)
+    let source_cpu = tensor.cpu(source)
+    if tensor.device(source) != 0 or tensor.device(source_cpu) != 0 {
+        return 1
+    }
+    if tensor.device_available(0) != true or tensor.device_status(0) != 0 {
+        return 2
+    }
+    if tensor.precision(source) != 0 {
+        return 3
+    }
+
+    let f32 = tensor.to_precision(source, 1)
+    if tensor.precision(f32) != 1 or tensor.len(f32) != 4 {
+        return 4
+    }
+    if tensor.get_f(f32, 0) as int != 1 {
+        return 5
+    }
+
+    let copied = tensor.to_device(f32, 0)
+    tensor.sync(copied)
+    let cpu_copy = tensor.cpu(copied)
+    if tensor.device(cpu_copy) != 0 or tensor.get_f(cpu_copy, 3) as int != 1 {
+        return 6
+    }
+
+    io.println("tensor device -> CPU residency and precision conversion")
+    tensor.free_all()
+    return 0
+}

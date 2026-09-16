@@ -1,0 +1,47 @@
+module stdlib_environment_options
+
+import std.convert as convert
+import std.env as env
+import std.io as io
+import std.option as option
+import std.string as string
+
+const PRESENT = "SPECTRALANG_STDLIB_EXAMPLE_PRESENT"
+const EMPTY = "SPECTRALANG_STDLIB_EXAMPLE_EMPTY"
+
+public func main() returns int {
+    if env.env_set(PRESENT, "configured") != true {
+        return 1
+    }
+    let value = env.env_get(PRESENT)
+    let length: Option<int> = option.option_map(
+        value,
+        |text: string| string.len(text)
+    )
+    if option.is_none(length) or option.option_unwrap(length) != 10 {
+        return 2
+    }
+
+    if env.env_set(EMPTY, "") != true {
+        return 3
+    }
+    let empty = env.env_get(EMPTY)
+    if option.is_none(empty) or option.option_unwrap(empty) != "" {
+        return 4
+    }
+
+    let missing = env.env_get("SPECTRALANG_STDLIB_EXAMPLE_MISSING")
+    if option.is_some(missing) or option.option_unwrap_or(missing, "fallback") != "fallback" {
+        return 5
+    }
+    if env.env_args_count() < 1 {
+        return 6
+    }
+    let out_of_range = env.env_arg(100000)
+    if option.is_some(out_of_range) {
+        return 7
+    }
+
+    io.println("environment -> " + convert.int_to_string(option.option_unwrap(length)))
+    return 0
+}

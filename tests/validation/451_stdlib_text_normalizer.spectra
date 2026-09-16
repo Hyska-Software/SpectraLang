@@ -1,0 +1,44 @@
+module validation_451_stdlib_text_normalizer
+
+// Contract: text helpers preserve the trimmed value, distinguish ASCII case,
+// locate substrings by byte index, and expose split output as a typed list.
+import std.char as char
+import std.collections as collections
+import std.option as option
+import std.string as string
+
+func digit_count(value: string) returns int {
+    let count = 0
+    let index = 0
+    while index < string.len(value) {
+        if char.is_digit_char(string.char_at(value, index)) {
+            count = count + 1
+        }
+        index = index + 1
+    }
+    return count
+}
+
+public func main() returns int {
+    let cleaned = string.trim("  Release-2026: READY  ")
+    if cleaned != "Release-2026: READY" {
+        return 1
+    }
+    let lower = string.to_lower(cleaned)
+    if string.starts_with(lower, "release") != true or string.ends_with(lower, "ready") != true {
+        return 2
+    }
+    if string.index_of(lower, "2026") != 8 or digit_count(lower) != 4 {
+        return 3
+    }
+    let pieces = string.split_by(lower, ":")
+    if collections.list_len(pieces) != 2 {
+        return 4
+    }
+    let suffix = collections.list_get_option(pieces, 1)
+    if option.is_none(suffix) or option.option_unwrap(suffix) != " ready" {
+        return 5
+    }
+    collections.list_free(pieces)
+    return 0
+}

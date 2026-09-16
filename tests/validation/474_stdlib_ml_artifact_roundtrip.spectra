@@ -1,0 +1,22 @@
+module validation_stdlib_ml_artifact_roundtrip
+
+import std.ml as ml
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    let artifact = ml.artifact_new("validation", "1", "multi_array")
+    let weights = tensor.full_f(2, 4.0)
+    if artifact == 0 or !ml.artifact_add_tensor(artifact, "weights", weights) {
+        return 1
+    }
+    if !ml.artifact_save(artifact, "target/stdlib-examples/validation.spar") {
+        return 2
+    }
+    if !ml.artifact_validate("target/stdlib-examples/validation.spar") {
+        return 3
+    }
+    ml.artifact_free(artifact)
+    tensor.free_all()
+    return 0
+}

@@ -1,0 +1,49 @@
+module stdlib_ml_vector_index
+
+import std.fs as fs
+import std.io as io
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+
+const ROOT = "target/stdlib-examples/vector-index"
+const PATH = ROOT + "/index.spar"
+
+public func main() returns int {
+    tensor.free_all()
+    let index = ml.vector_index_new(2)
+    if index == 0 or !ml.vector_index_set_metadata(index, "model_version", "stdlib-rag-v1") {
+        return 1
+    }
+    if ml.vector_index_insert(index, "doc-a", tensor.vector_f(2, 1.0)) != 1 {
+        return 2
+    }
+    if ml.vector_index_insert(index, "doc-b", tensor.vector_f(2, 2.0)) != 2 {
+        return 3
+    }
+
+    let query = ml.vector_index_query(index, tensor.vector_f(2, 1.0), 1)
+    if !string.contains(query, "doc-a") or !string.contains(query, "spectra.ml.vector_query.v2") {
+        return 4
+    }
+    let metrics = ml.vector_index_metrics(index)
+    if !string.contains(metrics, "\"insert_count\":2") or !string.contains(metrics, "\"query_count\":1") {
+        return 5
+    }
+
+    let persisted = ml.vector_index_persist(index, PATH)
+    if persisted != PATH {
+        return 6
+    }
+    let loaded = ml.vector_index_load(persisted)
+    let loaded_query = ml.vector_index_query(loaded, tensor.vector_f(2, 1.0), 1)
+    if !string.contains(loaded_query, "doc-a") {
+        return 7
+    }
+
+    fs.fs_remove(PATH)
+    fs.remove_dir(ROOT)
+    tensor.free_all()
+    io.println("ml vector index -> metadata query metrics persist load")
+    return 0
+}

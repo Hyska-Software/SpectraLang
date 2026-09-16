@@ -1,0 +1,45 @@
+module stdlib_numeric_widths
+
+import std.numeric as numeric
+
+public func main() returns int {
+    let signed8: i8 = numeric.wrapping_add_i8(127 as i8, 1 as i8)
+    if signed8 as int != -128 {
+        return 1
+    }
+    let signed16: i16 = numeric.wrapping_sub_i16(-30000 as i16, 10000 as i16)
+    if signed16 as int != 25536 {
+        return 2
+    }
+    let signed32: i32 = numeric.wrapping_mul_i32(50000 as i32, 50000 as i32)
+    if signed32 as int != -1794967296 {
+        return 3
+    }
+    let signed64: i64 = numeric.wrapping_add_i64(9000000000 as i64, 1 as i64)
+    if signed64 as int != 9000000001 {
+        return 4
+    }
+
+    let unsigned8: u8 = numeric.wrapping_sub_u8(0 as u8, 1 as u8)
+    if unsigned8 as int != 255 {
+        return 5
+    }
+    let unsigned16: u16 = numeric.wrapping_add_u16(65535 as u16, 1 as u16)
+    if unsigned16 as int != 0 {
+        return 6
+    }
+    let unsigned32: u32 = numeric.wrapping_mul_u32(65536 as u32, 65536 as u32)
+    if unsigned32 as int != 0 {
+        return 7
+    }
+    let unsigned64: u64 = numeric.wrapping_mul_u64(30000 as u64, 30000 as u64)
+    if unsigned64 as int != 900000000 {
+        return 8
+    }
+
+    let exact: f32 = numeric.checked_f32(1.25 as f64)
+    if exact as f64 != 1.25 {
+        return 9
+    }
+    return 0
+}

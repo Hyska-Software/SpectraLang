@@ -1,0 +1,47 @@
+module stdlib_convert_config
+
+import std.convert as convert
+import std.io as io
+import std.math as math
+import std.string as string
+
+public func main() returns int {
+    let port = convert.string_to_int_or("8080", 3000)
+    let fallback_port = convert.string_to_int_or("unset", 3000)
+    if port != 8080 or fallback_port != 3000 {
+        return 1
+    }
+
+    let ratio = convert.string_to_float_or("0.75", -1.0)
+    let fallback_ratio = convert.string_to_float_or("invalid", -1.0)
+    if ratio != 0.75 or fallback_ratio != -1.0 {
+        return 2
+    }
+    if math.is_nan_f(convert.string_to_float("NaN")) != true {
+        return 3
+    }
+    if convert.string_to_bool(" true ") != true or convert.string_to_bool("FALSE") != false {
+        return 4
+    }
+
+    let port_text = convert.int_to_string(port)
+    if string.eq(port_text, "8080") != true or convert.string_to_int(port_text) != port {
+        return 5
+    }
+    if convert.bool_to_string(true) != "true" or convert.bool_to_string(false) != "false" {
+        return 6
+    }
+    if convert.bool_to_int(true) != 1 or convert.bool_to_int(false) != 0 {
+        return 7
+    }
+    if convert.int_to_float(12) != 12.0 or convert.float_to_int(12.99) != 12 {
+        return 8
+    }
+
+    let encoded = convert.float_to_string(3.5)
+    if convert.string_to_float(encoded) != 3.5 {
+        return 9
+    }
+    io.println("config -> port=" + port_text + ", ratio=" + encoded)
+    return 0
+}

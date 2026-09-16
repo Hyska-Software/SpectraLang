@@ -564,6 +564,11 @@ impl CodeGenerator {
                         let ty = builder.func.dfg.value_type(value);
                         value = match ty {
                             types::I64 => value,
+                            types::I8 | types::I16 | types::I32
+                                if Self::host_uses_unsigned_numeric_args(host) =>
+                            {
+                                builder.ins().uextend(types::I64, value)
+                            }
                             types::I8 | types::I16 | types::I32 => {
                                 builder.ins().sextend(types::I64, value)
                             }

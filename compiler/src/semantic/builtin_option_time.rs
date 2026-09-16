@@ -54,7 +54,7 @@ pub(crate) fn make_std_option() -> ModuleExports {
             Type::Applied {
                 name: "Option".to_string(),
                 // `U` is instantiated from the closure's return type at each
-                // call site by `specialize_std_collection_signature`.
+                // call site by `specialize_std_call_signature`.
                 args: vec![Type::TypeParameter {
                     name: "U".to_string(),
                 }],

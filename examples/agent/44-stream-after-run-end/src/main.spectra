@@ -1,0 +1,93 @@
+module main
+
+// Example 44 — a completed model stream keeps its own buffered output after
+// `agent_end`; closing the stream, not ending the run, releases its handle.
+
+from std.io import println
+import std.agent
+import std.error as error
+import std.string as str
+
+func spec() returns string {
+    return "{\"goal\":\"example-stream-after-run-end\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":44,\"journal\":\"\"}"
+}
+
+async func verify() returns int {
+    let started = agent_start(spec())
+    if let Result::Err(problem) = started {
+        println("start failed: " + error.message(problem))
+        return 1
+    }
+    if let Result::Ok(run) = started {
+        let opened = await ask_stream(run, "survives run teardown")
+        if let Result::Err(problem) = opened {
+            println("stream failed: " + error.message(problem))
+            return 2
+        }
+        if let Result::Ok(stream) = opened {
+            let ended = agent_end(run)
+            if let Result::Err(problem) = ended {
+                println("end failed: " + error.message(problem))
+                return 3
+            }
+            if let Result::Ok(report) = ended {
+                if str.contains(report, "\"status\":\"completed\"") == false {
+                    return 4
+                }
+            }
+
+            let total  = ""
+            let chunks = 0
+            let done   = false
+            while done == false {
+                let next = await stream_next(stream)
+                if let Result::Ok(chunk) = next {
+                    if chunk == "" {
+                        done = true
+                    } else {
+                        total = total + chunk
+                        chunks = chunks + 1
+                    }
+                } else {
+                    return 5
+                }
+            }
+            if total != "mock echo: survives run teardown" or chunks < 2 {
+                return 6
+            }
+
+            // End-of-stream remains sticky even though the owner run is gone.
+            let repeated_end = await stream_next(stream)
+            if let Result::Ok(chunk) = repeated_end {
+                if chunk != "" {
+                    return 7
+                }
+            } else {
+                return 8
+            }
+
+            let closed = await stream_close(stream)
+            if let Result::Ok(ok) = closed {
+                if ok == false {
+                    return 9
+                }
+            } else {
+                return 10
+            }
+            let after_close = await stream_next(stream)
+            if let Result::Err(problem) = after_close {
+                if str.contains(error.message(problem), "unknown_handle") == false {
+                    return 11
+                }
+            } else {
+                return 12
+            }
+            println("stream after end -> buffered output survived until close")
+        }
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

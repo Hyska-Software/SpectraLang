@@ -1,0 +1,46 @@
+module stdlib_environment_options
+
+// Contract: std.env distinguishes a missing variable from an explicitly
+// empty value, and the Option payload can be transformed without sentinels.
+
+import std.env as env
+import std.option as option
+import std.string as string
+
+const PRESENT = "SPECTRALANG_STDLIB_VALIDATION_PRESENT"
+const EMPTY = "SPECTRALANG_STDLIB_VALIDATION_EMPTY"
+
+public func main() returns int {
+    if env.env_set(PRESENT, "spectra") != true {
+        return 1
+    }
+    let present = env.env_get(PRESENT)
+    let mapped: Option<int> = option.option_map(
+        present,
+        |text: string| string.len(text)
+    )
+    if option.is_none(mapped) or option.option_unwrap(mapped) != 7 {
+        return 2
+    }
+
+    if env.env_set(EMPTY, "") != true {
+        return 3
+    }
+    let empty = env.env_get_option(EMPTY)
+    if option.is_none(empty) or option.option_unwrap(empty) != "" {
+        return 4
+    }
+
+    let absent = env.env_get_option("SPECTRALANG_STDLIB_VALIDATION_MISSING")
+    if option.is_some(absent) {
+        return 5
+    }
+    let bad_arg = env.env_arg_option(999999)
+    if option.is_some(bad_arg) {
+        return 6
+    }
+    if env.env_args_count() < 1 {
+        return 7
+    }
+    return 0
+}

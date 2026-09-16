@@ -19,7 +19,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = "spectralang.stdlib_core_bug_hunt.v1"
 STDLIB_IDS = list(range(317, 330))
 ASYNC_IDS = list(range(293, 298))
-FORBIDDEN_NAMESPACES = ("std.api", "std.tensor", "std.ml")
+# `std.serve` uses tensor handles to register real models, and fixture 328 is
+# part of this core matrix. Keep API/ML surfaces excluded without rejecting
+# the tensor dependency needed by the serving baseline.
+FORBIDDEN_NAMESPACES = ("std.api", "std.ml")
 
 
 class ValidationFailure(RuntimeError):

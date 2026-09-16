@@ -1,0 +1,34 @@
+module stdlib_tensor_lifecycle
+
+import std.io as io
+import std.string as string
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.reset_stats()
+    let initial = tensor.full_f(16, 1.0)
+    let activated = tensor.relu(initial)
+    tensor.free(activated)
+    tensor.free(initial)
+
+    let reused = tensor.full_f(16, 2.0)
+    if tensor.stats_pool_hits() <= 0 {
+        return 1
+    }
+    tensor.free(reused)
+    if tensor.stats_lifetime_records() < 3 or tensor.stats_released_lifetimes() < 2 {
+        return 2
+    }
+    if tensor.stats_allocation_sites() <= 0 or tensor.stats_reuse_rate_per_mille() <= 0 {
+        return 3
+    }
+
+    let report = tensor.memory_report()
+    if string.len(report) < 200 {
+        return 4
+    }
+    io.println("tensor lifecycle -> pool reuse and memory report")
+    tensor.free_all()
+    return 0
+}

@@ -1,0 +1,22 @@
+module validation_stdlib_tensor_runtime_stats
+
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.reset_stats()
+    let left = tensor.full_f(3, 1.0)
+    let right = tensor.full_f(3, 2.0)
+    let sum = tensor.add(left, right)
+    if tensor.stats_allocations() <= 0 or tensor.stats_active() <= 0 {
+        return 1
+    }
+    if tensor.stats_kernel_ops() <= 0 or tensor.stats_kernel_elements() < 3 {
+        return 2
+    }
+    tensor.free(sum)
+    tensor.free(right)
+    tensor.free(left)
+    tensor.free_all()
+    return 0
+}

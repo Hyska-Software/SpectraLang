@@ -1,0 +1,21 @@
+module validation_stdlib_tensor_algebra
+
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    let values = tensor.arange(1, 4, 1)
+    if tensor.dot(values, values) != 14 or tensor.argmax(values) != 2 {
+        return 1
+    }
+    if tensor.get_f(tensor.dot_t(values, values), 0) as int != 14 {
+        return 2
+    }
+    let matrix = tensor.reshape(tensor.full_f(4, 1.0), 2, 2)
+    let result = tensor.matmul(matrix, matrix)
+    if tensor.rank(result) != 2 or tensor.get_f(result, 0) as int != 2 {
+        return 3
+    }
+    tensor.free_all()
+    return 0
+}

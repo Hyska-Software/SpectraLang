@@ -1,0 +1,56 @@
+module stdlib_option_result_flow
+
+import std.convert as convert
+import std.io as io
+import std.option as option
+import std.result as result
+import std.string as string
+
+public func main() returns int {
+    let present: Option<int> = Option::Some(21)
+    let rendered: Option<string> = option.option_map(
+        present,
+        |value: int| convert.int_to_string(value * 2)
+    )
+    if option.is_none(rendered) or option.option_unwrap(rendered) != "42" {
+        return 1
+    }
+
+    let absent: Option<int> = Option::None
+    let mapped_absent: Option<string> = option.option_map(
+        absent,
+        |value: int| convert.int_to_string(value + 1)
+    )
+    if option.is_some(mapped_absent) or option.option_unwrap_or(mapped_absent, "fallback") != "fallback" {
+        return 2
+    }
+
+    let success: Result<int, string> = Result::Ok(7)
+    let text_success: Result<string, string> = result.result_map(
+        success,
+        |value: int| string.concat("value=", convert.int_to_string(value))
+    )
+    if result.is_err(text_success) or result.result_unwrap(text_success) != "value=7" {
+        return 3
+    }
+
+    let failure: Result<int, string> = Result::Err("offline")
+    let preserved: Result<string, string> = result.result_map(
+        failure,
+        |value: int| convert.int_to_string(value)
+    )
+    if result.is_ok(preserved) or result.result_unwrap_err(preserved) != "offline" {
+        return 4
+    }
+
+    let classified: Result<int, int> = result.result_map_err(
+        failure,
+        |message: string| string.len(message)
+    )
+    if result.is_ok(classified) or result.result_unwrap_err(classified) != 7 {
+        return 5
+    }
+
+    io.println("result flow -> " + result.result_unwrap(text_success))
+    return 0
+}

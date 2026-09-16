@@ -1,0 +1,49 @@
+module stdlib_iterator_values
+
+from std.collections import Iterator, List, Set
+import std.collections as collections
+import std.io as io
+import std.option as option
+
+public func main() returns int {
+    let values: List<int> = collections.list_new()
+    collections.list_push(values, 4)
+    collections.list_push(values, 8)
+    collections.list_push(values, 15)
+    let cursor: Iterator<int> = collections.list_iter(values)
+    if collections.iterator_remaining(cursor) != 3 {
+        return 1
+    }
+    let first = collections.iterator_next(cursor)
+    let second = collections.iterator_next(cursor)
+    if option.is_none(first) or option.option_unwrap(first) != 4 {
+        return 2
+    }
+    if option.is_none(second) or option.option_unwrap(second) != 8 or collections.iterator_remaining(cursor) != 1 {
+        return 3
+    }
+    let last = collections.iterator_next(cursor)
+    let exhausted = collections.iterator_next(cursor)
+    if option.is_none(last) or option.option_unwrap(last) != 15 or option.is_some(exhausted) {
+        return 4
+    }
+    if collections.iterator_remaining(cursor) != 0 {
+        return 5
+    }
+    collections.iterator_free(cursor)
+
+    let labels: Set<int> = collections.set_new()
+    collections.set_insert(labels, 20)
+    collections.set_insert(labels, 30)
+    let set_cursor: Iterator<int> = collections.set_iter(labels)
+    let set_first = collections.iterator_next(set_cursor)
+    if option.is_none(set_first) or option.option_unwrap(set_first) != 20 {
+        return 6
+    }
+    collections.iterator_free(set_cursor)
+
+    io.println("iterator values -> next remaining exhausted")
+    collections.list_free(values)
+    collections.set_free(labels)
+    return 0
+}

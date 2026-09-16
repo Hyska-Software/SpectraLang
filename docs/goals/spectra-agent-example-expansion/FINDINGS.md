@@ -35,3 +35,22 @@ modules were outside the compiler input.
 JIT, matching its existing AOT invocation and the contributor-facing command.
 The source-file existence check remains, so a missing `src/main.spectra` still
 fails with a named example.
+
+## F-003 — The follow-up fixture catalog shadowed an existing key
+
+**Observed:** The first follow-up certification report had 45 examples but only
+51 verification fixtures, although the inclusive range `384..435` contains 52
+fixtures. The new `435_agent_concurrent_runs.spectra` entry reused the existing
+`concurrent_runs` Python dictionary key for fixture 391, so Python silently
+replaced the older fixture in the gate.
+
+**Impact:** The gate still passed, but it stopped executing
+`391_agent_concurrent_runs.spectra`; the acceptance claim that every fixture
+from `384..435` runs in JIT and AOT was false.
+
+**Correction:** Rename the new catalog key to
+`concurrent_runs_followup`, preserving both entries. The final report must
+contain 52 fixture records and both concurrent-run fixtures.
+
+**Permanent evidence:** The corrected `VERIFICATION_FIXTURES` map and the
+serial R-3221 report provide the count and key-level coverage check.

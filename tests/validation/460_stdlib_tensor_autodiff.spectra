@@ -1,0 +1,33 @@
+module validation_460_stdlib_tensor_autodiff
+
+// Contract: reverse-mode autodiff accumulates a gradient and zero_grad clears it.
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled(true)
+    let source = tensor.requires_grad(tensor.full_f(2, 1.5), true)
+    let other = tensor.full_f(2, 4.0)
+    let loss = tensor.dot_t(source, other)
+    tensor.backward(loss)
+    let gradient = tensor.grad(source)
+    if tensor.len(gradient) != 2 {
+        return 1
+    }
+    if tensor.get_f(gradient, 0) as int != 4 or tensor.sum_f(gradient) as int != 8 {
+        return 2
+    }
+    tensor.zero_grad(source)
+    let second_loss = tensor.dot_t(source, other)
+    tensor.backward(second_loss)
+    if tensor.sum_f(tensor.grad(source)) as int != 8 {
+        return 3
+    }
+    tensor.set_grad_enabled(false)
+    if tensor.grad_enabled() != false {
+        return 4
+    }
+    tensor.set_grad_enabled(true)
+    tensor.free_all()
+    return 0
+}

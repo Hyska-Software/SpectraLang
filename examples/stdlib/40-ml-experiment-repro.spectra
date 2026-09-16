@@ -1,0 +1,62 @@
+module stdlib_ml_experiment_repro
+
+import std.fs as fs
+import std.io as io
+import std.ml as ml
+import std.string as string
+
+const ROOT = "target/stdlib-examples/experiments"
+
+public func main() returns int {
+    let run_a = ml.experiment_start("stdlib-run", ROOT + "/run-a", 77)
+    let run_b = ml.experiment_start("stdlib-run", ROOT + "/run-b", 77)
+    let run_c = ml.experiment_start("stdlib-run", ROOT + "/run-c", 77)
+    if run_a == 0 or run_b == 0 or run_c == 0 {
+        return 1
+    }
+
+    ml.experiment_set_config(run_a, "dataset", "fixtures/demo.csv")
+    ml.experiment_set_config(run_a, "optimizer", "sgd")
+    ml.experiment_set_config(run_b, "dataset", "fixtures/demo.csv")
+    ml.experiment_set_config(run_b, "optimizer", "sgd")
+    ml.experiment_set_config(run_c, "dataset", "fixtures/demo.csv")
+    ml.experiment_set_config(run_c, "optimizer", "adam")
+    ml.experiment_log_metric(run_a, "loss", 0.25, 2)
+    ml.experiment_log_metric(run_b, "loss", 0.25, 2)
+    ml.experiment_log_metric(run_c, "loss", 0.50, 2)
+    ml.experiment_finish(run_a)
+    ml.experiment_finish(run_b)
+    ml.experiment_finish(run_c)
+
+    let manifest_a = ml.experiment_manifest_path(run_a)
+    let manifest_b = ml.experiment_manifest_path(run_b)
+    let manifest_c = ml.experiment_manifest_path(run_c)
+    if ml.experiment_compare_manifests(manifest_a, manifest_b) != 1 {
+        return 2
+    }
+    if ml.experiment_compare_manifests(manifest_a, manifest_c) != 0 {
+        return 3
+    }
+    let command = ml.experiment_repro_command(run_a)
+    if !string.contains(command, "spectralang run") or !string.contains(command, "experiment-manifest") {
+        return 4
+    }
+    let manifest = fs.fs_read(manifest_a)
+    if let Result::Ok(text) = manifest {
+        if !string.contains(text, "spectra.ml.experiment.v1") {
+            return 5
+        }
+    } else {
+        return 5
+    }
+
+    fs.fs_remove(manifest_a)
+    fs.fs_remove(manifest_b)
+    fs.fs_remove(manifest_c)
+    fs.remove_dir(ROOT + "/run-a")
+    fs.remove_dir(ROOT + "/run-b")
+    fs.remove_dir(ROOT + "/run-c")
+    fs.remove_dir(ROOT)
+    io.println("ml experiment -> reproducible manifests and comparison")
+    return 0
+}

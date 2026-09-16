@@ -1,0 +1,19 @@
+module validation_stdlib_ml_optimizer_schedule
+
+import std.ml as ml
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled(true)
+    let parameter = tensor.requires_grad(tensor.full_f(1, 1.0), true)
+    let velocity = tensor.full_f(1, 0.0)
+    tensor.backward(tensor.sum_t(tensor.mul(parameter, parameter)))
+    ml.sgd_momentum_step(parameter, velocity, 0.1, 0.9)
+    if ml.exp_lr(0.1, 0.5, 2) < 0.02 {
+        return 1
+    }
+    tensor.free_all()
+    tensor.set_grad_enabled(false)
+    return 0
+}

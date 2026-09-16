@@ -1,0 +1,49 @@
+module stdlib_ml_optimizer_schedule
+
+import std.io as io
+import std.ml as ml
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled(true)
+
+    let parameter = tensor.requires_grad(tensor.full_f(2, 2.0), true)
+    let velocity = tensor.full_f(2, 0.0)
+    let sgd_loss = tensor.sum_t(tensor.mul(parameter, parameter))
+    tensor.backward(sgd_loss)
+    ml.unscale_grad(parameter, 2.0)
+    ml.sgd_momentum_step(parameter, velocity, 0.1, 0.9)
+    if tensor.len(velocity) != 2 or tensor.get_f(parameter, 0) as int != 1 {
+        return 1
+    }
+
+    let adam_parameter = tensor.requires_grad(tensor.full_f(2, 1.0), true)
+    let first_moment = tensor.full_f(2, 0.0)
+    let second_moment = tensor.full_f(2, 0.0)
+    let adam_loss = tensor.sum_t(tensor.mul(adam_parameter, adam_parameter))
+    tensor.backward(adam_loss)
+    ml.adam_step(adam_parameter, first_moment, second_moment, 0.01, 0.9, 0.999, 0.00000001, 1)
+    if tensor.len(first_moment) != 2 or tensor.len(second_moment) != 2 {
+        return 2
+    }
+
+    let adamw_parameter = tensor.requires_grad(tensor.full_f(2, 1.0), true)
+    let adamw_first = tensor.full_f(2, 0.0)
+    let adamw_second = tensor.full_f(2, 0.0)
+    let adamw_loss = tensor.sum_t(tensor.mul(adamw_parameter, adamw_parameter))
+    tensor.backward(adamw_loss)
+    ml.adamw_step(adamw_parameter, adamw_first, adamw_second, 0.01, 0.9, 0.999, 0.00000001, 1, 0.01)
+    if tensor.len(adamw_first) != 2 or tensor.len(adamw_second) != 2 {
+        return 3
+    }
+
+    let learning_rate = ml.exp_lr(0.1, 0.5, 2)
+    if learning_rate < 0.02 or learning_rate > 0.03 {
+        return 4
+    }
+    io.println("ml optimizer -> unscaled gradients SGD momentum Adam AdamW schedule")
+    tensor.free_all()
+    tensor.set_grad_enabled(false)
+    return 0
+}

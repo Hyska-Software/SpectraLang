@@ -201,9 +201,9 @@ pub(crate) fn ml_dataset_subset(
     len: usize,
 ) -> Result<usize, i32> {
     let (feature_shape, feature_data, _) =
-        ml_tensor_float_data(dataset.features).ok_or(HOST_STATUS_INVALID_ARGUMENT)?;
+        ml_tensor_numeric_data(dataset.features).ok_or(HOST_STATUS_INVALID_ARGUMENT)?;
     let (label_shape, label_data, _) =
-        ml_tensor_float_data(dataset.labels).ok_or(HOST_STATUS_INVALID_ARGUMENT)?;
+        ml_tensor_numeric_data(dataset.labels).ok_or(HOST_STATUS_INVALID_ARGUMENT)?;
     if feature_shape.is_empty() || label_shape.is_empty() || feature_shape[0] != dataset.len {
         return Err(HOST_STATUS_INVALID_ARGUMENT);
     }

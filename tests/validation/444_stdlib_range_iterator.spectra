@@ -1,0 +1,58 @@
+module stdlib_range_iterator_validation
+
+import std.collections as collections
+import std.option as option
+import std.range as range
+from std.collections import Iterator
+
+public func main() returns int {
+    let exclusive = range.create(-2, 3, false)
+    if range.len(exclusive) != 5 or range.start(exclusive) != -2 or range.end(exclusive) != 3 {
+        return 1
+    }
+    if range.is_inclusive(exclusive) != false or range.at(exclusive, 0) != -2 or range.at(exclusive, 4) != 2 {
+        return 2
+    }
+
+    let cursor: Iterator<int> = range.iter(exclusive)
+    if collections.iterator_remaining(cursor) != 5 {
+        return 3
+    }
+    let sum = 0
+    for item in cursor {
+        sum = sum + item
+    }
+    if sum != 0 or collections.iterator_remaining(cursor) != 0 {
+        return 4
+    }
+    let exhausted = collections.iterator_next(cursor)
+    if option.is_some(exhausted) {
+        return 5
+    }
+    collections.iterator_free(cursor)
+
+    let inclusive = range.create(1, 4, true)
+    if range.len(inclusive) != 4 or range.at(inclusive, 3) != 4 {
+        return 6
+    }
+    let inclusive_cursor: Iterator<int> = range.iter(inclusive)
+    let product = 1
+    for item in inclusive_cursor {
+        product = product * item
+    }
+    if product != 24 {
+        return 7
+    }
+    collections.iterator_free(inclusive_cursor)
+
+    let empty = range.create(5, 2, true)
+    if range.len(empty) != 0 or range.eq(empty, exclusive) {
+        return 8
+    }
+    let empty_cursor: Iterator<int> = range.iter(empty)
+    if collections.iterator_remaining(empty_cursor) != 0 or option.is_some(collections.iterator_next(empty_cursor)) {
+        return 9
+    }
+    collections.iterator_free(empty_cursor)
+    return 0
+}

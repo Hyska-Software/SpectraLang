@@ -1,0 +1,70 @@
+module stdlib_filesystem_append_copy
+
+import std.collections as collections
+import std.error as error
+import std.fs as fs
+import std.io as io
+import std.result as result
+import std.string as string
+
+const ROOT = "target/stdlib-examples/fs-append-copy"
+
+public func main() returns int {
+    let source = ROOT + "/source.txt"
+    let copied = ROOT + "/copied.txt"
+    let renamed = ROOT + "/renamed.txt"
+    fs.fs_remove(source)
+    fs.fs_remove(copied)
+    fs.fs_remove(renamed)
+    fs.remove_dir(ROOT)
+    fs.remove_dir("target/stdlib-examples")
+
+    if result.is_err(fs.create_dir_all(ROOT)) {
+        return 1
+    }
+    if result.is_err(fs.fs_write(source, "first")) {
+        return 2
+    }
+    let appended = fs.fs_append(source, "\nsecond")
+    if result.is_err(appended) or result.result_unwrap(appended) != true {
+        return 3
+    }
+    let bytes = fs.copy(source, copied)
+    if result.is_err(bytes) or result.result_unwrap(bytes) != 12 {
+        return 4
+    }
+    let listed = fs.read_dir(ROOT)
+    if result.is_err(listed) {
+        return 5
+    }
+    let entries = result.result_unwrap(listed)
+    if collections.list_len(entries) != 2 {
+        collections.list_free(entries)
+        return 6
+    }
+    collections.list_free(entries)
+
+    if result.is_err(fs.rename(copied, renamed)) {
+        return 7
+    }
+    let loaded = fs.fs_read(renamed)
+    if result.is_err(loaded) or result.result_unwrap(loaded) != "first\nsecond" {
+        return 8
+    }
+    let missing = fs.fs_read(ROOT + "/missing.txt")
+    if result.is_ok(missing) {
+        return 9
+    }
+    if let Result::Err(problem) = missing {
+        if error.code(problem) != 1 or error.operation(problem) != "fs_read" {
+            return 10
+        }
+    }
+
+    fs.fs_remove(source)
+    fs.fs_remove(renamed)
+    fs.remove_dir(ROOT)
+    fs.remove_dir("target/stdlib-examples")
+    io.println("filesystem append -> copied 12 bytes")
+    return 0
+}

@@ -38,6 +38,11 @@ impl SemanticAnalyzer {
                             }
                         }
                     } else if let Some(signature) = self.functions.get(name).cloned() {
+                        let signature = self.specialize_std_call_signature(
+                            name,
+                            &signature,
+                            arguments,
+                        );
                         let def_span = self.lookup_symbol(name).and_then(|info| info.def_span);
                         self.symbol_resolutions.insert(
                             callee.span,

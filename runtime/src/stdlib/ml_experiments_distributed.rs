@@ -338,6 +338,36 @@ pub(crate) extern "C" fn std_ml_distributed_global_step(ctx: *mut SpectraHostCal
     }
 }
 
+pub(crate) extern "C" fn std_ml_distributed_worker_step(ctx: *mut SpectraHostCallContext) -> i32 {
+    unsafe {
+        let Ok((ctx_ref, args)) = ml_args(ctx, 4) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        if args[1] < 0 || args[2] < 0 {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let loss = f64::from_bits(args[3] as u64);
+        if !loss.is_finite() {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let Some(step_count) = with_ml_registry(|registry| {
+            let session = registry.distributed_sessions.get_mut(&(args[0] as usize))?;
+            let worker = session.workers.get_mut(args[1] as usize)?;
+            if !worker.active {
+                return None;
+            }
+            worker.step_count = worker.step_count.saturating_add(1);
+            worker.sample_count = worker.sample_count.saturating_add(args[2]);
+            worker.accumulator += loss;
+            session.last_loss = loss;
+            Some(worker.step_count)
+        }) else {
+            return HOST_STATUS_NOT_FOUND;
+        };
+        tensor_result(ctx_ref, step_count)
+    }
+}
+
 pub(crate) extern "C" fn std_ml_distributed_worker_step_count(
     ctx: *mut SpectraHostCallContext,
 ) -> i32 {

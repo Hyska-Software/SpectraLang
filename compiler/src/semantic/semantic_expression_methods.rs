@@ -56,7 +56,7 @@ impl SemanticAnalyzer {
                             })
                         });
                     let qualified_sig = qualified_sig.map(|signature| {
-                        self.specialize_std_collection_signature(
+                        self.specialize_std_call_signature(
                             &qualified_name,
                             &signature,
                             arguments,

@@ -1,0 +1,37 @@
+module stdlib_ml_tokenizer_training
+
+import std.io as io
+import std.ml as ml
+import std.string as string
+import std.tensor as tensor
+
+const CORPUS = "spectra language spectra runtime runtime library library"
+
+public func main() returns int {
+    tensor.free_all()
+    let bpe = ml.train_bpe(CORPUS, 32)
+    let wordpiece = ml.train_wordpiece(CORPUS, 32)
+    if bpe == 0 or wordpiece == 0 {
+        return 1
+    }
+    let bpe_vocab = ml.tokenizer_vocab(bpe)
+    let wordpiece_vocab = ml.tokenizer_vocab(wordpiece)
+    if !string.contains(bpe_vocab, "[UNK]:0") or !string.contains(wordpiece_vocab, "[UNK]:0") {
+        return 2
+    }
+
+    let bpe_ids = ml.tokenizer_encode(bpe, "spectra library")
+    let wordpiece_ids = ml.tokenizer_encode(wordpiece, "runtime language")
+    if tensor.len(bpe_ids) <= 0 or tensor.len(wordpiece_ids) <= 0 {
+        return 3
+    }
+    let bpe_text = ml.tokenizer_decode(bpe, bpe_ids)
+    let wordpiece_text = ml.tokenizer_decode(wordpiece, wordpiece_ids)
+    if string.len(bpe_text) <= 0 or string.len(wordpiece_text) <= 0 {
+        return 4
+    }
+
+    io.println("ml tokenizer -> BPE and WordPiece training encode decode")
+    tensor.free_all()
+    return 0
+}

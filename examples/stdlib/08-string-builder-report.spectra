@@ -1,0 +1,59 @@
+module stdlib_string_builder_report
+
+import std.collections as collections
+import std.option as option
+import std.string as string
+
+public func main() returns int {
+    let empty_builder = string.builder_new(0)
+    if string.builder_len(empty_builder) != 0 {
+        return 1
+    }
+    if string.builder_finish(empty_builder) != "" {
+        return 2
+    }
+
+    let report = string.builder_new(4)
+    string.builder_push(report, "id=")
+    string.builder_push(report, string.pad_left("7", 3, 48))
+    string.builder_push(report, ";state=")
+    string.builder_push(report, "ready")
+    if string.builder_len(report) != 18 {
+        return 3
+    }
+    let rendered = string.builder_finish(report)
+    if rendered != "id=007;state=ready" {
+        return 4
+    }
+
+    let fields = string.split_by(rendered, ";")
+    if collections.list_len(fields) != 2 {
+        return 5
+    }
+    let first = collections.list_get_option(fields, 0)
+    let second = collections.list_get_option(fields, 1)
+    if option.is_none(first) or option.option_unwrap(first) != "id=007" {
+        return 6
+    }
+    if option.is_none(second) or option.option_unwrap(second) != "state=ready" {
+        return 7
+    }
+    if string.split_first(rendered, "=") != "id" or string.split_last(rendered, "=") != "ready" {
+        return 8
+    }
+    if string.count_occurrences(rendered, "=") != 2 {
+        return 9
+    }
+    if string.repeat_str("-", 3) != "---" or string.is_empty("") != true {
+        return 10
+    }
+    if string.pad_right("ok", 5, 46) != "ok..." or string.eq(string.reverse_str("abc"), "cba") != true {
+        return 11
+    }
+
+    let discarded = string.builder_new(8)
+    string.builder_push(discarded, "discarded")
+    string.builder_free(discarded)
+    collections.list_free(fields)
+    return 0
+}

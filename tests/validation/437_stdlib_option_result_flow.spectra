@@ -1,0 +1,56 @@
+module stdlib_option_result_flow
+
+// Contract: Option/Result transforms call the closure only on the matching
+// variant and preserve the untouched payload on the other variant.
+
+import std.convert as convert
+import std.option as option
+import std.result as result
+import std.string as string
+
+public func main() returns int {
+    let some: Option<int> = Option::Some(5)
+    let mapped_some: Option<string> = option.option_map(
+        some,
+        |value: int| convert.int_to_string(value * 3)
+    )
+    if option.is_none(mapped_some) or option.option_unwrap(mapped_some) != "15" {
+        return 1
+    }
+
+    let none: Option<int> = Option::None
+    let mapped_none: Option<string> = option.option_map(
+        none,
+        |value: int| convert.int_to_string(value + 1)
+    )
+    if option.is_some(mapped_none) {
+        return 2
+    }
+
+    let ok: Result<int, string> = Result::Ok(9)
+    let mapped_ok: Result<string, string> = result.result_map(
+        ok,
+        |value: int| string.concat("ok:", convert.int_to_string(value))
+    )
+    if result.is_err(mapped_ok) or result.result_unwrap(mapped_ok) != "ok:9" {
+        return 3
+    }
+
+    let err: Result<int, string> = Result::Err("bad input")
+    let mapped_err: Result<string, string> = result.result_map(
+        err,
+        |value: int| convert.int_to_string(value)
+    )
+    if result.is_ok(mapped_err) or result.result_unwrap_err(mapped_err) != "bad input" {
+        return 4
+    }
+
+    let relabeled: Result<int, int> = result.result_map_err(
+        err,
+        |message: string| string.len(message)
+    )
+    if result.is_ok(relabeled) or result.result_unwrap_err(relabeled) != 9 {
+        return 5
+    }
+    return 0
+}

@@ -1,0 +1,34 @@
+module validation_458_stdlib_tensor_views
+
+// Contract: tensor shape metadata and view composition stay coherent.
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    let base = tensor.arange(-2, 4, 1)
+    let matrix = tensor.reshape(base, 2, 3)
+    let transposed = tensor.transpose(matrix)
+    if tensor.rows(transposed) != 3 or tensor.cols(transposed) != 2 {
+        return 1
+    }
+    if tensor.get2(transposed, 1, 0) != -1 or tensor.get2(transposed, 2, 1) != 3 {
+        return 2
+    }
+    let window = tensor.slice(base, 1, 5)
+    if tensor.len(window) != 4 or tensor.sum(window) != 2 {
+        return 3
+    }
+
+    let first = tensor.arange(10, 12, 1)
+    let second = tensor.arange(12, 14, 1)
+    let combined = tensor.concat(first, second)
+    if tensor.sum(combined) != 46 or tensor.argmax(combined) != 3 {
+        return 4
+    }
+    let stacked = tensor.stack(tensor.reshape(first, 1, 2), tensor.reshape(second, 1, 2))
+    if tensor.rank(stacked) != 3 or tensor.dim(stacked, 0) != 2 or tensor.get(stacked, 3) != 13 {
+        return 5
+    }
+    tensor.free_all()
+    return 0
+}

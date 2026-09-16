@@ -1,0 +1,54 @@
+module stdlib_ml_artifact_roundtrip
+
+import std.fs as fs
+import std.io as io
+import std.ml as ml
+import std.tensor as tensor
+
+const PATH = "target/stdlib-examples/artifacts/weights.spar"
+
+public func main() returns int {
+    tensor.free_all()
+    let weights = tensor.full_f(6, 1.5)
+    let bias = tensor.full_f(2, -0.25)
+    let artifact = ml.artifact_new("stdlib-weights", "v1", "checkpoint")
+    if artifact == 0 {
+        return 1
+    }
+    if !ml.artifact_set_metadata(artifact, "framework", "spectralang") {
+        return 2
+    }
+    if !ml.artifact_set_metadata(artifact, "purpose", "stdlib-example") {
+        return 3
+    }
+    if !ml.artifact_add_tensor(artifact, "weights", weights) or !ml.artifact_add_tensor(artifact, "bias", bias) {
+        return 4
+    }
+    if !ml.artifact_save(artifact, PATH) or !ml.artifact_validate(PATH) {
+        return 5
+    }
+
+    let loaded = ml.artifact_load(PATH)
+    if loaded == 0 or ml.artifact_metadata(loaded, "framework") != "spectralang" {
+        return 6
+    }
+    let loaded_weights = ml.artifact_tensor(loaded, "weights")
+    let loaded_bias = ml.artifact_tensor(loaded, "bias")
+    if loaded_weights == 0 or loaded_bias == 0 {
+        return 7
+    }
+    if tensor.len(loaded_weights) != 6 or tensor.get_f(loaded_weights, 0) as int != 1 {
+        return 8
+    }
+    if tensor.len(loaded_bias) != 2 or tensor.get_f(loaded_bias, 0) as int != 0 {
+        return 9
+    }
+
+    ml.artifact_free(loaded)
+    ml.artifact_free(artifact)
+    fs.fs_remove(PATH)
+    fs.remove_dir("target/stdlib-examples/artifacts")
+    tensor.free_all()
+    io.println("ml artifact -> metadata tensor save load validate")
+    return 0
+}

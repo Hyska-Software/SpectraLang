@@ -749,6 +749,7 @@ pub(crate) fn register_ml() {
         ML_DISTRIBUTED_SESSION_START,
         std_ml_distributed_session_start,
     );
+    register_host_function(ML_DISTRIBUTED_WORKER_STEP, std_ml_distributed_worker_step);
     register_host_function(ML_DISTRIBUTED_GLOBAL_STEP, std_ml_distributed_global_step);
     register_host_function(
         ML_DISTRIBUTED_WORKER_STEP_COUNT,

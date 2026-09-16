@@ -1,0 +1,40 @@
+module validation_459_stdlib_tensor_determinism
+
+// Contract: seeded tensor distributions are reproducible and policy metadata is positive.
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    if tensor.set_deterministic_mode(1) != 0 {
+        return 1
+    }
+    tensor.seed(459)
+    let first = tensor.uniform(6, 0, 50)
+    let first_float = tensor.uniform_f(2, -1.0, 1.0)
+    tensor.seed(459)
+    let second = tensor.uniform(6, 0, 50)
+    let second_float = tensor.uniform_f(2, -1.0, 1.0)
+    let index = 0
+    while index < 6 {
+        if tensor.get(first, index) != tensor.get(second, index) {
+            return 2
+        }
+        index = index + 1
+    }
+    if tensor.get_f(first_float, 0) != tensor.get_f(second_float, 0) or tensor.get_f(first_float, 1) != tensor.get_f(second_float, 1) {
+        return 3
+    }
+    let zeros = tensor.bernoulli(3, 0.0)
+    let weights = tensor.full(4, 0)
+    tensor.set(weights, 1, 1)
+    let samples = tensor.categorical(3, weights)
+    if tensor.sum(zeros) != 0 or tensor.sum(samples) != 3 {
+        return 4
+    }
+    if tensor.deterministic_mode() != 1 or tensor.tolerance_abs() <= 0.0 or tensor.tolerance_rel() <= 0.0 {
+        return 5
+    }
+    tensor.set_deterministic_mode(0)
+    tensor.free_all()
+    return 0
+}

@@ -1,0 +1,46 @@
+module stdlib_error_recovery
+
+// Contract: std.error is the structured error boundary for std.fs failures;
+// accessors expose stable fields and Result helpers preserve successful
+// absence checks without sentinel values.
+
+from std.error import ErrorCode
+import std.error as error
+import std.fs as fs
+import std.result as result
+
+public func main() returns int {
+    let created = error.new(
+        ErrorCode::Io,
+        "disk unavailable",
+        "fs_read",
+        "data.txt",
+        "fixture-439",
+        true
+    )
+    if error.code(created) != 3 or error.message(created) != "disk unavailable" {
+        return 1
+    }
+    if error.operation(created) != "fs_read" or error.context(created) != "data.txt" {
+        return 2
+    }
+    if error.origin(created) != "fixture-439" or error.retryable(created) != true {
+        return 3
+    }
+
+    let invalid = fs.fs_read("")
+    if let Result::Ok(_content) = invalid {
+        return 4
+    }
+    if let Result::Err(problem) = invalid {
+        if error.code(problem) != 0 or error.operation(problem) != "fs_read" {
+            return 5
+        }
+    }
+
+    let missing = fs.fs_exists("target/stdlib-validation/no-such-file")
+    if result.is_err(missing) or result.result_unwrap(missing) != false {
+        return 6
+    }
+    return 0
+}

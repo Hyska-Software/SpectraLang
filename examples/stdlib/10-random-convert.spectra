@@ -1,0 +1,58 @@
+module stdlib_random_convert
+
+import std.convert as convert
+import std.math as math
+import std.random as random
+
+public func main() returns int {
+    random.random_seed(0)
+    let zero_seed_value = random.random_int(4, 12)
+    random.random_seed(0)
+    if random.random_int(4, 12) != zero_seed_value {
+        return 1
+    }
+    if random.random_int(7, 7) != 7 or random.random_int(9, 3) != 9 {
+        return 2
+    }
+
+    random.random_seed(20260915)
+    let first = random.random_int(-4, 5)
+    let second = random.random_int(-4, 5)
+    let fraction = random.random_float()
+    let flag = random.random_bool()
+    if first < -4 or first >= 5 or second < -4 or second >= 5 {
+        return 3
+    }
+    if fraction < 0.0 or fraction >= 1.0 or (flag != true and flag != false) {
+        return 4
+    }
+
+    random.random_seed(20260915)
+    if random.random_int(-4, 5) != first or random.random_int(-4, 5) != second {
+        return 5
+    }
+    if random.random_float() != fraction or random.random_bool() != flag {
+        return 6
+    }
+
+    let encoded = convert.int_to_string(first)
+    if convert.string_to_int(encoded) != first {
+        return 7
+    }
+    if convert.string_to_float("3.25") != 3.25 or convert.string_to_float_or("oops", -1.5) != -1.5 {
+        return 8
+    }
+    if convert.string_to_bool(" TRUE ") != true or convert.string_to_bool("yes") != false {
+        return 9
+    }
+    if convert.bool_to_int(true) != 1 or convert.float_to_int(-3.9) != -3 {
+        return 10
+    }
+    if math.gcd(84, 30) != 6 or math.lcm(4, 6) != 12 or math.clamp(99, 0, 10) != 10 {
+        return 11
+    }
+    if math.abs_f(-2.5) != 2.5 or math.floor_f(2.9) != 2.0 or math.ceil_f(-2.1) != -2.0 {
+        return 12
+    }
+    return 0
+}

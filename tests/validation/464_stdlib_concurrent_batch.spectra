@@ -1,0 +1,43 @@
+module validation_464_stdlib_concurrent_batch
+
+// Contract: batch joins, FIFO channels, counters, and reset expose stable state.
+import std.concurrent as concurrent
+
+public func main() returns int {
+    concurrent.reset()
+    let batch = concurrent.task_spawn_batch(20, 3)
+    if concurrent.task_join_batch_sum(batch) != 63 {
+        return 1
+    }
+    if concurrent.stats_tasks_spawned() != 3 {
+        return 2
+    }
+
+    let channel = concurrent.channel_new()
+    if concurrent.channel_send(channel, -7) != true or concurrent.channel_send(channel, 8) != true {
+        return 3
+    }
+    if concurrent.channel_len(channel) != 2 or concurrent.channel_recv(channel) != -7 {
+        return 4
+    }
+    if concurrent.channel_recv(channel) != 8 or concurrent.channel_len(channel) != 0 {
+        return 5
+    }
+    concurrent.channel_close(channel)
+    if concurrent.channel_send(channel, 9) != false {
+        return 6
+    }
+
+    let counter = concurrent.counter_new(-5)
+    if concurrent.counter_add(counter, 12) != 7 or concurrent.counter_get(counter) != 7 {
+        return 7
+    }
+    if concurrent.pipeline_sum(2, 4, 9) != 14 {
+        return 8
+    }
+    concurrent.reset()
+    if concurrent.stats_tasks_spawned() != 0 or concurrent.stats_channels() != 0 {
+        return 9
+    }
+    return 0
+}

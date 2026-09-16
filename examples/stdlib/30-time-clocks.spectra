@@ -1,0 +1,47 @@
+module stdlib_time_clocks
+
+import std.io as io
+import std.time as time
+
+public func main() returns int {
+    let wall_ms = time.time_now_millis()
+    let wall_secs = time.time_now_secs()
+    if wall_ms < 0 or wall_secs < 0 or wall_ms / 1000 < wall_secs - 1 or wall_secs < wall_ms / 1000 {
+        return 1
+    }
+
+    let monotonic_before = time.monotonic_millis()
+    let nanos_before = time.monotonic_nanos()
+    time.sleep_ms(0)
+    let monotonic_after = time.monotonic_millis()
+    let nanos_after = time.monotonic_nanos()
+    if monotonic_after < monotonic_before or nanos_after < nanos_before {
+        return 2
+    }
+
+    let short = time.duration_ms(2500)
+    let long = time.duration_secs(3)
+    let total = time.duration_add(short, long)
+    let remainder = time.duration_sub(total, short)
+    if time.duration_millis(short) != 2500 or time.duration_secs_value(short) != 2 {
+        return 3
+    }
+    if time.duration_millis(total) != 5500 or time.duration_millis(remainder) != 3000 {
+        return 4
+    }
+
+    let instant = time.instant_now()
+    if time.instant_elapsed_ms(instant) < 0 {
+        return 5
+    }
+    let future = time.instant_add(instant, time.duration_ms(1000))
+    if time.instant_has_elapsed(future) != false {
+        return 6
+    }
+    let leap_day = time.unix_to_utc(1582934400)
+    if time.utc_year(leap_day) != 2020 or time.utc_month(leap_day) != 2 or time.utc_day(leap_day) != 29 {
+        return 7
+    }
+    io.println("time clocks -> monotonic duration instant UTC")
+    return 0
+}

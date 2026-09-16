@@ -38,3 +38,60 @@
 8. Run crate tests, JIT/AOT examples, and the full certification gate.
 
 Parallelism: examples whose source trees are independent may be authored together; implementation fixes and gate registration are serialized after the first reproducer result. Validation runs only after all edits are complete.
+
+## Follow-up Slice
+
+**Intent:** Extend the verified `std.agent` corpus beyond the first 42 examples
+with consumer-facing coverage for remote tools in the model-driven loop, stream
+ownership after run teardown, and concurrent live runs.
+**Current Behavior:** These boundaries exist in runtime tests or fixtures but
+are not all represented by runnable projects in `examples/agent`; remote
+descriptor cleanup is covered only indirectly by the first isolation scenario.
+**Expected Outcome:** Add examples `43..45` and fixtures `433..435`, register
+them in R-3221, and preserve JIT/AOT parity without adding another execution
+path.
+**Target-Perspective Output:** Contributors can run the remote `act`/A2A card,
+post-run stream, and concurrent-run examples with deterministic output; each
+fixture fails on a boundary regression.
+**Truth Owner:** `packages/spectra-agent` owns runtime behavior; the compiler
+owns generated tool wrappers; the R-3221 script owns registration and execution
+of the artifacts.
+**Contract Boundary:** The examples cross the existing `std.agent` host ABI
+through `mcp_connect`, `a2a_card`, `act`, `ask_stream`, `stream_next`,
+`stream_close`, `agent_start`, `agent_end`, and `tool_call`.
+**Cutover:** Extend the current example/fixture maps and documentation only;
+reuse the existing registry, provider, and gate paths.
+**Value Density:** Each addition covers a different boundary: remote discovery
+must feed both protocol metadata and model tool calls; streams must outlive
+their owner run; two live runs must retain independent counters and handles.
+**Acceptance Evidence:** New artifacts pass in JIT and AOT under R-3221; the
+remote fixture proves an overlapping run cannot inherit a descriptor and that
+the descriptor disappears after its last discovering handle ends.
+**Evidence Lane:** Direct JIT/AOT runs, `cargo test -p spectra-agent`, and
+`python scripts/validate_r3221_agent_conformance.py --jobs 1`.
+**Kill Criteria:** Do not duplicate an existing example without a new
+consumer-visible boundary; do not weaken run or stream handle ownership to make
+the scenarios pass.
+**Non-goals:** No new public host-call signatures, providers, protocols, or
+roadmap changes.
+**Architecture Slice:** Create `examples/agent/43-remote-act-and-card/**`,
+`44-stream-after-run-end/**`, `45-concurrent-runs/**` and
+`tests/validation/433_agent_remote_act.spectra` through
+`435_agent_concurrent_runs.spectra`; modify the R-3221 maps and the two agent
+documentation indexes; avoid generated outputs and unrelated formatting.
+**Acceptance evidence gate:** The final R-3221 report contains all three new
+examples and fixtures with both modes passed, and no new scenario leaves a live
+handle or descriptor behind.
+
+**Plan Review Gate:** Requires PRE review before execution. Self-review:
+ownership, cutover, boundary contracts, and the serial evidence lane are
+explicit; the slice reuses existing paths and has no unresolved blocker.
+
+### Follow-up Tasks
+
+1. Add examples 43 through 45 with deterministic assertions.
+2. Add fixtures 433 through 435 with distinct boundary checks.
+3. Run the new scenarios and investigate any failure before changing runtime
+   code.
+4. Document and correct any reproduced implementation defect.
+5. Register, validate, and document the follow-up artifacts.

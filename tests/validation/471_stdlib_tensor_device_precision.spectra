@@ -1,0 +1,18 @@
+module validation_stdlib_tensor_device_precision
+
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    let source = tensor.full_f(2, 2.0)
+    if tensor.device_available(0) != true or tensor.device_status(0) != 0 {
+        return 1
+    }
+    let converted = tensor.to_precision(source, 1)
+    if tensor.precision(converted) != 1 or tensor.get_f(converted, 1) as int != 2 {
+        return 2
+    }
+    tensor.sync(converted)
+    tensor.free_all()
+    return 0
+}

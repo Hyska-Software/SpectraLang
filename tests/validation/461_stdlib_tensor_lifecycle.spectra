@@ -1,0 +1,30 @@
+module validation_461_stdlib_tensor_lifecycle
+
+// Contract: tensor allocation metrics remain observable after explicit release.
+import std.string as string
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.reset_stats()
+    let source = tensor.full_f(8, 3.0)
+    let result = tensor.relu(source)
+    tensor.free(result)
+    tensor.free(source)
+    let replacement = tensor.full_f(8, 4.0)
+    if tensor.stats_pool_hits() <= 0 {
+        return 1
+    }
+    tensor.free(replacement)
+    if tensor.stats_lifetime_records() < 3 or tensor.stats_released_lifetimes() < 2 {
+        return 2
+    }
+    if tensor.stats_allocations() <= 0 or tensor.stats_kernel_ops() <= 0 {
+        return 3
+    }
+    if string.len(tensor.memory_report()) < 200 {
+        return 4
+    }
+    tensor.free_all()
+    return 0
+}

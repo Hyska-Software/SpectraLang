@@ -1,0 +1,55 @@
+module stdlib_unicode_text_validation
+
+import std.char as char
+import std.collections as collections
+import std.option as option
+import std.string as string
+
+public func main() returns int {
+    let word = "ação"
+    if string.len(word) != 6 {
+        return 1
+    }
+    if string.index_of(word, "ã") != 3 {
+        return 2
+    }
+    if string.substring(word, 1, 6) != "ção" {
+        return 3
+    }
+    if string.reverse_str(word) != "oãça" {
+        return 4
+    }
+    if string.to_upper(word) != "AÇÃO" or string.to_lower("AÇÃO") != word {
+        return 5
+    }
+    if string.replace(word, "ã", "õ") != "açõo" {
+        return 6
+    }
+    if string.char_at("café", 2) != 102 {
+        return 7
+    }
+
+    if char.is_alpha(233) != true or char.is_alphanumeric(233) != true {
+        return 8
+    }
+    if char.is_digit_char(57) != true or char.is_digit_char(233) != false {
+        return 9
+    }
+    if char.is_whitespace_char(9) != true or char.is_whitespace_char(97) != false {
+        return 10
+    }
+    if char.to_upper_char(225) != 193 or char.to_lower_char(193) != 225 {
+        return 11
+    }
+
+    let parts = string.split_by("café|ação|fim", "|")
+    if collections.list_len(parts) != 3 {
+        return 12
+    }
+    let middle = collections.list_get_option(parts, 1)
+    if option.is_none(middle) or option.option_unwrap(middle) != "ação" {
+        return 13
+    }
+    collections.list_free(parts)
+    return 0
+}

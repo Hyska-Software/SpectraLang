@@ -1,0 +1,62 @@
+module stdlib_collections_snapshot
+
+// Contract: list, set, and map iterators capture deterministic snapshots.
+// Mutating the source collection after iterator creation must not alter the
+// iterator's remaining values or its ownership.
+
+from std.collections import Iterator, List, Map, Set
+import std.collections as collections
+import std.option as option
+
+func take_two(values: Iterator<int>) returns int {
+    let first = collections.iterator_next(values)
+    let second = collections.iterator_next(values)
+    if option.is_none(first) or option.is_none(second) {
+        return -1
+    }
+    if option.option_unwrap(first) != 10 or option.option_unwrap(second) != 20 {
+        return -2
+    }
+    if collections.iterator_remaining(values) != 0 {
+        return -3
+    }
+    collections.iterator_free(values)
+    return 0
+}
+
+public func main() returns int {
+    let list: List<int> = collections.list_new()
+    collections.list_push(list, 10)
+    collections.list_push(list, 20)
+    let snapshot: Iterator<int> = collections.list_iter(list)
+    collections.list_push(list, 30)
+    if take_two(snapshot) != 0 or collections.list_len(list) != 3 {
+        return 1
+    }
+
+    let set: Set<int> = collections.set_new()
+    collections.set_insert(set, 3)
+    collections.set_insert(set, 5)
+    let set_snapshot: Iterator<int> = collections.set_iter(set)
+    collections.set_remove(set, 3)
+    let old_first = collections.iterator_next(set_snapshot)
+    if option.is_none(old_first) or option.option_unwrap(old_first) != 3 {
+        return 2
+    }
+    collections.iterator_free(set_snapshot)
+
+    let map: Map<int, int> = collections.map_new()
+    collections.map_set(map, 4, 40)
+    collections.map_set(map, 8, 80)
+    let map_snapshot: Iterator<int> = collections.map_iter(map)
+    collections.map_set(map, 12, 120)
+    if collections.iterator_remaining(map_snapshot) != 2 {
+        return 3
+    }
+    collections.iterator_free(map_snapshot)
+
+    collections.list_free(list)
+    collections.set_free(set)
+    collections.map_free(map)
+    return 0
+}

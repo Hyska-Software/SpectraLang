@@ -1,0 +1,108 @@
+module agent_remote_act
+
+// Contract: a remote MCP descriptor is visible to its discovering run's act
+// loop and A2A card, but overlapping runs do not inherit it; ending the last
+// discovering run removes it from the process-local registry.
+
+import std.agent
+import std.error as error
+import std.string as str
+
+#[derive(Serialize, Deserialize)]
+public record AddArgs {
+    a: int,
+    b: int,
+}
+
+#[agent_tool("Adds two integers")]
+public async func add(run: Run, args: AddArgs) returns int {
+    return args.a + args.b
+}
+
+func spec(goal: string, allow: string) returns string {
+    return "{\"goal\":\"" + goal + "\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":" + allow + ",\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"allow\",\"seed\":433,\"journal\":\"\"}"
+}
+
+func remote_name(authority: string) returns string {
+    let namespace = str.replace(str.replace(authority, ".", "_"), ":", "_")
+    return "mcp__" + namespace + "__add"
+}
+
+async func verify() returns int {
+    let first = agent_start(spec("fixture-433-source", "[\"mcp\"]"))
+    if let Result::Ok(run) = first {
+        let served = mcp_serve(run, "127.0.0.1:0")
+        if let Result::Ok(authority) = served {
+            let discovered = await mcp_connect(run, "http://" + authority + "/mcp")
+            if let Result::Ok(document) = discovered {
+                if str.contains(document, "\"remoteName\":\"add\"") == false {
+                    return 2
+                }
+            } else {
+                return 3
+            }
+        } else {
+            return 1
+        }
+    } else {
+        return 4
+    }
+
+    // The source run stays live while this unrelated run is inspected.
+    let overlapping = agent_start(spec("fixture-433-overlap", "[]"))
+    if let Result::Ok(run) = overlapping {
+        let listed = mcp_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}")
+        if let Result::Ok(document) = listed {
+            if str.contains(document, "mcp__") {
+                return 5
+            }
+            if str.contains(document, "\"name\":\"add\"") == false {
+                return 6
+            }
+        } else {
+            return 7
+        }
+        let card = a2a_card(run, "{}")
+        if let Result::Ok(document) = card {
+            if str.contains(document, "mcp__") {
+                return 8
+            }
+        } else {
+            return 9
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 10
+        }
+    } else {
+        return 11
+    }
+
+    if let Result::Ok(run) = first {
+        if let Result::Err(_problem) = agent_end(run) {
+            return 12
+        }
+    }
+
+    // After the last discovering handle ends, no stale remote descriptor remains.
+    let final_run = agent_start(spec("fixture-433-final", "[]"))
+    if let Result::Ok(run) = final_run {
+        let listed = mcp_handle(run, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}")
+        if let Result::Ok(document) = listed {
+            if str.contains(document, "mcp__") {
+                return 13
+            }
+        } else {
+            return 14
+        }
+        if let Result::Err(_problem) = agent_end(run) {
+            return 15
+        }
+    } else {
+        return 16
+    }
+    return 0
+}
+
+public func main() returns int {
+    return block_on(verify())
+}

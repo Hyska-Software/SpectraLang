@@ -192,6 +192,33 @@ fn exported_type_signature(name: &str, exported: &ExportedType) -> String {
     }
 }
 
+fn exported_function_signature(
+    module_path: &str,
+    name: &str,
+    exported: &crate::semantic::module_registry::ExportedFunction,
+) -> String {
+    // The runtime consumes `server + 3*n` integer arguments for a chain of
+    // dense layers. Keep the fixed one-layer prefix visible in the generated
+    // catalog; semantic validation enforces the minimum and complete groups.
+    if module_path == "std.serve" && name == "server_register_model_linear" {
+        return format!(
+            "fn(int, int, int, int, ...int) -> {}",
+            contract_type(&exported.return_type)
+        );
+    }
+
+    format!(
+        "fn({}) -> {}",
+        exported
+            .params
+            .iter()
+            .map(contract_type)
+            .collect::<Vec<_>>()
+            .join(", "),
+        contract_type(&exported.return_type)
+    )
+}
+
 /// Extract the builtin semantic surface used by contract tooling.
 pub fn builtin_contract_symbols() -> Vec<BuiltinContractSymbol> {
     let mut registry = ModuleRegistry::new();
@@ -215,16 +242,7 @@ pub fn builtin_contract_symbols() -> Vec<BuiltinContractSymbol> {
             symbols.push(BuiltinContractSymbol {
                 path: format!("{module_path}.{name}"),
                 kind: "function",
-                signature: format!(
-                    "fn({}) -> {}",
-                    exported
-                        .params
-                        .iter()
-                        .map(contract_type)
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    contract_type(&exported.return_type)
-                ),
+                signature: exported_function_signature(module_path, name, exported),
             });
         }
     }

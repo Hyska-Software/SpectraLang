@@ -1,0 +1,37 @@
+module stdlib_collection_hof
+
+from std.collections import List
+import std.collections as collections
+import std.io as io
+import std.option as option
+
+public func main() returns int {
+    let values: List<int> = collections.list_new()
+    collections.list_push(values, 1)
+    collections.list_push(values, 3)
+    collections.list_push(values, 5)
+    collections.list_push(values, 7)
+
+    let squares = collections.list_map(values, | value: int | value * value)
+    let odd_squares = collections.list_filter(squares, | value: int | value % 2 != 0)
+    let total = collections.list_reduce(odd_squares, 0, | acc: int, value: int | acc + value)
+    if total != 84 or collections.list_len(odd_squares) != 4 {
+        return 1
+    }
+
+    collections.list_sort_by(squares, | left: int, right: int | left - right)
+    let smallest = collections.list_get(squares, 0)
+    let largest = collections.list_get(squares, 3)
+    if option.is_none(smallest) or option.option_unwrap(smallest) != 1 {
+        return 2
+    }
+    if option.is_none(largest) or option.option_unwrap(largest) != 49 {
+        return 3
+    }
+
+    io.println("collection HOF -> map filter reduce sort_by")
+    collections.list_free(values)
+    collections.list_free(squares)
+    collections.list_free(odd_squares)
+    return 0
+}

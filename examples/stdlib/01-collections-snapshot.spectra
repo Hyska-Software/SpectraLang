@@ -1,0 +1,58 @@
+module stdlib_collections_snapshot
+
+from std.collections import Iterator, List, Map, Set
+import std.collections as collections
+import std.io as io
+import std.option as option
+import std.convert as convert
+
+func sum_iterator(values: Iterator<int>) returns int {
+    let total = 0
+    for value in values {
+        total = total + value
+    }
+    collections.iterator_free(values)
+    return total
+}
+
+public func main() returns int {
+    let numbers: List<int> = collections.list_new()
+    collections.list_push(numbers, 2)
+    collections.list_push(numbers, 4)
+
+    // Iterators are snapshots: later mutations do not change their cursor.
+    let list_snapshot: Iterator<int> = collections.list_iter(numbers)
+    collections.list_push(numbers, 8)
+    if collections.iterator_remaining(list_snapshot) != 2 {
+        return 1
+    }
+    if sum_iterator(list_snapshot) != 6 or collections.list_len(numbers) != 3 {
+        return 2
+    }
+
+    let unique: Set<int> = collections.set_new()
+    collections.set_insert(unique, 4)
+    collections.set_insert(unique, 7)
+    let set_snapshot: Iterator<int> = collections.set_iter(unique)
+    if collections.set_remove(unique, 4) != true {
+        return 3
+    }
+    if sum_iterator(set_snapshot) != 11 or collections.set_len(unique) != 1 {
+        return 4
+    }
+
+    let scores: Map<int, int> = collections.map_new()
+    collections.map_set(scores, 2, 20)
+    collections.map_set(scores, 5, 50)
+    let map_snapshot: Iterator<int> = collections.map_iter(scores)
+    collections.map_set(scores, 9, 90)
+    if sum_iterator(map_snapshot) != 7 or collections.map_len(scores) != 3 {
+        return 5
+    }
+
+    io.println("snapshot sum=" + convert.int_to_string(collections.map_len(scores)))
+    collections.list_free(numbers)
+    collections.set_free(unique)
+    collections.map_free(scores)
+    return 0
+}

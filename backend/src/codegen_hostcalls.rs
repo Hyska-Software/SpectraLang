@@ -186,8 +186,27 @@ impl CodeGenerator {
         }
     }
 
-    fn host_argument_to_i64(builder: &mut FunctionBuilder, value: Value) -> BackendResult<Value> {        Ok(match builder.func.dfg.value_type(value) {
+    fn host_uses_unsigned_numeric_args(host: &str) -> bool {
+        let Some(function) = host.strip_prefix("spectra.std.numeric.") else {
+            return false;
+        };
+        matches!(
+            function.rsplit('_').next(),
+            Some("u8" | "u16" | "u32" | "u64")
+        )
+    }
+
+    fn host_argument_to_i64(
+        builder: &mut FunctionBuilder,
+        value: Value,
+        host: &str,
+    ) -> BackendResult<Value> {
+        let unsigned_numeric = Self::host_uses_unsigned_numeric_args(host);
+        Ok(match builder.func.dfg.value_type(value) {
             types::I64 => value,
+            types::I8 | types::I16 | types::I32 if unsigned_numeric => {
+                builder.ins().uextend(types::I64, value)
+            }
             types::I8 | types::I16 | types::I32 => builder.ins().sextend(types::I64, value),
             types::F64 => builder.ins().bitcast(types::I64, MemFlags::new(), value),
             types::F32 => {
@@ -378,7 +397,7 @@ impl CodeGenerator {
                 .iconst(types::I64, i64::from(result.is_some()));
 
             for (arg_index, arg) in args.iter().enumerate() {
-                let value = Self::host_argument_to_i64(builder, get_value(arg)?)?;
+                let value = Self::host_argument_to_i64(builder, get_value(arg)?, host)?;
                 builder.ins().store(
                     MemFlags::new(),
                     value,

@@ -1,0 +1,56 @@
+module stdlib_collection_mutation
+
+from std.collections import List
+import std.collections as collections
+import std.io as io
+import std.option as option
+
+public func main() returns int {
+    let values: List<int> = collections.list_new()
+    collections.list_push(values, 5)
+    collections.list_push(values, 2)
+    collections.list_push(values, 9)
+    collections.list_insert_at(values, 1, 7)
+    collections.list_set(values, 0, 3)
+
+    if collections.list_len(values) != 4 or collections.list_index_of(values, 7) != 1 {
+        return 1
+    }
+    if collections.list_contains(values, 3) != true or collections.list_contains(values, 5) != false {
+        return 2
+    }
+
+    collections.list_sort(values)
+    let first = collections.list_get(values, 0)
+    let last = collections.list_get(values, 3)
+    if option.is_none(first) or option.option_unwrap(first) != 2 {
+        return 3
+    }
+    if option.is_none(last) or option.option_unwrap(last) != 9 {
+        return 4
+    }
+
+    let removed_last = collections.list_pop(values)
+    if option.is_none(removed_last) or option.option_unwrap(removed_last) != 9 {
+        return 5
+    }
+    let removed_first = collections.list_pop_front(values)
+    if option.is_none(removed_first) or option.option_unwrap(removed_first) != 2 {
+        return 6
+    }
+    let removed_middle = collections.list_remove_at(values, 0)
+    if option.is_none(removed_middle) or option.option_unwrap(removed_middle) != 3 {
+        return 7
+    }
+    if collections.list_len(values) != 1 {
+        return 8
+    }
+
+    collections.list_clear(values)
+    if collections.list_len(values) != 0 or option.is_some(collections.list_pop(values)) {
+        return 9
+    }
+    io.println("list mutation -> insert sort pop clear")
+    collections.list_free(values)
+    return 0
+}

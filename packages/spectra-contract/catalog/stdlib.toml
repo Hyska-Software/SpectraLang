@@ -19571,8 +19571,8 @@ fixture = "tests/validation/78_serving_foundations.spectra"
 path = "std.serve.server_register_model_linear"
 kind = "function"
 namespace = "std.serve"
-signature = "fn(int, int, int, int) -> int"
-params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }, { name = "arg2", ty = "int" }, { name = "arg3", ty = "int" }]
+signature = "fn(int, int, int, int, ...int) -> int"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }, { name = "arg2", ty = "int" }, { name = "arg3", ty = "int" }, { name = "arg4", ty = "...int" }]
 returns = "int"
 ir_return = "int"
 returns_value = true

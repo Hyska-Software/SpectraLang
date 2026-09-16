@@ -15,9 +15,9 @@ The checks run in order, stopping at the first failure:
       runs all of them;
   (d) surface determinism: two `spectralang surface --json` runs over
       `tests/projects/valid/integrated_agent_service` are byte-identical;
-  (e) every runnable example (`examples/agent/01..42`) in JIT and AOT
+  (e) every runnable example (`examples/agent/01..45`) in JIT and AOT
       (`compile --debug-info=none --emit-exe`, then execute);
-  (f) the verification fixtures (`tests/validation/384..432`) in JIT and AOT --
+  (f) the verification fixtures (`tests/validation/384..435`) in JIT and AOT --
       the language-surface contracts for streaming lifecycle, run-level grant
       enforcement, the journal artifact and run introspection, the aggregate-
       result lifetime regression, the dead-run guard matrix, spec rejection,
@@ -30,7 +30,8 @@ The checks run in order, stopping at the first failure:
       decisions, cost ceilings, unsafe run identities, corrupt journals,
       stream replay, boolean schemas, enum payloads, nested compensation,
       remote MCP errors, A2A idempotency, remote-tool run isolation, empty
-      streams, A2A card defaults and escaped Unicode payloads;
+      streams, A2A card defaults, escaped Unicode payloads, remote model-loop
+      dispatch, post-run stream ownership and concurrent runs;
   (g) the integrated-project validator
       (`scripts/validate_r3221_integrated_agent_service.py`).
 
@@ -134,6 +135,9 @@ EXAMPLES = {
     "40-empty-stream-boundary": "examples/agent/40-empty-stream-boundary",
     "41-a2a-card-defaults": "examples/agent/41-a2a-card-defaults",
     "42-unicode-tool-payload": "examples/agent/42-unicode-tool-payload",
+    "43-remote-act-and-card": "examples/agent/43-remote-act-and-card",
+    "44-stream-after-run-end": "examples/agent/44-stream-after-run-end",
+    "45-concurrent-runs": "examples/agent/45-concurrent-runs",
 }
 
 # The language-surface contracts that back the example set: the streaming
@@ -190,6 +194,9 @@ VERIFICATION_FIXTURES = {
     "empty_stream": "tests/validation/430_agent_empty_stream.spectra",
     "a2a_card_defaults": "tests/validation/431_agent_a2a_card_defaults.spectra",
     "unicode_tool_payload": "tests/validation/432_agent_unicode_tool_payload.spectra",
+    "remote_act": "tests/validation/433_agent_remote_act.spectra",
+    "stream_after_run": "tests/validation/434_agent_stream_after_run.spectra",
+    "concurrent_runs_followup": "tests/validation/435_agent_concurrent_runs.spectra",
 }
 
 CARGO = os.environ.get("CARGO") or shutil.which("cargo") or "cargo"

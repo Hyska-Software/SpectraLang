@@ -14,6 +14,60 @@ Demonstrações gerais da linguagem e fixtures de regressão históricas:
 - `type_system_demo.spectra`, `traits_demo.spectra` — sistema de tipos e traits
 - `test_*.spectra` — micro-exemplos históricos de construtos específicos
 
+## examples/stdlib — biblioteca padrão
+
+Quarenta e cinco exemplos executáveis que exercitam as APIs `std.*`; cada um
+tem um fixture correspondente em `tests/validation/436_stdlib_collections_snapshot.spectra`
+até `tests/validation/480_stdlib_serve_named_model.spectra`.
+
+| Arquivo | O que demonstra |
+|---|---|
+| `01-collections-snapshot.spectra` | snapshots de `List`, `Map`, `Set` e `Iterator` |
+| `02-option-result-flow.spectra` | transformação e propagação de `Option`/`Result` |
+| `03-filesystem-tree.spectra` | criação, listagem, rename, cópia e limpeza de arquivos |
+| `04-error-recovery.spectra` | `Error`, códigos, contexto e recuperação de falhas |
+| `05-environment-options.spectra` | variáveis de ambiente, argumentos e opções |
+| `06-typed-collections.spectra` | coleções genéricas tipadas e acesso opcional |
+| `07-unicode-text.spectra` | texto UTF-8, caracteres e limites de substring |
+| `08-string-builder-report.spectra` | `StringBuilder`, padding, repetição e relatórios |
+| `09-range-iterator.spectra` | ranges inclusivos/exclusivos e exaustão de iterador |
+| `10-random-convert.spectra` | aleatoriedade determinística e conversões |
+| `11-time-deadlines.spectra` | `Duration`, `Instant`, relógio e UTC |
+| `12-concurrent-fanout.spectra` | tasks, canais, contadores e pipeline concorrente |
+| `13-numeric-widths.spectra` | inteiros de largura exata e floats `f32`/`f64` |
+| `14-serve-lifecycle.spectra` | modelo linear multicamada, guardrails e monitoramento |
+| `15-standard-pipeline.spectra` | pipeline integrado de arquivo, texto, coleções e erros |
+| `16-text-normalizer.spectra` | normalização de texto, prefixos, caracteres e `Option` |
+| `17-math-geometry.spectra` | trigonometria, potências, logaritmos, arredondamento e inteiros |
+| `18-convert-config.spectra` | parsing com fallback e conversões de tipos |
+| `19-collection-mutation.spectra` | mutações de lista, ordenação, remoção e limpeza |
+| `20-collection-hof.spectra` | `map`, `filter`, `reduce` e `sort_by` com closures |
+| `21-map-set-lifecycle.spectra` | atualização, ausência, remoção e ciclo de vida de `Map`/`Set` |
+| `22-iterator-values.spectra` | consumo tipado, contagem restante e exaustão de iteradores |
+| `23-tensor-views.spectra` | reshape, transpose, slice, concat e stack |
+| `24-tensor-determinism.spectra` | RNG semeado, distribuições e política de tolerância |
+| `25-tensor-autodiff.spectra` | `requires_grad`, `backward`, gradientes e `zero_grad` |
+| `26-tensor-lifecycle.spectra` | reutilização de buffers, lifetimes e relatório de memória |
+| `27-ml-transformer-cache.spectra` | embedding, attention, KV-cache e sampling seeded |
+| `28-ml-dataset-module.spectra` | datasets tensor-backed, splits, dataloader e módulos |
+| `29-concurrent-batch.spectra` | batches, canais FIFO, contadores e reset |
+| `30-time-clocks.spectra` | clocks monotônicos, durações, instantes e UTC |
+| `31-char-classifier.spectra` | classificação de caracteres e composição de strings |
+| `32-string-search-report.spectra` | busca textual, índices e relatório formatado |
+| `33-filesystem-append-copy.spectra` | append, cópia, rename e erros estruturados de filesystem |
+| `34-numeric-checked.spectra` | conversões e aritmética numérica checked por largura |
+| `35-tensor-algebra.spectra` | reduções, `dot`, `matmul` e `matmul_batched` |
+| `36-tensor-device-precision.spectra` | residência CPU, `sync` e conversão de precisão |
+| `37-tensor-runtime-stats.spectra` | métricas de alocação, kernels, autograd e memória |
+| `38-ml-evaluation-report.spectra` | métricas ML e round-trip do relatório JSON |
+| `39-ml-artifact-roundtrip.spectra` | artefatos, metadados, tensores e validação persistida |
+| `40-ml-experiment-repro.spectra` | tracking, manifests reprodutíveis e comparação |
+| `41-ml-distributed-checkpoint.spectra` | passos de workers, checkpoint e resume distribuído |
+| `42-ml-tokenizer-training.spectra` | treinamento BPE/WordPiece, encode, decode e vocabulário |
+| `43-ml-vector-index.spectra` | índice HNSW, consulta, métricas e persistência |
+| `44-ml-optimizer-schedule.spectra` | gradiente escalado, SGD momentum, Adam, AdamW e schedule |
+| `45-serve-named-model.spectra` | inferência linear nomeada, vetor de resultado e monitoramento |
+
 ## examples/api — servidor HTTP e banco
 
 | Arquivo | O que demonstra |
@@ -87,6 +141,9 @@ rede), em JIT (`spectralang run`) e AOT (`compile --debug-info=none --emit-exe`)
 | `40-empty-stream-boundary` | stream vazio do provider, marcador de fim persistente e close idempotente |
 | `41-a2a-card-defaults` | defaults de identidade A2A, URL omitida e rejeição tipada de campo authored |
 | `42-unicode-tool-payload` | round-trip JSON derivado para Unicode, aspas, novas linhas e barras invertidas |
+| `43-remote-act-and-card` | ferramenta descoberta via MCP compartilhada pelo cartão A2A e pelo loop `act` |
+| `44-stream-after-run-end` | stream mantém seu buffer após `agent_end` e só libera o handle em `stream_close` |
+| `45-concurrent-runs` | duas runs vivas intercalam tools sem misturar contadores nem turnos do provider |
 
 Os contratos que os exemplos demonstram ficam fixados nos fixtures
 `tests/validation/384_agent_stream_lifecycle.spectra`,
@@ -144,5 +201,14 @@ descoberta MCP entre runs, o marcador de fim de stream vazio, defaults e
 validação de campos do cartão A2A e round-trip de payload JSON com escapes. O
 fixture 429 também protege contra a falha corrigida em que um descriptor remoto
 registrado por uma run contaminava o grant check de outra.
+
+Os fixtures `433_agent_remote_act.spectra`, `434_agent_stream_after_run.spectra`
+e `435_agent_concurrent_runs.spectra` fecham o follow-up com, respectivamente,
+descoberta remota compartilhada entre cartão A2A e `act`, ownership de stream
+após `agent_end` e isolamento de contadores/budget entre runs concorrentes.
+
+Os exemplos `43`–`45` ampliam a matriz para o caminho remoto orientado pelo
+modelo, a separação entre handles de run e stream e a atribuição de trabalho
+entre runs concorrentes.
 
 Ver `docs/book/11-agents.md`.

@@ -1,0 +1,56 @@
+module stdlib_text_normalizer
+
+import std.char as char
+import std.collections as collections
+import std.convert as convert
+import std.io as io
+import std.option as option
+import std.string as string
+
+func count_digits(text: string) returns int {
+    let count = 0
+    let index = 0
+    while index < string.len(text) {
+        if char.is_digit_char(string.char_at(text, index)) {
+            count = count + 1
+        }
+        index = index + 1
+    }
+    return count
+}
+
+public func main() returns int {
+    let raw = "  Build-42: READY  "
+    let clean = string.trim(raw)
+    if string.starts_with(clean, "Build") != true or string.ends_with(clean, "READY") != true {
+        return 1
+    }
+
+    let normalized = string.to_lower(clean)
+    if string.eq(normalized, "build-42: ready") != true {
+        return 2
+    }
+    if string.contains(normalized, "42") != true or string.index_of(normalized, "42") != 6 {
+        return 3
+    }
+    if count_digits(normalized) != 2 {
+        return 4
+    }
+
+    let fields = string.split_by(normalized, ":")
+    if collections.list_len(fields) != 2 {
+        return 5
+    }
+    let status = collections.list_get(fields, 1)
+    if option.is_none(status) or option.option_unwrap(status) != " ready" {
+        return 6
+    }
+
+    let label = string.concat(string.to_upper(string.split_first(clean, ":")), "#")
+    if label != "BUILD-42#" {
+        return 7
+    }
+    io.println("normalized -> " + label + convert.int_to_string(count_digits(normalized)))
+    collections.list_free(fields)
+    return 0
+}

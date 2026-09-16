@@ -1,0 +1,32 @@
+module validation_452_stdlib_math_geometry
+
+// Contract: integer helpers remain exact while floating-point helpers honor
+// their documented mathematical identities within a small tolerance.
+import std.math as math
+
+func near(actual: float, expected: float) returns bool {
+    return math.abs_f(actual - expected) < 0.0001
+}
+
+public func main() returns int {
+    let pi = math.pi()
+    if not near(math.sin_f(pi / 2.0), 1.0) or not near(math.cos_f(pi), -1.0) {
+        return 1
+    }
+    if not near(math.sqrt_f(144.0), 12.0) or not near(math.pow_f(3.0, 4.0), 81.0) {
+        return 2
+    }
+    if not near(math.log2_f(64.0), 6.0) or not near(math.log10_f(100.0), 2.0) {
+        return 3
+    }
+    if math.round_f(2.49) != 2.0 or math.floor_f(2.99) != 2.0 or math.ceil_f(2.01) != 3.0 {
+        return 4
+    }
+    if math.sign(-1) != -1 or math.sign(0) != 0 or math.sign(1) != 1 {
+        return 5
+    }
+    if math.gcd(105, 30) != 15 or math.lcm(9, 15) != 45 {
+        return 6
+    }
+    return 0
+}

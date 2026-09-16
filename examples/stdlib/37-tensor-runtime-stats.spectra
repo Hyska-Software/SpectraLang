@@ -1,0 +1,38 @@
+module stdlib_tensor_runtime_stats
+
+import std.io as io
+import std.string as string
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.reset_stats()
+    tensor.set_grad_enabled(true)
+
+    let input = tensor.requires_grad(tensor.full_f(4, 2.0), true)
+    let target = tensor.full_f(4, 3.0)
+    let transformed = tensor.mul(input, target)
+    let loss = tensor.mean_t(transformed)
+    if tensor.stats_graph_nodes() <= 0 {
+        return 1
+    }
+    tensor.backward(loss)
+    if tensor.stats_allocations() <= 0 or tensor.stats_active() <= 0 {
+        return 2
+    }
+    if tensor.stats_active_bytes() <= 0 or tensor.stats_kernel_ops() <= 0 {
+        return 3
+    }
+    if tensor.stats_kernel_elements() < 4 or tensor.stats_lifetime_records() <= 0 {
+        return 4
+    }
+
+    let report = tensor.memory_report()
+    if string.len(report) < 200 {
+        return 5
+    }
+    io.println("tensor stats -> allocations kernels graph and memory report")
+    tensor.free_all()
+    tensor.set_grad_enabled(false)
+    return 0
+}

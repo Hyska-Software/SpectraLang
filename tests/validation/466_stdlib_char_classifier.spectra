@@ -1,0 +1,32 @@
+module validation_466_stdlib_char_classifier
+
+import std.char as char
+import std.string as string
+
+public func main() returns int {
+    let text = "Ab9 _"
+    let alpha = 0
+    let digits = 0
+    let spaces = 0
+    let upper = 0
+    let lower = 0
+    let alphanumeric = 0
+    let index = 0
+    while index < string.len(text) {
+        let code = string.char_at(text, index)
+        if char.is_alpha(code) { alpha = alpha + 1 }
+        if char.is_digit_char(code) { digits = digits + 1 }
+        if char.is_whitespace_char(code) { spaces = spaces + 1 }
+        if char.is_upper_char(code) { upper = upper + 1 }
+        if char.is_lower_char(code) { lower = lower + 1 }
+        if char.is_alphanumeric(code) { alphanumeric = alphanumeric + 1 }
+        index = index + 1
+    }
+    if alpha != 2 or digits != 1 or spaces != 1 or upper != 1 or lower != 1 or alphanumeric != 3 {
+        return 1
+    }
+    if char.to_upper_char(98) != 66 or char.to_lower_char(65) != 97 {
+        return 2
+    }
+    return 0
+}

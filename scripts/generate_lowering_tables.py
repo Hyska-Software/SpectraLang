@@ -189,16 +189,17 @@ HEADER = """\
 
 NUMERIC_PATH = "midend/src/lowering_std_host_numeric.rs"
 NUMERIC_FUNCTION = "lookup_std_host_module_function"
-# The numeric file owns the `wrapping_*` width dispatch; every other
-# `std.numeric` function is lowered by the compiler builtin tables.
+# The numeric file owns direct host-call dispatch for checked scalar conversions,
+# checked scalar arithmetic, and the `wrapping_*` width-specific functions.
 WRAPPING_RE = re.compile(r"^wrapping_(add|sub|mul)_([iu])(8|16|32|64)$")
 WRAPPING_OPS = ("add", "sub", "mul")
 INT_WIDTHS = ("8", "16", "32", "64")
 
 NUMERIC_SUMMARY = """\
-`std.numeric` dispatcher: the `checked_f32` conversion and the `wrapping_add`,
-// `wrapping_sub` and `wrapping_mul` width table, all derived from the catalog
-// entries of that namespace, followed by the hand-written group fallthrough."""
+`std.numeric` dispatcher: checked scalar conversions, checked scalar arithmetic,
+// and the `wrapping_add`, `wrapping_sub` and `wrapping_mul` width table, all
+// derived from the catalog entries of that namespace, followed by the
+// hand-written group fallthrough."""
 
 # Catalog functions in the namespaces the generated tables own that are lowered
 # elsewhere (the compiler builtin tables and the JSON/ML/RAG host modules), so
@@ -236,12 +237,6 @@ EXCLUDED = {
         }
     ),
 }
-
-# The numeric dispatcher owns the `wrapping_*` width table and the checked float
-# conversions; the `checked_*` integer arithmetic is lowered by the compiler
-# builtin tables.
-NUMERIC_HANDLED_ELSEWHERE = re.compile(r"^checked_")
-
 
 @dataclass(frozen=True)
 class Group:
@@ -1031,6 +1026,37 @@ def render_numeric(catalog: dict[tuple[str, str], Entry]) -> str:
             "            });",
             "        }",
         ]
+    checked_ints = sorted(
+        (
+            entry
+            for (module, _), entry in catalog.items()
+            if module == "numeric"
+            and entry.function.startswith("checked_")
+            and entry.ir_return.startswith("ExactInt<")
+        ),
+        key=lambda e: e.function,
+    )
+    for entry in checked_ints:
+        width_text = entry.ir_return[len("ExactInt<") : -1]
+        if not width_text or width_text[0] not in "iu" or width_text[1:] not in INT_WIDTHS:
+            raise RuntimeError(
+                f"numeric checked function has unsupported exact integer return: "
+                f"{entry.function} -> {entry.ir_return}"
+            )
+        signed = width_text[0] == "i"
+        width = width_text[1:]
+        lines += [
+            f'        if function == "{entry.function}" {{',
+            "            return Some(HostFunctionDescriptor {",
+            f'                runtime_name: "{entry.binding}",',
+            "                return_type: IRType::ExactInt {",
+            f"                    signed: {str(signed).lower()},",
+            f"                    width: IRIntWidth::I{width},",
+            "                },",
+            f"                returns_value: {str(entry.returns_value).lower()},",
+            "            });",
+            "        }",
+        ]
     lines += [
         "        let (signed, width): (bool, IRIntWidth) = match function {",
     ]
@@ -1145,10 +1171,9 @@ def check_coverage(
         for function in numeric
         if WRAPPING_RE.fullmatch(function)
         or catalog[("numeric", function)].ir_return.startswith("ExactFloat<")
+        or catalog[("numeric", function)].ir_return.startswith("ExactInt<")
     }
-    unowned = sorted(
-        function for function in numeric - selected if not NUMERIC_HANDLED_ELSEWHERE.match(function)
-    )
+    unowned = sorted(numeric - selected)
     if unowned:
         problems.append(f"numeric: catalog functions that no lowering owns: {unowned}")
     return problems

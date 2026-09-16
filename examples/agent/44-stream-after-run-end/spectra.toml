@@ -1,0 +1,10 @@
+[project]
+name = "example_44_stream_after_run_end"
+version = "0.1.0"
+src_dirs = ["src"]
+
+[release]
+channel = "nightly"
+compatibility = "spectralang-0.1"
+
+[dependencies]

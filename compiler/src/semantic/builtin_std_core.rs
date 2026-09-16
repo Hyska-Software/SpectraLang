@@ -596,6 +596,20 @@ pub(crate) fn make_std_numeric() -> ModuleExports {
             },
         ),
     ] {
+        exports.functions.insert(
+            format!("checked_{name}"),
+            pub_fn(vec![Type::Int], ty.clone()),
+        );
+        exports.functions.insert(
+            format!("checked_float_{name}"),
+            pub_fn(vec![Type::Float], ty.clone()),
+        );
+        for op in ["add", "sub", "mul"] {
+            exports.functions.insert(
+                format!("checked_{op}_{name}"),
+                pub_fn(vec![ty.clone(), ty.clone()], ty.clone()),
+            );
+        }
         for op in ["add", "sub", "mul"] {
             exports.functions.insert(
                 format!("wrapping_{op}_{name}"),
