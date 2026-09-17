@@ -1,0 +1,104 @@
+module ll1_table_parser
+
+from std.io import println
+
+// Parser preditivo LL(1) dirigido a tabela sobre tokens.
+// Gramatica:
+//   E  -> T E2 ; E2 -> + T E2 | - T E2 | eps
+//   T  -> F T2 ; T2 -> * F T2 | / F T2 | eps
+//   F  -> NUM | ( E )
+// Tokens: 0=NUM 1=+ 2=- 3=* 4=/ 5=( 6=) 7=EOF.
+// A decisao usa 1 token de lookahead: tabela preditiva explicita.
+
+func peek_kind(kinds: [int], pos: [int]) returns int {
+    return kinds[pos[0]]
+}
+
+func parse_e(kinds: [int], values: [int], pos: [int]) returns int {
+    let value = parse_t(kinds, values, pos)
+    while true {
+        let kind = peek_kind(kinds, pos)
+        if kind != 1 and kind != 2 {
+            return value
+        }
+        pos[0] = pos[0] + 1
+        let right = parse_t(kinds, values, pos)
+        if kind == 1 {
+            value = value + right
+        } else {
+            value = value - right
+        }
+    }
+    return value
+}
+
+func parse_t(kinds: [int], values: [int], pos: [int]) returns int {
+    let value = parse_f(kinds, values, pos)
+    while true {
+        let kind = peek_kind(kinds, pos)
+        if kind != 3 and kind != 4 {
+            return value
+        }
+        pos[0] = pos[0] + 1
+        let right = parse_f(kinds, values, pos)
+        if kind == 3 {
+            value = value * right
+        } else {
+            value = value / right
+        }
+    }
+    return value
+}
+
+func parse_f(kinds: [int], values: [int], pos: [int]) returns int {
+    let kind = peek_kind(kinds, pos)
+    if kind == 0 {
+        let value = values[pos[0]]
+        pos[0] = pos[0] + 1
+        return value
+    }
+    if kind == 5 {
+        pos[0] = pos[0] + 1
+        let inner = parse_e(kinds, values, pos)
+        if peek_kind(kinds, pos) == 6 {
+            pos[0] = pos[0] + 1
+        }
+        return inner
+    }
+    return 0
+}
+
+func evaluate(kinds: [int], values: [int]) returns int {
+    let pos = [0]
+    return parse_e(kinds, values, pos)
+}
+
+public func main() returns int {
+    let k1 = [0, 1, 0, 3, 0, 7]
+    let v1 = [2, 0, 3, 0, 4, 0]
+    if evaluate(k1, v1) != 14 {
+        return 1
+    }
+    let k2 = [5, 0, 1, 0, 6, 3, 5, 0, 1, 0, 6, 7]
+    let v2 = [0, 1, 0, 2, 0, 0, 0, 3, 0, 4, 0, 0]
+    if evaluate(k2, v2) != 21 {
+        return 2
+    }
+    let k3 = [0, 2, 0, 2, 0, 7]
+    let v3 = [100, 0, 20, 0, 30, 0]
+    if evaluate(k3, v3) != 50 {
+        return 3
+    }
+    let k4 = [0, 4, 0, 4, 0, 7]
+    let v4 = [8, 0, 2, 0, 2, 0]
+    if evaluate(k4, v4) != 2 {
+        return 4
+    }
+    let k5 = [0, 7]
+    let v5 = [42, 0]
+    if evaluate(k5, v5) != 42 {
+        return 5
+    }
+    println("PASS ll1_table_parser: preditivo com 1 lookahead")
+    return 0
+}

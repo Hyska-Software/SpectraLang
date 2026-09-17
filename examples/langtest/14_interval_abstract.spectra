@@ -1,0 +1,94 @@
+module interval_abstract
+
+from std.io import println
+
+// Interpretacao abstrata sobre o dominio de intervalos.
+// Intervalo = [lo, hi] em variaveis paralelas. Transferencias sound para
+// +,-,* (operandos nao-negativos) e join de branches. contains = sanidade
+// concreto-dentro-do-abstrato em cada assert.
+
+func add_lo(a_lo: int, b_lo: int) returns int {
+    return a_lo + b_lo
+}
+
+func add_hi(a_hi: int, b_hi: int) returns int {
+    return a_hi + b_hi
+}
+
+func sub_lo(a_lo: int, b_hi: int) returns int {
+    return a_lo - b_hi
+}
+
+func sub_hi(a_hi: int, b_lo: int) returns int {
+    return a_hi - b_lo
+}
+
+func mul_lo(a_lo: int, b_lo: int) returns int {
+    return a_lo * b_lo
+}
+
+func mul_hi(a_hi: int, b_hi: int) returns int {
+    return a_hi * b_hi
+}
+
+func join_lo(a_lo: int, b_lo: int) returns int {
+    if a_lo < b_lo {
+        return a_lo
+    }
+    return b_lo
+}
+
+func join_hi(a_hi: int, b_hi: int) returns int {
+    if a_hi > b_hi {
+        return a_hi
+    }
+    return b_hi
+}
+
+func contains(lo: int, hi: int, v: int) returns bool {
+    return v >= lo and v <= hi
+}
+
+public func main() returns int {
+    let x_lo = 1
+    let x_hi = 5
+    let y_lo = 2
+    let y_hi = 3
+    let z_lo = add_lo(x_lo, y_lo)
+    let z_hi = add_hi(x_hi, y_hi)
+    if z_lo != 3 or z_hi != 8 {
+        return 1
+    }
+    if not contains(z_lo, z_hi, 5) {
+        return 2
+    }
+    let w_lo = mul_lo(x_lo, y_lo)
+    let w_hi = mul_hi(x_hi, y_hi)
+    if w_lo != 2 or w_hi != 15 {
+        return 3
+    }
+    if not contains(w_lo, w_hi, 6) {
+        return 4
+    }
+    let d_lo = sub_lo(x_lo, y_hi)
+    let d_hi = sub_hi(x_hi, y_lo)
+    if d_lo != -2 or d_hi != 3 {
+        return 5
+    }
+    if not contains(d_lo, d_hi, 0) {
+        return 6
+    }
+    let j_lo = join_lo(1, 5)
+    let j_hi = join_hi(2, 6)
+    if j_lo != 1 or j_hi != 6 {
+        return 7
+    }
+    if not contains(j_lo, j_hi, 2) or not contains(j_lo, j_hi, 5) {
+        return 8
+    }
+    if contains(j_lo, j_hi, 0) or contains(j_lo, j_hi, 7) {
+        return 9
+    }
+    println("PASS interval_abstract: transfers sound + join de branches")
+    return 0
+}

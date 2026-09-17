@@ -1,0 +1,136 @@
+module quickcheck_properties
+
+from std.io import println
+import std.convert
+import std.string as str
+
+// Propriedades estilo QuickCheck sobre a propria stdlib + algoritmos locais:
+// roundtrip, involucao, idempotencia e busca binaria como invariantes.
+
+func roundtrip(v: int) returns bool {
+    let s = std.convert.int_to_string(v)
+    return std.convert.string_to_int(s) == v
+}
+
+func reverse_copy(src: [int], dst: [int], n: int) {
+    let i = 0
+    while i < n {
+        dst[i] = src[n - 1 - i]
+        i = i + 1
+    }
+}
+
+func arrays_equal(a: [int], b: [int], n: int) returns bool {
+    let i = 0
+    while i < n {
+        if a[i] != b[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+func array_sum(a: [int], n: int) returns int {
+    let total = 0
+    let i     = 0
+    while i < n {
+        total = total + a[i]
+        i = i + 1
+    }
+    return total
+}
+
+func bubble_sort(a: [int], n: int) {
+    let i = 0
+    while i < n {
+        let j = 0
+        while j + 1 < n - i {
+            if a[j] > a[j + 1] {
+                let tmp = a[j]
+                a[j] = a[j + 1]
+                a[j + 1] = tmp
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+func is_sorted(a: [int], n: int) returns bool {
+    let i = 0
+    while i + 1 < n {
+        if a[i] > a[i + 1] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+func search(values: [int], n: int, target: int) returns int {
+    let low  = 0
+    let high = n - 1
+    while low <= high {
+        let middle = (low + high) / 2
+        if values[middle] == target {
+            return middle
+        } else if values[middle] < target {
+            low = middle + 1
+        } else {
+            high = high - 1
+        }
+    }
+    return-1
+}
+
+public func main() returns int {
+    if not roundtrip(0) or not roundtrip(1) {
+        return 1
+    }
+    if not roundtrip(-1) or not roundtrip(42) {
+        return 2
+    }
+    if not roundtrip(-100) or not roundtrip(123456) {
+        return 3
+    }
+    if str.reverse_str(str.reverse_str("hello")) != "hello" {
+        return 4
+    }
+    if str.reverse_str(str.reverse_str("")) != "" {
+        return 5
+    }
+    if str.reverse_str(str.reverse_str("racecar")) != "racecar" {
+        return 6
+    }
+    let a = [3, 1, 2, 5, 4, 0, 0, 0]
+    let b = [0, 0, 0, 0, 0, 0, 0, 0]
+    let c = [0, 0, 0, 0, 0, 0, 0, 0]
+    reverse_copy(a, b, 5)
+    reverse_copy(b, c, 5)
+    if not arrays_equal(a, c, 5) {
+        return 7
+    }
+    let before = array_sum(a, 5)
+    bubble_sort(a, 5)
+    if not is_sorted(a, 5) {
+        return 8
+    }
+    if array_sum(a, 5) != before {
+        return 9
+    }
+    bubble_sort(a, 5)
+    if not is_sorted(a, 5) {
+        return 10
+    }
+    let sorted = [2, 4, 6, 8, 0, 0, 0, 0]
+    let pos    = search(sorted, 4, 6)
+    if pos == -1 or sorted[pos] != 6 {
+        return 11
+    }
+    if search(sorted, 4, 5) != -1 {
+        return 12
+    }
+    println("PASS quickcheck_properties: roundtrip/involucao/idempotencia")
+    return 0
+}

@@ -1,0 +1,144 @@
+module lr0_closure
+
+from std.io import println
+
+// Automato LR(0) para: S' -> E | E -> E+T | E -> T | T -> id | T -> (E).
+// Item id = prod * 4 + dot. Terminais: id=0 +=1 (=2 )=3. Nao-terminais: E=10 T=11.
+
+func sym_after(item: int) returns int {
+    let prod = item / 4
+    let dot  = item % 4
+    if prod == 0 {
+        if dot == 0 {
+            return 10
+        }
+        return-1
+    }
+    if prod == 1 {
+        if dot == 0 {
+            return 10
+        }
+        if dot == 1 {
+            return 1
+        }
+        if dot == 2 {
+            return 11
+        }
+        return-1
+    }
+    if prod == 2 {
+        if dot == 0 {
+            return 11
+        }
+        return-1
+    }
+    if prod == 3 {
+        if dot == 0 {
+            return 0
+        }
+        return-1
+    }
+    if dot == 0 {
+        return 2
+    }
+    if dot == 1 {
+        return 10
+    }
+    if dot == 2 {
+        return 3
+    }
+    return-1
+}
+
+func lr_closure(set: [int]) {
+    let iter = 0
+    while iter < 10 {
+        let changed = 0
+        let i       = 0
+        while i < 20 {
+            if set[i] == 1 {
+                let s = sym_after(i)
+                if s == 10 {
+                    if set[4] == 0 {
+                        set[4] = 1
+                        changed = 1
+                    }
+                    if set[8] == 0 {
+                        set[8] = 1
+                        changed = 1
+                    }
+                }
+                if s == 11 {
+                    if set[12] == 0 {
+                        set[12] = 1
+                        changed = 1
+                    }
+                    if set[16] == 0 {
+                        set[16] = 1
+                        changed = 1
+                    }
+                }
+            }
+            i = i + 1
+        }
+        if changed == 0 {
+            return
+        }
+        iter = iter + 1
+    }
+}
+
+func lr_goto(set: [int], sym: int, out: [int]) {
+    let i = 0
+    while i < 20 {
+        out[i] = 0
+        i = i + 1
+    }
+    i = 0
+    while i < 20 {
+        if set[i] == 1 and sym_after(i) == sym {
+            out[i + 1] = 1
+        }
+        i = i + 1
+    }
+    lr_closure(out)
+}
+
+func set_size(set: [int]) returns int {
+    let total = 0
+    let i     = 0
+    while i < 20 {
+        total = total + set[i]
+        i = i + 1
+    }
+    return total
+}
+
+public func main() returns int {
+    let i0 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    i0[0] = 1
+    lr_closure(i0)
+    if set_size(i0) != 5 {
+        return 1
+    }
+    if i0[0] != 1 or i0[4] != 1 or i0[8] != 1 or i0[12] != 1 or i0[16] != 1 {
+        return 2
+    }
+    let g_e = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    lr_goto(i0, 10, g_e)
+    if set_size(g_e) != 2 or g_e[1] != 1 or g_e[5] != 1 {
+        return 3
+    }
+    let g_t = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    lr_goto(i0, 11, g_t)
+    if set_size(g_t) != 1 or g_t[9] != 1 {
+        return 4
+    }
+    let g_id = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    lr_goto(i0, 0, g_id)
+    if set_size(g_id) != 1 or g_id[13] != 1 {
+        return 5
+    }
+    println("PASS lr0_closure: closure/goto do automato LR(0)")
+    return 0
+}

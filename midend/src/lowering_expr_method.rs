@@ -60,6 +60,15 @@ impl ASTLowering {
                         .iter()
                         .map(|argument| self.lower_expression(argument, ir_func))
                         .collect();
+                    if self.user_function_returns_unit(&function_name) {
+                        self.builder.build_call(
+                            ir_func,
+                            self.resolve_user_function_symbol(&function_name),
+                            call_args,
+                            false,
+                        );
+                        return self.builder.build_const_int(ir_func, 0);
+                    }
                     return self.require_value(
                         self.builder
                             .build_call(
@@ -159,14 +168,17 @@ impl ASTLowering {
                 }
 
                 // 5. Fazer a chamada de função
+                let resolved_symbol = self.resolve_user_function_symbol(&function_name);
+                if self.user_function_returns_unit(&function_name)
+                    || self.user_function_returns_unit(&resolved_symbol)
+                {
+                    self.builder
+                        .build_call(ir_func, resolved_symbol, call_args, false);
+                    return self.builder.build_const_int(ir_func, 0);
+                }
                 self.require_value(
                     self.builder
-                        .build_call(
-                            ir_func,
-                            self.resolve_user_function_symbol(&function_name),
-                            call_args,
-                            true,
-                        ),
+                        .build_call(ir_func, resolved_symbol, call_args, true),
                     "method call did not produce its declared result",
                 )
             }

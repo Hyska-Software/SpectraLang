@@ -1,0 +1,116 @@
+module hm_unification
+
+from std.io import println
+
+// Unificacao estilo Hindley-Milner com union-find.
+// Tags: 10=int 11=bool 12=float, 100+id=variavel.
+// parent/binding tem 4 variaveis (ids 0..3).
+
+func is_var(t: int) returns bool {
+    return t >= 100
+}
+
+func var_id(t: int) returns int {
+    return t - 100
+}
+
+func find_root(parent: [int], x: int) returns int {
+    let r = x
+    while parent[r] != r {
+        r = parent[r]
+    }
+    return r
+}
+
+func resolve(t: int, parent: [int], binding: [int]) returns int {
+    if not is_var(t) {
+        return t
+    }
+    let r = find_root(parent, var_id(t))
+    let b = binding[r]
+    if b == -1 {
+        return 100 + r
+    }
+    return b
+}
+
+func unify(t1: int, t2: int, parent: [int], binding: [int]) returns bool {
+    if t1 == t2 {
+        return true
+    }
+    if is_var(t1) and is_var(t2) {
+        let r1 = find_root(parent, var_id(t1))
+        let r2 = find_root(parent, var_id(t2))
+        if r1 == r2 {
+            return true
+        }
+        let b1 = binding[r1]
+        let b2 = binding[r2]
+        if b1 != -1 and b2 != -1 and b1 != b2 {
+            return false
+        }
+        if b1 != -1 {
+            binding[r1] = b1
+        } else {
+            binding[r1] = b2
+        }
+        parent[r2] = r1
+        return true
+    }
+    if is_var(t1) {
+        let r = find_root(parent, var_id(t1))
+        let b = binding[r]
+        if b == -1 {
+            binding[r] = t2
+            return true
+        }
+        return b == t2
+    }
+    if is_var(t2) {
+        let r = find_root(parent, var_id(t2))
+        let b = binding[r]
+        if b == -1 {
+            binding[r] = t1
+            return true
+        }
+        return b == t1
+    }
+    return false
+}
+
+public func main() returns int {
+    let parent  = [0, 1, 2, 3]
+    let binding = [-1, -1, -1, -1]
+    if not unify(10, 10, parent, binding) {
+        return 1
+    }
+    if unify(10, 11, parent, binding) {
+        return 2
+    }
+    if not unify(100, 10, parent, binding) {
+        return 3
+    }
+    if not unify(100, 10, parent, binding) {
+        return 4
+    }
+    if unify(100, 11, parent, binding) {
+        return 5
+    }
+    if not unify(101, 102, parent, binding) {
+        return 6
+    }
+    if not unify(101, 10, parent, binding) {
+        return 7
+    }
+    if resolve(102, parent, binding) != 10 {
+        return 8
+    }
+    if unify(102, 11, parent, binding) {
+        return 9
+    }
+    if not unify(103, 103, parent, binding) {
+        return 10
+    }
+    println("PASS hm_unification: union-find com occurs-check simples")
+    return 0
+}

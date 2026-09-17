@@ -210,11 +210,24 @@ impl ASTLowering {
                     self.resolve_user_function_symbol(&function_name)
                 };
 
-                self.require_value(
+                // Calls to unit functions produce no SSA value. Claiming a
+                // result here used to mint a phantom value that the If
+                // lowering fed into merge phis, breaking -O0/-O1 backend
+                // codegen ("Value N not found"). Mirror the Void host-call
+                // path and hand back a plain zero instead.
+                let is_unit_return = self.user_function_returns_unit(&final_function_name)
+                    || self.user_function_returns_unit(&function_name);
+                if is_unit_return {
                     self.builder
-                        .build_call(ir_func, final_function_name, arg_values, true),
-                    "function call did not produce its declared result",
-                )
+                        .build_call(ir_func, final_function_name, arg_values, false);
+                    self.builder.build_const_int(ir_func, 0)
+                } else {
+                    self.require_value(
+                        self.builder
+                            .build_call(ir_func, final_function_name, arg_values, true),
+                        "function call did not produce its declared result",
+                    )
+                }
             }
             _ => unreachable!("lowering expression category mismatch"),
         }

@@ -1,0 +1,92 @@
+module nfa_thompson
+
+from std.io import println
+import std.string as str
+
+// Simulacao de NFA estilo Thompson para a regex a(b|c)*.
+// Estados: 0=inicio, 1=apos 'a', 2=entrada do laco, 3=corpo, 4=aceitacao.
+// Epsilons: 1->2, 2->3, 2->4. Moves: 0 -a-> 1, 3 -b|c-> 2.
+
+func eps_closure(active: [int]) {
+    let iter = 0
+    while iter < 5 {
+        let changed = 0
+        if active[1] == 1 and active[2] == 0 {
+            active[2] = 1
+            changed = 1
+        }
+        if active[2] == 1 and active[3] == 0 {
+            active[3] = 1
+            changed = 1
+        }
+        if active[2] == 1 and active[4] == 0 {
+            active[4] = 1
+            changed = 1
+        }
+        if changed == 0 {
+            return
+        }
+        iter = iter + 1
+    }
+}
+
+func nfa_accept(text: string) returns bool {
+    let cur = [1, 0, 0, 0, 0]
+    let nxt = [0, 0, 0, 0, 0]
+    eps_closure(cur)
+    let index = 0
+    let n     = str.len(text)
+    while index < n {
+        let code = str.char_at(text, index)
+        nxt[0] = 0
+        nxt[1] = 0
+        nxt[2] = 0
+        nxt[3] = 0
+        nxt[4] = 0
+        if code == 97 and cur[0] == 1 {
+            nxt[1] = 1
+        }
+        if code == 98 or code == 99 {
+            if cur[3] == 1 {
+                nxt[2] = 1
+            }
+        }
+        eps_closure(nxt)
+        cur[0] = nxt[0]
+        cur[1] = nxt[1]
+        cur[2] = nxt[2]
+        cur[3] = nxt[3]
+        cur[4] = nxt[4]
+        index = index + 1
+    }
+    return cur[4] == 1
+}
+
+public func main() returns int {
+    if not nfa_accept("a") {
+        return 1
+    }
+    if not nfa_accept("ab") {
+        return 2
+    }
+    if not nfa_accept("ac") {
+        return 3
+    }
+    if not nfa_accept("abcbcb") {
+        return 4
+    }
+    if nfa_accept("") {
+        return 5
+    }
+    if nfa_accept("b") {
+        return 6
+    }
+    if nfa_accept("aa") {
+        return 7
+    }
+    if nfa_accept("abd") {
+        return 8
+    }
+    println("PASS nfa_thompson: epsilon-closure aceita a(b|c)*")
+    return 0
+}

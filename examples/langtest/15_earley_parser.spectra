@@ -1,0 +1,246 @@
+module earley_parser
+
+from std.io import println
+
+// Earley para a gramática ambígua S -> SS | (S) | ().
+// Tokens: 0='(' 1=')'. Regras: 0:S->SS 1:S->(S) 2:S->().
+// Item compacto: rule*64 + dot*8 + origin. Chart achatado: 5 posicoes x 20.
+
+func rule_len(r: int) returns int {
+    if r == 1 {
+        return 3
+    }
+    return 2
+}
+
+func rhs_sym(r: int, d: int) returns int {
+    if r == 0 {
+        return 10
+    }
+    if r == 1 {
+        if d == 0 {
+            return 0
+        }
+        if d == 1 {
+            return 10
+        }
+        return 1
+    }
+    if d == 0 {
+        return 0
+    }
+    return 1
+}
+
+func pack(rule: int, dot: int, origin: int) returns int {
+    return rule * 64 + dot * 8 + origin
+}
+
+func chart_add(chart: [int], cnt: [int], pos: int, item: int) {
+    let base = pos * 20
+    let k    = 0
+    while k < cnt[pos] {
+        if chart[base + k] == item {
+            return
+        }
+        k = k + 1
+    }
+    if cnt[pos] < 20 {
+        chart[base + cnt[pos]] = item
+        cnt[pos] = cnt[pos] + 1
+    }
+}
+
+func earley_accept(toks: [int], n: int, chart: [int], cnt: [int]) returns bool {
+    let p = 0
+    while p <= n {
+        cnt[p] = 0
+        p = p + 1
+    }
+    chart_add(chart, cnt, 0, pack(0, 0, 0))
+    chart_add(chart, cnt, 0, pack(1, 0, 0))
+    chart_add(chart, cnt, 0, pack(2, 0, 0))
+    let i = 0
+    while i <= n {
+        let q = 0
+        while q < cnt[i] {
+            let it  = chart[i * 20 + q]
+            let r   = it / 64
+            let rem = it % 64
+            let d   = rem / 8
+            let o   = rem % 8
+            if d == rule_len(r) {
+                let k = 0
+                while k < cnt[o] {
+                    let pit  = chart[o * 20 + k]
+                    let pr   = pit / 64
+                    let prem = pit % 64
+                    let pd   = prem / 8
+                    let po   = prem % 8
+                    if pd < rule_len(pr) and rhs_sym(pr, pd) == 10 {
+                        chart_add(chart, cnt, i, pack(pr, pd + 1, po))
+                    }
+                    k = k + 1
+                }
+            } else {
+                let s = rhs_sym(r, d)
+                if s == 10 {
+                    chart_add(chart, cnt, i, pack(0, 0, i))
+                    chart_add(chart, cnt, i, pack(1, 0, i))
+                    chart_add(chart, cnt, i, pack(2, 0, i))
+                } else {
+                    if i < n and toks[i] == s {
+                        chart_add(chart, cnt, i + 1, pack(r, d + 1, o))
+                    }
+                }
+            }
+            q = q + 1
+        }
+        i = i + 1
+    }
+    let k = 0
+    while k < cnt[n] {
+        let it  = chart[n * 20 + k]
+        let r   = it / 64
+        let rem = it % 64
+        let d   = rem / 8
+        let o   = rem % 8
+        if o == 0 and d == rule_len(r) {
+            return true
+        }
+        k = k + 1
+    }
+    return false
+}
+
+public func main() returns int {
+    let chart = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    let cnt = [0, 0, 0, 0, 0]
+    let t1  = [0, 1, 0, 0]
+    if not earley_accept(t1, 2, chart, cnt) {
+        return 1
+    }
+    let t2 = [0, 1, 0, 1]
+    if not earley_accept(t2, 4, chart, cnt) {
+        return 2
+    }
+    let t3 = [0, 0, 1, 1]
+    if not earley_accept(t3, 4, chart, cnt) {
+        return 3
+    }
+    let t4 = [0, 0, 1, 0]
+    if earley_accept(t4, 3, chart, cnt) {
+        return 4
+    }
+    let t5 = [1, 0, 0, 0]
+    if earley_accept(t5, 2, chart, cnt) {
+        return 5
+    }
+    let t6 = [0, 0, 0, 0]
+    if earley_accept(t6, 0, chart, cnt) {
+        return 6
+    }
+    println("PASS earley_parser: predict/scan/complete sobre ambigua")
+    return 0
+}

@@ -1,0 +1,104 @@
+module ddmin_reduction
+
+from std.io import println
+
+// Delta debugging (ddmin) simplificado: remove chunks enquanto o
+// predicado de falha for preservado. Falha = conter 1, 2 e 3.
+// Entrada: [9,1,9,2,9,3,9] -> minimo esperado: [1,2,3].
+
+func contains_value(data: [int], n: int, target: int) returns bool {
+    let i = 0
+    while i < n {
+        if data[i] == target {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+func fails(data: [int], n: int) returns bool {
+    if not contains_value(data, n, 1) {
+        return false
+    }
+    if not contains_value(data, n, 2) {
+        return false
+    }
+    return contains_value(data, n, 3)
+}
+
+public func main() returns int {
+    let data = [9, 1, 9, 2, 9, 3, 9, 0]
+    let cand = [0, 0, 0, 0, 0, 0, 0, 0]
+    let n    = 7
+    if not fails(data, n) {
+        return 1
+    }
+    let single = [1, 0, 0, 0, 0, 0, 0, 0]
+    if fails(single, 1) {
+        return 2
+    }
+    let chunks = 2
+    let iter   = 0
+    while n >= 2 and iter < 20 {
+        iter = iter + 1
+        if chunks > n {
+            break
+        }
+        let chunk_size = n / chunks
+        if chunk_size == 0 {
+            chunk_size = 1
+        }
+        let reduced = 0
+        let c       = 0
+        while c < chunks {
+            let start = c * chunk_size
+            let end   = start + chunk_size
+            if c == chunks - 1 {
+                end = n
+            }
+            if start < n {
+                if end > n {
+                    end = n
+                }
+                let m = 0
+                let i = 0
+                while i < start {
+                    cand[m] = data[i]
+                    m = m + 1
+                    i = i + 1
+                }
+                i = end
+                while i < n {
+                    cand[m] = data[i]
+                    m = m + 1
+                    i = i + 1
+                }
+                if fails(cand, m) {
+                    i = 0
+                    while i < m {
+                        data[i] = cand[i]
+                        i = i + 1
+                    }
+                    n = m
+                    reduced = 1
+                    break
+                }
+            }
+            c = c + 1
+        }
+        if reduced == 1 {
+            chunks = 2
+        } else {
+            chunks = chunks * 2
+        }
+    }
+    if n != 3 {
+        return 3
+    }
+    if data[0] != 1 or data[1] != 2 or data[2] != 3 {
+        return 4
+    }
+    println("PASS ddmin_reduction: [9,1,9,2,9,3,9] -> [1,2,3]")
+    return 0
+}

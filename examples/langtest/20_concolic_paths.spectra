@@ -1,0 +1,51 @@
+module concolic_paths
+
+from std.io import println
+
+// Teste concolico estilo DART: driver sistematico cobre os 4 paths de
+// target(x): x>10 ? (x>20 ? 2 : 1) : (x==0 ? 3 : 0).
+// Path id = b0*2 + b1. Candidatos dirigidos {0,1,10,11,20,21}.
+
+func target(x: int, path: [int]) returns int {
+    if x > 10 {
+        path[0] = 1
+        if x > 20 {
+            path[1] = 1
+            return 2
+        }
+        path[1] = 0
+        return 1
+    }
+    path[0] = 0
+    if x == 0 {
+        path[1] = 1
+        return 3
+    }
+    path[1] = 0
+    return 0
+}
+
+public func main() returns int {
+    let inputs      = [0, 1, 10, 11, 20, 21]
+    let expect_ret  = [3, 0, 0, 1, 1, 2]
+    let expect_path = [1, 0, 0, 2, 2, 3]
+    let covered     = [0, 0, 0, 0]
+    let path        = [0, 0]
+    let k           = 0
+    while k < 6 {
+        path[0] = 0
+        path[1] = 0
+        let ret = target(inputs[k], path)
+        let pid = path[0] * 2 + path[1]
+        if ret != expect_ret[k] or pid != expect_path[k] {
+            return 10 + k
+        }
+        covered[pid] = 1
+        k = k + 1
+    }
+    if covered[0] != 1 or covered[1] != 1 or covered[2] != 1 or covered[3] != 1 {
+        return 20
+    }
+    println("PASS concolic_paths: 4/4 paths cobertos dirigidos")
+    return 0
+}

@@ -1,0 +1,170 @@
+module grammar_fuzzer
+
+from std.io import println
+
+// Grammar-based generation com oraculo: LCG deriva NUM(OP NUM)* da gramatica,
+// wellformed checa alternancia NUM/OP/EOF e dois avaliadores (recursivo x
+// Pratt) fazem o diferencial. Fuzzer e oraculo no mesmo loop, 10 trials.
+
+func next_rand(state: [int]) returns int {
+    state[0] = (state[0] * 1103515245 + 12345) % 2147483648
+    return state[0]
+}
+
+func rand_range(state: [int], lo: int, hi: int) returns int {
+    let r = next_rand(state)
+    return lo + r % (hi - lo + 1)
+}
+
+func gen_expr(kinds: [int], values: [int], state: [int]) returns int {
+    let nnums = rand_range(state, 2, 4)
+    let i     = 0
+    while i < nnums {
+        values[i * 2] = rand_range(state, 1, 9)
+        kinds[i * 2] = 0
+        if i + 1 < nnums {
+            kinds[i * 2 + 1] = rand_range(state, 1, 4)
+            values[i * 2 + 1] = 0
+        }
+        i = i + 1
+    }
+    kinds[(nnums - 1) * 2 + 1] = 8
+    values[(nnums - 1) * 2 + 1] = 0
+    return(nnums - 1) * 2 + 2
+}
+
+func wellformed(kinds: [int], n: int) returns bool {
+    if n < 2 {
+        return false
+    }
+    if kinds[n - 1] != 8 {
+        return false
+    }
+    let i = 0
+    while i < n - 1 {
+        if i % 2 == 0 {
+            if kinds[i] != 0 {
+                return false
+            }
+        } else {
+            if kinds[i] < 1 or kinds[i] > 4 {
+                return false
+            }
+        }
+        i = i + 1
+    }
+    return true
+}
+
+func rec_e(kinds: [int], values: [int], pos: [int]) returns int {
+    let value = rec_t(kinds, values, pos)
+    while true {
+        let kind = kinds[pos[0]]
+        if kind != 1 and kind != 2 {
+            return value
+        }
+        pos[0] = pos[0] + 1
+        let right = rec_t(kinds, values, pos)
+        if kind == 1 {
+            value = value + right
+        } else {
+            value = value - right
+        }
+    }
+    return value
+}
+
+func rec_t(kinds: [int], values: [int], pos: [int]) returns int {
+    if kinds[pos[0]] != 0 {
+        return 0
+    }
+    let value = values[pos[0]]
+    pos[0] = pos[0] + 1
+    while true {
+        let kind = kinds[pos[0]]
+        if kind != 3 and kind != 4 {
+            return value
+        }
+        pos[0] = pos[0] + 1
+        let right = values[pos[0]]
+        pos[0] = pos[0] + 1
+        if kind == 3 {
+            value = value * right
+        } else {
+            value = value / right
+        }
+    }
+    return value
+}
+
+func eval_rec(kinds: [int], values: [int]) returns int {
+    let pos = [0]
+    return rec_e(kinds, values, pos)
+}
+
+func pprec(op: int) returns int {
+    if op == 1 or op == 2 {
+        return 1
+    }
+    if op == 3 or op == 4 {
+        return 2
+    }
+    return 0
+}
+
+func papply(op: int, lhs: int, rhs: int) returns int {
+    if op == 1 {
+        return lhs + rhs
+    }
+    if op == 2 {
+        return lhs - rhs
+    }
+    if op == 3 {
+        return lhs * rhs
+    }
+    return lhs / rhs
+}
+
+func pexpr(kinds: [int], values: [int], pos: [int], min_prec: int) returns int {
+    let lhs = values[pos[0]]
+    pos[0] = pos[0] + 1
+    while true {
+        let op = kinds[pos[0]]
+        let p  = pprec(op)
+        if p < min_prec or p == 0 {
+            return lhs
+        }
+        pos[0] = pos[0] + 1
+        let rhs = pexpr(kinds, values, pos, p + 1)
+        lhs = papply(op, lhs, rhs)
+    }
+    return lhs
+}
+
+func eval_pratt(kinds: [int], values: [int]) returns int {
+    let pos = [0]
+    return pexpr(kinds, values, pos, 1)
+}
+
+public func main() returns int {
+    let state  = [7]
+    let kinds  = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let values = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let trial  = 0
+    while trial < 10 {
+        let n = gen_expr(kinds, values, state)
+        if not wellformed(kinds, n) {
+            return 10
+        }
+        if eval_rec(kinds, values) != eval_pratt(kinds, values) {
+            return 20
+        }
+        trial = trial + 1
+    }
+    let bad = [0, 1, 1, 8, 0, 0, 0, 0, 0, 0]
+    if wellformed(bad, 4) {
+        return 30
+    }
+    println("PASS grammar_fuzzer: geracao guiada + oraculo diferencial")
+    return 0
+}

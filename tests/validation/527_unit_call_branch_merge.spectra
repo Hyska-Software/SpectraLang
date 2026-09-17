@@ -1,0 +1,37 @@
+module validation_527_unit_call_branch_merge
+
+// Regression: an if/else used as a statement whose branch tails call unit
+// functions must not feed phantom unit values into the merge phi. Before the
+// midend fix this failed backend codegen at -O0/-O1 with
+// "Value N not found during backend code generation" while -O2 passed.
+
+func touch(x: int) {
+    x = x + 1
+}
+
+func pick(flag: int) returns int {
+    if flag == 1 {
+        touch(1)
+    } else {
+        touch(2)
+    }
+    return flag
+}
+
+public func main() returns int {
+    if pick(1) != 1 {
+        return 1
+    }
+    if pick(7) != 7 {
+        return 2
+    }
+    let flag = 3
+    if flag == 1 {
+        touch(10)
+    } else {
+        if flag == 2 {
+            touch(20)
+        }
+    }
+    return 0
+}

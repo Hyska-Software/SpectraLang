@@ -1,0 +1,95 @@
+module cyk_parser
+
+from std.io import println
+import std.string as str
+
+// CYK sobre gramática em CNF (exemplo clássico):
+//   S -> AB | BC ; A -> BA | a ; B -> CC | b ; C -> AB | a
+// Sem bitsets na linguagem: uma tabela 5x5 achatada por não-terminal.
+// idx(start, len) = start * 5 + (len - 1). Suporta n <= 5.
+
+func idx(start: int, len: int) returns int {
+    return start * 5 + (len - 1)
+}
+
+func cyk_accept(text: string, t_s: [int], t_a: [int], t_b: [int], t_c: [int]) returns bool {
+    let n = str.len(text)
+    if n == 0 or n > 5 {
+        return false
+    }
+    let i = 0
+    while i < 25 {
+        t_s[i] = 0
+        t_a[i] = 0
+        t_b[i] = 0
+        t_c[i] = 0
+        i = i + 1
+    }
+    i = 0
+    while i < n {
+        let code = str.char_at(text, i)
+        if code == 97 {
+            t_a[idx(i, 1)] = 1
+            t_c[idx(i, 1)] = 1
+        }
+        if code == 98 {
+            t_b[idx(i, 1)] = 1
+        }
+        i = i + 1
+    }
+    let len = 2
+    while len <= n {
+        let start = 0
+        while start <= n - len {
+            let split = 1
+            while split <= len - 1 {
+                let l = idx(start, split)
+                let r = idx(start + split, len - split)
+                if t_a[l] == 1 and t_b[r] == 1 {
+                    t_s[idx(start, len)] = 1
+                    t_c[idx(start, len)] = 1
+                }
+                if t_b[l] == 1 and t_c[r] == 1 {
+                    t_s[idx(start, len)] = 1
+                }
+                if t_b[l] == 1 and t_a[r] == 1 {
+                    t_a[idx(start, len)] = 1
+                }
+                if t_c[l] == 1 and t_c[r] == 1 {
+                    t_b[idx(start, len)] = 1
+                }
+                split = split + 1
+            }
+            start = start + 1
+        }
+        len = len + 1
+    }
+    return t_s[idx(0, n)] == 1
+}
+
+public func main() returns int {
+    let t_s = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let t_a = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let t_b = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let t_c = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    if not cyk_accept("baaba", t_s, t_a, t_b, t_c) {
+        return 1
+    }
+    if not cyk_accept("ab", t_s, t_a, t_b, t_c) {
+        return 2
+    }
+    if cyk_accept("bb", t_s, t_a, t_b, t_c) {
+        return 3
+    }
+    if cyk_accept("b", t_s, t_a, t_b, t_c) {
+        return 4
+    }
+    if cyk_accept("a", t_s, t_a, t_b, t_c) {
+        return 5
+    }
+    if cyk_accept("", t_s, t_a, t_b, t_c) {
+        return 6
+    }
+    println("PASS cyk_parser: programacao dinamica sobre CNF")
+    return 0
+}

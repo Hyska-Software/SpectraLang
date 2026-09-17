@@ -1,0 +1,158 @@
+module dfa_lexer
+
+from std.io import println
+import std.string as str
+
+// DFA de lexer por tabela implicita de estados:
+// S0=start, S1=em_identificador, S2=em_inteiro.
+// Transicoes decididas por classes: alpha, digit, outro.
+// Equivale ao DFA minimizado obtido via Thompson + subset construction + Hopcroft.
+
+func is_alpha(code: int) returns bool {
+    if code == 95 {
+        return true
+    }
+    if code >= 65 and code <= 90 {
+        return true
+    }
+    if code >= 97 and code <= 122 {
+        return true
+    }
+    return false
+}
+
+func is_digit(code: int) returns bool {
+    if code < 48 {
+        return false
+    }
+    return code <= 57
+}
+
+func count_idents(text: string) returns int {
+    let count = 0
+    let index = 0
+    let n     = str.len(text)
+    while index < n {
+        let code = str.char_at(text, index)
+        if is_alpha(code) {
+            count = count + 1
+            index = index + 1
+            while index < n {
+                let next = str.char_at(text, index)
+                if is_alpha(next) or is_digit(next) {
+                    index = index + 1
+                } else {
+                    break
+                }
+            }
+        } else {
+            index = index + 1
+        }
+    }
+    return count
+}
+
+func count_ints(text: string) returns int {
+    let count = 0
+    let index = 0
+    let n     = str.len(text)
+    while index < n {
+        let code = str.char_at(text, index)
+        if is_alpha(code) {
+            index = index + 1
+            while index < n {
+                let next = str.char_at(text, index)
+                if is_alpha(next) or is_digit(next) {
+                    index = index + 1
+                } else {
+                    break
+                }
+            }
+        } else {
+            if is_digit(code) {
+                count = count + 1
+                index = index + 1
+                while index < n {
+                    let next = str.char_at(text, index)
+                    if is_digit(next) {
+                        index = index + 1
+                    } else {
+                        break
+                    }
+                }
+            } else {
+                index = index + 1
+            }
+        }
+    }
+    return count
+}
+
+func first_token_kind(text: string) returns int {
+    let index = 0
+    let n     = str.len(text)
+    while index < n {
+        if str.char_at(text, index) != 32 {
+            break
+        }
+        index = index + 1
+    }
+    if index >= n {
+        return 0
+    }
+    let code = str.char_at(text, index)
+    if is_alpha(code) {
+        return 1
+    }
+    if is_digit(code) {
+        return 2
+    }
+    return 3
+}
+
+public func main() returns int {
+    if not is_alpha(95) {
+        return 1
+    }
+    if not is_alpha(65) {
+        return 2
+    }
+    if is_alpha(48) {
+        return 3
+    }
+    if not is_digit(48) {
+        return 4
+    }
+    if is_digit(97) {
+        return 5
+    }
+    if first_token_kind("abc123") != 1 {
+        return 6
+    }
+    if first_token_kind("123abc") != 2 {
+        return 7
+    }
+    if first_token_kind("   +") != 3 {
+        return 8
+    }
+    if first_token_kind("") != 0 {
+        return 9
+    }
+    if count_idents("foo bar2 baz") != 3 {
+        return 10
+    }
+    if count_idents("") != 0 {
+        return 11
+    }
+    if count_ints("12 + 34 - 5") != 3 {
+        return 12
+    }
+    if count_ints("abc123 def") != 0 {
+        return 13
+    }
+    if count_ints("") != 0 {
+        return 14
+    }
+    println("PASS dfa_lexer: DFA minimizado classifica ident/int/outro")
+    return 0
+}

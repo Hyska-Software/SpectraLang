@@ -104,6 +104,16 @@ impl ASTLowering {
             .unwrap_or_else(|| name.to_string())
     }
 
+    /// True when the named user function is known to return unit. Unit calls
+    /// produce no SSA value: claiming a result mints a phantom value that the
+    /// If lowering feeds into merge phis, breaking -O0/-O1 backend codegen
+    /// ("Value N not found"). Callers must emit the call with `has_return =
+    /// false` and hand back a plain zero instead (same contract as Void host
+    /// calls and closure calls).
+    pub(crate) fn user_function_returns_unit(&self, name: &str) -> bool {
+        matches!(self.function_return_types.get(name), Some(IRType::Void))
+    }
+
     pub fn set_source_file(&mut self, file: impl Into<String>) {
         self.source_file = file.into();
     }

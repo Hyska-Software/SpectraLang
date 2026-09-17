@@ -1,0 +1,100 @@
+module pratt_precedence
+
+from std.io import println
+
+// Pratt / precedence climbing: parse_expr(min_prec) consome operadores
+// enquanto prec(lookahead) >= min_prec, com associatividade a esquerda.
+// Tokens: 0=NUM 1=+ 2=- 3=* 4=/ 5=% 6=( 7=) 8=EOF.
+
+func prec(op: int) returns int {
+    if op == 1 or op == 2 {
+        return 1
+    }
+    if op == 3 or op == 4 or op == 5 {
+        return 2
+    }
+    return 0
+}
+
+func apply_op(op: int, lhs: int, rhs: int) returns int {
+    if op == 1 {
+        return lhs + rhs
+    }
+    if op == 2 {
+        return lhs - rhs
+    }
+    if op == 3 {
+        return lhs * rhs
+    }
+    if op == 4 {
+        return lhs / rhs
+    }
+    return lhs % rhs
+}
+
+func parse_expr(kinds: [int], values: [int], pos: [int], min_prec: int) returns int {
+    let lhs = parse_primary(kinds, values, pos)
+    while true {
+        let op = kinds[pos[0]]
+        let p  = prec(op)
+        if p < min_prec or p == 0 {
+            return lhs
+        }
+        pos[0] = pos[0] + 1
+        let rhs = parse_expr(kinds, values, pos, p + 1)
+        lhs = apply_op(op, lhs, rhs)
+    }
+    return lhs
+}
+
+func parse_primary(kinds: [int], values: [int], pos: [int]) returns int {
+    if kinds[pos[0]] == 0 {
+        let value = values[pos[0]]
+        pos[0] = pos[0] + 1
+        return value
+    }
+    if kinds[pos[0]] == 6 {
+        pos[0] = pos[0] + 1
+        let inner = parse_expr(kinds, values, pos, 1)
+        if kinds[pos[0]] == 7 {
+            pos[0] = pos[0] + 1
+        }
+        return inner
+    }
+    return 0
+}
+
+func evaluate(kinds: [int], values: [int]) returns int {
+    let pos = [0]
+    return parse_expr(kinds, values, pos, 1)
+}
+
+public func main() returns int {
+    let k1 = [0, 1, 0, 3, 0, 8]
+    let v1 = [2, 0, 3, 0, 4, 0]
+    if evaluate(k1, v1) != 14 {
+        return 1
+    }
+    let k2 = [0, 2, 0, 2, 0, 8]
+    let v2 = [10, 0, 5, 0, 2, 0]
+    if evaluate(k2, v2) != 3 {
+        return 2
+    }
+    let k3 = [0, 4, 0, 3, 0, 8]
+    let v3 = [20, 0, 2, 0, 3, 0]
+    if evaluate(k3, v3) != 30 {
+        return 3
+    }
+    let k4 = [0, 5, 0, 8]
+    let v4 = [10, 0, 3, 0]
+    if evaluate(k4, v4) != 1 {
+        return 4
+    }
+    let k5 = [6, 0, 1, 0, 7, 3, 0, 8]
+    let v5 = [0, 2, 0, 3, 0, 0, 4, 0]
+    if evaluate(k5, v5) != 20 {
+        return 5
+    }
+    println("PASS pratt_precedence: climbing com associatividade")
+    return 0
+}
