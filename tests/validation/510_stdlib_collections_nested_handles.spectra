@@ -1,0 +1,117 @@
+module validation_510_stdlib_collections_nested_handles
+
+// Handles compose: a map value can be another collection, the same handle can
+// be stored under several keys, and iteration snapshots stay stable while the
+// source is mutated. These paths mix map/stack/queue with loop control.
+
+from std.collections import Iterator, Map, Queue, Stack
+import std.collections as col
+import std.convert
+import std.io
+import std.option as option
+import std.string
+
+public func main() returns int {
+    // Map<string, Stack<int>>: mutating through the nested handle is visible
+    // through the binding it was stored from.
+    let registry: Map<string, Stack<int>> = col.map_new()
+    let bucket: Stack<int>                = col.stack_new()
+    col.stack_push(bucket, 1)
+    col.map_set(registry, "bucket", bucket)
+
+    let stored = col.map_get(registry, "bucket")
+    if option.is_none(stored) {
+        return 1
+    }
+    let handle = option.option_unwrap(stored)
+    col.stack_push(handle, 2)
+    if col.stack_len(bucket) != 2 {
+        return 2
+    }
+    let top = col.stack_pop(bucket)
+    if option.is_none(top) or option.option_unwrap(top) != 2 {
+        return 3
+    }
+
+    // The same stack under two keys: one object, two references.
+    let holders: Map<int, Stack<int>> = col.map_new()
+    col.map_set(holders, 1, bucket)
+    col.map_set(holders, 2, bucket)
+    let via_two = col.map_get(holders, 2)
+    if option.is_none(via_two) {
+        return 4
+    }
+    let popped = col.stack_pop(option.option_unwrap(via_two))
+    if option.is_none(popped) or option.option_unwrap(popped) != 1 {
+        return 5
+    }
+    if not col.stack_is_empty(bucket) {
+        return 6
+    }
+
+    // break and continue over a stack iterator.
+    let numbers: Stack<int> = col.stack_new()
+    let i                   = 1
+    while i <= 6 {
+        col.stack_push(numbers, i)
+        i = i + 1
+    }
+    let visited = 0
+    for value in numbers {
+        if value == 4 {
+            continue
+        }
+        if value == 6 {
+            break
+        }
+        visited = visited + value
+    }
+    if visited != 1 + 2 + 3 + 5 {
+        return 7
+    }
+
+    // A for loop over a map snapshot ignores keys added inside the body.
+    let table: Map<int, int> = col.map_new()
+    col.map_set(table, 1, 10)
+    col.map_set(table, 2, 20)
+    let key_sum = 0
+    for key in table {
+        key_sum = key_sum + key
+        col.map_set(table, 100, 1000)
+    }
+    if key_sum != 3 or col.map_len(table) != 3 {
+        return 8
+    }
+
+    // while let consumes an explicit queue iterator exactly once.
+    let q: Queue<int> = col.queue_new()
+    col.queue_enqueue(q, 7)
+    col.queue_enqueue(q, 8)
+    let qit: Iterator<int> = col.queue_iter(q)
+    let q_sum              = 0
+    while let Option::Some(value) = col.iterator_next(qit) {
+        q_sum = q_sum + value
+    }
+    col.iterator_free(qit)
+    if q_sum != 15 {
+        return 9
+    }
+
+    // Re-iterating after a clear yields an empty snapshot.
+    col.stack_clear(numbers)
+    let after_clear = 0
+    for value in numbers {
+        after_clear = after_clear + value
+    }
+    if after_clear != 0 {
+        return 10
+    }
+
+    col.stack_free(bucket)
+    col.stack_free(numbers)
+    col.map_free(registry)
+    col.map_free(holders)
+    col.map_free(table)
+    col.queue_free(q)
+    return 0
+}

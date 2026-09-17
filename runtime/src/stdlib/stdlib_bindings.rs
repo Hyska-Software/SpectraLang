@@ -34,6 +34,35 @@ impl PartialEq for CollectionKey {
 
 impl Eq for CollectionKey {}
 
+/// Total order used by deterministic map snapshots.
+///
+/// The order is defined over the key *value*, never over the stored raw
+/// pointer: string keys compare by their owned text and scalar keys by their
+/// `i64` payload. Sorting by `raw_value()` (a heap address for strings) made
+/// `map_iter`/`map_values_iter` visit string keys in allocation order, which
+/// changes between processes and between JIT and AOT builds.
+impl Ord for CollectionKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+        match (self, other) {
+            (Self::Scalar(left), Self::Scalar(right)) => left.cmp(right),
+            (Self::String { value: left, .. }, Self::String { value: right, .. }) => {
+                left.cmp(right)
+            }
+            // A single typed map cannot mix kinds; keep a stable total order
+            // anyway so untyped callers cannot produce an unspecified result.
+            (Self::Scalar(_), Self::String { .. }) => Ordering::Less,
+            (Self::String { .. }, Self::Scalar(_)) => Ordering::Greater,
+        }
+    }
+}
+
+impl PartialOrd for CollectionKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl Hash for CollectionKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {

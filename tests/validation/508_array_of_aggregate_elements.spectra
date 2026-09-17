@@ -1,0 +1,123 @@
+module validation_508_array_of_aggregate_elements
+
+// Arrays whose element type is an aggregate (a record, a tuple, or an opaque
+// collection handle) must give every slot independent storage. Two backend
+// bugs used to break this: the element stride came from the standalone
+// allocation size instead of the stored size (stride 0 for field-less handle
+// structs, so all slots aliased; stride larger than the allocation for
+// records, so stores ran past the array), and a struct literal built inside a
+// loop kept one promoted stack slot, so every stored element aliased the last
+// construction.
+
+from std.collections import Map, Queue, Stack
+import std.collections as col
+import std.convert
+import std.io
+import std.option as option
+
+record Ponto {
+    x: int,
+    y: int
+}
+
+public func main() returns int {
+    // Collection handles in arrays stay independent.
+    let stacks: [Stack<int>] = [col.stack_new(), col.stack_new()]
+    col.stack_push(stacks[0], 10)
+    col.stack_push(stacks[1], 20)
+    let top0 = col.stack_pop(stacks[0])
+    let top1 = col.stack_pop(stacks[1])
+    if option.is_none(top0) or option.option_unwrap(top0) != 10 {
+        return 1
+    }
+    if option.is_none(top1) or option.option_unwrap(top1) != 20 {
+        return 2
+    }
+
+    let queues: [Queue<int>] = [col.queue_new(), col.queue_new()]
+    col.queue_enqueue(queues[0], 1)
+    col.queue_enqueue(queues[1], 2)
+    let front1 = col.queue_dequeue(queues[1])
+    if option.is_none(front1) or option.option_unwrap(front1) != 2 {
+        return 3
+    }
+
+    let maps: [Map<string, int>] = [col.map_new(), col.map_new()]
+    col.map_set(maps[0], "a", 1)
+    col.map_set(maps[1], "b", 2)
+    if col.map_contains(maps[0], "b") or col.map_contains(maps[1], "a") {
+        return 4
+    }
+    let a = col.map_get(maps[0], "a")
+    if option.is_none(a) or option.option_unwrap(a) != 1 {
+        return 5
+    }
+
+    // Record fields stay independent per slot.
+    let pontos: [Ponto] = [Ponto { x: 1, y: 2 }, Ponto { x: 3, y: 4 }, Ponto { x: 5, y: 6 }]
+    if pontos[0] .x != 1 or pontos[1] .x != 3 or pontos[2] .x != 5 {
+        return 6
+    }
+    if pontos[0] .y != 2 or pontos[1] .y != 4 or pontos[2] .y != 6 {
+        return 7
+    }
+
+    // Records built inside a loop must not alias the loop temporary.
+    let built = [
+        Ponto { x: 0, y: 0 },
+        Ponto { x: 0, y: 0 },
+        Ponto { x: 0, y: 0 },
+        Ponto { x: 0, y: 0 },
+    ]
+    let i = 0
+    while i < 4 {
+        built[i] = Ponto { x: i, y: i * 10 }
+        i = i + 1
+    }
+    i = 0
+    while i < 4 {
+        if built[i] .x != i or built[i] .y != i * 10 {
+            return 8
+        }
+        i = i + 1
+    }
+
+    // Writing records must not run past the array into a neighbouring one.
+    let canary = [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+    let more   = [
+        Ponto { x: 0, y: 0 },
+        Ponto { x: 0, y: 0 },
+        Ponto { x: 0, y: 0 },
+        Ponto { x: 0, y: 0 },
+        Ponto { x: 0, y: 0 },
+        Ponto { x: 0, y: 0 },
+        Ponto { x: 0, y: 0 },
+        Ponto { x: 0, y: 0 }
+    ]
+    i = 0
+    while i < 8 {
+        more[i] = Ponto { x: i, y: i }
+        i = i + 1
+    }
+    i = 0
+    while i < 16 {
+        if canary[i] != 7 {
+            return 9
+        }
+        i = i + 1
+    }
+
+    // Tuples are aggregates too: every slot owns its payload.
+    let pares: [(int, int)] = [(1, 2), (3, 4)]
+    if pares[0] .0 != 1 or pares[0] .1 != 2 or pares[1] .0 != 3 or pares[1] .1 != 4 {
+        return 10
+    }
+
+    col.stack_free(stacks[0])
+    col.stack_free(stacks[1])
+    col.queue_free(queues[0])
+    col.queue_free(queues[1])
+    col.map_free(maps[0])
+    col.map_free(maps[1])
+    return 0
+}

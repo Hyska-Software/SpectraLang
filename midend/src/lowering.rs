@@ -362,8 +362,58 @@ impl MonomorphizationRequest {
             IRType::Bool => "bool".to_string(),
             IRType::String => "string".to_string(),
             IRType::Char => "char".to_string(),
+            IRType::Range => "range".to_string(),
+            IRType::ExactInt { signed, width } => match (signed, width) {
+                (true, IRIntWidth::I8) => "i8",
+                (true, IRIntWidth::I16) => "i16",
+                (true, IRIntWidth::I32) => "i32",
+                (true, IRIntWidth::I64) => "i64",
+                (true, IRIntWidth::Isize | IRIntWidth::Usize) => "isize",
+                (false, IRIntWidth::I8) => "u8",
+                (false, IRIntWidth::I16) => "u16",
+                (false, IRIntWidth::I32) => "u32",
+                (false, IRIntWidth::I64) => "u64",
+                (false, IRIntWidth::Isize | IRIntWidth::Usize) => "usize",
+            }
+            .to_string(),
+            IRType::ExactFloat { width } => match width {
+                IRFloatWidth::F32 => "f32",
+                IRFloatWidth::F64 => "f64",
+            }
+            .to_string(),
             IRType::Pointer(inner) => format!("ptr_{}", Self::type_to_string(inner)),
-            IRType::Struct { name, .. } => name.clone(),
+            IRType::Struct { name, .. } | IRType::Enum { name, .. } => name.clone(),
+            IRType::Generic {
+                name,
+                args,
+                representation,
+            } => {
+                // Prefer the monomorphized representation name (`Stack_int`)
+                // so the specialization key matches the lowering's own naming.
+                if let IRType::Struct { name, .. } = representation.as_ref() {
+                    return name.clone();
+                }
+                let mut rendered = name.clone();
+                for arg in args {
+                    rendered.push('_');
+                    rendered.push_str(&Self::type_to_string(arg));
+                }
+                rendered
+            }
+            IRType::Array { element_type, size } => {
+                format!("array_{}_{}", Self::type_to_string(element_type), size)
+            }
+            IRType::Tuple { elements } => {
+                let mut rendered = "tuple".to_string();
+                for element in elements {
+                    rendered.push('_');
+                    rendered.push_str(&Self::type_to_string(element));
+                }
+                rendered
+            }
+            IRType::Task { output } => format!("task_{}", Self::type_to_string(output)),
+            IRType::DynTrait { trait_name, .. } => format!("dyn_{trait_name}"),
+            IRType::Void => "void".to_string(),
             _ => "unknown".to_string(), // Fallback for other types
         }
     }

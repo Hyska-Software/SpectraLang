@@ -4,6 +4,7 @@ impl CodeGenerator {
         let mut alloca_types = HashMap::new();
         let mut derived_from_alloca = HashMap::new();
         let mut contained_roots: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut alloca_block: HashMap<usize, usize> = HashMap::new();
 
         for block in &ir_func.blocks {
             for instruction in &block.instructions {
@@ -12,6 +13,7 @@ impl CodeGenerator {
                         stack_allocas.insert(result.id);
                         alloca_types.insert(result.id, ty.clone());
                         derived_from_alloca.insert(result.id, result.id);
+                        alloca_block.insert(result.id, block.id);
                     }
                 }
             }
@@ -105,10 +107,128 @@ impl CodeGenerator {
             }
         }
 
+        // A construction inside a cycle runs again on every iteration. A fixed
+        // stack slot would be reused, so every pointer stored into a container
+        // would alias the latest construction (for example, an array element
+        // written from a struct literal inside a loop). Demote such cyclic
+        // constructions to the manual heap so each execution owns a fresh
+        // object.
+        let cyclic_blocks = Self::blocks_on_cycles(ir_func);
+        if !cyclic_blocks.is_empty() {
+            for block in &ir_func.blocks {
+                for instruction in &block.instructions {
+                    if let InstructionKind::Store { value, .. } = &instruction.kind {
+                        if let Some(root) = derived_from_alloca.get(&value.id).copied() {
+                            if let Some(root_block) = alloca_block.get(&root) {
+                                if cyclic_blocks.contains(root_block) {
+                                    stack_allocas.remove(&root);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         stack_allocas
             .into_iter()
             .filter(|id| alloca_types.contains_key(id))
             .collect()
+    }
+
+    /// CFG blocks that can execute more than once: every block that belongs to
+    /// a cycle (including a self-loop). Used to keep per-iteration aggregate
+    /// constructions from sharing one promoted stack slot.
+    fn blocks_on_cycles(ir_func: &IRFunction) -> HashSet<usize> {
+        fn block_successors(block: &IRBasicBlock) -> Vec<usize> {
+            match &block.terminator {
+                Some(Terminator::Branch { target }) => vec![*target],
+                Some(Terminator::CondBranch {
+                    true_block,
+                    false_block,
+                    ..
+                }) => vec![*true_block, *false_block],
+                Some(Terminator::Switch { cases, default, .. }) => {
+                    let mut targets: Vec<usize> =
+                        cases.iter().map(|(_, target)| *target).collect();
+                    targets.push(*default);
+                    targets
+                }
+                _ => Vec::new(),
+            }
+        }
+
+        let by_id: HashMap<usize, &IRBasicBlock> =
+            ir_func.blocks.iter().map(|block| (block.id, block)).collect();
+        let mut index_of: HashMap<usize, usize> = HashMap::new();
+        let mut lowlink: HashMap<usize, usize> = HashMap::new();
+        let mut on_stack: HashSet<usize> = HashSet::new();
+        let mut tarjan_stack: Vec<usize> = Vec::new();
+        let mut next_index = 0usize;
+        let mut cyclic: HashSet<usize> = HashSet::new();
+
+        // Iterative Tarjan: recursion would tie the compiler stack to the
+        // program's CFG depth.
+        for root in ir_func.blocks.iter().map(|block| block.id) {
+            if index_of.contains_key(&root) {
+                continue;
+            }
+            index_of.insert(root, next_index);
+            lowlink.insert(root, next_index);
+            next_index += 1;
+            tarjan_stack.push(root);
+            on_stack.insert(root);
+            let mut work: Vec<(usize, usize)> = vec![(root, 0)];
+
+            while let Some((node, successor_index)) = work.last().copied() {
+                let succs = by_id
+                    .get(&node)
+                    .map(|block| block_successors(block))
+                    .unwrap_or_default();
+                if successor_index < succs.len() {
+                    work.last_mut().expect("work is not empty").1 += 1;
+                    let successor = succs[successor_index];
+                    if !index_of.contains_key(&successor) {
+                        index_of.insert(successor, next_index);
+                        lowlink.insert(successor, next_index);
+                        next_index += 1;
+                        tarjan_stack.push(successor);
+                        on_stack.insert(successor);
+                        work.push((successor, 0));
+                    } else if on_stack.contains(&successor) {
+                        let candidate = index_of[&successor];
+                        let entry = lowlink.entry(node).or_insert(candidate);
+                        *entry = (*entry).min(candidate);
+                    }
+                } else {
+                    work.pop();
+                    if let Some((parent, _)) = work.last().copied() {
+                        let node_low = lowlink[&node];
+                        let entry = lowlink.entry(parent).or_insert(node_low);
+                        *entry = (*entry).min(node_low);
+                    }
+                    if lowlink[&node] == index_of[&node] {
+                        let mut component = Vec::new();
+                        while let Some(top) = tarjan_stack.pop() {
+                            on_stack.remove(&top);
+                            component.push(top);
+                            if top == node {
+                                break;
+                            }
+                        }
+                        let self_loop = by_id
+                            .get(&node)
+                            .map(|block| block_successors(block).contains(&node))
+                            .unwrap_or(false);
+                        if component.len() > 1 || self_loop {
+                            cyclic.extend(component);
+                        }
+                    }
+                }
+            }
+        }
+
+        cyclic
     }
 
     /// Return scalar stack allocas that can be represented by Cranelift

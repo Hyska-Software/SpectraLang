@@ -1,59 +1,17 @@
 use super::*;
 
 impl ASTLowering {
-    /// Infer concrete types from argument expressions
-    /// This is a simplified type inference for monomorphization
+    /// Infer the concrete IR types of a generic call's arguments.
+    ///
+    /// Delegates to the general expression type inference so compound
+    /// arguments (field access, calls, indexing, literals) monomorphize with
+    /// their real types. The previous ad-hoc match returned `Unknown` for
+    /// everything outside a small set of expression kinds, which specialized
+    /// generic functions with unknown type arguments.
     pub(crate) fn infer_argument_types(&mut self, arguments: &[Expression]) -> Vec<IRType> {
         arguments
             .iter()
-            .map(|arg| {
-                // Try to infer type from expression
-                match &arg.kind {
-                    ExpressionKind::NumberLiteral(n) => {
-                        // Try to determine if int or float
-                        if spectra_compiler::numeric::number_literal_is_float(n) {
-                            IRType::Float
-                        } else {
-                            IRType::Int
-                        }
-                    }
-                    ExpressionKind::BoolLiteral(_) => IRType::Bool,
-                    ExpressionKind::StringLiteral(_) => IRType::String,
-                    ExpressionKind::Identifier(name) => {
-                        // Try to find in struct_var_map
-                        if let Some((_, struct_name)) = self.struct_var_map.get(name) {
-                            // Get fields from struct_definitions
-                            let fields = self
-                                .struct_definitions
-                                .get(&struct_name)
-                                .cloned()
-                                .unwrap_or_default();
-                            IRType::Struct {
-                                name: struct_name,
-                                fields,
-                            }
-                        } else if let Some(info) = self.array_map.get(name) {
-                            IRType::Array {
-                                element_type: Box::new(info.element_type.clone()),
-                                size: info.size,
-                            }
-                        } else if let Some(ty) = self.variable_types.get(name) {
-                            ty
-                        } else {
-                            // An unresolved argument must remain poison.  Defaulting
-                            // it to `int` changes generic monomorphization and can
-                            // make an invalid call look well-typed to the backend.
-                            IRType::Unknown
-                        }
-                    }
-                    ExpressionKind::StructLiteral {
-                        name, type_args, ..
-                    } => self
-                        .resolve_struct_type(name, type_args)
-                        .unwrap_or(IRType::Unknown),
-                    _ => IRType::Unknown,
-                }
-            })
+            .map(|arg| self.infer_expr_ir_type(arg))
             .collect()
     }
 

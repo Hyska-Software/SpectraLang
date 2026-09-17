@@ -66,6 +66,77 @@ fn trailing_commas_are_accepted_in_arrays_and_call_arguments() {
 }
 
 #[test]
+fn generic_annotations_parse_in_record_fields_and_array_elements() {
+    use spectra_compiler::ast::{Item, StatementKind, TypeAnnotationKind};
+
+    // The generic-argument heuristic must accept a record's last field (`}`),
+    // a comma-less next field (identifier), and an array element type (`]`).
+    let source = r#"
+        module generic_annotation_surface
+
+        record Inventory {
+            items: Stack<int>
+            labels: Map<string, int>,
+            pending: Queue<string>
+        }
+
+        public func main() returns int {
+            let slots: [Stack<int>] = []
+            return 0
+        }
+    "#;
+
+    let module = parse(source);
+    let fields = module
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Struct(record) if record.name == "Inventory" => Some(record.fields.clone()),
+            _ => None,
+        })
+        .expect("Inventory record");
+    assert_eq!(fields.len(), 3);
+    for (field, expected) in fields.iter().zip(["Stack", "Map", "Queue"]) {
+        assert!(
+            matches!(
+                &field.ty.kind,
+                TypeAnnotationKind::Generic { name, .. } if name == expected
+            ),
+            "field {} should keep its generic annotation, got {:?}",
+            field.name,
+            field.ty.kind
+        );
+    }
+
+    let main = module
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Function(function) if function.name == "main" => Some(function),
+            _ => None,
+        })
+        .expect("main function");
+    let statement = main
+        .body
+        .statements
+        .iter()
+        .find_map(|statement| match &statement.kind {
+            StatementKind::Let(let_statement) => Some(let_statement),
+            _ => None,
+        })
+        .expect("let statement");
+    let annotation = statement.ty.as_ref().expect("let annotation");
+    let TypeAnnotationKind::Generic { name, type_args } = &annotation.kind else {
+        panic!("expected an array annotation, got {:?}", annotation.kind);
+    };
+    assert_eq!(name, "array");
+    assert!(matches!(
+        &type_args[0].kind,
+        TypeAnnotationKind::Generic { name, .. } if name == "Stack"
+    ));
+}
+
+#[test]
 fn doubled_comma_in_array_literal_remains_a_parse_error() {
     let source = r#"
         module doubled_comma_array

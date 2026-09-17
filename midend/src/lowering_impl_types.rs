@@ -452,6 +452,24 @@ impl ASTLowering {
             IRType::Bool => Self::simple_type_annotation("bool"),
             IRType::String => Self::simple_type_annotation("string"),
             IRType::Char => Self::simple_type_annotation("char"),
+            IRType::Range => Self::simple_type_annotation("Range"),
+            IRType::ExactInt { signed, width } => Self::simple_type_annotation(match (signed, width)
+            {
+                (true, IRIntWidth::I8) => "i8",
+                (true, IRIntWidth::I16) => "i16",
+                (true, IRIntWidth::I32) => "i32",
+                (true, IRIntWidth::I64) => "i64",
+                (true, IRIntWidth::Isize | IRIntWidth::Usize) => "isize",
+                (false, IRIntWidth::I8) => "u8",
+                (false, IRIntWidth::I16) => "u16",
+                (false, IRIntWidth::I32) => "u32",
+                (false, IRIntWidth::I64) => "u64",
+                (false, IRIntWidth::Isize | IRIntWidth::Usize) => "usize",
+            }),
+            IRType::ExactFloat { width } => Self::simple_type_annotation(match width {
+                IRFloatWidth::F32 => "f32",
+                IRFloatWidth::F64 => "f64",
+            }),
             IRType::Struct { name, .. } => self
                 .specialized_generic_annotation(name)
                 .unwrap_or_else(|| Self::simple_type_annotation(name)),
@@ -459,6 +477,19 @@ impl ASTLowering {
                 .specialized_generic_annotation_from_enum(name, variants)
                 .or_else(|| self.specialized_generic_annotation(name))
                 .unwrap_or_else(|| Self::simple_type_annotation(name)),
+            IRType::Generic { name, args, .. } => TypeAnnotation {
+                // Keep the arguments: substituting a type parameter with a
+                // generic application and then re-lowering it must recover
+                // `Stack<int>`, not the bare `Stack`.
+                kind: TypeAnnotationKind::Generic {
+                    name: name.clone(),
+                    type_args: args
+                        .iter()
+                        .map(|arg| self.ir_type_to_annotation(arg))
+                        .collect(),
+                },
+                span: Span::dummy(),
+            },
             IRType::Array { element_type, .. } => TypeAnnotation {
                 // Arrays parse as `Generic{array, [T]}` annotations; round-trip
                 // through that form so generic inference records `array<int>`
@@ -480,13 +511,53 @@ impl ASTLowering {
                 },
                 span: Span::dummy(),
             },
+            IRType::Function {
+                params,
+                return_type,
+            } => TypeAnnotation {
+                kind: TypeAnnotationKind::Function {
+                    params: params
+                        .iter()
+                        .map(|param| self.ir_type_to_annotation(param))
+                        .collect(),
+                    return_type: Box::new(self.ir_type_to_annotation(return_type)),
+                },
+                span: Span::dummy(),
+            },
+            IRType::Task { output } => TypeAnnotation {
+                kind: TypeAnnotationKind::Generic {
+                    name: "Task".to_string(),
+                    type_args: vec![self.ir_type_to_annotation(output)],
+                },
+                span: Span::dummy(),
+            },
+            IRType::Tensor { dtype, .. } => TypeAnnotation {
+                // Rank/dims/layout/device metadata has no re-parsable form
+                // here; the dtype keeps the annotation inside the supported
+                // Tensor surface.
+                kind: TypeAnnotationKind::Generic {
+                    name: "Tensor".to_string(),
+                    type_args: vec![self.ir_type_to_annotation(dtype)],
+                },
+                span: Span::dummy(),
+            },
+            IRType::DynTrait {
+                trait_name,
+                auto_traits,
+            } => TypeAnnotation {
+                kind: TypeAnnotationKind::DynTrait {
+                    trait_name: trait_name.clone(),
+                    auto_traits: auto_traits.clone(),
+                },
+                span: Span::dummy(),
+            },
             // Pointers have no annotation syntax (`Box` only covers
             // `Box<dyn Trait>`), so the pointee form is kept: collapsing is
             // lossy but total, while inventing a `pointer` generic would
             // break every downstream consumer of annotations.
             IRType::Pointer(inner) => self.ir_type_to_annotation(inner.as_ref()),
             IRType::Void => Self::simple_type_annotation("void"),
-            _ => Self::unknown_type_annotation(),
+            IRType::Unknown => Self::unknown_type_annotation(),
         }
     }
 }

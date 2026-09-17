@@ -100,24 +100,27 @@ impl MapRegistry {
     pub(crate) fn keys_snapshot(&self, handle: usize) -> Result<Vec<SpectraHostValue>, i32> {
         let id = Self::id(handle)?;
         let map = self.maps.get(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
-        let mut keys = lock_unpoisoned(map)
+        // Sort the key values, not their raw pointers: string keys order by
+        // text, so the snapshot is identical across runs and between the JIT
+        // and AOT builds.
+        let mut keys = lock_unpoisoned(&map)
             .data
             .keys()
-            .map(CollectionKey::raw_value)
+            .cloned()
             .collect::<Vec<_>>();
         keys.sort_unstable();
-        Ok(keys)
+        Ok(keys.into_iter().map(|key| key.raw_value()).collect())
     }
 
     pub(crate) fn values_snapshot(&self, handle: usize) -> Result<Vec<SpectraHostValue>, i32> {
         let id = Self::id(handle)?;
         let map = self.maps.get(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
-        let mut values = lock_unpoisoned(map)
+        let mut values = lock_unpoisoned(&map)
             .data
             .iter()
-            .map(|(key, value)| (key.raw_value(), *value))
+            .map(|(key, value)| (key.clone(), *value))
             .collect::<Vec<_>>();
-        values.sort_unstable_by_key(|(key, _)| *key);
+        values.sort_unstable_by(|left, right| left.0.cmp(&right.0));
         Ok(values.into_iter().map(|(_, value)| value).collect())
     }
 

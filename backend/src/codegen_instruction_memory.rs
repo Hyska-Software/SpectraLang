@@ -213,8 +213,14 @@ impl CodeGenerator {
 
                 let index_val = get_value(index)?;
 
-                // Calcular o tamanho do elemento em bytes
-                let elem_size = Self::type_size_bytes(element_type) as i64;
+                // Element stride inside an array is the *stored* size of the
+                // element (`layout::stored_size`): aggregates are embedded as
+                // their 8-byte pointer, matching the array allocation size
+                // (`stored_size(element) * length`). Using the standalone
+                // allocation size here made stride 0 for field-less opaque
+                // handle structs (every element aliased) and stride larger
+                // than the allocation for records (out-of-bounds stores).
+                let elem_size = spectra_midend::layout::stored_size(element_type) as i64;
 
                 // offset = index * elem_size
                 let elem_size_val = builder.ins().iconst(types::I64, elem_size);

@@ -1,0 +1,93 @@
+module validation_509_generic_type_annotation_positions
+
+// Generic type annotations (`Stack<int>`, `Map<string, int>`, ...) must be
+// accepted in every type position. The parser only treated `<` as the start
+// of a type-argument list when the matching `>` was followed by `{`, `=`, a
+// comma, `)`, `returns`, `[`, or another `>`; a struct's last field (`}`) and
+// an array element type (`]`) were missing, so `items: Stack<int>` and
+// `[Stack<int>]` failed to parse.
+
+from std.collections import Map, Queue, Stack
+import std.collections as col
+import std.convert
+import std.io
+import std.option as option
+
+record Inventory {
+    items: Stack<int>
+    labels: Map<string, int>
+    pending: Queue<string>
+}
+
+func stack_size<T>(items: Stack<T>) returns int {
+    return col.stack_len(items)
+}
+
+func total(inv: Inventory) returns int {
+    let sum = 0
+    for value in inv.items {
+        sum = sum + value
+    }
+    return sum
+}
+
+public func main() returns int {
+    let items: Stack<int> = col.stack_new()
+    col.stack_push(items, 4)
+    col.stack_push(items, 5)
+    col.stack_push(items, 6)
+
+    let labels: Map<string, int> = col.map_new()
+    col.map_set(labels, "count", 3)
+
+    let pending: Queue<string> = col.queue_new()
+    col.queue_enqueue(pending, "first")
+
+    // A record field of a generic type, with the last field uncommaed.
+    let inventory = Inventory { items: items, labels: labels, pending: pending }
+    if total(inventory) != 15 {
+        return 1
+    }
+    if stack_size(inventory.items) != 3 {
+        return 2
+    }
+    let count = col.map_get(inventory.labels, "count")
+    if option.is_none(count) or option.option_unwrap(count) != 3 {
+        return 3
+    }
+    let next = col.queue_dequeue(inventory.pending)
+    if option.is_none(next) or option.option_unwrap(next) != "first" {
+        return 4
+    }
+
+    // Generic annotations as array element types.
+    let slots: [Stack<int>] = [col.stack_new(), col.stack_new()]
+    col.stack_push(slots[1], 9)
+    let top = col.stack_pop(slots[1])
+    if option.is_none(top) or option.option_unwrap(top) != 9 {
+        return 5
+    }
+
+    // The same annotations keep working in every existing position.
+    let as_param: Queue<int> = col.queue_new()
+    col.queue_enqueue(as_param, 1)
+    if queue_front(as_param) != 1 {
+        return 6
+    }
+
+    col.stack_free(items)
+    col.stack_free(slots[0])
+    col.stack_free(slots[1])
+    col.map_free(labels)
+    col.queue_free(pending)
+    col.queue_free(as_param)
+    return 0
+}
+
+func queue_front(values: Queue<int>) returns int {
+    let front = col.queue_peek(values)
+    if option.is_none(front) {
+        return-1
+    }
+    return option.option_unwrap(front)
+}

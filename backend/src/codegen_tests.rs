@@ -541,6 +541,180 @@ mod tests {
     }
 
     #[test]
+    fn cyclic_aggregate_construction_is_not_stack_promoted() {
+        // A struct literal built inside a loop body must get fresh storage per
+        // iteration: promoted to one fixed stack slot it would make every
+        // stored pointer alias the latest construction.
+        let element_type = IRType::Struct {
+            name: "Handle".to_string(),
+            fields: vec![],
+        };
+        let array_type = IRType::Array {
+            element_type: Box::new(element_type.clone()),
+            size: 2,
+        };
+        let function = IRFunction {
+            name: "cyclic_construction".to_string(),
+            params: vec![],
+            return_type: IRType::Void,
+            source_span: None,
+            locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
+            next_value_id: 4,
+            next_block_id: 2,
+            blocks: vec![
+                IRBasicBlock {
+                    id: 0,
+                    label: "entry".to_string(),
+                    instructions: vec![
+                        Instruction {
+                            id: 0,
+                            kind: InstructionKind::Alloca {
+                                result: IRValue { id: 0 },
+                                ty: array_type,
+                            },
+                            source_span: None,
+                        },
+                        Instruction {
+                            id: 1,
+                            kind: InstructionKind::ConstInt {
+                                result: IRValue { id: 1 },
+                                value: 0,
+                            },
+                            source_span: None,
+                        },
+                        Instruction {
+                            id: 2,
+                            kind: InstructionKind::GetElementPtr {
+                                result: IRValue { id: 2 },
+                                ptr: IRValue { id: 0 },
+                                index: IRValue { id: 1 },
+                                element_type: element_type.clone(),
+                            },
+                            source_span: None,
+                        },
+                    ],
+                    terminator: Some(Terminator::Branch { target: 1 }),
+                },
+                IRBasicBlock {
+                    id: 1,
+                    label: "loop.body".to_string(),
+                    instructions: vec![
+                        Instruction {
+                            id: 3,
+                            kind: InstructionKind::Alloca {
+                                result: IRValue { id: 3 },
+                                ty: element_type,
+                            },
+                            source_span: None,
+                        },
+                        Instruction {
+                            id: 4,
+                            kind: InstructionKind::Store {
+                                ptr: IRValue { id: 2 },
+                                value: IRValue { id: 3 },
+                            },
+                            source_span: None,
+                        },
+                    ],
+                    terminator: Some(Terminator::Branch { target: 1 }),
+                },
+            ],
+        };
+
+        let stack_allocas = CodeGenerator::collect_stack_allocas(&function);
+        assert!(
+            stack_allocas.contains(&0),
+            "the array container itself stays stack-promoted"
+        );
+        assert!(
+            !stack_allocas.contains(&3),
+            "per-iteration construction must be demoted to the manual heap"
+        );
+    }
+
+    #[test]
+    fn straight_line_aggregate_construction_stays_stack_promoted() {
+        // The same construction outside a cycle executes once, so its stack
+        // slot cannot be reused by a later iteration and stays promoted.
+        let element_type = IRType::Struct {
+            name: "Handle".to_string(),
+            fields: vec![],
+        };
+        let array_type = IRType::Array {
+            element_type: Box::new(element_type.clone()),
+            size: 2,
+        };
+        let function = IRFunction {
+            name: "straight_line_construction".to_string(),
+            params: vec![],
+            return_type: IRType::Void,
+            source_span: None,
+            locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
+            next_value_id: 4,
+            next_block_id: 2,
+            blocks: vec![
+                IRBasicBlock {
+                    id: 0,
+                    label: "entry".to_string(),
+                    instructions: vec![
+                        Instruction {
+                            id: 0,
+                            kind: InstructionKind::Alloca {
+                                result: IRValue { id: 0 },
+                                ty: array_type,
+                            },
+                            source_span: None,
+                        },
+                        Instruction {
+                            id: 1,
+                            kind: InstructionKind::ConstInt {
+                                result: IRValue { id: 1 },
+                                value: 0,
+                            },
+                            source_span: None,
+                        },
+                        Instruction {
+                            id: 2,
+                            kind: InstructionKind::GetElementPtr {
+                                result: IRValue { id: 2 },
+                                ptr: IRValue { id: 0 },
+                                index: IRValue { id: 1 },
+                                element_type: element_type.clone(),
+                            },
+                            source_span: None,
+                        },
+                        Instruction {
+                            id: 3,
+                            kind: InstructionKind::Alloca {
+                                result: IRValue { id: 3 },
+                                ty: element_type,
+                            },
+                            source_span: None,
+                        },
+                        Instruction {
+                            id: 4,
+                            kind: InstructionKind::Store {
+                                ptr: IRValue { id: 2 },
+                                value: IRValue { id: 3 },
+                            },
+                            source_span: None,
+                        },
+                    ],
+                    terminator: Some(Terminator::Return { value: None }),
+                },
+            ],
+        };
+
+        let stack_allocas = CodeGenerator::collect_stack_allocas(&function);
+        assert!(stack_allocas.contains(&0));
+        assert!(stack_allocas.contains(&3));
+    }
+
+    #[test]
     fn test_type_conversion() {
         assert_eq!(
             CodeGenerator::ir_type_to_cranelift(&IRType::Bool).unwrap(),

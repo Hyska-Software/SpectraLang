@@ -235,9 +235,12 @@ impl ASTLowering {
                 if segments.len() == 1 {
                     let name = &segments[0];
                     if let Some(concrete_type) = type_map.get(name) {
-                        // Replace with concrete type name
-                        let concrete_name = self.ir_type_to_ast_name(concrete_type);
-                        segments[0] = concrete_name;
+                        // Replace the whole annotation with the concrete IR
+                        // type: a flat name would drop the structure of
+                        // compound types (`Stack<int>` -> bare `Stack`,
+                        // `[int]` -> `unknown`) and the re-lowering would
+                        // resolve the argument to Unknown.
+                        *annotation = self.ir_type_to_annotation(concrete_type);
                     }
                 }
             }

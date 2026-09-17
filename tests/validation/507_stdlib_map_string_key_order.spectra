@@ -1,0 +1,91 @@
+module validation_507_stdlib_map_string_key_order
+
+// Map snapshots must be deterministic: iterating a string-keyed map visits
+// the keys in value order (lexicographic UTF-8 bytes), never in allocation
+// order. Before the runtime fix, `map_iter` sorted the raw key pointers, so
+// the same program produced a different order on every run and a different
+// order again between the JIT and AOT builds.
+
+from std.collections import Iterator, Map
+import std.collections as col
+import std.convert
+import std.io
+import std.option as option
+import std.string
+
+public func main() returns int {
+    let table: Map<string, int> = col.map_new()
+    col.map_set(table, "delta", 4)
+    col.map_set(table, "alpha", 1)
+    col.map_set(table, "charlie", 3)
+    col.map_set(table, "bravo", 2)
+
+    let keys = ""
+    for key in table {
+        keys = concat(keys, key)
+        keys = concat(keys, " ")
+    }
+    if keys != "alpha bravo charlie delta " {
+        return 1
+    }
+
+    // Values follow the same key order: 1, 2, 3, 4.
+    let values = ""
+    for value in col.map_values_iter(table) {
+        values = concat(values, int_to_string(value))
+    }
+    if values != "1234" {
+        return 2
+    }
+
+    // Computed keys inserted in ascending order still come out sorted.
+    let computed: Map<string, int> = col.map_new()
+    col.map_set(computed, concat("k", int_to_string(3)), 3)
+    col.map_set(computed, concat("k", int_to_string(1)), 1)
+    col.map_set(computed, concat("k", int_to_string(2)), 2)
+    let computed_keys = ""
+    for key in computed {
+        computed_keys = concat(computed_keys, key)
+        computed_keys = concat(computed_keys, " ")
+    }
+    if computed_keys != "k1 k2 k3 " {
+        return 3
+    }
+
+    // UTF-8 byte order: ação (0x61) < café (0x63) < zebra (0x7A) < 日本 (0xE6).
+    let unicode: Map<string, int> = col.map_new()
+    col.map_set(unicode, "日本", 3)
+    col.map_set(unicode, "café", 2)
+    col.map_set(unicode, "ação", 1)
+    col.map_set(unicode, "zebra", 4)
+    let unicode_keys = ""
+    for key in unicode {
+        unicode_keys = concat(unicode_keys, key)
+        unicode_keys = concat(unicode_keys, " ")
+    }
+    if unicode_keys != "ação café zebra 日本 " {
+        return 4
+    }
+
+    // The snapshot is fixed at creation: later mutations are invisible.
+    let snapshot: Iterator<string> = col.map_iter(table)
+    col.map_set(table, "aardvark", 0)
+    col.map_clear(table)
+    let snapshot_keys = 0
+    while true {
+        let o = col.iterator_next(snapshot)
+        if option.is_none(o) {
+            break
+        }
+        snapshot_keys = snapshot_keys + 1
+    }
+    col.iterator_free(snapshot)
+    if snapshot_keys != 4 {
+        return 5
+    }
+
+    col.map_free(table)
+    col.map_free(computed)
+    col.map_free(unicode)
+    return 0
+}

@@ -214,7 +214,7 @@ impl Parser {
     ///
     /// Heuristic: scan forward to find the matching `>`, then check that the
     /// token immediately after it is one that can legally follow a type annotation
-    /// (`{`, `=`, `,`, `)`, `;`, `->`, or EOF).
+    /// (`{`, `}`, `=`, `,`, `)`, `]`, `;`, `->`, or EOF).
     fn looks_like_type_args_in_annotation(&self) -> bool {
         if !self.check_symbol('<') {
             return false;
@@ -235,12 +235,19 @@ impl Parser {
                         return matches!(
                             self.tokens[after].kind,
                             TokenKind::Symbol('{')      // function body / struct literal
+                            | TokenKind::Symbol('}')    // last struct field / block end
                             | TokenKind::Symbol('=')    // let binding
-                            | TokenKind::Symbol(',')    // parameter separator
+                            | TokenKind::Symbol(',')    // parameter / field separator
                             | TokenKind::Symbol(')')    // end of parameter list / tuple
-                            | TokenKind::Keyword(Keyword::Returns) // function return type
+                            | TokenKind::Symbol(']')    // array element type
+                            | TokenKind::Symbol(';')    // statement terminator
                             | TokenKind::Symbol('[') // array index after type
                             | TokenKind::Symbol('>') // nested generic closing delimiter
+                            | TokenKind::Symbol('#') // next field carries an attribute
+                            | TokenKind::Identifier(_) // comma-less next field/parameter
+                            | TokenKind::Keyword(Keyword::Public)   // next field visibility
+                            | TokenKind::Keyword(Keyword::Internal) // next field visibility
+                            | TokenKind::Keyword(Keyword::Returns) // function return type
                         );
                     }
                 }
