@@ -1,19 +1,19 @@
-# Tail-Call Recursion Codegen Failure (Known Failure)
+# Tail-Call Recursion Codegen Failure (Resolved)
 
-Status: **open** — valid recursive programs are rejected by the backend or crash the compiler.
+Status: **resolved** — the per-block tail-call terminator bug was fixed and
+covered by regressions.
 
 Found: 2026-09-16 · CLI 0.3.4 (nightly) · commit `5a08bf9d` · `cranelift-frontend 0.130.0`.
+Fixed: 2026-09-16 · same toolchain line.
 
-## Scope
+## Original failure
 
-Backend Cranelift function building (`backend/`, via `cranelift-frontend`).
-Semantic analysis accepts these programs: `spectralang check` itself emits the
-`error[codegen]` diagnostics below, so the failure fires on every CLI path
-(`check`, `run`, `compile`, `--emit-object`).
+Backend Cranelift function building (`backend/`) rejected valid recursive
+programs or crashed the compiler. Semantic analysis accepted them: the
+`error[codegen]` diagnostics below fired on every CLI path (`check`, `run`,
+`compile`, `--emit-object`).
 
-## Failing shapes
-
-### A. Tail call as the whole return value in `if` without `else` → exit 65
+### A. Tail call as the whole `return` value in `if` without `else` → exit 65
 
 ```spectra
 module repro_a
@@ -32,104 +32,77 @@ public func main() returns int {
 }
 ```
 
-```powershell
-spectralang check repro_a_tail_if_no_else.spectra
-```
-
 ```text
 error[codegen]: Failed to define function 'helper': Compilation(Verifier(VerifierErrors([VerifierError { location: inst3, context: None, message: "invalid block reference block2" }])))
 ```
 
 ### B. Single-parameter tail recursion, same shape → compiler panic, exit 101
 
-```spectra
-module repro_b
-import std.io
-
-func down(n: int) returns int {
-    if n > 0 {
-        return down(n - 1)
-    }
-    return 0
-}
-
-public func main() returns int {
-    println(f"d={down(5)}")
-    return 0
-}
-```
-
 ```text
 thread 'main' panicked at cranelift-frontend-0.130.0/src/frontend.rs:692:21:
 FunctionBuilder finalized, but block block2 is not filled
 ```
 
-No diagnostic is emitted; the process aborts with exit code 101.
+No diagnostic was emitted; the process aborted with exit code 101.
 
 ### C. Array indexed store + recursive call in one branch → exit 65
 
-Even with `if`/`else`, an indexed store to an array parameter in the same
-branch as the recursive call fails:
+With `pilha[topo] = n` in the same branch as the recursive call (even with
+`if`/`else`), Cranelift reported `invalid block reference block3`.
 
-```spectra
-module repro_c
-import std.io
+## Root cause
 
-func empilha(n: int, pilha: [int], topo: int) returns int {
-    if n > 1 {
-        pilha[topo] = n
-        return empilha(n - 1, pilha, topo + 1)
-    } else {
-        return topo
-    }
-}
+`emitted_tail_call` in `backend/src/codegen_block.rs` was a function-scoped
+flag. A block that emitted Cranelift's native `return_call` set it to `true`,
+and `generate_block` skipped the IR terminator whenever the flag was set. The
+flag was only cleared at the start of the next `Call` instruction, so every
+later block **without a call** — for example the `if.merge` return that follows
+a tail-recursive `if.then` — also skipped its own terminator and was left
+unfilled.
 
-public func main() returns int {
-    let pilha = [0, 0, 0, 0, 0, 0, 0, 0]
-    println(f"t={empilha(5, pilha, 0)}")
-    return 0
-}
-```
+The two observed failure modes were the same bug:
 
-```text
-error[codegen]: Failed to define function 'empilha': Compilation(Verifier(VerifierErrors([VerifierError { location: inst3, context: None, message: "invalid block reference block3" }])))
-```
+- when the unfilled block had instructions (e.g. a `ConstInt 0` before the
+  return, as in shape B), `FunctionBuilder::finalize` hit its debug assertion
+  and panicked;
+- when the unfilled block only had the terminator (shape A), the block stayed
+  pristine, finalization passed, and `module.define_function` failed Cranelift
+  verification with `invalid block reference`.
 
-Each half in isolation compiles: an indexed store inside `if` with a plain
-trailing return works, and a non-recursive call in the same position works.
-Only the store + recursive-call combination fails.
+Shape C failed for the same reason: the store instruction does not reset the
+flag, only a `Call` does.
 
-## Shapes that work (controls, verified on the same toolchain)
+## Fix
 
-- Non-tail recursion: `return n * fat_rec(n - 1)` with a trailing `return 1`
-  (the shape used by `examples/fibonacci.spectra` and `console_demo.spectra`).
-- Pure-scalar tail recursion with `if`/`else` and a return in **both** branches
-  (no trailing return after the `if`).
-- Recursion threading `List<T>` handles (`std.collections`) instead of array
-  parameters, with strict `if`/`else` returns.
-- `unit`-returning recursion with the recursive call as a statement plus a
-  bare `return`.
+`backend/src/codegen_block.rs`: reset `*emitted_tail_call = false` at the start
+of every block, so the flag means "this block already received a native
+`return_call` terminator" instead of "some block in this function did".
 
-The `PythontoSpectra/*_sem_laco.spectra` conversions were written against the
-working shapes (recursive `List<int>` stack, strict `if`/`else`).
+Both generators share `CodeGenerator::generate_block`, so the JIT path
+(`codegen_core.rs`) and the AOT path (`aot.rs`) are fixed together. Tail-fusion
+marking (`midend/src/passes/tail_call_marking.rs`) already guarantees the
+marked call is the last instruction of a block whose terminator returns its
+result, so skipping that terminator remains correct.
 
-## Hypothesis (unconfirmed)
+## Regressions
 
-A branch that ends in a call-as-return-value never seals/fills its successor
-block in the Cranelift builder, so verification fails (`invalid block
-reference`) or finalization panics (`block is not filled`). The array-store
-variant suggests the store + call instruction sequence leaves the fallthrough
-block unreferenced the same way. Requires backend minimization to confirm.
+- `backend/src/codegen_tests.rs::tail_call_block_does_not_suppress_later_block_return`
+  builds the midend block order (tail-call `step` block before the plain-return
+  `base` block), asserts the finalized IR still contains exactly one
+  `return_call` plus the base `ret`, and runs 100k recursion levels to prove
+  the native tail call survives. Reverting the fix makes this test fail with
+  the original `invalid block reference block2` error.
+- `tests/validation/506_tail_call_recursion_shapes.spectra` covers shapes A, B,
+  and C plus a 200k-level deep case; it compiles, lints, formats clean, runs
+  under the JIT, and passes as an AOT executable.
 
-## Impact
+## Validation evidence
 
-- Valid programs rejected (exit 65) or compiler crash (exit 101, no diagnostics).
-- Blocks the natural accumulator-recursion style and array-backed explicit
-  stacks inside recursive functions; workarounds exist (see above).
-
-## Suggested follow-up
-
-- Backend-owner minimization and fix in block sealing for call-terminated branches.
-- Add `tests/validation/` regressions for shapes A–C once fixed (they must stay
-  out for now: they fail `check`).
-- Re-evaluate the `PythontoSpectra/*_sem_laco.spectra` workarounds after the fix.
+- `cargo test -p spectra-backend` — 57 passed.
+- `spectralang check`, `lint`, `fmt --check` on the new regression — clean.
+- `spectralang run tests/validation/506_tail_call_recursion_shapes.spectra` —
+  exit 0; `compile --debug-info=none --emit-exe` + produced binary — exit 0.
+- The `PythontoSpectra/*.spectra` conversions that motivated the report now
+  run byte-identical to their Python originals under JIT and AOT
+  (`fatorial_pilha 20 --traco`, `fatorial_pilha_sem_laco 20 --traco`,
+  `fibonacci_pilha_sem_laco 30 --traco` and `92`).

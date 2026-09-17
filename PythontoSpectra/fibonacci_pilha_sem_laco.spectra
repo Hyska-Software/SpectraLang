@@ -8,31 +8,30 @@ import std.io
 import std.option as option
 import std.string
 
-// Fibonacci com pilha explicita (LIFO), sem nenhuma repeticao por
-// palavra-chave de ciclo: cada passo e uma chamada recursiva.
+// Fibonacci with an explicit stack (LIFO), with no repetition keyword at all:
+// every step is a recursive call.
 //
-// Uso:
+// Usage:
 //     spectralang run fibonacci_pilha_sem_laco.spectra
 //     spectralang run fibonacci_pilha_sem_laco.spectra -- 10
 //     spectralang run fibonacci_pilha_sem_laco.spectra -- 10 --traco
 //
-// Diferenca em relacao ao fatorial: aqui o elemento retirado NAO e o
-// operando, e sim o indice do passo -- f(k) = f(k-1) + f(k-2). Os dois
-// valores vivos da recorrencia ficam em dois registradores (a, b), nao na
-// pilha. O topo comeca em 2 e sobe ate N, entao o k retirado e exatamente
-// o indice que esta sendo formado; empilhar N..2 e retirar em ordem
-// crescente e o que garante isso.
+// Difference from the factorial: here the popped element is NOT the operand,
+// it is the index of the step -- f(k) = f(k-1) + f(k-2). The two live values
+// of the recurrence stay in two registers (a, b), not on the stack. The top
+// starts at 2 and climbs to N, so the popped k is exactly the index being
+// formed; pushing N..2 and popping in increasing order is what guarantees it.
 //
-// Cada passo recebe (k, a, b, novo) em quatro listas paralelas, na ordem
-// dos pop. Antes do passo: a = f(k-2), b = f(k-1). Depois: o par vira
-// (b, a + b) e o passo guarda (k, a, b, a + b).
+// Each step records (k, a, b, new) in four parallel lists, in pop order.
+// Before the step: a = f(k-2), b = f(k-1). After: the pair becomes
+// (b, a + b) and the step stores (k, a, b, a + b).
 //
-// Limites desta versao: int e i64, logo N vai ate 92 (fib(92) =
-// 7540113804746346429; fib(93) transborda; o Python original usa BigInt).
-// A profundidade da recursao e O(N); com N <= 92 isso e irrelevante, e nao
-// ha teto de ~997 chamadas como no CPython.
+// Limits of this version: int is i64, so N goes up to 92 (fib(92) =
+// 7540113804746346429; fib(93) overflows; the original Python uses BigInt).
+// The recursion depth is O(N); with N <= 92 that is irrelevant, and there is
+// no ~997-call ceiling like CPython has.
 
-// Empilha N, N-1, ..., 2: um elemento por passo da recorrencia.
+// Pushes N, N-1, ..., 2: one element per step of the recurrence.
 func empilha(n: int, pilha: List<int>) returns int {
     if n > 1 {
         col.list_push(pilha, n)
@@ -42,7 +41,7 @@ func empilha(n: int, pilha: List<int>) returns int {
     }
 }
 
-// Um passo por chamada: (a, b) = (b, a + b). Devolve f(N) ao esvaziar.
+// One step per call: (a, b) = (b, a + b). Returns f(N) when the stack drains.
 func desempilha(pilha: List<int>, a: int, b: int, ks: List<int>, pas: List<int>, pbs: List<int>, novos: List<int>) returns int {
     if col.list_len(pilha) > 0 {
         let o = col.list_pop(pilha)
@@ -62,7 +61,7 @@ func desempilha(pilha: List<int>, a: int, b: int, ks: List<int>, pas: List<int>,
     }
 }
 
-// Devolve f(N); f(0) = 0 e f(1) = 1 sao os casos base.
+// Returns f(N); f(0) = 0 and f(1) = 1 are the base cases.
 func fibonacci(n: int, ks: List<int>, pas: List<int>, pbs: List<int>, novos: List<int>) returns int {
     if n == 0 {
         return 0
@@ -75,7 +74,7 @@ func fibonacci(n: int, ks: List<int>, pas: List<int>, pbs: List<int>, novos: Lis
     }
 }
 
-// Imprime um passo por linha: uma chamada recursiva por linha.
+// Prints one step per line: one recursive call per line.
 func imprime_passos(ks: List<int>, pas: List<int>, pbs: List<int>, novos: List<int>, total: int, i: int, largura: int) {
     if i < total {
         let ok = col.list_get(ks, i)

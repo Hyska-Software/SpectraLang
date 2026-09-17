@@ -8,28 +8,28 @@ import std.io
 import std.option as option
 import std.string
 
-// Fatorial com pilha explicita (LIFO), sem nenhuma repeticao por palavra-chave
-// de ciclo: cada passo e uma chamada recursiva.
+// Factorial with an explicit stack (LIFO), with no repetition keyword at all:
+// every step is a recursive call.
 //
-// Uso:
+// Usage:
 //     spectralang run fatorial_pilha_sem_laco.spectra
-//     spectralang run fatorial_pilha_sem_laco.spectra -- 50
-//     spectralang run fatorial_pilha_sem_laco.spectra -- 50 --traco
+//     spectralang run fatorial_pilha_sem_laco.spectra -- 20
+//     spectralang run fatorial_pilha_sem_laco.spectra -- 20 --traco
 //
-// Onde a versao anterior usava ciclos, aqui ha recursao:
-//     consumir a pilha passo a passo -> desempilha (uma chamada por elemento)
-//     imprimir um passo por linha     -> imprime_passos (uma chamada por linha)
-//     varrer os argumentos            -> tem_traco / busca_texto
-//     ler os digitos do texto         -> parse_rec
+// Where the previous version used loops, this one recurses:
+//     consume the stack one step at a time -> desempilha (one call per element)
+//     print one step per line               -> imprime_passos (one call per line)
+//     scan the arguments                    -> tem_traco / busca_texto
+//     read the digits of the text           -> parse_rec
 //
-// A pilha e List<int> de std.collections: empilha N..2 (topo = 2) e cada
-// pop devolve 2, 3, ..., N, como no Python original.
+// The stack is a std.collections List<int>: pushes N..2 (top = 2) and every
+// pop yields 2, 3, ..., N, like the original Python.
 //
-// Limites desta versao: int e i64, logo N vai ate 20 (21! transborda; o Python
-// original usa BigInt). A profundidade da recursao e O(N); com N <= 20 isso e
-// irrelevante, e nao ha teto de ~997 chamadas como no CPython.
+// Limits of this version: int is i64, so N goes up to 20 (21! overflows; the
+// original Python uses BigInt). The recursion depth is O(N); with N <= 20
+// that is irrelevant, and there is no ~997-call ceiling like CPython has.
 
-// Empilha N, N-1, ..., 2. Uma chamada por elemento empilhado.
+// Pushes N, N-1, ..., 2. One call per pushed element.
 func empilha(n: int, pilha: List<int>) returns int {
     if n > 1 {
         col.list_push(pilha, n)
@@ -39,9 +39,10 @@ func empilha(n: int, pilha: List<int>) returns int {
     }
 }
 
-// Desempilha multiplicando. `fatores` recebe cada fator na ordem dos pop e
-// `produtos` o acumulado correspondente. Uma chamada por elemento retirado;
-// o retorno da recursao e a "volta" da pilha (o ultimo empilhado sai antes).
+// Pops multiplying. `fatores` receives each factor in pop order and
+// `produtos` the matching accumulated product. One call per removed element;
+// the return of the recursion is the "way back" of the stack (the last one
+// pushed leaves first).
 func desempilha(pilha: List<int>, acumulado: int, fatores: List<int>, produtos: List<int>) returns int {
     if col.list_len(pilha) > 0 {
         let o = col.list_pop(pilha)
@@ -67,7 +68,7 @@ func fatorial(n: int, fatores: List<int>, produtos: List<int>) returns int {
     return resultado
 }
 
-// Imprime um passo por linha: uma chamada recursiva por linha.
+// Prints one step per line: one recursive call per line.
 func imprime_passos(fatores: List<int>, produtos: List<int>, total: int, i: int, anterior: int, largura: int) {
     if i < total {
         let of = col.list_get(fatores, i)
@@ -124,7 +125,7 @@ func parse_int(texto: string) returns(bool, int) {
     return parse_rec(texto, 0, len(texto), false, 0, 0)
 }
 
-// Conta os digitos decimais com recursao (sem ciclo).
+// Counts the decimal digits with recursion (no loop).
 func num_digitos(n: int) returns int {
     if n < 10 {
         return 1
@@ -142,7 +143,7 @@ func arg_ou_vazio(i: int) returns string {
     }
 }
 
-// Diz se "--traco" aparece entre os argumentos (varredura recursiva).
+// Tells whether "--traco" appears among the arguments (recursive scan).
 func tem_traco(idx: int, argc: int) returns bool {
     if idx >= argc {
         return false
@@ -155,7 +156,7 @@ func tem_traco(idx: int, argc: int) returns bool {
     }
 }
 
-// Devolve o primeiro argumento diferente de "--traco", ou "" se nao houver.
+// Returns the first argument different from "--traco", or "" if there is none.
 func busca_texto(idx: int, argc: int) returns string {
     if idx >= argc {
         return ""

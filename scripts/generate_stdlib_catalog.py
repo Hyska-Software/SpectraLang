@@ -165,7 +165,7 @@ def read_expression(text: str, index: int) -> str:
 
 def struct_ir_name(name: str) -> str:
     """Render a midend struct name with the catalog IR type grammar."""
-    for prefix in ("List", "Set", "Iterator"):
+    for prefix in ("List", "Set", "Iterator", "Stack", "Queue"):
         if name.startswith(prefix + "_"):
             return f"{prefix}<{name[len(prefix) + 1:]}>"
     if name.startswith("Map_"):

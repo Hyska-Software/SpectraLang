@@ -6,19 +6,19 @@ import std.io
 import std.option as option
 import std.string
 
-// Fatorial com pilha explicita (LIFO): empilha N..2 e desempilha
-// multiplicando, de modo que os fatores saem na ordem 2, 3, ..., N.
+// Factorial with an explicit stack (LIFO): pushes N..2 and pops multiplying,
+// so the factors come out in the order 2, 3, ..., N.
 //
-// Devolve o resultado; os passos (fator, produto acumulado) saem nos
-// arrays paralelos `fatores` / `produtos` e o total e N - 1 (0 se N < 2).
+// Returns the result; the steps (factor, accumulated product) come out in the
+// parallel arrays `fatores` / `produtos` and the count is N - 1 (0 if N < 2).
 //
-// Uso:
+// Usage:
 //     spectralang run fatorial_pilha.spectra
-//     spectralang run fatorial_pilha.spectra -- 50
-//     spectralang run fatorial_pilha.spectra -- 50 --traco
+//     spectralang run fatorial_pilha.spectra -- 20
+//     spectralang run fatorial_pilha.spectra -- 20 --traco
 //
-// Limite: int e i64, logo N vai ate 20 (21! transborda). O Python original
-// usa BigInt; aqui N > 20 e recusado com mensagem.
+// Limit: int is i64, so N goes up to 20 (21! overflows). The original Python
+// uses BigInt; here N > 20 is refused with a message.
 
 func nova_pilha() returns[int] {
     return[

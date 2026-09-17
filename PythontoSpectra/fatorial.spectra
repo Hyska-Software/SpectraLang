@@ -4,17 +4,19 @@ import std.convert
 import std.io
 import std.string
 
-// Fatorial por recursao, pilha (LIFO) e fila (FIFO).
+// Factorial by recursion, stack (LIFO) and queue (FIFO).
 //
-// As tres versoes multiplicam os mesmos fatores 2..N; a diferenca e a ORDEM em
-// que os fatores sao consumidos. Como a multiplicacao e comutativa, o resultado
-// final e o mesmo -- a estrutura de dados serve para deixar a ordem explicita.
+// All three versions multiply the same factors 2..N; the difference is the
+// ORDER in which the factors are consumed. Since multiplication is
+// commutative the final result is the same -- the data structure exists to
+// make the order explicit.
 //
-// Limite desta versao: int e i64 (max 9223372036854775807), logo N vai ate 20
-// (20! = 2432902008176640000; 21! estoura). O Python original usa BigInt e vai
-// alem; aqui N > 20 e recusado com mensagem em vez de transbordar em silencio.
+// Limit of this version: int is i64 (max 9223372036854775807), so N goes up
+// to 20 (20! = 2432902008176640000; 21! overflows). The original Python uses
+// BigInt and goes further; here N > 20 is refused with a message instead of
+// overflowing silently.
 
-// Capacidade das pilhas/filas estaticas: cobre N <= 20 com folga.
+// Capacity of the static stacks/queues: covers N <= 20 with headroom.
 func nova_pilha() returns[int] {
     return[
         0,
@@ -52,8 +54,8 @@ func nova_pilha() returns[int] {
     ]
 }
 
-// A pilha aqui e implicita na versao recursiva: a call stack guarda
-// N, N-1, ... ate o caso base.
+// The stack is implicit in the recursive version: the call stack holds
+// N, N-1, ... down to the base case.
 func fatorial_recursivo(n: int) returns int {
     if n > 1 {
         return n * fatorial_recursivo(n - 1)
@@ -62,9 +64,9 @@ func fatorial_recursivo(n: int) returns int {
     }
 }
 
-// Empilha N..2 e desempilha multiplicando: fatores saem na ordem 2, 3, ..., N.
-// E a volta da recursao (quem retorna primeiro e a chamada mais profunda),
-// mas sem gastar a call stack do interpretador.
+// Pushes N..2 and pops multiplying: the factors come out in the order
+// 2, 3, ..., N. That is the return path of the recursion (the deepest call
+// returns first), but without spending the interpreter call stack.
 func fatorial_pilha(n: int) returns int {
     let pilha = nova_pilha()
     let topo  = 0
@@ -82,9 +84,9 @@ func fatorial_pilha(n: int) returns int {
     return resultado
 }
 
-// Enfileira N..2 e desenfileira multiplicando: fatores saem na ordem
-// N, N-1, ..., 2. E a descida da recursao: o primeiro da fila e o N,
-// o ultimo e o 2.
+// Enqueues N..2 and dequeues multiplying: the factors come out in the order
+// N, N-1, ..., 2. That is the descent of the recursion: the first in the
+// queue is N, the last is 2.
 func fatorial_fila(n: int) returns int {
     let fila = nova_pilha()
     let fim  = 0
@@ -103,7 +105,7 @@ func fatorial_fila(n: int) returns int {
     return resultado
 }
 
-// Texto "1 -> 2 -> 6 -> ..." na ordem LIFO (2..N), como no original.
+// Step text "1 -> 2 -> 6 -> ..." in LIFO order (2..N), like the original.
 func parciais_pilha_str(n: int) returns string {
     let pilha = nova_pilha()
     let topo  = 0
@@ -123,7 +125,7 @@ func parciais_pilha_str(n: int) returns string {
     return texto
 }
 
-// Texto "1 -> N -> ..." na ordem FIFO (N..2), como no original.
+// Step text "1 -> N -> ..." in FIFO order (N..2), like the original.
 func parciais_fila_str(n: int) returns string {
     let fila = nova_pilha()
     let fim  = 0
@@ -144,10 +146,10 @@ func parciais_fila_str(n: int) returns string {
     return texto
 }
 
-// Parse estrito de inteiro: devolve (ok, valor). Rejeita texto vazio,
-// sinal solitario e qualquer caractere fora de [0-9] (com sinal inicial
-// opcional). Necessario porque string_to_int devolve 0 tanto para "0"
-// quanto para erro, e aqui "0" e valido mas "abc" nao e.
+// Strict integer parse: returns (ok, value). Rejects empty text, a lone
+// sign and any character outside [0-9] (with an optional leading sign).
+// Needed because string_to_int returns 0 for both "0" and an error, and
+// here "0" is valid while "abc" is not.
 func parse_rec(texto: string, idx: int, n: int, neg: bool, val: int, ndig: int) returns(bool, int) {
     if idx >= n {
         if ndig == 0 {

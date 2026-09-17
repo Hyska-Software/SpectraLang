@@ -13739,168 +13739,6 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/497_stdlib_map_iteration.spectra"
 
 [[entry]]
-path = "std.collections.set_clear"
-kind = "function"
-namespace = "std.collections"
-signature = "fn(Set) -> unit"
-params = [{ name = "arg0", ty = "Set" }]
-returns = "unit"
-ir_return = "void"
-returns_value = false
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.std.collections.set_clear"
-maturity = "stable"
-owner = "runtime"
-docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.collections.set_contains"
-kind = "function"
-namespace = "std.collections"
-signature = "fn(Set, T) -> bool"
-params = [{ name = "arg0", ty = "Set" }, { name = "arg1", ty = "T" }]
-returns = "bool"
-ir_return = "bool"
-returns_value = true
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.std.collections.set_contains"
-maturity = "stable"
-owner = "runtime"
-docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.collections.set_free"
-kind = "function"
-namespace = "std.collections"
-signature = "fn(Set) -> unit"
-params = [{ name = "arg0", ty = "Set" }]
-returns = "unit"
-ir_return = "void"
-returns_value = false
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.std.collections.set_free"
-maturity = "stable"
-owner = "runtime"
-docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.collections.set_get"
-kind = "function"
-namespace = "std.collections"
-signature = "fn(Set, int) -> Option"
-params = [{ name = "arg0", ty = "Set" }, { name = "arg1", ty = "int" }]
-returns = "Option"
-ir_return = "unknown"
-returns_value = true
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.std.collections.set_get"
-maturity = "stable"
-owner = "runtime"
-docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.collections.set_insert"
-kind = "function"
-namespace = "std.collections"
-signature = "fn(Set, T) -> bool"
-params = [{ name = "arg0", ty = "Set" }, { name = "arg1", ty = "T" }]
-returns = "bool"
-ir_return = "bool"
-returns_value = true
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.std.collections.set_insert"
-maturity = "stable"
-owner = "runtime"
-docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.collections.set_iter"
-kind = "function"
-namespace = "std.collections"
-signature = "fn(Set) -> Iterator"
-params = [{ name = "arg0", ty = "Set" }]
-returns = "Iterator"
-ir_return = "Iterator<int>"
-returns_value = true
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.std.collections.set_iter"
-maturity = "stable"
-owner = "runtime"
-docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.collections.set_len"
-kind = "function"
-namespace = "std.collections"
-signature = "fn(Set) -> int"
-params = [{ name = "arg0", ty = "Set" }]
-returns = "int"
-ir_return = "int"
-returns_value = true
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.std.collections.set_len"
-maturity = "stable"
-owner = "runtime"
-docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.collections.set_new"
-kind = "function"
-namespace = "std.collections"
-signature = "fn() -> Set"
-params = []
-returns = "Set"
-ir_return = "Set<int>"
-returns_value = true
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.std.collections.set_new"
-maturity = "stable"
-owner = "runtime"
-docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
-path = "std.collections.set_remove"
-kind = "function"
-namespace = "std.collections"
-signature = "fn(Set, T) -> bool"
-params = [{ name = "arg0", ty = "Set" }, { name = "arg1", ty = "T" }]
-returns = "bool"
-ir_return = "bool"
-returns_value = true
-abi = "host(ctx: SpectraHostCallContext) -> i32"
-effects = ["host"]
-error_model = "host status + typed return"
-binding = "spectra.std.collections.set_remove"
-maturity = "stable"
-owner = "runtime"
-docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
-
-[[entry]]
 path = "std.collections.queue_clear"
 kind = "function"
 namespace = "std.collections"
@@ -14084,6 +13922,168 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/503_stdlib_collections_empty_options.spectra"
+
+[[entry]]
+path = "std.collections.set_clear"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Set) -> unit"
+params = [{ name = "arg0", ty = "Set" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.set_clear"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.set_contains"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Set, T) -> bool"
+params = [{ name = "arg0", ty = "Set" }, { name = "arg1", ty = "T" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.set_contains"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.set_free"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Set) -> unit"
+params = [{ name = "arg0", ty = "Set" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.set_free"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.set_get"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Set, int) -> Option"
+params = [{ name = "arg0", ty = "Set" }, { name = "arg1", ty = "int" }]
+returns = "Option"
+ir_return = "unknown"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.set_get"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.set_insert"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Set, T) -> bool"
+params = [{ name = "arg0", ty = "Set" }, { name = "arg1", ty = "T" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.set_insert"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.set_iter"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Set) -> Iterator"
+params = [{ name = "arg0", ty = "Set" }]
+returns = "Iterator"
+ir_return = "Iterator<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.set_iter"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.set_len"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Set) -> int"
+params = [{ name = "arg0", ty = "Set" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.set_len"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.set_new"
+kind = "function"
+namespace = "std.collections"
+signature = "fn() -> Set"
+params = []
+returns = "Set"
+ir_return = "Set<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.set_new"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.set_remove"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Set, T) -> bool"
+params = [{ name = "arg0", ty = "Set" }, { name = "arg1", ty = "T" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.set_remove"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
 path = "std.collections.stack_clear"

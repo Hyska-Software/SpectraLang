@@ -32,6 +32,15 @@ impl CodeGenerator {
             builder.switch_to_block(block);
         }
 
+        // A native `return_call` emitted while generating this block already
+        // terminated the block, so its IR terminator must be skipped below.
+        // The flag is scoped to a single block: resetting it here stops a
+        // tail-call block from suppressing the terminator of a later block
+        // that contains no call (for example the `if.merge` return that
+        // follows a tail-recursive `if.then`), which used to leave that block
+        // unfilled and fail Cranelift verification or finalization.
+        *emitted_tail_call = false;
+
         // Generate instructions. A batch is planned only across a contiguous
         // run of generic HostCall instructions in this block. All uncertain
         // cases fall back to the existing single-instruction lowering.

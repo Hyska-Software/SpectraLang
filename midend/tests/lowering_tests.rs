@@ -578,7 +578,12 @@ fn test_lower_stored_range_for_loop_uses_counted_loop() {
 }
 
 #[test]
-fn test_lower_literal_range_for_loop_uses_iterator_protocol() {
+fn test_lower_literal_range_for_loop_uses_direct_induction_loop() {
+    // fn main() { for i in 0..100 { break; } }
+    //
+    // A syntactic range exposes its bounds directly, so the loop is lowered
+    // as an induction loop over them: no range handle, no iterator handle,
+    // and no host call at all (see `lower_range_index_for_loop`).
     let module = make_module(
         "test",
         vec![make_function(
@@ -616,11 +621,83 @@ fn test_lower_literal_range_for_loop_uses_iterator_protocol() {
         })
         .collect();
 
-    assert!(hosts.contains(&"spectra.std.range.create"));
+    assert!(
+        hosts.is_empty(),
+        "a literal range loop must not issue host calls, got {hosts:?}"
+    );
+
+    let labels: Vec<&str> = func.blocks.iter().map(|block| block.label.as_str()).collect();
+    for expected in [
+        "range.cond",
+        "range.body",
+        "range.latch",
+        "range.increment",
+        "range.exit",
+    ] {
+        assert!(
+            labels.contains(&expected),
+            "expected block {expected:?} in {labels:?}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_range_parameter_for_loop_uses_iterator_protocol() {
+    // fn soma(r: Range) -> int { for value in r { break; } return 0; }
+    //
+    // A range whose bounds are not statically known (parameters, returns)
+    // keeps the generic iterator protocol and its ownership semantics.
+    let for_loop = Statement {
+        span: s(),
+        kind: StatementKind::For(ForLoop {
+            iterator: "value".to_string(),
+            iterable: ident("r"),
+            body: Block {
+                span: s(),
+                statements: vec![Statement {
+                    span: s(),
+                    kind: StatementKind::Break,
+                }],
+            },
+            span: s(),
+        }),
+    };
+    let range_type = spectra_compiler::ast::TypeAnnotation {
+        kind: spectra_compiler::ast::TypeAnnotationKind::Simple {
+            segments: vec!["Range".to_string()],
+        },
+        span: s(),
+    };
+    let module = make_module(
+        "test",
+        vec![make_function_with_params(
+            "soma",
+            vec![("r", range_type)],
+            vec![for_loop, return_stmt(int_lit(0))],
+            Some(int_type()),
+        )],
+    );
+
+    let mut lowering = ASTLowering::new();
+    let ir_module = lowering
+        .lower_module(&module)
+        .expect("lowering should succeed");
+    let func = &ir_module.functions[0];
+    let hosts: Vec<&str> = func
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter_map(|instruction| match &instruction.kind {
+            InstructionKind::HostCall { host, .. } => Some(host.as_str()),
+            _ => None,
+        })
+        .collect();
+
     assert!(hosts.contains(&"spectra.std.range.iter"));
     assert!(hosts.contains(&"spectra.std.collections.iterator_remaining"));
-    assert!(hosts.contains(&"spectra.std.collections.iterator_next"));
-    assert!(hosts.contains(&"spectra.std.option.option_unwrap"));
+    assert!(hosts.contains(&"spectra.std.collections.iterator_next_unchecked"));
+    assert!(hosts.contains(&"spectra.std.collections.iterator_free"));
+    assert!(!hosts.contains(&"spectra.std.range.create"));
     assert!(!hosts.contains(&"spectra.std.range.len"));
     assert!(!hosts.contains(&"spectra.std.range.at"));
 }

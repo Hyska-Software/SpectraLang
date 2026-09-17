@@ -1280,6 +1280,207 @@ mod tests {
         assert_eq!(func.signature.call_conv, isa::CallConv::Tail);
     }
 
+    /// Midend block order regression: the tail-call block (`step`) precedes
+    /// the plain-return block (`base`) in the block list, exactly like a
+    /// source-level `if cond { return f(...) } return acc` lowers. Before the
+    /// per-block reset of `emitted_tail_call`, the tail call in `step` leaked
+    /// into `base` and suppressed its `return`, leaving the block unfilled.
+    fn tail_recursion_loop_sum_tail_block_first() -> IRFunction {
+        let mut function = IRFunction::new(
+            "loop_sum",
+            vec![
+                Parameter {
+                    id: 0,
+                    name: "n".to_string(),
+                    ty: IRType::Int,
+                },
+                Parameter {
+                    id: 1,
+                    name: "acc".to_string(),
+                    ty: IRType::Int,
+                },
+            ],
+            IRType::Int,
+        );
+        let entry_block = function.add_block("entry");
+        let n = IRValue { id: 0 };
+        let acc = IRValue { id: 1 };
+
+        {
+            let block = function.get_block_mut(entry_block).unwrap();
+            block.add_instruction(InstructionKind::ConstInt {
+                result: IRValue { id: 2 },
+                value: 0,
+            });
+            block.add_instruction(InstructionKind::Le {
+                result: IRValue { id: 3 },
+                lhs: n,
+                rhs: IRValue { id: 2 },
+            });
+        }
+
+        // The recursive step is registered before the base case, which is the
+        // order the midend emits for a trailing return after the `if`.
+        let step = function.add_block("step");
+        let base = function.add_block("base");
+        function
+            .get_block_mut(entry_block)
+            .unwrap()
+            .set_terminator(Terminator::CondBranch {
+                condition: IRValue { id: 3 },
+                true_block: base,
+                false_block: step,
+            });
+
+        {
+            let block = function.get_block_mut(step).unwrap();
+            block.add_instruction(InstructionKind::ConstInt {
+                result: IRValue { id: 5 },
+                value: 1,
+            });
+            block.add_instruction(InstructionKind::Sub {
+                result: IRValue { id: 4 },
+                lhs: n,
+                rhs: IRValue { id: 5 },
+            });
+            block.add_instruction(InstructionKind::Add {
+                result: IRValue { id: 6 },
+                lhs: acc,
+                rhs: n,
+            });
+            block.add_instruction(InstructionKind::Call {
+                result: Some(IRValue { id: 7 }),
+                function: "loop_sum".to_string(),
+                args: vec![IRValue { id: 4 }, IRValue { id: 6 }],
+                is_tail: true,
+            });
+            block.set_terminator(Terminator::Return {
+                value: Some(IRValue { id: 7 }),
+            });
+        }
+        function
+            .get_block_mut(base)
+            .unwrap()
+            .set_terminator(Terminator::Return { value: Some(acc) });
+        function
+    }
+
+    #[test]
+    fn tail_call_block_does_not_suppress_later_block_return() {
+        let mut codegen = CodeGenerator::new();
+        let mut module = IRModule::new("tail_recursion_ordered");
+
+        // Recursive function plus platform-ABI wrapper, mirroring the deep
+        // recursion test so the compiled result can be executed.
+        module.add_function(tail_recursion_loop_sum_tail_block_first());
+        let mut wrapper = IRFunction::new(
+            "wrapper",
+            vec![
+                Parameter {
+                    id: 0,
+                    name: "n".to_string(),
+                    ty: IRType::Int,
+                },
+                Parameter {
+                    id: 1,
+                    name: "acc".to_string(),
+                    ty: IRType::Int,
+                },
+            ],
+            IRType::Int,
+        );
+        let entry = wrapper.add_block("entry");
+        {
+            let block = wrapper.get_block_mut(entry).unwrap();
+            block.add_instruction(InstructionKind::Call {
+                result: Some(IRValue { id: 2 }),
+                function: "loop_sum".to_string(),
+                args: vec![IRValue { id: 0 }, IRValue { id: 1 }],
+                is_tail: false,
+            });
+            block.set_terminator(Terminator::Return {
+                value: Some(IRValue { id: 2 }),
+            });
+        }
+        module.add_function(wrapper);
+
+        codegen.pre_intern_host_names(&module);
+        for func in &module.functions {
+            codegen.declare_function(func).expect("declare");
+        }
+        let function_params: HashMap<String, Vec<IRType>> = module
+            .functions
+            .iter()
+            .map(|func| {
+                (
+                    func.name.clone(),
+                    func.params.iter().map(|param| param.ty.clone()).collect(),
+                )
+            })
+            .collect();
+        let loop_sum = module
+            .functions
+            .iter()
+            .find(|func| func.name == "loop_sum")
+            .expect("loop_sum")
+            .clone();
+        let wrapper = module
+            .functions
+            .iter()
+            .find(|func| func.name == "wrapper")
+            .expect("wrapper")
+            .clone();
+
+        // Defining `loop_sum` used to panic in `FunctionBuilder::finalize`
+        // ("block is not filled") for the base block.
+        codegen
+            .define_function(&loop_sum, &function_params)
+            .expect("define loop_sum");
+
+        // The base block's plain return must survive next to the native tail
+        // call emitted for the recursive step, even though the step block is
+        // generated first.
+        let func = codegen
+            .last_finalized_func
+            .as_ref()
+            .expect("define_function should snapshot the finalized IR");
+        let mut return_calls = 0;
+        let mut plain_returns = 0;
+        for block in func.layout.blocks() {
+            for inst in func.layout.block_insts(block) {
+                match func.dfg.insts[inst].opcode() {
+                    cranelift_codegen::ir::Opcode::ReturnCall => return_calls += 1,
+                    cranelift_codegen::ir::Opcode::Return => plain_returns += 1,
+                    _ => {}
+                }
+            }
+        }
+        assert_eq!(return_calls, 1, "expected exactly one native return_call");
+        assert!(
+            plain_returns >= 1,
+            "the base-case `ret` must survive as a normal return"
+        );
+
+        codegen
+            .define_function(&wrapper, &function_params)
+            .expect("define wrapper");
+        codegen
+            .module
+            .finalize_definitions()
+            .expect("finalize definitions");
+
+        let wrapper_id = *codegen.function_map.get("wrapper").unwrap();
+        let ptr = codegen.module.get_finalized_function(wrapper_id) as usize;
+        let run: extern "C" fn(i64, i64) -> i64 = unsafe { std::mem::transmute(ptr) };
+
+        // Small case: sum of 0..=5.
+        assert_eq!(run(5, 0), 15);
+        // Deep case: the recursive call must still be a native tail call, so
+        // 100k levels must not overflow the stack.
+        const N: i64 = 100_000;
+        assert_eq!(run(N, 0), N * (N + 1) / 2);
+    }
+
     #[test]
     fn deep_tail_recursion_runs_without_stack_overflow() {
         let mut codegen = CodeGenerator::new();

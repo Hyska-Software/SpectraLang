@@ -1,0 +1,76 @@
+module validation_506_tail_call_recursion_shapes
+
+// Regression for the per-block tail-call terminator bug in backend codegen.
+//
+// A native `return_call` emitted while generating one block used to leak into
+// every later block: blocks without a call kept a stale "already terminated"
+// flag and their own terminator was dropped, so Cranelift reported an invalid
+// block reference (or `FunctionBuilder::finalize` panicked with "block is not
+// filled"). Shape A/B (self tail call inside `if` without `else`, followed by
+// a trailing return) and shape C (array store next to the recursive call)
+// all failed that way.
+//
+// The shapes below must compile, execute, and keep the tail-call
+// optimization: the deep case only finishes if the self-call stayed a native
+// tail call, because plain recursion would exhaust the stack long before
+// 200k levels.
+
+// Shape A: accumulator tail recursion; the `if` has no `else` and the return
+// after it becomes the `if.merge` block that has no call of its own.
+func soma_ate(limite: int, n: int, acc: int) returns int {
+    if n < limite {
+        return soma_ate(limite, n + 1, acc + 1)
+    }
+    return acc
+}
+
+// Shape B: single-parameter tail recursion with the same block layout.
+func desce(n: int) returns int {
+    if n > 0 {
+        return desce(n - 1)
+    }
+    return n + 41
+}
+
+// Shape C: an indexed array store in the same branch as the recursive call.
+func empilha(n: int, pilha: [int], topo: int) returns int {
+    if n > 1 {
+        pilha[topo] = n
+        return empilha(n - 1, pilha, topo + 1)
+    } else {
+        return topo
+    }
+}
+
+public func main() returns int {
+    // Shape A: increments `acc` once per level and keeps the base-case value.
+    if soma_ate(3, 0, 0) != 3 {
+        return 1
+    }
+    if soma_ate(0, 0, 7) != 7 {
+        return 2
+    }
+
+    // Shape B: the recursion runs down to the base case.
+    if desce(5) != 41 {
+        return 3
+    }
+    if desce(0) != 41 {
+        return 4
+    }
+
+    // Shape C: the store runs on every level and the top index comes back.
+    let pilha = [0, 0, 0, 0, 0, 0, 0, 0]
+    if empilha(5, pilha, 0) != 4 {
+        return 5
+    }
+    if pilha[0] != 5 or pilha[1] != 4 or pilha[2] != 3 or pilha[3] != 2 {
+        return 6
+    }
+
+    // Deep case: requires the native tail call to survive the fix.
+    if soma_ate(200000, 0, 0) != 200000 {
+        return 7
+    }
+    return 0
+}
