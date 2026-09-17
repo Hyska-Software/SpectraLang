@@ -1,4 +1,6 @@
 use super::*;
+use std::cell::RefCell;
+use std::sync::Weak;
 // ── std.collections map ─────────────────────────────────────────────────────
 
 pub(crate) const MAP_NEW: &str = "spectra.std.collections.map_new";
@@ -37,6 +39,32 @@ pub(crate) struct MapRegistry {
 #[derive(Default)]
 pub(crate) struct StdMap {
     pub(crate) data: HashMap<CollectionKey, SpectraHostValue>,
+}
+
+// Direct collection calls tend to touch the same map handle repeatedly. The
+// registry mutex is still required to validate a handle, but a thread-local
+// weak cache avoids reacquiring it for every operation while preserving map
+// reclamation: a freed map is not kept alive by the cache.
+static MAP_REGISTRY_EPOCH: AtomicU64 = AtomicU64::new(0);
+
+struct MapFastCache {
+    handle: usize,
+    epoch: u64,
+    map: Weak<Mutex<StdMap>>,
+}
+
+impl Default for MapFastCache {
+    fn default() -> Self {
+        Self {
+            handle: 0,
+            epoch: 0,
+            map: Weak::new(),
+        }
+    }
+}
+
+thread_local! {
+    static MAP_FAST_CACHE: RefCell<MapFastCache> = RefCell::new(MapFastCache::default());
 }
 
 impl MapRegistry {
@@ -95,7 +123,9 @@ impl MapRegistry {
 
     pub(crate) fn remove(&mut self, handle: usize) -> Result<Arc<Mutex<StdMap>>, i32> {
         let id = Self::id(handle)?;
-        self.maps.remove(id).map_err(|_| HOST_STATUS_NOT_FOUND)
+        let map = self.maps.remove(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
+        MAP_REGISTRY_EPOCH.fetch_add(1, Ordering::AcqRel);
+        Ok(map)
     }
 
     pub(crate) fn remove_value(
@@ -109,7 +139,9 @@ impl MapRegistry {
     }
 
     pub(crate) fn clear_all(&mut self) -> usize {
-        self.maps.clear()
+        let count = self.maps.clear();
+        MAP_REGISTRY_EPOCH.fetch_add(1, Ordering::AcqRel);
+        count
     }
 }
 
@@ -125,6 +157,34 @@ where
     let registry = map_registry();
     let mut guard = lock_unpoisoned(registry);
     action(&mut guard)
+}
+
+/// Returns a validated map reference for direct collection calls.
+///
+/// The cache is invalidated by the registry epoch whenever a handle is
+/// released. The exact generational handle is also part of the key, so a
+/// recycled slot cannot reuse an older cached map.
+pub(crate) fn map_fast_get(handle: usize) -> Option<Arc<Mutex<StdMap>>> {
+    let epoch = MAP_REGISTRY_EPOCH.load(Ordering::Acquire);
+    if let Some(map) = MAP_FAST_CACHE.with(|cache| {
+        let cache = cache.borrow();
+        (cache.handle == handle && cache.epoch == epoch)
+            .then(|| cache.map.upgrade())
+            .flatten()
+    }) {
+        return Some(map);
+    }
+
+    let map = with_map_registry(|registry| registry.get(handle));
+    if let Some(ref map) = map {
+        MAP_FAST_CACHE.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            cache.handle = handle;
+            cache.epoch = epoch;
+            cache.map = Arc::downgrade(map);
+        });
+    }
+    map
 }
 
 /// Creates a new empty map and returns its handle.

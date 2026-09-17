@@ -779,13 +779,19 @@ fn collection_fast_paths_preserve_values_and_handles() {
     let list = crate::stdlib::list_new_fast() as usize;
     assert_ne!(list, 0);
     assert_eq!(crate::stdlib::list_push_fast(list, 11), HOST_STATUS_SUCCESS);
-    assert_eq!(crate::stdlib::list_push_fast(list, 22), HOST_STATUS_SUCCESS);
+    assert_eq!(crate::stdlib::list_push_value_fast(list, 22), 2);
     assert_eq!(crate::stdlib::list_len_fast(list), 2);
     let first = crate::stdlib::list_get_fast(list, 0);
     assert_eq!(unsafe { tagged_result_parts(first) }, (0, 11));
     let missing = crate::stdlib::list_get_fast(list, 99);
     assert_eq!(missing, crate::stdlib::list_get_fast(list, 100));
     assert_eq!(unsafe { tagged_result_parts(missing) }, (1, 0));
+    let list_iterator = crate::stdlib::list_iter_fast(list);
+    assert_eq!(crate::stdlib::iterator_remaining_fast(list_iterator as usize), 2);
+    assert_eq!(
+        crate::stdlib::iterator_next_unchecked_fast(list_iterator as usize),
+        11
+    );
 
     let map = crate::stdlib::map_new_fast();
     assert_ne!(map, 0);
@@ -795,6 +801,17 @@ fn collection_fast_paths_preserve_values_and_handles() {
         unsafe { tagged_result_parts(crate::stdlib::map_get_fast(map as usize, 7)) },
         (0, 70)
     );
+    let map_iterator = crate::stdlib::map_iter_fast(map as usize);
+    assert_eq!(crate::stdlib::iterator_remaining_fast(map_iterator as usize), 1);
+    assert_eq!(
+        crate::stdlib::iterator_next_unchecked_fast(map_iterator as usize),
+        7
+    );
+    let map_values_iterator = crate::stdlib::map_values_iter_fast(map as usize);
+    assert_eq!(
+        crate::stdlib::iterator_next_unchecked_fast(map_values_iterator as usize),
+        70
+    );
 
     let stack = crate::stdlib::stack_new_fast() as usize;
     assert_ne!(stack, 0);
@@ -802,6 +819,12 @@ fn collection_fast_paths_preserve_values_and_handles() {
     assert_eq!(
         unsafe { tagged_result_parts(crate::stdlib::stack_peek_fast(stack)) },
         (0, 31)
+    );
+    let stack_iterator = crate::stdlib::stack_iter_fast(stack);
+    assert_eq!(crate::stdlib::iterator_remaining_fast(stack_iterator as usize), 1);
+    assert_eq!(
+        crate::stdlib::iterator_next_unchecked_fast(stack_iterator as usize),
+        31
     );
 
     let queue = crate::stdlib::queue_new_fast() as usize;
@@ -811,6 +834,8 @@ fn collection_fast_paths_preserve_values_and_handles() {
         unsafe { tagged_result_parts(crate::stdlib::queue_dequeue_fast(queue)) },
         (0, 41)
     );
+    let queue_iterator = crate::stdlib::queue_iter_fast(queue);
+    assert_eq!(crate::stdlib::iterator_remaining_fast(queue_iterator as usize), 0);
 
     let iterator = crate::stdlib::insert_iterator(vec![51, 52]).expect("iterator");
     assert_eq!(crate::stdlib::iterator_remaining_fast(iterator), 2);
@@ -826,7 +851,89 @@ fn collection_fast_paths_preserve_values_and_handles() {
     assert_eq!(crate::stdlib::map_free_fast(map as usize), ());
     assert_eq!(crate::stdlib::stack_free_fast(stack), HOST_STATUS_SUCCESS);
     assert_eq!(crate::stdlib::queue_free_fast(queue), HOST_STATUS_SUCCESS);
+    assert_eq!(
+        crate::stdlib::iterator_free_fast(list_iterator as usize),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        crate::stdlib::iterator_free_fast(map_iterator as usize),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        crate::stdlib::iterator_free_fast(map_values_iterator as usize),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        crate::stdlib::iterator_free_fast(stack_iterator as usize),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        crate::stdlib::iterator_free_fast(queue_iterator as usize),
+        HOST_STATUS_SUCCESS
+    );
     assert_eq!(crate::stdlib::iterator_free_fast(iterator), HOST_STATUS_SUCCESS);
+    crate::ffi::spectra_rt_manual_clear();
+}
+
+#[test]
+fn map_fast_cache_respects_release_and_generation_changes() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    crate::ffi::spectra_rt_manual_clear();
+
+    let first = crate::stdlib::map_new_fast() as usize;
+    assert_eq!(
+        crate::stdlib::map_set_fast(first, 9, 90),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(crate::stdlib::map_contains_fast(first, 9), 1);
+
+    crate::stdlib::map_free_fast(first);
+    assert_eq!(crate::stdlib::map_contains_fast(first, 9), 0);
+
+    let second = crate::stdlib::map_new_fast() as usize;
+    assert_ne!(first, second);
+    assert_eq!(
+        crate::stdlib::map_set_fast(second, 9, 900),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(crate::stdlib::map_contains_fast(first, 9), 0);
+    assert_eq!(crate::stdlib::map_contains_fast(second, 9), 1);
+
+    crate::stdlib::map_free_fast(second);
+    crate::ffi::spectra_rt_manual_clear();
+}
+
+#[test]
+fn scalar_map_fast_variants_preserve_map_option_semantics() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    crate::ffi::spectra_rt_manual_clear();
+
+    let map = crate::stdlib::map_new_fast() as usize;
+    assert_eq!(
+        crate::stdlib::map_set_scalar_fast(map, 7, 70),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(crate::stdlib::map_contains_scalar_fast(map, 7), 1);
+    assert_eq!(crate::stdlib::map_contains_scalar_fast(map, 8), 0);
+    assert_eq!(
+        unsafe { tagged_result_parts(crate::stdlib::map_get_scalar_fast(map, 7)) },
+        (0, 70)
+    );
+    assert_eq!(
+        unsafe { tagged_result_parts(crate::stdlib::map_get_scalar_fast(map, 8)) },
+        (1, 0)
+    );
+    assert_eq!(
+        unsafe { tagged_result_parts(crate::stdlib::map_remove_scalar_fast(map, 7)) },
+        (0, 70)
+    );
+    assert_eq!(crate::stdlib::map_contains_scalar_fast(map, 7), 0);
+
+    crate::stdlib::map_free_fast(map);
     crate::ffi::spectra_rt_manual_clear();
 }
 

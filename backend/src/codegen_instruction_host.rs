@@ -55,6 +55,16 @@ impl CodeGenerator {
                 | FastHostCall::IteratorNextUnchecked
                 | FastHostCall::IteratorRemaining
                 | FastHostCall::IteratorFree
+                | FastHostCall::ListIter
+                | FastHostCall::SetIter
+                | FastHostCall::MapIter
+                | FastHostCall::MapValuesIter
+                | FastHostCall::StackIter
+                | FastHostCall::QueueIter
+                | FastHostCall::MapSetScalar
+                | FastHostCall::MapContainsScalar
+                | FastHostCall::MapGetScalar
+                | FastHostCall::MapRemoveScalar
         )
     }
 
@@ -91,7 +101,35 @@ impl CodeGenerator {
             builder.func,
         );
         let call = builder.ins().call(func_ref, &call_args);
-        if matches!(
+        let push_returns_length = matches!(fast, FastHostCall::ListPush);
+        if push_returns_length {
+            // `list_push` historically exposes the new length as its IR
+            // result. The direct ABI keeps that value and reserves negatives
+            // for host status codes, so valid lengths must not be treated as
+            // failed status returns.
+            let length_or_status = builder.inst_results(call)[0];
+            let zero = builder.ins().iconst(types::I64, 0);
+            let failed = builder
+                .ins()
+                .icmp(IntCC::SignedLessThan, length_or_status, zero);
+            let success_block = builder.create_block();
+            let failure_block = builder.create_block();
+            builder
+                .ins()
+                .brif(failed, failure_block, &[], success_block, &[]);
+
+            builder.switch_to_block(failure_block);
+            Self::emit_runtime_panic(
+                module,
+                hostcall,
+                builder,
+                &format!("fast collection host call '{}' failed", fast.host_name()),
+            )?;
+            builder.seal_block(failure_block);
+
+            builder.switch_to_block(success_block);
+            builder.seal_block(success_block);
+        } else if matches!(
             fast.runtime_import().signature().returns,
             [spectra_runtime::abi::AbiScalar::I32]
         ) {

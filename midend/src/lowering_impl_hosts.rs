@@ -481,6 +481,56 @@ impl ASTLowering {
         descriptor
     }
 
+    /// Selects an internal collection ABI when the source types prove that a
+    /// map operation only handles scalar words. Scalar keys cannot be packed
+    /// strings, so the runtime can skip the allocation-table probe that
+    /// protects the polymorphic collection path. Unknown, aggregate, and
+    /// string payloads deliberately keep the public host name.
+    pub(crate) fn specialized_collection_host_runtime_name(
+        &mut self,
+        runtime_name: &'static str,
+        arguments: &[Expression],
+    ) -> &'static str {
+        const MAP_SET_SCALAR: &str = "spectra.compiler.collections.map_set_scalar";
+        const MAP_CONTAINS_SCALAR: &str = "spectra.compiler.collections.map_contains_scalar";
+        const MAP_GET_SCALAR: &str = "spectra.compiler.collections.map_get_scalar";
+        const MAP_REMOVE_SCALAR: &str = "spectra.compiler.collections.map_remove_scalar";
+
+        let mut is_scalar = |argument: Option<&Expression>| {
+            argument.is_some_and(|argument| {
+                matches!(
+                    self.infer_expr_ir_type(argument),
+                    IRType::Int
+                        | IRType::Float
+                        | IRType::Bool
+                        | IRType::Char
+                        | IRType::ExactInt { .. }
+                        | IRType::ExactFloat { .. }
+                )
+            })
+        };
+
+        match runtime_name {
+            "spectra.std.collections.map_set"
+                if is_scalar(arguments.get(1)) && is_scalar(arguments.get(2)) =>
+            {
+                MAP_SET_SCALAR
+            }
+            "spectra.std.collections.map_contains" if is_scalar(arguments.get(1)) => {
+                MAP_CONTAINS_SCALAR
+            }
+            "spectra.std.collections.map_get"
+            | "spectra.std.collections.map_get_option" if is_scalar(arguments.get(1)) => {
+                MAP_GET_SCALAR
+            }
+            "spectra.std.collections.map_remove"
+            | "spectra.std.collections.map_remove_option" if is_scalar(arguments.get(1)) => {
+                MAP_REMOVE_SCALAR
+            }
+            _ => runtime_name,
+        }
+    }
+
     pub(crate) fn std_method_host_function_descriptor(
         &self,
         object: &Expression,

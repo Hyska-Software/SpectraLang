@@ -18,10 +18,22 @@ pub fn list_new_fast() -> SpectraHostValue {
 }
 
 pub fn list_push_fast(handle: usize, value: SpectraHostValue) -> i32 {
+    let result = list_push_value_fast(handle, value);
+    if result < 0 {
+        result as i32
+    } else {
+        HOST_STATUS_SUCCESS
+    }
+}
+
+/// Preserves the legacy `list_push` result, which is the new list length.
+/// Negative values are reserved for host status codes so the backend can
+/// retain the generic path's failure behavior without an out-of-band result.
+pub fn list_push_value_fast(handle: usize, value: SpectraHostValue) -> SpectraHostValue {
     crate::ffi::escape_stored_value(value);
     match with_list_registry(|registry| registry.push(handle, value)) {
-        Ok(_) => HOST_STATUS_SUCCESS,
-        Err(code) => code,
+        Ok(len) => len as SpectraHostValue,
+        Err(code) => code as SpectraHostValue,
     }
 }
 
@@ -117,9 +129,11 @@ pub fn map_set_fast_collection(
 }
 
 pub fn map_get_fast(handle: usize, key: SpectraHostValue) -> SpectraHostValue {
-    option_from_result(with_map_registry(|registry| {
-        registry.lookup_value(handle, key)
-    }))
+    let Some(map) = map_fast_get(handle) else {
+        return collection_option_handle(None);
+    };
+    let value = lock_unpoisoned(&map).data.get(&collection_key(key)).copied();
+    collection_option_handle(value)
 }
 
 pub fn map_contains_fast_collection(handle: usize, key: SpectraHostValue) -> SpectraHostValue {
@@ -127,9 +141,11 @@ pub fn map_contains_fast_collection(handle: usize, key: SpectraHostValue) -> Spe
 }
 
 pub fn map_remove_fast(handle: usize, key: SpectraHostValue) -> SpectraHostValue {
-    option_from_result(with_map_registry(|registry| {
-        registry.remove_value(handle, key)
-    }))
+    let Some(map) = map_fast_get(handle) else {
+        return collection_option_handle(None);
+    };
+    let value = lock_unpoisoned(&map).data.remove(&collection_key(key));
+    collection_option_handle(value)
 }
 
 pub fn map_len_fast_collection(handle: usize) -> SpectraHostValue {
@@ -137,7 +153,7 @@ pub fn map_len_fast_collection(handle: usize) -> SpectraHostValue {
 }
 
 pub fn map_is_empty_fast(handle: usize) -> SpectraHostValue {
-    with_map_registry(|registry| registry.get(handle))
+    map_fast_get(handle)
         .map(|map| lock_unpoisoned(&map).data.is_empty() as SpectraHostValue)
         .unwrap_or(0)
 }
@@ -262,6 +278,47 @@ pub fn queue_free_fast(handle: usize) -> i32 {
 
 pub fn queue_free_all_fast() -> SpectraHostValue {
     with_queue_registry(|registry| registry.clear_all() as SpectraHostValue)
+}
+
+#[inline]
+fn iterator_from_snapshot(
+    snapshot: Result<Vec<SpectraHostValue>, i32>,
+) -> SpectraHostValue {
+    let items = match snapshot {
+        Ok(items) => items,
+        Err(_) => return 0,
+    };
+    insert_iterator(items)
+        .map(|handle| handle as SpectraHostValue)
+        .unwrap_or(0)
+}
+
+pub fn list_iter_fast(handle: usize) -> SpectraHostValue {
+    iterator_from_snapshot(with_list_registry(|registry| registry.snapshot(handle)))
+}
+
+pub fn set_iter_fast(handle: usize) -> SpectraHostValue {
+    iterator_from_snapshot(with_set_registry(|registry| registry.snapshot(handle)))
+}
+
+pub fn map_iter_fast(handle: usize) -> SpectraHostValue {
+    iterator_from_snapshot(with_map_registry(|registry| {
+        registry.keys_snapshot(handle)
+    }))
+}
+
+pub fn map_values_iter_fast(handle: usize) -> SpectraHostValue {
+    iterator_from_snapshot(with_map_registry(|registry| {
+        registry.values_snapshot(handle)
+    }))
+}
+
+pub fn stack_iter_fast(handle: usize) -> SpectraHostValue {
+    iterator_from_snapshot(with_stack_registry(|registry| registry.snapshot(handle)))
+}
+
+pub fn queue_iter_fast(handle: usize) -> SpectraHostValue {
+    iterator_from_snapshot(with_queue_registry(|registry| registry.snapshot(handle)))
 }
 
 pub fn iterator_next_fast(handle: usize) -> SpectraHostValue {

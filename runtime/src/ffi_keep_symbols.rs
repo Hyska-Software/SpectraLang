@@ -13,7 +13,11 @@ pub fn keep_fast_symbols() {
     // Map: create a map, write / read / check, then free.
     let m = spectra_rt_map_new_fast();
     let _ = spectra_rt_map_set_fast(m, 0, 0);
+    let _ = spectra_rt_map_set_scalar_fast(m, 1, 2);
     let _ = spectra_rt_map_contains_fast(m, 0);
+    let _ = spectra_rt_map_contains_scalar_fast(m, 1);
+    let _ = spectra_rt_map_get_scalar_fast(m, 1);
+    let _ = spectra_rt_map_remove_scalar_fast(m, 1);
     let _ = spectra_rt_map_len_fast(m);
     spectra_rt_map_clear_fast(m);
     spectra_rt_map_free_fast(m);

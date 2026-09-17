@@ -24,16 +24,34 @@ pub(crate) extern "C" fn std_string_split_by(ctx: *mut SpectraHostCallContext) -
                 return HOST_STATUS_SUCCESS;
             }
         };
+        let parts: Vec<&str> = s.split(sep.as_str()).collect();
+        let mut values = Vec::with_capacity(parts.len());
+        for part in parts {
+            let ptr = alloc_spectra_string(part);
+            if ptr == 0 {
+                return HOST_STATUS_INTERNAL_ERROR;
+            }
+            crate::ffi::escape_stored_value(ptr);
+            values.push(ptr);
+        }
         let memory = crate::initialize().memory();
-        let list = match memory.allocate_manual(StdList::default()) {
+        let list = match memory.allocate_manual(StdList::with_capacity(values.len())) {
             Ok(l) => l,
             Err(_) => return HOST_STATUS_INTERNAL_ERROR,
         };
-        let handle = with_list_registry(|reg| reg.insert(list));
-        for part in s.split(sep.as_str()) {
-            let ptr = alloc_spectra_string(part);
-            let _ = with_list_registry(|reg| reg.push(handle, ptr));
-        }
+        let handle = match with_list_registry(|reg| {
+            let handle = reg.insert(list);
+            match reg.extend(handle, values) {
+                Ok(()) => Ok(handle),
+                Err(code) => {
+                    let _ = reg.remove(handle);
+                    Err(code)
+                }
+            }
+        }) {
+            Ok(handle) => handle,
+            Err(code) => return code,
+        };
         results[0] = handle as SpectraHostValue;
     }
     HOST_STATUS_SUCCESS

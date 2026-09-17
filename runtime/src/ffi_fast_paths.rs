@@ -305,6 +305,18 @@ pub extern "C" fn spectra_rt_map_set_fast(
     crate::stdlib::map_set_fast(handle as usize, key, value)
 }
 
+/// Scalar-only map insertion used by typed collection lowering. It skips the
+/// allocation-table probe required by the polymorphic entry point.
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_set_scalar_fast(
+    handle: SpectraHostValue,
+    key: SpectraHostValue,
+    value: SpectraHostValue,
+) -> i32 {
+    crate::stdlib::map_set_scalar_fast(handle as usize, key, value)
+}
+
 
 /// Fast ABI entry for `col.map_contains(handle, key)`.
 ///
@@ -317,6 +329,16 @@ pub extern "C" fn spectra_rt_map_contains_fast(
     key: SpectraHostValue,
 ) -> SpectraHostValue {
     crate::stdlib::map_contains_fast(handle as usize, key)
+}
+
+/// Scalar-only map membership check used by typed collection lowering.
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_contains_scalar_fast(
+    handle: SpectraHostValue,
+    key: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::map_contains_scalar_fast(handle as usize, key)
 }
 
 /// Fast ABI entry for `col.map_new()`.
@@ -375,6 +397,15 @@ pub extern "C" fn spectra_rt_list_push_fast(
     value: SpectraHostValue,
 ) -> i32 {
     crate::stdlib::list_push_fast(handle as usize, value)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_push_value_fast(
+    handle: SpectraHostValue,
+    value: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::list_push_value_fast(handle as usize, value)
 }
 
 #[no_mangle]
@@ -516,6 +547,16 @@ pub extern "C" fn spectra_rt_map_get_fast(
     crate::stdlib::map_get_fast(handle as usize, key)
 }
 
+/// Scalar-only map lookup with the regular tagged `Option` result ABI.
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_get_scalar_fast(
+    handle: SpectraHostValue,
+    key: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::map_get_scalar_fast(handle as usize, key)
+}
+
 #[no_mangle]
 #[inline(never)]
 pub extern "C" fn spectra_rt_map_get_option_fast(
@@ -532,6 +573,16 @@ pub extern "C" fn spectra_rt_map_remove_fast(
     key: SpectraHostValue,
 ) -> SpectraHostValue {
     crate::stdlib::map_remove_fast(handle as usize, key)
+}
+
+/// Scalar-only map removal with the regular tagged `Option` result ABI.
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_remove_scalar_fast(
+    handle: SpectraHostValue,
+    key: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::map_remove_scalar_fast(handle as usize, key)
 }
 
 #[no_mangle]
@@ -683,6 +734,44 @@ pub extern "C" fn spectra_rt_queue_free_fast(handle: SpectraHostValue) -> i32 {
 #[inline(never)]
 pub extern "C" fn spectra_rt_queue_free_all_fast() -> SpectraHostValue {
     crate::stdlib::queue_free_all_fast()
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_iter_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::list_iter_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_set_iter_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::set_iter_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_iter_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::map_iter_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_values_iter_fast(
+    handle: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::map_values_iter_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_stack_iter_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::stack_iter_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_queue_iter_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::queue_iter_fast(handle as usize)
 }
 
 #[no_mangle]

@@ -140,6 +140,109 @@ mod tests {
     }
 
     #[test]
+    fn range_for_loop_lowers_to_direct_induction_loop_without_iterator_hosts() {
+        let ir = lower_source(
+            r#"
+            module range_induction_loop
+
+            func total() returns int {
+                let sum = 0
+                for value in 1 ..= 4 {
+                    sum = sum + value
+                }
+                return sum
+            }
+            "#,
+        );
+
+        let pretty = crate::ir::pretty::format_module(&ir);
+        assert!(!pretty.contains("spectra.std.range.iter"), "{pretty}");
+        assert!(!pretty.contains("spectra.std.collections.iterator_remaining"), "{pretty}");
+        assert!(!pretty.contains("spectra.std.collections.iterator_next"), "{pretty}");
+        assert!(pretty.contains("range.cond"), "{pretty}");
+        assert!(pretty.contains("range.body"), "{pretty}");
+        assert!(pretty.contains("range.latch"), "{pretty}");
+        assert!(pretty.contains("range.exit"), "{pretty}");
+    }
+
+    #[test]
+    fn range_binding_uses_direct_loop_until_reassignment() {
+        let ir = lower_source(
+            r#"
+            module range_binding_loop
+
+            func total() returns int {
+                let range = 1 ..= 3
+                let sum = 0
+                for value in range {
+                    sum = sum + value
+                }
+                return sum
+            }
+
+            func reassigned() returns int {
+                let range = 1 ..= 3
+                range = 5 ..= 6
+                let sum = 0
+                for value in range {
+                    sum = sum + value
+                }
+                return sum
+            }
+            "#,
+        );
+
+        let pretty = crate::ir::pretty::format_module(&ir);
+        let total = pretty
+            .split("fn total()")
+            .nth(1)
+            .and_then(|body| body.split("fn reassigned()").next())
+            .expect("total function should be present");
+        assert!(!total.contains("spectra.std.range.iter"), "{total}");
+        assert!(!total.contains("spectra.std.collections.iterator_remaining"), "{total}");
+
+        let reassigned = pretty
+            .split("fn reassigned()")
+            .nth(1)
+            .expect("reassigned function should be present");
+        assert!(reassigned.contains("spectra.std.range.iter"), "{reassigned}");
+    }
+
+    #[test]
+    fn collection_for_loop_caches_snapshot_length_in_a_local_counter() {
+        let ir = lower_source(
+            r#"
+            module collection_snapshot_counter
+
+            import std.collections as collections
+
+            func total() returns int {
+                let values = collections.list_new()
+                collections.list_push(values, 2)
+                collections.list_push(values, 3)
+                let sum = 0
+                for value in values {
+                    sum = sum + value
+                }
+                collections.list_free(values)
+                return sum
+            }
+            "#,
+        );
+
+        let pretty = crate::ir::pretty::format_module(&ir);
+        let remaining = pretty
+            .find("spectra.std.collections.iterator_remaining")
+            .expect("collection loop should initialize its snapshot counter");
+        let header = pretty
+            .find("iterator.header:")
+            .expect("collection loop should have an iterator header");
+        assert!(remaining < header, "{pretty}");
+        assert!(pretty.contains("iterator.latch"), "{pretty}");
+        assert!(pretty.contains("spectra.std.collections.iterator_next_unchecked"), "{pretty}");
+    }
+
+    #[test]
     fn unsized_array_parameter_iteration_is_rejected_with_a_clear_error() {
         let tokens = Lexer::new(
             r#"
@@ -471,5 +574,56 @@ mod tests {
             vec![1, 0, 2, 3, 1],
             "expected string/int/bool/float/string tags",
         );
+    }
+
+    #[test]
+    fn scalar_map_calls_use_allocation_table_free_fast_variants() {
+        let ir = lower_source(
+            r#"
+            module scalar_map_fast_variants
+
+            from std.collections import Map
+            import std.collections as collections
+            import std.option as option
+
+            public func main() returns int {
+                let numbers: Map<int, int> = collections.map_new()
+                collections.map_set(numbers, 1, 10)
+                let present = collections.map_contains(numbers, 1)
+                let value = collections.map_get(numbers, 1)
+                let removed = collections.map_remove(numbers, 1)
+                if present and option.is_some(value) and option.is_some(removed) {
+                    return 0
+                }
+                return 1
+            }
+            "#,
+        );
+
+        let pretty = crate::ir::pretty::format_module(&ir);
+        assert!(pretty.contains("spectra.compiler.collections.map_set_scalar"));
+        assert!(pretty.contains("spectra.compiler.collections.map_contains_scalar"));
+        assert!(pretty.contains("spectra.compiler.collections.map_get_scalar"));
+        assert!(pretty.contains("spectra.compiler.collections.map_remove_scalar"));
+        assert!(!pretty.contains("spectra.std.collections.map_set"));
+        assert!(!pretty.contains("spectra.std.collections.map_contains"));
+
+        let string_ir = lower_source(
+            r#"
+            module string_map_keeps_general_path
+
+            from std.collections import Map
+            import std.collections as collections
+
+            public func main() returns int {
+                let labels: Map<string, int> = collections.map_new()
+                collections.map_set(labels, "key", 7)
+                return 0
+            }
+            "#,
+        );
+        let string_pretty = crate::ir::pretty::format_module(&string_ir);
+        assert!(string_pretty.contains("spectra.std.collections.map_set"));
+        assert!(!string_pretty.contains("spectra.compiler.collections.map_set_scalar"));
     }
 }

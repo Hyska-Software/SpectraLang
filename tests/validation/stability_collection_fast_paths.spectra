@@ -55,17 +55,31 @@ public func main() returns int {
     if collections.stack_len(stack) != 2 or option.option_unwrap(collections.stack_peek(stack)) != 20 {
         return 8
     }
+    let stack_sum = 0
+    for value in stack {
+        stack_sum = stack_sum + value
+    }
+    if stack_sum != 30 {
+        return 9
+    }
     let stack_value = collections.stack_pop(stack)
     if option.is_none(stack_value) or option.option_unwrap(stack_value) != 20 {
-        return 9
+        return 10
     }
 
     let queue: Queue<int> = collections.queue_new()
     collections.queue_enqueue(queue, 30)
     collections.queue_enqueue(queue, 40)
+    let queue_sum = 0
+    for value in queue {
+        queue_sum = queue_sum + value
+    }
+    if queue_sum != 70 {
+        return 11
+    }
     let queue_value = collections.queue_dequeue(queue)
     if option.is_none(queue_value) or option.option_unwrap(queue_value) != 30 {
-        return 10
+        return 12
     }
 
     collections.list_free(values)

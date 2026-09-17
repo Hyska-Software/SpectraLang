@@ -1,0 +1,37 @@
+module stability_scalar_map_fast_path
+
+from std.collections import Map
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let numbers: Map<int, int> = collections.map_new()
+    collections.map_set(numbers, 7, 70)
+    if not collections.map_contains(numbers, 7) {
+        return 1
+    }
+    let number = collections.map_get(numbers, 7)
+    if option.is_none(number) or option.option_unwrap(number) != 70 {
+        return 2
+    }
+    let removed_number = collections.map_remove(numbers, 7)
+    if option.is_none(removed_number) or option.option_unwrap(removed_number) != 70 {
+        return 3
+    }
+
+    // String keys must retain the polymorphic path and compare by text.
+    let labels: Map<string, int> = collections.map_new()
+    collections.map_set(labels, "stable", 1)
+    let lookup = "st" + "able"
+    if not collections.map_contains(labels, lookup) {
+        return 4
+    }
+    let label = collections.map_get(labels, lookup)
+    if option.is_none(label) or option.option_unwrap(label) != 1 {
+        return 5
+    }
+
+    collections.map_free(numbers)
+    collections.map_free(labels)
+    return 0
+}

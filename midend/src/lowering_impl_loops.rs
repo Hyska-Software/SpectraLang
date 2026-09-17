@@ -37,6 +37,7 @@ impl ASTLowering {
         iterator_value: Value,
         element_type: IRType,
         owns_iterator: bool,
+        snapshot_length: bool,
         ir_func: &mut IRFunction,
     ) {
         if Self::ir_type_contains_unknown(&element_type) {
@@ -46,20 +47,48 @@ impl ASTLowering {
 
         let iterator_header = ir_func.add_block("iterator.header");
         let iterator_body = ir_func.add_block("iterator.body");
+        let iterator_latch = snapshot_length.then(|| ir_func.add_block("iterator.latch"));
         let iterator_exit = ir_func.add_block("iterator.exit");
+
+        // Collection iterators are private snapshots created by this lowering
+        // path, so their length cannot change while the loop body runs. Keep
+        // the count in an IR local and retain the old per-header host query
+        // for explicit Iterator<T> values, whose body may consume the cursor.
+        let remaining_slot = if snapshot_length {
+            let slot = self.builder.build_alloca(ir_func, IRType::Int);
+            let remaining = self.require_value(
+                self.builder.build_typed_host_call(
+                    ir_func,
+                    "spectra.std.collections.iterator_remaining".to_string(),
+                    vec![iterator_value],
+                    IRType::Int,
+                    true,
+                ),
+                "iterator.remaining host call did not produce its declared result",
+            );
+            self.builder.build_store(ir_func, slot, remaining);
+            Some(slot)
+        } else {
+            None
+        };
 
         self.builder.build_branch(ir_func, iterator_header);
         self.builder.set_current_block(iterator_header);
-        let remaining = self.require_value(
-            self.builder.build_typed_host_call(
-                ir_func,
-                "spectra.std.collections.iterator_remaining".to_string(),
-                vec![iterator_value],
-                IRType::Int,
-                true,
-            ),
-            "iterator.remaining host call did not produce its declared result",
-        );
+        let remaining = if let Some(slot) = remaining_slot {
+            self.builder
+                .build_load_typed(ir_func, slot, IRType::Int)
+        } else {
+            self.require_value(
+                self.builder.build_typed_host_call(
+                    ir_func,
+                    "spectra.std.collections.iterator_remaining".to_string(),
+                    vec![iterator_value],
+                    IRType::Int,
+                    true,
+                ),
+                "iterator.remaining host call did not produce its declared result",
+            )
+        };
         let zero = self.builder.build_const_int(ir_func, 0);
         let has_next = self.builder.build_gt(ir_func, remaining, zero);
         self.builder
@@ -67,7 +96,7 @@ impl ASTLowering {
 
         self.builder.set_current_block(iterator_body);
         self.loop_stack.push(LoopContext {
-            header_block: iterator_header,
+            header_block: iterator_latch.unwrap_or(iterator_header),
             exit_block: iterator_exit,
         });
         self.value_map.push_scope();
@@ -99,7 +128,8 @@ impl ASTLowering {
         if let Some(current_block) = self.builder.get_current_block() {
             if let Some(block) = ir_func.get_block_mut(current_block) {
                 if block.terminator.is_none() {
-                    self.builder.build_branch(ir_func, iterator_header);
+                    self.builder
+                        .build_branch(ir_func, iterator_latch.unwrap_or(iterator_header));
                 }
             }
         }
@@ -110,6 +140,22 @@ impl ASTLowering {
         self.variable_types.pop_scope();
         self.value_map.pop_scope();
         self.loop_stack.pop();
+
+        if let Some(iterator_latch) = iterator_latch {
+            self.builder.set_current_block(iterator_latch);
+            let remaining = self
+                .builder
+                .build_load_typed(ir_func, remaining_slot.expect("snapshot slot exists"), IRType::Int);
+            let one = self.builder.build_const_int(ir_func, 1);
+            let next = self.builder.build_sub(ir_func, remaining, one);
+            self.builder.build_store(
+                ir_func,
+                remaining_slot.expect("snapshot slot exists"),
+                next,
+            );
+            self.builder.build_branch(ir_func, iterator_header);
+        }
+
         self.builder.set_current_block(iterator_exit);
         if owns_iterator {
             let _ = self.builder.build_host_call(
@@ -220,6 +266,100 @@ impl ASTLowering {
         self.builder.set_current_block(exit_block);
     }
 
+    /// Lowers a unit-step integer range as a direct induction loop. The
+    /// runtime range object remains available for ordinary expressions, but a
+    /// `for` loop only needs its two bounds and inclusive bit. Avoiding the
+    /// range and iterator registries removes two handle allocations and three
+    /// registry calls from the loop setup, plus two calls per iteration.
+    pub(crate) fn lower_range_index_for_loop(
+        &mut self,
+        for_stmt: &spectra_compiler::ast::ForLoop,
+        start: Value,
+        end: Value,
+        inclusive: bool,
+        ir_func: &mut IRFunction,
+    ) {
+        let current_ptr = self.builder.build_alloca(ir_func, IRType::Int);
+        self.builder.build_store(ir_func, current_ptr, start);
+
+        let cond_block = ir_func.add_block("range.cond");
+        let body_block = ir_func.add_block("range.body");
+        let latch_block = ir_func.add_block("range.latch");
+        let increment_block = ir_func.add_block("range.increment");
+        let exit_block = ir_func.add_block("range.exit");
+
+        self.builder.build_branch(ir_func, cond_block);
+        self.builder.set_current_block(cond_block);
+        let current = self
+            .builder
+            .build_load_typed(ir_func, current_ptr, IRType::Int);
+        let has_next = if inclusive {
+            self.builder.build_le(ir_func, current, end)
+        } else {
+            self.builder.build_lt(ir_func, current, end)
+        };
+        self.builder
+            .build_cond_branch(ir_func, has_next, body_block, exit_block);
+
+        self.builder.set_current_block(body_block);
+        self.loop_stack.push(LoopContext {
+            header_block: latch_block,
+            exit_block,
+        });
+        self.value_map.push_scope();
+        self.variable_types.push_scope();
+        self.array_map.push_scope();
+        self.range_map.push_scope();
+        self.struct_var_map.push_scope();
+
+        let element_value = self
+            .builder
+            .build_load_typed(ir_func, current_ptr, IRType::Int);
+        self.value_map
+            .insert(for_stmt.iterator.clone(), element_value);
+        self.variable_types
+            .insert(for_stmt.iterator.clone(), IRType::Int);
+
+        self.lower_block_with_scope(&for_stmt.body.statements, ir_func, false);
+        if let Some(current_block) = self.builder.get_current_block() {
+            if let Some(block) = ir_func.get_block_mut(current_block) {
+                if block.terminator.is_none() {
+                    self.builder.build_branch(ir_func, latch_block);
+                }
+            }
+        }
+
+        self.struct_var_map.pop_scope();
+        self.range_map.pop_scope();
+        self.array_map.pop_scope();
+        self.variable_types.pop_scope();
+        self.value_map.pop_scope();
+        self.loop_stack.pop();
+
+        self.builder.set_current_block(latch_block);
+        let current = self
+            .builder
+            .build_load_typed(ir_func, current_ptr, IRType::Int);
+        let at_end = self.builder.build_eq(ir_func, current, end);
+        self.builder.build_cond_branch(
+            ir_func,
+            at_end,
+            exit_block,
+            increment_block,
+        );
+
+        self.builder.set_current_block(increment_block);
+        let current = self
+            .builder
+            .build_load_typed(ir_func, current_ptr, IRType::Int);
+        let one = self.builder.build_const_int(ir_func, 1);
+        let next = self.builder.build_add(ir_func, current, one);
+        self.builder.build_store(ir_func, current_ptr, next);
+        self.builder.build_branch(ir_func, cond_block);
+
+        self.builder.set_current_block(exit_block);
+    }
+
     pub(crate) fn lower_for_loop_via_iterator(
         &mut self,
         for_stmt: &spectra_compiler::ast::ForLoop,
@@ -243,6 +383,44 @@ impl ASTLowering {
             }
             _ => {}
         }
+
+        // A syntactic range already exposes its bounds in the AST. A range
+        // binding created by a `let` is also safe to use when its sidecar has
+        // not been invalidated by reassignment. Other Range values (parameters,
+        // returns, and explicit `range.iter(...)` inputs) keep the generic
+        // iterator path and its existing ownership semantics.
+        match &for_stmt.iterable.kind {
+            ExpressionKind::Range {
+                start,
+                end,
+                inclusive,
+            } => {
+                let start = self.lower_expression(start, ir_func);
+                let end = self.lower_expression(end, ir_func);
+                self.lower_range_index_for_loop(
+                    for_stmt,
+                    start,
+                    end,
+                    *inclusive,
+                    ir_func,
+                );
+                return;
+            }
+            ExpressionKind::Identifier(name) => {
+                if let Some(info) = self.range_map.get(name) {
+                    self.lower_range_index_for_loop(
+                        for_stmt,
+                        info.start,
+                        info.end,
+                        info.inclusive,
+                        ir_func,
+                    );
+                    return;
+                }
+            }
+            _ => {}
+        }
+
         let iterable_value = self.lower_expression(&for_stmt.iterable, ir_func);
         let iterable_type = self.infer_expr_ir_type(&for_stmt.iterable);
         let mangle_type = |part: &str| -> IRType {
@@ -300,7 +478,7 @@ impl ASTLowering {
             }),
         };
 
-        let (iterator_value, element_type, owns_iterator) = match iterable_type {
+        let (iterator_value, element_type, owns_iterator, snapshot_length) = match iterable_type {
             IRType::Range => (
                 self.require_value(
                     self.builder.build_typed_host_call(
@@ -313,6 +491,7 @@ impl ASTLowering {
                     "range.iter host call did not produce its declared iterator",
                 ),
                 IRType::Int,
+                true,
                 true,
             ),
             IRType::Array { element_type, size } => {
@@ -359,6 +538,7 @@ impl ASTLowering {
                     ),
                     element_type,
                     true,
+                    true,
                 )
             }
             IRType::Generic { name, args, .. } if name == "Set" => {
@@ -378,6 +558,7 @@ impl ASTLowering {
                         "set.iter host call did not produce its declared iterator",
                     ),
                     element_type,
+                    true,
                     true,
                 )
             }
@@ -399,6 +580,7 @@ impl ASTLowering {
                     ),
                     element_type,
                     true,
+                    true,
                 )
             }
             IRType::Generic { name, args, .. } if name == "Queue" => {
@@ -418,6 +600,7 @@ impl ASTLowering {
                         "queue.iter host call did not produce its declared iterator",
                     ),
                     element_type,
+                    true,
                     true,
                 )
             }
@@ -439,6 +622,7 @@ impl ASTLowering {
                     ),
                     element_type,
                     true,
+                    true,
                 )
             }
             IRType::Generic { name, args, .. } if name == "Iterator" => {
@@ -446,7 +630,7 @@ impl ASTLowering {
                     self.error("cannot consume Iterator<T> without its element type");
                     return;
                 };
-                (iterable_value, element_type, false)
+                (iterable_value, element_type, false, false)
             }
             IRType::Struct { name, .. } if name.starts_with("List_") => {
                 let suffix = &name["List_".len()..];
@@ -466,6 +650,7 @@ impl ASTLowering {
                         "list.iter host call did not produce its declared iterator",
                     ),
                     element_type,
+                    true,
                     true,
                 )
             }
@@ -488,6 +673,7 @@ impl ASTLowering {
                     ),
                     element_type,
                     true,
+                    true,
                 )
             }
             IRType::Struct { name, .. } if name.starts_with("Stack_") => {
@@ -509,6 +695,7 @@ impl ASTLowering {
                     ),
                     element_type,
                     true,
+                    true,
                 )
             }
             IRType::Struct { name, .. } if name.starts_with("Queue_") => {
@@ -529,6 +716,7 @@ impl ASTLowering {
                         "queue.iter host call did not produce its declared iterator",
                     ),
                     element_type,
+                    true,
                     true,
                 )
             }
@@ -555,11 +743,12 @@ impl ASTLowering {
                     ),
                     element_type,
                     true,
+                    true,
                 )
             }
             IRType::Struct { name, .. } if name.starts_with("Iterator_") => {
                 let suffix = &name["Iterator_".len()..];
-                (iterable_value, mangle_type(suffix), false)
+                (iterable_value, mangle_type(suffix), false, false)
             }
             other => {
                 self.error(format!(
@@ -575,6 +764,7 @@ impl ASTLowering {
             iterator_value,
             element_type,
             owns_iterator,
+            snapshot_length,
             ir_func,
         );
     }

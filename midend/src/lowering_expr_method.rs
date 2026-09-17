@@ -30,9 +30,13 @@ impl ASTLowering {
                         arguments,
                         ir_func,
                     );
+                    let runtime_name = self.specialized_collection_host_runtime_name(
+                        desc.runtime_name,
+                        arguments,
+                    );
                     let result = self.builder.build_typed_host_call(
                         ir_func,
-                        desc.runtime_name.to_string(),
+                        runtime_name.to_string(),
                         call_args,
                         desc.return_type.clone(),
                         desc.returns_value,

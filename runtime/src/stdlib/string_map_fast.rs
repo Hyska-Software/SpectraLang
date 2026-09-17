@@ -78,19 +78,29 @@ pub fn map_new_fast() -> i64 {
 /// Returns 0 on success, `HOST_STATUS_NOT_FOUND` if the handle is invalid.
 /// Handle 0 is a sentinel for "no map" and is a no-op (returns NOT_FOUND).
 pub fn map_set_fast(handle: usize, key: i64, value: i64) -> i32 {
-    let map_arc = with_map_registry(|reg| reg.get(handle));
-    match map_arc {
-        Some(map_arc) => {
-            // The map outlives the frame that stored these values.
-            crate::ffi::escape_stored_value(key);
-            crate::ffi::escape_stored_value(value);
-            lock_unpoisoned(&map_arc)
-                .data
-                .insert(collection_key(key), value);
-            HOST_STATUS_SUCCESS
-        }
-        None => HOST_STATUS_NOT_FOUND,
-    }
+    let Some(map_arc) = map_fast_get(handle) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    // The map outlives the frame that stored these values.
+    crate::ffi::escape_stored_value(key);
+    crate::ffi::escape_stored_value(value);
+    lock_unpoisoned(&map_arc)
+        .data
+        .insert(collection_key(key), value);
+    HOST_STATUS_SUCCESS
+}
+
+/// Scalar-specialized map insertion. The compiler selects this internal ABI
+/// only when the source types prove that both key and value are non-pointer
+/// scalar words, so neither the string probe nor the escape table is needed.
+pub fn map_set_scalar_fast(handle: usize, key: i64, value: i64) -> i32 {
+    let Some(map_arc) = map_fast_get(handle) else {
+        return HOST_STATUS_NOT_FOUND;
+    };
+    lock_unpoisoned(&map_arc)
+        .data
+        .insert(CollectionKey::Scalar(key), value);
+    HOST_STATUS_SUCCESS
 }
 
 /// Fast-path helper for `col.map_contains(handle, key)`.
@@ -98,36 +108,68 @@ pub fn map_set_fast(handle: usize, key: i64, value: i64) -> i32 {
 /// Returns 1 if the key is present in the map, 0 otherwise (including
 /// invalid handle).
 pub fn map_contains_fast(handle: usize, key: i64) -> i64 {
-    let map_arc = with_map_registry(|reg| reg.get(handle));
-    match map_arc {
-        Some(map_arc)
-            if lock_unpoisoned(&map_arc)
-                .data
-                .contains_key(&collection_key(key)) =>
-        {
-            1
-        }
-        Some(_) | None => 0,
-    }
+    let Some(map_arc) = map_fast_get(handle) else {
+        return 0;
+    };
+    let found = lock_unpoisoned(&map_arc)
+        .data
+        .contains_key(&collection_key(key));
+    found as i64
+}
+
+/// Scalar-specialized map membership check that avoids probing the allocation
+/// table for a packed string representation.
+pub fn map_contains_scalar_fast(handle: usize, key: i64) -> i64 {
+    let Some(map_arc) = map_fast_get(handle) else {
+        return 0;
+    };
+    let found = lock_unpoisoned(&map_arc)
+        .data
+        .contains_key(&CollectionKey::Scalar(key));
+    found as i64
+}
+
+/// Scalar-specialized map lookup with the same tagged `Option` result ABI as
+/// the public `map_get` and `map_get_option` calls.
+pub fn map_get_scalar_fast(handle: usize, key: i64) -> SpectraHostValue {
+    let Some(map_arc) = map_fast_get(handle) else {
+        return collection_option_handle(None);
+    };
+    let value = lock_unpoisoned(&map_arc)
+        .data
+        .get(&CollectionKey::Scalar(key))
+        .copied();
+    collection_option_handle(value)
+}
+
+/// Scalar-specialized map removal with the same tagged `Option` result ABI as
+/// the public `map_remove` and `map_remove_option` calls.
+pub fn map_remove_scalar_fast(handle: usize, key: i64) -> SpectraHostValue {
+    let Some(map_arc) = map_fast_get(handle) else {
+        return collection_option_handle(None);
+    };
+    let value = lock_unpoisoned(&map_arc)
+        .data
+        .remove(&CollectionKey::Scalar(key));
+    collection_option_handle(value)
 }
 
 /// Fast-path helper for `col.map_len(handle)`.
 ///
 /// Returns the number of entries in the map, or 0 for an invalid handle.
 pub fn map_len_fast(handle: usize) -> i64 {
-    let map_arc = with_map_registry(|reg| reg.get(handle));
-    match map_arc {
-        Some(map_arc) => lock_unpoisoned(&map_arc).data.len() as i64,
-        None => 0,
-    }
+    let Some(map_arc) = map_fast_get(handle) else {
+        return 0;
+    };
+    let len = lock_unpoisoned(&map_arc).data.len();
+    len as i64
 }
 
 /// Fast-path helper for `col.map_clear(handle)`.
 ///
 /// Removes all entries from the map. No-op for an invalid handle.
 pub fn map_clear_fast(handle: usize) {
-    let map_arc = with_map_registry(|reg| reg.get(handle));
-    if let Some(map_arc) = map_arc {
+    if let Some(map_arc) = map_fast_get(handle) {
         lock_unpoisoned(&map_arc).data.clear();
     }
 }

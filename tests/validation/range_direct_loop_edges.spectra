@@ -1,0 +1,35 @@
+module range_direct_loop_edges
+
+public func main() returns int {
+    let maximum = 9223372036854775807
+    let visits = 0
+    for value in maximum ..= maximum {
+        if value != maximum {
+            return 1
+        }
+        visits = visits + 1
+    }
+    if visits != 1 {
+        return 2
+    }
+
+    let empty_visits = 0
+    for value in 5 .. 2 {
+        empty_visits = empty_visits + value
+    }
+    if empty_visits != 0 {
+        return 3
+    }
+
+    let changed = 1 ..= 2
+    changed = 7 ..= 8
+    let changed_sum = 0
+    for value in changed {
+        changed_sum = changed_sum + value
+    }
+    if changed_sum != 15 {
+        return 4
+    }
+
+    return 0
+}

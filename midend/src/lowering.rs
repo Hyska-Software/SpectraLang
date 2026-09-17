@@ -253,6 +253,23 @@ impl RangeScopeStack {
         }
     }
 
+    fn get(&self, name: &str) -> Option<RangeInfo> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(info) = scope.get(name) {
+                return Some(*info);
+            }
+        }
+        None
+    }
+
+    fn remove(&mut self, name: &str) {
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.remove(name).is_some() {
+                return;
+            }
+        }
+    }
+
     fn clear(&mut self) {
         self.scopes.clear();
         self.scopes.push(HashMap::new());

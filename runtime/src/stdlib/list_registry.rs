@@ -21,20 +21,7 @@ pub(crate) fn list_registry() -> &'static Mutex<ListRegistry> {
 /// a JSON array and must see the elements. The registry itself stays private;
 /// this read seam and [`list_create`] are the whole cross-crate surface.
 pub fn list_elements(handle: i64) -> Result<Vec<SpectraHostValue>, i32> {
-    with_list_registry(|registry| {
-        let len = registry.len(handle as usize)?;
-        let mut values = Vec::with_capacity(len);
-        for index in 0..len {
-            match registry.get_option(handle as usize, index as i64)? {
-                Some(value) => values.push(value),
-                // `len` and `get_option` agree on the same table entry; a
-                // missing index means the list shrank mid-read, which no path
-                // does, so stopping short is the safe reading.
-                None => break,
-            }
-        }
-        Ok(values)
-    })
+    with_list_registry(|registry| registry.snapshot(handle as usize))
 }
 
 /// Creates a list holding `elements` and returns its handle.
@@ -57,9 +44,7 @@ pub fn list_create(elements: &[SpectraHostValue]) -> Result<i64, i32> {
     }
     with_list_registry(|registry| {
         let handle = registry.insert(list);
-        for value in elements {
-            registry.push(handle, *value)?;
-        }
+        registry.extend(handle, elements.iter().copied())?;
         Ok(handle as i64)
     })
 }

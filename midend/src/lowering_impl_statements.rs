@@ -216,6 +216,16 @@ impl ASTLowering {
                 let value = self.lower_expression(&assign.value, ir_func);
                 let value_type = self.infer_expr_ir_type(&assign.value);
 
+                // A range sidecar contains the original SSA bounds. Any
+                // reassignment can invalidate those bounds, including an
+                // assignment from another range, so the direct range-loop
+                // lowering remains conservative after mutation.
+                if let spectra_compiler::ast::LValue::Identifier(name) = &assign.target {
+                    if matches!(self.variable_types.get(name), Some(IRType::Range)) {
+                        self.range_map.remove(name);
+                    }
+                }
+
                 match &assign.target {
                     spectra_compiler::ast::LValue::Identifier(name) => {
                         if let Some((global_key, static_type)) =

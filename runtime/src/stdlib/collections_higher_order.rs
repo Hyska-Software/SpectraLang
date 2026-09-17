@@ -53,10 +53,7 @@ pub(crate) extern "C" fn std_list_map(ctx: *mut SpectraHostCallContext) -> i32 {
             mapped.push(out);
         }
         if let Err(code) = with_list_registry(|reg| {
-            for value in mapped {
-                reg.push(dest_handle, value)?;
-            }
-            Ok(())
+            reg.extend(dest_handle, mapped)
         }) {
             let _ = with_list_registry(|reg| reg.remove(dest_handle));
             return code;
@@ -123,10 +120,7 @@ pub(crate) extern "C" fn std_list_filter(ctx: *mut SpectraHostCallContext) -> i3
             }
         }
         if let Err(code) = with_list_registry(|reg| {
-            for value in selected {
-                reg.push(dest_handle, value)?;
-            }
-            Ok(())
+            reg.extend(dest_handle, selected)
         }) {
             let _ = with_list_registry(|reg| reg.remove(dest_handle));
             return code;

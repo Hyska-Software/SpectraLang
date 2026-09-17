@@ -33,7 +33,7 @@ public func main() returns int {
         let acc = 0
         let x   = 0
         while x < 750 {
-            if col.map_contains(m, x) == 1 {
+            if col.map_contains(m, x) {
                 acc = acc + x
             }
             x = x + 1

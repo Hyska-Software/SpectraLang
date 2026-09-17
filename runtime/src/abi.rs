@@ -179,10 +179,22 @@ pub enum RuntimeImport {
     IteratorNextUnchecked,
     IteratorRemaining,
     IteratorFree,
+    ListIter,
+    SetIter,
+    MapIter,
+    MapValuesIter,
+    StackIter,
+    QueueIter,
+    /// Internal scalar-only collection calls. These are appended so the
+    /// existing ABI indexes remain stable.
+    MapSetScalar,
+    MapContainsScalar,
+    MapGetScalar,
+    MapRemoveScalar,
 }
 
 impl RuntimeImport {
-    pub const COUNT: usize = 104;
+    pub const COUNT: usize = 114;
 
     pub const ALL: &'static [Self] = &[
         Self::ManualAlloc,
@@ -289,6 +301,16 @@ impl RuntimeImport {
         Self::IteratorNextUnchecked,
         Self::IteratorRemaining,
         Self::IteratorFree,
+        Self::ListIter,
+        Self::SetIter,
+        Self::MapIter,
+        Self::MapValuesIter,
+        Self::StackIter,
+        Self::QueueIter,
+        Self::MapSetScalar,
+        Self::MapContainsScalar,
+        Self::MapGetScalar,
+        Self::MapRemoveScalar,
     ];
     pub const fn index(self) -> usize {
         self as usize
@@ -354,7 +376,7 @@ impl RuntimeImport {
             Self::CoroutinePollReturn => "spectra_rt_coroutine_poll_return",
             Self::HostDenied => "spectra_rt_capability_denied",
             Self::ListNew => "spectra_rt_list_new_fast",
-            Self::ListPush => "spectra_rt_list_push_fast",
+            Self::ListPush => "spectra_rt_list_push_value_fast",
             Self::ListLen => "spectra_rt_list_len_fast",
             Self::ListGet => "spectra_rt_list_get_fast",
             Self::ListGetOption => "spectra_rt_list_get_option_fast",
@@ -400,6 +422,16 @@ impl RuntimeImport {
             Self::IteratorNextUnchecked => "spectra_rt_iterator_next_unchecked_fast",
             Self::IteratorRemaining => "spectra_rt_iterator_remaining_fast",
             Self::IteratorFree => "spectra_rt_iterator_free_fast",
+            Self::ListIter => "spectra_rt_list_iter_fast",
+            Self::SetIter => "spectra_rt_set_iter_fast",
+            Self::MapIter => "spectra_rt_map_iter_fast",
+            Self::MapValuesIter => "spectra_rt_map_values_iter_fast",
+            Self::StackIter => "spectra_rt_stack_iter_fast",
+            Self::QueueIter => "spectra_rt_queue_iter_fast",
+            Self::MapSetScalar => "spectra_rt_map_set_scalar_fast",
+            Self::MapContainsScalar => "spectra_rt_map_contains_scalar_fast",
+            Self::MapGetScalar => "spectra_rt_map_get_scalar_fast",
+            Self::MapRemoveScalar => "spectra_rt_map_remove_scalar_fast",
         }
     }
 
@@ -447,7 +479,7 @@ impl RuntimeImport {
             Self::SpectraPanic => (I64, EMPTY),
             Self::HostDenied => (I64, EMPTY),
             Self::ListNew => (EMPTY, I64),
-            Self::ListPush => (I64_I64, I32),
+            Self::ListPush => (I64_I64, I64),
             Self::ListLen => (I64, I64),
             Self::ListGet => (I64_I64, I64),
             Self::ListGetOption => (I64_I64, I64),
@@ -493,6 +525,16 @@ impl RuntimeImport {
             Self::IteratorNextUnchecked => (I64, I64),
             Self::IteratorRemaining => (I64, I64),
             Self::IteratorFree => (I64, I32),
+            Self::ListIter => (I64, I64),
+            Self::SetIter => (I64, I64),
+            Self::MapIter => (I64, I64),
+            Self::MapValuesIter => (I64, I64),
+            Self::StackIter => (I64, I64),
+            Self::QueueIter => (I64, I64),
+            Self::MapSetScalar => (I64_I64_I64, I32),
+            Self::MapContainsScalar => (I64_I64, I64),
+            Self::MapGetScalar => (I64_I64, I64),
+            Self::MapRemoveScalar => (I64_I64, I64),
             Self::CoroutineFrameAlloc => (I64, I64),
             Self::CoroutineFrameStore => (I64_I64_I64, I64),
             Self::CoroutineFrameLoad => (I64_I64, I64),
@@ -563,7 +605,7 @@ impl RuntimeImport {
             Self::SpectraPanic => crate::panic::spectra_rt_panic as *const u8,
             Self::HostDenied => crate::panic::spectra_rt_capability_denied as *const u8,
             Self::ListNew => crate::ffi::spectra_rt_list_new_fast as *const u8,
-            Self::ListPush => crate::ffi::spectra_rt_list_push_fast as *const u8,
+            Self::ListPush => crate::ffi::spectra_rt_list_push_value_fast as *const u8,
             Self::ListLen => crate::ffi::spectra_rt_list_len_fast as *const u8,
             Self::ListGet => crate::ffi::spectra_rt_list_get_fast as *const u8,
             Self::ListGetOption => crate::ffi::spectra_rt_list_get_option_fast as *const u8,
@@ -615,6 +657,20 @@ impl RuntimeImport {
             }
             Self::IteratorRemaining => crate::ffi::spectra_rt_iterator_remaining_fast as *const u8,
             Self::IteratorFree => crate::ffi::spectra_rt_iterator_free_fast as *const u8,
+            Self::ListIter => crate::ffi::spectra_rt_list_iter_fast as *const u8,
+            Self::SetIter => crate::ffi::spectra_rt_set_iter_fast as *const u8,
+            Self::MapIter => crate::ffi::spectra_rt_map_iter_fast as *const u8,
+            Self::MapValuesIter => crate::ffi::spectra_rt_map_values_iter_fast as *const u8,
+            Self::StackIter => crate::ffi::spectra_rt_stack_iter_fast as *const u8,
+            Self::QueueIter => crate::ffi::spectra_rt_queue_iter_fast as *const u8,
+            Self::MapSetScalar => crate::ffi::spectra_rt_map_set_scalar_fast as *const u8,
+            Self::MapContainsScalar => {
+                crate::ffi::spectra_rt_map_contains_scalar_fast as *const u8
+            }
+            Self::MapGetScalar => crate::ffi::spectra_rt_map_get_scalar_fast as *const u8,
+            Self::MapRemoveScalar => {
+                crate::ffi::spectra_rt_map_remove_scalar_fast as *const u8
+            }
             Self::CoroutineFrameAlloc => {
                 crate::async_abi::spectra_rt_coroutine_frame_alloc as *const u8
             }
@@ -769,9 +825,19 @@ pub enum FastHostCall {
     IteratorNextUnchecked,
     IteratorRemaining,
     IteratorFree,
+    ListIter,
+    SetIter,
+    MapIter,
+    MapValuesIter,
+    StackIter,
+    QueueIter,
+    MapSetScalar,
+    MapContainsScalar,
+    MapGetScalar,
+    MapRemoveScalar,
 }
 impl FastHostCall {
-    pub const COUNT: usize = 75;
+    pub const COUNT: usize = 85;
 
     pub const ALL: &'static [Self] = &[
         Self::ConcurrentReset,
@@ -849,6 +915,16 @@ impl FastHostCall {
         Self::IteratorNextUnchecked,
         Self::IteratorRemaining,
         Self::IteratorFree,
+        Self::ListIter,
+        Self::SetIter,
+        Self::MapIter,
+        Self::MapValuesIter,
+        Self::StackIter,
+        Self::QueueIter,
+        Self::MapSetScalar,
+        Self::MapContainsScalar,
+        Self::MapGetScalar,
+        Self::MapRemoveScalar,
     ];
 
     pub const fn index(self) -> usize {
@@ -932,6 +1008,16 @@ impl FastHostCall {
             Self::IteratorNextUnchecked => "spectra.std.collections.iterator_next_unchecked",
             Self::IteratorRemaining => "spectra.std.collections.iterator_remaining",
             Self::IteratorFree => "spectra.std.collections.iterator_free",
+            Self::ListIter => "spectra.std.collections.list_iter",
+            Self::SetIter => "spectra.std.collections.set_iter",
+            Self::MapIter => "spectra.std.collections.map_iter",
+            Self::MapValuesIter => "spectra.std.collections.map_values_iter",
+            Self::StackIter => "spectra.std.collections.stack_iter",
+            Self::QueueIter => "spectra.std.collections.queue_iter",
+            Self::MapSetScalar => "spectra.compiler.collections.map_set_scalar",
+            Self::MapContainsScalar => "spectra.compiler.collections.map_contains_scalar",
+            Self::MapGetScalar => "spectra.compiler.collections.map_get_scalar",
+            Self::MapRemoveScalar => "spectra.compiler.collections.map_remove_scalar",
         }
     }
 
@@ -1012,6 +1098,16 @@ impl FastHostCall {
             Self::IteratorNextUnchecked => RuntimeImport::IteratorNextUnchecked,
             Self::IteratorRemaining => RuntimeImport::IteratorRemaining,
             Self::IteratorFree => RuntimeImport::IteratorFree,
+            Self::ListIter => RuntimeImport::ListIter,
+            Self::SetIter => RuntimeImport::SetIter,
+            Self::MapIter => RuntimeImport::MapIter,
+            Self::MapValuesIter => RuntimeImport::MapValuesIter,
+            Self::StackIter => RuntimeImport::StackIter,
+            Self::QueueIter => RuntimeImport::QueueIter,
+            Self::MapSetScalar => RuntimeImport::MapSetScalar,
+            Self::MapContainsScalar => RuntimeImport::MapContainsScalar,
+            Self::MapGetScalar => RuntimeImport::MapGetScalar,
+            Self::MapRemoveScalar => RuntimeImport::MapRemoveScalar,
         }
     }
 
@@ -1268,7 +1364,17 @@ mod tests {
                 | FastHostCall::IteratorNext
                 | FastHostCall::IteratorNextUnchecked
                 | FastHostCall::IteratorRemaining
-                | FastHostCall::IteratorFree => {}
+                | FastHostCall::IteratorFree
+                | FastHostCall::ListIter
+                | FastHostCall::SetIter
+                | FastHostCall::MapIter
+                | FastHostCall::MapValuesIter
+                | FastHostCall::StackIter
+                | FastHostCall::QueueIter
+                | FastHostCall::MapSetScalar
+                | FastHostCall::MapContainsScalar
+                | FastHostCall::MapGetScalar
+                | FastHostCall::MapRemoveScalar => {}
             }
 
             let name = fast.host_name();

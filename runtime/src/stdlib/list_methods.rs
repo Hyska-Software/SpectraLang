@@ -21,6 +21,20 @@ impl ListRegistry {
         Ok(list.data.len())
     }
 
+    pub(crate) fn extend<I>(
+        &mut self,
+        handle: usize,
+        values: I,
+    ) -> Result<(), i32>
+    where
+        I: IntoIterator<Item = SpectraHostValue>,
+    {
+        let id = Self::id(handle)?;
+        let list = self.lists.get_mut(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
+        list.data.extend(values);
+        Ok(())
+    }
+
     pub(crate) fn len(&self, handle: usize) -> Result<usize, i32> {
         let id = Self::id(handle)?;
         Ok(self

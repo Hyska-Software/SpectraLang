@@ -470,19 +470,33 @@ pub(crate) extern "C" fn std_fs_read_dir(ctx: *mut SpectraHostCallContext) -> i3
                 return write_fs_result(ctx_ref, Err(fs_io_failure("fs_read_dir", &path, error)))
             }
         };
-        let memory = crate::initialize().memory();
-        let list = match memory.allocate_manual(StdList::default()) {
-            Ok(list) => list,
-            Err(_) => return HOST_STATUS_INTERNAL_ERROR,
-        };
-        let handle = with_list_registry(|reg| reg.insert(list));
-        for name in &names {
-            let ptr = alloc_spectra_string(name);
+        let mut values = Vec::with_capacity(names.len());
+        for name in names {
+            let ptr = alloc_spectra_string(&name);
             if ptr == 0 {
                 return HOST_STATUS_INTERNAL_ERROR;
             }
-            let _ = with_list_registry(|reg| reg.push(handle, ptr));
+            crate::ffi::escape_stored_value(ptr);
+            values.push(ptr);
         }
+        let memory = crate::initialize().memory();
+        let list = match memory.allocate_manual(StdList::with_capacity(values.len())) {
+            Ok(list) => list,
+            Err(_) => return HOST_STATUS_INTERNAL_ERROR,
+        };
+        let handle = match with_list_registry(|reg| {
+            let handle = reg.insert(list);
+            match reg.extend(handle, values) {
+                Ok(()) => Ok(handle),
+                Err(code) => {
+                    let _ = reg.remove(handle);
+                    Err(code)
+                }
+            }
+        }) {
+            Ok(handle) => handle,
+            Err(code) => return code,
+        };
         write_fs_result(ctx_ref, Ok(handle as SpectraHostValue))
     }
 }
