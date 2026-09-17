@@ -1,0 +1,87 @@
+module validation_517_recursion_backtracking_queens
+
+// Backtracking recursion with shared array state: place one queen per row,
+// checking every previously placed queen before descending. Counts the
+// number of solutions for N = 1, 4, 6, and 8.
+
+func abs_i(value: int) returns int {
+    if value < 0 {
+        return 0 - value
+    }
+    return value
+}
+
+func is_safe(cols: [int], row: int, col: int) returns bool {
+    let placed = 0
+    while placed < row {
+        if cols[placed] == col {
+            return false
+        }
+        if abs_i(cols[placed] - col) == row - placed {
+            return false
+        }
+        placed = placed + 1
+    }
+    return true
+}
+
+func solve(cols: [int], row: int, size: int) returns int {
+    if row == size {
+        return 1
+    }
+    let total = 0
+    let col = 0
+    while col < size {
+        if is_safe(cols, row, col) {
+            cols[row] = col
+            total = total + solve(cols, row + 1, size)
+        }
+        col = col + 1
+    }
+    return total
+}
+
+// Count only the solutions whose queen in the first row sits in the first
+// half of the board; recursion re-visits the same search with an extra
+// per-level filter.
+func solve_first_half(cols: [int], row: int, size: int) returns int {
+    if row == size {
+        if cols[0] < size / 2 {
+            return 1
+        }
+        return 0
+    }
+    let total = 0
+    let col = 0
+    while col < size {
+        if is_safe(cols, row, col) {
+            cols[row] = col
+            total = total + solve_first_half(cols, row + 1, size)
+        }
+        col = col + 1
+    }
+    return total
+}
+
+public func main() returns int {
+    let cols = [-1, -1, -1, -1, -1, -1, -1, -1]
+    if solve(cols, 0, 1) != 1 {
+        return 1
+    }
+    if solve(cols, 0, 4) != 2 {
+        return 2
+    }
+    if solve(cols, 0, 6) != 4 {
+        return 3
+    }
+    if solve(cols, 0, 8) != 92 {
+        return 4
+    }
+    if solve_first_half(cols, 0, 8) != 46 {
+        return 5
+    }
+    if solve_first_half(cols, 0, 4) != 1 {
+        return 6
+    }
+    return 0
+}

@@ -1,0 +1,155 @@
+module validation_519_recursion_tower_of_hanoi
+
+// Towers of Hanoi as pure recursion. `hanoi` returns an aggregate summary
+// tuple, `record_moves` materializes the full move sequence into an array,
+// and `replay` checks the generated sequence is a legal solution (never
+// placing a disk on a smaller one).
+
+func hanoi(n: int, origin: int, target: int, spare: int, step: int) returns (int, int, int, int, int, int) {
+    if n == 0 {
+        return (0, -1, -1, -1, -1, step)
+    }
+
+    let left = hanoi(n - 1, origin, spare, target, step)
+    let moves = left.0
+    let first_origin = left.1
+    let first_target = left.2
+    let last_origin = left.3
+    let last_target = left.4
+    let current_step = left.5
+
+    if first_origin == -1 {
+        first_origin = origin
+        first_target = target
+    }
+    last_origin = origin
+    last_target = target
+    current_step = current_step + 1
+
+    let right = hanoi(n - 1, spare, target, origin, current_step)
+    let right_moves = right.0
+    if right_moves > 0 {
+        last_origin = right.3
+        last_target = right.4
+    }
+    current_step = right.5
+
+    return (moves + 1 + right_moves, first_origin, first_target, last_origin, last_target, current_step)
+}
+
+// Write each move as a (origin, target) pair at `cursor * 2` and return the
+// cursor after the last recorded move.
+func record_moves(n: int, origin: int, target: int, spare: int, moves: [int], cursor: int) returns int {
+    if n == 0 {
+        return cursor
+    }
+    let after_left = record_moves(n - 1, origin, spare, target, moves, cursor)
+    moves[after_left * 2] = origin
+    moves[after_left * 2 + 1] = target
+    return record_moves(n - 1, spare, target, origin, moves, after_left + 1)
+}
+
+// Replay the recorded sequence on three explicit disk stacks (stride 8 per
+// peg, disks numbered 1 = smallest .. n = largest). A move is legal only
+// when the moving disk is the source's top and it is smaller than the
+// destination's top disk.
+func replay(n: int, moves: [int], count: int) returns bool {
+    let stacks = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let heights = [0, 0, 0]
+    let disk = n
+    while disk >= 1 {
+        stacks[heights[0]] = disk
+        heights[0] = heights[0] + 1
+        disk = disk - 1
+    }
+
+    let index = 0
+    while index < count {
+        let source = moves[index * 2]
+        let target = moves[index * 2 + 1]
+        if heights[source] <= 0 {
+            return false
+        }
+        let source_top = source * 8 + heights[source] - 1
+        let moving = stacks[source_top]
+        if heights[target] > 0 {
+            let target_top = stacks[target * 8 + heights[target] - 1]
+            if target_top < moving {
+                return false
+            }
+        }
+        stacks[source_top] = 0
+        heights[source] = heights[source] - 1
+        stacks[target * 8 + heights[target]] = moving
+        heights[target] = heights[target] + 1
+        index = index + 1
+    }
+
+    if heights[0] != 0 or heights[1] != n or heights[2] != 0 {
+        return false
+    }
+    return stacks[8] == n and stacks[8 + n - 1] == 1
+}
+
+public func main() returns int {
+    let empty = hanoi(0, 0, 2, 1, 0)
+    if empty.0 != 0 or empty.5 != 0 {
+        return 1
+    }
+    if empty.1 != -1 or empty.3 != -1 {
+        return 2
+    }
+
+    let triple = hanoi(3, 0, 2, 1, 0)
+    if triple.0 != 7 {
+        return 3
+    }
+    if triple.1 != 0 or triple.2 != 2 {
+        return 4
+    }
+    if triple.3 != 0 or triple.4 != 2 {
+        return 5
+    }
+    if triple.5 != 7 {
+        return 6
+    }
+
+    let ten = hanoi(10, 0, 1, 2, 0)
+    if ten.0 != 1023 {
+        return 7
+    }
+    if ten.1 != 0 or ten.2 != 2 {
+        return 8
+    }
+    if ten.3 != 2 or ten.4 != 1 {
+        return 9
+    }
+    if ten.5 != 1023 {
+        return 10
+    }
+
+    let moves4 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let count4 = record_moves(4, 0, 1, 2, moves4, 0)
+    if count4 != 15 {
+        return 11
+    }
+    if moves4[0] != 0 or moves4[1] != 2 {
+        return 12
+    }
+    if moves4[28] != 2 or moves4[29] != 1 {
+        return 13
+    }
+    if not replay(4, moves4, count4) {
+        return 14
+    }
+
+    let moves5 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let count5 = record_moves(5, 0, 1, 2, moves5, 0)
+    if count5 != 31 {
+        return 15
+    }
+    if not replay(5, moves5, count5) {
+        return 16
+    }
+    return 0
+}

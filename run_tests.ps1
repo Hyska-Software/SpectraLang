@@ -1092,6 +1092,29 @@ $results += [PSCustomObject]@{
 }
 
 Write-Host ""
+Write-Host "--- Recursion algorithm regression suite (16 testes: JIT + AOT) ---" -ForegroundColor Yellow
+$recursionSuite = Invoke-HostCommand `
+    -name "validate_recursion_suite" `
+    -fileName "python" `
+    -arguments @(
+        "scripts\validate_recursion_suite.py",
+        "--binary", $binary,
+        "--report", "target\recursion-suite\report.json"
+    ) `
+    -workingDir (Get-Location).Path
+if ($recursionSuite.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{
+    Diretorio = "tests\validation"
+    Teste = "recursion_algorithm_suite_16"
+    Status = $recursionSuite.Status
+    Detalhe = $recursionSuite.Detail
+}
+
+Write-Host ""
 Write-Host "--- Tensor device-placement contract fixtures ---" -ForegroundColor Yellow
 $tensorDeviceContract = Invoke-HostCommand `
     -name "validate_tensor_device_contract" `

@@ -59,6 +59,61 @@ impl ASTLowering {
         }
     }
 
+    /// Resolve the structural fields of a (possibly nominal) struct type.
+    ///
+    /// Recursive aggregates carry a body-less `IRType::Struct { name, fields:
+    /// [] }` reference for self/mutual references. Consumers that need field
+    /// offsets fall back to the registered definition by name; a genuinely
+    /// empty record keeps its empty field list.
+    pub(crate) fn struct_fields_for_type(&self, ty: &IRType) -> Option<Vec<(String, IRType)>> {
+        match Self::ir_type_representation_static(ty) {
+            IRType::Struct { name, fields } => {
+                if !fields.is_empty() {
+                    return Some(fields.clone());
+                }
+                Some(
+                    self.struct_definitions
+                        .get(name)
+                        .cloned()
+                        .unwrap_or_default(),
+                )
+            }
+            _ => None,
+        }
+    }
+
+    /// Resolve the variant definitions of a (possibly nominal) enum type.
+    ///
+    /// See [`Self::struct_fields_for_type`]. Returns `None` when the type is
+    /// not an enum, so callers can keep their fallback chains.
+    pub(crate) fn enum_variants_for_type(
+        &self,
+        ty: &IRType,
+    ) -> Option<Vec<EnumVariantDefinition>> {
+        match Self::ir_type_representation_static(ty) {
+            IRType::Enum { name, variants } => {
+                if !variants.is_empty() {
+                    return Some(
+                        variants
+                            .iter()
+                            .enumerate()
+                            .map(|(tag, (variant, data))| (variant.clone(), tag, data.clone()))
+                            .collect(),
+                    );
+                }
+                self.enum_definitions.get(name).cloned()
+            }
+            _ => None,
+        }
+    }
+
+    /// Nominal (body-less) reference used while an aggregate's own layout is
+    /// still being computed. Later references are structurally complete, so
+    /// only the cyclic edges carry the empty body.
+    pub(crate) fn nominal_type_reference(&self, name: &str) -> Option<IRType> {
+        self.pending_type_declarations.get(name).cloned()
+    }
+
     pub(crate) fn lower_type(&self, ast_type: &ASTType) -> IRType {
         match ast_type {
             ASTType::Int => IRType::Int,
@@ -116,6 +171,8 @@ impl ASTLowering {
                     // local declarations instead of degrading the signature
                     // to `Unknown`.
                     self.lower_type_annotation(&specialized)
+                } else if let Some(nominal) = self.nominal_type_reference(name) {
+                    nominal
                 } else {
                     IRType::Unknown
                 }
@@ -161,6 +218,8 @@ impl ASTLowering {
                     }
                 } else if let Some(specialized) = self.specialized_generic_annotation(name) {
                     self.lower_type_annotation(&specialized)
+                } else if let Some(nominal) = self.nominal_type_reference(name) {
+                    nominal
                 } else {
                     IRType::Unknown
                 }
@@ -201,6 +260,73 @@ impl ASTLowering {
                 trait_name: trait_name.clone(),
                 auto_traits: auto_traits.clone(),
             },
+        }
+    }
+
+    /// Apply the active specialization substitution map to each type
+    /// argument. Inside a `T -> int` specialization, `Seq<T>` must key the
+    /// same `Seq_int` specialization as an explicit `Seq<int>`.
+    pub(crate) fn substituted_type_args(
+        &self,
+        type_args: &[TypeAnnotation],
+    ) -> Vec<TypeAnnotation> {
+        self.substituted_type_args_with(type_args, &self.type_substitution_map)
+    }
+
+    /// [`Self::substituted_type_args`] against an explicit substitution map.
+    pub(crate) fn substituted_type_args_with(
+        &self,
+        type_args: &[TypeAnnotation],
+        substitutions: &HashMap<String, IRType>,
+    ) -> Vec<TypeAnnotation> {
+        type_args
+            .iter()
+            .map(|ty| self.substitute_ir_type_params(ty, substitutions))
+            .collect()
+    }
+
+    fn substitute_ir_type_params(
+        &self,
+        ty: &TypeAnnotation,
+        substitutions: &HashMap<String, IRType>,
+    ) -> TypeAnnotation {
+        let kind = match &ty.kind {
+            TypeAnnotationKind::Simple { segments } if segments.len() == 1 => {
+                if let Some(concrete) = substitutions.get(&segments[0]) {
+                    return self.ir_type_to_annotation(concrete);
+                }
+                TypeAnnotationKind::Simple {
+                    segments: segments.clone(),
+                }
+            }
+            TypeAnnotationKind::Generic { name, type_args } => TypeAnnotationKind::Generic {
+                name: name.clone(),
+                type_args: type_args
+                    .iter()
+                    .map(|arg| self.substitute_ir_type_params(arg, substitutions))
+                    .collect(),
+            },
+            TypeAnnotationKind::Tuple { elements } => TypeAnnotationKind::Tuple {
+                elements: elements
+                    .iter()
+                    .map(|element| self.substitute_ir_type_params(element, substitutions))
+                    .collect(),
+            },
+            TypeAnnotationKind::Function {
+                params,
+                return_type,
+            } => TypeAnnotationKind::Function {
+                params: params
+                    .iter()
+                    .map(|param| self.substitute_ir_type_params(param, substitutions))
+                    .collect(),
+                return_type: Box::new(self.substitute_ir_type_params(return_type, substitutions)),
+            },
+            other => other.clone(),
+        };
+        TypeAnnotation {
+            kind,
+            span: ty.span,
         }
     }
 
@@ -303,6 +429,12 @@ impl ASTLowering {
             type_map.insert(param.name.clone(), arg.clone());
         }
 
+        // Recursive references inside this specialization resolve nominally
+        // while the variants are being computed.
+        self.specializing_enums
+            .borrow_mut()
+            .insert(mangled_name.to_string());
+
         // Substitute types in variants
         let mut field_names = HashMap::new();
         let specialized_variants: Vec<(String, usize, Option<Vec<IRType>>)> = generic
@@ -346,6 +478,7 @@ impl ASTLowering {
         // Store specialized enum definition
         self.enum_definitions
             .insert(mangled_name.to_string(), specialized_variants);
+        self.specializing_enums.borrow_mut().remove(mangled_name);
         if !field_names.is_empty() {
             self.enum_variant_field_names
                 .insert(mangled_name.to_string(), field_names);

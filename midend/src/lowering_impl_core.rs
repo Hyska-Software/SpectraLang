@@ -83,6 +83,9 @@ impl ASTLowering {
             const_values: HashMap::new(),
             static_globals: HashMap::new(),
             drop_excluded_names: HashSet::new(),
+            pending_type_declarations: HashMap::new(),
+            specializing_enums: RefCell::new(HashSet::new()),
+            specializing_structs: RefCell::new(HashSet::new()),
         };
         lowering.register_builtin_error_struct();
         lowering.register_builtin_generic_enums();

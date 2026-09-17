@@ -17,6 +17,7 @@ use spectra_compiler::ast::{
 };
 use spectra_compiler::error::MidendError;
 use spectra_compiler::span::Span;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 /// Stack-based scope system for variable shadowing support
@@ -545,6 +546,19 @@ pub struct ASTLowering {
     /// Borrowed receiver parameters are visible in `struct_var_map` but are
     /// not owned by the current method and must not be destroyed on return.
     drop_excluded_names: HashSet<String>,
+    /// Aggregate type names declared in the module currently being registered
+    /// whose definitions are still being built. A reference to one of these
+    /// names lowers to a nominal (body-less) `IRType::Struct`/`IRType::Enum`
+    /// so self-referential and mutually recursive aggregates terminate while
+    /// their layout is computed.
+    pending_type_declarations: HashMap<String, IRType>,
+    /// Generic enum specializations currently being computed. A recursive
+    /// reference inside the specialization's own variants resolves to a
+    /// nominal `IRType::Generic` instead of re-entering the specialization.
+    specializing_enums: RefCell<HashSet<String>>,
+    /// Generic struct specializations currently being computed. Recursive
+    /// field types resolve to a nominal representation for the same reason.
+    specializing_structs: RefCell<HashSet<String>>,
 }
 
 // Former include! monolith, decomposed into real child modules. The glob

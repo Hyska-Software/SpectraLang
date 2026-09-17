@@ -1,0 +1,93 @@
+module validation_516_recursion_quicksort_partition
+
+// In-place recursive quicksort with a Lomuto partition around a chosen
+// pivot index, plus recursive counting of elements satisfying a predicate
+// over the sorted result. Exercises recursion that mutates array
+// parameters shared across all levels.
+
+func swap_values(arr: [int], left: int, right: int) {
+    let saved = arr[left]
+    arr[left] = arr[right]
+    arr[right] = saved
+}
+
+func partition(arr: [int], lo: int, hi: int) returns int {
+    let pivot = arr[hi]
+    let store = lo
+    let index = lo
+    while index < hi {
+        if arr[index] < pivot {
+            swap_values(arr, store, index)
+            store = store + 1
+        }
+        index = index + 1
+    }
+    swap_values(arr, store, hi)
+    return store
+}
+
+func quick_sort(arr: [int], lo: int, hi: int) {
+    if lo >= hi {
+        return
+    }
+    let split = partition(arr, lo, hi)
+    quick_sort(arr, lo, split - 1)
+    quick_sort(arr, split + 1, hi)
+}
+
+func sorted_ascending(arr: [int], index: int, n: int) returns bool {
+    if index + 1 >= n {
+        return true
+    }
+    if arr[index] > arr[index + 1] {
+        return false
+    }
+    return sorted_ascending(arr, index + 1, n)
+}
+
+func count_greater(arr: [int], index: int, n: int, threshold: int) returns int {
+    if index >= n {
+        return 0
+    }
+    let tail = count_greater(arr, index + 1, n, threshold)
+    if arr[index] > threshold {
+        return tail + 1
+    }
+    return tail
+}
+
+public func main() returns int {
+    let values = [8, 3, 1, 7, 0, 10, 2, 6]
+    quick_sort(values, 0, 7)
+    if not sorted_ascending(values, 0, 8) {
+        return 1
+    }
+    if values[0] != 0 or values[7] != 10 {
+        return 2
+    }
+    if count_greater(values, 0, 8, 5) != 4 {
+        return 3
+    }
+
+    let duplicates = [4, 4, 2, 9, 2, 4, 0, 9]
+    quick_sort(duplicates, 0, 7)
+    if not sorted_ascending(duplicates, 0, 8) {
+        return 4
+    }
+    if duplicates[0] != 0 or duplicates[7] != 9 or duplicates[3] != 4 {
+        return 5
+    }
+
+    let negatives = [-5, -1, -9, -3, -7, -2, -8, -4]
+    quick_sort(negatives, 0, 7)
+    if negatives[0] != -9 or negatives[7] != -1 {
+        return 6
+    }
+
+    let single = [42, 0, 0, 0, 0, 0, 0, 0]
+    quick_sort(single, 0, 0)
+    if single[0] != 42 {
+        return 7
+    }
+    return 0
+}

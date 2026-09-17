@@ -50,6 +50,52 @@ impl ASTLowering {
                     .insert(alias.name.clone(), alias.ty.clone());
             }
         }
+
+        // Pre-register nominal references for every aggregate declared in this
+        // module (local and imported). While a definition is being built, a
+        // reference to itself or to a later declaration resolves to a
+        // body-less type instead of `Unknown`, so self-referential and
+        // mutually recursive aggregates terminate.
+        self.pending_type_declarations.clear();
+        for item in &ast_module.items {
+            match item {
+                Item::Struct(struct_def) => {
+                    self.pending_type_declarations.insert(
+                        struct_def.name.clone(),
+                        IRType::Struct {
+                            name: struct_def.name.clone(),
+                            fields: Vec::new(),
+                        },
+                    );
+                }
+                Item::Enum(enum_def) => {
+                    self.pending_type_declarations.insert(
+                        enum_def.name.clone(),
+                        IRType::Enum {
+                            name: enum_def.name.clone(),
+                            variants: Vec::new(),
+                        },
+                    );
+                }
+                _ => {}
+            }
+        }
+        for struct_def in &ast_module.imported_struct_defs {
+            self.pending_type_declarations
+                .entry(struct_def.name.clone())
+                .or_insert_with(|| IRType::Struct {
+                    name: struct_def.name.clone(),
+                    fields: Vec::new(),
+                });
+        }
+        for enum_def in &ast_module.imported_enum_defs {
+            self.pending_type_declarations
+                .entry(enum_def.name.clone())
+                .or_insert_with(|| IRType::Enum {
+                    name: enum_def.name.clone(),
+                    variants: Vec::new(),
+                });
+        }
         self.const_values.clear();
         self.static_globals.clear();
         for item in &ast_module.items {
@@ -403,6 +449,11 @@ impl ASTLowering {
                     .insert(trait_decl.name.clone(), signatures);
             }
         }
+
+        // Every declared aggregate now has a registered structure; later
+        // modules must not resolve undefined names through this module's
+        // pending set.
+        self.pending_type_declarations.clear();
 
         // Normalize trait metadata after every declaration has been seen so
         // child traits can be declared before their parents. Vtable slots are

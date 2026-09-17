@@ -54,11 +54,10 @@ impl ASTLowering {
                 }
             }
             Pattern::Struct { fields, .. } => {
-                if let Some(IRType::Struct {
-                    fields: struct_fields,
-                    ..
-                }) = scrutinee_type.map(Self::ir_type_representation_static)
+                if let Some(struct_fields) =
+                    scrutinee_type.and_then(|ty| self.struct_fields_for_type(ty))
                 {
+                    let struct_fields = &struct_fields;
                     let field_map: HashMap<String, (usize, IRType)> = struct_fields
                         .iter()
                         .cloned()
@@ -306,6 +305,10 @@ impl ASTLowering {
                             self.specialized_generic_annotation(type_name)
                         {
                             self.lower_type_annotation_with_map(&specialized, substitutions)
+                        } else if let Some(nominal) = self.nominal_type_reference(type_name) {
+                            // Forward/self reference to an aggregate whose
+                            // definition is still being registered.
+                            nominal
                         } else {
                             IRType::Unknown
                         }
@@ -462,11 +465,33 @@ impl ASTLowering {
 
                 // Resolve to the monomorphized enum type.
                 // First, try the already-specialized version (e.g., "Option_int").
-                let type_names: Vec<String> = type_args
+                // The active substitutions are applied before mangling so a
+                // `Seq<T>` reference inside a `T -> int` specialization keys
+                // the same `Seq_int` definition as an explicit `Seq<int>`.
+                let substituted_args: Vec<TypeAnnotation> =
+                    self.substituted_type_args_with(type_args, substitutions);
+                let type_names: Vec<String> = substituted_args
                     .iter()
                     .map(|ty| self.type_annotation_to_string(ty))
                     .collect();
                 let mangled = format!("{}_{}", name, type_names.join("_"));
+                // A recursive reference to the specialization currently being
+                // computed must not re-enter it: emit the nominal application
+                // and let the registered definition supply the structure.
+                if self.specializing_enums.borrow().contains(&mangled) {
+                    let args: Vec<IRType> = substituted_args
+                        .iter()
+                        .map(|arg| self.lower_type_annotation_with_map(arg, substitutions))
+                        .collect();
+                    return IRType::Generic {
+                        name: name.clone(),
+                        args,
+                        representation: Box::new(IRType::Enum {
+                            name: mangled,
+                            variants: Vec::new(),
+                        }),
+                    };
+                }
                 if let Some(variants) = self.enum_definitions.get(&mangled) {
                     let simplified = variants
                         .iter()
@@ -488,9 +513,13 @@ impl ASTLowering {
                 // during lowering of the call site.
                 if let Some(generic_enum) = self.generic_enums.get(name.as_str()) {
                     let mut type_map: HashMap<String, TypeAnnotation> = HashMap::new();
-                    for (param, arg) in generic_enum.type_params.iter().zip(type_args.iter()) {
+                    for (param, arg) in generic_enum.type_params.iter().zip(substituted_args.iter())
+                    {
                         type_map.insert(param.name.clone(), arg.clone());
                     }
+                    // Nested references to this same application must not
+                    // re-enter the substitution.
+                    self.specializing_enums.borrow_mut().insert(mangled.clone());
                     let simplified: Vec<(String, Option<Vec<IRType>>)> = generic_enum
                         .variants
                         .iter()
@@ -525,6 +554,7 @@ impl ASTLowering {
                             (v.name.clone(), data)
                         })
                         .collect();
+                    self.specializing_enums.borrow_mut().remove(&mangled);
                     return self.lower_generic_application(
                         name,
                         type_args,

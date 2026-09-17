@@ -32,7 +32,8 @@ impl ASTLowering {
             return (base_name.to_string(), Vec::new());
         }
 
-        let type_names: Vec<String> = type_args
+        let substituted_args = self.substituted_type_args(type_args);
+        let type_names: Vec<String> = substituted_args
             .iter()
             .map(|ty| self.type_annotation_to_string(ty))
             .collect();
@@ -40,7 +41,7 @@ impl ASTLowering {
 
         if !self.struct_definitions.contains_key(&mangled) {
             if let Some(generic_struct) = self.generic_structs.get(base_name).cloned() {
-                self.specialize_struct(&generic_struct, type_args, &mangled);
+                self.specialize_struct(&generic_struct, &substituted_args, &mangled);
             } else {
                 self.error(format!(
                     "Generic struct '{}' not found for specialization with arguments {:?}",
@@ -50,7 +51,7 @@ impl ASTLowering {
         }
 
         // Track the instantiation for generic impl method specialization (R-211).
-        let concrete_ir_types: Vec<IRType> = type_args
+        let concrete_ir_types: Vec<IRType> = substituted_args
             .iter()
             .map(|ann| self.lower_type_annotation(ann))
             .collect();
@@ -153,7 +154,8 @@ impl ASTLowering {
             return (base_name.to_string(), Vec::new());
         }
 
-        let type_names: Vec<String> = type_args
+        let substituted_args = self.substituted_type_args(type_args);
+        let type_names: Vec<String> = substituted_args
             .iter()
             .map(|ty| self.type_annotation_to_string(ty))
             .collect();
@@ -161,7 +163,7 @@ impl ASTLowering {
 
         if !self.enum_definitions.contains_key(&mangled) {
             if let Some(generic_enum) = self.generic_enums.get(base_name).cloned() {
-                self.specialize_enum(&generic_enum, type_args, &mangled);
+                self.specialize_enum(&generic_enum, &substituted_args, &mangled);
             } else {
                 self.error(format!(
                     "Generic enum '{}' not found for specialization with arguments {:?}",
@@ -201,7 +203,8 @@ impl ASTLowering {
                 });
         }
 
-        let type_names: Vec<String> = type_args
+        let substituted_args = self.substituted_type_args(type_args);
+        let type_names: Vec<String> = substituted_args
             .iter()
             .map(|ty| self.type_annotation_to_string(ty))
             .collect();
@@ -210,7 +213,7 @@ impl ASTLowering {
         if let Some(fields) = self.struct_definitions.get(&mangled) {
             return Some(IRType::Generic {
                 name: base_name.to_string(),
-                args: type_args
+                args: substituted_args
                     .iter()
                     .map(|arg| self.lower_type_annotation(arg))
                     .collect(),
@@ -226,10 +229,36 @@ impl ASTLowering {
                 return None;
             }
 
+            let lowered_args: Vec<IRType> = substituted_args
+                .iter()
+                .map(|arg| self.lower_type_annotation(arg))
+                .collect();
+
+            // A recursive field reference to the specialization currently
+            // being computed stays nominal so the type terminates.
+            if self.specializing_structs.borrow().contains(&mangled) {
+                return Some(IRType::Generic {
+                    name: base_name.to_string(),
+                    args: lowered_args,
+                    representation: Box::new(IRType::Struct {
+                        name: mangled,
+                        fields: Vec::new(),
+                    }),
+                });
+            }
+
             let mut type_map: HashMap<String, TypeAnnotation> = HashMap::new();
-            for (param, arg) in generic_struct.type_params.iter().zip(type_args.iter()) {
+            for (param, arg) in generic_struct
+                .type_params
+                .iter()
+                .zip(substituted_args.iter())
+            {
                 type_map.insert(param.name.clone(), arg.clone());
             }
+
+            self.specializing_structs
+                .borrow_mut()
+                .insert(mangled.clone());
 
             let fields: Vec<(String, IRType)> = generic_struct
                 .fields
@@ -241,12 +270,11 @@ impl ASTLowering {
                 })
                 .collect();
 
+            self.specializing_structs.borrow_mut().remove(&mangled);
+
             return Some(IRType::Generic {
                 name: base_name.to_string(),
-                args: type_args
-                    .iter()
-                    .map(|arg| self.lower_type_annotation(arg))
-                    .collect(),
+                args: lowered_args,
                 representation: Box::new(IRType::Struct {
                     name: mangled,
                     fields,
@@ -266,7 +294,8 @@ impl ASTLowering {
         let variants_data = if type_args.is_empty() {
             self.enum_definitions.get(base_name).cloned()
         } else {
-            let type_names: Vec<String> = type_args
+            let substituted_args = self.substituted_type_args(type_args);
+            let type_names: Vec<String> = substituted_args
                 .iter()
                 .map(|ty| self.type_annotation_to_string(ty))
                 .collect();
@@ -274,6 +303,11 @@ impl ASTLowering {
             enum_name = mangled.clone();
 
             let mut entry = self.enum_definitions.get(&mangled).cloned();
+            if entry.is_none() && self.specializing_enums.borrow().contains(&mangled) {
+                // Recursive reference to the specialization being computed:
+                // keep the application nominal so the type terminates.
+                entry = Some(Vec::new());
+            }
             if entry.is_none() {
                 if let Some(generic_enum) = self.generic_enums.get(base_name) {
                     if generic_enum.type_params.len() != type_args.len() {
@@ -281,9 +315,14 @@ impl ASTLowering {
                     }
 
                     let mut type_map: HashMap<String, TypeAnnotation> = HashMap::new();
-                    for (param, arg) in generic_enum.type_params.iter().zip(type_args.iter()) {
+                    for (param, arg) in generic_enum.type_params.iter().zip(substituted_args.iter())
+                    {
                         type_map.insert(param.name.clone(), arg.clone());
                     }
+
+                    // Recursive references inside these variants resolve
+                    // nominally while the specialization is computed.
+                    self.specializing_enums.borrow_mut().insert(mangled.clone());
 
                     let computed: Vec<(String, usize, Option<Vec<IRType>>)> = generic_enum
                         .variants
@@ -315,6 +354,7 @@ impl ASTLowering {
                         })
                         .collect();
 
+                    self.specializing_enums.borrow_mut().remove(&mangled);
                     entry = Some(computed);
                 }
             }
@@ -337,7 +377,8 @@ impl ASTLowering {
             } else {
                 IRType::Generic {
                     name: base_name.to_string(),
-                    args: type_args
+                    args: self
+                        .substituted_type_args(type_args)
                         .iter()
                         .map(|arg| self.lower_type_annotation(arg))
                         .collect(),
@@ -453,19 +494,20 @@ impl ASTLowering {
             IRType::String => Self::simple_type_annotation("string"),
             IRType::Char => Self::simple_type_annotation("char"),
             IRType::Range => Self::simple_type_annotation("Range"),
-            IRType::ExactInt { signed, width } => Self::simple_type_annotation(match (signed, width)
-            {
-                (true, IRIntWidth::I8) => "i8",
-                (true, IRIntWidth::I16) => "i16",
-                (true, IRIntWidth::I32) => "i32",
-                (true, IRIntWidth::I64) => "i64",
-                (true, IRIntWidth::Isize | IRIntWidth::Usize) => "isize",
-                (false, IRIntWidth::I8) => "u8",
-                (false, IRIntWidth::I16) => "u16",
-                (false, IRIntWidth::I32) => "u32",
-                (false, IRIntWidth::I64) => "u64",
-                (false, IRIntWidth::Isize | IRIntWidth::Usize) => "usize",
-            }),
+            IRType::ExactInt { signed, width } => {
+                Self::simple_type_annotation(match (signed, width) {
+                    (true, IRIntWidth::I8) => "i8",
+                    (true, IRIntWidth::I16) => "i16",
+                    (true, IRIntWidth::I32) => "i32",
+                    (true, IRIntWidth::I64) => "i64",
+                    (true, IRIntWidth::Isize | IRIntWidth::Usize) => "isize",
+                    (false, IRIntWidth::I8) => "u8",
+                    (false, IRIntWidth::I16) => "u16",
+                    (false, IRIntWidth::I32) => "u32",
+                    (false, IRIntWidth::I64) => "u64",
+                    (false, IRIntWidth::Isize | IRIntWidth::Usize) => "usize",
+                })
+            }
             IRType::ExactFloat { width } => Self::simple_type_annotation(match width {
                 IRFloatWidth::F32 => "f32",
                 IRFloatWidth::F64 => "f64",

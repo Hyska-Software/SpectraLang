@@ -1,0 +1,130 @@
+module validation_521_recursion_linked_list_enum
+
+// Structural recursion over a self-referential enum: `IntList` is defined
+// in terms of itself, so the recursive variants carry a nominal reference
+// to the list being defined. Covers building, folding, rebuilding
+// (append/map), and reversing the list.
+
+enum IntList {
+    Cons(int, IntList),
+    Nil,
+}
+
+func list_sum(list: IntList) returns int {
+    return match list {
+        when IntList::Cons(head, tail) then head + list_sum(tail),
+        when IntList::Nil then 0
+    }
+}
+
+func list_len(list: IntList) returns int {
+    return match list {
+        when IntList::Cons(head, tail) then 1 + list_len(tail),
+        when IntList::Nil then 0
+    }
+}
+
+func list_contains(list: IntList, value: int) returns bool {
+    return match list {
+        when IntList::Cons(head, tail) then head == value or list_contains(tail, value),
+        when IntList::Nil then false
+    }
+}
+
+func list_append(list: IntList, value: int) returns IntList {
+    return match list {
+        when IntList::Cons(head, tail) then IntList::Cons(head, list_append(tail, value)),
+        when IntList::Nil then IntList::Cons(value, IntList::Nil)
+    }
+}
+
+func list_reverse(list: IntList, acc: IntList) returns IntList {
+    return match list {
+        when IntList::Cons(head, tail) then list_reverse(tail, IntList::Cons(head, acc)),
+        when IntList::Nil then acc
+    }
+}
+
+func list_map_inc(list: IntList) returns IntList {
+    return match list {
+        when IntList::Cons(head, tail) then IntList::Cons(head + 1, list_map_inc(tail)),
+        when IntList::Nil then IntList::Nil
+    }
+}
+
+func list_min(list: IntList, current: int) returns int {
+    return match list {
+        when IntList::Cons(head, tail) then {
+            let next = current
+            if head < next {
+                next = head
+            }
+            list_min(tail, next)
+        },
+        when IntList::Nil then current
+    }
+}
+
+func build_descending(n: int) returns IntList {
+    if n <= 0 {
+        return IntList::Nil
+    }
+    return IntList::Cons(n, build_descending(n - 1))
+}
+
+public func main() returns int {
+    let list = IntList::Cons(1, IntList::Cons(2, IntList::Cons(3, IntList::Nil)))
+    if list_sum(list) != 6 {
+        return 1
+    }
+    if list_len(list) != 3 {
+        return 2
+    }
+    if list_len(IntList::Nil) != 0 {
+        return 3
+    }
+    if not list_contains(list, 2) {
+        return 4
+    }
+    if list_contains(list, 9) {
+        return 5
+    }
+
+    let appended = list_append(list, 4)
+    if list_sum(appended) != 10 or list_len(appended) != 4 {
+        return 6
+    }
+    if list_sum(list) != 6 {
+        return 7
+    }
+
+    let reversed = list_reverse(list, IntList::Nil)
+    if list_sum(reversed) != 6 or list_len(reversed) != 3 {
+        return 8
+    }
+    let back = list_reverse(reversed, IntList::Nil)
+    if list_sum(back) != 6 {
+        return 9
+    }
+
+    let incremented = list_map_inc(list)
+    if list_sum(incremented) != 9 {
+        return 10
+    }
+
+    let descending = build_descending(20)
+    if list_len(descending) != 20 {
+        return 11
+    }
+    if list_sum(descending) != 210 {
+        return 12
+    }
+    if list_min(descending, 999) != 1 {
+        return 13
+    }
+    let ascending = list_reverse(descending, IntList::Nil)
+    if list_min(ascending, 999) != 1 {
+        return 14
+    }
+    return 0
+}

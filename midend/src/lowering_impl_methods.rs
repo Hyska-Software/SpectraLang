@@ -132,6 +132,16 @@ impl ASTLowering {
             self.allocate_slot(&mut ir_func, var_name, slot_type);
         }
 
+        // A parameter that is reassigned in the body lives in a promoted
+        // slot; seed it with the incoming argument value so reads before the
+        // first assignment do not observe uninitialized stack memory.
+        for (idx, param) in ast_func.params.iter().enumerate() {
+            if let Some(&slot) = self.alloca_map.get(&param.name) {
+                self.builder
+                    .build_store(&mut ir_func, slot, Value { id: idx });
+            }
+        }
+
         // Lower async bodies as poll work. The ramp is generated below and
         // therefore cannot execute any body instruction.
         self.current_function = Some(ir_func.clone());
@@ -329,6 +339,15 @@ impl ASTLowering {
         for var_name in &assigned_vars {
             let slot_type = slot_hints.get(var_name).cloned().unwrap_or(IRType::Int);
             self.allocate_slot(&mut ir_func, var_name, slot_type);
+        }
+
+        // Seed promoted parameter slots with the incoming argument values
+        // (see the equivalent step in `lower_function`).
+        for (idx, param) in method.params.iter().enumerate() {
+            if let Some(&slot) = self.alloca_map.get(&param.name) {
+                self.builder
+                    .build_store(&mut ir_func, slot, Value { id: idx });
+            }
         }
 
         self.current_function = Some(ir_func.clone());

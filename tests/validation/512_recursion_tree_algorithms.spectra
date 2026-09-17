@@ -1,0 +1,64 @@
+module validation_512_recursion_tree_algorithms
+
+// Tree recursion: each call fans out into multiple recursive calls.
+// Covers the classic exponential shapes (naive Fibonacci, binomial
+// coefficients, grid walks) and the deeply nested Ackermann function.
+
+func fib(n: int) returns int {
+    if n < 2 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+func binomial(n: int, k: int) returns int {
+    if k == 0 or k == n {
+        return 1
+    }
+    return binomial(n - 1, k - 1) + binomial(n - 1, k)
+}
+
+func count_paths(rows: int, cols: int) returns int {
+    if rows == 1 or cols == 1 {
+        return 1
+    }
+    return count_paths(rows - 1, cols) + count_paths(rows, cols - 1)
+}
+
+func ackermann(m: int, n: int) returns int {
+    if m == 0 {
+        return n + 1
+    }
+    if n == 0 {
+        return ackermann(m - 1, 1)
+    }
+    return ackermann(m - 1, ackermann(m, n - 1))
+}
+
+public func main() returns int {
+    if fib(0) != 0 or fib(1) != 1 {
+        return 1
+    }
+    if fib(20) != 6765 {
+        return 2
+    }
+    if binomial(10, 5) != 252 {
+        return 3
+    }
+    if binomial(6, 0) != 1 or binomial(6, 6) != 1 {
+        return 4
+    }
+    if count_paths(4, 5) != 35 {
+        return 5
+    }
+    if ackermann(1, 5) != 7 {
+        return 6
+    }
+    if ackermann(2, 3) != 9 {
+        return 7
+    }
+    if ackermann(3, 3) != 61 {
+        return 8
+    }
+    return 0
+}

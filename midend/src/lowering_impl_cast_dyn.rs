@@ -316,11 +316,10 @@ impl ASTLowering {
                 }
             }
             Pattern::Struct { fields, .. } => {
-                if let Some(IRType::Struct {
-                    fields: struct_fields,
-                    ..
-                }) = scrutinee_type.map(Self::ir_type_representation_static)
+                if let Some(struct_fields) =
+                    scrutinee_type.and_then(|ty| self.struct_fields_for_type(ty))
                 {
+                    let struct_fields = &struct_fields;
                     let field_map: HashMap<String, (usize, IRType)> = struct_fields
                         .iter()
                         .cloned()

@@ -1,0 +1,155 @@
+module validation_523_recursion_generic_structural
+
+// Recursive generic aggregates and generic recursive functions. `Seq<T>`
+// and `Chain<T>` are defined in terms of themselves, and `seq_len`,
+// `seq_take`, `count_elements`, `chain_len`, and `fold_chain` recurse
+// through the same type parameter they were instantiated with. A stable
+// monomorphizer must reuse one specialization per concrete type instead of
+// requesting a new one on every recursive level.
+
+enum Seq<T> {
+    Cons(T, Seq<T>),
+    Nil,
+}
+
+record Chain<T> {
+    value: T,
+    next: Option<Chain<T>>,
+}
+
+func seq_len<T>(list: Seq<T>) returns int {
+    return match list {
+        when Seq::Cons(head, tail) then 1 + seq_len(tail),
+        when Seq::Nil then 0
+    }
+}
+
+func seq_head_or<T>(list: Seq<T>, fallback: T) returns T {
+    return match list {
+        when Seq::Cons(head, tail) then head,
+        when Seq::Nil then fallback
+    }
+}
+
+func take_step<T>(head: T, tail: Seq<T>, n: int) returns Seq<T> {
+    if n <= 0 {
+        return Seq::Nil
+    }
+    return Seq::Cons(head, seq_take(tail, n - 1))
+}
+
+func seq_take<T>(list: Seq<T>, n: int) returns Seq<T> {
+    return match list {
+        when Seq::Cons(head, tail) then take_step(head, tail, n),
+        when Seq::Nil then Seq::Nil
+    }
+}
+
+func count_elements<T>(items: [T], index: int, size: int) returns int {
+    if index >= size {
+        return 0
+    }
+    return 1 + count_elements(items, index + 1, size)
+}
+
+func chain_len<T>(chain: Chain<T>) returns int {
+    return match chain.next {
+        when Option::Some(rest) then 1 + chain_len(rest),
+        when Option::None then 1
+    }
+}
+
+func fold_chain<T>(chain: Chain<T>, acc: int, combine: func(T, int) returns int) returns int {
+    return match chain.next {
+        when Option::Some(rest) then fold_chain(rest, combine(chain.value, acc), combine),
+        when Option::None then combine(chain.value, acc)
+    }
+}
+
+func build_seq(n: int) returns Seq<int> {
+    if n <= 0 {
+        return Seq::Nil
+    }
+    return Seq::Cons(n * 10, build_seq(n - 1))
+}
+
+public func main() returns int {
+    let empty_ints: Seq<int> = Seq::Nil
+    let empty_words: Seq<string> = Seq::Nil
+
+    let ints = Seq::Cons(1, Seq::Cons(2, Seq::Cons(3, Seq::Nil)))
+    if seq_len(ints) != 3 {
+        return 1
+    }
+    let words = Seq::Cons("a", Seq::Cons("b", Seq::Nil))
+    if seq_len(words) != 2 {
+        return 2
+    }
+    if seq_len(empty_ints) != 0 {
+        return 3
+    }
+    if seq_head_or(ints, 99) != 1 {
+        return 4
+    }
+    if seq_head_or(empty_ints, 99) != 99 {
+        return 5
+    }
+    if seq_head_or(words, "none") != "a" {
+        return 6
+    }
+
+    let first_two: Seq<int> = seq_take(ints, 2)
+    if seq_len(first_two) != 2 {
+        return 7
+    }
+    if seq_head_or(first_two, 0) != 1 {
+        return 8
+    }
+    if seq_len(seq_take(ints, 0)) != 0 {
+        return 9
+    }
+    if seq_len(seq_take(ints, 9)) != 3 {
+        return 10
+    }
+
+    let numbers = [1, 2, 3, 4, 5]
+    if count_elements(numbers, 0, 5) != 5 {
+        return 11
+    }
+    let labels = ["x", "y", "z"]
+    if count_elements(labels, 0, 3) != 3 {
+        return 12
+    }
+    if count_elements(numbers, 3, 5) != 2 {
+        return 13
+    }
+    if count_elements(numbers, 5, 5) != 0 {
+        return 14
+    }
+
+    let deep = build_seq(300)
+    if seq_len(deep) != 300 {
+        return 15
+    }
+    if seq_head_or(deep, 0) != 3000 {
+        return 16
+    }
+
+    let tail = Chain { value: 30, next: Option::None }
+    let middle = Chain { value: 20, next: Option::Some(tail) }
+    let head = Chain { value: 10, next: Option::Some(middle) }
+    if chain_len(head) != 3 {
+        return 17
+    }
+    if chain_len(tail) != 1 {
+        return 18
+    }
+    if fold_chain(head, 0, |value: int, acc: int| value + acc) != 60 {
+        return 19
+    }
+    if fold_chain(head, 1, |value: int, acc: int| value * acc) != 6000 {
+        return 20
+    }
+    return 0
+}
+

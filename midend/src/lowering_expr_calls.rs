@@ -188,7 +188,8 @@ impl ASTLowering {
                 let final_function_name = if self.generic_functions.contains_key(&function_name) {
                     // This is a generic function call - we need to infer concrete types
                     // For now, we'll infer types from the argument expressions
-                    let concrete_types = self.infer_argument_types(arguments);
+                    let concrete_types =
+                        self.infer_generic_concrete_types(&function_name, arguments);
 
                     let request = MonomorphizationRequest {
                         generic_name: function_name.clone(),

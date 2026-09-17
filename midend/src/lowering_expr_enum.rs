@@ -180,8 +180,10 @@ impl ASTLowering {
                             }
                         }
                         let final_name = if self.generic_functions.contains_key(&callee) {
-                            let concrete_types =
-                                self.infer_argument_types(data.as_deref().unwrap_or(&[]));
+                            let concrete_types = self.infer_generic_concrete_types(
+                                &callee,
+                                data.as_deref().unwrap_or(&[]),
+                            );
                             let request = MonomorphizationRequest {
                                 generic_name: callee.clone(),
                                 concrete_types,
@@ -226,41 +228,11 @@ impl ASTLowering {
                 };
 
                 let mut final_args: Vec<TypeAnnotation> = if let Some(mut args) = inferred_args {
-                    // If some args are still "unknown", try to fill them from the function's
-                    // declared return type annotation (e.g., fn -> Result<int, string> means
-                    // both Result::Ok and Result::Err should use the same specialization).
-                    if args
-                        .iter()
-                        .any(|a| self.type_annotation_needs_refinement(a))
-                    {
-                        let contextual_annotations = [
-                            self.current_expected_annotation.clone(),
-                            self.current_function_return_annotation.clone(),
-                        ];
-                        for context_ann in contextual_annotations.into_iter().flatten() {
-                            if let TypeAnnotationKind::Generic {
-                                name: context_name,
-                                type_args: context_args,
-                            } = &context_ann.kind
-                            {
-                                if context_name == enum_name && context_args.len() == args.len() {
-                                    for (arg, context_arg) in
-                                        args.iter_mut().zip(context_args.iter())
-                                    {
-                                        if self.type_annotation_needs_refinement(arg) {
-                                            *arg = context_arg.clone();
-                                        }
-                                    }
-                                }
-                            }
-                            if !args
-                                .iter()
-                                .any(|a| self.type_annotation_needs_refinement(a))
-                            {
-                                break;
-                            }
-                        }
-                    }
+                    // Unresolved type arguments (e.g. a bare `Seq::Nil` in a
+                    // `returns Seq<int>` function) are filled from the typed
+                    // context so every constructor of the same enum shares one
+                    // specialization.
+                    self.fill_type_args_from_context(enum_name, &mut args);
                     args
                 } else {
                     // Check typed expression contexts as the primary source of type args.

@@ -77,14 +77,14 @@ impl ASTLowering {
                 .unwrap_or(IRType::Unknown),
             ExpressionKind::FieldAccess { object, field } => {
                 let object_type = self.infer_expr_ir_type(object);
-                match self.ir_type_representation(&object_type) {
-                    IRType::Struct { fields, .. } => fields
-                        .iter()
-                        .find(|(fname, _)| fname == field)
-                        .map(|(_, ty)| ty.clone())
-                        .unwrap_or(IRType::Unknown),
-                    _ => IRType::Unknown,
-                }
+                self.struct_fields_for_type(&object_type)
+                    .and_then(|fields| {
+                        fields
+                            .iter()
+                            .find(|(fname, _)| fname == field)
+                            .map(|(_, ty)| ty.clone())
+                    })
+                    .unwrap_or(IRType::Unknown)
             }
             ExpressionKind::EnumVariant {
                 module_path,
@@ -138,8 +138,10 @@ impl ASTLowering {
                         return ret.clone();
                     }
                     if self.generic_functions.contains_key(variant_name) {
-                        let concrete_types =
-                            self.infer_argument_types(data.as_deref().unwrap_or(&[]));
+                        let concrete_types = self.infer_generic_concrete_types(
+                            variant_name,
+                            data.as_deref().unwrap_or(&[]),
+                        );
                         let request = MonomorphizationRequest {
                             generic_name: variant_name.clone(),
                             concrete_types,
@@ -224,6 +226,7 @@ impl ASTLowering {
                     type_args.clone()
                 };
 
+                self.fill_type_args_from_context(enum_name, &mut final_args);
                 Self::fill_builtin_enum_defaults(enum_name, &mut final_args);
 
                 let resolved = self
@@ -303,7 +306,7 @@ impl ASTLowering {
                     }
 
                     if self.generic_functions.contains_key(name) {
-                        let concrete_types = self.infer_argument_types(arguments);
+                        let concrete_types = self.infer_generic_concrete_types(name, arguments);
                         let request = MonomorphizationRequest {
                             generic_name: name.clone(),
                             concrete_types: concrete_types.clone(),
@@ -347,9 +350,7 @@ impl ASTLowering {
                     return descriptor.return_type.clone();
                 }
 
-                if let Some(function_name) =
-                    self.imported_user_function_name(object, method_name)
-                {
+                if let Some(function_name) = self.imported_user_function_name(object, method_name) {
                     return self
                         .function_return_types
                         .get(&function_name)
@@ -655,10 +656,8 @@ impl ASTLowering {
                 }
             }
             Pattern::Struct { fields, .. } => {
-                if let Some(IRType::Struct {
-                    fields: struct_fields,
-                    ..
-                }) = scrutinee_type.map(Self::ir_type_representation_static)
+                if let Some(struct_fields) =
+                    scrutinee_type.and_then(|ty| self.struct_fields_for_type(ty))
                 {
                     let field_map: HashMap<String, IRType> =
                         struct_fields.iter().cloned().collect();

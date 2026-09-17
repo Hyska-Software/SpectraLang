@@ -1,20 +1,6 @@
 use super::*;
 
 impl ASTLowering {
-    /// Infer the concrete IR types of a generic call's arguments.
-    ///
-    /// Delegates to the general expression type inference so compound
-    /// arguments (field access, calls, indexing, literals) monomorphize with
-    /// their real types. The previous ad-hoc match returned `Unknown` for
-    /// everything outside a small set of expression kinds, which specialized
-    /// generic functions with unknown type arguments.
-    pub(crate) fn infer_argument_types(&mut self, arguments: &[Expression]) -> Vec<IRType> {
-        arguments
-            .iter()
-            .map(|arg| self.infer_expr_ir_type(arg))
-            .collect()
-    }
-
     pub(crate) fn resolve_call_path(&self, callee: &Expression) -> Option<Vec<String>> {
         match &callee.kind {
             ExpressionKind::Identifier(name) => Some(vec![name.clone()]),

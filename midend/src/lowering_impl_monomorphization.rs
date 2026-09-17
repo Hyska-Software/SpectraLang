@@ -1,6 +1,173 @@
 use super::*;
 
 impl ASTLowering {
+    /// Infer the concrete type argument for each type parameter of a generic
+    /// function by structurally unifying its parameter annotations with the
+    /// actual argument types.
+    ///
+    /// Binding a type parameter to the whole argument type (the historical
+    /// positional inference) is wrong whenever the parameter is nested, e.g.
+    /// `func f<T>(items: [T], n: int)`: the old behavior bound `T` to `[int]`
+    /// and each recursive call then bound it to a deeper array, producing a
+    /// fresh specialization per level until the monomorphization limit.
+    ///
+    /// Parameters whose type parameter cannot be inferred structurally keep
+    /// the positional fallback so existing specializations stay stable.
+    pub(crate) fn infer_generic_concrete_types(
+        &mut self,
+        generic_name: &str,
+        arguments: &[Expression],
+    ) -> Vec<IRType> {
+        let arg_types: Vec<IRType> = arguments
+            .iter()
+            .map(|arg| self.infer_expr_ir_type(arg))
+            .collect();
+
+        let Some(generic_func) = self.generic_functions.get(generic_name) else {
+            return arg_types;
+        };
+
+        let type_param_names: HashSet<String> = generic_func
+            .type_params
+            .iter()
+            .map(|param| param.name.clone())
+            .collect();
+
+        let mut bindings: HashMap<String, IRType> = HashMap::new();
+        for (param, arg_type) in generic_func.params.iter().zip(arg_types.iter()) {
+            if let Some(annotation) = param.ty.as_ref() {
+                self.unify_annotation_with_ir_type(
+                    annotation,
+                    arg_type,
+                    &type_param_names,
+                    &mut bindings,
+                );
+            }
+        }
+
+        generic_func
+            .type_params
+            .iter()
+            .enumerate()
+            .map(|(idx, type_param)| {
+                bindings
+                    .get(&type_param.name)
+                    .cloned()
+                    .or_else(|| arg_types.get(idx).cloned())
+                    .unwrap_or(IRType::Unknown)
+            })
+            .collect()
+    }
+
+    /// Recursively bind type parameters of `annotation` from the shape of
+    /// `ty`, descending through arrays, tuples, functions, and generic
+    /// applications whose names match.
+    fn unify_annotation_with_ir_type(
+        &self,
+        annotation: &TypeAnnotation,
+        ty: &IRType,
+        type_param_names: &HashSet<String>,
+        bindings: &mut HashMap<String, IRType>,
+    ) {
+        match (&annotation.kind, ty) {
+            (TypeAnnotationKind::Simple { segments }, _) if segments.len() == 1 => {
+                let name = &segments[0];
+                if type_param_names.contains(name) {
+                    bindings.entry(name.clone()).or_insert_with(|| ty.clone());
+                }
+            }
+            (
+                TypeAnnotationKind::Generic { name, type_args },
+                IRType::Array { element_type, .. },
+            ) if name == "array" => {
+                if let Some(first) = type_args.first() {
+                    self.unify_annotation_with_ir_type(
+                        first,
+                        element_type,
+                        type_param_names,
+                        bindings,
+                    );
+                }
+            }
+            (
+                TypeAnnotationKind::Generic { name, type_args },
+                IRType::Generic {
+                    name: actual_name,
+                    args,
+                    ..
+                },
+            ) if name == actual_name => {
+                for (type_arg, concrete) in type_args.iter().zip(args.iter()) {
+                    self.unify_annotation_with_ir_type(
+                        type_arg,
+                        concrete,
+                        type_param_names,
+                        bindings,
+                    );
+                }
+            }
+            // A value of a generic struct is often carried as its
+            // monomorphized nominal type (`Struct { name: "Chain_int" }`)
+            // instead of the `Generic` application. Recover the concrete
+            // arguments recorded when the specialization was instantiated.
+            (
+                TypeAnnotationKind::Generic { name, type_args },
+                IRType::Struct {
+                    name: actual_name, ..
+                },
+            ) => {
+                if let Some((base, concrete_args)) = self.instantiated_structs.get(actual_name) {
+                    if base == name {
+                        for (type_arg, concrete) in type_args.iter().zip(concrete_args.iter()) {
+                            self.unify_annotation_with_ir_type(
+                                type_arg,
+                                concrete,
+                                type_param_names,
+                                bindings,
+                            );
+                        }
+                    }
+                }
+            }
+            (TypeAnnotationKind::Tuple { elements }, IRType::Tuple { elements: concrete }) => {
+                for (element, concrete_element) in elements.iter().zip(concrete.iter()) {
+                    self.unify_annotation_with_ir_type(
+                        element,
+                        concrete_element,
+                        type_param_names,
+                        bindings,
+                    );
+                }
+            }
+            (
+                TypeAnnotationKind::Function {
+                    params,
+                    return_type,
+                },
+                IRType::Function {
+                    params: concrete_params,
+                    return_type: concrete_return,
+                },
+            ) => {
+                for (param, concrete_param) in params.iter().zip(concrete_params.iter()) {
+                    self.unify_annotation_with_ir_type(
+                        param,
+                        concrete_param,
+                        type_param_names,
+                        bindings,
+                    );
+                }
+                self.unify_annotation_with_ir_type(
+                    return_type,
+                    concrete_return,
+                    type_param_names,
+                    bindings,
+                );
+            }
+            _ => {}
+        }
+    }
+
     /// Process all pending monomorphization requests
     pub(crate) fn process_monomorphization_requests(&mut self, ir_module: &mut IRModule) {
         // Safety limit: prevent infinite expansion from recursive/mutually-recursive

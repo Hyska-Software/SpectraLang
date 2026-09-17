@@ -1,0 +1,102 @@
+module validation_526_recursion_parameter_promotion
+
+// Regression: a parameter that the body reassigns is promoted to a stack
+// slot, and the incoming argument must be seeded into that slot before the
+// body runs. Before the fix, reads of a reassigned parameter observed
+// uninitialized stack memory, which also corrupted recursive cursor
+// threading and array writes.
+//
+// Covers reassignment in loops, reassignment before recursing, a promoted
+// accumulator parameter, and a promoted non-self method parameter.
+
+record Tally {
+    total: int,
+}
+
+impl Tally {
+    func add_shifted(&mut self, value: int) returns int {
+        value = value + 1
+        self.total = self.total + value
+        return value
+    }
+}
+
+func count_down(n: int, visited: [int]) returns int {
+    let steps = 0
+    while n > 0 {
+        visited[n] = n
+        n = n - 1
+        steps = steps + 1
+    }
+    return steps
+}
+
+func store_cursor(node: int, order: [int], cursor: int) returns int {
+    order[cursor] = node
+    cursor = cursor + 1
+    if node > 0 {
+        cursor = store_cursor(node - 1, order, cursor)
+    }
+    return cursor
+}
+
+func sum_from(n: int, acc: int) returns int {
+    if n <= 0 {
+        return acc
+    }
+    acc = acc + n
+    return sum_from(n - 1, acc)
+}
+
+func double_then_add(base: int, times: int) returns int {
+    times = times * 2
+    if times <= 0 {
+        return base
+    }
+    base = base + times
+    return double_then_add(base, times / 2 - 1)
+}
+
+public func main() returns int {
+    let visited = [0, 0, 0, 0, 0, 0]
+    if count_down(5, visited) != 5 {
+        return 1
+    }
+    if visited[5] != 5 or visited[3] != 3 or visited[0] != 0 {
+        return 2
+    }
+
+    let order = [0, 0, 0, 0]
+    if store_cursor(3, order, 0) != 4 {
+        return 3
+    }
+    if order[0] != 3 or order[1] != 2 or order[2] != 1 or order[3] != 0 {
+        return 4
+    }
+
+    if sum_from(10, 0) != 55 {
+        return 5
+    }
+    if sum_from(0, 7) != 7 {
+        return 6
+    }
+
+    if double_then_add(0, 3) != 12 {
+        return 7
+    }
+    if double_then_add(5, 0) != 5 {
+        return 8
+    }
+
+    let tally = Tally { total: 0 }
+    if tally.add_shifted(10) != 11 {
+        return 9
+    }
+    if tally.add_shifted(20) != 21 {
+        return 10
+    }
+    if tally.total != 32 {
+        return 11
+    }
+    return 0
+}

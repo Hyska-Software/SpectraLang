@@ -56,12 +56,7 @@ impl ASTLowering {
                 }
                 let object_ptr = self.lower_expression(object, ir_func);
                 let object_type = self.infer_expr_ir_type(object);
-                if let IRType::Struct {
-                    fields: field_defs,
-                    name: struct_name,
-                    ..
-                } = self.ir_type_representation(&object_type)
-                {
+                if let Some(field_defs) = self.struct_fields_for_type(&object_type) {
                     if let Some((field_idx, field_ty)) = field_defs
                         .iter()
                         .enumerate()
@@ -74,6 +69,8 @@ impl ASTLowering {
                                 .get(field_idx)
                                 .copied()
                         else {
+                            let struct_name =
+                                self.ir_nominal_name(&object_type).unwrap_or("unknown");
                             return self.invalid_value(format!(
                                 "field layout for '{struct_name}.{field}' has no offset for field type {field_ty:?}"
                             ));

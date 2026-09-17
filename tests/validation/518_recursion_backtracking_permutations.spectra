@@ -1,0 +1,93 @@
+module validation_518_recursion_backtracking_permutations
+
+// Backtracking over permutations and subsets. Both routines mutate an
+// array parameter in place, recurse, and restore the previous state on the
+// way back up (swap-in / swap-out), and accumulate results in a small
+// array used as an out-parameter.
+
+func swap_values(arr: [int], left: int, right: int) {
+    let saved = arr[left]
+    arr[left] = arr[right]
+    arr[right] = saved
+}
+
+// `acc` is [permutation_count, last_element_weight]:
+// every complete arrangement adds `100 * first + last` to the weight.
+func permute_weight(arr: [int], start: int, n: int, acc: [int]) returns int {
+    if start == n {
+        acc[0] = acc[0] + 1
+        acc[1] = acc[1] + arr[0] * 100 + arr[n - 1]
+        return acc[0]
+    }
+    let index = start
+    while index < n {
+        swap_values(arr, start, index)
+        permute_weight(arr, start + 1, n, acc)
+        swap_values(arr, start, index)
+        index = index + 1
+    }
+    return acc[0]
+}
+
+func count_subsets(values: [int], index: int, n: int, remaining: int) returns int {
+    if remaining == 0 {
+        return 1
+    }
+    if index >= n or remaining < 0 {
+        return 0
+    }
+    let with_element = count_subsets(values, index + 1, n, remaining - values[index])
+    let without_element = count_subsets(values, index + 1, n, remaining)
+    return with_element + without_element
+}
+
+// Generate every subset and fold a deterministic checksum: each subset's
+// signature is the sum of its elements multiplied by a running selector.
+func subset_checksum(values: [int], index: int, n: int, running: int, acc: [int]) returns int {
+    if index == n {
+        acc[0] = acc[0] + running * (acc[1] + 1)
+        acc[1] = acc[1] + 1
+        return acc[0]
+    }
+    let with_element = running + values[index]
+    subset_checksum(values, index + 1, n, with_element, acc)
+    subset_checksum(values, index + 1, n, running, acc)
+    return acc[0]
+}
+
+public func main() returns int {
+    let digits = [1, 2, 3, 4, 5]
+    let acc = [0, 0]
+    if permute_weight(digits, 0, 5, acc) != 120 {
+        return 1
+    }
+    if acc[1] != 36360 {
+        return 2
+    }
+    if digits[0] != 1 or digits[4] != 5 {
+        return 3
+    }
+
+    let values = [1, 2, 3, 4, 5, 6, 7, 8]
+    if count_subsets(values, 0, 8, 10) != 8 {
+        return 4
+    }
+    if count_subsets(values, 0, 8, 0) != 1 {
+        return 5
+    }
+    if count_subsets(values, 0, 8, 100) != 0 {
+        return 6
+    }
+
+    let small = [1, 2, 3]
+    let checksum = [0, 0]
+    subset_checksum(small, 0, 3, 0, checksum)
+    // 8 subsets, each weighted by its visit order (1-based).
+    if checksum[0] != 86 {
+        return 7
+    }
+    if checksum[1] != 8 {
+        return 8
+    }
+    return 0
+}

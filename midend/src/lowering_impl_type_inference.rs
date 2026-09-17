@@ -188,18 +188,86 @@ impl ASTLowering {
     pub(crate) fn type_annotation_needs_refinement(&self, ann: &TypeAnnotation) -> bool {
         match &ann.kind {
             TypeAnnotationKind::Simple { segments } if segments.len() == 1 => {
-                let name = &segments[0];
+                let name = segments[0].as_str();
                 if name == "unknown" {
-                    true
-                } else if self.enum_definitions.contains_key(name)
-                    || self.struct_definitions.contains_key(name)
-                {
-                    false
-                } else {
-                    self.generic_enums.contains_key(name)
+                    return true;
                 }
+                if matches!(
+                    name,
+                    "int"
+                        | "float"
+                        | "bool"
+                        | "string"
+                        | "char"
+                        | "void"
+                        | "Range"
+                        | "i8"
+                        | "i16"
+                        | "i32"
+                        | "i64"
+                        | "isize"
+                        | "u8"
+                        | "u16"
+                        | "u32"
+                        | "u64"
+                        | "usize"
+                        | "f32"
+                        | "f64"
+                        | "array"
+                ) || self.enum_definitions.contains_key(name)
+                    || self.struct_definitions.contains_key(name)
+                    || self.generic_enums.contains_key(name)
+                    || self.generic_structs.contains_key(name)
+                    || self.type_aliases.contains_key(name)
+                {
+                    return false;
+                }
+                // An unregistered single-segment name is a type parameter (or
+                // a forward reference) that a typed context can still resolve,
+                // e.g. the `T` written by semantic inference on a constructor
+                // whose argument types were not known yet.
+                true
             }
             _ => false,
+        }
+    }
+
+    /// Fill unresolved type arguments of a generic enum constructor from the
+    /// typed context: the expected annotation of the enclosing expression and
+    /// the declared return type of the current function. A bare `Seq::Nil`
+    /// returned from `func f() returns Seq<int>` therefore resolves to
+    /// `Seq<int>` instead of an `unknown` specialization.
+    pub(crate) fn fill_type_args_from_context(&self, enum_name: &str, args: &mut [TypeAnnotation]) {
+        if !args
+            .iter()
+            .any(|arg| self.type_annotation_needs_refinement(arg))
+        {
+            return;
+        }
+        let contextual = [
+            self.current_expected_annotation.clone(),
+            self.current_function_return_annotation.clone(),
+        ];
+        for context_ann in contextual.into_iter().flatten() {
+            if let TypeAnnotationKind::Generic {
+                name: context_name,
+                type_args: context_args,
+            } = &context_ann.kind
+            {
+                if context_name == enum_name && context_args.len() == args.len() {
+                    for (arg, context_arg) in args.iter_mut().zip(context_args.iter()) {
+                        if self.type_annotation_needs_refinement(arg) {
+                            *arg = context_arg.clone();
+                        }
+                    }
+                }
+            }
+            if !args
+                .iter()
+                .any(|arg| self.type_annotation_needs_refinement(arg))
+            {
+                break;
+            }
         }
     }
 
@@ -439,18 +507,7 @@ impl ASTLowering {
         &self,
         scrutinee_type: Option<&IRType>,
     ) -> Option<Vec<EnumVariantDefinition>> {
-        if let Some(IRType::Enum { variants, .. }) =
-            scrutinee_type.map(Self::ir_type_representation_static)
-        {
-            return Some(
-                variants
-                    .iter()
-                    .enumerate()
-                    .map(|(tag, (name, data))| (name.clone(), tag, data.clone()))
-                    .collect(),
-            );
-        }
-        None
+        scrutinee_type.and_then(|ty| self.enum_variants_for_type(ty))
     }
 
     pub(crate) fn merge_types(&self, left: &IRType, right: &IRType) -> Option<IRType> {

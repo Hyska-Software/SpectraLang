@@ -1,0 +1,168 @@
+module validation_522_recursion_binary_tree_enum
+
+// Structural recursion over a self-referential binary search tree enum.
+// Insertion rebuilds the path; queries fold over both children. This is
+// the recursive-enum regression for node payloads that mention the tree
+// type itself. (`if` is statement-only in this language, so the branching
+// halves of the folds live in small helpers.)
+
+enum Tree {
+    Leaf,
+    Node(int, Tree, Tree),
+}
+
+func min2(a: int, b: int) returns int {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+func max2(a: int, b: int) returns int {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+func insert_node(data: int, left: Tree, right: Tree, value: int) returns Tree {
+    if value < data {
+        return Tree::Node(data, tree_insert(left, value), right)
+    }
+    if value > data {
+        return Tree::Node(data, left, tree_insert(right, value))
+    }
+    return Tree::Node(data, left, right)
+}
+
+func tree_insert(tree: Tree, value: int) returns Tree {
+    return match tree {
+        when Tree::Leaf then Tree::Node(value, Tree::Leaf, Tree::Leaf),
+        when Tree::Node(data, left, right) then insert_node(data, left, right, value)
+    }
+}
+
+func contains_node(data: int, left: Tree, right: Tree, value: int) returns bool {
+    if value == data {
+        return true
+    }
+    if value < data {
+        return tree_contains(left, value)
+    }
+    return tree_contains(right, value)
+}
+
+func tree_contains(tree: Tree, value: int) returns bool {
+    return match tree {
+        when Tree::Leaf then false,
+        when Tree::Node(data, left, right) then contains_node(data, left, right, value)
+    }
+}
+
+func tree_sum(tree: Tree) returns int {
+    return match tree {
+        when Tree::Leaf then 0,
+        when Tree::Node(data, left, right) then data + tree_sum(left) + tree_sum(right)
+    }
+}
+
+func tree_count(tree: Tree) returns int {
+    return match tree {
+        when Tree::Leaf then 0,
+        when Tree::Node(data, left, right) then 1 + tree_count(left) + tree_count(right)
+    }
+}
+
+func tree_height(tree: Tree) returns int {
+    return match tree {
+        when Tree::Leaf then 0,
+        when Tree::Node(data, left, right) then 1 + max2(tree_height(left), tree_height(right))
+    }
+}
+
+func tree_min(tree: Tree, fallback: int) returns int {
+    return match tree {
+        when Tree::Leaf then fallback,
+        when Tree::Node(data, left, right) then min2(data, tree_min(left, data))
+    }
+}
+
+func tree_max(tree: Tree, fallback: int) returns int {
+    return match tree {
+        when Tree::Leaf then fallback,
+        when Tree::Node(data, left, right) then max2(data, tree_max(right, data))
+    }
+}
+
+func inorder_weight(tree: Tree, weight: int) returns int {
+    return match tree {
+        when Tree::Leaf then 0,
+        when Tree::Node(data, left, right) then {
+            let left_sum = inorder_weight(left, weight)
+            let here = left_sum + data * weight
+            here + inorder_weight(right, weight + 1)
+        }
+    }
+}
+
+func build_tree(values: [int], count: int) returns Tree {
+    let tree = Tree::Leaf
+    let index = 0
+    while index < count {
+        tree = tree_insert(tree, values[index])
+        index = index + 1
+    }
+    return tree
+}
+
+public func main() returns int {
+    let values = [50, 30, 70, 20, 40, 60, 80]
+    let tree = build_tree(values, 7)
+
+    if tree_count(tree) != 7 {
+        return 1
+    }
+    if tree_sum(tree) != 350 {
+        return 2
+    }
+    if tree_height(tree) != 3 {
+        return 3
+    }
+    if tree_min(tree, 999) != 20 {
+        return 4
+    }
+    if tree_max(tree, -999) != 80 {
+        return 5
+    }
+    if not tree_contains(tree, 60) {
+        return 6
+    }
+    if tree_contains(tree, 65) {
+        return 7
+    }
+    if not tree_contains(tree, 50) {
+        return 8
+    }
+
+    let with_duplicate = tree_insert(tree, 50)
+    if tree_count(with_duplicate) != 7 {
+        return 9
+    }
+    if tree_sum(with_duplicate) != 350 {
+        return 10
+    }
+
+    if inorder_weight(tree, 1) < tree_sum(tree) {
+        return 11
+    }
+    if tree_count(Tree::Leaf) != 0 {
+        return 12
+    }
+    if tree_height(Tree::Leaf) != 0 {
+        return 13
+    }
+    if tree_min(Tree::Leaf, 42) != 42 {
+        return 14
+    }
+    return 0
+}

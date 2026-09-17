@@ -361,14 +361,17 @@ impl ASTLowering {
                                     None
                                 }
                             } else {
-                                match self.infer_expr_ir_type(object) {
-                                    IRType::Struct { fields, .. } => fields
-                                        .into_iter()
-                                        .enumerate()
-                                        .find(|(_, (fname, _))| fname.as_str() == field.as_str())
-                                        .map(|(idx, (_, ty))| (idx, ty)),
-                                    _ => None,
-                                }
+                                let object_type = self.infer_expr_ir_type(object);
+                                self.struct_fields_for_type(&object_type)
+                                    .and_then(|fields| {
+                                        fields
+                                            .into_iter()
+                                            .enumerate()
+                                            .find(|(_, (fname, _))| {
+                                                fname.as_str() == field.as_str()
+                                            })
+                                            .map(|(idx, (_, ty))| (idx, ty))
+                                    })
                             };
 
                         // Step 2: get (or compute) the struct pointer.
@@ -379,36 +382,34 @@ impl ASTLowering {
 
                         // Step 3: field pointer (padded layout) + store
                         if let Some((field_idx, field_type)) = field_info {
-                            let (offsets, struct_label) = match self.infer_expr_ir_type(object) {
-                                IRType::Struct { fields, name, .. } => (
+                            let object_type = self.infer_expr_ir_type(object);
+                            let (offsets, struct_label) = if let Some(fields) =
+                                self.struct_fields_for_type(&object_type)
+                            {
+                                (
                                     layout::layout_of(fields.iter().map(|(_, ty)| ty)).offsets,
-                                    name,
-                                ),
-                                _ => {
-                                    if let spectra_compiler::ast::ExpressionKind::Identifier(
-                                        var_name,
-                                    ) = &object.kind
-                                    {
-                                        self.struct_var_map
-                                            .get(var_name.as_str())
-                                            .and_then(|(_, sname)| {
-                                                self.struct_definitions.get(sname.as_str()).map(
-                                                    |defs| {
-                                                        (
-                                                            layout::layout_of(
-                                                                defs.iter().map(|(_, ty)| ty),
-                                                            )
-                                                            .offsets,
-                                                            sname.clone(),
-                                                        )
-                                                    },
-                                                )
-                                            })
-                                            .unwrap_or_default()
-                                    } else {
-                                        (Vec::new(), "<unknown>".to_string())
-                                    }
-                                }
+                                    self.ir_nominal_name(&object_type)
+                                        .unwrap_or("unknown")
+                                        .to_string(),
+                                )
+                            } else if let spectra_compiler::ast::ExpressionKind::Identifier(
+                                var_name,
+                            ) = &object.kind
+                            {
+                                self.struct_var_map
+                                    .get(var_name.as_str())
+                                    .and_then(|(_, sname)| {
+                                        self.struct_definitions.get(sname.as_str()).map(|defs| {
+                                            (
+                                                layout::layout_of(defs.iter().map(|(_, ty)| ty))
+                                                    .offsets,
+                                                sname.clone(),
+                                            )
+                                        })
+                                    })
+                                    .unwrap_or_default()
+                            } else {
+                                (Vec::new(), "<unknown>".to_string())
                             };
                             let Some(byte_offset) = offsets.get(field_idx).copied() else {
                                 self.error(format!(

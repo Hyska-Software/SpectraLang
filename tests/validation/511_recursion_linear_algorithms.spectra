@@ -1,0 +1,81 @@
+module validation_511_recursion_linear_algorithms
+
+// Linear recursion: each function makes at most one recursive call and
+// peels one element per level. Covers factorials, digit decomposition, and
+// recursion driven through a function-typed parameter.
+
+func factorial(n: int) returns int {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+func sum_to(n: int) returns int {
+    if n <= 0 {
+        return 0
+    }
+    return n + sum_to(n - 1)
+}
+
+func digit_sum(n: int) returns int {
+    if n < 10 {
+        return n
+    }
+    return n % 10 + digit_sum(n / 10)
+}
+
+func count_digits(n: int) returns int {
+    if n < 10 {
+        return 1
+    }
+    return 1 + count_digits(n / 10)
+}
+
+func reverse_number(n: int, acc: int) returns int {
+    if n == 0 {
+        return acc
+    }
+    return reverse_number(n / 10, acc * 10 + n % 10)
+}
+
+// Apply a closure `n` times over a seed value. The recursive step uses the
+// function-typed parameter, so monomorphization sees it as an ordinary
+// argument (function types are not generic parameters).
+func apply_n(value: int, n: int, f: func(int) returns int) returns int {
+    if n <= 0 {
+        return value
+    }
+    return apply_n(f(value), n - 1, f)
+}
+
+public func main() returns int {
+    if factorial(0) != 1 {
+        return 1
+    }
+    if factorial(6) != 720 {
+        return 2
+    }
+    if sum_to(100) != 5050 {
+        return 3
+    }
+    if digit_sum(90210) != 12 {
+        return 4
+    }
+    if count_digits(999) != 3 {
+        return 5
+    }
+    if reverse_number(12345, 0) != 54321 {
+        return 6
+    }
+    if reverse_number(1200, 0) != 21 {
+        return 7
+    }
+    if apply_n(1, 10, |x: int| x * 2) != 1024 {
+        return 8
+    }
+    if apply_n(7, 0, |x: int| x + 1) != 7 {
+        return 9
+    }
+    return 0
+}

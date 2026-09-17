@@ -1,0 +1,84 @@
+module validation_513_recursion_tail_accumulators
+
+// Tail recursion with accumulators. Every recursive call is the final
+// expression of its branch, so the backend can fuse self-calls into native
+// tail jumps. The deep case (200000 levels) only completes if the tail
+// fusion survives, because plain recursion would exhaust the stack.
+
+func sum_acc(n: int, acc: int) returns int {
+    if n <= 0 {
+        return acc
+    }
+    return sum_acc(n - 1, acc + n)
+}
+
+func gcd(a: int, b: int) returns int {
+    if b == 0 {
+        return a
+    }
+    return gcd(b, a % b)
+}
+
+func collatz_steps(n: int, steps: int) returns int {
+    if n == 1 {
+        return steps
+    }
+    if n % 2 == 0 {
+        return collatz_steps(n / 2, steps + 1)
+    }
+    return collatz_steps(3 * n + 1, steps + 1)
+}
+
+func power(base: int, exponent: int, acc: int) returns int {
+    if exponent == 0 {
+        return acc
+    }
+    return power(base, exponent - 1, acc * base)
+}
+
+func count_bits(n: int, acc: int) returns int {
+    if n == 0 {
+        return acc
+    }
+    return count_bits(n / 2, acc + n % 2)
+}
+
+// Two-accumulator tail recursion: the pair of running totals is carried
+// explicitly instead of captured.
+func alternate_sum(limit: int, index: int, even: int, odd: int) returns int {
+    if index > limit {
+        return even - odd
+    }
+    if index % 2 == 0 {
+        return alternate_sum(limit, index + 1, even + index, odd)
+    }
+    return alternate_sum(limit, index + 1, even, odd + index)
+}
+
+public func main() returns int {
+    if sum_acc(100, 0) != 5050 {
+        return 1
+    }
+    if gcd(1071, 462) != 21 {
+        return 2
+    }
+    if collatz_steps(27, 0) != 111 {
+        return 3
+    }
+    if power(2, 10, 1) != 1024 {
+        return 4
+    }
+    if count_bits(255, 0) != 8 {
+        return 5
+    }
+    if alternate_sum(10, 1, 0, 0) != 5 {
+        return 6
+    }
+    if sum_acc(200000, 0) != 20000100000 {
+        return 7
+    }
+    if collatz_steps(1, 0) != 0 {
+        return 8
+    }
+    return 0
+}

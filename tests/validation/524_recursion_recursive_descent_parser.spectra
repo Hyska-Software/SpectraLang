@@ -1,0 +1,140 @@
+module validation_524_recursion_recursive_descent_parser
+
+// Recursive descent parser: `parse_expr` -> `parse_term` -> `parse_factor`
+// form a mutually recursive grammar. The cursor is a one-element array so
+// every recursive level advances the same scanner state; strings are
+// scanned with std.string.char_at (ASCII codes).
+
+import std.string as string
+
+func is_digit(code: int) returns bool {
+    if code < 48 {
+        return false
+    }
+    return code <= 57
+}
+
+func skip_spaces(text: string, position: [int]) {
+    while position[0] < string.len(text) {
+        if string.char_at(text, position[0]) != 32 {
+            return
+        }
+        position[0] = position[0] + 1
+    }
+}
+
+func parse_number(text: string, position: [int]) returns int {
+    skip_spaces(text, position)
+    let value = 0
+    while position[0] < string.len(text) {
+        let code = string.char_at(text, position[0])
+        if not is_digit(code) {
+            return value
+        }
+        value = value * 10 + (code - 48)
+        position[0] = position[0] + 1
+    }
+    return value
+}
+
+func parse_expression(text: string, position: [int]) returns int {
+    let value = parse_term(text, position)
+    while true {
+        skip_spaces(text, position)
+        if position[0] >= string.len(text) {
+            return value
+        }
+        let operator = string.char_at(text, position[0])
+        if operator != 43 and operator != 45 {
+            return value
+        }
+        position[0] = position[0] + 1
+        let right = parse_term(text, position)
+        if operator == 43 {
+            value = value + right
+        } else {
+            value = value - right
+        }
+    }
+    return value
+}
+
+func parse_term(text: string, position: [int]) returns int {
+    let value = parse_factor(text, position)
+    while true {
+        skip_spaces(text, position)
+        if position[0] >= string.len(text) {
+            return value
+        }
+        let operator = string.char_at(text, position[0])
+        if operator != 42 and operator != 47 {
+            return value
+        }
+        position[0] = position[0] + 1
+        let right = parse_factor(text, position)
+        if operator == 42 {
+            value = value * right
+        } else {
+            value = value / right
+        }
+    }
+    return value
+}
+
+func parse_factor(text: string, position: [int]) returns int {
+    skip_spaces(text, position)
+    if position[0] >= string.len(text) {
+        return 0
+    }
+    if string.char_at(text, position[0]) == 40 {
+        position[0] = position[0] + 1
+        let inner = parse_expression(text, position)
+        skip_spaces(text, position)
+        if position[0] < string.len(text) {
+            if string.char_at(text, position[0]) == 41 {
+                position[0] = position[0] + 1
+            }
+        }
+        return inner
+    }
+    return parse_number(text, position)
+}
+
+func evaluate(text: string) returns int {
+    let position = [0]
+    return parse_expression(text, position)
+}
+
+public func main() returns int {
+    if evaluate("42") != 42 {
+        return 1
+    }
+    if evaluate("12+34*2") != 80 {
+        return 2
+    }
+    if evaluate("2*(3+4)") != 14 {
+        return 3
+    }
+    if evaluate("100-20-30") != 50 {
+        return 4
+    }
+    if evaluate("8/2/2") != 2 {
+        return 5
+    }
+    if evaluate("(1+2)*(3+4)") != 21 {
+        return 6
+    }
+    if evaluate(" 7 ") != 7 {
+        return 7
+    }
+    if evaluate("((2+3)*(4-1))-5") != 10 {
+        return 8
+    }
+    if evaluate("2+3*4-6/3") != 12 {
+        return 9
+    }
+    if evaluate("") != 0 {
+        return 10
+    }
+    return 0
+}
