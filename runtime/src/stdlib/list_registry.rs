@@ -46,19 +46,38 @@ pub fn list_elements(handle: i64) -> Result<Vec<SpectraHostValue>, i32> {
 pub fn list_create(elements: &[SpectraHostValue]) -> Result<i64, i32> {
     let memory = initialize().memory();
     let list = memory
-        .allocate_manual(StdList::default())
+        .allocate_manual(StdList::with_capacity(elements.len()))
         .map_err(|_| HOST_STATUS_INTERNAL_ERROR)?;
-    let handle = with_list_registry(|registry| registry.insert(list));
+
+    // Escape values before taking the registry lock, then fill the reserved
+    // vector under one registry critical section. JSON decoding can otherwise
+    // pay one registry lock/unlock pair per element.
     for value in elements {
         crate::ffi::escape_stored_value(*value);
-        with_list_registry(|registry| registry.push(handle, *value))?;
     }
-    Ok(handle as i64)
+    with_list_registry(|registry| {
+        let handle = registry.insert(list);
+        for value in elements {
+            registry.push(handle, *value)?;
+        }
+        Ok(handle as i64)
+    })
 }
 
 #[derive(Default)]
 pub(crate) struct StdList {
-    pub(crate) data: Vec<SpectraHostValue>,
+    /// A deque keeps indexed access O(1) while making `pop_front` O(1), which
+    /// is the important distinction from a plain `Vec` for FIFO-style list
+    /// workloads. Sorting temporarily makes the ring contiguous.
+    pub(crate) data: VecDeque<SpectraHostValue>,
+}
+
+impl StdList {
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
+        Self {
+            data: VecDeque::with_capacity(capacity),
+        }
+    }
 }
 
 pub(crate) struct ListRegistry {

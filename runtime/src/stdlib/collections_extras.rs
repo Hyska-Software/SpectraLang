@@ -8,11 +8,7 @@ pub(crate) fn write_option_result(
     if ctx.result_len == 0 || ctx.results.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
-    let (tag, payload) = match value {
-        Some(value) => (0, value),
-        None => (1, 0),
-    };
-    let handle = unsafe { alloc_tagged_payload(tag, payload) };
+    let handle = collection_option_handle(value);
     if handle == 0 {
         return HOST_STATUS_INTERNAL_ERROR;
     }
@@ -21,6 +17,37 @@ pub(crate) fn write_option_result(
         results[0] = handle;
     }
     HOST_STATUS_SUCCESS
+}
+
+/// A `None` value has no payload and is immutable after construction. Keep a
+/// process-owned representation for it so empty collection reads do not spend
+/// an allocation and an allocation-table entry on every miss.
+static NONE_OPTION: [SpectraHostValue; 2] = [1, 0];
+
+pub(crate) fn none_option_handle() -> SpectraHostValue {
+    NONE_OPTION.as_ptr() as SpectraHostValue
+}
+
+/// Materializes the tagged option representation used by the compiler.
+/// `None` is borrowed from the process-wide immutable singleton; `Some` still
+/// uses a tracked allocation because its payload can be an owned value.
+pub(crate) fn collection_option_handle(value: Option<SpectraHostValue>) -> SpectraHostValue {
+    match value {
+        Some(payload) => {
+            let handle = unsafe { alloc_tagged_payload(0, payload) };
+            if handle == 0 {
+                // Preserve a valid tagged representation under allocation
+                // pressure. The generic ABI reports OOM; fast scalar paths
+                // have no status/result pair, so a borrowed None is the safe
+                // failure value instead of a null pointer that pattern
+                // lowering cannot dereference.
+                none_option_handle()
+            } else {
+                handle
+            }
+        }
+        None => none_option_handle(),
+    }
 }
 
 pub(crate) extern "C" fn std_list_get_option(ctx: *mut SpectraHostCallContext) -> i32 {

@@ -1,0 +1,209 @@
+module fatorial_pilha_sem_laco
+
+from std.collections import List
+import std.collections as col
+import std.convert
+import std.env
+import std.io
+import std.option as option
+import std.string
+
+// Fatorial com pilha explicita (LIFO), sem nenhuma repeticao por palavra-chave
+// de ciclo: cada passo e uma chamada recursiva.
+//
+// Uso:
+//     spectralang run fatorial_pilha_sem_laco.spectra
+//     spectralang run fatorial_pilha_sem_laco.spectra -- 50
+//     spectralang run fatorial_pilha_sem_laco.spectra -- 50 --traco
+//
+// Onde a versao anterior usava ciclos, aqui ha recursao:
+//     consumir a pilha passo a passo -> desempilha (uma chamada por elemento)
+//     imprimir um passo por linha     -> imprime_passos (uma chamada por linha)
+//     varrer os argumentos            -> tem_traco / busca_texto
+//     ler os digitos do texto         -> parse_rec
+//
+// A pilha e List<int> de std.collections: empilha N..2 (topo = 2) e cada
+// pop devolve 2, 3, ..., N, como no Python original.
+//
+// Limites desta versao: int e i64, logo N vai ate 20 (21! transborda; o Python
+// original usa BigInt). A profundidade da recursao e O(N); com N <= 20 isso e
+// irrelevante, e nao ha teto de ~997 chamadas como no CPython.
+
+// Empilha N, N-1, ..., 2. Uma chamada por elemento empilhado.
+func empilha(n: int, pilha: List<int>) returns int {
+    if n > 1 {
+        col.list_push(pilha, n)
+        return empilha(n - 1, pilha)
+    } else {
+        return 0
+    }
+}
+
+// Desempilha multiplicando. `fatores` recebe cada fator na ordem dos pop e
+// `produtos` o acumulado correspondente. Uma chamada por elemento retirado;
+// o retorno da recursao e a "volta" da pilha (o ultimo empilhado sai antes).
+func desempilha(pilha: List<int>, acumulado: int, fatores: List<int>, produtos: List<int>) returns int {
+    if col.list_len(pilha) > 0 {
+        let o = col.list_pop(pilha)
+        if option.is_some(o) {
+            let fator   = option.option_unwrap(o)
+            let produto = acumulado * fator
+            col.list_push(fatores, fator)
+            col.list_push(produtos, produto)
+            return desempilha(pilha, produto, fatores, produtos)
+        } else {
+            return acumulado
+        }
+    } else {
+        return acumulado
+    }
+}
+
+func fatorial(n: int, fatores: List<int>, produtos: List<int>) returns int {
+    let pilha: List<int> = col.list_new()
+    empilha(n, pilha)
+    let resultado = desempilha(pilha, 1, fatores, produtos)
+    col.list_free(pilha)
+    return resultado
+}
+
+// Imprime um passo por linha: uma chamada recursiva por linha.
+func imprime_passos(fatores: List<int>, produtos: List<int>, total: int, i: int, anterior: int, largura: int) {
+    if i < total {
+        let of = col.list_get(fatores, i)
+        let op = col.list_get(produtos, i)
+        if option.is_some(of) and option.is_some(op) {
+            let fator   = option.option_unwrap(of)
+            let produto = option.option_unwrap(op)
+            let num     = pad_left(int_to_string(i + 1), largura, 32)
+            println(f"{num}. desempilha {fator} : {anterior} x {fator} = {produto}")
+            imprime_passos(fatores, produtos, total, i + 1, produto, largura)
+            return
+        } else {
+            return
+        }
+    } else {
+        return
+    }
+}
+
+func parse_rec(texto: string, idx: int, n: int, neg: bool, val: int, ndig: int) returns(bool, int) {
+    if idx >= n {
+        if ndig == 0 {
+            return( false, 0)
+        } else {
+            if neg {
+                return( true, 0 - val)
+            } else {
+                return( true, val)
+            }
+        }
+    } else {
+        let code = char_at(texto, idx)
+        if idx == 0 and(code == 45 or code == 43) {
+            if idx + 1 >= n {
+                return( false, 0)
+            } else {
+                if code == 45 {
+                    return parse_rec(texto, idx + 1, n, true, val, ndig)
+                } else {
+                    return parse_rec(texto, idx + 1, n, false, val, ndig)
+                }
+            }
+        } else {
+            if code < 48 or code > 57 {
+                return( false, 0)
+            } else {
+                return parse_rec(texto, idx + 1, n, neg, val * 10 + (code - 48), ndig + 1)
+            }
+        }
+    }
+}
+
+func parse_int(texto: string) returns(bool, int) {
+    return parse_rec(texto, 0, len(texto), false, 0, 0)
+}
+
+// Conta os digitos decimais com recursao (sem ciclo).
+func num_digitos(n: int) returns int {
+    if n < 10 {
+        return 1
+    } else {
+        return 1 + num_digitos(n / 10)
+    }
+}
+
+func arg_ou_vazio(i: int) returns string {
+    let o = env_arg(i)
+    if option.is_some(o) {
+        return option.option_unwrap(o)
+    } else {
+        return ""
+    }
+}
+
+// Diz se "--traco" aparece entre os argumentos (varredura recursiva).
+func tem_traco(idx: int, argc: int) returns bool {
+    if idx >= argc {
+        return false
+    } else {
+        if arg_ou_vazio(idx) == "--traco" {
+            return true
+        } else {
+            return tem_traco(idx + 1, argc)
+        }
+    }
+}
+
+// Devolve o primeiro argumento diferente de "--traco", ou "" se nao houver.
+func busca_texto(idx: int, argc: int) returns string {
+    if idx >= argc {
+        return ""
+    } else {
+        let a = arg_ou_vazio(idx)
+        if a == "--traco" or a == "" {
+            return busca_texto(idx + 1, argc)
+        } else {
+            return a
+        }
+    }
+}
+
+public func main() returns int {
+    let argc          = env_args_count()
+    let mostrar_traco = tem_traco(1, argc)
+    let texto_n       = busca_texto(1, argc)
+    let lido          = texto_n
+    if lido == "" {
+        lido = input("Digite N: ")
+    }
+    let r = parse_int(lido)
+    if not r.0 {
+        println("Entrada invalida: digite um numero inteiro.")
+        return 0
+    }
+    let n = r.1
+    if n < 0 {
+        println("Nao existe fatorial de numero negativo.")
+        return 0
+    }
+    if n > 20 {
+        println("N fora do intervalo suportado (0..20): int e i64 e 21! transborda.")
+        return 0
+    }
+    let fatores: List<int>  = col.list_new()
+    let produtos: List<int> = col.list_new()
+    let resultado           = fatorial(n, fatores, produtos)
+    println(f"{n}! = {resultado}")
+    if mostrar_traco {
+        let total = col.list_len(fatores)
+        if total == 0 {
+            println("sem passos: caso base (pilha vazia) -> 1")
+        } else {
+            imprime_passos(fatores, produtos, total, 0, 1, num_digitos(total))
+        }
+    }
+    col.list_free(fatores)
+    col.list_free(produtos)
+    return 0
+}

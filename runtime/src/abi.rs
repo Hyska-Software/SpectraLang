@@ -132,10 +132,57 @@ pub enum RuntimeImport {
     /// when the dispatcher returns `HOST_STATUS_DENIED`. Prints
     /// `capability denied: <message>` and exits with 101.
     HostDenied,
+    ListNew,
+    ListPush,
+    ListLen,
+    ListGet,
+    ListGetOption,
+    ListSet,
+    ListContains,
+    ListClear,
+    ListFree,
+    ListFreeAll,
+    ListPop,
+    ListPopFront,
+    ListPopOption,
+    ListPopFrontOption,
+    ListInsertAt,
+    ListRemoveAt,
+    ListRemoveAtOption,
+    ListIndexOf,
+    ListSort,
+    MapGet,
+    MapGetOption,
+    MapRemove,
+    MapRemoveOption,
+    MapIsEmpty,
+    MapFreeAll,
+    StackNew,
+    StackPush,
+    StackPop,
+    StackPeek,
+    StackLen,
+    StackIsEmpty,
+    StackClear,
+    StackFree,
+    StackFreeAll,
+    QueueNew,
+    QueueEnqueue,
+    QueueDequeue,
+    QueuePeek,
+    QueueLen,
+    QueueIsEmpty,
+    QueueClear,
+    QueueFree,
+    QueueFreeAll,
+    IteratorNext,
+    IteratorNextUnchecked,
+    IteratorRemaining,
+    IteratorFree,
 }
 
 impl RuntimeImport {
-    pub const COUNT: usize = 57;
+    pub const COUNT: usize = 104;
 
     pub const ALL: &'static [Self] = &[
         Self::ManualAlloc,
@@ -195,6 +242,53 @@ impl RuntimeImport {
         Self::CoroutineCancelled,
         Self::CoroutinePollReturn,
         Self::HostDenied,
+        Self::ListNew,
+        Self::ListPush,
+        Self::ListLen,
+        Self::ListGet,
+        Self::ListGetOption,
+        Self::ListSet,
+        Self::ListContains,
+        Self::ListClear,
+        Self::ListFree,
+        Self::ListFreeAll,
+        Self::ListPop,
+        Self::ListPopFront,
+        Self::ListPopOption,
+        Self::ListPopFrontOption,
+        Self::ListInsertAt,
+        Self::ListRemoveAt,
+        Self::ListRemoveAtOption,
+        Self::ListIndexOf,
+        Self::ListSort,
+        Self::MapGet,
+        Self::MapGetOption,
+        Self::MapRemove,
+        Self::MapRemoveOption,
+        Self::MapIsEmpty,
+        Self::MapFreeAll,
+        Self::StackNew,
+        Self::StackPush,
+        Self::StackPop,
+        Self::StackPeek,
+        Self::StackLen,
+        Self::StackIsEmpty,
+        Self::StackClear,
+        Self::StackFree,
+        Self::StackFreeAll,
+        Self::QueueNew,
+        Self::QueueEnqueue,
+        Self::QueueDequeue,
+        Self::QueuePeek,
+        Self::QueueLen,
+        Self::QueueIsEmpty,
+        Self::QueueClear,
+        Self::QueueFree,
+        Self::QueueFreeAll,
+        Self::IteratorNext,
+        Self::IteratorNextUnchecked,
+        Self::IteratorRemaining,
+        Self::IteratorFree,
     ];
     pub const fn index(self) -> usize {
         self as usize
@@ -259,6 +353,53 @@ impl RuntimeImport {
             Self::CoroutineCancelled => "spectra_rt_coroutine_cancelled",
             Self::CoroutinePollReturn => "spectra_rt_coroutine_poll_return",
             Self::HostDenied => "spectra_rt_capability_denied",
+            Self::ListNew => "spectra_rt_list_new_fast",
+            Self::ListPush => "spectra_rt_list_push_fast",
+            Self::ListLen => "spectra_rt_list_len_fast",
+            Self::ListGet => "spectra_rt_list_get_fast",
+            Self::ListGetOption => "spectra_rt_list_get_option_fast",
+            Self::ListSet => "spectra_rt_list_set_fast",
+            Self::ListContains => "spectra_rt_list_contains_fast",
+            Self::ListClear => "spectra_rt_list_clear_fast",
+            Self::ListFree => "spectra_rt_list_free_fast",
+            Self::ListFreeAll => "spectra_rt_list_free_all_fast",
+            Self::ListPop => "spectra_rt_list_pop_fast",
+            Self::ListPopFront => "spectra_rt_list_pop_front_fast",
+            Self::ListPopOption => "spectra_rt_list_pop_option_fast",
+            Self::ListPopFrontOption => "spectra_rt_list_pop_front_option_fast",
+            Self::ListInsertAt => "spectra_rt_list_insert_at_fast",
+            Self::ListRemoveAt => "spectra_rt_list_remove_at_fast",
+            Self::ListRemoveAtOption => "spectra_rt_list_remove_at_option_fast",
+            Self::ListIndexOf => "spectra_rt_list_index_of_fast",
+            Self::ListSort => "spectra_rt_list_sort_fast",
+            Self::MapGet => "spectra_rt_map_get_fast",
+            Self::MapGetOption => "spectra_rt_map_get_option_fast",
+            Self::MapRemove => "spectra_rt_map_remove_fast",
+            Self::MapRemoveOption => "spectra_rt_map_remove_option_fast",
+            Self::MapIsEmpty => "spectra_rt_map_is_empty_fast",
+            Self::MapFreeAll => "spectra_rt_map_free_all_fast",
+            Self::StackNew => "spectra_rt_stack_new_fast",
+            Self::StackPush => "spectra_rt_stack_push_fast",
+            Self::StackPop => "spectra_rt_stack_pop_fast",
+            Self::StackPeek => "spectra_rt_stack_peek_fast",
+            Self::StackLen => "spectra_rt_stack_len_fast",
+            Self::StackIsEmpty => "spectra_rt_stack_is_empty_fast",
+            Self::StackClear => "spectra_rt_stack_clear_fast",
+            Self::StackFree => "spectra_rt_stack_free_fast",
+            Self::StackFreeAll => "spectra_rt_stack_free_all_fast",
+            Self::QueueNew => "spectra_rt_queue_new_fast",
+            Self::QueueEnqueue => "spectra_rt_queue_enqueue_fast",
+            Self::QueueDequeue => "spectra_rt_queue_dequeue_fast",
+            Self::QueuePeek => "spectra_rt_queue_peek_fast",
+            Self::QueueLen => "spectra_rt_queue_len_fast",
+            Self::QueueIsEmpty => "spectra_rt_queue_is_empty_fast",
+            Self::QueueClear => "spectra_rt_queue_clear_fast",
+            Self::QueueFree => "spectra_rt_queue_free_fast",
+            Self::QueueFreeAll => "spectra_rt_queue_free_all_fast",
+            Self::IteratorNext => "spectra_rt_iterator_next_fast",
+            Self::IteratorNextUnchecked => "spectra_rt_iterator_next_unchecked_fast",
+            Self::IteratorRemaining => "spectra_rt_iterator_remaining_fast",
+            Self::IteratorFree => "spectra_rt_iterator_free_fast",
         }
     }
 
@@ -305,6 +446,53 @@ impl RuntimeImport {
             Self::ChannelLen => (I64, I64),
             Self::SpectraPanic => (I64, EMPTY),
             Self::HostDenied => (I64, EMPTY),
+            Self::ListNew => (EMPTY, I64),
+            Self::ListPush => (I64_I64, I32),
+            Self::ListLen => (I64, I64),
+            Self::ListGet => (I64_I64, I64),
+            Self::ListGetOption => (I64_I64, I64),
+            Self::ListSet => (I64_I64_I64, I32),
+            Self::ListContains => (I64_I64, I64),
+            Self::ListClear => (I64, I32),
+            Self::ListFree => (I64, I32),
+            Self::ListFreeAll => (EMPTY, I64),
+            Self::ListPop => (I64, I64),
+            Self::ListPopFront => (I64, I64),
+            Self::ListPopOption => (I64, I64),
+            Self::ListPopFrontOption => (I64, I64),
+            Self::ListInsertAt => (I64_I64_I64, I32),
+            Self::ListRemoveAt => (I64_I64, I64),
+            Self::ListRemoveAtOption => (I64_I64, I64),
+            Self::ListIndexOf => (I64_I64, I64),
+            Self::ListSort => (I64, I32),
+            Self::MapGet => (I64_I64, I64),
+            Self::MapGetOption => (I64_I64, I64),
+            Self::MapRemove => (I64_I64, I64),
+            Self::MapRemoveOption => (I64_I64, I64),
+            Self::MapIsEmpty => (I64, I64),
+            Self::MapFreeAll => (EMPTY, I64),
+            Self::StackNew => (EMPTY, I64),
+            Self::StackPush => (I64_I64, I32),
+            Self::StackPop => (I64, I64),
+            Self::StackPeek => (I64, I64),
+            Self::StackLen => (I64, I64),
+            Self::StackIsEmpty => (I64, I64),
+            Self::StackClear => (I64, I32),
+            Self::StackFree => (I64, I32),
+            Self::StackFreeAll => (EMPTY, I64),
+            Self::QueueNew => (EMPTY, I64),
+            Self::QueueEnqueue => (I64_I64, I32),
+            Self::QueueDequeue => (I64, I64),
+            Self::QueuePeek => (I64, I64),
+            Self::QueueLen => (I64, I64),
+            Self::QueueIsEmpty => (I64, I64),
+            Self::QueueClear => (I64, I32),
+            Self::QueueFree => (I64, I32),
+            Self::QueueFreeAll => (EMPTY, I64),
+            Self::IteratorNext => (I64, I64),
+            Self::IteratorNextUnchecked => (I64, I64),
+            Self::IteratorRemaining => (I64, I64),
+            Self::IteratorFree => (I64, I32),
             Self::CoroutineFrameAlloc => (I64, I64),
             Self::CoroutineFrameStore => (I64_I64_I64, I64),
             Self::CoroutineFrameLoad => (I64_I64, I64),
@@ -374,6 +562,59 @@ impl RuntimeImport {
             Self::HostInvokeCachedBatch => ffi::spectra_rt_host_invoke_cached_batch as *const u8,
             Self::SpectraPanic => crate::panic::spectra_rt_panic as *const u8,
             Self::HostDenied => crate::panic::spectra_rt_capability_denied as *const u8,
+            Self::ListNew => crate::ffi::spectra_rt_list_new_fast as *const u8,
+            Self::ListPush => crate::ffi::spectra_rt_list_push_fast as *const u8,
+            Self::ListLen => crate::ffi::spectra_rt_list_len_fast as *const u8,
+            Self::ListGet => crate::ffi::spectra_rt_list_get_fast as *const u8,
+            Self::ListGetOption => crate::ffi::spectra_rt_list_get_option_fast as *const u8,
+            Self::ListSet => crate::ffi::spectra_rt_list_set_fast as *const u8,
+            Self::ListContains => crate::ffi::spectra_rt_list_contains_fast as *const u8,
+            Self::ListClear => crate::ffi::spectra_rt_list_clear_fast as *const u8,
+            Self::ListFree => crate::ffi::spectra_rt_list_free_fast as *const u8,
+            Self::ListFreeAll => crate::ffi::spectra_rt_list_free_all_fast as *const u8,
+            Self::ListPop => crate::ffi::spectra_rt_list_pop_fast as *const u8,
+            Self::ListPopFront => crate::ffi::spectra_rt_list_pop_front_fast as *const u8,
+            Self::ListPopOption => crate::ffi::spectra_rt_list_pop_option_fast as *const u8,
+            Self::ListPopFrontOption => {
+                crate::ffi::spectra_rt_list_pop_front_option_fast as *const u8
+            }
+            Self::ListInsertAt => crate::ffi::spectra_rt_list_insert_at_fast as *const u8,
+            Self::ListRemoveAt => crate::ffi::spectra_rt_list_remove_at_fast as *const u8,
+            Self::ListRemoveAtOption => {
+                crate::ffi::spectra_rt_list_remove_at_option_fast as *const u8
+            }
+            Self::ListIndexOf => crate::ffi::spectra_rt_list_index_of_fast as *const u8,
+            Self::ListSort => crate::ffi::spectra_rt_list_sort_fast as *const u8,
+            Self::MapGet => crate::ffi::spectra_rt_map_get_fast as *const u8,
+            Self::MapGetOption => crate::ffi::spectra_rt_map_get_option_fast as *const u8,
+            Self::MapRemove => crate::ffi::spectra_rt_map_remove_fast as *const u8,
+            Self::MapRemoveOption => crate::ffi::spectra_rt_map_remove_option_fast as *const u8,
+            Self::MapIsEmpty => crate::ffi::spectra_rt_map_is_empty_fast as *const u8,
+            Self::MapFreeAll => crate::ffi::spectra_rt_map_free_all_fast as *const u8,
+            Self::StackNew => crate::ffi::spectra_rt_stack_new_fast as *const u8,
+            Self::StackPush => crate::ffi::spectra_rt_stack_push_fast as *const u8,
+            Self::StackPop => crate::ffi::spectra_rt_stack_pop_fast as *const u8,
+            Self::StackPeek => crate::ffi::spectra_rt_stack_peek_fast as *const u8,
+            Self::StackLen => crate::ffi::spectra_rt_stack_len_fast as *const u8,
+            Self::StackIsEmpty => crate::ffi::spectra_rt_stack_is_empty_fast as *const u8,
+            Self::StackClear => crate::ffi::spectra_rt_stack_clear_fast as *const u8,
+            Self::StackFree => crate::ffi::spectra_rt_stack_free_fast as *const u8,
+            Self::StackFreeAll => crate::ffi::spectra_rt_stack_free_all_fast as *const u8,
+            Self::QueueNew => crate::ffi::spectra_rt_queue_new_fast as *const u8,
+            Self::QueueEnqueue => crate::ffi::spectra_rt_queue_enqueue_fast as *const u8,
+            Self::QueueDequeue => crate::ffi::spectra_rt_queue_dequeue_fast as *const u8,
+            Self::QueuePeek => crate::ffi::spectra_rt_queue_peek_fast as *const u8,
+            Self::QueueLen => crate::ffi::spectra_rt_queue_len_fast as *const u8,
+            Self::QueueIsEmpty => crate::ffi::spectra_rt_queue_is_empty_fast as *const u8,
+            Self::QueueClear => crate::ffi::spectra_rt_queue_clear_fast as *const u8,
+            Self::QueueFree => crate::ffi::spectra_rt_queue_free_fast as *const u8,
+            Self::QueueFreeAll => crate::ffi::spectra_rt_queue_free_all_fast as *const u8,
+            Self::IteratorNext => crate::ffi::spectra_rt_iterator_next_fast as *const u8,
+            Self::IteratorNextUnchecked => {
+                crate::ffi::spectra_rt_iterator_next_unchecked_fast as *const u8
+            }
+            Self::IteratorRemaining => crate::ffi::spectra_rt_iterator_remaining_fast as *const u8,
+            Self::IteratorFree => crate::ffi::spectra_rt_iterator_free_fast as *const u8,
             Self::CoroutineFrameAlloc => {
                 crate::async_abi::spectra_rt_coroutine_frame_alloc as *const u8
             }
@@ -481,9 +722,56 @@ pub enum FastHostCall {
     MlSgdStep,
     TensorFullF,
     ConcurrentSpawnFn,
+    ListNew,
+    ListPush,
+    ListLen,
+    ListGet,
+    ListGetOption,
+    ListSet,
+    ListContains,
+    ListClear,
+    ListFree,
+    ListFreeAll,
+    ListPop,
+    ListPopFront,
+    ListPopOption,
+    ListPopFrontOption,
+    ListInsertAt,
+    ListRemoveAt,
+    ListRemoveAtOption,
+    ListIndexOf,
+    ListSort,
+    MapGet,
+    MapGetOption,
+    MapRemove,
+    MapRemoveOption,
+    MapIsEmpty,
+    MapFreeAll,
+    StackNew,
+    StackPush,
+    StackPop,
+    StackPeek,
+    StackLen,
+    StackIsEmpty,
+    StackClear,
+    StackFree,
+    StackFreeAll,
+    QueueNew,
+    QueueEnqueue,
+    QueueDequeue,
+    QueuePeek,
+    QueueLen,
+    QueueIsEmpty,
+    QueueClear,
+    QueueFree,
+    QueueFreeAll,
+    IteratorNext,
+    IteratorNextUnchecked,
+    IteratorRemaining,
+    IteratorFree,
 }
 impl FastHostCall {
-    pub const COUNT: usize = 28;
+    pub const COUNT: usize = 75;
 
     pub const ALL: &'static [Self] = &[
         Self::ConcurrentReset,
@@ -514,6 +802,53 @@ impl FastHostCall {
         Self::MlSgdStep,
         Self::TensorFullF,
         Self::ConcurrentSpawnFn,
+        Self::ListNew,
+        Self::ListPush,
+        Self::ListLen,
+        Self::ListGet,
+        Self::ListGetOption,
+        Self::ListSet,
+        Self::ListContains,
+        Self::ListClear,
+        Self::ListFree,
+        Self::ListFreeAll,
+        Self::ListPop,
+        Self::ListPopFront,
+        Self::ListPopOption,
+        Self::ListPopFrontOption,
+        Self::ListInsertAt,
+        Self::ListRemoveAt,
+        Self::ListRemoveAtOption,
+        Self::ListIndexOf,
+        Self::ListSort,
+        Self::MapGet,
+        Self::MapGetOption,
+        Self::MapRemove,
+        Self::MapRemoveOption,
+        Self::MapIsEmpty,
+        Self::MapFreeAll,
+        Self::StackNew,
+        Self::StackPush,
+        Self::StackPop,
+        Self::StackPeek,
+        Self::StackLen,
+        Self::StackIsEmpty,
+        Self::StackClear,
+        Self::StackFree,
+        Self::StackFreeAll,
+        Self::QueueNew,
+        Self::QueueEnqueue,
+        Self::QueueDequeue,
+        Self::QueuePeek,
+        Self::QueueLen,
+        Self::QueueIsEmpty,
+        Self::QueueClear,
+        Self::QueueFree,
+        Self::QueueFreeAll,
+        Self::IteratorNext,
+        Self::IteratorNextUnchecked,
+        Self::IteratorRemaining,
+        Self::IteratorFree,
     ];
 
     pub const fn index(self) -> usize {
@@ -550,6 +885,53 @@ impl FastHostCall {
             Self::MlSgdStep => "spectra.std.ml.sgd_step",
             Self::TensorFullF => "spectra.std.tensor.full_f",
             Self::ConcurrentSpawnFn => "spectra.std.concurrent.task_spawn_fn",
+            Self::ListNew => "spectra.std.collections.list_new",
+            Self::ListPush => "spectra.std.collections.list_push",
+            Self::ListLen => "spectra.std.collections.list_len",
+            Self::ListGet => "spectra.std.collections.list_get",
+            Self::ListGetOption => "spectra.std.collections.list_get_option",
+            Self::ListSet => "spectra.std.collections.list_set",
+            Self::ListContains => "spectra.std.collections.list_contains",
+            Self::ListClear => "spectra.std.collections.list_clear",
+            Self::ListFree => "spectra.std.collections.list_free",
+            Self::ListFreeAll => "spectra.std.collections.list_free_all",
+            Self::ListPop => "spectra.std.collections.list_pop",
+            Self::ListPopFront => "spectra.std.collections.list_pop_front",
+            Self::ListPopOption => "spectra.std.collections.list_pop_option",
+            Self::ListPopFrontOption => "spectra.std.collections.list_pop_front_option",
+            Self::ListInsertAt => "spectra.std.collections.list_insert_at",
+            Self::ListRemoveAt => "spectra.std.collections.list_remove_at",
+            Self::ListRemoveAtOption => "spectra.std.collections.list_remove_at_option",
+            Self::ListIndexOf => "spectra.std.collections.list_index_of",
+            Self::ListSort => "spectra.std.collections.list_sort",
+            Self::MapGet => "spectra.std.collections.map_get",
+            Self::MapGetOption => "spectra.std.collections.map_get_option",
+            Self::MapRemove => "spectra.std.collections.map_remove",
+            Self::MapRemoveOption => "spectra.std.collections.map_remove_option",
+            Self::MapIsEmpty => "spectra.std.collections.map_is_empty",
+            Self::MapFreeAll => "spectra.std.collections.map_free_all",
+            Self::StackNew => "spectra.std.collections.stack_new",
+            Self::StackPush => "spectra.std.collections.stack_push",
+            Self::StackPop => "spectra.std.collections.stack_pop",
+            Self::StackPeek => "spectra.std.collections.stack_peek",
+            Self::StackLen => "spectra.std.collections.stack_len",
+            Self::StackIsEmpty => "spectra.std.collections.stack_is_empty",
+            Self::StackClear => "spectra.std.collections.stack_clear",
+            Self::StackFree => "spectra.std.collections.stack_free",
+            Self::StackFreeAll => "spectra.std.collections.stack_free_all",
+            Self::QueueNew => "spectra.std.collections.queue_new",
+            Self::QueueEnqueue => "spectra.std.collections.queue_enqueue",
+            Self::QueueDequeue => "spectra.std.collections.queue_dequeue",
+            Self::QueuePeek => "spectra.std.collections.queue_peek",
+            Self::QueueLen => "spectra.std.collections.queue_len",
+            Self::QueueIsEmpty => "spectra.std.collections.queue_is_empty",
+            Self::QueueClear => "spectra.std.collections.queue_clear",
+            Self::QueueFree => "spectra.std.collections.queue_free",
+            Self::QueueFreeAll => "spectra.std.collections.queue_free_all",
+            Self::IteratorNext => "spectra.std.collections.iterator_next",
+            Self::IteratorNextUnchecked => "spectra.std.collections.iterator_next_unchecked",
+            Self::IteratorRemaining => "spectra.std.collections.iterator_remaining",
+            Self::IteratorFree => "spectra.std.collections.iterator_free",
         }
     }
 
@@ -583,6 +965,53 @@ impl FastHostCall {
             Self::MlSgdStep => RuntimeImport::MlSgdStep,
             Self::TensorFullF => RuntimeImport::TensorFullF,
             Self::ConcurrentSpawnFn => RuntimeImport::ConcurrentSpawnFn,
+            Self::ListNew => RuntimeImport::ListNew,
+            Self::ListPush => RuntimeImport::ListPush,
+            Self::ListLen => RuntimeImport::ListLen,
+            Self::ListGet => RuntimeImport::ListGet,
+            Self::ListGetOption => RuntimeImport::ListGetOption,
+            Self::ListSet => RuntimeImport::ListSet,
+            Self::ListContains => RuntimeImport::ListContains,
+            Self::ListClear => RuntimeImport::ListClear,
+            Self::ListFree => RuntimeImport::ListFree,
+            Self::ListFreeAll => RuntimeImport::ListFreeAll,
+            Self::ListPop => RuntimeImport::ListPop,
+            Self::ListPopFront => RuntimeImport::ListPopFront,
+            Self::ListPopOption => RuntimeImport::ListPopOption,
+            Self::ListPopFrontOption => RuntimeImport::ListPopFrontOption,
+            Self::ListInsertAt => RuntimeImport::ListInsertAt,
+            Self::ListRemoveAt => RuntimeImport::ListRemoveAt,
+            Self::ListRemoveAtOption => RuntimeImport::ListRemoveAtOption,
+            Self::ListIndexOf => RuntimeImport::ListIndexOf,
+            Self::ListSort => RuntimeImport::ListSort,
+            Self::MapGet => RuntimeImport::MapGet,
+            Self::MapGetOption => RuntimeImport::MapGetOption,
+            Self::MapRemove => RuntimeImport::MapRemove,
+            Self::MapRemoveOption => RuntimeImport::MapRemoveOption,
+            Self::MapIsEmpty => RuntimeImport::MapIsEmpty,
+            Self::MapFreeAll => RuntimeImport::MapFreeAll,
+            Self::StackNew => RuntimeImport::StackNew,
+            Self::StackPush => RuntimeImport::StackPush,
+            Self::StackPop => RuntimeImport::StackPop,
+            Self::StackPeek => RuntimeImport::StackPeek,
+            Self::StackLen => RuntimeImport::StackLen,
+            Self::StackIsEmpty => RuntimeImport::StackIsEmpty,
+            Self::StackClear => RuntimeImport::StackClear,
+            Self::StackFree => RuntimeImport::StackFree,
+            Self::StackFreeAll => RuntimeImport::StackFreeAll,
+            Self::QueueNew => RuntimeImport::QueueNew,
+            Self::QueueEnqueue => RuntimeImport::QueueEnqueue,
+            Self::QueueDequeue => RuntimeImport::QueueDequeue,
+            Self::QueuePeek => RuntimeImport::QueuePeek,
+            Self::QueueLen => RuntimeImport::QueueLen,
+            Self::QueueIsEmpty => RuntimeImport::QueueIsEmpty,
+            Self::QueueClear => RuntimeImport::QueueClear,
+            Self::QueueFree => RuntimeImport::QueueFree,
+            Self::QueueFreeAll => RuntimeImport::QueueFreeAll,
+            Self::IteratorNext => RuntimeImport::IteratorNext,
+            Self::IteratorNextUnchecked => RuntimeImport::IteratorNextUnchecked,
+            Self::IteratorRemaining => RuntimeImport::IteratorRemaining,
+            Self::IteratorFree => RuntimeImport::IteratorFree,
         }
     }
 
@@ -728,7 +1157,7 @@ mod tests {
         );
         assert_eq!(
             resolve_host_call("spectra.std.collections.map_get", 2),
-            HostCallClass::Generic
+            HostCallClass::Fast(FastHostCall::MapGet)
         );
     }
 
@@ -792,7 +1221,54 @@ mod tests {
                 | FastHostCall::TensorBackward
                 | FastHostCall::MlSgdStep
                 | FastHostCall::TensorFullF
-                | FastHostCall::ConcurrentSpawnFn => {}
+                | FastHostCall::ConcurrentSpawnFn
+                | FastHostCall::ListNew
+                | FastHostCall::ListPush
+                | FastHostCall::ListLen
+                | FastHostCall::ListGet
+                | FastHostCall::ListGetOption
+                | FastHostCall::ListSet
+                | FastHostCall::ListContains
+                | FastHostCall::ListClear
+                | FastHostCall::ListFree
+                | FastHostCall::ListFreeAll
+                | FastHostCall::ListPop
+                | FastHostCall::ListPopFront
+                | FastHostCall::ListPopOption
+                | FastHostCall::ListPopFrontOption
+                | FastHostCall::ListInsertAt
+                | FastHostCall::ListRemoveAt
+                | FastHostCall::ListRemoveAtOption
+                | FastHostCall::ListIndexOf
+                | FastHostCall::ListSort
+                | FastHostCall::MapGet
+                | FastHostCall::MapGetOption
+                | FastHostCall::MapRemove
+                | FastHostCall::MapRemoveOption
+                | FastHostCall::MapIsEmpty
+                | FastHostCall::MapFreeAll
+                | FastHostCall::StackNew
+                | FastHostCall::StackPush
+                | FastHostCall::StackPop
+                | FastHostCall::StackPeek
+                | FastHostCall::StackLen
+                | FastHostCall::StackIsEmpty
+                | FastHostCall::StackClear
+                | FastHostCall::StackFree
+                | FastHostCall::StackFreeAll
+                | FastHostCall::QueueNew
+                | FastHostCall::QueueEnqueue
+                | FastHostCall::QueueDequeue
+                | FastHostCall::QueuePeek
+                | FastHostCall::QueueLen
+                | FastHostCall::QueueIsEmpty
+                | FastHostCall::QueueClear
+                | FastHostCall::QueueFree
+                | FastHostCall::QueueFreeAll
+                | FastHostCall::IteratorNext
+                | FastHostCall::IteratorNextUnchecked
+                | FastHostCall::IteratorRemaining
+                | FastHostCall::IteratorFree => {}
             }
 
             let name = fast.host_name();

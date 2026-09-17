@@ -34,11 +34,12 @@ pub(crate) extern "C" fn std_list_map(ctx: *mut SpectraHostCallContext) -> i32 {
 
         // Allocate the destination list.
         let memory = initialize().memory();
-        let dest_list = match memory.allocate_manual(StdList::default()) {
+        let dest_list = match memory.allocate_manual(StdList::with_capacity(src_data.len())) {
             Ok(l) => l,
             Err(_) => return HOST_STATUS_INTERNAL_ERROR,
         };
         let dest_handle = with_list_registry(|reg| reg.insert(dest_list));
+        let mut mapped = Vec::with_capacity(src_data.len());
 
         for &elem in &src_data {
             let arg_buf = [elem];
@@ -48,10 +49,17 @@ pub(crate) extern "C" fn std_list_map(ctx: *mut SpectraHostCallContext) -> i32 {
                 let _ = with_list_registry(|reg| reg.remove(dest_handle));
                 return status;
             }
-            if let Err(code) = with_list_registry(|reg| reg.push(dest_handle, out)) {
-                let _ = with_list_registry(|reg| reg.remove(dest_handle));
-                return code;
+            crate::ffi::escape_stored_value(out);
+            mapped.push(out);
+        }
+        if let Err(code) = with_list_registry(|reg| {
+            for value in mapped {
+                reg.push(dest_handle, value)?;
             }
+            Ok(())
+        }) {
+            let _ = with_list_registry(|reg| reg.remove(dest_handle));
+            return code;
         }
 
         let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);
@@ -90,11 +98,12 @@ pub(crate) extern "C" fn std_list_filter(ctx: *mut SpectraHostCallContext) -> i3
         };
 
         let memory = initialize().memory();
-        let dest_list = match memory.allocate_manual(StdList::default()) {
+        let dest_list = match memory.allocate_manual(StdList::with_capacity(src_data.len())) {
             Ok(l) => l,
             Err(_) => return HOST_STATUS_INTERNAL_ERROR,
         };
         let dest_handle = with_list_registry(|reg| reg.insert(dest_list));
+        let mut selected = Vec::with_capacity(src_data.len());
 
         for &elem in &src_data {
             let arg_buf = [elem];
@@ -109,11 +118,18 @@ pub(crate) extern "C" fn std_list_filter(ctx: *mut SpectraHostCallContext) -> i3
             // an unspecified upper part of a widened bool cannot turn false
             // into a truthy predicate.
             if (out & 0xff) != 0 {
-                if let Err(code) = with_list_registry(|reg| reg.push(dest_handle, elem)) {
-                    let _ = with_list_registry(|reg| reg.remove(dest_handle));
-                    return code;
-                }
+                crate::ffi::escape_stored_value(elem);
+                selected.push(elem);
             }
+        }
+        if let Err(code) = with_list_registry(|reg| {
+            for value in selected {
+                reg.push(dest_handle, value)?;
+            }
+            Ok(())
+        }) {
+            let _ = with_list_registry(|reg| reg.remove(dest_handle));
+            return code;
         }
 
         let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);

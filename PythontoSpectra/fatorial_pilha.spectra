@@ -1,0 +1,203 @@
+module fatorial_pilha
+
+import std.convert
+import std.env
+import std.io
+import std.option as option
+import std.string
+
+// Fatorial com pilha explicita (LIFO): empilha N..2 e desempilha
+// multiplicando, de modo que os fatores saem na ordem 2, 3, ..., N.
+//
+// Devolve o resultado; os passos (fator, produto acumulado) saem nos
+// arrays paralelos `fatores` / `produtos` e o total e N - 1 (0 se N < 2).
+//
+// Uso:
+//     spectralang run fatorial_pilha.spectra
+//     spectralang run fatorial_pilha.spectra -- 50
+//     spectralang run fatorial_pilha.spectra -- 50 --traco
+//
+// Limite: int e i64, logo N vai ate 20 (21! transborda). O Python original
+// usa BigInt; aqui N > 20 e recusado com mensagem.
+
+func nova_pilha() returns[int] {
+    return[
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+}
+
+func fatorial(n: int, fatores: [int], produtos: [int]) returns int {
+    let pilha = nova_pilha()
+    let topo  = 0
+    let v     = n
+    while v > 1 {
+        pilha[topo] = v
+        topo = topo + 1
+        v = v - 1
+    }
+    let resultado = 1
+    let total     = 0
+    while topo > 0 {
+        topo = topo - 1
+        let fator = pilha[topo]
+        resultado = resultado * fator
+        fatores[total] = fator
+        produtos[total] = resultado
+        total = total + 1
+    }
+    return resultado
+}
+
+func parse_rec(texto: string, idx: int, n: int, neg: bool, val: int, ndig: int) returns(bool, int) {
+    if idx >= n {
+        if ndig == 0 {
+            return( false, 0)
+        } else {
+            if neg {
+                return( true, 0 - val)
+            } else {
+                return( true, val)
+            }
+        }
+    } else {
+        let code = char_at(texto, idx)
+        if idx == 0 and(code == 45 or code == 43) {
+            if idx + 1 >= n {
+                return( false, 0)
+            } else {
+                if code == 45 {
+                    return parse_rec(texto, idx + 1, n, true, val, ndig)
+                } else {
+                    return parse_rec(texto, idx + 1, n, false, val, ndig)
+                }
+            }
+        } else {
+            if code < 48 or code > 57 {
+                return( false, 0)
+            } else {
+                return parse_rec(texto, idx + 1, n, neg, val * 10 + (code - 48), ndig + 1)
+            }
+        }
+    }
+}
+
+func parse_int(texto: string) returns(bool, int) {
+    return parse_rec(texto, 0, len(texto), false, 0, 0)
+}
+
+func num_digitos(n: int) returns int {
+    if n < 10 {
+        return 1
+    }
+    let conta = 1
+    let v     = n
+    while v >= 10 {
+        v = v / 10
+        conta = conta + 1
+    }
+    return conta
+}
+
+func arg_ou_vazio(i: int) returns string {
+    let o = env_arg(i)
+    if option.is_some(o) {
+        return option.option_unwrap(o)
+    } else {
+        return ""
+    }
+}
+
+public func main() returns int {
+    let argc          = env_args_count()
+    let mostrar_traco = false
+    let texto_n       = ""
+    let i             = 1
+    while i < argc {
+        let a = arg_ou_vazio(i)
+        if a == "--traco" {
+            mostrar_traco = true
+        } else {
+            if texto_n == "" {
+                texto_n = a
+            }
+        }
+        i = i + 1
+    }
+    let lido = texto_n
+    if lido == "" {
+        lido = input("Digite N: ")
+    }
+    let r = parse_int(lido)
+    if not r.0 {
+        println("Entrada invalida: digite um numero inteiro.")
+        return 0
+    }
+    let n = r.1
+    if n < 0 {
+        println("Nao existe fatorial de numero negativo.")
+        return 0
+    }
+    if n > 20 {
+        println("N fora do intervalo suportado (0..20): int e i64 e 21! transborda.")
+        return 0
+    }
+    let fatores   = nova_pilha()
+    let produtos  = nova_pilha()
+    let resultado = fatorial(n, fatores, produtos)
+    println(f"{n}! = {resultado}")
+    if mostrar_traco {
+        let total = 0
+        if n > 1 {
+            total = n - 1
+        }
+        if total == 0 {
+            println("sem passos: caso base (pilha vazia) -> 1")
+            return 0
+        }
+        let largura = num_digitos(total)
+        let k       = 0
+        while k < total {
+            let fator    = fatores[k]
+            let parcial  = produtos[k]
+            let anterior = 1
+            if k > 0 {
+                anterior = produtos[k - 1]
+            }
+            let num = pad_left(int_to_string(k + 1), largura, 32)
+            println(f"{num}. desempilha {fator} : {anterior} x {fator} = {parcial}")
+            k = k + 1
+        }
+    }
+    return 0
+}

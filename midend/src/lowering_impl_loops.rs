@@ -44,17 +44,6 @@ impl ASTLowering {
             return;
         }
 
-        let option_type = IRType::Generic {
-            name: "Option".to_string(),
-            args: vec![element_type.clone()],
-            representation: Box::new(IRType::Enum {
-                name: format!("Option_{}", self.ir_type_to_ast_name(&element_type)),
-                variants: vec![
-                    ("Some".to_string(), Some(vec![element_type.clone()])),
-                    ("None".to_string(), None),
-                ],
-            }),
-        };
         let iterator_header = ir_func.add_block("iterator.header");
         let iterator_body = ir_func.add_block("iterator.body");
         let iterator_exit = ir_func.add_block("iterator.exit");
@@ -87,25 +76,15 @@ impl ASTLowering {
         self.range_map.push_scope();
         self.struct_var_map.push_scope();
 
-        let option_value = self.require_value(
-            self.builder.build_typed_host_call(
-                ir_func,
-                "spectra.std.collections.iterator_next".to_string(),
-                vec![iterator_value],
-                option_type,
-                true,
-            ),
-            "iterator.next host call did not produce its declared result",
-        );
         let element_value = self.require_value(
             self.builder.build_typed_host_call(
                 ir_func,
-                "spectra.std.option.option_unwrap".to_string(),
-                vec![option_value],
+                "spectra.std.collections.iterator_next_unchecked".to_string(),
+                vec![iterator_value],
                 element_type.clone(),
                 true,
             ),
-            "iterator option unwrap did not produce its declared element",
+            "iterator.next_unchecked host call did not produce its declared element",
         );
         self.value_map
             .insert(for_stmt.iterator.clone(), element_value);

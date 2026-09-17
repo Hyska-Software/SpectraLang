@@ -17,7 +17,7 @@ impl ListRegistry {
     pub(crate) fn push(&mut self, handle: usize, value: SpectraHostValue) -> Result<usize, i32> {
         let id = Self::id(handle)?;
         let list = self.lists.get_mut(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
-        list.data.push(value);
+        list.data.push_back(value);
         Ok(list.data.len())
     }
 
@@ -96,7 +96,7 @@ impl ListRegistry {
     pub(crate) fn pop_option(&mut self, handle: usize) -> Result<Option<SpectraHostValue>, i32> {
         let id = Self::id(handle)?;
         let list = self.lists.get_mut(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
-        Ok(list.data.pop())
+        Ok(list.data.pop_back())
     }
 
     pub(crate) fn pop_front_option(
@@ -105,10 +105,7 @@ impl ListRegistry {
     ) -> Result<Option<SpectraHostValue>, i32> {
         let id = Self::id(handle)?;
         let list = self.lists.get_mut(id).map_err(|_| HOST_STATUS_NOT_FOUND)?;
-        if list.data.is_empty() {
-            return Ok(None);
-        }
-        Ok(Some(list.data.remove(0)))
+        Ok(list.data.pop_front())
     }
 
     pub(crate) fn insert_at(
@@ -134,7 +131,7 @@ impl ListRegistry {
         if index < 0 || (index as usize) >= list.data.len() {
             return Ok(None);
         }
-        Ok(Some(list.data.remove(index as usize)))
+        Ok(list.data.remove(index as usize))
     }
 
     pub(crate) fn index_of(
@@ -159,6 +156,7 @@ impl ListRegistry {
             .get_mut(id)
             .map_err(|_| HOST_STATUS_NOT_FOUND)?
             .data
+            .make_contiguous()
             .sort();
         Ok(())
     }
@@ -171,7 +169,9 @@ impl ListRegistry {
             .get(id)
             .map_err(|_| HOST_STATUS_NOT_FOUND)?
             .data
-            .clone())
+            .iter()
+            .copied()
+            .collect())
     }
 
     /// Replaces a list's data with `data` (used after an out-of-lock sort/transform).
@@ -184,7 +184,7 @@ impl ListRegistry {
         self.lists
             .get_mut(id)
             .map_err(|_| HOST_STATUS_NOT_FOUND)?
-            .data = data;
+            .data = data.into_iter().collect();
         Ok(())
     }
 }

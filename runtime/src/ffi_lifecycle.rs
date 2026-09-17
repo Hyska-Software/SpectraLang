@@ -151,6 +151,53 @@ fn frame0_budget_abort(message: &str) -> ! {
 /// Only moves the allocation if it currently belongs to `current_frame_id` — this
 /// prevents accidentally re-parenting allocations that were passed in from the caller.
 /// If `ptr` is not a tracked allocation (e.g. a scalar value), this is a no-op.
+fn escape_allocation_locked(
+    table: &mut AllocationTable,
+    ptr_value: usize,
+    current_frame_id: usize,
+) -> usize {
+    // Frame 0 is already immortal. Avoid charging an allocation that is
+    // already there a second time when a caller stores it again.
+    if current_frame_id == 0 {
+        return 0;
+    }
+
+    let belongs_to_current = table
+        .allocations
+        .get(&ptr_value)
+        .is_some_and(|entry| entry.frame_id == current_frame_id);
+    if !belongs_to_current {
+        return 0;
+    }
+
+    table.remove_from_frame(current_frame_id, ptr_value);
+    if let Some(entry) = table.allocations.get_mut(&ptr_value) {
+        // Escaping directly to frame 0 keeps values alive across nested
+        // transient frames.
+        entry.frame_id = 0;
+    }
+    if let Some(parent) = table.frames.iter_mut().rev().find(|frame| frame.id == 0) {
+        parent.track(ptr_value);
+    }
+    table
+        .allocations
+        .get(&ptr_value)
+        .map(ManualAllocation::byte_len)
+        .unwrap_or(0)
+}
+
+fn account_frame0_escape(escaped_bytes: usize) {
+    if escaped_bytes == 0 {
+        return;
+    }
+    let total =
+        FRAME0_ESCAPED_BYTES.fetch_add(escaped_bytes, std::sync::atomic::Ordering::Relaxed)
+            + escaped_bytes;
+    if let Err(message) = frame0_budget_check(total, frame0_budget_mb()) {
+        frame0_budget_abort(&message);
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn spectra_rt_manual_escape(ptr: *mut u8, current_frame_id: usize) {
     if ptr.is_null() {
@@ -160,49 +207,9 @@ pub extern "C" fn spectra_rt_manual_escape(ptr: *mut u8, current_frame_id: usize
     let table = allocation_table();
     let mut guard = table.lock().unwrap_or_else(|e| e.into_inner());
 
-    // Only escape allocations that belong to the current frame.
-    let old_frame_id = match guard.allocations.get(&ptr_value) {
-        Some(entry) if entry.frame_id == current_frame_id => entry.frame_id,
-        _ => return,
-    };
-
-    guard.remove_from_frame(old_frame_id, ptr_value);
-
-    // Move the allocation to the base frame (0). Escaping only to the
-    // immediate parent frame is unsafe: when the parent is itself a transient
-    // callee frame (e.g. `Outer::create` calling `Inner::new`), the parent's
-    // `frame_exit` would free the escaped allocation while the caller still
-    // holds it. The base frame is never popped by `frame_exit`, so escaped
-    // values remain valid for the lifetime of the program.
-    let parent_frame_id = 0;
-
-    if let Some(entry) = guard.allocations.get_mut(&ptr_value) {
-        entry.frame_id = parent_frame_id;
-    }
-
-    if let Some(parent) = guard
-        .frames
-        .iter_mut()
-        .rev()
-        .find(|f| f.id == parent_frame_id)
-    {
-        parent.track(ptr_value);
-    }
-    let escaped_bytes = guard
-        .allocations
-        .get(&ptr_value)
-        .map(|entry| entry.byte_len())
-        .unwrap_or(0);
+    let escaped_bytes = escape_allocation_locked(&mut guard, ptr_value, current_frame_id);
     drop(guard);
-
-    // Monotonic accounting + budget enforcement. See the block comment above:
-    // the counter never decrements; breaching it is fatal via spectra_rt_panic.
-    let total =
-        FRAME0_ESCAPED_BYTES.fetch_add(escaped_bytes, std::sync::atomic::Ordering::Relaxed)
-            + escaped_bytes;
-    if let Err(message) = frame0_budget_check(total, frame0_budget_mb()) {
-        frame0_budget_abort(&message);
-    }
+    account_frame0_escape(escaped_bytes);
 }
 
 /// Re-parents a value that a runtime-owned container is about to store.
@@ -216,15 +223,14 @@ pub(crate) fn escape_stored_value(value: SpectraHostValue) {
     if value == 0 {
         return;
     }
-    let frame_id = {
-        let table = allocation_table();
-        let mut guard = table.lock().unwrap_or_else(|error| error.into_inner());
-        guard.current_frame_mut().map(|frame| frame.id)
-    };
-    let Some(frame_id) = frame_id else {
+    let table = allocation_table();
+    let mut guard = table.lock().unwrap_or_else(|error| error.into_inner());
+    let Some(frame_id) = guard.current_frame_mut().map(|frame| frame.id) else {
         return;
     };
-    spectra_rt_manual_escape(value as *mut u8, frame_id);
+    let escaped_bytes = escape_allocation_locked(&mut guard, value as usize, frame_id);
+    drop(guard);
+    account_frame0_escape(escaped_bytes);
 }
 
 /// Clears all outstanding manual allocations owned by the runtime.

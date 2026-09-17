@@ -1,0 +1,76 @@
+module stability_collection_fast_paths
+
+import std.collections as collections
+import std.option as option
+from std.collections import List, Map, Queue, Stack
+
+public func main() returns int {
+    let values: List<int> = collections.list_new()
+    collections.list_push(values, 4)
+    collections.list_push(values, 7)
+    collections.list_set(values, 0, 5)
+    if collections.list_len(values) != 2 or not collections.list_contains(values, 5) {
+        return 1
+    }
+
+    let list_sum = 0
+    for value in values {
+        list_sum = list_sum + value
+    }
+    if list_sum != 12 {
+        return 2
+    }
+
+    let missing_list = collections.list_get_option(values, 99)
+    if option.is_some(missing_list) or option.option_unwrap_or(missing_list, 41) != 41 {
+        return 3
+    }
+
+    let scores: Map<int, int> = collections.map_new()
+    collections.map_set(scores, 2, 20)
+    collections.map_set(scores, 3, 30)
+    if not collections.map_contains(scores, 2) or collections.map_len(scores) != 2 {
+        return 4
+    }
+    let score = collections.map_get_option(scores, 3)
+    if option.is_none(score) or option.option_unwrap(score) != 30 {
+        return 5
+    }
+    let missing_score = collections.map_get(scores, 99)
+    if option.is_some(missing_score) or option.option_unwrap_or(missing_score, 9) != 9 {
+        return 6
+    }
+
+    let map_sum = 0
+    for key in scores {
+        map_sum = map_sum + key
+    }
+    if map_sum != 5 {
+        return 7
+    }
+
+    let stack: Stack<int> = collections.stack_new()
+    collections.stack_push(stack, 10)
+    collections.stack_push(stack, 20)
+    if collections.stack_len(stack) != 2 or option.option_unwrap(collections.stack_peek(stack)) != 20 {
+        return 8
+    }
+    let stack_value = collections.stack_pop(stack)
+    if option.is_none(stack_value) or option.option_unwrap(stack_value) != 20 {
+        return 9
+    }
+
+    let queue: Queue<int> = collections.queue_new()
+    collections.queue_enqueue(queue, 30)
+    collections.queue_enqueue(queue, 40)
+    let queue_value = collections.queue_dequeue(queue)
+    if option.is_none(queue_value) or option.option_unwrap(queue_value) != 30 {
+        return 10
+    }
+
+    collections.list_free(values)
+    collections.map_free(scores)
+    collections.stack_free(stack)
+    collections.queue_free(queue)
+    return 0
+}

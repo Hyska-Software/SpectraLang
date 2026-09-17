@@ -1,0 +1,211 @@
+module fatorial
+
+import std.convert
+import std.io
+import std.string
+
+// Fatorial por recursao, pilha (LIFO) e fila (FIFO).
+//
+// As tres versoes multiplicam os mesmos fatores 2..N; a diferenca e a ORDEM em
+// que os fatores sao consumidos. Como a multiplicacao e comutativa, o resultado
+// final e o mesmo -- a estrutura de dados serve para deixar a ordem explicita.
+//
+// Limite desta versao: int e i64 (max 9223372036854775807), logo N vai ate 20
+// (20! = 2432902008176640000; 21! estoura). O Python original usa BigInt e vai
+// alem; aqui N > 20 e recusado com mensagem em vez de transbordar em silencio.
+
+// Capacidade das pilhas/filas estaticas: cobre N <= 20 com folga.
+func nova_pilha() returns[int] {
+    return[
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+}
+
+// A pilha aqui e implicita na versao recursiva: a call stack guarda
+// N, N-1, ... ate o caso base.
+func fatorial_recursivo(n: int) returns int {
+    if n > 1 {
+        return n * fatorial_recursivo(n - 1)
+    } else {
+        return 1
+    }
+}
+
+// Empilha N..2 e desempilha multiplicando: fatores saem na ordem 2, 3, ..., N.
+// E a volta da recursao (quem retorna primeiro e a chamada mais profunda),
+// mas sem gastar a call stack do interpretador.
+func fatorial_pilha(n: int) returns int {
+    let pilha = nova_pilha()
+    let topo  = 0
+    let v     = n
+    while v > 1 {
+        pilha[topo] = v
+        topo = topo + 1
+        v = v - 1
+    }
+    let resultado = 1
+    while topo > 0 {
+        topo = topo - 1
+        resultado = resultado * pilha[topo]
+    }
+    return resultado
+}
+
+// Enfileira N..2 e desenfileira multiplicando: fatores saem na ordem
+// N, N-1, ..., 2. E a descida da recursao: o primeiro da fila e o N,
+// o ultimo e o 2.
+func fatorial_fila(n: int) returns int {
+    let fila = nova_pilha()
+    let fim  = 0
+    let v    = n
+    while v > 1 {
+        fila[fim] = v
+        fim = fim + 1
+        v = v - 1
+    }
+    let resultado = 1
+    let cabeca    = 0
+    while cabeca < fim {
+        resultado = resultado * fila[cabeca]
+        cabeca = cabeca + 1
+    }
+    return resultado
+}
+
+// Texto "1 -> 2 -> 6 -> ..." na ordem LIFO (2..N), como no original.
+func parciais_pilha_str(n: int) returns string {
+    let pilha = nova_pilha()
+    let topo  = 0
+    let v     = n
+    while v > 1 {
+        pilha[topo] = v
+        topo = topo + 1
+        v = v - 1
+    }
+    let texto   = "1"
+    let parcial = 1
+    while topo > 0 {
+        topo = topo - 1
+        parcial = parcial * pilha[topo]
+        texto = concat(concat(texto, " -> "), int_to_string(parcial))
+    }
+    return texto
+}
+
+// Texto "1 -> N -> ..." na ordem FIFO (N..2), como no original.
+func parciais_fila_str(n: int) returns string {
+    let fila = nova_pilha()
+    let fim  = 0
+    let v    = n
+    while v > 1 {
+        fila[fim] = v
+        fim = fim + 1
+        v = v - 1
+    }
+    let texto   = "1"
+    let parcial = 1
+    let cabeca  = 0
+    while cabeca < fim {
+        parcial = parcial * fila[cabeca]
+        texto = concat(concat(texto, " -> "), int_to_string(parcial))
+        cabeca = cabeca + 1
+    }
+    return texto
+}
+
+// Parse estrito de inteiro: devolve (ok, valor). Rejeita texto vazio,
+// sinal solitario e qualquer caractere fora de [0-9] (com sinal inicial
+// opcional). Necessario porque string_to_int devolve 0 tanto para "0"
+// quanto para erro, e aqui "0" e valido mas "abc" nao e.
+func parse_rec(texto: string, idx: int, n: int, neg: bool, val: int, ndig: int) returns(bool, int) {
+    if idx >= n {
+        if ndig == 0 {
+            return( false, 0)
+        } else {
+            if neg {
+                return( true, 0 - val)
+            } else {
+                return( true, val)
+            }
+        }
+    } else {
+        let code = char_at(texto, idx)
+        if idx == 0 and(code == 45 or code == 43) {
+            if idx + 1 >= n {
+                return( false, 0)
+            } else {
+                if code == 45 {
+                    return parse_rec(texto, idx + 1, n, true, val, ndig)
+                } else {
+                    return parse_rec(texto, idx + 1, n, false, val, ndig)
+                }
+            }
+        } else {
+            if code < 48 or code > 57 {
+                return( false, 0)
+            } else {
+                return parse_rec(texto, idx + 1, n, neg, val * 10 + (code - 48), ndig + 1)
+            }
+        }
+    }
+}
+
+func parse_int(texto: string) returns(bool, int) {
+    return parse_rec(texto, 0, len(texto), false, 0, 0)
+}
+
+public func main() returns int {
+    let lido = input("Digite N: ")
+    let r    = parse_int(lido)
+    if not r.0 {
+        println("Entrada invalida: digite um numero inteiro.")
+        return 0
+    }
+    let n = r.1
+    if n < 0 {
+        println("Nao existe fatorial de numero negativo.")
+        return 0
+    }
+    if n > 20 {
+        println("N fora do intervalo suportado (0..20): int e i64 e 21! transborda.")
+        return 0
+    }
+    let rec      = fatorial_recursivo(n)
+    let respilha = fatorial_pilha(n)
+    let resfila  = fatorial_fila(n)
+    println(f"recursivo : {n}! = {rec}")
+    println(f"pilha     : {n}! = {respilha}  parciais: {parciais_pilha_str(n)}")
+    println(f"fila      : {n}! = {resfila}  parciais: {parciais_fila_str(n)}")
+    return 0
+}

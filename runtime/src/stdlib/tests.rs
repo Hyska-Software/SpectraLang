@@ -770,6 +770,67 @@ fn collections_list_lifecycle() {
 }
 
 #[test]
+fn collection_fast_paths_preserve_values_and_handles() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    crate::ffi::spectra_rt_manual_clear();
+
+    let list = crate::stdlib::list_new_fast() as usize;
+    assert_ne!(list, 0);
+    assert_eq!(crate::stdlib::list_push_fast(list, 11), HOST_STATUS_SUCCESS);
+    assert_eq!(crate::stdlib::list_push_fast(list, 22), HOST_STATUS_SUCCESS);
+    assert_eq!(crate::stdlib::list_len_fast(list), 2);
+    let first = crate::stdlib::list_get_fast(list, 0);
+    assert_eq!(unsafe { tagged_result_parts(first) }, (0, 11));
+    let missing = crate::stdlib::list_get_fast(list, 99);
+    assert_eq!(missing, crate::stdlib::list_get_fast(list, 100));
+    assert_eq!(unsafe { tagged_result_parts(missing) }, (1, 0));
+
+    let map = crate::stdlib::map_new_fast();
+    assert_ne!(map, 0);
+    assert_eq!(crate::stdlib::map_set_fast(map as usize, 7, 70), HOST_STATUS_SUCCESS);
+    assert_eq!(crate::stdlib::map_contains_fast(map as usize, 7), 1);
+    assert_eq!(
+        unsafe { tagged_result_parts(crate::stdlib::map_get_fast(map as usize, 7)) },
+        (0, 70)
+    );
+
+    let stack = crate::stdlib::stack_new_fast() as usize;
+    assert_ne!(stack, 0);
+    assert_eq!(crate::stdlib::stack_push_fast(stack, 31), HOST_STATUS_SUCCESS);
+    assert_eq!(
+        unsafe { tagged_result_parts(crate::stdlib::stack_peek_fast(stack)) },
+        (0, 31)
+    );
+
+    let queue = crate::stdlib::queue_new_fast() as usize;
+    assert_ne!(queue, 0);
+    assert_eq!(crate::stdlib::queue_enqueue_fast(queue, 41), HOST_STATUS_SUCCESS);
+    assert_eq!(
+        unsafe { tagged_result_parts(crate::stdlib::queue_dequeue_fast(queue)) },
+        (0, 41)
+    );
+
+    let iterator = crate::stdlib::insert_iterator(vec![51, 52]).expect("iterator");
+    assert_eq!(crate::stdlib::iterator_remaining_fast(iterator), 2);
+    assert_eq!(crate::stdlib::iterator_next_unchecked_fast(iterator), 51);
+    assert_eq!(crate::stdlib::iterator_remaining_fast(iterator), 1);
+    assert_eq!(
+        unsafe { tagged_result_parts(crate::stdlib::iterator_next_fast(iterator)) },
+        (0, 52)
+    );
+    assert_eq!(crate::stdlib::iterator_remaining_fast(iterator), 0);
+
+    assert_eq!(crate::stdlib::list_free_fast(list), HOST_STATUS_SUCCESS);
+    assert_eq!(crate::stdlib::map_free_fast(map as usize), ());
+    assert_eq!(crate::stdlib::stack_free_fast(stack), HOST_STATUS_SUCCESS);
+    assert_eq!(crate::stdlib::queue_free_fast(queue), HOST_STATUS_SUCCESS);
+    assert_eq!(crate::stdlib::iterator_free_fast(iterator), HOST_STATUS_SUCCESS);
+    crate::ffi::spectra_rt_manual_clear();
+}
+
+#[test]
 fn tensor_runtime_lifecycle_and_elementwise_ops() {
     let _lock = test_guard();
     clear_host_functions();

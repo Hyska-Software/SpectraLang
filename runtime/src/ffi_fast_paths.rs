@@ -360,6 +360,359 @@ pub extern "C" fn spectra_rt_map_free_fast(handle: SpectraHostValue) {
     crate::stdlib::map_free_fast(handle as usize)
 }
 
+// ── Collection fast ABI -----------------------------------------------------
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_new_fast() -> SpectraHostValue {
+    crate::stdlib::list_new_fast()
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_push_fast(
+    handle: SpectraHostValue,
+    value: SpectraHostValue,
+) -> i32 {
+    crate::stdlib::list_push_fast(handle as usize, value)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_len_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::list_len_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_get_fast(
+    handle: SpectraHostValue,
+    index: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::list_get_fast(handle as usize, index)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_get_option_fast(
+    handle: SpectraHostValue,
+    index: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::list_get_fast(handle as usize, index)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_set_fast(
+    handle: SpectraHostValue,
+    index: SpectraHostValue,
+    value: SpectraHostValue,
+) -> i32 {
+    crate::stdlib::list_set_fast(handle as usize, index, value)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_contains_fast(
+    handle: SpectraHostValue,
+    value: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::list_contains_fast(handle as usize, value)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_clear_fast(handle: SpectraHostValue) -> i32 {
+    crate::stdlib::list_clear_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_free_fast(handle: SpectraHostValue) -> i32 {
+    crate::stdlib::list_free_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_free_all_fast() -> SpectraHostValue {
+    crate::stdlib::list_free_all_fast()
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_pop_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::list_pop_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_pop_front_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::list_pop_front_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_pop_option_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::list_pop_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_pop_front_option_fast(
+    handle: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::list_pop_front_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_insert_at_fast(
+    handle: SpectraHostValue,
+    index: SpectraHostValue,
+    value: SpectraHostValue,
+) -> i32 {
+    crate::stdlib::list_insert_at_fast(handle as usize, index, value)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_remove_at_fast(
+    handle: SpectraHostValue,
+    index: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::list_remove_at_fast(handle as usize, index)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_remove_at_option_fast(
+    handle: SpectraHostValue,
+    index: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::list_remove_at_fast(handle as usize, index)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_index_of_fast(
+    handle: SpectraHostValue,
+    value: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::list_index_of_fast(handle as usize, value)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_list_sort_fast(handle: SpectraHostValue) -> i32 {
+    crate::stdlib::list_sort_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_get_fast(
+    handle: SpectraHostValue,
+    key: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::map_get_fast(handle as usize, key)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_get_option_fast(
+    handle: SpectraHostValue,
+    key: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::map_get_fast(handle as usize, key)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_remove_fast(
+    handle: SpectraHostValue,
+    key: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::map_remove_fast(handle as usize, key)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_remove_option_fast(
+    handle: SpectraHostValue,
+    key: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::map_remove_fast(handle as usize, key)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_is_empty_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::map_is_empty_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_free_all_fast() -> SpectraHostValue {
+    crate::stdlib::map_free_all_fast()
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_clear_status_fast(handle: SpectraHostValue) -> i32 {
+    crate::stdlib::map_clear_fast_collection(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_map_free_status_fast(handle: SpectraHostValue) -> i32 {
+    crate::stdlib::map_free_fast_collection(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_stack_new_fast() -> SpectraHostValue {
+    crate::stdlib::stack_new_fast()
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_stack_push_fast(
+    handle: SpectraHostValue,
+    value: SpectraHostValue,
+) -> i32 {
+    crate::stdlib::stack_push_fast(handle as usize, value)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_stack_pop_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::stack_pop_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_stack_peek_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::stack_peek_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_stack_len_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::stack_len_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_stack_is_empty_fast(
+    handle: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::stack_is_empty_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_stack_clear_fast(handle: SpectraHostValue) -> i32 {
+    crate::stdlib::stack_clear_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_stack_free_fast(handle: SpectraHostValue) -> i32 {
+    crate::stdlib::stack_free_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_stack_free_all_fast() -> SpectraHostValue {
+    crate::stdlib::stack_free_all_fast()
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_queue_new_fast() -> SpectraHostValue {
+    crate::stdlib::queue_new_fast()
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_queue_enqueue_fast(
+    handle: SpectraHostValue,
+    value: SpectraHostValue,
+) -> i32 {
+    crate::stdlib::queue_enqueue_fast(handle as usize, value)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_queue_dequeue_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::queue_dequeue_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_queue_peek_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::queue_peek_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_queue_len_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::queue_len_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_queue_is_empty_fast(
+    handle: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::queue_is_empty_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_queue_clear_fast(handle: SpectraHostValue) -> i32 {
+    crate::stdlib::queue_clear_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_queue_free_fast(handle: SpectraHostValue) -> i32 {
+    crate::stdlib::queue_free_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_queue_free_all_fast() -> SpectraHostValue {
+    crate::stdlib::queue_free_all_fast()
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_iterator_next_fast(handle: SpectraHostValue) -> SpectraHostValue {
+    crate::stdlib::iterator_next_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_iterator_next_unchecked_fast(
+    handle: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::iterator_next_unchecked_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_iterator_remaining_fast(
+    handle: SpectraHostValue,
+) -> SpectraHostValue {
+    crate::stdlib::iterator_remaining_fast(handle as usize)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn spectra_rt_iterator_free_fast(handle: SpectraHostValue) -> i32 {
+    crate::stdlib::iterator_free_fast(handle as usize)
+}
+
 /// Fast ABI entry for `concurrent.channel_new()`.
 ///
 /// Skips the generic host-call dispatch. Returns the new channel id

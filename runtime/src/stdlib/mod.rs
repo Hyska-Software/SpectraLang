@@ -53,6 +53,10 @@ pub(crate) use list_registry::*;
 mod string_map_fast;
 pub use string_map_fast::*;
 
+#[path = "collections_fast.rs"]
+mod collections_fast;
+pub use collections_fast::*;
+
 #[path = "ml_tensor_fast.rs"]
 mod ml_tensor_fast;
 pub use ml_tensor_fast::*;

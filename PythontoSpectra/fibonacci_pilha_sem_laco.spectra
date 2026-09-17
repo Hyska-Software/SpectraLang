@@ -1,0 +1,222 @@
+module fibonacci_pilha_sem_laco
+
+from std.collections import List
+import std.collections as col
+import std.convert
+import std.env
+import std.io
+import std.option as option
+import std.string
+
+// Fibonacci com pilha explicita (LIFO), sem nenhuma repeticao por
+// palavra-chave de ciclo: cada passo e uma chamada recursiva.
+//
+// Uso:
+//     spectralang run fibonacci_pilha_sem_laco.spectra
+//     spectralang run fibonacci_pilha_sem_laco.spectra -- 10
+//     spectralang run fibonacci_pilha_sem_laco.spectra -- 10 --traco
+//
+// Diferenca em relacao ao fatorial: aqui o elemento retirado NAO e o
+// operando, e sim o indice do passo -- f(k) = f(k-1) + f(k-2). Os dois
+// valores vivos da recorrencia ficam em dois registradores (a, b), nao na
+// pilha. O topo comeca em 2 e sobe ate N, entao o k retirado e exatamente
+// o indice que esta sendo formado; empilhar N..2 e retirar em ordem
+// crescente e o que garante isso.
+//
+// Cada passo recebe (k, a, b, novo) em quatro listas paralelas, na ordem
+// dos pop. Antes do passo: a = f(k-2), b = f(k-1). Depois: o par vira
+// (b, a + b) e o passo guarda (k, a, b, a + b).
+//
+// Limites desta versao: int e i64, logo N vai ate 92 (fib(92) =
+// 7540113804746346429; fib(93) transborda; o Python original usa BigInt).
+// A profundidade da recursao e O(N); com N <= 92 isso e irrelevante, e nao
+// ha teto de ~997 chamadas como no CPython.
+
+// Empilha N, N-1, ..., 2: um elemento por passo da recorrencia.
+func empilha(n: int, pilha: List<int>) returns int {
+    if n > 1 {
+        col.list_push(pilha, n)
+        return empilha(n - 1, pilha)
+    } else {
+        return 0
+    }
+}
+
+// Um passo por chamada: (a, b) = (b, a + b). Devolve f(N) ao esvaziar.
+func desempilha(pilha: List<int>, a: int, b: int, ks: List<int>, pas: List<int>, pbs: List<int>, novos: List<int>) returns int {
+    if col.list_len(pilha) > 0 {
+        let o = col.list_pop(pilha)
+        if option.is_some(o) {
+            let k    = option.option_unwrap(o)
+            let novo = a + b
+            col.list_push(ks, k)
+            col.list_push(pas, a)
+            col.list_push(pbs, b)
+            col.list_push(novos, novo)
+            return desempilha(pilha, b, novo, ks, pas, pbs, novos)
+        } else {
+            return b
+        }
+    } else {
+        return b
+    }
+}
+
+// Devolve f(N); f(0) = 0 e f(1) = 1 sao os casos base.
+func fibonacci(n: int, ks: List<int>, pas: List<int>, pbs: List<int>, novos: List<int>) returns int {
+    if n == 0 {
+        return 0
+    } else {
+        let pilha: List<int> = col.list_new()
+        empilha(n, pilha)
+        let resultado = desempilha(pilha, 0, 1, ks, pas, pbs, novos)
+        col.list_free(pilha)
+        return resultado
+    }
+}
+
+// Imprime um passo por linha: uma chamada recursiva por linha.
+func imprime_passos(ks: List<int>, pas: List<int>, pbs: List<int>, novos: List<int>, total: int, i: int, largura: int) {
+    if i < total {
+        let ok = col.list_get(ks, i)
+        let oa = col.list_get(pas, i)
+        let ob = col.list_get(pbs, i)
+        let on = col.list_get(novos, i)
+        if option.is_some(ok) and option.is_some(oa) and option.is_some(ob) and option.is_some(on) {
+            let k    = option.option_unwrap(ok)
+            let a    = option.option_unwrap(oa)
+            let b    = option.option_unwrap(ob)
+            let novo = option.option_unwrap(on)
+            let num  = pad_left(int_to_string(i + 1), largura, 32)
+            println(f"{num}. desempilha {k} : {a} + {b} = {novo}")
+            imprime_passos(ks, pas, pbs, novos, total, i + 1, largura)
+            return
+        } else {
+            return
+        }
+    } else {
+        return
+    }
+}
+
+func parse_rec(texto: string, idx: int, n: int, neg: bool, val: int, ndig: int) returns(bool, int) {
+    if idx >= n {
+        if ndig == 0 {
+            return( false, 0)
+        } else {
+            if neg {
+                return( true, 0 - val)
+            } else {
+                return( true, val)
+            }
+        }
+    } else {
+        let code = char_at(texto, idx)
+        if idx == 0 and(code == 45 or code == 43) {
+            if idx + 1 >= n {
+                return( false, 0)
+            } else {
+                if code == 45 {
+                    return parse_rec(texto, idx + 1, n, true, val, ndig)
+                } else {
+                    return parse_rec(texto, idx + 1, n, false, val, ndig)
+                }
+            }
+        } else {
+            if code < 48 or code > 57 {
+                return( false, 0)
+            } else {
+                return parse_rec(texto, idx + 1, n, neg, val * 10 + (code - 48), ndig + 1)
+            }
+        }
+    }
+}
+
+func parse_int(texto: string) returns(bool, int) {
+    return parse_rec(texto, 0, len(texto), false, 0, 0)
+}
+
+func num_digitos(n: int) returns int {
+    if n < 10 {
+        return 1
+    } else {
+        return 1 + num_digitos(n / 10)
+    }
+}
+
+func arg_ou_vazio(i: int) returns string {
+    let o = env_arg(i)
+    if option.is_some(o) {
+        return option.option_unwrap(o)
+    } else {
+        return ""
+    }
+}
+
+func tem_traco(idx: int, argc: int) returns bool {
+    if idx >= argc {
+        return false
+    } else {
+        if arg_ou_vazio(idx) == "--traco" {
+            return true
+        } else {
+            return tem_traco(idx + 1, argc)
+        }
+    }
+}
+
+func busca_texto(idx: int, argc: int) returns string {
+    if idx >= argc {
+        return ""
+    } else {
+        let a = arg_ou_vazio(idx)
+        if a == "--traco" or a == "" {
+            return busca_texto(idx + 1, argc)
+        } else {
+            return a
+        }
+    }
+}
+
+public func main() returns int {
+    let argc          = env_args_count()
+    let mostrar_traco = tem_traco(1, argc)
+    let texto_n       = busca_texto(1, argc)
+    let lido          = texto_n
+    if lido == "" {
+        lido = input("Digite N: ")
+    }
+    let r = parse_int(lido)
+    if not r.0 {
+        println("Entrada invalida: digite um numero inteiro.")
+        return 0
+    }
+    let n = r.1
+    if n < 0 {
+        println("Nao existe Fibonacci de numero negativo.")
+        return 0
+    }
+    if n > 92 {
+        println("N fora do intervalo suportado (0..92): int e i64 e fib(93) transborda.")
+        return 0
+    }
+    let ks: List<int>    = col.list_new()
+    let pas: List<int>   = col.list_new()
+    let pbs: List<int>   = col.list_new()
+    let novos: List<int> = col.list_new()
+    let resultado        = fibonacci(n, ks, pas, pbs, novos)
+    println(f"fib({n}) = {resultado}")
+    if mostrar_traco {
+        let total = col.list_len(ks)
+        if total == 0 {
+            println(f"sem passos: caso base fib({n}) = {resultado}")
+        } else {
+            imprime_passos(ks, pas, pbs, novos, total, 0, num_digitos(total))
+        }
+    }
+    col.list_free(ks)
+    col.list_free(pas)
+    col.list_free(pbs)
+    col.list_free(novos)
+    return 0
+}

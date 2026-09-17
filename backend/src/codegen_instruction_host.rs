@@ -1,4 +1,136 @@
 impl CodeGenerator {
+    fn is_collection_fast_call(fast: FastHostCall) -> bool {
+        matches!(
+            fast,
+            FastHostCall::MapSet
+                | FastHostCall::MapContains
+                | FastHostCall::MapNew
+                | FastHostCall::MapLen
+                | FastHostCall::MapClear
+                | FastHostCall::MapFree
+                | FastHostCall::ListNew
+                | FastHostCall::ListPush
+                | FastHostCall::ListLen
+                | FastHostCall::ListGet
+                | FastHostCall::ListGetOption
+                | FastHostCall::ListSet
+                | FastHostCall::ListContains
+                | FastHostCall::ListClear
+                | FastHostCall::ListFree
+                | FastHostCall::ListFreeAll
+                | FastHostCall::ListPop
+                | FastHostCall::ListPopFront
+                | FastHostCall::ListPopOption
+                | FastHostCall::ListPopFrontOption
+                | FastHostCall::ListInsertAt
+                | FastHostCall::ListRemoveAt
+                | FastHostCall::ListRemoveAtOption
+                | FastHostCall::ListIndexOf
+                | FastHostCall::ListSort
+                | FastHostCall::MapGet
+                | FastHostCall::MapGetOption
+                | FastHostCall::MapRemove
+                | FastHostCall::MapRemoveOption
+                | FastHostCall::MapIsEmpty
+                | FastHostCall::MapFreeAll
+                | FastHostCall::StackNew
+                | FastHostCall::StackPush
+                | FastHostCall::StackPop
+                | FastHostCall::StackPeek
+                | FastHostCall::StackLen
+                | FastHostCall::StackIsEmpty
+                | FastHostCall::StackClear
+                | FastHostCall::StackFree
+                | FastHostCall::StackFreeAll
+                | FastHostCall::QueueNew
+                | FastHostCall::QueueEnqueue
+                | FastHostCall::QueueDequeue
+                | FastHostCall::QueuePeek
+                | FastHostCall::QueueLen
+                | FastHostCall::QueueIsEmpty
+                | FastHostCall::QueueClear
+                | FastHostCall::QueueFree
+                | FastHostCall::QueueFreeAll
+                | FastHostCall::IteratorNext
+                | FastHostCall::IteratorNextUnchecked
+                | FastHostCall::IteratorRemaining
+                | FastHostCall::IteratorFree
+        )
+    }
+
+    /// Emits the uniform i64-word ABI used by collection operations. Keeping
+    /// this in one lowering path makes float payloads and narrow integer
+    /// payloads obey the same canonical conversion as generic host calls.
+    fn emit_collection_fast_instruction<M: Module>(
+        module: &mut M,
+        hostcall: &mut HostCallLoweringContext<'_>,
+        builder: &mut FunctionBuilder,
+        fast_hostcall: HostCallClass,
+        args: &[IRValue],
+        result: Option<&IRValue>,
+        result_type: Option<&IRType>,
+        value_map: &mut DenseValueMap,
+    ) -> BackendResult<bool> {
+        let HostCallClass::Fast(fast) = fast_hostcall else {
+            return Ok(false);
+        };
+        if !Self::is_collection_fast_call(fast) {
+            return Ok(false);
+        }
+
+        let mut call_args = Vec::with_capacity(args.len());
+        for arg in args {
+            let value = value_map
+                .get(arg.id)
+                .ok_or_else(|| BackendCodegenError::missing_value(arg.id))?;
+            call_args.push(Self::host_argument_to_i64(builder, value, fast.host_name())?);
+        }
+
+        let func_ref = module.declare_func_in_func(
+            hostcall.fast_func(fast),
+            builder.func,
+        );
+        let call = builder.ins().call(func_ref, &call_args);
+        if matches!(
+            fast.runtime_import().signature().returns,
+            [spectra_runtime::abi::AbiScalar::I32]
+        ) {
+            let status = builder.inst_results(call)[0];
+            let zero = builder.ins().iconst(types::I32, 0);
+            let is_ok = builder.ins().icmp(IntCC::Equal, status, zero);
+            let success_block = builder.create_block();
+            let failure_block = builder.create_block();
+            builder
+                .ins()
+                .brif(is_ok, success_block, &[], failure_block, &[]);
+
+            builder.switch_to_block(failure_block);
+            Self::emit_runtime_panic(
+                module,
+                hostcall,
+                builder,
+                &format!("fast collection host call '{}' failed", fast.host_name()),
+            )?;
+            builder.seal_block(failure_block);
+
+            builder.switch_to_block(success_block);
+            builder.seal_block(success_block);
+        }
+        if let Some(result_value) = result {
+            if let Some(raw_value) = builder.inst_results(call).first().copied() {
+                let raw_value = match fast.runtime_import().signature().returns {
+                    [spectra_runtime::abi::AbiScalar::I32] => {
+                        builder.ins().sextend(types::I64, raw_value)
+                    }
+                    _ => raw_value,
+                };
+                let value = Self::convert_host_result_value(builder, raw_value, result_type)?;
+                value_map.insert(result_value.id, value);
+            }
+        }
+        Ok(true)
+    }
+
     fn generate_host_instruction<M: Module>(
         module: &mut M,
         hostcall: &mut HostCallLoweringContext<'_>,
@@ -8,12 +140,6 @@ impl CodeGenerator {
         stack_array_lengths: &mut HashMap<usize, i64>,
         string_literal_lengths: &mut HashMap<usize, i64>,
     ) -> BackendResult<()> {
-        let get_value = |v: &IRValue| -> BackendResult<Value> {
-            value_map
-                .get(v.id)
-                .ok_or_else(|| BackendCodegenError::missing_value(v.id))
-        };
-
         match kind {
             InstructionKind::HostCall {
                 result,
@@ -22,6 +148,25 @@ impl CodeGenerator {
                 result_type,
             } => {
                 let fast_hostcall = resolve_host_call(host, args.len());
+
+                if Self::emit_collection_fast_instruction(
+                    module,
+                    hostcall,
+                    builder,
+                    fast_hostcall,
+                    args,
+                    result.as_ref(),
+                    result_type.as_ref(),
+                    value_map,
+                )? {
+                    return Ok(());
+                }
+
+                let get_value = |v: &IRValue| -> BackendResult<Value> {
+                    value_map
+                        .get(v.id)
+                        .ok_or_else(|| BackendCodegenError::missing_value(v.id))
+                };
 
                 if matches!(
                     fast_hostcall,
