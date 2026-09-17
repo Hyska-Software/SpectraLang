@@ -1,0 +1,70 @@
+module topo_sort
+
+from std.io import println
+
+// Kahn para ordenacao de dependencias (teste do package manager):
+// indeg = no. de deps; ao concluir um pacote, decrementa os dependentes.
+// Ordem valida: toda dep sai antes do dependente. Ciclo => count < n.
+
+func kahn(n: int, indeg: [int], dstart: [int], dflat: [int], order: [int]) returns int {
+    let queue = [0, 0, 0, 0, 0]
+    let qh    = 0
+    let qt    = 0
+    let i     = 0
+    while i < n {
+        if indeg[i] == 0 {
+            queue[qt] = i
+            qt = qt + 1
+        }
+        i = i + 1
+    }
+    let oi = 0
+    while qh < qt {
+        let u = queue[qh]
+        qh = qh + 1
+        order[oi] = u
+        oi = oi + 1
+        let e = dstart[u]
+        while e < dstart[u + 1] {
+            let w = dflat[e]
+            indeg[w] = indeg[w] - 1
+            if indeg[w] == 0 {
+                queue[qt] = w
+                qt = qt + 1
+            }
+            e = e + 1
+        }
+    }
+    return oi
+}
+
+public func main() returns int {
+    let indeg  = [2, 1, 2, 0, 0]
+    let dstart = [0, 0, 1, 2, 4, 5]
+    let dflat  = [0, 0, 1, 2, 2]
+    let order  = [0, 0, 0, 0, 0]
+    if kahn(5, indeg, dstart, dflat, order) != 5 {
+        return 1
+    }
+    let pos = [0, 0, 0, 0, 0]
+    let i   = 0
+    while i < 5 {
+        pos[order[i]] = i
+        i = i + 1
+    }
+    if pos[1] >= pos[0] or pos[2] >= pos[0] {
+        return 2
+    }
+    if pos[3] >= pos[1] or pos[3] >= pos[2] or pos[4] >= pos[2] {
+        return 3
+    }
+    let indeg_c  = [1, 1, 1]
+    let dstart_c = [0, 1, 2, 3]
+    let dflat_c  = [2, 0, 1]
+    let order_c  = [0, 0, 0]
+    if kahn(3, indeg_c, dstart_c, dflat_c, order_c) == 3 {
+        return 4
+    }
+    println("PASS topo_sort: ordem valida + ciclo detectado")
+    return 0
+}

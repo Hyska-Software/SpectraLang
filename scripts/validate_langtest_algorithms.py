@@ -31,6 +31,13 @@ FILES = [
     "19_levenshtein_diff.spectra",
     "20_concolic_paths.spectra",
     "21_grammar_fuzzer.spectra",
+    "22_dpll_sat.spectra",
+    "23_tarjan_scc.spectra",
+    "24_kmp_search.spectra",
+    "25_graph_coloring.spectra",
+    "26_mark_sweep.spectra",
+    "27_packrat_memo.spectra",
+    "28_topo_sort.spectra",
 ]
 
 

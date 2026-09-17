@@ -1,0 +1,125 @@
+module graph_coloring
+
+from std.io import println
+
+// Chaitin-Briggs simplify/select (alocacao de registradores do backend):
+// remove no de grau<K empilhando, spill guess por maior grau, colore com a
+// menor cor livre. K=3. A eh colorivel; K4 exige spill.
+
+func degree(adj: [int], n: int, v: int, removed: [int]) returns int {
+    let d = 0
+    let u = 0
+    while u < n {
+        if removed[u] == 0 and adj[v * n + u] == 1 {
+            d = d + 1
+        }
+        u = u + 1
+    }
+    return d
+}
+
+func colorize(adj: [int], n: int, k: int, color: [int], removed: [int], stack: [int]) returns int {
+    let v = 0
+    while v < n {
+        color[v] = -1
+        removed[v] = 0
+        v = v + 1
+    }
+    let sp        = 0
+    let remaining = n
+    while remaining > 0 {
+        let pick = -1
+        v = 0
+        while v < n {
+            if pick == -1 and removed[v] == 0 and degree(adj, n, v, removed) < k {
+                pick = v
+            }
+            v = v + 1
+        }
+        if pick == -1 {
+            let best = -1
+            v = 0
+            while v < n {
+                if removed[v] == 0 and degree(adj, n, v, removed) > best {
+                    best = degree(adj, n, v, removed)
+                    pick = v
+                }
+                v = v + 1
+            }
+        }
+        stack[sp] = pick
+        sp = sp + 1
+        removed[pick] = 1
+        remaining = remaining - 1
+    }
+    let used    = [0, 0, 0, 0, 0]
+    let spilled = 0
+    while sp > 0 {
+        sp = sp - 1
+        v = stack[sp]
+        let c = 0
+        while c < k {
+            used[c] = 0
+            c = c + 1
+        }
+        let u = 0
+        while u < n {
+            if adj[v * n + u] == 1 and color[u] >= 0 and color[u] < k {
+                used[color[u]] = 1
+            }
+            u = u + 1
+        }
+        let choice = -1
+        c = 0
+        while c < k {
+            if choice == -1 and used[c] == 0 {
+                choice = c
+            }
+            c = c + 1
+        }
+        if choice == -1 {
+            color[v] = -2
+            spilled = spilled + 1
+        } else {
+            color[v] = choice
+        }
+    }
+    return spilled
+}
+
+func coloring_valid(adj: [int], n: int, color: [int]) returns bool {
+    let v = 0
+    while v < n {
+        let u = v + 1
+        while u < n {
+            if adj[v * n + u] == 1 and color[v] >= 0 and color[u] >= 0 and color[v] == color[u] {
+                return false
+            }
+            u = u + 1
+        }
+        v = v + 1
+    }
+    return true
+}
+
+public func main() returns int {
+    let adj_a     = [0, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0]
+    let color_a   = [-1, -1, -1, -1, -1]
+    let removed_a = [0, 0, 0, 0, 0]
+    let stack_a   = [0, 0, 0, 0, 0]
+    if colorize(adj_a, 5, 3, color_a, removed_a, stack_a) != 0 {
+        return 1
+    }
+    if not coloring_valid(adj_a, 5, color_a) {
+        return 2
+    }
+    let adj_b     = [0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0]
+    let color_b   = [-1, -1, -1, -1]
+    let removed_b = [0, 0, 0, 0]
+    let stack_b   = [0, 0, 0, 0]
+    if colorize(adj_b, 4, 3, color_b, removed_b, stack_b) < 1 {
+        return 3
+    }
+    println("PASS graph_coloring: K3 colore A, K4 exige spill")
+    return 0
+}

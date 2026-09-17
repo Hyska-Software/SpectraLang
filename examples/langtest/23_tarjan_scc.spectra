@@ -1,0 +1,75 @@
+module tarjan_scc
+
+from std.io import println
+
+// Tarjan SCC recursivo (deteccao de ciclos em call-graph): index/lowlink,
+// pilha explicita e single-elem arrays como out-params (idioma do 524).
+// Grafo: 0->1, 1->2|3, 2->0|3, 3->4, 4->5, 5->3 => SCCs {0,1,2} e {3,4,5}.
+
+func strongconnect(v: int, start: [int], edges: [int], index: [int], low: [int], onstack: [int], stack: [int], top: [int], counter: [int], scc: [int], ncomp: [int]) {
+    index[v] = counter[0]
+    low[v] = counter[0]
+    counter[0] = counter[0] + 1
+    stack[top[0]] = v
+    top[0] = top[0] + 1
+    onstack[v] = 1
+    let e = start[v]
+    while e < start[v + 1] {
+        let w = edges[e]
+        if index[w] == -1 {
+            strongconnect(w, start, edges, index, low, onstack, stack, top, counter, scc, ncomp)
+            if low[w] < low[v] {
+                low[v] = low[w]
+            }
+        } else {
+            if onstack[w] == 1 and index[w] < low[v] {
+                low[v] = index[w]
+            }
+        }
+        e = e + 1
+    }
+    if low[v] == index[v] {
+        let w = -1
+        while w != v {
+            top[0] = top[0] - 1
+            w = stack[top[0]]
+            onstack[w] = 0
+            scc[w] = ncomp[0]
+        }
+        ncomp[0] = ncomp[0] + 1
+    }
+}
+
+public func main() returns int {
+    let start   = [0, 1, 3, 5, 6, 7, 8]
+    let edges   = [1, 2, 3, 0, 3, 4, 5, 3]
+    let index   = [-1, -1, -1, -1, -1, -1]
+    let low     = [0, 0, 0, 0, 0, 0]
+    let onstack = [0, 0, 0, 0, 0, 0]
+    let stack   = [0, 0, 0, 0, 0, 0]
+    let top     = [0]
+    let counter = [0]
+    let scc     = [-1, -1, -1, -1, -1, -1]
+    let ncomp   = [0]
+    let v       = 0
+    while v < 6 {
+        if index[v] == -1 {
+            strongconnect(v, start, edges, index, low, onstack, stack, top, counter, scc, ncomp)
+        }
+        v = v + 1
+    }
+    if ncomp[0] != 2 {
+        return 1
+    }
+    if scc[0] != scc[1] or scc[1] != scc[2] {
+        return 2
+    }
+    if scc[3] != scc[4] or scc[4] != scc[5] {
+        return 3
+    }
+    if scc[0] == scc[3] {
+        return 4
+    }
+    println("PASS tarjan_scc: 2 componentes, ciclo {0,1,2} isolado")
+    return 0
+}

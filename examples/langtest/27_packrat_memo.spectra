@@ -1,0 +1,158 @@
+module packrat_memo
+
+from std.io import println
+
+// PEG com memoizacao (packrat): tabela (regra,pos)->(valor,nova_pos) com
+// MISS sentinel. Segunda passada sobre a mesma entrada so da cache hit,
+// o contrato que garante tempo linear. Tokens: 0=NUM 1=+ 2=- 3=* 4=/ 5=( 6=) 7=EOF.
+
+func memo_get(memo_v: [int], memo_p: [int], rule: int, pos: int, out_pos: [int]) returns int {
+    let key = rule * 8 + pos
+    if memo_v[key] != -99999 {
+        out_pos[0] = memo_p[key]
+        return memo_v[key]
+    }
+    return-99999
+}
+
+func memo_put(memo_v: [int], memo_p: [int], rule: int, pos: int, val: int, newpos: int) {
+    let key = rule * 8 + pos
+    memo_v[key] = val
+    memo_p[key] = newpos
+}
+
+func parse_e(kinds: [int], values: [int], pos: [int], memo_v: [int], memo_p: [int], hits: [int], stores: [int]) returns int {
+    let cached_pos = [-1]
+    let cached     = memo_get(memo_v, memo_p, 0, pos[0], cached_pos)
+    if cached != -99999 {
+        hits[0] = hits[0] + 1
+        pos[0] = cached_pos[0]
+        return cached
+    }
+    let start = pos[0]
+    let value = parse_t(kinds, values, pos, memo_v, memo_p, hits, stores)
+    while true {
+        let kind = kinds[pos[0]]
+        if kind != 1 and kind != 2 {
+            memo_put(memo_v, memo_p, 0, start, value, pos[0])
+            stores[0] = stores[0] + 1
+            return value
+        }
+        pos[0] = pos[0] + 1
+        let right = parse_t(kinds, values, pos, memo_v, memo_p, hits, stores)
+        if kind == 1 {
+            value = value + right
+        } else {
+            value = value - right
+        }
+    }
+    return value
+}
+
+func parse_t(kinds: [int], values: [int], pos: [int], memo_v: [int], memo_p: [int], hits: [int], stores: [int]) returns int {
+    let cached_pos = [-1]
+    let cached     = memo_get(memo_v, memo_p, 1, pos[0], cached_pos)
+    if cached != -99999 {
+        hits[0] = hits[0] + 1
+        pos[0] = cached_pos[0]
+        return cached
+    }
+    let start = pos[0]
+    let value = parse_f(kinds, values, pos, memo_v, memo_p, hits, stores)
+    while true {
+        let kind = kinds[pos[0]]
+        if kind != 3 and kind != 4 {
+            memo_put(memo_v, memo_p, 1, start, value, pos[0])
+            stores[0] = stores[0] + 1
+            return value
+        }
+        pos[0] = pos[0] + 1
+        let right = parse_f(kinds, values, pos, memo_v, memo_p, hits, stores)
+        if kind == 3 {
+            value = value * right
+        } else {
+            value = value / right
+        }
+    }
+    return value
+}
+
+func parse_f(kinds: [int], values: [int], pos: [int], memo_v: [int], memo_p: [int], hits: [int], stores: [int]) returns int {
+    let cached_pos = [-1]
+    let cached     = memo_get(memo_v, memo_p, 2, pos[0], cached_pos)
+    if cached != -99999 {
+        hits[0] = hits[0] + 1
+        pos[0] = cached_pos[0]
+        return cached
+    }
+    let start = pos[0]
+    if kinds[pos[0]] == 0 {
+        let value = values[pos[0]]
+        pos[0] = pos[0] + 1
+        memo_put(memo_v, memo_p, 2, start, value, pos[0])
+        stores[0] = stores[0] + 1
+        return value
+    }
+    pos[0] = pos[0] + 1
+    let inner = parse_e(kinds, values, pos, memo_v, memo_p, hits, stores)
+    if kinds[pos[0]] == 6 {
+        pos[0] = pos[0] + 1
+    }
+    memo_put(memo_v, memo_p, 2, start, inner, pos[0])
+    stores[0] = stores[0] + 1
+    return inner
+}
+
+func evaluate(kinds: [int], values: [int], memo_v: [int], memo_p: [int], hits: [int], stores: [int]) returns int {
+    let pos = [0]
+    return parse_e(kinds, values, pos, memo_v, memo_p, hits, stores)
+}
+
+public func main() returns int {
+    let memo_v = [
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+        -99999,
+    ]
+    let memo_p = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let hits   = [0]
+    let stores = [0]
+    let k1     = [0, 1, 0, 3, 0, 7]
+    let v1     = [2, 0, 3, 0, 4, 0]
+    if evaluate(k1, v1, memo_v, memo_p, hits, stores) != 14 {
+        return 1
+    }
+    if stores[0] == 0 {
+        return 2
+    }
+    hits[0] = 0
+    if evaluate(k1, v1, memo_v, memo_p, hits, stores) != 14 {
+        return 3
+    }
+    if hits[0] == 0 {
+        return 4
+    }
+    println("PASS packrat_memo: 2a passada so acerta cache")
+    return 0
+}

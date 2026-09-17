@@ -1,0 +1,78 @@
+module kmp_search
+
+from std.io import println
+import std.string as str
+
+// Knuth-Morris-Pratt: funcao prefixo + busca sem retrocesso sobre o texto.
+// Base da busca de simbolos/diagnosticos no tooling (LSP, "did you mean").
+
+func prefix_fn(pat: string, pi: [int]) returns int {
+    let m = str.len(pat)
+    pi[0] = 0
+    let k = 0
+    let q = 1
+    while q < m {
+        while k > 0 and str.char_at(pat, k) != str.char_at(pat, q) {
+            k = pi[k - 1]
+        }
+        if str.char_at(pat, k) == str.char_at(pat, q) {
+            k = k + 1
+        }
+        pi[q] = k
+        q = q + 1
+    }
+    return m
+}
+
+func kmp_find(text: string, pat: string, pi: [int]) returns int {
+    let n = str.len(text)
+    let m = str.len(pat)
+    if m == 0 {
+        return 0
+    }
+    let q = 0
+    let i = 0
+    while i < n {
+        while q > 0 and str.char_at(pat, q) != str.char_at(text, i) {
+            q = pi[q - 1]
+        }
+        if str.char_at(pat, q) == str.char_at(text, i) {
+            q = q + 1
+        }
+        if q == m {
+            return i - m + 1
+        }
+        i = i + 1
+    }
+    return-1
+}
+
+public func main() returns int {
+    let pi = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    prefix_fn("aaaa", pi)
+    if pi[0] != 0 or pi[1] != 1 or pi[2] != 2 or pi[3] != 3 {
+        return 1
+    }
+    prefix_fn("abcab", pi)
+    if pi[0] != 0 or pi[1] != 0 or pi[2] != 0 or pi[3] != 1 or pi[4] != 2 {
+        return 2
+    }
+    prefix_fn("aba", pi)
+    if kmp_find("ababa", "aba", pi) != 0 {
+        return 3
+    }
+    prefix_fn("cd", pi)
+    if kmp_find("abcde", "cd", pi) != 2 {
+        return 4
+    }
+    prefix_fn("d", pi)
+    if kmp_find("abc", "d", pi) != -1 {
+        return 5
+    }
+    prefix_fn("aab", pi)
+    if kmp_find("aaab", "aab", pi) != 1 {
+        return 6
+    }
+    println("PASS kmp_search: prefixo + busca linear sem retrocesso")
+    return 0
+}

@@ -30,6 +30,13 @@ invariantes passam e um código distinto por estágio quando alguma falha.
 | `19_levenshtein_diff.spectra` | Levenshtein (base do diff) | DP com 2 linhas sobre char codes; `kitten/sitting=3`, `saturday/sunday=3` — valida snapshots/diagnósticos |
 | `20_concolic_paths.spectra` | Teste concolico estilo DART | Driver sistemático cobre os 4 paths de branches aninhados com entradas dirigidas `{0,1,10,11,20,21}` |
 | `21_grammar_fuzzer.spectra` | Geração guiada por gramática | LCG deriva `NUM(OP NUM)*`; `wellformed` checa alternância e o diferencial recursivo×Pratt é o oráculo |
+| `22_dpll_sat.spectra` | DPLL (unit+pure+splitting) | CNF 3-literal com pad -1, literal `var*2+sign`; decide SAT com modelo verificável e UNSAT `(x)∧(¬x)` |
+| `23_tarjan_scc.spectra` | Tarjan SCC (ciclo em call-graph) | index/lowlink recursivo com single-elem out-params; `{0,1,2}` e `{3,4,5}` isolados |
+| `24_kmp_search.spectra` | KMP prefixo + busca | Sem retrocesso sobre o texto; base de busca de símbolos/diagnósticos do tooling |
+| `25_graph_coloring.spectra` | Chaitin-Briggs (regalloc do backend) | simplify/select com spill guess, K=3: amostra colorível + K4 que exige spill |
+| `26_mark_sweep.spectra` | Mark-and-sweep (runtime) | Mark iterativo com worklist desde as raízes; sweep libera a ilha `5→6` |
+| `27_packrat_memo.spectra` | PEG com memoização | Tabela `(regra,pos)` com MISS sentinel; 2ª passada só dá cache hit (contrato linear) |
+| `28_topo_sort.spectra` | Kahn (deps do package manager) | Ordem válida com `pos[dep]<pos[pkg]` + ciclo `0→1→2→0` detectado (`count<n`) |
 
 Relação com o já existente: `tests/validation/524_recursion_recursive_descent_parser.spectra`
 cobre descida recursiva sobre strings; esta suíte complementa com DFA tabular,
@@ -86,7 +93,16 @@ generation`, enquanto `-O2`/`-O3` passavam (o DCE escondia o problema).
 
 Nenhum outro defeito de compilador/runtime foi encontrado nos demais
 arquivos: `check`, `run -O0`, `run -O3`, `lint` e `fmt --check` passam nos
-21 arquivos.
+28 arquivos.
+
+## Quarta leva (22–28): correção no próprio teste
+
+- `24_kmp_search.spectra` — a primeira versão reutilizava a tabela `pi` de
+  outro padrão entre buscas (falha `exit 6`, não bug da linguagem: KMP exige
+  o prefixo do padrão buscado). Correção no `.spectra`: `prefix_fn` do
+  padrão correto antes de cada `kmp_find`. Nenhuma mudança no compilador
+  nesta leva; o gate `-O0` do validador (introduzido no R527) passou em
+  todos os 28 arquivos de primeira, confirmando que o fix anterior segura.
 Por isso não há alteração em `compiler/`, `midend/`, `backend/` ou `runtime/`
 neste change — apenas arquivos novos sob `examples/langtest/` mais este doc e
 o validador. Se um bug real aparecer no futuro, a correção deve entrar no crate
