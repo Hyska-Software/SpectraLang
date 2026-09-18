@@ -1,0 +1,40 @@
+module mvcc_visibility
+
+from std.io import println
+
+// Visibilidade MVCC (snapshot isolation): versao visivel se xmin committed
+// e xmax ausente/invisivel (xmax -1, ativo ou futuro). Txs 1,2 committed;
+// 3 ativa. Esperado [vis,vis,invis,invis].
+
+func is_committed(tx: int) returns bool {
+    return tx == 1 or tx == 2
+}
+
+func is_visible(xmin: int, xmax: int) returns bool {
+    if not is_committed(xmin) {
+        return false
+    }
+    if xmax == 0 - 1 {
+        return true
+    }
+    return not is_committed(xmax)
+}
+
+public func main() returns int {
+    let xmin = [1, 1, 3, 2]
+    let xmax = [-1, 3, -1, 1]
+    let want = [1, 1, 0, 0]
+    let i    = 0
+    while i < 4 {
+        let got = 0
+        if is_visible(xmin[i], xmax[i]) {
+            got = 1
+        }
+        if got != want[i] {
+            return 10 + i
+        }
+        i = i + 1
+    }
+    println("PASS mvcc_visibility: snapshot decide 4 versoes")
+    return 0
+}

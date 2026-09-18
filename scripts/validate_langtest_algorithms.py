@@ -92,6 +92,14 @@ FILES = [
     "80_lsm_tree.spectra",
     "81_jwt_claims.spectra",
     "82_huffman_coding.spectra",
+    "83_linear_scan_regalloc.spectra",
+    "84_ssa_destruction.spectra",
+    "85_vtable_layout.spectra",
+    "86_csv_parser.spectra",
+    "87_sql_pipeline.spectra",
+    "88_bplus_range.spectra",
+    "89_mvcc_visibility.spectra",
+    "90_adler32_checksum.spectra",
 ]
 
 

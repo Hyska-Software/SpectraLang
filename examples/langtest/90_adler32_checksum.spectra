@@ -1,0 +1,37 @@
+module adler32_checksum
+
+from std.io import println
+import std.string as str
+
+// Adler-32 p/ checksums de artefatos (package registry): a=1+soma,
+// b+=a, tudo mod 65521; digest b*65536+a. Vetores do zlib: ""=>1,
+// "A"=>4325442, "hello"=>103547413, "123456789"=>152961502.
+
+func adler32(text: string) returns int {
+    let a = 1
+    let b = 0
+    let i = 0
+    while i < str.len(text) {
+        a = (a + str.char_at(text, i)) % 65521
+        b = (b + a) % 65521
+        i = i + 1
+    }
+    return b * 65536 + a
+}
+
+public func main() returns int {
+    if adler32("") != 1 {
+        return 1
+    }
+    if adler32("A") != 4325442 {
+        return 2
+    }
+    if adler32("hello") != 103547413 {
+        return 3
+    }
+    if adler32("123456789") != 152961502 {
+        return 4
+    }
+    println("PASS adler32_checksum: 4 vetores do zlib")
+    return 0
+}

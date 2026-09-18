@@ -1,0 +1,81 @@
+module csv_parser
+
+from std.io import println
+import std.string as str
+
+// CSV RFC 4180 p/ datasets (std.ml): campos com aspas ("a""b" => a"b),
+// virgulas internas, \r\n e \n. Celulas flat + inicios/tamanhos por linha.
+
+func parse_csv(text: string, cells: [string], row_start: [int], row_len: [int]) returns int {
+    let nrows  = 0
+    let ncells = 0
+    row_start[0] = 0
+    let i = 0
+    while i < str.len(text) {
+        let field = ""
+        if str.char_at(text, i) == 34 {
+            i = i + 1
+            while i < str.len(text) {
+                if str.char_at(text, i) == 34 {
+                    if i + 1 < str.len(text) and str.char_at(text, i + 1) == 34 {
+                        field = field + "\""
+                        i = i + 2
+                    } else {
+                        i = i + 1
+                        break
+                    }
+                } else {
+                    field = field + str.substring(text, i, i + 1)
+                    i = i + 1
+                }
+            }
+        } else {
+            while i < str.len(text) and str.char_at(text, i) != 44 and str.char_at(text, i) != 10 and str.char_at(text, i) != 13 {
+                field = field + str.substring(text, i, i + 1)
+                i = i + 1
+            }
+        }
+        cells[ncells] = field
+        ncells = ncells + 1
+        if i < str.len(text) and str.char_at(text, i) == 44 {
+            i = i + 1
+        } else {
+            if i < str.len(text) and str.char_at(text, i) == 13 {
+                i = i + 1
+            }
+            if i < str.len(text) and str.char_at(text, i) == 10 {
+                i = i + 1
+            }
+            row_len[nrows] = ncells - row_start[nrows]
+            nrows = nrows + 1
+            if i < str.len(text) {
+                row_start[nrows] = ncells
+            }
+        }
+    }
+    return nrows
+}
+
+public func main() returns int {
+    let cells     = ["", "", "", "", "", "", "", "", ""]
+    let row_start = [0, 0, 0, 0]
+    let row_len   = [0, 0, 0, 0]
+    let text      = "name,age\n\"Doe, J\",30\n\"A\"\"B\",40\n"
+    if parse_csv(text, cells, row_start, row_len) != 3 {
+        return 1
+    }
+    if row_len[0] != 2 or row_len[1] != 2 or row_len[2] != 2 {
+        return 2
+    }
+    if cells[0] != "name" or cells[1] != "age" {
+        return 3
+    }
+    if cells[2] != "Doe, J" or cells[3] != "30" {
+        return 4
+    }
+    if cells[4] != "A\"B" or cells[5] != "40" {
+        return 5
+    }
+    println("PASS csv_parser: aspas, virgula interna, CRLF")
+    return 0
+}

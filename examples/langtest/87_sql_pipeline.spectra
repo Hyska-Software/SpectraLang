@@ -1,0 +1,62 @@
+module sql_pipeline
+
+from std.io import println
+
+// Pipeline de query (scan->filter->project->sort->limit): funcionarios
+// (id,dept,sal) filtrados dept==1, projetados (id,sal), ordenados por
+// salario desc, limit 2 => [(3,70),(4,60)].
+
+public func main() returns int {
+    let ids   = [1, 2, 3, 4, 5]
+    let depts = [1, 2, 1, 1, 2]
+    let sals  = [50, 80, 70, 60, 90]
+    let sel   = [0, 0, 0, 0, 0]
+    let nsel  = 0
+    let i     = 0
+    while i < 5 {
+        if depts[i] == 1 {
+            sel[nsel] = i
+            nsel = nsel + 1
+        }
+        i = i + 1
+    }
+    if nsel != 3 {
+        return 1
+    }
+    let pids  = [0, 0, 0]
+    let psals = [0, 0, 0]
+    i = 0
+    while i < nsel {
+        pids[i] = ids[sel[i]]
+        psals[i] = sals[sel[i]]
+        i = i + 1
+    }
+    i = 0
+    while i < nsel {
+        let j = 0
+        while j + 1 < nsel - i {
+            if psals[j] < psals[j + 1] {
+                let ts = psals[j]
+                psals[j] = psals[j + 1]
+                psals[j + 1] = ts
+                let ti = pids[j]
+                pids[j] = pids[j + 1]
+                pids[j + 1] = ti
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    let limit = 2
+    if limit > nsel {
+        limit = nsel
+    }
+    if limit != 2 or pids[0] != 3 or psals[0] != 70 {
+        return 2
+    }
+    if pids[1] != 4 or psals[1] != 60 {
+        return 3
+    }
+    println("PASS sql_pipeline: filter->project->sort->limit")
+    return 0
+}

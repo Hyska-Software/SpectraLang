@@ -1,0 +1,97 @@
+module linear_scan_regalloc
+
+from std.io import println
+
+// Linear scan (JIT rapido, alternativa ao grafo): intervalos ordenados por
+// inicio, expira fim<=inicio, spill sem reg livre. K=2 sem spill;
+// K=1 despeja {1,2}. Semi-aberto [inicio,fim).
+
+func allocate(starts: [int], ends: [int], n: int, k: int, reg: [int], active: [int]) returns int {
+    let i = 0
+    while i < n {
+        reg[i] = -1
+        active[i] = 0
+        i = i + 1
+    }
+    let spilled = 0
+    i = 0
+    while i < n {
+        let a = 0
+        while a < i {
+            if active[a] == 1 and ends[a] <= starts[i] {
+                active[a] = 0
+            }
+            a = a + 1
+        }
+        let r     = 0
+        let found = -1
+        while r < k {
+            let busy = 0
+            a = 0
+            while a < i {
+                if active[a] == 1 and reg[a] == r {
+                    busy = 1
+                }
+                a = a + 1
+            }
+            if busy == 0 {
+                found = r
+                r = k
+            }
+            r = r + 1
+        }
+        if found == -1 {
+            spilled = spilled + 1
+        } else {
+            reg[i] = found
+            active[i] = 1
+        }
+        i = i + 1
+    }
+    return spilled
+}
+
+func no_overlap_same_reg(starts: [int], ends: [int], n: int, reg: [int]) returns bool {
+    let i = 0
+    while i < n {
+        if reg[i] >= 0 {
+            let j = i + 1
+            while j < n {
+                if reg[j] == reg[i] {
+                    if starts[i] < ends[j] and starts[j] < ends[i] {
+                        return false
+                    }
+                }
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+    return true
+}
+
+public func main() returns int {
+    let starts = [0, 1, 3, 6]
+    let ends   = [5, 2, 6, 8]
+    let reg    = [-1, -1, -1, -1]
+    let active = [0, 0, 0, 0]
+    if allocate(starts, ends, 4, 2, reg, active) != 0 {
+        return 1
+    }
+    if reg[0] != 0 or reg[1] != 1 or reg[2] != 1 or reg[3] != 0 {
+        return 2
+    }
+    if not no_overlap_same_reg(starts, ends, 4, reg) {
+        return 3
+    }
+    let reg2    = [-1, -1, -1, -1]
+    let active2 = [0, 0, 0, 0]
+    if allocate(starts, ends, 4, 1, reg2, active2) != 2 {
+        return 4
+    }
+    if reg2[0] != 0 or reg2[1] != -1 or reg2[2] != -1 or reg2[3] != 0 {
+        return 5
+    }
+    println("PASS linear_scan_regalloc: expira + spill exato")
+    return 0
+}

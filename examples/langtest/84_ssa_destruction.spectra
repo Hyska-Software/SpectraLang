@@ -1,0 +1,60 @@
+module ssa_destruction
+
+from std.io import println
+
+// Destruicao SSA: aresta critica B1->B3 (pred multi-succ + succ multi-pred)
+// eh splitada com B4 (copia x=1); phi restante vira copia em B2 (x=2).
+// Sem phis no fim, copias nos lugares certos.
+
+public func main() returns int {
+    let succ0    = [1, -1]
+    let succ1    = [2, 3]
+    let pred3    = [1, 2]
+    let phi_pred = [1, 2]
+    let phi_val  = [1, 2]
+    let nphi     = 1
+    let e1       = succ1[1]
+    let crit     = 0
+    if succ0[0] != 1 {
+        return 1
+    }
+    if e1 == 3 {
+        let npred = 0
+        let p     = 0
+        while p < 2 {
+            if pred3[p] != -1 {
+                npred = npred + 1
+            }
+            p = p + 1
+        }
+        if npred > 1 {
+            crit = 1
+        }
+    }
+    if crit != 1 {
+        return 2
+    }
+    let b4 = 4
+    succ1[1] = b4
+    let copy_b4 = 1
+    phi_pred[0] = b4
+    let copies_b2 = 0
+    if phi_pred[1] == 2 {
+        copies_b2 = phi_val[1]
+    }
+    nphi = 0
+    if succ1[0] != 2 or succ1[1] != 4 {
+        return 3
+    }
+    if phi_pred[0] != 4 or copy_b4 != 1 {
+        return 4
+    }
+    if copies_b2 != 2 {
+        return 5
+    }
+    if nphi != 0 {
+        return 6
+    }
+    println("PASS ssa_destruction: split + copias, zero phis")
+    return 0
+}

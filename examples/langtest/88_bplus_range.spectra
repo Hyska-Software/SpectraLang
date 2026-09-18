@@ -1,0 +1,62 @@
+module bplus_range
+
+from std.io import println
+
+// B+ com folhas encadeadas (range scan, sequel do 65): folhas
+// [5,6,7]->[12,20,30], raiz [10] so roteia. range(lo,hi) acha a folha
+// inicial e caminha pelos nexts coletando <=hi.
+
+func find_leaf(limits: [int], first_leaf: [int], key: int) returns int {
+    if key < limits[0] {
+        return first_leaf[0]
+    }
+    return first_leaf[1]
+}
+
+public func main() returns int {
+    let leaf_keys  = [5, 6, 7, 12, 20, 30, 0, 0, 0]
+    let leaf_n     = [3, 3, 0]
+    let leaf_next  = [1, -1, -1]
+    let limits     = [10]
+    let first_leaf = [0, 1]
+    let out        = [0, 0, 0, 0, 0, 0, 0]
+    let nout       = [0]
+    let lo         = 6
+    let hi         = 20
+    let leaf       = find_leaf(limits, first_leaf, lo)
+    let li         = 0
+    while li < leaf_n[leaf] and leaf_keys[leaf * 3 + li] < lo {
+        li = li + 1
+    }
+    let guard = 0
+    while leaf != -1 and guard < 6 {
+        guard = guard + 1
+        while li < leaf_n[leaf] {
+            let k = leaf_keys[leaf * 3 + li]
+            if k > hi {
+                leaf = -1
+                break
+            }
+            out[nout[0]] = k
+            nout[0] = nout[0] + 1
+            li = li + 1
+        }
+        if leaf != -1 {
+            leaf = leaf_next[leaf]
+            li = 0
+        }
+    }
+    if nout[0] != 4 {
+        return 1
+    }
+    let want = [6, 7, 12, 20, 0, 0, 0]
+    let i    = 0
+    while i < 4 {
+        if out[i] != want[i] {
+            return 2
+        }
+        i = i + 1
+    }
+    println("PASS bplus_range: scan encadeado [6,20]")
+    return 0
+}

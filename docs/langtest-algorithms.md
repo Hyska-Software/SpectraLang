@@ -91,6 +91,14 @@ invariantes passam e um código distinto por estágio quando alguma falha.
 | `80_lsm_tree.spectra` | LSM (storage alternativo) | Memtable, flush, merge newest-wins, lookup por idade |
 | `81_jwt_claims.spectra` | Base64url + exp (auth) | Vetores "M"→"TQ"; exp válido/expirado/ausente |
 | `82_huffman_coding.spectra` | Huffman (compressão) | 7 bits p/ "abac" + prefix-free por pares |
+| `83_linear_scan_regalloc.spectra` | Linear scan (JIT) | Expira + spill exato; sem overlap no mesmo reg |
+| `84_ssa_destruction.spectra` | Split + cópias (SSA-out) | Aresta crítica detectada, zero phis no fim |
+| `85_vtable_layout.spectra` | Offsets + vtable (OOP/ABI) | `align_up`, override in place, append |
+| `86_csv_parser.spectra` | CSV RFC 4180 (datasets) | Aspas escapadas, vírgula interna, CRLF |
+| `87_sql_pipeline.spectra` | filter→project→sort→limit (DB) | 5 linhas ⇒ `[(3,70),(4,60)]` |
+| `88_bplus_range.spectra` | Range em folhas (DB) | Scan encadeado `[6,20]` (10 mora só na raiz!) |
+| `89_mvcc_visibility.spectra` | Snapshot isolation (DB) | xmin/xmax decidem 4 versões |
+| `90_adler32_checksum.spectra` | Adler-32 (artefatos) | 4 vetores do zlib via python |
 
 Relação com o já existente: `tests/validation/524_recursion_recursive_descent_parser.spectra`
 cobre descida recursiva sobre strings; esta suíte complementa com DFA tabular,
@@ -157,6 +165,20 @@ passavam nos 28 arquivos então existentes (a suíte hoje tem 58).
   padrão correto antes de cada `kmp_find`. Nenhuma mudança no compilador
   nesta leva; o gate `-O0` do validador (introduzido no R527) passou em
   todos os 28 arquivos de primeira, confirmando que o fix anterior segura.
+
+## Décima segunda leva (83–90): só correções no próprio teste
+
+Backend/OOP/dados/DB em algoritmos puros, sem novos bugs de compilador
+(`check`, `run -O0`/`-O3`, `lint`, `fmt` verdes):
+
+- `84_ssa_destruction.spectra` — reescrito após edição quebrar blocos;
+  códigos de retorno distintos por estágio.
+- `88_bplus_range.spectra` — o `10` mora só na raiz (B+!): esperado
+  corrigido para `[6,7,12,20]`; depois o próprio bounds-check pegou
+  releitura de `leaf_n[-1]` (corrigido com `break`).
+- `90_adler32_checksum.spectra` — vetores aterrados via `zlib.adler32`
+  do python (`"", "A", "hello", "123456789"`); mod simplificado p/ `%`.
+- Formatação normalizada com `spectralang fmt` (8 arquivos).
 
 ## Décima primeira leva (75–82): só correções no próprio teste
 

@@ -1,0 +1,79 @@
+module vtable_layout
+
+from std.io import println
+
+// Layout p/ OOP (ABI do backend): offsets com align_up, tamanho final
+// alinhado ao maximo; vtable preserva ordem da base (override in place,
+// novos append). Animal{x:8,y:8} => 16; Dog+{breed:8,tag:1} => 32.
+
+func align_up(v: int, a: int) returns int {
+    if v % a == 0 {
+        return v
+    }
+    return v + (a - v % a)
+}
+
+func layout_fields(sizes: [int], aligns: [int], n: int, offs: [int]) returns int {
+    let cur  = 0
+    let maxa = 1
+    let i    = 0
+    while i < n {
+        cur = align_up(cur, aligns[i])
+        offs[i] = cur
+        cur = cur + sizes[i]
+        if aligns[i] > maxa {
+            maxa = aligns[i]
+        }
+        i = i + 1
+    }
+    return align_up(cur, maxa)
+}
+
+public func main() returns int {
+    let sizes  = [8, 8]
+    let aligns = [8, 8]
+    let offs   = [0, 0]
+    if layout_fields(sizes, aligns, 2, offs) != 16 {
+        return 1
+    }
+    if offs[0] != 0 or offs[1] != 8 {
+        return 2
+    }
+    let sizes2  = [8, 8, 8, 1]
+    let aligns2 = [8, 8, 8, 1]
+    let offs2   = [0, 0, 0, 0]
+    if layout_fields(sizes2, aligns2, 4, offs2) != 32 {
+        return 3
+    }
+    if offs2[2] != 16 or offs2[3] != 24 {
+        return 4
+    }
+    let base_m = [1, 2, -1, -1]
+    let over   = [1, 0, -1, -1]
+    let new_m  = [-1, -1, 3, -1]
+    let vtable = [0, 0, 0, 0]
+    let nv     = 0
+    let i      = 0
+    while i < 2 {
+        if over[i] == 1 {
+            vtable[i] = base_m[i] + 10
+        } else {
+            vtable[i] = base_m[i]
+        }
+        nv = nv + 1
+        i = i + 1
+    }
+    i = 0
+    while i < 4 {
+        if new_m[i] != -1 {
+            vtable[nv] = new_m[i]
+            nv = nv + 1
+        }
+        i = i + 1
+    }
+    if nv != 3 or vtable[0] != 11 or vtable[1] != 2 or vtable[2] != 3 {
+        return 5
+    }
+    println("PASS vtable_layout: offsets + override in place")
+    return 0
+}
