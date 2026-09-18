@@ -1,0 +1,60 @@
+module knn_classifier
+
+from std.io import println
+
+// k-NN exato (ML deterministico): distancias quadraticas, selecao dos k
+// menores sem ordenar tudo, voto majoritario. Treino 3+3, queries com
+// respostas conhecidas.
+
+func dist2(tx: [int], ty: [int], i: int, qx: int, qy: int) returns int {
+    let dx = tx[i] - qx
+    let dy = ty[i] - qy
+    return dx * dx + dy * dy
+}
+
+func knn_predict(tx: [int], ty: [int], tl: [int], n: int, qx: int, qy: int, k: int) returns int {
+    let used   = [0, 0, 0, 0, 0, 0]
+    let votes0 = 0
+    let votes1 = 0
+    let c      = 0
+    while c < k {
+        let best = -1
+        let i    = 0
+        while i < n {
+            if used[i] == 0 {
+                if best == -1 or dist2(tx, ty, i, qx, qy) < dist2(tx, ty, best, qx, qy) {
+                    best = i
+                }
+            }
+            i = i + 1
+        }
+        used[best] = 1
+        if tl[best] == 0 {
+            votes0 = votes0 + 1
+        } else {
+            votes1 = votes1 + 1
+        }
+        c = c + 1
+    }
+    if votes1 > votes0 {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    let tx = [1, 1, 2, 4, 4, 5]
+    let ty = [1, 2, 1, 4, 5, 4]
+    let tl = [0, 0, 0, 1, 1, 1]
+    if knn_predict(tx, ty, tl, 6, 2, 2, 3) != 0 {
+        return 1
+    }
+    if knn_predict(tx, ty, tl, 6, 5, 5, 3) != 1 {
+        return 2
+    }
+    if knn_predict(tx, ty, tl, 6, 3, 3, 1) != 1 {
+        return 3
+    }
+    println("PASS knn_classifier: 3 queries exatas")
+    return 0
+}

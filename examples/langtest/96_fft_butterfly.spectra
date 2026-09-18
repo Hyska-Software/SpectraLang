@@ -1,0 +1,113 @@
+module fft_butterfly
+
+from std.io import println
+import std.math as m
+
+// FFT radix-2 DIT (numerics): bit-reversal + borboletas com twiddles via
+// sin/cos da stdlib; IFFT por conjugado. [1,1,1,1]->[4,0,0,0],
+// [1,0,0,0]->uns, roundtrip com erro < 0.01.
+
+func fft(re: [float], im: [float], n: int, invert: int) {
+    let j = 0
+    let i = 1
+    while i < n {
+        let bit = n / 2
+        while j >= bit and bit > 0 {
+            j = j - bit
+            bit = bit / 2
+        }
+        j = j + bit
+        if i < j {
+            let tr = re[i]
+            re[i] = re[j]
+            re[j] = tr
+            let ti = im[i]
+            im[i] = im[j]
+            im[j] = ti
+        }
+        i = i + 1
+    }
+    let len = 2
+    while len <= n {
+        let ang = 6.283185307179586 /(len * 1.0)
+        if invert == 1 {
+            ang = 0.0 - ang
+        }
+        let wlen_re = m.cos_f(ang)
+        let wlen_im = m.sin_f(ang)
+        i = 0
+        while i < n {
+            let w_re = 1.0
+            let w_im = 0.0
+            let jj   = 0
+            while jj < len / 2 {
+                let ur = re[i + jj]
+                let ui = im[i + jj]
+                let vr = re[i + jj + len / 2] * w_re - im[i + jj + len / 2] * w_im
+                let vi = re[i + jj + len / 2] * w_im + im[i + jj + len / 2] * w_re
+                re[i + jj] = ur + vr
+                im[i + jj] = ui + vi
+                re[i + jj + len / 2] = ur - vr
+                im[i + jj + len / 2] = ui - vi
+                let nwr = w_re * wlen_re - w_im * wlen_im
+                w_im = w_re * wlen_im + w_im * wlen_re
+                w_re = nwr
+                jj = jj + 1
+            }
+            i = i + len
+        }
+        len = len * 2
+    }
+    if invert == 1 {
+        i = 0
+        while i < n {
+            re[i] = re[i] /(n * 1.0)
+            im[i] = im[i] /(n * 1.0)
+            i = i + 1
+        }
+    }
+}
+
+func close_enough(a: float, b: float) returns bool {
+    let d = a - b
+    if d < 0.0 {
+        d = 0.0 - d
+    }
+    return d < 0.01
+}
+
+public func main() returns int {
+    let re = [1.0, 1.0, 1.0, 1.0]
+    let im = [0.0, 0.0, 0.0, 0.0]
+    fft(re, im, 4, 0)
+    if not close_enough(re[0], 4.0) or not close_enough(im[0], 0.0) {
+        return 1
+    }
+    if not close_enough(re[1], 0.0) or not close_enough(re[2], 0.0) or not close_enough(re[3], 0.0) {
+        return 2
+    }
+    let re2 = [1.0, 0.0, 0.0, 0.0]
+    let im2 = [0.0, 0.0, 0.0, 0.0]
+    fft(re2, im2, 4, 0)
+    let i = 0
+    while i < 4 {
+        if not close_enough(re2[i], 1.0) or not close_enough(im2[i], 0.0) {
+            return 3
+        }
+        i = i + 1
+    }
+    let re3 = [1.0, 2.0, 3.0, 4.0]
+    let im3 = [0.0, 0.0, 0.0, 0.0]
+    fft(re3, im3, 4, 0)
+    fft(re3, im3, 4, 1)
+    let want = [1.0, 2.0, 3.0, 4.0]
+    i = 0
+    while i < 4 {
+        if not close_enough(re3[i], want[i]) or not close_enough(im3[i], 0.0) {
+            return 4
+        }
+        i = i + 1
+    }
+    println("PASS fft_butterfly: DFT exata + roundtrip")
+    return 0
+}

@@ -1,0 +1,71 @@
+module soundex_search
+
+from std.io import println
+import std.convert
+import std.string as str
+
+// Soundex americano p/ busca fuzzy do LSP: primeira letra + 3 digitos
+// (bfpv1 cgjkqsxz2 dt3 l4 mn5 r6; aeiouyhw some), colapsa repetidos.
+
+func digit_of(c: int) returns int {
+    if c == 66 or c == 70 or c == 80 or c == 86 {
+        return 1
+    }
+    if c == 67 or c == 71 or c == 74 or c == 75 or c == 81 or c == 83 or c == 88 or c == 90 {
+        return 2
+    }
+    if c == 68 or c == 84 {
+        return 3
+    }
+    if c == 76 {
+        return 4
+    }
+    if c == 77 or c == 78 {
+        return 5
+    }
+    if c == 82 {
+        return 6
+    }
+    return 0
+}
+
+func soundex(name: string) returns string {
+    let upper = str.to_upper(name)
+    let out   = str.substring(upper, 0, 1)
+    let prev  = digit_of(str.char_at(upper, 0))
+    let count = 0
+    let i     = 1
+    while i < str.len(upper) and count < 3 {
+        let d = digit_of(str.char_at(upper, i))
+        if d != 0 and d != prev {
+            out = out + std.convert.int_to_string(d)
+            count = count + 1
+        }
+        if d != 0 {
+            prev = d
+        }
+        i = i + 1
+    }
+    while count < 3 {
+        out = out + "0"
+        count = count + 1
+    }
+    return out
+}
+
+public func main() returns int {
+    if soundex("Euler") != "E460" or soundex("Ellery") != "E460" {
+        return 1
+    }
+    if soundex("Smith") != "S530" or soundex("Smyth") != "S530" {
+        return 2
+    }
+    if soundex("Ashcraft") != "A261" or soundex("Ashcroft") != "A261" {
+        return 3
+    }
+    if soundex("Pfister") != "P236" {
+        return 4
+    }
+    println("PASS soundex_search: pares classicos colidem")
+    return 0
+}

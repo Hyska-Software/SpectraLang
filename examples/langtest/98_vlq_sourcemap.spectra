@@ -1,0 +1,93 @@
+module vlq_sourcemap
+
+from std.io import println
+import std.string as str
+
+// VLQ base64 com sinal p/ source maps (debugger): v -> (abs<<1)|sinal,
+// grupos LE de 5 bits com bit de continuacao, alfabeto por slice.
+// Vetores: 0->A 1->C -1->D, 123->wH; roundtrip em 5 valores.
+
+func b64_at(v: int) returns string {
+    let alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    return str.substring(alpha, v, v + 1)
+}
+
+func b64_val(c: int) returns int {
+    if c >= 65 and c <= 90 {
+        return c - 65
+    }
+    if c >= 97 and c <= 122 {
+        return c - 71
+    }
+    if c >= 48 and c <= 57 {
+        return c + 4
+    }
+    if c == 43 {
+        return 62
+    }
+    return 63
+}
+
+func vlq_encode(v: int) returns string {
+    let u = v * 2
+    if v < 0 {
+        u = (0 - v) * 2 + 1
+    }
+    let out   = ""
+    let first = 1
+    while first == 1 or u > 0 {
+        first = 0
+        let chunk = u % 32
+        u = u / 32
+        if u > 0 {
+            chunk = chunk + 32
+        }
+        out = out + b64_at(chunk)
+    }
+    return out
+}
+
+func vlq_decode(text: string, pos: [int]) returns int {
+    let result = 0
+    let mult   = 1
+    while true {
+        let d = b64_val(str.char_at(text, pos[0]))
+        pos[0] = pos[0] + 1
+        result = result + (d % 32) * mult
+        mult = mult * 32
+        if d < 32 {
+            break
+        }
+    }
+    if result % 2 == 1 {
+        return 0 - (result / 2)
+    }
+    return result / 2
+}
+
+public func main() returns int {
+    if vlq_encode(0) != "A" {
+        return 1
+    }
+    if vlq_encode(1) != "C" or vlq_encode(0 - 1) != "D" {
+        return 2
+    }
+    if vlq_encode(123) != "2H" {
+        return 3
+    }
+    let pos = [0]
+    if vlq_decode("2H", pos) != 123 or pos[0] != 2 {
+        return 4
+    }
+    let vals = [0, 1, 0 - 1, 16, 0 - 16, 1000, 0 - 100000]
+    let i    = 0
+    while i < 7 {
+        pos[0] = 0
+        if vlq_decode(vlq_encode(vals[i]), pos) != vals[i] {
+            return 10 + i
+        }
+        i = i + 1
+    }
+    println("PASS vlq_sourcemap: vetores + forma")
+    return 0
+}

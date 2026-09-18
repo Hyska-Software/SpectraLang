@@ -1,0 +1,182 @@
+module twosat_scc
+
+from std.io import println
+
+// 2-SAT linear via SCC (Kosaraju): grafo de implicacao (!a=>b, !b=>a),
+// S lit 0..2n-1 (lit=var*2+sign, neg=^1), duas DFS, x vale comp[l] maior.
+// SAT: F1 do 22. UNSAT: (x1)&(!x1).
+
+func neg_lit(lit: int) returns int {
+    if lit % 2 == 0 {
+        return lit + 1
+    }
+    return lit - 1
+}
+
+func dfs1(adj: [int], n: int, v: int, seen: [int], order: [int], cursor: [int]) {
+    seen[v] = 1
+    let e = 0
+    while e < n {
+        if adj[v * 6 + e] == 1 and seen[e] == 0 {
+            dfs1(adj, n, e, seen, order, cursor)
+        }
+        e = e + 1
+    }
+    order[cursor[0]] = v
+    cursor[0] = cursor[0] + 1
+}
+
+func dfs2(radj: [int], n: int, v: int, comp: [int], cid: int) {
+    comp[v] = cid
+    let e = 0
+    while e < n {
+        if radj[v * 6 + e] == 1 and comp[e] == -1 {
+            dfs2(radj, n, e, comp, cid)
+        }
+        e = e + 1
+    }
+}
+
+func solve2sat(nvars: int, ca: [int], cb: [int], nclauses: int, assign: [int]) returns bool {
+    let n   = nvars * 2
+    let adj = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    let radj = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    let c = 0
+    while c < nclauses {
+        let a = ca[c]
+        let b = cb[c]
+        adj[neg_lit(a) * 6 + b] = 1
+        adj[neg_lit(b) * 6 + a] = 1
+        radj[b * 6 + neg_lit(a)] = 1
+        radj[a * 6 + neg_lit(b)] = 1
+        c = c + 1
+    }
+    let seen   = [0, 0, 0, 0, 0, 0]
+    let order  = [0, 0, 0, 0, 0, 0]
+    let cursor = [0]
+    let v      = 0
+    while v < n {
+        if seen[v] == 0 {
+            dfs1(adj, n, v, seen, order, cursor)
+        }
+        v = v + 1
+    }
+    let comp = [-1, -1, -1, -1, -1, -1]
+    let cid  = 0
+    let k    = n - 1
+    while k >= 0 {
+        let w = order[k]
+        if comp[w] == -1 {
+            dfs2(radj, n, w, comp, cid)
+            cid = cid + 1
+        }
+        k = k - 1
+    }
+    v = 0
+    while v < nvars {
+        if comp[v * 2] == comp[v * 2 + 1] {
+            return false
+        }
+        if comp[v * 2] > comp[v * 2 + 1] {
+            assign[v] = 1
+        } else {
+            assign[v] = 0
+        }
+        v = v + 1
+    }
+    return true
+}
+
+public func main() returns int {
+    let ca     = [0, 1, 3]
+    let cb     = [2, 4, 5]
+    let assign = [0, 0, 0]
+    if not solve2sat(3, ca, cb, 3, assign) {
+        return 1
+    }
+    if assign[0] + assign[1] + assign[2] < 1 {
+        return 2
+    }
+    let sc = [0, 1]
+    let sd = [0, 1]
+    let a2 = [0]
+    if solve2sat(1, sc, sd, 2, a2) {
+        return 3
+    }
+    println("PASS twosat_scc: Kosaraju decide + atribui")
+    return 0
+}

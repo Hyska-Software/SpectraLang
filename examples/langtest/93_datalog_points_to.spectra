@@ -1,0 +1,105 @@
+module datalog_points_to
+
+from std.io import println
+
+// Andersen-lite por Datalog: restricoes como dados (addr/copy/store/load)
+// avaliadas genericamente ate o ponto fixo. p=&o0 q=&o1 r=p *r=q s=*p
+// => pt(p)={o0} pt(q)={o1} pt(r)={o0} pt(o0)={o1} pt(s)={o1}.
+// Vars 0-3, objetos 4-5 (linha = entidade, coluna = objeto 0/1).
+
+func apply_once(addr_x: [int], addr_o: [int], na: int, copy_x: [int], copy_y: [int], nc: int, store_x: [int], store_y: [int], ns: int, load_x: [int], load_y: [int], nl: int, pt: [int]) returns bool {
+    let changed = false
+    let i       = 0
+    while i < na {
+        if pt[addr_x[i] * 2 + addr_o[i]] == 0 {
+            pt[addr_x[i] * 2 + addr_o[i]] = 1
+            changed = true
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < nc {
+        let o = 0
+        while o < 2 {
+            if pt[copy_y[i] * 2 + o] == 1 and pt[copy_x[i] * 2 + o] == 0 {
+                pt[copy_x[i] * 2 + o] = 1
+                changed = true
+            }
+            o = o + 1
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < ns {
+        let o = 0
+        while o < 2 {
+            if pt[store_x[i] * 2 + o] == 1 {
+                let t = 0
+                while t < 2 {
+                    if pt[store_y[i] * 2 + t] == 1 and pt[(4 + o) * 2 + t] == 0 {
+                        pt[(4 + o) * 2 + t] = 1
+                        changed = true
+                    }
+                    t = t + 1
+                }
+            }
+            o = o + 1
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < nl {
+        let o = 0
+        while o < 2 {
+            if pt[load_y[i] * 2 + o] == 1 {
+                let t = 0
+                while t < 2 {
+                    if pt[(4 + o) * 2 + t] == 1 and pt[load_x[i] * 2 + t] == 0 {
+                        pt[load_x[i] * 2 + t] = 1
+                        changed = true
+                    }
+                    t = t + 1
+                }
+            }
+            o = o + 1
+        }
+        i = i + 1
+    }
+    return changed
+}
+
+public func main() returns int {
+    let pt      = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let addr_x  = [0, 1]
+    let addr_o  = [0, 1]
+    let copy_x  = [2]
+    let copy_y  = [0]
+    let store_x = [2]
+    let store_y = [1]
+    let load_x  = [3]
+    let load_y  = [0]
+    let iter    = 0
+    while iter < 10 {
+        if not apply_once(addr_x, addr_o, 2, copy_x, copy_y, 1, store_x, store_y, 1, load_x, load_y, 1, pt) {
+            break
+        }
+        iter = iter + 1
+    }
+    if pt[0 * 2 + 0] != 1 or pt[0 * 2 + 1] != 0 {
+        return 1
+    }
+    if pt[1 * 2 + 1] != 1 or pt[1 * 2 + 0] != 0 {
+        return 2
+    }
+    if pt[2 * 2 + 0] != 1 or pt[2 * 2 + 1] != 0 {
+        return 3
+    }
+    if pt[4 * 2 + 1] != 1 or pt[4 * 2 + 0] != 0 {
+        return 4
+    }
+    if pt[3 * 2 + 0] != 0 or pt[3 * 2 + 1] != 1 {
+        return 5
+    }
+    println("PASS datalog_points_to: store-through + load compoem")
+    return 0
+}

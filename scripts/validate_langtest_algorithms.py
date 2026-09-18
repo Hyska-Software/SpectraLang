@@ -100,6 +100,14 @@ FILES = [
     "88_bplus_range.spectra",
     "89_mvcc_visibility.spectra",
     "90_adler32_checksum.spectra",
+    "91_sched_list.spectra",
+    "92_egraph_rewrites.spectra",
+    "93_datalog_points_to.spectra",
+    "94_twosat_scc.spectra",
+    "95_knn_classifier.spectra",
+    "96_fft_butterfly.spectra",
+    "97_soundex_search.spectra",
+    "98_vlq_sourcemap.spectra",
 ]
 
 

@@ -99,6 +99,14 @@ invariantes passam e um código distinto por estágio quando alguma falha.
 | `88_bplus_range.spectra` | Range em folhas (DB) | Scan encadeado `[6,20]` (10 mora só na raiz!) |
 | `89_mvcc_visibility.spectra` | Snapshot isolation (DB) | xmin/xmax decidem 4 versões |
 | `90_adler32_checksum.spectra` | Adler-32 (artefatos) | 4 vetores do zlib via python |
+| `91_sched_list.spectra` | List scheduling (backend) | Caminho crítico + makespan 6 com 1 unidade |
+| `92_egraph_rewrites.spectra` | E-graphs egg-lite (otimização) | R1/R2 + congruência + extração mínima (SHL, custo 2) |
+| `93_datalog_points_to.spectra` | Andersen via Datalog (análise) | addr/copy/store/load genéricos; store-through compõe |
+| `94_twosat_scc.spectra` | 2-SAT via Kosaraju (solvers) | SAT com modelo + UNSAT `(x)&(!x)` |
+| `95_knn_classifier.spectra` | k-NN exato (ML) | 3 queries com respostas conhecidas |
+| `96_fft_butterfly.spectra` | FFT radix-2 (numerics) | DFT exata + roundtrip com tolerância |
+| `97_soundex_search.spectra` | Soundex (busca fuzzy LSP) | Pares clássicos colidem (Euler/Ellery…) |
+| `98_vlq_sourcemap.spectra` | VLQ base64 (debugger) | Vetores A/C/D + roundtrip em 7 valores |
 
 Relação com o já existente: `tests/validation/524_recursion_recursive_descent_parser.spectra`
 cobre descida recursiva sobre strings; esta suíte complementa com DFA tabular,
@@ -165,6 +173,28 @@ passavam nos 28 arquivos então existentes (a suíte hoje tem 58).
   padrão correto antes de cada `kmp_find`. Nenhuma mudança no compilador
   nesta leva; o gate `-O0` do validador (introduzido no R527) passou em
   todos os 28 arquivos de primeira, confirmando que o fix anterior segura.
+
+## Décima terceira leva (91–98): só correções no próprio teste
+
+Otimizadores/análise/solvers/ML/numerics/tooling em algoritmos puros, sem
+novos bugs de compilador (`check`, `run -O0`/`-O3`, `lint`, `fmt` verdes):
+
+- `91_sched_list.spectra` — CP de A corrigido para 5 (makespan 6 vem da
+  contenção do recurso único, não do caminho).
+- `92_egraph_rewrites.spectra` — kinds ADD/SHL colidiam e SHL pegava o
+  operando errado; reescrito com R1/R2 idempotentes + extract com memo e
+  guarda anti-ciclo (a primeira versão estourou a pilha!).
+- `93_datalog_points_to.spectra` — primeira versão traçada à mão;
+  reescrita data-driven; expectativa de `pt(s)` corrigida para `{o1}`
+  (load lê o conteúdo, não o ponteiro).
+- `94_twosat_scc.spectra` — cláusula UNSAT codificada como tautologia;
+  corrigida para `(¬x0∨¬x0)`.
+- `95_knn_classifier.spectra` — param `n` morto removido de `dist2`.
+- `96_fft_butterfly.spectra` — bit-reversal com `j=1` (inputs simétricos
+  escondiam); `j=0` + `jj` sem shadowing.
+- `98_vlq_sourcemap.spectra` — vetor `123→"2H"` (`"wH"` seria 120);
+  decode reescrito com acumulador + roundtrip.
+- Formatação normalizada com `spectralang fmt` (8 arquivos).
 
 ## Décima segunda leva (83–90): só correções no próprio teste
 
