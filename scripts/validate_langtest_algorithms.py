@@ -68,6 +68,22 @@ FILES = [
     "56_callrank_pagerank.spectra",
     "57_minimax_ab.spectra",
     "58_rope_buffer.spectra",
+    "59_semver_match.spectra",
+    "60_mvs_resolve.spectra",
+    "61_http_router.spectra",
+    "62_token_bucket.spectra",
+    "63_circuit_breaker.spectra",
+    "64_sql_predicates.spectra",
+    "65_btree_ops.spectra",
+    "66_wal_redo.spectra",
+    "67_hash_join.spectra",
+    "68_histogram_buckets.spectra",
+    "69_merkle_proof.spectra",
+    "70_rbac_eval.spectra",
+    "71_consistent_hashing.spectra",
+    "72_wrr_scheduler.spectra",
+    "73_deadlock_detect.spectra",
+    "74_bankers_safety.spectra",
 ]
 
 

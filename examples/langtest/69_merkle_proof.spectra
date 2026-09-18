@@ -1,0 +1,48 @@
+module merkle_proof
+
+from std.io import println
+
+// Merkle p/ integridade de artefatos (package registry): FNV-like sobre
+// ints, root de 4 folhas, prova de inclusao da folha 2 ([h3,h01]) e
+// deteccao de adulteracao.
+
+func mix(h: int, x: int) returns int {
+    return h * 31 + x
+}
+
+func leaf_hash(v: int) returns int {
+    return mix(146959, v)
+}
+
+public func main() returns int {
+    let leaves = [3, 1, 4, 1]
+    let h0     = leaf_hash(leaves[0])
+    let h1     = leaf_hash(leaves[1])
+    let h2     = leaf_hash(leaves[2])
+    let h3     = leaf_hash(leaves[3])
+    let h01    = mix(h0, h1)
+    let h23    = mix(h2, h3)
+    let root   = mix(h01, h23)
+    let proof0 = h3
+    let proof1 = h01
+    let acc    = leaf_hash(leaves[2])
+    acc = mix(acc, proof0)
+    acc = mix(proof1, acc)
+    if acc != root {
+        return 1
+    }
+    let bad = leaf_hash(9)
+    bad = mix(bad, proof0)
+    bad = mix(proof1, bad)
+    if bad == root {
+        return 2
+    }
+    let r2 = leaf_hash(leaves[0])
+    r2 = mix(r2, h1)
+    let left = mix(r2, h23)
+    if left != root {
+        return 3
+    }
+    println("PASS merkle_proof: inclusao prova, adulteracao falha")
+    return 0
+}

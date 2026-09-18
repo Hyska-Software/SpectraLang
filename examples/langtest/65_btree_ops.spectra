@@ -1,0 +1,186 @@
+module btree_ops
+
+from std.io import println
+
+// B-tree t=2 (max 3 chaves/no, min 1): insert com split on-descent, busca
+// e inorder. Sequencia 10,20,5,6,12,30,7 => raiz [10], folhas [5,6,7] e
+// [12,20,30]. Chaves 6x3, filhos 6x4.
+
+func search_node(keys: [int], counts: [int], children: [int], is_leaf: [int], node: int, key: int) returns bool {
+    let i = 0
+    while i < counts[node] and key > keys[node * 3 + i] {
+        i = i + 1
+    }
+    if i < counts[node] and key == keys[node * 3 + i] {
+        return true
+    }
+    if is_leaf[node] == 1 {
+        return false
+    }
+    return search_node(keys, counts, children, is_leaf, children[node * 4 + i], key)
+}
+
+func split_child(keys: [int], counts: [int], children: [int], is_leaf: [int], nnodes: [int], parent: int, i: int) {
+    let full  = children[parent * 4 + i]
+    let right = nnodes[0]
+    nnodes[0] = nnodes[0] + 1
+    is_leaf[right] = is_leaf[full]
+    keys[right * 3] = keys[full * 3 + 2]
+    counts[right] = 1
+    counts[full] = 1
+    children[right * 4] = children[full * 4 + 2]
+    children[right * 4 + 1] = children[full * 4 + 3]
+    children[right * 4 + 2] = -1
+    children[right * 4 + 3] = -1
+    let median = keys[full * 3 + 1]
+    let j      = counts[parent]
+    while j > i {
+        keys[parent * 3 + j] = keys[parent * 3 + j - 1]
+        children[parent * 4 + j + 1] = children[parent * 4 + j]
+        j = j - 1
+    }
+    keys[parent * 3 + i] = median
+    children[parent * 4 + i + 1] = right
+    counts[parent] = counts[parent] + 1
+}
+
+func insert_nonfull(keys: [int], counts: [int], children: [int], is_leaf: [int], nnodes: [int], node: int, key: int) {
+    if is_leaf[node] == 1 {
+        let i = counts[node]
+        while i > 0 and key < keys[node * 3 + i - 1] {
+            keys[node * 3 + i] = keys[node * 3 + i - 1]
+            i = i - 1
+        }
+        keys[node * 3 + i] = key
+        counts[node] = counts[node] + 1
+        return
+    }
+    let i = counts[node]
+    while i > 0 and key < keys[node * 3 + i - 1] {
+        i = i - 1
+    }
+    let child = children[node * 4 + i]
+    if counts[child] == 3 {
+        split_child(keys, counts, children, is_leaf, nnodes, node, i)
+        if key > keys[node * 3 + i] {
+            i = i + 1
+        }
+    }
+    insert_nonfull(keys, counts, children, is_leaf, nnodes, children[node * 4 + i], key)
+}
+
+func btree_insert(keys: [int], counts: [int], children: [int], is_leaf: [int], nnodes: [int], root: [int], key: int) {
+    if counts[root[0]] == 3 {
+        let old = root[0]
+        let nr  = nnodes[0]
+        nnodes[0] = nnodes[0] + 1
+        is_leaf[nr] = 0
+        counts[nr] = 0
+        children[nr * 4] = old
+        children[nr * 4 + 1] = -1
+        children[nr * 4 + 2] = -1
+        children[nr * 4 + 3] = -1
+        root[0] = nr
+        split_child(keys, counts, children, is_leaf, nnodes, nr, 0)
+    }
+    insert_nonfull(keys, counts, children, is_leaf, nnodes, root[0], key)
+}
+
+func inorder(keys: [int], counts: [int], children: [int], is_leaf: [int], node: int, out: [int], cursor: [int]) {
+    let i = 0
+    while i < counts[node] {
+        if is_leaf[node] == 0 {
+            inorder(keys, counts, children, is_leaf, children[node * 4 + i], out, cursor)
+        }
+        out[cursor[0]] = keys[node * 3 + i]
+        cursor[0] = cursor[0] + 1
+        i = i + 1
+    }
+    if is_leaf[node] == 0 {
+        inorder(keys, counts, children, is_leaf, children[node * 4 + i], out, cursor)
+    }
+}
+
+public func main() returns int {
+    let keys     = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let counts   = [0, 0, 0, 0, 0, 0]
+    let children = [
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+    ]
+    let is_leaf = [1, 1, 1, 1, 1, 1]
+    let nnodes  = [1]
+    let root    = [0]
+    counts[0] = 0
+    btree_insert(keys, counts, children, is_leaf, nnodes, root, 10)
+    btree_insert(keys, counts, children, is_leaf, nnodes, root, 20)
+    btree_insert(keys, counts, children, is_leaf, nnodes, root, 5)
+    btree_insert(keys, counts, children, is_leaf, nnodes, root, 6)
+    btree_insert(keys, counts, children, is_leaf, nnodes, root, 12)
+    btree_insert(keys, counts, children, is_leaf, nnodes, root, 30)
+    btree_insert(keys, counts, children, is_leaf, nnodes, root, 7)
+    if not search_node(keys, counts, children, is_leaf, root[0], 6) {
+        return 1
+    }
+    if not search_node(keys, counts, children, is_leaf, root[0], 30) {
+        return 2
+    }
+    if search_node(keys, counts, children, is_leaf, root[0], 15) {
+        return 3
+    }
+    if search_node(keys, counts, children, is_leaf, root[0], 1) {
+        return 4
+    }
+    let out    = [0, 0, 0, 0, 0, 0, 0]
+    let cursor = [0]
+    inorder(keys, counts, children, is_leaf, root[0], out, cursor)
+    if cursor[0] != 7 {
+        return 5
+    }
+    let want = [5, 6, 7, 10, 12, 20, 30]
+    let i    = 0
+    while i < 7 {
+        if out[i] != want[i] {
+            return 6
+        }
+        i = i + 1
+    }
+    let n = 0
+    while n < nnodes[0] {
+        if counts[n] < 1 or counts[n] > 3 {
+            return 7
+        }
+        let k = 1
+        while k < counts[n] {
+            if keys[n * 3 + k - 1] >= keys[n * 3 + k] {
+                return 8
+            }
+            k = k + 1
+        }
+        n = n + 1
+    }
+    println("PASS btree_ops: splits + inorder + invariantes")
+    return 0
+}

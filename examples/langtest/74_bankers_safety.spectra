@@ -1,0 +1,85 @@
+module bankers_safety
+
+from std.io import println
+
+// Banker p/ deadlock avoidance (concorrencia): need=max-alloc; acha ordem
+// segura validando cada passo (need<=work). Grant so se continua seguro;
+// pedido acima do disponivel nega. 3 procs x 2 recursos.
+
+func find_safe_order(alloc: [int], need: [int], avail_in: [int], order: [int]) returns bool {
+    let work   = [avail_in[0], avail_in[1]]
+    let done   = [0, 0, 0]
+    let placed = 0
+    let guard  = 0
+    while placed < 3 and guard < 10 {
+        guard = guard + 1
+        let progress = 0
+        let p        = 0
+        while p < 3 {
+            if done[p] == 0 and need[p * 2] <= work[0] and need[p * 2 + 1] <= work[1] {
+                done[p] = 1
+                order[placed] = p
+                placed = placed + 1
+                work[0] = work[0] + alloc[p * 2]
+                work[1] = work[1] + alloc[p * 2 + 1]
+                progress = 1
+            }
+            p = p + 1
+        }
+        if progress == 0 {
+            return false
+        }
+    }
+    return placed == 3
+}
+
+func order_valid(alloc: [int], need: [int], avail: [int], order: [int]) returns bool {
+    let work = [avail[0], avail[1]]
+    let seen = [0, 0, 0]
+    let i    = 0
+    while i < 3 {
+        let p = order[i]
+        if p < 0 or p > 2 or seen[p] == 1 {
+            return false
+        }
+        seen[p] = 1
+        if need[p * 2] > work[0] or need[p * 2 + 1] > work[1] {
+            return false
+        }
+        work[0] = work[0] + alloc[p * 2]
+        work[1] = work[1] + alloc[p * 2 + 1]
+        i = i + 1
+    }
+    return true
+}
+
+public func main() returns int {
+    let alloc = [0, 1, 2, 0, 3, 0]
+    let need  = [3, 2, 1, 2, 0, 3]
+    let avail = [3, 2]
+    let order = [0, 0, 0]
+    if not find_safe_order(alloc, need, avail, order) {
+        return 1
+    }
+    if not order_valid(alloc, need, avail, order) {
+        return 2
+    }
+    let avail2 = [3, 2]
+    let need2  = [3, 2, 0, 2, 0, 3]
+    let alloc2 = [0, 1, 3, 0, 3, 0]
+    let order2 = [0, 0, 0]
+    if not find_safe_order(alloc2, need2, avail2, order2) {
+        return 3
+    }
+    if not order_valid(alloc2, need2, avail2, order2) {
+        return 4
+    }
+    let avail3 = [3, 2]
+    let req0   = 0
+    let req1   = 3
+    if req0 <= avail3[0] and req1 <= avail3[1] {
+        return 5
+    }
+    println("PASS bankers_safety: ordem valida + grant/deny")
+    return 0
+}

@@ -1,0 +1,53 @@
+module token_bucket
+
+from std.io import println
+
+// Token bucket p/ middleware de rate-limit: relogio virtual (determinista),
+// capacidade 10, reposicao 1/500ms. allow consome; sem tokens nega.
+
+func allow(state: [int], cap: int, per_ms: int, now: int) returns bool {
+    let elapsed = now - state[1]
+    if elapsed > 0 {
+        state[0] = state[0] + elapsed / per_ms
+        if state[0] > cap {
+            state[0] = cap
+        }
+        state[1] = now
+    }
+    if state[0] >= 1 {
+        state[0] = state[0] - 1
+        return true
+    }
+    return false
+}
+
+public func main() returns int {
+    let state = [10, 0]
+    let i     = 0
+    while i < 10 {
+        if not allow(state, 10, 500, 0) {
+            return 1
+        }
+        i = i + 1
+    }
+    if state[0] != 0 {
+        return 2
+    }
+    if allow(state, 10, 500, 0) {
+        return 3
+    }
+    if not allow(state, 10, 500, 1000) {
+        return 4
+    }
+    if not allow(state, 10, 500, 1000) {
+        return 5
+    }
+    if allow(state, 10, 500, 1000) {
+        return 6
+    }
+    if state[0] != 0 {
+        return 7
+    }
+    println("PASS token_bucket: rajada nega, refill libera")
+    return 0
+}

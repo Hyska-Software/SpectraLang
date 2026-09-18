@@ -1,0 +1,56 @@
+module histogram_buckets
+
+from std.io import println
+
+// Histogramas estilo Prometheus (observabilidade): buckets cumulativos
+// le10/le50/le100/+inf sobre 7 observacoes; p50 = primeiro bucket com
+// cumulativo >= metade (ceil). Total e soma conferem.
+
+public func main() returns int {
+    let obs    = [5, 12, 12, 70, 150, 8, 45]
+    let bounds = [10, 50, 100]
+    let cum    = [0, 0, 0, 0]
+    let total  = 0
+    let i      = 0
+    while i < 7 {
+        total = total + 1
+        if obs[i] <= 10 {
+            cum[0] = cum[0] + 1
+        }
+        if obs[i] <= 50 {
+            cum[1] = cum[1] + 1
+        }
+        if obs[i] <= 100 {
+            cum[2] = cum[2] + 1
+        }
+        cum[3] = cum[3] + 1
+        i = i + 1
+    }
+    if cum[0] != 2 or cum[1] != 5 or cum[2] != 6 or cum[3] != 7 {
+        return 1
+    }
+    if total != 7 or cum[3] != total {
+        return 2
+    }
+    let half = total / 2
+    if total % 2 == 1 {
+        half = half + 1
+    }
+    let p50 = 3
+    i = 0
+    while i < 4 {
+        if cum[i] >= half {
+            p50 = i
+            i = 4
+        }
+        i = i + 1
+    }
+    if p50 != 1 {
+        return 3
+    }
+    if bounds[p50] != 50 {
+        return 4
+    }
+    println("PASS histogram_buckets: cumulativos + p50 no le50")
+    return 0
+}

@@ -1,0 +1,72 @@
+module rbac_eval
+
+from std.io import println
+
+// RBAC com hierarquia e deny-override (seguranca): viewer{read},
+// editor herda viewer +{write}, auditor nega write. carol{editor,auditor}
+// perde o write; ninguem tem delete.
+
+func role_allows(role_perm: [int], role: int, perm: int) returns int {
+    return role_perm[role * 2 + perm]
+}
+
+func user_has_role(user_roles: [int], user: int, role: int) returns bool {
+    let r = 0
+    while r < 3 {
+        if user_roles[user * 3 + r] == role {
+            return true
+        }
+        r = r + 1
+    }
+    return false
+}
+
+func authorize(user_roles: [int], role_perm: [int], role_parent: [int], user: int, perm: int) returns bool {
+    let allowed = 0
+    let r       = 0
+    while r < 3 {
+        if user_has_role(user_roles, user, r) {
+            let cur   = r
+            let depth = 0
+            while cur != -1 and depth < 3 {
+                let p = role_allows(role_perm, cur, perm)
+                if p == 0 {
+                    return false
+                }
+                if p == 1 {
+                    allowed = 1
+                }
+                cur = role_parent[cur]
+                depth = depth + 1
+            }
+        }
+        r = r + 1
+    }
+    return allowed == 1
+}
+
+public func main() returns int {
+    let role_perm   = [1, -1, 1, 1, -1, 0]
+    let role_parent = [-1, 0, -1]
+    let user_roles  = [1, -1, -1, 0, -1, -1, 1, 2, -1]
+    if not authorize(user_roles, role_perm, role_parent, 0, 1) {
+        return 1
+    }
+    if not authorize(user_roles, role_perm, role_parent, 0, 0) {
+        return 2
+    }
+    if authorize(user_roles, role_perm, role_parent, 2, 1) {
+        return 3
+    }
+    if authorize(user_roles, role_perm, role_parent, 1, 1) {
+        return 4
+    }
+    if authorize(user_roles, role_perm, role_parent, 0, 0) != true {
+        return 5
+    }
+    if authorize(user_roles, role_perm, role_parent, 1, 0) != true {
+        return 6
+    }
+    println("PASS rbac_eval: heranca + deny vence allow")
+    return 0
+}

@@ -1,0 +1,47 @@
+module wrr_scheduler
+
+from std.io import println
+
+// Weighted round-robin suave (nginx): cur+=peso, escolhe max, max-=total.
+// Pesos 3:2:1 => sequencia A,B,A,C,B,A; contagens exatas em 6 picks.
+
+public func main() returns int {
+    let weight = [3, 2, 1]
+    let cur    = [0, 0, 0]
+    let total  = 6
+    let seq    = [0, 0, 0, 0, 0, 0]
+    let p      = 0
+    while p < 6 {
+        let best = 0
+        let i    = 0
+        while i < 3 {
+            cur[i] = cur[i] + weight[i]
+            if cur[i] > cur[best] {
+                best = i
+            }
+            i = i + 1
+        }
+        seq[p] = best
+        cur[best] = cur[best] - total
+        p = p + 1
+    }
+    let want = [0, 1, 0, 2, 1, 0]
+    p = 0
+    while p < 6 {
+        if seq[p] != want[p] {
+            return 1
+        }
+        p = p + 1
+    }
+    let count = [0, 0, 0]
+    p = 0
+    while p < 6 {
+        count[seq[p]] = count[seq[p]] + 1
+        p = p + 1
+    }
+    if count[0] != 3 or count[1] != 2 or count[2] != 1 {
+        return 2
+    }
+    println("PASS wrr_scheduler: sequencia suave + proporcao")
+    return 0
+}

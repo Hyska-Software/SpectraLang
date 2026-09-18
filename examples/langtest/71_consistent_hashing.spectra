@@ -1,0 +1,65 @@
+module consistent_hashing
+
+from std.io import println
+
+// Consistent hashing p/ balanceamento (serving): anel 64, A:{5,37},
+// B:{21,53}. Lookup = proximo vnode no sentido horario (wrap).
+// Remover B so move as chaves de B (disrupcao minima).
+
+func owner_of(vpos: [int], vnode: [int], nvnodes: int, key: int) returns int {
+    let best     = -1
+    let best_pos = 64
+    let i        = 0
+    while i < nvnodes {
+        if vpos[i] >= key and vpos[i] < best_pos {
+            best_pos = vpos[i]
+            best = vnode[i]
+        }
+        i = i + 1
+    }
+    if best != -1 {
+        return best
+    }
+    best_pos = 64
+    i = 0
+    while i < nvnodes {
+        if vpos[i] < best_pos {
+            best_pos = vpos[i]
+            best = vnode[i]
+        }
+        i = i + 1
+    }
+    return best
+}
+
+public func main() returns int {
+    let vpos  = [5, 37, 21, 53]
+    let vnode = [0, 0, 1, 1]
+    let keys  = [3, 10, 25, 40, 60]
+    let want  = [0, 1, 0, 1, 0]
+    let i     = 0
+    while i < 5 {
+        if owner_of(vpos, vnode, 4, keys[i]) != want[i] {
+            return 1
+        }
+        i = i + 1
+    }
+    let vpos2  = [5, 37]
+    let vnode2 = [0, 0]
+    let want2  = [0, 0, 0, 0, 0]
+    i = 0
+    while i < 5 {
+        if owner_of(vpos2, vnode2, 2, keys[i]) != want2[i] {
+            return 2
+        }
+        i = i + 1
+    }
+    if owner_of(vpos, vnode, 4, 3) != owner_of(vpos2, vnode2, 2, 3) {
+        return 3
+    }
+    if owner_of(vpos, vnode, 4, 25) != owner_of(vpos2, vnode2, 2, 25) {
+        return 4
+    }
+    println("PASS consistent_hashing: anel + remocao minima")
+    return 0
+}

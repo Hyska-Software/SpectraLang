@@ -1,0 +1,71 @@
+module mvs_resolve
+
+from std.io import println
+
+// Minimal Version Selection (estilo Go): seleciona o menor que satisfaz,
+// subindo quando deps transitivas exigem. Arestas (from,from_ver,to,min).
+// Pkgs 0=A 1=B 2=C; avail = versao maxima existente (1..max contiguas).
+
+func mvs(root_min: [int], edges: [int], nedges: int, avail: [int], sel: [int]) returns bool {
+    sel[0] = root_min[0]
+    sel[1] = root_min[1]
+    sel[2] = root_min[2]
+    let iter = 0
+    while iter < 5 {
+        let moved = 0
+        let e     = 0
+        while e < nedges {
+            let fp = edges[e * 4]
+            let fv = edges[e * 4 + 1]
+            let tp = edges[e * 4 + 2]
+            let tm = edges[e * 4 + 3]
+            if sel[fp] >= fv and sel[tp] < tm {
+                sel[tp] = tm
+                moved = 1
+            }
+            e = e + 1
+        }
+        if moved == 0 {
+            break
+        }
+        iter = iter + 1
+    }
+    if sel[0] < 1 or sel[0] > avail[0] {
+        return false
+    }
+    if sel[1] < 1 or sel[1] > avail[1] {
+        return false
+    }
+    if sel[2] < 1 or sel[2] > avail[2] {
+        return false
+    }
+    return true
+}
+
+public func main() returns int {
+    let edges = [0, 1, 2, 2, 0, 2, 2, 3, 1, 1, 2, 1]
+    let avail = [2, 1, 3]
+    let sel   = [0, 0, 0]
+    let root  = [1, 1, 0]
+    if not mvs(root, edges, 3, avail, sel) {
+        return 1
+    }
+    if sel[0] != 1 or sel[1] != 1 or sel[2] != 2 {
+        return 2
+    }
+    let sel2  = [0, 0, 0]
+    let root2 = [2, 1, 0]
+    if not mvs(root2, edges, 3, avail, sel2) {
+        return 3
+    }
+    if sel2[0] != 2 or sel2[2] != 3 {
+        return 4
+    }
+    let sel3  = [0, 0, 0]
+    let root3 = [1, 1, 9]
+    if mvs(root3, edges, 3, avail, sel3) {
+        return 5
+    }
+    println("PASS mvs_resolve: minimo que satisfaz + conflito")
+    return 0
+}

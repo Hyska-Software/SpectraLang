@@ -1,0 +1,120 @@
+module http_router
+
+from std.io import println
+import std.string as str
+
+// Roteador trie p/ spectra.api: segmentos static:param=*; precedencia
+// static > param > wildcard. Ate 3 segmentos por rota, ate 4 no path.
+// Handlers: 1=index 2=new 3=show 4=posts 5=files 6=health.
+
+func split_path(text: string, segs: [string]) returns int {
+    let n = 0
+    let i = 0
+    while i < str.len(text) {
+        if str.char_at(text, i) == 47 {
+            i = i + 1
+        } else {
+            let j = i
+            while j < str.len(text) and str.char_at(text, j) != 47 {
+                j = j + 1
+            }
+            segs[n] = str.substring(text, i, j)
+            n = n + 1
+            i = j
+        }
+    }
+    return n
+}
+
+func match_route(nseg: [int], segs: [string], kinds: [int], handler: [int], path: [string], npath: int, captured: [string]) returns int {
+    let r = 0
+    while r < 6 {
+        if nseg[r] <= npath {
+            let wild = 0
+            let ok   = 1
+            let i    = 0
+            while i < nseg[r] {
+                let k = kinds[r * 3 + i]
+                if k == 2 {
+                    wild = 1
+                    i = nseg[r]
+                } else {
+                    if i >= npath {
+                        ok = 0
+                        i = nseg[r]
+                    } else {
+                        if k == 0 and segs[r * 3 + i] != path[i] {
+                            ok = 0
+                            i = nseg[r]
+                        }
+                        if k == 1 {
+                            captured[0] = path[i]
+                        }
+                        i = i + 1
+                    }
+                }
+            }
+            if ok == 1 and(wild == 1 or nseg[r] == npath) {
+                return handler[r]
+            }
+        }
+        r = r + 1
+    }
+    return-1
+}
+
+public func main() returns int {
+    let nseg = [1, 2, 2, 3, 2, 1]
+    let segs = [
+        "users",
+        "",
+        "",
+        "users",
+        "new",
+        "",
+        "users",
+        "id",
+        "",
+        "users",
+        "id",
+        "posts",
+        "files",
+        "*",
+        "",
+        "health",
+        "",
+        "",
+    ]
+    let kinds    = [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 2, 0, 0, 0, 0]
+    let handler  = [1, 2, 3, 4, 5, 6]
+    let path     = ["", "", "", ""]
+    let captured = ["", ""]
+    let n        = split_path("/users/42", path)
+    captured[0] = ""
+    if match_route(nseg, segs, kinds, handler, path, n, captured) != 3 or captured[0] != "42" {
+        return 1
+    }
+    n = split_path("/users/new", path)
+    captured[0] = ""
+    if match_route(nseg, segs, kinds, handler, path, n, captured) != 2 {
+        return 2
+    }
+    n = split_path("/files/a/b", path)
+    if match_route(nseg, segs, kinds, handler, path, n, captured) != 5 {
+        return 3
+    }
+    n = split_path("/health", path)
+    if match_route(nseg, segs, kinds, handler, path, n, captured) != 6 {
+        return 4
+    }
+    n = split_path("/nope", path)
+    if match_route(nseg, segs, kinds, handler, path, n, captured) != -1 {
+        return 5
+    }
+    n = split_path("/users", path)
+    if match_route(nseg, segs, kinds, handler, path, n, captured) != 1 {
+        return 6
+    }
+    println("PASS http_router: static>param>wildcard + captura")
+    return 0
+}

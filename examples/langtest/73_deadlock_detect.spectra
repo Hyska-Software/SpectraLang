@@ -1,0 +1,60 @@
+module deadlock_detect
+
+from std.io import println
+
+// Deteccao de deadlock via wait-for graph (runtime async): DFS 3-cores
+// (0=branco 1=cinza 2=preto); reencontrar cinza = ciclo. 0->1->2->0 cicla;
+// sem a aresta 2->0, 3->1 eh aciclico. Devolve testemunha.
+
+func dfs(adj: [int], n: int, v: int, color: [int], witness: [int]) returns bool {
+    color[v] = 1
+    let e = 0
+    while e < n {
+        if adj[v * 4 + e] == 1 {
+            if color[e] == 1 {
+                witness[0] = e
+                return true
+            }
+            if color[e] == 0 {
+                if dfs(adj, n, e, color, witness) {
+                    return true
+                }
+            }
+        }
+        e = e + 1
+    }
+    color[v] = 2
+    return false
+}
+
+func has_cycle(adj: [int], n: int, witness: [int]) returns bool {
+    let color = [0, 0, 0, 0]
+    let v     = 0
+    while v < n {
+        if color[v] == 0 {
+            if dfs(adj, n, v, color, witness) {
+                return true
+            }
+        }
+        v = v + 1
+    }
+    return false
+}
+
+public func main() returns int {
+    let cyclic = [0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0]
+    let wit    = [-1]
+    if not has_cycle(cyclic, 4, wit) {
+        return 1
+    }
+    if wit[0] != 0 {
+        return 2
+    }
+    let acyclic = [0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0]
+    let wit2    = [-1]
+    if has_cycle(acyclic, 4, wit2) {
+        return 3
+    }
+    println("PASS deadlock_detect: ciclo com testemunha + DAG limpo")
+    return 0
+}

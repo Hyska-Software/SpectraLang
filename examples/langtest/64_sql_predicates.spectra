@@ -1,0 +1,57 @@
+module sql_predicates
+
+from std.io import println
+
+// Motor de predicados WHERE (camada de query do DB): nos 0=TRUE 1=col<k
+// 2=col>k 3=col==k 4=AND 5=OR 6=NOT. Linhas: (age,score)x4.
+// Q: (age>30 AND score<90) OR age==25 => [1,0,1,0].
+
+func eval_pred(kind: [int], a: [int], b: [int], node: int, row: [int]) returns bool {
+    let k = kind[node]
+    if k == 0 {
+        return true
+    }
+    if k == 1 {
+        return row[a[node]] < b[node]
+    }
+    if k == 2 {
+        return row[a[node]] > b[node]
+    }
+    if k == 3 {
+        return row[a[node]] == b[node]
+    }
+    if k == 4 {
+        return eval_pred(kind, a, b, a[node], row) and eval_pred(kind, a, b, b[node], row)
+    }
+    if k == 5 {
+        return eval_pred(kind, a, b, a[node], row) or eval_pred(kind, a, b, b[node], row)
+    }
+    return not eval_pred(kind, a, b, a[node], row)
+}
+
+public func main() returns int {
+    let kind = [2, 1, 4, 3, 5, 0, 0, 0]
+    let ka   = [0, 1, 0, 0, 2, 0, 0, 0]
+    let kb   = [30, 90, 1, 25, 3, 0, 0, 0]
+    let rows = [25, 80, 35, 95, 40, 70, 30, 80]
+    let want = [1, 0, 1, 0]
+    let got  = 0
+    let r    = 0
+    while r < 4 {
+        let row = [rows[r * 2], rows[r * 2 + 1]]
+        let hit = 0
+        if eval_pred(kind, ka, kb, 4, row) {
+            hit = 1
+        }
+        if hit != want[r] {
+            return 10 + r
+        }
+        got = got + hit
+        r = r + 1
+    }
+    if got != 2 {
+        return 20
+    }
+    println("PASS sql_predicates: AND/OR/NOT sobre 4 linhas")
+    return 0
+}

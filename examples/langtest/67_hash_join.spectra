@@ -1,0 +1,101 @@
+module hash_join
+
+from std.io import println
+
+// Hash join build/probe (query engine do DB) com cross-check contra nested
+// loop: R(key,val) x S(key,val) ON key. Tabela 8 slots, sondagem linear.
+
+func ht_insert(ht_key: [int], ht_row: [int], key: int, row: int) {
+    let slot = key % 8
+    if slot < 0 {
+        slot = slot + 8
+    }
+    while ht_key[slot] != -1 {
+        slot = slot + 1
+        if slot >= 8 {
+            slot = 0
+        }
+    }
+    ht_key[slot] = key
+    ht_row[slot] = row
+}
+
+func ht_lookup(ht_key: [int], ht_row: [int], key: int) returns int {
+    let slot = key % 8
+    if slot < 0 {
+        slot = slot + 8
+    }
+    let k = 0
+    while k < 8 {
+        if ht_key[slot] == -1 {
+            return-1
+        }
+        if ht_key[slot] == key {
+            return ht_row[slot]
+        }
+        slot = slot + 1
+        if slot >= 8 {
+            slot = 0
+        }
+        k = k + 1
+    }
+    return-1
+}
+
+public func main() returns int {
+    let rkey   = [1, 2, 3, 4]
+    let rval   = [10, 20, 30, 40]
+    let skey   = [2, 3, 5]
+    let sval   = [200, 300, 500]
+    let ht_key = [-1, -1, -1, -1, -1, -1, -1, -1]
+    let ht_row = [0, 0, 0, 0, 0, 0, 0, 0]
+    let i      = 0
+    while i < 4 {
+        ht_insert(ht_key, ht_row, rkey[i], i)
+        i = i + 1
+    }
+    let okey  = [0, 0, 0, 0]
+    let oval1 = [0, 0, 0, 0]
+    let oval2 = [0, 0, 0, 0]
+    let nout  = 0
+    let j     = 0
+    while j < 3 {
+        let hit = ht_lookup(ht_key, ht_row, skey[j])
+        if hit != -1 {
+            okey[nout] = skey[j]
+            oval1[nout] = rval[hit]
+            oval2[nout] = sval[j]
+            nout = nout + 1
+        }
+        j = j + 1
+    }
+    if nout != 2 {
+        return 1
+    }
+    if okey[0] != 2 or oval1[0] != 20 or oval2[0] != 200 {
+        return 2
+    }
+    if okey[1] != 3 or oval1[1] != 30 or oval2[1] != 300 {
+        return 3
+    }
+    let nlj = 0
+    i = 0
+    while i < 4 {
+        j = 0
+        while j < 3 {
+            if rkey[i] == skey[j] {
+                if rkey[i] != okey[nlj] or rval[i] != oval1[nlj] or sval[j] != oval2[nlj] {
+                    return 4
+                }
+                nlj = nlj + 1
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    if nlj != nout {
+        return 5
+    }
+    println("PASS hash_join: probe == nested-loop, 2 linhas")
+    return 0
+}

@@ -67,6 +67,22 @@ invariantes passam e um código distinto por estágio quando alguma falha.
 | `56_callrank_pagerank.spectra` | PageRank (PGO) | d=0.85, 20 iterações; soma~1, sink no topo |
 | `57_minimax_ab.spectra` | Minimax + alpha-beta | Nim 7: mesmo valor, poda estrita, lance ótimo 3 |
 | `58_rope_buffer.spectra` | Rope (buffers LSP) | Peças paralelas; split/flatten/char_at coerentes |
+| `59_semver_match.spectra` | SemVer (package) | Parse/cmp + exact/caret/tilde/gte, rejeita `1.2` e `a.b.c` |
+| `60_mvs_resolve.spectra` | MVS estilo Go (package) | Menor que satisfaz + upgrade transitivo + conflito detectado |
+| `61_http_router.spectra` | Trie de rotas (API) | First-match com static antes de param; captura `:id`, `*` casa resto |
+| `62_token_bucket.spectra` | Token bucket (middleware) | Relógio virtual; rajada nega, refill 1/500ms libera |
+| `63_circuit_breaker.spectra` | Closed/open/half-open (API) | 3 falhas abrem, trial em 5s fecha ou reabre |
+| `64_sql_predicates.spectra` | WHERE AND/OR/NOT (DB) | Predicados sobre 4 linhas; conta 2 acertos |
+| `65_btree_ops.spectra` | B-tree t=2 (storage) | Splits on-descent, busca, inorder e invariantes por nó |
+| `66_wal_redo.spectra` | WAL redo (durabilidade) | Só committed reaplica; replay idempotente |
+| `67_hash_join.spectra` | Hash join build/probe (DB) | Sondagem linear + cross-check nested-loop, 2 linhas |
+| `68_histogram_buckets.spectra` | Buckets Prometheus (observabilidade) | Cumulativos le10/50/100/+inf; p50 no le50 |
+| `69_merkle_proof.spectra` | Merkle + prova (package) | FNV-like; inclusão prova, adulteração falha |
+| `70_rbac_eval.spectra` | RBAC + deny-override (segurança) | Herança de papéis; deny vence allow |
+| `71_consistent_hashing.spectra` | Anel c/ vnodes (serving) | Horário + wrap; remover nó só move as dele |
+| `72_wrr_scheduler.spectra` | WRR suave (serving) | Sequência A,B,A,C,B,A + proporção 3:2:1 |
+| `73_deadlock_detect.spectra` | Wait-for + DFS (concorrência) | Ciclo com testemunha; DAG limpo |
+| `74_bankers_safety.spectra` | Banker (concorrência) | Ordem validada passo a passo + grant/deny |
 
 Relação com o já existente: `tests/validation/524_recursion_recursive_descent_parser.spectra`
 cobre descida recursiva sobre strings; esta suíte complementa com DFA tabular,
@@ -133,6 +149,34 @@ passavam nos 28 arquivos então existentes (a suíte hoje tem 58).
   padrão correto antes de cada `kmp_find`. Nenhuma mudança no compilador
   nesta leva; o gate `-O0` do validador (introduzido no R527) passou em
   todos os 28 arquivos de primeira, confirmando que o fix anterior segura.
+
+## Décima leva (67–74): só correções no próprio teste
+
+DB/serving/concorrência/observabilidade em algoritmos puros, sem novos
+bugs de compilador (`check`, `run -O0`/`-O3`, `lint`, `fmt` verdes):
+
+- `67_hash_join.spectra` — cross-check nested-loop alinhado por ordem de
+  emissão (2,3); sondagem linear com wrap e guarda de negativo.
+- `71_consistent_hashing.spectra` — atribuições derivadas à mão
+  (3→A,10→B,25→A,40→B,60→A) + estabilidade pós-remoção verificada.
+- `72_wrr_scheduler.spectra` — sequência suave A,B,A,C,B,A derivada passo
+  a passo e confirmada na execução.
+- `74_bankers_safety.spectra` — caso de deny reescrito como pedido acima
+  do disponível (a versão anterior retornava falha espúria).
+- Formatação normalizada com `spectralang fmt` (8 arquivos).
+
+## Nona leva (59–66): só correções no próprio teste
+
+Workstreams de API/DB/package em algoritmos puros, sem novos bugs de
+compilador (`check`, `run -O0`/`-O3`, `lint`, `fmt` verdes de primeira na
+maioria):
+
+- `61_http_router.spectra` — tabela inicial punha `:id` antes de `new`,
+  quebrando a precedência static>param; reordenada (first-match-wins) e o
+  assert do `/users/new` corrigido para o handler 2.
+- `65_btree_ops.spectra` — filhos com stride 3 estourariam o nó cheio
+  (4 filhos); reescrito com stride 4 + checagem manual do trace.
+- Formatação normalizada com `spectralang fmt` (7 arquivos).
 
 ## Oitava leva (51–58): dois bugs reais numéricos
 

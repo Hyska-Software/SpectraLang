@@ -1,0 +1,35 @@
+module wal_redo
+
+from std.io import println
+
+// WAL redo (durabilidade do DB): log (tx,key,val) + commits; crash perde a
+// memtable; redo reaplica so txs committed, em ordem, idempotente.
+// T1: A=10 committed; T2: B=20 sem commit => pos-crash [10,0].
+
+func redo(data: [int], ltx: [int], lkey: [int], lval: [int], nlog: int, committed: [int]) {
+    let i = 0
+    while i < nlog {
+        if committed[ltx[i]] == 1 {
+            data[lkey[i]] = lval[i]
+        }
+        i = i + 1
+    }
+}
+
+public func main() returns int {
+    let ltx       = [1, 2, 0, 0, 0, 0]
+    let lkey      = [0, 1, 0, 0, 0, 0]
+    let lval      = [10, 20, 0, 0, 0, 0]
+    let committed = [0, 1, 0]
+    let data      = [0, 0]
+    redo(data, ltx, lkey, lval, 2, committed)
+    if data[0] != 10 or data[1] != 0 {
+        return 1
+    }
+    redo(data, ltx, lkey, lval, 2, committed)
+    if data[0] != 10 or data[1] != 0 {
+        return 2
+    }
+    println("PASS wal_redo: so committed, replay idempotente")
+    return 0
+}

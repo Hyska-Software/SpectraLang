@@ -1,0 +1,111 @@
+module semver_match
+
+from std.io import println
+import std.string as str
+
+// SemVer p/ o package manager (subset sem prerelease): parse "M.m.p",
+// cmp lexicografico, exact/caret/tilde/gte. Caret = mesmo major e >=
+// (major>0); tilde = mesmo major+minor e >=.
+
+func parse_ver(text: string, out: [int]) returns bool {
+    let parts  = [0, 0, 0]
+    let pi     = 0
+    let value  = 0
+    let digits = 0
+    let i      = 0
+    while i <= str.len(text) {
+        let c = -1
+        if i < str.len(text) {
+            c = str.char_at(text, i)
+        }
+        if c == 46 or i == str.len(text) {
+            if digits == 0 or pi > 2 {
+                return false
+            }
+            parts[pi] = value
+            pi = pi + 1
+            value = 0
+            digits = 0
+        } else {
+            if c < 48 or c > 57 {
+                return false
+            }
+            value = value * 10 + (c - 48)
+            digits = digits + 1
+        }
+        i = i + 1
+    }
+    if pi != 3 {
+        return false
+    }
+    out[0] = parts[0]
+    out[1] = parts[1]
+    out[2] = parts[2]
+    return true
+}
+
+func cmp_ver(a: [int], b: [int]) returns int {
+    let i = 0
+    while i < 3 {
+        if a[i] < b[i] {
+            return 0 - 1
+        }
+        if a[i] > b[i] {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+func gte_ver(a: [int], b: [int]) returns bool {
+    return cmp_ver(a, b) >= 0
+}
+
+func matches_req(kind: int, req: [int], ver: [int]) returns bool {
+    if kind == 0 {
+        return cmp_ver(req, ver) == 0
+    }
+    if kind == 1 {
+        return ver[0] == req[0] and gte_ver(ver, req)
+    }
+    if kind == 2 {
+        return ver[0] == req[0] and ver[1] == req[1] and gte_ver(ver, req)
+    }
+    return gte_ver(ver, req)
+}
+
+public func main() returns int {
+    let v = [0, 0, 0]
+    if not parse_ver("10.20.30", v) or v[0] != 10 or v[1] != 20 or v[2] != 30 {
+        return 1
+    }
+    if parse_ver("1.2", v) or parse_ver("a.b.c", v) or parse_ver("1.2.3.4", v) {
+        return 2
+    }
+    let a = [1, 2, 3]
+    let b = [1, 2, 4]
+    if cmp_ver(a, b) != 0 - 1 or cmp_ver(b, a) != 1 or cmp_ver(a, a) != 0 {
+        return 3
+    }
+    let req  = [1, 2, 3]
+    let v190 = [1, 9, 0]
+    let v200 = [2, 0, 0]
+    let v122 = [1, 2, 2]
+    if not matches_req(1, req, v190) or matches_req(1, req, v200) {
+        return 4
+    }
+    if matches_req(1, req, v122) {
+        return 5
+    }
+    let v129 = [1, 2, 9]
+    let v130 = [1, 3, 0]
+    if not matches_req(2, req, v129) or matches_req(2, req, v130) {
+        return 6
+    }
+    if not matches_req(3, req, v200) or matches_req(3, req, v122) {
+        return 7
+    }
+    println("PASS semver_match: parse/cmp/caret/tilde/gte")
+    return 0
+}

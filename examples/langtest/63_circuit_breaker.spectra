@@ -1,0 +1,66 @@
+module circuit_breaker
+
+from std.io import println
+
+// Circuit breaker (resiliencia de API): 0=closed 1=open 2=half-open.
+// Fecha apos 3 falhas; abre trial apos 5000ms; trial ok fecha, falha reabre.
+// attempt devolve 1 se a requisicao passou, 0 se rejeitada.
+
+func attempt(st: [int], now: int, ok: int) returns int {
+    if st[0] == 1 {
+        if now - st[2] < 5000 {
+            return 0
+        }
+        st[0] = 2
+    }
+    if st[0] == 2 {
+        if ok == 1 {
+            st[0] = 0
+            st[1] = 0
+        } else {
+            st[0] = 1
+            st[2] = now
+        }
+        return 1
+    }
+    if ok == 1 {
+        st[1] = 0
+        return 1
+    }
+    st[1] = st[1] + 1
+    if st[1] >= 3 {
+        st[0] = 1
+        st[2] = now
+    }
+    return 1
+}
+
+public func main() returns int {
+    let st = [0, 0, 0]
+    if attempt(st, 0, 0) != 1 or attempt(st, 0, 0) != 1 {
+        return 1
+    }
+    if attempt(st, 0, 0) != 1 or st[0] != 1 {
+        return 2
+    }
+    if attempt(st, 1000, 1) != 0 or st[0] != 1 {
+        return 3
+    }
+    if attempt(st, 6000, 1) != 1 or st[0] != 0 {
+        return 4
+    }
+    if attempt(st, 6000, 0) != 1 or attempt(st, 6000, 0) != 1 {
+        return 5
+    }
+    if attempt(st, 6000, 0) != 1 or st[0] != 1 {
+        return 6
+    }
+    if attempt(st, 7000, 0) != 0 {
+        return 7
+    }
+    if attempt(st, 12000, 0) != 1 or st[0] != 1 {
+        return 8
+    }
+    println("PASS circuit_breaker: abre, trial, reabre")
+    return 0
+}
