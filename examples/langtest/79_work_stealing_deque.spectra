@@ -1,0 +1,65 @@
+module work_stealing_deque
+
+from std.io import println
+
+// Deque Chase-Lev simulado single-thread (executor async): dono push/pop
+// em LIFO, ladrao steal em FIFO, indices com wrap. Cap 4: cheio nega(-2),
+// vazio -1.
+
+func dq_push(buf: [int], head: [int], tail: [int], cap: int, v: int) returns bool {
+    if tail[0] - head[0] >= cap {
+        return false
+    }
+    buf[tail[0] % cap] = v
+    tail[0] = tail[0] + 1
+    return true
+}
+
+func dq_pop(buf: [int], head: [int], tail: [int], cap: int) returns int {
+    if tail[0] <= head[0] {
+        return 0 - 1
+    }
+    tail[0] = tail[0] - 1
+    return buf[tail[0] % cap]
+}
+
+func dq_steal(buf: [int], head: [int], tail: [int], cap: int) returns int {
+    if tail[0] <= head[0] {
+        return 0 - 1
+    }
+    let v = buf[head[0] % cap]
+    head[0] = head[0] + 1
+    return v
+}
+
+public func main() returns int {
+    let buf  = [0, 0, 0, 0]
+    let head = [0]
+    let tail = [0]
+    if not dq_push(buf, head, tail, 4, 1) or not dq_push(buf, head, tail, 4, 2) {
+        return 1
+    }
+    if dq_steal(buf, head, tail, 4) != 1 {
+        return 2
+    }
+    if not dq_push(buf, head, tail, 4, 3) or not dq_push(buf, head, tail, 4, 4) {
+        return 3
+    }
+    if not dq_push(buf, head, tail, 4, 5) {
+        return 4
+    }
+    if dq_push(buf, head, tail, 4, 6) {
+        return 5
+    }
+    if dq_pop(buf, head, tail, 4) != 5 or dq_pop(buf, head, tail, 4) != 4 {
+        return 6
+    }
+    if dq_steal(buf, head, tail, 4) != 2 or dq_steal(buf, head, tail, 4) != 3 {
+        return 7
+    }
+    if dq_pop(buf, head, tail, 4) != 0 - 1 or dq_steal(buf, head, tail, 4) != 0 - 1 {
+        return 8
+    }
+    println("PASS work_stealing_deque: LIFO dono, FIFO ladrao")
+    return 0
+}

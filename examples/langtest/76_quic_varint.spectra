@@ -1,0 +1,120 @@
+module quic_varint
+
+from std.io import println
+
+// Varints do QUIC, RFC 9000 16: prefixo de 2 bits (1/2/4/8 bytes),
+// restante big-endian, codificacao minima. Redondo em 0,63,64,16383,
+// 16384,2^30-1,2^30,2^62-1; bytes construidos a mao.
+
+func encode_varint(v: int, out: [int]) returns int {
+    if v < 64 {
+        out[0] = v
+        return 1
+    }
+    if v < 16384 {
+        out[0] = 64 + v / 256
+        out[1] = v % 256
+        return 2
+    }
+    if v < 1073741824 {
+        out[0] = 128 + v / 16777216
+        out[1] = v / 65536 % 256
+        out[2] = v / 256 % 256
+        out[3] = v % 256
+        return 4
+    }
+    out[0] = 192 + v / 72057594037927936
+    out[1] = v / 281474976710656 % 256
+    out[2] = v / 1099511627776 % 256
+    out[3] = v / 4294967296 % 256
+    out[4] = v / 16777216 % 256
+    out[5] = v / 65536 % 256
+    out[6] = v / 256 % 256
+    out[7] = v % 256
+    return 8
+}
+
+func decode_varint(buf: [int], pos: [int], nbytes: int) returns int {
+    if pos[0] >= nbytes {
+        return 0 - 1
+    }
+    let first  = buf[pos[0]]
+    let prefix = first / 64
+    if prefix == 0 {
+        pos[0] = pos[0] + 1
+        return first
+    }
+    if prefix == 1 {
+        if pos[0] + 2 > nbytes {
+            return 0 - 1
+        }
+        let v = (first % 64) * 256 + buf[pos[0] + 1]
+        pos[0] = pos[0] + 2
+        return v
+    }
+    if prefix == 2 {
+        if pos[0] + 4 > nbytes {
+            return 0 - 1
+        }
+        let v = (first % 64) *
+            16777216 +
+            buf[pos[0] + 1] *
+            65536 +
+            buf[pos[0] + 2] *
+            256 +
+            buf[pos[0] + 3]
+        pos[0] = pos[0] + 4
+        return v
+    }
+    if pos[0] + 8 > nbytes {
+        return 0 - 1
+    }
+    let v = (first % 64) *
+        72057594037927936 +
+        buf[pos[0] + 1] *
+        281474976710656 +
+        buf[pos[0] + 2] *
+        1099511627776 +
+        buf[pos[0] + 3] *
+        4294967296 +
+        buf[pos[0] + 4] *
+        16777216 +
+        buf[pos[0] + 5] *
+        65536 +
+        buf[pos[0] + 6] *
+        256 +
+        buf[pos[0] + 7]
+    pos[0] = pos[0] + 8
+    return v
+}
+
+public func main() returns int {
+    let buf      = [0, 0, 0, 0, 0, 0, 0, 0]
+    let pos      = [0]
+    let cases    = [0, 63, 64, 16383, 16384, 1073741823, 1073741824, 4611686018427387903]
+    let want_len = [1, 1, 2, 2, 4, 4, 8, 8]
+    let i        = 0
+    while i < 8 {
+        let n = encode_varint(cases[i], buf)
+        if n != want_len[i] {
+            return 10 + i
+        }
+        pos[0] = 0
+        if decode_varint(buf, pos, n) != cases[i] or pos[0] != n {
+            return 20 + i
+        }
+        i = i + 1
+    }
+    let raw = [64, 64, 0, 0, 0, 0, 0, 0]
+    pos[0] = 0
+    if decode_varint(raw, pos, 2) != 64 {
+        return 30
+    }
+    let raw8 = [192, 0, 0, 0, 0, 0, 0, 1]
+    pos[0] = 0
+    if decode_varint(raw8, pos, 8) != 1 {
+        return 31
+    }
+    println("PASS quic_varint: roundtrip + formas minimas")
+    return 0
+}

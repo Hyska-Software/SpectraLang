@@ -1,0 +1,107 @@
+module ws_frames
+
+from std.io import println
+
+// Frames RFC 6455 (WebSocket da API): header FIN/opcode/mask/len, payload
+// com mascara XOR, remontagem de fragmentacao (opcode 0 = continuacao).
+// Vetor: "Hello" mascarado com chave [1,2,3,4].
+
+func parse_frame(bytes: [int], nbytes: int, pos: [int], fin: [int], op: [int], payload: [int]) returns int {
+    if pos[0] + 2 > nbytes {
+        return 0 - 1
+    }
+    let b0 = bytes[pos[0]]
+    let b1 = bytes[pos[0] + 1]
+    fin[0] = b0 / 128
+    op[0] = b0 % 16
+    let masked = b1 / 128
+    let len    = b1 % 128
+    pos[0] = pos[0] + 2
+    if len == 126 or len == 127 {
+        return 0 - 1
+    }
+    let key = [0, 0, 0, 0]
+    if masked == 1 {
+        if pos[0] + 4 > nbytes {
+            return 0 - 1
+        }
+        let k = 0
+        while k < 4 {
+            key[k] = bytes[pos[0] + k]
+            k = k + 1
+        }
+        pos[0] = pos[0] + 4
+    }
+    if pos[0] + len > nbytes {
+        return 0 - 1
+    }
+    let i = 0
+    while i < len {
+        let v = bytes[pos[0] + i]
+        if masked == 1 {
+            v = v % 256
+            let m   = key[i % 4]
+            let x   = 0
+            let bit = 1
+            while bit < 256 {
+                if v / bit % 2 != m / bit % 2 {
+                    x = x + bit
+                }
+                bit = bit * 2
+            }
+            v = x
+        }
+        payload[i] = v
+        i = i + 1
+    }
+    pos[0] = pos[0] + len
+    return len
+}
+
+public func main() returns int {
+    let bytes   = [129, 133, 1, 2, 3, 4, 73, 103, 111, 104, 110, 0, 0, 0, 0, 0]
+    let pos     = [0]
+    let fin     = [0]
+    let op      = [0]
+    let payload = [0, 0, 0, 0, 0, 0, 0, 0]
+    if parse_frame(bytes, 11, pos, fin, op, payload) != 5 {
+        return 1
+    }
+    if fin[0] != 1 or op[0] != 1 {
+        return 2
+    }
+    if payload[0] != 72 or payload[1] != 101 or payload[2] != 108 or payload[3] != 108 or payload[4] != 111 {
+        return 3
+    }
+    if pos[0] != 11 {
+        return 4
+    }
+    let frag  = [1, 131, 1, 2, 3, 4, 73, 103, 111, 128, 2, 108, 111, 0, 0, 0]
+    let p2    = [0]
+    let f2    = [0]
+    let o2    = [0]
+    let acc   = [0, 0, 0, 0, 0, 0, 0, 0]
+    let total = 0
+    if parse_frame(frag, 13, p2, f2, o2, acc) != 3 {
+        return 5
+    }
+    if f2[0] != 0 or o2[0] != 1 {
+        return 6
+    }
+    total = 3
+    let p3 = [0, 0, 0, 0, 0, 0, 0, 0]
+    if parse_frame(frag, 13, p2, f2, o2, p3) != 2 {
+        return 7
+    }
+    if f2[0] != 1 or o2[0] != 0 {
+        return 8
+    }
+    acc[3] = p3[0]
+    acc[4] = p3[1]
+    total = total + 2
+    if total != 5 or acc[0] != 72 or acc[4] != 111 {
+        return 9
+    }
+    println("PASS ws_frames: mascara + remontagem")
+    return 0
+}

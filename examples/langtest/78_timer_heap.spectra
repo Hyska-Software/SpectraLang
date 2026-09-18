@@ -1,0 +1,92 @@
+module timer_heap
+
+from std.io import println
+
+// Binary min-heap p/ timers do reactor: push (deadline,task), pop-min,
+// peek e vazio. Ordem de disparo verificada sobre 5 timers.
+
+func heap_swap(dl: [int], task: [int], i: int, j: int) {
+    let td = dl[i]
+    dl[i] = dl[j]
+    dl[j] = td
+    let tt = task[i]
+    task[i] = task[j]
+    task[j] = tt
+}
+
+func heap_push(dl: [int], task: [int], size: [int], deadline: int, id: int) {
+    dl[size[0]] = deadline
+    task[size[0]] = id
+    let i = size[0]
+    size[0] = size[0] + 1
+    while i > 0 {
+        let parent = (i - 1) / 2
+        if dl[i] < dl[parent] {
+            heap_swap(dl, task, i, parent)
+            i = parent
+        } else {
+            break
+        }
+    }
+}
+
+func heap_pop(dl: [int], task: [int], size: [int], out_task: [int]) returns int {
+    if size[0] == 0 {
+        return 0 - 1
+    }
+    let top_deadline = dl[0]
+    out_task[0] = task[0]
+    size[0] = size[0] - 1
+    dl[0] = dl[size[0]]
+    task[0] = task[size[0]]
+    let i = 0
+    while true {
+        let left     = i * 2 + 1
+        let right    = i * 2 + 2
+        let smallest = i
+        if left < size[0] and dl[left] < dl[smallest] {
+            smallest = left
+        }
+        if right < size[0] and dl[right] < dl[smallest] {
+            smallest = right
+        }
+        if smallest == i {
+            break
+        }
+        heap_swap(dl, task, i, smallest)
+        i = smallest
+    }
+    return top_deadline
+}
+
+public func main() returns int {
+    let dl   = [0, 0, 0, 0, 0, 0, 0, 0]
+    let task = [0, 0, 0, 0, 0, 0, 0, 0]
+    let size = [0]
+    heap_push(dl, task, size, 50, 1)
+    heap_push(dl, task, size, 10, 2)
+    heap_push(dl, task, size, 30, 3)
+    heap_push(dl, task, size, 5, 4)
+    heap_push(dl, task, size, 40, 5)
+    if size[0] != 5 or dl[0] != 5 {
+        return 1
+    }
+    let fired     = [0]
+    let want_task = [4, 2, 3, 5, 1]
+    let want_dl   = [5, 10, 30, 40, 50]
+    let k         = 0
+    while k < 5 {
+        if heap_pop(dl, task, size, fired) != want_dl[k] or fired[0] != want_task[k] {
+            return 10 + k
+        }
+        k = k + 1
+    }
+    if size[0] != 0 {
+        return 20
+    }
+    if heap_pop(dl, task, size, fired) != 0 - 1 {
+        return 21
+    }
+    println("PASS timer_heap: ordem de disparo + vazio")
+    return 0
+}

@@ -83,6 +83,14 @@ invariantes passam e um código distinto por estágio quando alguma falha.
 | `72_wrr_scheduler.spectra` | WRR suave (serving) | Sequência A,B,A,C,B,A + proporção 3:2:1 |
 | `73_deadlock_detect.spectra` | Wait-for + DFS (concorrência) | Ciclo com testemunha; DAG limpo |
 | `74_bankers_safety.spectra` | Banker (concorrência) | Ordem validada passo a passo + grant/deny |
+| `75_ws_frames.spectra` | Frames RFC 6455 (API) | Máscara XOR + remontagem; vetor "Hello" calculado à mão |
+| `76_quic_varint.spectra` | Varints RFC 9000 §16 (HTTP/3) | Roundtrip nas 8 fronteiras + bytes construídos à mão |
+| `77_url_parse.spectra` | URL split+normalize (API/CLI) | scheme/host/porta, dot-segments, query/frag |
+| `78_timer_heap.spectra` | Min-heap (timers do reactor) | Ordem de disparo + peek implícito + vazio |
+| `79_work_stealing_deque.spectra` | Chase-Lev (executor async) | LIFO do dono, FIFO do ladrão, cheio/vazio/wrap |
+| `80_lsm_tree.spectra` | LSM (storage alternativo) | Memtable, flush, merge newest-wins, lookup por idade |
+| `81_jwt_claims.spectra` | Base64url + exp (auth) | Vetores "M"→"TQ"; exp válido/expirado/ausente |
+| `82_huffman_coding.spectra` | Huffman (compressão) | 7 bits p/ "abac" + prefix-free por pares |
 
 Relação com o já existente: `tests/validation/524_recursion_recursive_descent_parser.spectra`
 cobre descida recursiva sobre strings; esta suíte complementa com DFA tabular,
@@ -149,6 +157,21 @@ passavam nos 28 arquivos então existentes (a suíte hoje tem 58).
   padrão correto antes de cada `kmp_find`. Nenhuma mudança no compilador
   nesta leva; o gate `-O0` do validador (introduzido no R527) passou em
   todos os 28 arquivos de primeira, confirmando que o fix anterior segura.
+
+## Décima primeira leva (75–82): só correções no próprio teste
+
+API/async/storage/auth/compressão em algoritmos puros, sem novos bugs de
+compilador (`check`, `run -O0`/`-O3`, `lint`, `fmt` verdes):
+
+- `75_ws_frames.spectra` — vetor de fragmentação reconstruído byte a
+  byte (header/len/key corretos + `nbytes=13`).
+- `77_url_parse.spectra` — bloco vazio reescrito com `if` aninhado.
+- `80_lsm_tree.spectra` — merge reescrito: ramos exclusivos copiam só o
+  seu lado; comparação de `seq` só em chaves iguais.
+- `81_jwt_claims.spectra` — `str.from_code` não existe na stdlib;
+  reescrito com slice de alfabeto + comparação por bytes via `char_at`.
+- `82_huffman_coding.spectra` — removida função `code_bit` morta/restante.
+- Formatação normalizada com `spectralang fmt` (8 arquivos).
 
 ## Décima leva (67–74): só correções no próprio teste
 

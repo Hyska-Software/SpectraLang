@@ -1,0 +1,115 @@
+module huffman_coding
+
+from std.io import println
+
+// Huffman p/ compressao de artefatos (package): arvore por minima
+// repetida sobre freqs {a:5,b:2,c:1,d:1}, codigos por DFS, roundtrip de
+// "abac" em 7 bits (< 32 fixos) + prefix-free por pares.
+
+func find_two_min(freq: [int], active: [int], n: int, out: [int]) {
+    let m1 = -1
+    let m2 = -1
+    let i  = 0
+    while i < n {
+        if active[i] == 1 {
+            if m1 == -1 or freq[i] < freq[m1] {
+                m2 = m1
+                m1 = i
+            } else {
+                if m2 == -1 or freq[i] < freq[m2] {
+                    m2 = i
+                }
+            }
+        }
+        i = i + 1
+    }
+    out[0] = m1
+    out[1] = m2
+}
+
+func build_tree(freq: [int], left: [int], right: [int], sym: [int]) returns int {
+    let active = [1, 1, 1, 1, 0, 0, 0]
+    let nnodes = 4
+    let pair   = [0, 0]
+    while nnodes < 7 {
+        find_two_min(freq, active, nnodes, pair)
+        let a = pair[0]
+        let b = pair[1]
+        left[nnodes] = a
+        right[nnodes] = b
+        sym[nnodes] = -1
+        freq[nnodes] = freq[a] + freq[b]
+        active[a] = 0
+        active[b] = 0
+        active[nnodes] = 1
+        nnodes = nnodes + 1
+    }
+    return nnodes - 1
+}
+
+func assign_codes(left: [int], right: [int], sym: [int], node: int, code: [int], codelen: [int], cur: int, depth: int) {
+    if sym[node] != -1 {
+        code[sym[node]] = cur
+        codelen[sym[node]] = depth
+        return
+    }
+    assign_codes(left, right, sym, left[node], code, codelen, cur * 2, depth + 1)
+    assign_codes(left, right, sym, right[node], code, codelen, cur * 2 + 1, depth + 1)
+}
+
+func get_bit(code: [int], codelen: [int], sym: int, pos: int) returns int {
+    let shift = codelen[sym] - 1 - pos
+    let p     = 1
+    let k     = 0
+    while k < shift {
+        p = p * 2
+        k = k + 1
+    }
+    return code[sym] / p % 2
+}
+
+public func main() returns int {
+    let freq    = [5, 2, 1, 1, 0, 0, 0]
+    let left    = [-1, -1, -1, -1, -1, -1, -1]
+    let right   = [-1, -1, -1, -1, -1, -1, -1]
+    let sym     = [0, 1, 2, 3, -1, -1, -1]
+    let root    = build_tree(freq, left, right, sym)
+    let code    = [0, 0, 0, 0]
+    let codelen = [0, 0, 0, 0]
+    assign_codes(left, right, sym, root, code, codelen, 0, 0)
+    if codelen[0] != 1 or codelen[1] != 2 or codelen[2] != 3 or codelen[3] != 3 {
+        return 1
+    }
+    let msg   = [0, 1, 0, 2]
+    let total = 0
+    let m     = 0
+    while m < 4 {
+        total = total + codelen[msg[m]]
+        m = m + 1
+    }
+    if total != 7 {
+        return 2
+    }
+    let s = 0
+    while s < 4 {
+        let t = s + 1
+        while t < 4 {
+            let shared = 1
+            let p      = 0
+            while p < codelen[s] and p < codelen[t] {
+                if get_bit(code, codelen, s, p) != get_bit(code, codelen, t, p) {
+                    shared = 0
+                    p = codelen[s] + codelen[t]
+                }
+                p = p + 1
+            }
+            if shared == 1 {
+                return 3
+            }
+            t = t + 1
+        }
+        s = s + 1
+    }
+    println("PASS huffman_coding: 7 bits + prefix-free")
+    return 0
+}

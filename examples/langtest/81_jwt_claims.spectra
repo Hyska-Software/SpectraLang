@@ -1,0 +1,191 @@
+module jwt_claims
+
+from std.io import println
+import std.string as str
+
+// JWT estrutural (auth da API): base64url sem padding + extracao da claim
+// exp + validade contra now. Vetores: "M"->"TQ", "Ma"->"TWE".
+
+func b64val(c: int) returns int {
+    if c >= 65 and c <= 90 {
+        return c - 65
+    }
+    if c >= 97 and c <= 122 {
+        return c - 71
+    }
+    if c >= 48 and c <= 57 {
+        return c + 4
+    }
+    if c == 45 {
+        return 62
+    }
+    return 63
+}
+
+func b64char_at(v: int) returns string {
+    let alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    return str.substring(alpha, v, v + 1)
+}
+
+func b64url_encode(text: string) returns string {
+    let out = ""
+    let i   = 0
+    while i < str.len(text) {
+        let b0 = str.char_at(text, i)
+        let b1 = -1
+        if i + 1 < str.len(text) {
+            b1 = str.char_at(text, i + 1)
+        }
+        let b2 = -1
+        if i + 2 < str.len(text) {
+            b2 = str.char_at(text, i + 2)
+        }
+        out = out + b64char_at(b0 / 4)
+        if b1 == -1 {
+            out = out + b64char_at((b0 % 4) * 16)
+        } else {
+            out = out + b64char_at((b0 % 4) * 16 + b1 / 16)
+            if b2 == -1 {
+                out = out + b64char_at((b1 % 16) * 4)
+            } else {
+                out = out + b64char_at((b1 % 16) * 4 + b2 / 64)
+                out = out + b64char_at(b2 % 64)
+            }
+        }
+        i = i + 3
+    }
+    return out
+}
+
+func b64url_decode(text: string, out: [int]) returns int {
+    let n = 0
+    let i = 0
+    while i < str.len(text) {
+        let v0 = b64val(str.char_at(text, i))
+        let v1 = 0
+        if i + 1 < str.len(text) {
+            v1 = b64val(str.char_at(text, i + 1))
+        }
+        out[n] = v0 * 4 + v1 / 16
+        n = n + 1
+        if i + 2 < str.len(text) {
+            let v2 = b64val(str.char_at(text, i + 2))
+            out[n] = (v1 % 16) * 16 + v2 / 4
+            n = n + 1
+            if i + 3 < str.len(text) {
+                let v3 = b64val(str.char_at(text, i + 3))
+                out[n] = (v2 % 4) * 64 + v3
+                n = n + 1
+            }
+        }
+        i = i + 4
+    }
+    return n
+}
+
+func find_number(text: string, key: string) returns int {
+    let at = str.index_of(text, key)
+    if at == -1 {
+        return 0 - 1
+    }
+    let i = at + str.len(key)
+    while i < str.len(text) {
+        let c = str.char_at(text, i)
+        if c >= 48 and c <= 57 {
+            break
+        }
+        i = i + 1
+    }
+    if i >= str.len(text) {
+        return 0 - 1
+    }
+    let value = 0
+    while i < str.len(text) {
+        let c = str.char_at(text, i)
+        if c < 48 or c > 57 {
+            break
+        }
+        value = value * 10 + (c - 48)
+        i = i + 1
+    }
+    return value
+}
+
+public func main() returns int {
+    if b64url_encode("M") != "TQ" {
+        return 1
+    }
+    if b64url_encode("Ma") != "TWE" {
+        return 2
+    }
+    let payload = "{\"sub\":\"alice\",\"exp\":2000000000}"
+    let enc     = b64url_encode(payload)
+    let raw     = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    let n = b64url_decode(enc, raw)
+    if n != str.len(payload) {
+        return 3
+    }
+    let i = 0
+    while i < n {
+        if raw[i] != str.char_at(payload, i) {
+            return 3
+        }
+        i = i + 1
+    }
+    if find_number(payload, "\"exp\"") != 2000000000 {
+        return 4
+    }
+    if find_number(payload, "\"exp\"") <= 1000000000 {
+        return 5
+    }
+    let old = "{\"sub\":\"bob\",\"exp\":1000}"
+    if find_number(old, "\"exp\"") > 1000000000 {
+        return 6
+    }
+    if find_number(payload, "\"nbf\"") != 0 - 1 {
+        return 7
+    }
+    println("PASS jwt_claims: base64url + exp valido/expirado")
+    return 0
+}

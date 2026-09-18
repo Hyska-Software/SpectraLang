@@ -84,6 +84,14 @@ FILES = [
     "72_wrr_scheduler.spectra",
     "73_deadlock_detect.spectra",
     "74_bankers_safety.spectra",
+    "75_ws_frames.spectra",
+    "76_quic_varint.spectra",
+    "77_url_parse.spectra",
+    "78_timer_heap.spectra",
+    "79_work_stealing_deque.spectra",
+    "80_lsm_tree.spectra",
+    "81_jwt_claims.spectra",
+    "82_huffman_coding.spectra",
 ]
 
 

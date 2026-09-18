@@ -1,0 +1,126 @@
+module url_parse
+
+from std.io import println
+import std.string as str
+
+// URL p/ clientes/API (subset sem folding de caixa): scheme://host[:port]
+// /path com dot-segments + ?query& + #frag. Split em pieces + normalizacao.
+
+func split_host_port(authority: string, host: [string], port: [int]) {
+    let i     = str.len(authority) - 1
+    let colon = -1
+    while i >= 0 {
+        if str.char_at(authority, i) == 58 {
+            colon = i
+            i = -1
+        }
+        i = i - 1
+    }
+    if colon == -1 {
+        host[0] = authority
+        port[0] = -1
+        return
+    }
+    host[0] = str.substring(authority, 0, colon)
+    port[0] = std.convert.string_to_int(str.substring(authority, colon + 1, str.len(authority)))
+}
+
+func normalize_path(path: string) returns string {
+    let segs = ["", "", "", "", "", "", "", ""]
+    let n    = 0
+    let i    = 0
+    while i < str.len(path) {
+        if str.char_at(path, i) == 47 {
+            i = i + 1
+        } else {
+            let j = i
+            while j < str.len(path) and str.char_at(path, j) != 47 {
+                j = j + 1
+            }
+            let seg = str.substring(path, i, j)
+            if seg == ".." {
+                if n > 0 {
+                    n = n - 1
+                }
+            } else {
+                if seg != "." {
+                    segs[n] = seg
+                    n = n + 1
+                }
+            }
+            i = j
+        }
+    }
+    let out = ""
+    let k   = 0
+    while k < n {
+        out = out + "/" + segs[k]
+        k = k + 1
+    }
+    if out == "" {
+        return "/"
+    }
+    return out
+}
+
+func parse_url(text: string, scheme: [string], host: [string], port: [int], path: [string], query: [string], frag: [string]) returns bool {
+    let rest = text
+    let ci   = str.index_of(rest, "://")
+    if ci == -1 {
+        return false
+    }
+    scheme[0] = str.substring(rest, 0, ci)
+    rest = str.substring(rest, ci + 3, str.len(rest))
+    let hi = str.index_of(rest, "#")
+    if hi != -1 {
+        frag[0] = str.substring(rest, hi + 1, str.len(rest))
+        rest = str.substring(rest, 0, hi)
+    } else {
+        frag[0] = ""
+    }
+    let qi = str.index_of(rest, "?")
+    if qi != -1 {
+        query[0] = str.substring(rest, qi + 1, str.len(rest))
+        rest = str.substring(rest, 0, qi)
+    } else {
+        query[0] = ""
+    }
+    let si = str.index_of(rest, "/")
+    if si == -1 {
+        split_host_port(rest, host, port)
+        path[0] = "/"
+    } else {
+        split_host_port(str.substring(rest, 0, si), host, port)
+        path[0] = normalize_path(str.substring(rest, si, str.len(rest)))
+    }
+    return true
+}
+
+public func main() returns int {
+    let scheme = [""]
+    let host   = [""]
+    let port   = [0]
+    let path   = [""]
+    let query  = [""]
+    let frag   = [""]
+    if not parse_url("https://api.x.com:8080/a/./b/../c?x=1&y=2#frag", scheme, host, port, path, query, frag) {
+        return 1
+    }
+    if scheme[0] != "https" or host[0] != "api.x.com" or port[0] != 8080 {
+        return 2
+    }
+    if path[0] != "/a/c" or query[0] != "x=1&y=2" or frag[0] != "frag" {
+        return 3
+    }
+    if not parse_url("http://h/path", scheme, host, port, path, query, frag) {
+        return 4
+    }
+    if port[0] != -1 or path[0] != "/path" or query[0] != "" or frag[0] != "" {
+        return 5
+    }
+    if parse_url("no-scheme-here", scheme, host, port, path, query, frag) {
+        return 6
+    }
+    println("PASS url_parse: split + dot-segments + query/frag")
+    return 0
+}
