@@ -1,0 +1,13 @@
+module array_index_oob_copy
+
+// Expected behavior: JIT/AOT execution prints
+//   runtime error: array index out of bounds
+// to stderr and terminates the process with exit code 101
+// (spectra_rt_panic). Copies keep the sized type (`[int; 3]`), so the
+// bound follows the value; only `[T]` parameters are unchecked.
+public func main() returns int {
+    let a = [10, 20, 30]
+    let b = a
+    let i = 7
+    return b[i]
+}

@@ -141,16 +141,17 @@ da faixa era silencioso (`a[10]=99; return a[10]` devolvia 99): o backend
   pega índices negativos. O construtor antigo `build_getelementptr` delega
   com `None` (zero mudança nos demais GEPs internos) e o `bound` é
   preservado pelo inliner.
-- **Regressões:** `tests/errors/array_index_oob_read.spectra` e
-  `array_index_oob_write.spectra` (registrados em `run_tests.ps1`
-  `runtimeErrorFixtures`, falham com 101 em `-O0`–`-O3`) + 2 testes de
-  backend (`bounded_gep_lowering_passes_verifier`,
+- **Regressões:** `tests/errors/array_index_oob_read.spectra`,
+  `array_index_oob_write.spectra` e `array_index_oob_copy.spectra`
+  (registrados em `run_tests.ps1` `runtimeErrorFixtures`, falham com 101 em
+  `-O0`–`-O3`) + 2 testes de backend (`bounded_gep_lowering_passes_verifier`,
   `aot_bounded_gep_references_spectra_rt_panic`, cobrindo JIT e AOT).
 - **Limites honestos (não cobertos):** params `[T]` baixam para `[0 x int]`
-  (tamanho desconhecido no callee) — `get(a, 7)` segue silencioso e exige
-  fat pointers (trabalho futuro); escritas em `String` têm length dinâmico
-  (leituras já vão por `char_at`, que retorna -1); cópias (`let b = a`) não
-  propagam tamanho pelo `array_map`.
+  (tamanho desconhecido no callee) — seguem silenciosos e exigem fat
+  pointers (trabalho futuro); escritas em `String` têm length dinâmico
+  (leituras já vão por `char_at`, que retorna -1). Cópias (`let b = a`)
+  **são** cobertas: o frontend propaga o tipo dimensionado (`[int; 3]`),
+  então o bound acompanha o valor (travado pelo fixture `_copy`).
 - **Validação do fix:** `cargo test -p spectra-backend` (61 passed, incl. os
   2 novos), `-p spectra-midend` (78), `-p spectra-compiler` (94), suíte
   langtest 35/35 em default e `-O0`, slice array-heavy (10 arquivos) em
