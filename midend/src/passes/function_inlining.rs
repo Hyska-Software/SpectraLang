@@ -437,11 +437,13 @@ fn remap_instruction(kind: &InstructionKind, values: &HashMap<usize, Value>) -> 
             ptr,
             index,
             element_type,
+            bound,
         } => InstructionKind::GetElementPtr {
             result: map_value(*result, values),
             ptr: map_value(*ptr, values),
             index: map_value(*index, values),
             element_type: element_type.clone(),
+            bound: *bound,
         },
         InstructionKind::FieldPtr {
             result,

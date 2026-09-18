@@ -37,6 +37,13 @@ invariantes passam e um código distinto por estágio quando alguma falha.
 | `26_mark_sweep.spectra` | Mark-and-sweep (runtime) | Mark iterativo com worklist desde as raízes; sweep libera a ilha `5→6` |
 | `27_packrat_memo.spectra` | PEG com memoização | Tabela `(regra,pos)` com MISS sentinel; 2ª passada só dá cache hit (contrato linear) |
 | `28_topo_sort.spectra` | Kahn (deps do package manager) | Ordem válida com `pos[dep]<pos[pkg]` + ciclo `0→1→2→0` detectado (`count<n`) |
+| `29_shunting_yard.spectra` | Shunting-yard (Dijkstra) | Infixa→RPN com pilha de operadores + avaliação com pilha de valores; `2+3*4=14`, `(1+2)*3=9` |
+| `30_first_follow.spectra` | FIRST/FOLLOW + tabela LL(1) | Construção por ponto fixo sobre produções como dados; 6 células verificadas (`M[E',+]=P1`, `M[E',$]=P2`…) |
+| `31_peephole_opt.spectra` | Passes de midend (fold+alg+DCE) | IR brinquedo com folding, `x+0`/`x*0`/`x*1`, DCE por roots + diferencial antes/depois |
+| `32_stlc_bidir.spectra` | Bidirecional STLC (De Bruijn) | `infer` falha em lambda nua, `check` anota; `(λx.x:Int→Int) 5 : Int`, `Int→Bool` rejeitado |
+| `33_json_parser.spectra` | Parser JSON (subset tooling) | Extrai soma dos números + conta strings; rejeita `{"a":}` e `[1,]` |
+| `34_domfrontiers.spectra` | DF + phis de Cytron (SSA) | Recomputa DOM, deriva idom, DF e posiciona phis para defs `{2,3}` ⇒ `{1,3}` |
+| `35_brzozowski.spectra` | Derivadas de regex | Matching por derivação com pool fixo; casa `a(b|c)*` sem autômatos |
 
 Relação com o já existente: `tests/validation/524_recursion_recursive_descent_parser.spectra`
 cobre descida recursiva sobre strings; esta suíte complementa com DFA tabular,
@@ -92,8 +99,8 @@ generation`, enquanto `-O2`/`-O3` passavam (o DCE escondia o problema).
   276, 155) em `-O0` e default.
 
 Nenhum outro defeito de compilador/runtime foi encontrado nos demais
-arquivos: `check`, `run -O0`, `run -O3`, `lint` e `fmt --check` passam nos
-28 arquivos.
+arquivos daquela leva: `check`, `run -O0`, `run -O3`, `lint` e `fmt --check`
+passavam nos 28 arquivos então existentes (a suíte hoje tem 35).
 
 ## Quarta leva (22–28): correção no próprio teste
 
@@ -103,6 +110,51 @@ arquivos: `check`, `run -O0`, `run -O3`, `lint` e `fmt --check` passam nos
   padrão correto antes de cada `kmp_find`. Nenhuma mudança no compilador
   nesta leva; o gate `-O0` do validador (introduzido no R527) passou em
   todos os 28 arquivos de primeira, confirmando que o fix anterior segura.
+
+## Quinta leva (29–35) + fix de safety pendente (bounds-check dinâmico)
+
+Correções nos próprios testes:
+
+- `33_json_parser.spectra` — contagem manual errada do cursor (`pos != 22`,
+  o correto é 25 para `{"a":[1,2,true],"b":null}`); corrigido o assert.
+- `35_brzozowski.spectra` — `nullable` da ALT olhava `node-1` em vez dos
+  filhos; corrigido para `nullable(l) or nullable(r)` (e `and` no CONCAT).
+- `31_peephole_opt.spectra` — `is_const`/`cval`/`used` com tamanho 6 para
+  registradores `0..6`; ampliados para 8.
+- `31`/`32` — params mortos removidos (`alg_pass.dst`, `dom_of.ty`); lint
+  limpo.
+
+**Fix implementado: índice dinâmico OOB em array agora é fail-fast.**
+Antes, índice estático OOB era erro de compilação
+(`error[semantic]: Array index 10 out of bounds`), mas `a[i]` dinâmico fora
+da faixa era silencioso (`a[10]=99; return a[10]` devolvia 99): o backend
+(`GetElementPtr` em `backend/src/codegen_instruction_memory.rs`) calculava
+`ptr+index*size` sem checagem e sem length no site.
+
+- **Implementação:** `GetElementPtr` ganhou `bound: Option<usize>` (mede
+  `midend/src/ir.rs`); o midend anexa o tamanho nos dois sites de indexação
+  do usuário (leitura em `lowering_expr_aggregates.rs`, escrita em
+  `lowering_impl_statements.rs`) quando a inferência conhece o tamanho
+  (`size > 0`); o backend emite `icmp ult(index, len)` com bloco de panic
+  via `spectra_rt_panic` (`runtime error: array index out of bounds`, exit
+  101) — o mesmo contrato do `integer division by zero`. Unsigned também
+  pega índices negativos. O construtor antigo `build_getelementptr` delega
+  com `None` (zero mudança nos demais GEPs internos) e o `bound` é
+  preservado pelo inliner.
+- **Regressões:** `tests/errors/array_index_oob_read.spectra` e
+  `array_index_oob_write.spectra` (registrados em `run_tests.ps1`
+  `runtimeErrorFixtures`, falham com 101 em `-O0`–`-O3`) + 2 testes de
+  backend (`bounded_gep_lowering_passes_verifier`,
+  `aot_bounded_gep_references_spectra_rt_panic`, cobrindo JIT e AOT).
+- **Limites honestos (não cobertos):** params `[T]` baixam para `[0 x int]`
+  (tamanho desconhecido no callee) — `get(a, 7)` segue silencioso e exige
+  fat pointers (trabalho futuro); escritas em `String` têm length dinâmico
+  (leituras já vão por `char_at`, que retorna -1); cópias (`let b = a`) não
+  propagam tamanho pelo `array_map`.
+- **Validação do fix:** `cargo test -p spectra-backend` (61 passed, incl. os
+  2 novos), `-p spectra-midend` (78), `-p spectra-compiler` (94), suíte
+  langtest 35/35 em default e `-O0`, slice array-heavy (10 arquivos) em
+  default e `-O0`, fixtures com mensagem exata em `-O0`–`-O3`.
 Por isso não há alteração em `compiler/`, `midend/`, `backend/` ou `runtime/`
 neste change — apenas arquivos novos sob `examples/langtest/` mais este doc e
 o validador. Se um bug real aparecer no futuro, a correção deve entrar no crate

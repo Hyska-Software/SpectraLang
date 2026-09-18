@@ -280,8 +280,14 @@ impl ASTLowering {
                 // Avaliar o índice
                 let index_value = self.lower_expression(index, ir_func);
 
-                let elem_type = match self.infer_expr_ir_type(array) {
-                    IRType::Array { element_type, .. } => *element_type,
+                let (elem_type, bound) = match self.infer_expr_ir_type(array) {
+                    IRType::Array { element_type, size } => (
+                        *element_type,
+                        // Size 0 is the `[T]` parameter placeholder ("unknown
+                        // length", not "empty"): only a known positive length
+                        // can back a runtime check.
+                        if size > 0 { Some(size) } else { None },
+                    ),
                     other => {
                         return self.invalid_value(format!(
                             "Index access expected array expression, found {:?}",
@@ -289,11 +295,12 @@ impl ASTLowering {
                         ));
                     }
                 };
-                let elem_ptr = self.builder.build_getelementptr(
+                let elem_ptr = self.builder.build_getelementptr_bounded(
                     ir_func,
                     array_ptr,
                     index_value,
                     elem_type.clone(),
+                    bound,
                 );
 
                 self.builder.build_load_typed(ir_func, elem_ptr, elem_type)

@@ -1,0 +1,206 @@
+module json_parser
+
+from std.io import println
+import std.string as str
+
+// Parser JSON (subconjunto: null/true/false/int/string/array/object, sem
+// escapes): extrai soma dos numeros + contagem de strings. Erro => false.
+
+func skip_ws(text: string, pos: [int]) {
+    while pos[0] < str.len(text) {
+        let c = str.char_at(text, pos[0])
+        if c != 32 and c != 10 and c != 9 and c != 13 {
+            return
+        }
+        pos[0] = pos[0] + 1
+    }
+}
+
+func parse_string(text: string, pos: [int], nstr: [int]) returns bool {
+    if pos[0] >= str.len(text) or str.char_at(text, pos[0]) != 34 {
+        return false
+    }
+    pos[0] = pos[0] + 1
+    while pos[0] < str.len(text) and str.char_at(text, pos[0]) != 34 {
+        pos[0] = pos[0] + 1
+    }
+    if pos[0] >= str.len(text) {
+        return false
+    }
+    pos[0] = pos[0] + 1
+    nstr[0] = nstr[0] + 1
+    return true
+}
+
+func parse_number(text: string, pos: [int], total: [int]) returns bool {
+    if pos[0] >= str.len(text) {
+        return false
+    }
+    let neg = 0
+    if str.char_at(text, pos[0]) == 45 {
+        neg = 1
+        pos[0] = pos[0] + 1
+    }
+    let digits = 0
+    let value  = 0
+    while pos[0] < str.len(text) {
+        let c = str.char_at(text, pos[0])
+        if c < 48 or c > 57 {
+            break
+        }
+        value = value * 10 + (c - 48)
+        digits = digits + 1
+        pos[0] = pos[0] + 1
+    }
+    if digits == 0 {
+        return false
+    }
+    if neg == 1 {
+        total[0] = total[0] - value
+    } else {
+        total[0] = total[0] + value
+    }
+    return true
+}
+
+func parse_literal(text: string, pos: [int], word: string) returns bool {
+    let i = 0
+    while i < str.len(word) {
+        if pos[0] >= str.len(text) or str.char_at(text, pos[0]) != str.char_at(word, i) {
+            return false
+        }
+        pos[0] = pos[0] + 1
+        i = i + 1
+    }
+    return true
+}
+
+func parse_value(text: string, pos: [int], total: [int], nstr: [int]) returns bool {
+    skip_ws(text, pos)
+    if pos[0] >= str.len(text) {
+        return false
+    }
+    let c = str.char_at(text, pos[0])
+    if c == 34 {
+        return parse_string(text, pos, nstr)
+    }
+    if c == 91 {
+        return parse_array(text, pos, total, nstr)
+    }
+    if c == 123 {
+        return parse_object(text, pos, total, nstr)
+    }
+    if c == 116 {
+        return parse_literal(text, pos, "true")
+    }
+    if c == 102 {
+        return parse_literal(text, pos, "false")
+    }
+    if c == 110 {
+        return parse_literal(text, pos, "null")
+    }
+    return parse_number(text, pos, total)
+}
+
+func parse_array(text: string, pos: [int], total: [int], nstr: [int]) returns bool {
+    pos[0] = pos[0] + 1
+    skip_ws(text, pos)
+    if pos[0] < str.len(text) and str.char_at(text, pos[0]) == 93 {
+        pos[0] = pos[0] + 1
+        return true
+    }
+    while true {
+        if not parse_value(text, pos, total, nstr) {
+            return false
+        }
+        skip_ws(text, pos)
+        if pos[0] >= str.len(text) {
+            return false
+        }
+        if str.char_at(text, pos[0]) == 93 {
+            pos[0] = pos[0] + 1
+            return true
+        }
+        if str.char_at(text, pos[0]) != 44 {
+            return false
+        }
+        pos[0] = pos[0] + 1
+    }
+    return false
+}
+
+func parse_object(text: string, pos: [int], total: [int], nstr: [int]) returns bool {
+    pos[0] = pos[0] + 1
+    skip_ws(text, pos)
+    if pos[0] < str.len(text) and str.char_at(text, pos[0]) == 125 {
+        pos[0] = pos[0] + 1
+        return true
+    }
+    while true {
+        skip_ws(text, pos)
+        if not parse_string(text, pos, nstr) {
+            return false
+        }
+        skip_ws(text, pos)
+        if pos[0] >= str.len(text) or str.char_at(text, pos[0]) != 58 {
+            return false
+        }
+        pos[0] = pos[0] + 1
+        if not parse_value(text, pos, total, nstr) {
+            return false
+        }
+        skip_ws(text, pos)
+        if pos[0] >= str.len(text) {
+            return false
+        }
+        if str.char_at(text, pos[0]) == 125 {
+            pos[0] = pos[0] + 1
+            return true
+        }
+        if str.char_at(text, pos[0]) != 44 {
+            return false
+        }
+        pos[0] = pos[0] + 1
+    }
+    return false
+}
+
+public func main() returns int {
+    let pos   = [0]
+    let total = [0]
+    let nstr  = [0]
+    if not parse_value("{\"a\":[1,2,true],\"b\":null}", pos, total, nstr) {
+        return 1
+    }
+    if pos[0] != 25 or total[0] != 3 or nstr[0] != 2 {
+        return 2
+    }
+    pos[0] = 0
+    total[0] = 0
+    nstr[0] = 0
+    if not parse_value("[1,[2,[3]]]", pos, total, nstr) {
+        return 3
+    }
+    if total[0] != 6 or nstr[0] != 0 {
+        return 4
+    }
+    pos[0] = 0
+    total[0] = 0
+    nstr[0] = 0
+    if not parse_value("{\"x\":\"hi\"}", pos, total, nstr) {
+        return 5
+    }
+    if total[0] != 0 or nstr[0] != 2 {
+        return 6
+    }
+    pos[0] = 0
+    if parse_value("{\"a\":}", pos, total, nstr) {
+        return 7
+    }
+    pos[0] = 0
+    if parse_value("[1,]", pos, total, nstr) {
+        return 8
+    }
+    println("PASS json_parser: extracao + rejeicao de malformados")
+    return 0
+}

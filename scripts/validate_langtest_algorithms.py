@@ -38,6 +38,13 @@ FILES = [
     "26_mark_sweep.spectra",
     "27_packrat_memo.spectra",
     "28_topo_sort.spectra",
+    "29_shunting_yard.spectra",
+    "30_first_follow.spectra",
+    "31_peephole_opt.spectra",
+    "32_stlc_bidir.spectra",
+    "33_json_parser.spectra",
+    "34_domfrontiers.spectra",
+    "35_brzozowski.spectra",
 ]
 
 

@@ -1,0 +1,85 @@
+module stlc_bidir
+
+from std.io import println
+
+// Checagem bidirecional para lambda-calculo simplesmente tipado (De Bruijn):
+// infer falha em lambda nua (a licao central do bidirecional), check anota.
+// Termos: 0=VAR(idx) 1=LAM(body) 2=APP(f,x) 3=ANN(t,ty) 4=INTLIT 5=BOOLLIT.
+// Tipos: 10=Int 11=Bool 20=Int->Int 21=Int->Bool.
+
+func is_arrow(ty: int) returns bool {
+    return ty == 20 or ty == 21
+}
+
+func dom_of() returns int {
+    return 10
+}
+
+func cod_of(ty: int) returns int {
+    if ty == 20 {
+        return 10
+    }
+    return 11
+}
+
+func infer_kind(nkind: [int], na: [int], nb: [int], node: int, ctx: [int], depth: int) returns int {
+    let k = nkind[node]
+    if k == 4 {
+        return 10
+    }
+    if k == 5 {
+        return 11
+    }
+    if k == 0 {
+        return ctx[depth - 1 - na[node]]
+    }
+    if k == 3 {
+        if check_kind(nkind, na, nb, na[node], ctx, depth, nb[node]) {
+            return nb[node]
+        }
+        return-1
+    }
+    if k == 2 {
+        let tf = infer_kind(nkind, na, nb, na[node], ctx, depth)
+        if not is_arrow(tf) {
+            return-1
+        }
+        if check_kind(nkind, na, nb, nb[node], ctx, depth, dom_of()) {
+            return cod_of(tf)
+        }
+        return-1
+    }
+    return-1
+}
+
+func check_kind(nkind: [int], na: [int], nb: [int], node: int, ctx: [int], depth: int, ty: int) returns bool {
+    if nkind[node] == 1 and is_arrow(ty) {
+        ctx[depth] = dom_of()
+        return check_kind(nkind, na, nb, na[node], ctx, depth + 1, cod_of(ty))
+    }
+    return infer_kind(nkind, na, nb, node, ctx, depth) == ty
+}
+
+public func main() returns int {
+    let nkind = [1, 0, 3, 4, 2, 0, 0, 0]
+    let na    = [1, 0, 0, 5, 2, 0, 0, 0]
+    let nb    = [0, 0, 20, 0, 3, 0, 0, 0]
+    let ctx   = [0, 0, 0, 0, 0, 0, 0, 0]
+    if infer_kind(nkind, na, nb, 2, ctx, 0) != 20 {
+        return 1
+    }
+    if infer_kind(nkind, na, nb, 4, ctx, 0) != 10 {
+        return 2
+    }
+    if infer_kind(nkind, na, nb, 0, ctx, 0) != -1 {
+        return 3
+    }
+    if not check_kind(nkind, na, nb, 0, ctx, 0, 20) {
+        return 4
+    }
+    if check_kind(nkind, na, nb, 0, ctx, 0, 21) {
+        return 5
+    }
+    println("PASS stlc_bidir: infer/check com De Bruijn")
+    return 0
+}

@@ -1,0 +1,13 @@
+module array_index_oob_read
+
+// Expected behavior: JIT/AOT execution prints
+//   runtime error: array index out of bounds
+// to stderr and terminates the process with exit code 101
+// (spectra_rt_panic), instead of reading adjacent memory.
+// The index is dynamic on purpose: a constant `values[3]` is already a
+// compile-time `error[semantic]`.
+public func main() returns int {
+    let values = [10, 20, 30]
+    let i      = 3
+    return values[i]
+}

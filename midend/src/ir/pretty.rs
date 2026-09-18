@@ -203,13 +203,20 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                 ptr,
                 index,
                 element_type,
-            } => format!(
-                "{} = gep {}, {}, {}",
-                fmt_value(*result),
-                fmt_value(*ptr),
-                fmt_value(*index),
-                fmt_type(element_type)
-            ),
+                bound,
+            } => {
+                let base = format!(
+                    "{} = gep {}, {}, {}",
+                    fmt_value(*result),
+                    fmt_value(*ptr),
+                    fmt_value(*index),
+                    fmt_type(element_type)
+                );
+                match bound {
+                    Some(len) => format!("{base}, bound {len}"),
+                    None => base,
+                }
+            }
             InstructionKind::FieldPtr {
                 result,
                 ptr,

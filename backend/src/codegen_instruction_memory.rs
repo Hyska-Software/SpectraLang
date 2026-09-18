@@ -208,10 +208,45 @@ impl CodeGenerator {
                 ptr,
                 index,
                 element_type,
+                bound,
             } => {
                 let ptr_val = get_value(ptr)?;
 
                 let index_val = get_value(index)?;
+
+                // User array indexing with a statically known length traps
+                // via `spectra_rt_panic` ("array index out of bounds", exit
+                // 101) instead of computing an unchecked address. The
+                // unsigned compare also catches negative indices. Mirrors
+                // `emit_checked_int_divrem`'s panic/continue split.
+                if let Some(len) = bound {
+                    let len_val = builder.ins().iconst(types::I64, *len as i64);
+                    let panic_block = builder.create_block();
+                    let continue_block = builder.create_block();
+                    let in_bounds =
+                        builder
+                            .ins()
+                            .icmp(IntCC::UnsignedLessThan, index_val, len_val);
+                    builder.ins().brif(
+                        in_bounds,
+                        continue_block,
+                        &[],
+                        panic_block,
+                        &[],
+                    );
+                    builder.seal_block(panic_block);
+                    builder.seal_block(continue_block);
+
+                    builder.switch_to_block(panic_block);
+                    Self::emit_runtime_panic(
+                        module,
+                        hostcall,
+                        builder,
+                        "array index out of bounds",
+                    )?;
+
+                    builder.switch_to_block(continue_block);
+                }
 
                 // Element stride inside an array is the *stored* size of the
                 // element (`layout::stored_size`): aggregates are embedded as

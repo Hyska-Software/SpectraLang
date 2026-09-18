@@ -163,11 +163,23 @@ impl IRBuilder {
         index: Value,
         element_type: crate::ir::Type,
     ) -> Value {
+        self.build_getelementptr_bounded(func, ptr, index, element_type, None)
+    }
+
+    pub fn build_getelementptr_bounded(
+        &self,
+        func: &mut Function,
+        ptr: Value,
+        index: Value,
+        element_type: crate::ir::Type,
+        bound: Option<usize>,
+    ) -> Value {
         self.try_emit(func, |result| InstructionKind::GetElementPtr {
             result,
             ptr,
             index,
             element_type,
+            bound,
         })
     }
 

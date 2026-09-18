@@ -1,0 +1,204 @@
+module brzozowski
+
+from std.io import println
+import std.string as str
+
+// Derivadas de Brzozowski: matching por derivacao sucessiva, sem automatos.
+// Nos: 0=EMPTY 1=EPS 2+=STR fs. 2=CHAR 3=ALT 4=CONCAT 5=STAR.
+// Pool fixo de 32 nos com contador out-param.
+
+func nullable(nkind: [int], nl: [int], nr: [int], node: int) returns bool {
+    if node == 0 {
+        return false
+    }
+    if node == 1 {
+        return true
+    }
+    if nkind[node] == 2 {
+        return false
+    }
+    if nkind[node] == 3 {
+        return nullable(nkind, nl, nr, nl[node]) or nullable(nkind, nl, nr, nr[node])
+    }
+    if nkind[node] == 4 {
+        return nullable(nkind, nl, nr, nl[node]) and nullable(nkind, nl, nr, nr[node])
+    }
+    return true
+}
+
+func alloc_node(nkind: [int], nl: [int], nr: [int], next: [int], k: int, l: int, r: int) returns int {
+    if next[0] >= 32 {
+        return-1
+    }
+    let id = next[0]
+    next[0] = next[0] + 1
+    nkind[id] = k
+    nl[id] = l
+    nr[id] = r
+    return id
+}
+
+func deriv(nkind: [int], nl: [int], nr: [int], next: [int], node: int, ch: int) returns int {
+    if node == 0 or node == 1 {
+        return 0
+    }
+    if nkind[node] == 2 {
+        if nl[node] == ch {
+            return 1
+        }
+        return 0
+    }
+    if nkind[node] == 3 {
+        let dl = deriv(nkind, nl, nr, next, nl[node], ch)
+        let dr = deriv(nkind, nl, nr, next, nr[node], ch)
+        return alloc_node(nkind, nl, nr, next, 3, dl, dr)
+    }
+    if nkind[node] == 5 {
+        let dx = deriv(nkind, nl, nr, next, nl[node], ch)
+        return alloc_node(nkind, nl, nr, next, 4, dx, node)
+    }
+    if nullable(nkind, nl, nr, nl[node]) {
+        let dl   = deriv(nkind, nl, nr, next, nl[node], ch)
+        let left = alloc_node(nkind, nl, nr, next, 4, dl, nr[node])
+        let dr   = deriv(nkind, nl, nr, next, nr[node], ch)
+        return alloc_node(nkind, nl, nr, next, 3, left, dr)
+    }
+    let dl = deriv(nkind, nl, nr, next, nl[node], ch)
+    return alloc_node(nkind, nl, nr, next, 4, dl, nr[node])
+}
+
+func matches(nkind: [int], nl: [int], nr: [int], root: int, text: string) returns bool {
+    let next = [8]
+    let node = root
+    let i    = 0
+    while i < str.len(text) {
+        node = deriv(nkind, nl, nr, next, node, str.char_at(text, i))
+        if node == -1 {
+            return false
+        }
+        i = i + 1
+    }
+    return nullable(nkind, nl, nr, node)
+}
+
+public func main() returns int {
+    let nkind = [
+        0,
+        0,
+        2,
+        2,
+        2,
+        3,
+        5,
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    let nl = [
+        0,
+        0,
+        97,
+        98,
+        99,
+        3,
+        5,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    let nr = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        4,
+        0,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    if not matches(nkind, nl, nr, 7, "a") {
+        return 1
+    }
+    if not matches(nkind, nl, nr, 7, "abcb") {
+        return 2
+    }
+    if matches(nkind, nl, nr, 7, "") {
+        return 3
+    }
+    if matches(nkind, nl, nr, 7, "b") {
+        return 4
+    }
+    if matches(nkind, nl, nr, 7, "aa") {
+        return 5
+    }
+    println("PASS brzozowski: derivadas casam a(b|c)*")
+    return 0
+}

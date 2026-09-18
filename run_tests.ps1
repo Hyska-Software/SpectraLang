@@ -587,6 +587,8 @@ $errorDir = "tests\errors"
 if (Test-Path $errorDir) {
     $files = Get-ChildItem -Path $errorDir -Filter "*.spectra" | Sort-Object Name
     $runtimeErrorFixtures = @(
+        "array_index_oob_read.spectra",
+        "array_index_oob_write.spectra",
         "exact_width_float_nonfinite.spectra",
         "exact_width_invalid_cast.spectra",
         "exact_width_runtime_overflow.spectra",

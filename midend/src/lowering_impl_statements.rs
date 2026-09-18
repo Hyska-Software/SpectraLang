@@ -311,14 +311,24 @@ impl ASTLowering {
                         let index_value = self.lower_expression(index, ir_func);
 
                         // Calcular endereço do elemento
-                        let elem_type = match self.infer_expr_ir_type(array) {
-                            IRType::Array { element_type, .. } => *element_type,
+                        let (elem_type, bound) = match self.infer_expr_ir_type(array) {
+                            IRType::Array { element_type, size } => (
+                                *element_type,
+                                // Size 0 is the `[T]` parameter placeholder
+                                // ("unknown length"): only a known positive
+                                // length can back a runtime check. Strings
+                                // have dynamic length: no static bound.
+                                if size > 0 { Some(size) } else { None },
+                            ),
                             // Strings are packed byte buffers: element access
                             // is byte-granular (1-byte stride, 1-byte store).
-                            IRType::String => IRType::ExactInt {
-                                signed: true,
-                                width: crate::ir::IntWidth::I8,
-                            },
+                            IRType::String => (
+                                IRType::ExactInt {
+                                    signed: true,
+                                    width: crate::ir::IntWidth::I8,
+                                },
+                                None,
+                            ),
                             other => {
                                 self.error(format!(
                                     "index assignment expected array or string, found {:?}",
@@ -327,11 +337,12 @@ impl ASTLowering {
                                 return;
                             }
                         };
-                        let elem_ptr = self.builder.build_getelementptr(
+                        let elem_ptr = self.builder.build_getelementptr_bounded(
                             ir_func,
                             array_ptr,
                             index_value,
                             elem_type.clone(),
+                            bound,
                         );
 
                         // Store valor no elemento

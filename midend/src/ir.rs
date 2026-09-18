@@ -250,6 +250,13 @@ pub enum InstructionKind {
         ptr: Value,
         index: Value,
         element_type: Type,
+        /// Static upper bound for user array indexing (`Some(len)` checks
+        /// `0 <= index < len` in the backend, trapping via `spectra_rt_panic`
+        /// with "array index out of bounds"). `None` for internal GEPs
+        /// (closure slots, enum tags, constant-driven walks) and for arrays
+        /// whose length is unknown at compile time (`[T]` parameters lower
+        /// to size 0, which means "unknown", not "empty").
+        bound: Option<usize>,
     },
     /// Pointer arithmetic with a constant byte offset for aggregate fields.
     /// Used for struct/tuple/enum fields whose layout requires padding and

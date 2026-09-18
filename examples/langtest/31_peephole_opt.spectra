@@ -1,0 +1,156 @@
+module peephole_opt
+
+from std.io import println
+
+// Passes de midend sobre IR brinquedo: constant folding, simplificacao
+// algebrica (x+0, x*0, x*1) e DCE por roots. Diferencial: interpreta antes
+// e depois, saidas precisam coincidir. Opcodes: 0=NOP 1=CONST 2=ADD 3=MUL 4=SUB 5=MOV.
+
+func interp(op: [int], a: [int], b: [int], dst: [int], n: int, env: [int]) {
+    let i = 0
+    while i < n {
+        if op[i] == 1 {
+            env[dst[i]] = a[i]
+        } else {
+            if op[i] == 2 {
+                env[dst[i]] = env[a[i]] + env[b[i]]
+            } else {
+                if op[i] == 3 {
+                    env[dst[i]] = env[a[i]] * env[b[i]]
+                } else {
+                    if op[i] == 4 {
+                        env[dst[i]] = env[a[i]] - env[b[i]]
+                    } else {
+                        if op[i] == 5 {
+                            env[dst[i]] = env[a[i]]
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+}
+
+func fold_pass(op: [int], a: [int], b: [int], dst: [int], n: int, is_const: [int], cval: [int]) {
+    let r = 0
+    while r < 8 {
+        is_const[r] = 0
+        cval[r] = 0
+        r = r + 1
+    }
+    let i = 0
+    while i < n {
+        if op[i] == 1 {
+            is_const[dst[i]] = 1
+            cval[dst[i]] = a[i]
+        } else {
+            if op[i] == 5 {
+                if is_const[a[i]] == 1 {
+                    op[i] = 1
+                    a[i] = cval[a[i]]
+                    is_const[dst[i]] = 1
+                    cval[dst[i]] = a[i]
+                } else {
+                    is_const[dst[i]] = 0
+                }
+            } else {
+                if op[i] >= 2 and op[i] <= 4 and is_const[a[i]] == 1 and is_const[b[i]] == 1 {
+                    let folded = cval[a[i]] + cval[b[i]]
+                    if op[i] == 3 {
+                        folded = cval[a[i]] * cval[b[i]]
+                    }
+                    if op[i] == 4 {
+                        folded = cval[a[i]] - cval[b[i]]
+                    }
+                    op[i] = 1
+                    a[i] = folded
+                    is_const[dst[i]] = 1
+                    cval[dst[i]] = folded
+                } else {
+                    if dst[i] >= 0 {
+                        is_const[dst[i]] = 0
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+}
+
+func alg_pass(op: [int], a: [int], b: [int], n: int, is_const: [int], cval: [int]) {
+    let i = 0
+    while i < n {
+        if op[i] == 2 and is_const[b[i]] == 1 and cval[b[i]] == 0 {
+            op[i] = 5
+            b[i] = 0
+        }
+        if op[i] == 3 and is_const[b[i]] == 1 and cval[b[i]] == 0 {
+            op[i] = 1
+            a[i] = 0
+        }
+        if op[i] == 3 and is_const[b[i]] == 1 and cval[b[i]] == 1 {
+            op[i] = 5
+            b[i] = 0
+        }
+        i = i + 1
+    }
+}
+
+func dce_pass(op: [int], a: [int], b: [int], dst: [int], n: int, roots: [int], nroots: int) {
+    let used = [0, 0, 0, 0, 0, 0, 0, 0]
+    let r    = 0
+    while r < nroots {
+        used[roots[r]] = 1
+        r = r + 1
+    }
+    let i = n - 1
+    while i >= 0 {
+        if op[i] == 0 {
+            i = i - 1
+        } else {
+            if used[dst[i]] == 0 {
+                op[i] = 0
+            } else {
+                if op[i] >= 2 and op[i] <= 5 {
+                    used[a[i]] = 1
+                    if op[i] >= 2 and op[i] <= 4 {
+                        used[b[i]] = 1
+                    }
+                }
+            }
+            i = i - 1
+        }
+    }
+}
+
+public func main() returns int {
+    let op         = [1, 1, 2, 3, 2, 0, 0, 0]
+    let av         = [3, 0, 2, 4, 2, 0, 0, 0]
+    let bv         = [0, 0, 3, 0, 2, 0, 0, 0]
+    let dst        = [2, 3, 4, 5, 6, 0, 0, 0]
+    let is_const   = [0, 0, 0, 0, 0, 0, 0, 0]
+    let cval       = [0, 0, 0, 0, 0, 0, 0, 0]
+    let env_before = [7, 0, 0, 0, 0, 0, 0, 0]
+    interp(op, av, bv, dst, 5, env_before)
+    fold_pass(op, av, bv, dst, 5, is_const, cval)
+    if op[2] != 1 or av[2] != 3 {
+        return 1
+    }
+    alg_pass(op, av, bv, 5, is_const, cval)
+    let roots = [4, 5]
+    dce_pass(op, av, bv, dst, 5, roots, 2)
+    if op[4] != 0 {
+        return 2
+    }
+    let env_after = [7, 0, 0, 0, 0, 0, 0, 0]
+    interp(op, av, bv, dst, 5, env_after)
+    if env_after[4] != env_before[4] or env_after[5] != env_before[5] {
+        return 3
+    }
+    if env_after[4] != 3 or env_after[5] != 21 {
+        return 4
+    }
+    println("PASS peephole_opt: fold+alg+DCE preservam semantica")
+    return 0
+}
