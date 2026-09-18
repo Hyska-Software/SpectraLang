@@ -479,6 +479,10 @@ impl AotCodeGenerator {
             .ok_or_else(|| BackendCodegenError::missing_function(&ir_func.name))?;
 
         self.ctx.func.clear();
+        // See codegen_core.rs: a failed function leaves the shared builder
+        // context dirty (only `finalize` resets it), so start clean to keep
+        // a prior backend error from panicking the next `FunctionBuilder`.
+        self.builder_context = FunctionBuilderContext::new();
         self.ctx.func.signature = self
             .module
             .declarations()
@@ -588,17 +592,11 @@ impl AotCodeGenerator {
             }
         }
 
-        // Add block parameters for PHI nodes to Cranelift blocks.
-        for ir_block in &ir_func.blocks {
-            if let Some(phis) = phi_map.get(&ir_block.id) {
-                let block = *block_map
-                    .get(&ir_block.id)
-                    .ok_or_else(|| BackendCodegenError::missing_block(ir_block.id))?;
-                for _ in phis {
-                    builder.append_block_param(block, types::I64);
-                }
-            }
-        }
+        // Block parameters for PHI nodes are declared lazily by
+        // `get_phi_args`, typed from the first jump's argument values
+        // (see codegen.rs). Pre-declaring them here is unnecessary: every
+        // block carrying phis is targeted by at least one jump, which fixes
+        // the parameter types before use.
 
         let blocks = ir_func.blocks.clone();
         let mut emitted_tail_call = false;
@@ -849,6 +847,7 @@ impl AotCodeGenerator {
 
         // ── define the shim body ──────────────────────────────────────────────
         self.ctx.func.clear();
+        self.builder_context = FunctionBuilderContext::new();
         self.ctx.func.signature = self
             .module
             .declarations()

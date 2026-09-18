@@ -1,0 +1,29 @@
+module validation_529_inlined_branch_merge
+
+// Regression: inlining a callee whose merge phi is intact must remap the
+// phi's predecessor blocks. Used to fail at -O2 with "PHI for target block
+// N is missing incoming value from block M" while -O0 passed.
+
+func pick(a: int, b: int) returns int {
+    let m = if a > b { a + 0 } else { b + 0 }
+    return m
+}
+
+func tiny(x: int) returns int {
+    return x + 1
+}
+
+public func main() returns int {
+    if pick(3, 4) != 4 {
+        return 1
+    }
+    if pick(9, 2) != 9 {
+        return 2
+    }
+    let c = 1
+    let m = if c == 1 { tiny(41) } else { 0 }
+    if m != 42 {
+        return 3
+    }
+    return 0
+}

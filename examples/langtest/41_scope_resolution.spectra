@@ -1,0 +1,82 @@
+module scope_resolution
+
+from std.io import println
+
+// Grafo de escopos com shadowing: pilha de declaracoes (nome,profundidade).
+// resolve devolve a profundidade definidora ou -1; redeclare no mesmo
+// escopo eh erro. Nomes: 1=x 2=y 3=z.
+
+func enter(depth: [int]) {
+    depth[0] = depth[0] + 1
+}
+
+func leave(depth: [int], ddepth: [int], count: [int]) {
+    let i = 0
+    while i < count[0] {
+        if ddepth[i] == depth[0] {
+            ddepth[i] = -2
+        }
+        i = i + 1
+    }
+    depth[0] = depth[0] - 1
+}
+
+func declare(dname: [int], ddepth: [int], count: [int], depth: int, name: int) returns bool {
+    let i = 0
+    while i < count[0] {
+        if dname[i] == name and ddepth[i] == depth {
+            return false
+        }
+        i = i + 1
+    }
+    dname[count[0]] = name
+    ddepth[count[0]] = depth
+    count[0] = count[0] + 1
+    return true
+}
+
+func resolve(dname: [int], ddepth: [int], count: [int], name: int) returns int {
+    let i = count[0] - 1
+    while i >= 0 {
+        if dname[i] == name and ddepth[i] >= 0 {
+            return ddepth[i]
+        }
+        i = i - 1
+    }
+    return-1
+}
+
+public func main() returns int {
+    let depth  = [0]
+    let dname  = [0, 0, 0, 0, 0, 0, 0, 0]
+    let ddepth = [0, 0, 0, 0, 0, 0, 0, 0]
+    let count  = [0]
+    if not declare(dname, ddepth, count, 0, 1) {
+        return 1
+    }
+    enter(depth)
+    if not declare(dname, ddepth, count, 1, 2) {
+        return 2
+    }
+    if resolve(dname, ddepth, count, 1) != 0 or resolve(dname, ddepth, count, 2) != 1 {
+        return 3
+    }
+    if not declare(dname, ddepth, count, 1, 1) {
+        return 4
+    }
+    if resolve(dname, ddepth, count, 1) != 1 {
+        return 5
+    }
+    if declare(dname, ddepth, count, 1, 2) {
+        return 6
+    }
+    leave(depth, ddepth, count)
+    if resolve(dname, ddepth, count, 1) != 0 or resolve(dname, ddepth, count, 2) != -1 {
+        return 7
+    }
+    if resolve(dname, ddepth, count, 3) != -1 {
+        return 8
+    }
+    println("PASS scope_resolution: shadowing + use-def + indefinido")
+    return 0
+}

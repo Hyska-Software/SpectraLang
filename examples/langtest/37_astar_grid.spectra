@@ -1,0 +1,149 @@
+module astar_grid
+
+from std.io import println
+
+// A* em grade 5x5 com heuristica de Manhattan (admissivel => otimo).
+// Vizinhanca 4-dir, custo 1. Cenario 1: parede com gap, otimo 8.
+// Cenario 2: fileira fechada, sem caminho (-1).
+
+func manhattan(cell: int, goal: int) returns int {
+    let dr = cell / 5 - goal / 5
+    if dr < 0 {
+        dr = 0 - dr
+    }
+    let dc = cell % 5 - goal % 5
+    if dc < 0 {
+        dc = 0 - dc
+    }
+    return dr + dc
+}
+
+func astar(blocked: [int], start: int, goal: int, dist: [int], parent: [int]) returns int {
+    let g = [
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+        9999,
+    ]
+    let closed = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let inopen = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    g[start] = 0
+    parent[start] = -1
+    inopen[start] = 1
+    let remaining = 1
+    while remaining > 0 {
+        let best   = -1
+        let best_f = 99999
+        let c      = 0
+        while c < 25 {
+            if inopen[c] == 1 and closed[c] == 0 {
+                let f = g[c] + manhattan(c, goal)
+                if f < best_f {
+                    best_f = f
+                    best = c
+                }
+            }
+            c = c + 1
+        }
+        if best == -1 {
+            dist[0] = -1
+            return-1
+        }
+        inopen[best] = 0
+        remaining = remaining - 1
+        closed[best] = 1
+        if best == goal {
+            dist[0] = g[best]
+            return g[best]
+        }
+        let dr = [0 - 1, 1, 0, 0]
+        let dc = [0, 0, 0 - 1, 1]
+        let k  = 0
+        while k < 4 {
+            let r   = best / 5 + dr[k]
+            let col = best % 5 + dc[k]
+            if r >= 0 and r < 5 and col >= 0 and col < 5 {
+                let nb = r * 5 + col
+                if blocked[nb] == 0 and closed[nb] == 0 {
+                    if g[best] + 1 < g[nb] {
+                        g[nb] = g[best] + 1
+                        parent[nb] = best
+                    }
+                    if inopen[nb] == 0 {
+                        inopen[nb] = 1
+                        remaining = remaining + 1
+                    }
+                }
+            }
+            k = k + 1
+        }
+    }
+    dist[0] = -1
+    return-1
+}
+
+func chain_ok(parent: [int], start: int, goal: int) returns bool {
+    let cur   = goal
+    let steps = 0
+    while cur != start and steps <= 25 {
+        let prev = parent[cur]
+        if prev < 0 {
+            return false
+        }
+        let dr = cur / 5 - prev / 5
+        if dr < 0 {
+            dr = 0 - dr
+        }
+        let dc = cur % 5 - prev % 5
+        if dc < 0 {
+            dc = 0 - dc
+        }
+        if dr + dc != 1 {
+            return false
+        }
+        cur = prev
+        steps = steps + 1
+    }
+    return cur == start
+}
+
+public func main() returns int {
+    let blocked = [0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
+    let dist    = [0]
+    let parent  = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    if astar(blocked, 0, 24, dist, parent) != 8 {
+        return 1
+    }
+    if not chain_ok(parent, 0, 24) {
+        return 2
+    }
+    let wall    = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let dist2   = [0]
+    let parent2 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    if astar(wall, 0, 24, dist2, parent2) != -1 {
+        return 3
+    }
+    println("PASS astar_grid: otimo 8 + sem-caminho detectado")
+    return 0
+}

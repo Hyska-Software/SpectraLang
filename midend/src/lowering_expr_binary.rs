@@ -50,6 +50,23 @@ impl ASTLowering {
                     );
                 }
 
+                // Logical operators short-circuit: the right-hand side is only
+                // evaluated on the path that needs it (`and` iff lhs is true,
+                // `or` iff lhs is false). Both operands are statically boolean
+                // (enforced by semantic analysis). Previously both sides were
+                // lowered unconditionally and combined with one eager And/Or
+                // instruction, so guards like `i >= 0 and a[i] == 0` evaluated
+                // the out-of-bounds access.
+                match operator {
+                    BinaryOperator::And => {
+                        return self.lower_short_circuit_boolean(true, left, right, ir_func);
+                    }
+                    BinaryOperator::Or => {
+                        return self.lower_short_circuit_boolean(false, left, right, ir_func);
+                    }
+                    _ => {}
+                }
+
                 let lhs = self.lower_expression(left, ir_func);
                 let rhs = self.lower_expression(right, ir_func);
 
@@ -128,8 +145,7 @@ impl ASTLowering {
                     BinaryOperator::Or => self.builder.build_or(ir_func, lhs, rhs),
                 }
             }
-            ExpressionKind::Unary { operator, operand } => {
-                use spectra_compiler::ast::UnaryOperator;
+            ExpressionKind::Unary { operator, operand } => {                use spectra_compiler::ast::UnaryOperator;
 
                 // Operator overloading: if operand is a struct, dispatch `StructName_neg`.
                 if matches!(operator, UnaryOperator::Negate) {
@@ -159,6 +175,60 @@ impl ASTLowering {
                 }
             }
             _ => unreachable!("lowering expression category mismatch"),
+        }
+    }
+
+    /// Lower `and`/`&&` (`is_and`) or `or`/`||` with short-circuit control
+    /// flow, mirroring the If lowering: the right-hand side lives in its own
+    /// block reachable only from the path that needs its value, and a merge
+    /// phi joins it with the short-circuit constant. Both sides are boolean,
+    /// so the phi is bool/bool and needs no coercion.
+    pub(crate) fn lower_short_circuit_boolean(
+        &mut self,
+        is_and: bool,
+        left: &Expression,
+        right: &Expression,
+        ir_func: &mut IRFunction,
+    ) -> Value {
+        let lhs = self.lower_expression(left, ir_func);
+        let (rhs_name, short_name, merge_name) = if is_and {
+            ("and.rhs", "and.short", "and.merge")
+        } else {
+            ("or.rhs", "or.short", "or.merge")
+        };
+        let rhs_bb = ir_func.add_block(rhs_name);
+        let short_bb = ir_func.add_block(short_name);
+        let merge_bb = ir_func.add_block(merge_name);
+        if is_and {
+            self.builder
+                .build_cond_branch(ir_func, lhs, rhs_bb, short_bb);
+        } else {
+            self.builder
+                .build_cond_branch(ir_func, lhs, short_bb, rhs_bb);
+        }
+        // Short path: constant result, right-hand side never evaluated.
+        self.builder.set_current_block(short_bb);
+        let short_val = self.builder.build_const_bool(ir_func, !is_and);
+        self.builder.build_branch(ir_func, merge_bb);
+        // Evaluation path.
+        self.builder.set_current_block(rhs_bb);
+        let rhs_val = self.lower_expression(right, ir_func);
+        let rhs_final = self.builder.get_current_block().unwrap_or(rhs_bb);
+        let rhs_terminated = ir_func
+            .get_block(rhs_final)
+            .map(|block| block.terminator.is_some())
+            .unwrap_or(false);
+        if !rhs_terminated {
+            self.builder.build_branch(ir_func, merge_bb);
+        }
+        // Merge.
+        self.builder.set_current_block(merge_bb);
+        if rhs_terminated {
+            // The rhs diverges: merge is only reachable via the short arm.
+            short_val
+        } else {
+            self.builder
+                .build_phi(ir_func, vec![(rhs_val, rhs_final), (short_val, short_bb)])
         }
     }
 }

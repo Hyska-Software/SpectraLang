@@ -1,0 +1,161 @@
+module aho_corasick
+
+from std.io import println
+import std.string as str
+
+// Aho-Corasick multi-padrono ("he","she","his","hers"): trie por arestas,
+// BFS de failure links com heranca de saidas, busca O(n).
+// Nos: 0=root 1=h 2=he 3=s 4=sh 5=she 6=hi 7=his 8=her 9=hers.
+
+func child_of(e_from: [int], e_char: [int], e_child: [int], e_next: [int], heads: [int], node: int, ch: int) returns int {
+    let e = heads[node]
+    while e != -1 {
+        if e_from[e] == node and e_char[e] == ch {
+            return e_child[e]
+        }
+        e = e_next[e]
+    }
+    return-1
+}
+
+func build_fail(e_from: [int], e_char: [int], e_child: [int], e_next: [int], heads: [int], fail: [int], out_a: [int], out_b: [int], out_n: [int]) {
+    let queue = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let qh    = 0
+    let qt    = 0
+    let e     = heads[0]
+    while e != -1 {
+        let v = e_child[e]
+        fail[v] = 0
+        queue[qt] = v
+        qt = qt + 1
+        e = e_next[e]
+    }
+    while qh < qt {
+        let u = queue[qh]
+        qh = qh + 1
+        let f = heads[u]
+        while f != -1 {
+            let ch = e_char[f]
+            let v  = e_child[f]
+            let w  = fail[u]
+            while w != 0 and child_of(e_from, e_char, e_child, e_next, heads, w, ch) == -1 {
+                w = fail[w]
+            }
+            let nxt = child_of(e_from, e_char, e_child, e_next, heads, w, ch)
+            if nxt == -1 {
+                fail[v] = 0
+            } else {
+                fail[v] = nxt
+            }
+            let k = 0
+            while k < out_n[fail[v]] {
+                let pat = out_a[fail[v]]
+                if k == 1 {
+                    pat = out_b[fail[v]]
+                }
+                if out_n[v] < 2 {
+                    if out_n[v] == 0 {
+                        out_a[v] = pat
+                    } else {
+                        out_b[v] = pat
+                    }
+                    out_n[v] = out_n[v] + 1
+                }
+                k = k + 1
+            }
+            queue[qt] = v
+            qt = qt + 1
+            f = e_next[f]
+        }
+    }
+}
+
+func search(text: string, e_from: [int], e_char: [int], e_child: [int], e_next: [int], heads: [int], fail: [int], out_a: [int], out_b: [int], out_n: [int], hit_pat: [int], hit_end: [int]) returns int {
+    let found = 0
+    let state = 0
+    let i     = 0
+    while i < str.len(text) {
+        let ch = str.char_at(text, i)
+        while state != 0 and child_of(e_from, e_char, e_child, e_next, heads, state, ch) == -1 {
+            state = fail[state]
+        }
+        let nxt = child_of(e_from, e_char, e_child, e_next, heads, state, ch)
+        if nxt == -1 {
+            state = 0
+        } else {
+            state = nxt
+        }
+        let k = 0
+        while k < out_n[state] {
+            if k == 0 {
+                hit_pat[found] = out_a[state]
+            } else {
+                hit_pat[found] = out_b[state]
+            }
+            hit_end[found] = i
+            found = found + 1
+            k = k + 1
+        }
+        i = i + 1
+    }
+    return found
+}
+
+public func main() returns int {
+    let e_from  = [0, 0, 1, 1, 2, 3, 4, 6, 8]
+    let e_char  = [104, 115, 101, 105, 114, 104, 101, 115, 115]
+    let e_child = [1, 3, 2, 6, 8, 4, 5, 7, 9]
+    let e_next  = [1, -1, 3, -1, -1, -1, -1, -1, -1]
+    let heads   = [0, 2, 4, 5, 6, -1, 7, -1, 8, -1]
+    let fail    = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let out_a   = [-1, -1, 0, -1, -1, 1, -1, 2, -1, 3]
+    let out_b   = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+    let out_n   = [0, 0, 1, 0, 0, 1, 0, 1, 0, 1]
+    build_fail(e_from, e_char, e_child, e_next, heads, fail, out_a, out_b, out_n)
+    if fail[5] != 2 or fail[7] != 3 or fail[9] != 3 {
+        return 1
+    }
+    if out_n[5] != 2 or out_a[5] != 1 or out_b[5] != 0 {
+        return 2
+    }
+    let hit_pat = [-1, -1, -1, -1, -1, -1]
+    let hit_end = [-1, -1, -1, -1, -1, -1]
+    let n = search(
+        "ushers",
+        e_from,
+        e_char,
+        e_child,
+        e_next,
+        heads,
+        fail,
+        out_a,
+        out_b,
+        out_n,
+        hit_pat,
+        hit_end,
+    )
+    if n != 3 {
+        return 3
+    }
+    let has_she  = 0
+    let has_he   = 0
+    let has_hers = 0
+    let i        = 0
+    while i < n {
+        if hit_pat[i] == 1 and hit_end[i] == 3 {
+            has_she = 1
+        }
+        if hit_pat[i] == 0 and hit_end[i] == 3 {
+            has_he = 1
+        }
+        if hit_pat[i] == 3 and hit_end[i] == 5 {
+            has_hers = 1
+        }
+        i = i + 1
+    }
+    if has_she != 1 or has_he != 1 or has_hers != 1 {
+        return 4
+    }
+    println("PASS aho_corasick: 3 padroes em 1 passada sobre ushers")
+    return 0
+}

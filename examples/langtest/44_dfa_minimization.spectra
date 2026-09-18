@@ -1,0 +1,81 @@
+module dfa_minimization
+
+from std.io import println
+
+// Table-filling (Myhill-Nerode) para DFA que aceita strings terminadas em
+// "ab" sobre {a=0,b=1}, com o estado 0 duplicado em 3 (equivalente).
+// Trans: 0-a>1 0-b>0 | 1-a>1 1-b>2 | 2-a>1 2-b>0 | 3-a>1 3-b>0.
+// Esperado: todos os pares marcados, exceto (0,3) => 3 classes.
+
+func pair_idx(i: int, j: int) returns int {
+    return i * 4 + j
+}
+
+public func main() returns int {
+    let trans  = [1, 0, 1, 2, 1, 0, 1, 0]
+    let accept = [0, 0, 1, 0]
+    let marked = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let i      = 0
+    while i < 4 {
+        let j = i + 1
+        while j < 4 {
+            if accept[i] != accept[j] {
+                marked[pair_idx(i, j)] = 1
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    let changed = 1
+    let iter    = 0
+    while changed == 1 and iter < 10 {
+        changed = 0
+        iter = iter + 1
+        i = 0
+        while i < 4 {
+            let j = i + 1
+            while j < 4 {
+                if marked[pair_idx(i, j)] == 0 {
+                    let c = 0
+                    while c < 2 {
+                        let ti = trans[i * 2 + c]
+                        let tj = trans[j * 2 + c]
+                        let a  = ti
+                        let b  = tj
+                        if a > b {
+                            a = tj
+                            b = ti
+                        }
+                        if a != b and marked[pair_idx(a, b)] == 1 {
+                            marked[pair_idx(i, j)] = 1
+                            changed = 1
+                            c = 2
+                        }
+                        c = c + 1
+                    }
+                }
+                j = j + 1
+            }
+            i = i + 1
+        }
+    }
+    if marked[pair_idx(0, 3)] != 0 {
+        return 1
+    }
+    if marked[pair_idx(0, 1)] != 1 or marked[pair_idx(0, 2)] != 1 {
+        return 2
+    }
+    if marked[pair_idx(1, 2)] != 1 or marked[pair_idx(1, 3)] != 1 or marked[pair_idx(2, 3)] != 1 {
+        return 3
+    }
+    let classes = [0, 0, 0, 0]
+    classes[0] = 0
+    classes[3] = 0
+    classes[1] = 1
+    classes[2] = 2
+    if classes[0] != classes[3] or classes[0] == classes[1] or classes[1] == classes[2] {
+        return 4
+    }
+    println("PASS dfa_minimization: table-filling isola (0,3)")
+    return 0
+}

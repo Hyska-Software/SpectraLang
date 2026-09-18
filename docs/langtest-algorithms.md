@@ -44,6 +44,21 @@ invariantes passam e um código distinto por estágio quando alguma falha.
 | `33_json_parser.spectra` | Parser JSON (subset tooling) | Extrai soma dos números + conta strings; rejeita `{"a":}` e `[1,]` |
 | `34_domfrontiers.spectra` | DF + phis de Cytron (SSA) | Recomputa DOM, deriva idom, DF e posiciona phis para defs `{2,3}` ⇒ `{1,3}` |
 | `35_brzozowski.spectra` | Derivadas de regex | Matching por derivação com pool fixo; casa `a(b|c)*` sem autômatos |
+| `36_bmh_search.spectra` | Boyer-Moore-Horspool | Bad-character sobre a-z, comparação reversa; tabela verificada + 4 buscas |
+| `37_astar_grid.spectra` | A* com Manhattan admissível | Grade 5×5: ótimo 8 com parede + sem-caminho (-1), cadeia de parentes válida |
+| `38_gvn_numbering.spectra` | GVN (midend) | Partição com operandos canônicos; redundância fundida em 4 classes |
+| `39_lru_cache.spectra` | LRU por timestamps | Despejo do menos recente + update in-place (teste de dispatch-cache) |
+| `40_error_recovery.spectra` | Panic-mode (diagnósticos) | Sync=FIRST∪FOLLOW, totaliza erros: `2+*3`→5/1 erro, `(2+3`→5/1 erro |
+| `41_scope_resolution.spectra` | Grafo de escopos | Shadowing, resolve por profundidade, redeclare e indefinido |
+| `42_taint_analysis.spectra` | Taint may-analysis | Bypass vulnerável (1) vs sanitizado seguro (0) no mesmo CFG |
+| `43_aho_corasick.spectra` | Aho-Corasick | Trie + failure BFS com herança de saídas; `he`/`she`/`hers` em 1 passada sobre `ushers` |
+| `44_dfa_minimization.spectra` | Table-filling (Myhill-Nerode) | DFA `*ab` com estado duplicado; só o par (0,3) sobrevive ⇒ 3 classes |
+| `45_model_checking.spectra` | BFS explícito (TOCTOU) | Check-then-act acha `(2,2)`; variante com flag prova segurança por exaustão |
+| `46_program_slice.spectra` | Slice backward (Weiser) | Walk use-def reverso; critério `d` isola o stmt 5 morto |
+| `47_short_circuit.spectra` | Demo de curto-circuito | Guardas, skips observáveis, `or`, aninhados e loop-guard anti-OOB |
+| `48_escape_analysis.spectra` | Escape p/ stack | Global/arg/store propagam; só o local fica na stack |
+| `49_inline_cost.spectra` | Heurística de inline | Limiar + call-site único + vetos (recursivo/raiz/gigante) |
+| `50_corpus_minimization.spectra` | afl-cmin guloso | 6 candidatos × 8 arestas ⇒ `{A,B}` ótimo |
 
 Relação com o já existente: `tests/validation/524_recursion_recursive_descent_parser.spectra`
 cobre descida recursiva sobre strings; esta suíte complementa com DFA tabular,
@@ -110,6 +125,59 @@ passavam nos 28 arquivos então existentes (a suíte hoje tem 35).
   padrão correto antes de cada `kmp_find`. Nenhuma mudança no compilador
   nesta leva; o gate `-O0` do validador (introduzido no R527) passou em
   todos os 28 arquivos de primeira, confirmando que o fix anterior segura.
+
+## Sétima leva (43–50): três bugs reais de compilador
+
+O `15_earley_parser`/`02_ll1_table_parser` (com `and`) e os probes de guarda
+exigiram investigar fundo. Resultado: `and`/`or` eram **eager** (sem
+curto-circuito) e, ao implementar o curto-circuito, dois bugs latentes
+apareceram.
+
+1. **Curto-circuito (`midend/src/lowering_expr_binary.rs`).** `and`/`or`
+   avaliavam ambos os lados + 1 instrução eager, então
+   `i >= 0 and a[i] == v` avaliava o OOB (o bounds-check da leva passada o
+   expôs). Agora baixam para `rhs/short/merge` com phi bool/bool, espelhando
+   o lowering do `if`. Semântica garante operandos bool.
+2. **Tipos dos params de bloco phi (`backend/`).** Params eram sempre I64:
+   phis bool/float quebravam o verifier (`arg has type i8, expected i64`).
+   `if` com valor bool já era quebrado antes (`probe_boolphi`). Agora
+   `get_phi_args` declara params preguiçosamente com o tipo do primeiro
+   jump (JIT+AOT), com fallback I64 p/ blocos nunca saltados.
+3. **Inliner (`midend/src/passes/function_inlining.rs`, 2 pontos).**
+   (a) Clonagem remapeava valores mas não os blocos dos phis; (b) ao dividir
+   o bloco do call, phis continuavam nomeando o bloco original em vez da
+   continuação. Ambos davam `PHI for target block N is missing incoming`
+   só em O2 (ex.: `max` puro inlineado!). Corrigidos com remap + rewire.
+4. **Robustez (`backend/src/codegen_core.rs`, `aot.rs`).** Erro de backend
+   deixava o `FunctionBuilderContext` sujo e o próximo `define` panica
+   (`debug_assert func_ctx.is_empty`). Reset no início de cada `define`.
+- **Regressões:** `tests/validation/528_short_circuit_and_or.spectra`
+  (guardas, skips observáveis, bool-phi), `529_inlined_branch_merge`
+  (phi no callee + call em pred de phi), teste unitário de backend
+  (`backend_error_does_not_poison_builder_context`) e
+  `examples/langtest/47_short_circuit.spectra`.
+- **Correções nos testes da leva:** aresta `her→s` faltante, cópia de
+  outputs que sobrescrevia o próprio padrão e `fail[hers]=3` no 43;
+  `defs[5]=-1` no 46; `46` usa `if`s aninhados porque `and` não tem
+  curto-circuito na guarda (o que, junto ao bounds-check, armou o trap 101
+  e revelou o bug nº 1 acima); `40` trocado por parêntese faltante;
+  `leave.dname` removido no 41.
+- **Validação dos fixes:** `cargo test -p` midend/backend/compiler verdes,
+  suíte langtest 50/50 em default e `-O0`, sweep amplo abaixo.
+
+## Sexta leva (36–42): só correções no próprio teste
+
+- `36_bmh_search.spectra` — tabela esperada corrigida (`a→1`, não 4) e
+  removida linha morta.
+- `40_error_recovery.spectra` — o caso "lixo trailing" não gerava erro
+  (o loop de `E` só consome `+`/`-`); trocado por parêntese faltante, que
+  exercita o caminho de erro de verdade.
+- `41_scope_resolution.spectra` — typo `depth[0]]` (erro de sintaxe) e
+  param morto `leave.dname` removido; lint limpo.
+- `42_taint_analysis.spectra` — removido loop morto no início de `analyze`.
+- Nenhum bug de compilador/runtime nesta leva: `check`, `run -O0`,
+  `run -O3`, `lint` e `fmt --check` passam nos 42 arquivos; o gate `-O0`
+  segue verde em tudo (R527 continua segurando).
 
 ## Quinta leva (29–35) + fix de safety pendente (bounds-check dinâmico)
 

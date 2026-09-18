@@ -1,0 +1,54 @@
+module short_circuit
+
+from std.io import println
+
+// Avaliacao curto-circuito de and/or: o lado direito so avalia quando o
+// esquerdo nao decide. Guardas (`i>=0 and a[i]==v`), skips observaveis via
+// contador, `or` complementar e and/or aninhados com loop-guard.
+
+func bump(hit: [int]) returns bool {
+    hit[0] = hit[0] + 1
+    return true
+}
+
+func all_positive(a: [int], n: int) returns bool {
+    let i = 0
+    while i < n and a[i] > 0 {
+        i = i + 1
+    }
+    return i == n
+}
+
+public func main() returns int {
+    let a = [10, 20, 30]
+    let i = 0 - 1
+    if i >= 0 and a[i] == 10 {
+        return 1
+    }
+    let hit = [0]
+    if false and bump(hit) {
+        return 2
+    }
+    if true or bump(hit) {
+        hit[0] = hit[0]
+    }
+    if hit[0] != 0 {
+        return 3
+    }
+    if (i < 0 or a[0] != 10) and(hit[0] == 0 or bump(hit)) {
+        hit[0] = hit[0]
+    }
+    if hit[0] != 0 {
+        return 4
+    }
+    let b = [1, 2, 3]
+    if not all_positive(b, 3) {
+        return 5
+    }
+    let c = [1, 0 - 2, 3]
+    if all_positive(c, 3) {
+        return 6
+    }
+    println("PASS short_circuit: guardas + skips + loop-guard")
+    return 0
+}

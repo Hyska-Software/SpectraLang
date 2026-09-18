@@ -1,0 +1,67 @@
+module gvn_numbering
+
+from std.io import println
+
+// Global Value Numbering: particiona expressoes em classes de equivalencia
+// (op + operandos canonicos, comutativos ordenados) e detecta redundancia.
+// r2=r0+r1, r3=r0+r1, r4=r2*r3, r5=r2*r3 => 4 classes, r2==r3, r4==r5.
+
+func find_or_add(lop: [int], la: [int], lb: [int], lvn: [int], count: [int], op: int, a: int, b: int) returns int {
+    if op == 2 and a > b {
+        let tmp = a
+        a = b
+        b = tmp
+    }
+    if op == 3 and a > b {
+        let tmp = a
+        a = b
+        b = tmp
+    }
+    let i = 0
+    while i < count[0] {
+        if lop[i] == op and la[i] == a and lb[i] == b {
+            return lvn[i]
+        }
+        i = i + 1
+    }
+    lop[count[0]] = op
+    la[count[0]] = a
+    lb[count[0]] = b
+    lvn[count[0]] = count[0]
+    count[0] = count[0] + 1
+    return lvn[count[0] - 1]
+}
+
+public func main() returns int {
+    let lop   = [0, 0, 0, 0, 0, 0, 0, 0]
+    let la    = [0, 0, 0, 0, 0, 0, 0, 0]
+    let lb    = [0, 0, 0, 0, 0, 0, 0, 0]
+    let lvn   = [0, 0, 0, 0, 0, 0, 0, 0]
+    let count = [2]
+    lop[0] = 1
+    la[0] = -1
+    lb[0] = -1
+    lvn[0] = 0
+    lop[1] = 1
+    la[1] = -2
+    lb[1] = -2
+    lvn[1] = 1
+    let v_r2 = find_or_add(lop, la, lb, lvn, count, 2, 0, 1)
+    let v_r3 = find_or_add(lop, la, lb, lvn, count, 2, 1, 0)
+    if v_r2 != v_r3 {
+        return 1
+    }
+    let v_r4 = find_or_add(lop, la, lb, lvn, count, 3, v_r2, v_r3)
+    let v_r5 = find_or_add(lop, la, lb, lvn, count, 3, v_r3, v_r2)
+    if v_r4 != v_r5 {
+        return 2
+    }
+    if count[0] != 4 {
+        return 3
+    }
+    if v_r2 == 0 or v_r2 == 1 or v_r4 == v_r2 {
+        return 4
+    }
+    println("PASS gvn_numbering: redundancia fundida em 4 classes")
+    return 0
+}

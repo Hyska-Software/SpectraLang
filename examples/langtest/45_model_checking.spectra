@@ -1,0 +1,242 @@
+module model_checking
+
+from std.io import println
+
+// Model checking explicito (BFS) de exclusao mutua com race TOCTOU:
+// check-then-act separado (0:idle 1:checked 2:crit, flags f0/f1).
+// Buggy: entra sem setar flag => (2,2) alcancavel. Safe: seta antes.
+// Estado id = ((p0*3+p1)*2+f0)*2+f1, maximo 36.
+
+func buggy_step(p0: int, p1: int, f0: int, f1: int, next: [int]) returns int {
+    let n = 0
+    if p0 == 0 and f1 == 0 {
+        next[n * 4] = 1
+        next[n * 4 + 1] = p1
+        next[n * 4 + 2] = f0
+        next[n * 4 + 3] = f1
+        n = n + 1
+    }
+    if p0 == 1 {
+        next[n * 4] = 2
+        next[n * 4 + 1] = p1
+        next[n * 4 + 2] = 1
+        next[n * 4 + 3] = f1
+        n = n + 1
+    }
+    if p0 == 2 {
+        next[n * 4] = 0
+        next[n * 4 + 1] = p1
+        next[n * 4 + 2] = 0
+        next[n * 4 + 3] = f1
+        n = n + 1
+    }
+    if p1 == 0 and f0 == 0 {
+        next[n * 4] = p0
+        next[n * 4 + 1] = 1
+        next[n * 4 + 2] = f0
+        next[n * 4 + 3] = f1
+        n = n + 1
+    }
+    if p1 == 1 {
+        next[n * 4] = p0
+        next[n * 4 + 1] = 2
+        next[n * 4 + 2] = f0
+        next[n * 4 + 3] = 1
+        n = n + 1
+    }
+    if p1 == 2 {
+        next[n * 4] = p0
+        next[n * 4 + 1] = 0
+        next[n * 4 + 2] = f0
+        next[n * 4 + 3] = 0
+        n = n + 1
+    }
+    return n
+}
+
+func safe_step(p0: int, p1: int, f0: int, f1: int, next: [int]) returns int {
+    let n = 0
+    if p0 == 0 {
+        next[n * 4] = 1
+        next[n * 4 + 1] = p1
+        next[n * 4 + 2] = 1
+        next[n * 4 + 3] = f1
+        n = n + 1
+    }
+    if p0 == 1 and f1 == 0 {
+        next[n * 4] = 2
+        next[n * 4 + 1] = p1
+        next[n * 4 + 2] = f0
+        next[n * 4 + 3] = f1
+        n = n + 1
+    }
+    if p0 == 2 {
+        next[n * 4] = 0
+        next[n * 4 + 1] = p1
+        next[n * 4 + 2] = 0
+        next[n * 4 + 3] = f1
+        n = n + 1
+    }
+    if p1 == 0 {
+        next[n * 4] = p0
+        next[n * 4 + 1] = 1
+        next[n * 4 + 2] = f0
+        next[n * 4 + 3] = 1
+        n = n + 1
+    }
+    if p1 == 1 and f0 == 0 {
+        next[n * 4] = p0
+        next[n * 4 + 1] = 2
+        next[n * 4 + 2] = f0
+        next[n * 4 + 3] = f1
+        n = n + 1
+    }
+    if p1 == 2 {
+        next[n * 4] = p0
+        next[n * 4 + 1] = 0
+        next[n * 4 + 2] = f0
+        next[n * 4 + 3] = 0
+        n = n + 1
+    }
+    return n
+}
+
+func explore(buggy: int, visited_count: [int]) returns int {
+    let visited = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    let queue = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    let next = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    visited[0] = 1
+    queue[0] = 0
+    let qh = 0
+    let qt = 1
+    visited_count[0] = 1
+    while qh < qt {
+        let id = queue[qh]
+        qh = qh + 1
+        let f1 = id % 2
+        let f0 = (id / 2) % 2
+        let p1 = (id / 4) % 3
+        let p0 = id / 12
+        if p0 == 2 and p1 == 2 {
+            return id
+        }
+        let n = 0
+        if buggy == 1 {
+            n = buggy_step(p0, p1, f0, f1, next)
+        } else {
+            n = safe_step(p0, p1, f0, f1, next)
+        }
+        let k = 0
+        while k < n {
+            let q0  = next[k * 4]
+            let q1  = next[k * 4 + 1]
+            let g0  = next[k * 4 + 2]
+            let g1  = next[k * 4 + 3]
+            let nid = ((q0 * 3 + q1) * 2 + g0) * 2 + g1
+            if visited[nid] == 0 {
+                visited[nid] = 1
+                visited_count[0] = visited_count[0] + 1
+                queue[qt] = nid
+                qt = qt + 1
+            }
+            k = k + 1
+        }
+    }
+    return-1
+}
+
+public func main() returns int {
+    let vc  = [0]
+    let bad = explore(1, vc)
+    if bad == -1 {
+        return 1
+    }
+    let bp1 = (bad / 4) % 3
+    let bp0 = bad / 12
+    if bp0 != 2 or bp1 != 2 or vc[0] < 3 {
+        return 2
+    }
+    vc[0] = 0
+    if explore(0, vc) != -1 {
+        return 3
+    }
+    if vc[0] < 5 {
+        return 4
+    }
+    println("PASS model_checking: violacao achada, fix provado seguro")
+    return 0
+}

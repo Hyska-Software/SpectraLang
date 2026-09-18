@@ -16,14 +16,19 @@ impl CodeGenerator {
 
         match kind {
             // PHI nodes are lowered to Cranelift block parameters.
-            // The block was already created with the appropriate parameters in
-            // define_function(). Here we simply read the parameter that
-            // corresponds to this PHI and expose it in the value_map.
+            // The parameters were declared (with the incoming values' types)
+            // by `get_phi_args` when the first jump to this block was
+            // emitted. If no jump ever targeted this block (unreachable
+            // merge), declare I64 placeholders so the shape stays identical
+            // to the old eager pre-declaration behavior.
             InstructionKind::Phi { result, .. } => {
                 let block = *block_map
                     .get(&current_block_id)
                     .ok_or_else(|| BackendCodegenError::missing_block(current_block_id))?;
                 if let Some(phis) = phi_map.get(&current_block_id) {
+                    while builder.block_params(block).len() < phis.len() {
+                        builder.append_block_param(block, types::I64);
+                    }
                     for (idx, phi) in phis.iter().enumerate() {
                         if phi.result_id == result.id {
                             let phi_val = builder.block_params(block)[idx];

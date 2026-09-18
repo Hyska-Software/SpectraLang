@@ -1,0 +1,44 @@
+module program_slice
+
+from std.io import println
+
+// Backward static slice (Weiser) sobre codigo straight-line: use-def walk
+// reverso a partir do criterio (var d no fim). Stmts: def + ate 2 uses
+// (-1 = ausente). Esperado: tudo menos o stmt 5 (morto p/ d).
+
+public func main() returns int {
+    let defs     = [0, 1, 2, 3, 4, -1]
+    let use1     = [-1, 0, -1, 1, 0, 3]
+    let use2     = [-1, -1, -1, 2, -1, -1]
+    let relevant = [0, 0, 0, 0, 0, 0]
+    let in_slice = [0, 0, 0, 0, 0, 0]
+    relevant[3] = 1
+    let s = 5
+    while s >= 0 {
+        if defs[s] >= 0 and relevant[defs[s]] == 1 {
+            in_slice[s] = 1
+            if use1[s] >= 0 {
+                relevant[use1[s]] = 1
+            }
+            if use2[s] >= 0 {
+                relevant[use2[s]] = 1
+            }
+        } else {
+            if defs[s] == -1 and use1[s] >= 0 and relevant[use1[s]] == 1 {
+                in_slice[s] = 1
+            }
+        }
+        s = s - 1
+    }
+    if in_slice[0] != 1 or in_slice[1] != 1 or in_slice[2] != 1 {
+        return 1
+    }
+    if in_slice[3] != 1 or in_slice[5] != 1 {
+        return 2
+    }
+    if in_slice[4] != 0 {
+        return 3
+    }
+    println("PASS program_slice: criterio d isola stmt morto")
+    return 0
+}

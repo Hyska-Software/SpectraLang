@@ -1,0 +1,87 @@
+module taint_analysis
+
+from std.io import println
+
+// Taint may-analysis forward (teste de seguranca): B0 gera taint em t,
+// B1 propaga para u (u=t), B2 sanitiza u, B3 consome. Com bypass B1->B3 o
+// sink eh alcancavel contaminado (vuln=1); sanitizando em B1 tambem, 0.
+
+func analyze(sanitize_b1: int, in_t: [int], in_u: [int], out_t: [int], out_u: [int]) returns int {
+    let pred_first  = [-1, 0, 1, 1]
+    let pred_second = [-1, -1, -1, 2]
+    let changed     = 1
+    let iter        = 0
+    while changed == 1 and iter < 10 {
+        changed = 0
+        iter = iter + 1
+        let b = 0
+        while b <= 3 {
+            let nt = 0
+            let p  = pred_first[b]
+            if p != -1 and out_t[p] == 1 {
+                nt = 1
+            }
+            p = pred_second[b]
+            if p != -1 and out_t[p] == 1 {
+                nt = 1
+            }
+            let nu = 0
+            p = pred_first[b]
+            if p != -1 and out_u[p] == 1 {
+                nu = 1
+            }
+            p = pred_second[b]
+            if p != -1 and out_u[p] == 1 {
+                nu = 1
+            }
+            let ot = nt
+            let ou = nu
+            if b == 0 {
+                ot = 1
+            }
+            if b == 1 {
+                if sanitize_b1 == 1 {
+                    ou = 0
+                } else {
+                    if nt == 1 {
+                        ou = 1
+                    }
+                }
+            }
+            if b == 2 {
+                ou = 0
+            }
+            if ot != out_t[b] or ou != out_u[b] or nt != in_t[b] or nu != in_u[b] {
+                changed = 1
+            }
+            in_t[b] = nt
+            in_u[b] = nu
+            out_t[b] = ot
+            out_u[b] = ou
+            b = b + 1
+        }
+    }
+    if in_u[3] == 1 {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    let in_t  = [0, 0, 0, 0]
+    let in_u  = [0, 0, 0, 0]
+    let out_t = [0, 0, 0, 0]
+    let out_u = [0, 0, 0, 0]
+    if analyze(0, in_t, in_u, out_t, out_u) != 1 {
+        return 1
+    }
+    let in_t2  = [0, 0, 0, 0]
+    let in_u2  = [0, 0, 0, 0]
+    let out_t2 = [0, 0, 0, 0]
+    let out_u2 = [0, 0, 0, 0]
+    if analyze(1, in_t2, in_u2, out_t2, out_u2) != 0 {
+        return 2
+    }
+    println("PASS taint_analysis: bypass vulneravel, sanitizado seguro")
+    return 0
+}

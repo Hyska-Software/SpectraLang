@@ -1,0 +1,53 @@
+module validation_528_short_circuit_and_or
+
+// Regression: `and`/`&&`/`or`/`||` short-circuit. The right-hand side must
+// not evaluate when the left decides: guards like `i >= 0 and a[i] == v`
+// must not trap, and side effects must be skipped observably. Also covers
+// bool-valued if-expressions (bool merge phis).
+
+func bump(hit: [int]) returns bool {
+    hit[0] = hit[0] + 1
+    return true
+}
+
+public func main() returns int {
+    let a = [10, 20, 30]
+    let i = 0 - 1
+    if i >= 0 and a[i] == 10 {
+        return 1
+    }
+    let j = 1
+    if not (j >= 0 and a[j] == 20) {
+        return 2
+    }
+    let k = 5
+    if k < 0 or a[0] != 10 {
+        return 3
+    }
+    let hit = [0]
+    if false and bump(hit) {
+        return 4
+    }
+    if hit[0] != 0 {
+        return 5
+    }
+    if true or bump(hit) {
+        hit[0] = hit[0]
+    }
+    if hit[0] != 0 {
+        return 6
+    }
+    if true and bump(hit) {
+        hit[0] = hit[0]
+    }
+    if hit[0] != 1 {
+        return 7
+    }
+    let x = 3
+    let y = 4
+    let b = if x > 1 { y < 5 } else { x < 2 }
+    if not b {
+        return 8
+    }
+    return 0
+}

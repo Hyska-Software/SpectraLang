@@ -1,0 +1,46 @@
+module inline_cost
+
+from std.io import println
+
+// Heuristica de inlining (teste do pass de midend): inline se pequeno
+// (size<=10) ou ponto unico de chamada com size<=30; nunca recursivo,
+// raiz ou gigante. Tabela: (size, calls, rec) x5 funcoes.
+
+func should_inline(size: int, calls: int, rec: int, is_root: int) returns bool {
+    if is_root == 1 {
+        return false
+    }
+    if rec == 1 {
+        return false
+    }
+    if size > 30 {
+        return false
+    }
+    if size <= 10 {
+        return true
+    }
+    return calls == 1
+}
+
+public func main() returns int {
+    if not should_inline(4, 3, 0, 0) {
+        return 1
+    }
+    if not should_inline(20, 1, 0, 0) {
+        return 2
+    }
+    if should_inline(20, 2, 0, 0) {
+        return 3
+    }
+    if should_inline(100, 2, 0, 0) {
+        return 4
+    }
+    if should_inline(5, 1, 1, 0) {
+        return 5
+    }
+    if should_inline(50, 0, 0, 1) {
+        return 6
+    }
+    println("PASS inline_cost: limiar + call-site unico + vetos")
+    return 0
+}

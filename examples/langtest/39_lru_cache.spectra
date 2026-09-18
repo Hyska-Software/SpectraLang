@@ -1,0 +1,90 @@
+module lru_cache
+
+from std.io import println
+
+// LRU por timestamps (teste de dispatch-cache): hit atualiza o relogio,
+// miss com cache cheio despeja o menor stamp. Capacidade 3, valores >= 0
+// (miss = -1).
+
+func lru_get(keys: [int], vals: [int], stamp: [int], clock: [int], cap: int, k: int) returns int {
+    let i = 0
+    while i < cap {
+        if keys[i] == k {
+            stamp[i] = clock[0]
+            clock[0] = clock[0] + 1
+            return vals[i]
+        }
+        i = i + 1
+    }
+    return-1
+}
+
+func lru_put(keys: [int], vals: [int], stamp: [int], clock: [int], cap: int, k: int, v: int) {
+    let i = 0
+    while i < cap {
+        if keys[i] == k {
+            vals[i] = v
+            stamp[i] = clock[0]
+            clock[0] = clock[0] + 1
+            return
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < cap {
+        if keys[i] == -1 {
+            keys[i] = k
+            vals[i] = v
+            stamp[i] = clock[0]
+            clock[0] = clock[0] + 1
+            return
+        }
+        i = i + 1
+    }
+    let victim = 0
+    let oldest = stamp[0]
+    i = 1
+    while i < cap {
+        if stamp[i] < oldest {
+            oldest = stamp[i]
+            victim = i
+        }
+        i = i + 1
+    }
+    keys[victim] = k
+    vals[victim] = v
+    stamp[victim] = clock[0]
+    clock[0] = clock[0] + 1
+}
+
+public func main() returns int {
+    let keys  = [-1, -1, -1]
+    let vals  = [0, 0, 0]
+    let stamp = [0, 0, 0]
+    let clock = [1]
+    lru_put(keys, vals, stamp, clock, 3, 1, 10)
+    lru_put(keys, vals, stamp, clock, 3, 2, 20)
+    lru_put(keys, vals, stamp, clock, 3, 3, 30)
+    if lru_get(keys, vals, stamp, clock, 3, 1) != 10 {
+        return 1
+    }
+    lru_put(keys, vals, stamp, clock, 3, 4, 40)
+    if lru_get(keys, vals, stamp, clock, 3, 2) != -1 {
+        return 2
+    }
+    if lru_get(keys, vals, stamp, clock, 3, 3) != 30 {
+        return 3
+    }
+    if lru_get(keys, vals, stamp, clock, 3, 4) != 40 {
+        return 4
+    }
+    if lru_get(keys, vals, stamp, clock, 3, 1) != 10 {
+        return 5
+    }
+    lru_put(keys, vals, stamp, clock, 3, 1, 11)
+    if lru_get(keys, vals, stamp, clock, 3, 1) != 11 {
+        return 6
+    }
+    println("PASS lru_cache: despejo do menos recente + update")
+    return 0
+}

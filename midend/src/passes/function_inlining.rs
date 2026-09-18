@@ -227,6 +227,12 @@ fn inline_call(
     let continuation_id = caller.next_block_id;
     caller.next_block_id += 1;
 
+    // The call block is about to be split: its tail (including the original
+    // terminator) moves to the continuation block, so the call block no
+    // longer jumps to its former targets. Remember its id to rewire merge
+    // phis below.
+    let split_block_id = caller.blocks[block_index].id;
+
     let mut block_id_map = HashMap::new();
     for block in &candidate.function.blocks {
         let new_id = caller.next_block_id;
@@ -280,7 +286,7 @@ fn inline_call(
             instructions: block
                 .instructions
                 .iter()
-                .map(|instruction| clone_instruction(instruction, &value_map))
+                .map(|instruction| clone_instruction(instruction, &value_map, &block_id_map))
                 .collect(),
             terminator: clone_terminator(
                 block.terminator.as_ref(),
@@ -333,17 +339,43 @@ fn inline_call(
     caller
         .blocks
         .insert(insert_at + candidate.function.blocks.len(), continuation);
+
+    // Rewire merge phis: any incoming edge recorded from the split block now
+    // originates in the continuation block (values keep their ids — the call
+    // result is reloaded under its original id — so only the predecessor id
+    // moves). Without this, inlining a call inside a phi-predecessor block
+    // leaves the phi naming a block that no longer jumps to the merge, and
+    // the backend reports a missing incoming.
+    for block in &mut caller.blocks {
+        for instruction in &mut block.instructions {
+            if let InstructionKind::Phi { incoming, .. } = &mut instruction.kind {
+                for (_, pred) in incoming.iter_mut() {
+                    if *pred == split_block_id {
+                        *pred = continuation_id;
+                    }
+                }
+            }
+        }
+    }
 }
 
-fn clone_instruction(instruction: &Instruction, values: &HashMap<usize, Value>) -> Instruction {
+fn clone_instruction(
+    instruction: &Instruction,
+    values: &HashMap<usize, Value>,
+    blocks: &HashMap<usize, usize>,
+) -> Instruction {
     Instruction {
         id: instruction.id,
-        kind: remap_instruction(&instruction.kind, values),
+        kind: remap_instruction(&instruction.kind, values, blocks),
         source_span: instruction.source_span.clone(),
     }
 }
 
-fn remap_instruction(kind: &InstructionKind, values: &HashMap<usize, Value>) -> InstructionKind {
+fn remap_instruction(
+    kind: &InstructionKind,
+    values: &HashMap<usize, Value>,
+    blocks: &HashMap<usize, usize>,
+) -> InstructionKind {
     match kind {
         InstructionKind::Add { result, lhs, rhs } => InstructionKind::Add {
             result: map_value(*result, values),
@@ -467,9 +499,12 @@ fn remap_instruction(kind: &InstructionKind, values: &HashMap<usize, Value>) -> 
         },
         InstructionKind::Phi { result, incoming } => InstructionKind::Phi {
             result: map_value(*result, values),
+            // Predecessor blocks live in the callee's id space like every
+            // other block reference: remap them, otherwise the merge phi
+            // names stale blocks and the backend reports a missing incoming.
             incoming: incoming
                 .iter()
-                .map(|(value, block)| (map_value(*value, values), *block))
+                .map(|(value, block)| (map_value(*value, values), blocks[block]))
                 .collect(),
         },
         InstructionKind::ConstInt { result, value } => InstructionKind::ConstInt {

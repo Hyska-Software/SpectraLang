@@ -1,0 +1,108 @@
+module corpus_minimization
+
+from std.io import println
+
+// afl-cmin: guloso cobre arestas com menos inputs. 6 candidatos x 8 arestas;
+// A cobre 4, B cobre o resto => {A,B} otimo, singletons nunca passam de 2.
+
+func uncovered_count(cov: [int], covered: [int], cand: int) returns int {
+    let total = 0
+    let e     = 0
+    while e < 8 {
+        if cov[cand * 8 + e] == 1 and covered[e] == 0 {
+            total = total + 1
+        }
+        e = e + 1
+    }
+    return total
+}
+
+public func main() returns int {
+    let cov = [
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+    ]
+    let covered   = [0, 0, 0, 0, 0, 0, 0, 0]
+    let selected  = [0, 0, 0, 0, 0, 0]
+    let nsel      = 0
+    let remaining = 8
+    while remaining > 0 {
+        let best      = -1
+        let best_gain = 0
+        let c         = 0
+        while c < 6 {
+            if selected[c] == 0 {
+                let gain = uncovered_count(cov, covered, c)
+                if gain > best_gain {
+                    best_gain = gain
+                    best = c
+                }
+            }
+            c = c + 1
+        }
+        if best == -1 {
+            return 1
+        }
+        selected[best] = 1
+        nsel = nsel + 1
+        let e = 0
+        while e < 8 {
+            if cov[best * 8 + e] == 1 and covered[e] == 0 {
+                covered[e] = 1
+                remaining = remaining - 1
+            }
+            e = e + 1
+        }
+    }
+    if nsel != 2 or selected[0] != 1 or selected[1] != 1 {
+        return 2
+    }
+    println("PASS corpus_minimization: guloso acha {A,B} otimo")
+    return 0
+}

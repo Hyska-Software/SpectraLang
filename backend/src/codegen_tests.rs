@@ -1351,6 +1351,43 @@ mod tests {
         );
     }
 
+    #[test]
+    fn backend_error_does_not_poison_builder_context() {
+        use spectra_midend::ir::{InstructionKind, Terminator, Value};
+
+        let mut codegen = CodeGenerator::new();
+        // Broken on purpose: the return references a value no instruction
+        // defines, so lowering fails *after* its FunctionBuilder exists.
+        let mut broken = IRFunction::new("broken_fn", vec![], IRType::Int);
+        let entry = broken.add_block("entry");
+        broken
+            .get_block_mut(entry)
+            .unwrap()
+            .set_terminator(Terminator::Return {
+                value: Some(Value { id: 99 }),
+            });
+        assert!(codegen.declare_function(&broken).is_ok());
+        assert!(codegen
+            .define_function(&broken, &std::collections::HashMap::new())
+            .is_err());
+        // The next definition reuses the same generator: without a context
+        // reset this panics inside `FunctionBuilder::new` (debug_assert).
+        let mut good = IRFunction::new("good_fn", vec![], IRType::Int);
+        let g_entry = good.add_block("entry");
+        let g_block = good.get_block_mut(g_entry).unwrap();
+        g_block.add_instruction(InstructionKind::ConstInt {
+            result: Value { id: 0 },
+            value: 7,
+        });
+        g_block.set_terminator(Terminator::Return {
+            value: Some(Value { id: 0 }),
+        });
+        assert!(codegen.declare_function(&good).is_ok());
+        assert!(codegen
+            .define_function(&good, &std::collections::HashMap::new())
+            .is_ok());
+    }
+
     /// Builds `fn name() -> int { return host(-7) }` with a generic host call
     /// so the lowering emits both the generic failure panic and the
     /// capability-denial branch.

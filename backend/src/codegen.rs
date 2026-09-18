@@ -237,7 +237,15 @@ pub(crate) fn validate_tensor_ir(ir_module: &IRModule) -> BackendResult<TensorGr
 
 /// Collect the Cranelift block arguments that should be passed for the PHIs
 /// in `target_block` when jumping from `current_block`.
+///
+/// Block parameters are declared lazily here, typed from the first jump's
+/// argument values. All predecessors of a well-typed phi pass same-typed
+/// values, so the first jump fixes every position. Hardcoding every
+/// parameter to I64 (the previous behavior) broke bool- and float-valued
+/// phis with verifier errors like "arg has type i8, expected i64".
 fn get_phi_args(
+    builder: &mut FunctionBuilder,
+    target_cl_block: cranelift_codegen::ir::Block,
     target_block: usize,
     current_block: usize,
     phi_map: &HashMap<usize, Vec<PhiDescriptor>>,
@@ -252,10 +260,15 @@ fn get_phi_args(
             let val = value_map
                 .get(*incoming_id)
                 .ok_or_else(|| BackendCodegenError::missing_value(*incoming_id))?;
-            args.push(val.into());
+            args.push(val);
+        }
+        let have = builder.block_params(target_cl_block).len();
+        for arg in args.iter().skip(have).take(phis.len().saturating_sub(have)) {
+            let ty = builder.func.dfg.value_type(*arg);
+            builder.append_block_param(target_cl_block, ty);
         }
     }
-    Ok(args)
+    Ok(args.into_iter().map(Into::into).collect())
 }
 
 include!("codegen_core.rs");

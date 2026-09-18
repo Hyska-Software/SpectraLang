@@ -240,7 +240,14 @@ impl CodeGenerator {
                 let target_block = *block_map
                     .get(target)
                     .ok_or_else(|| BackendCodegenError::missing_block(*target))?;
-                let phi_args = get_phi_args(*target, current_block_id, phi_map, value_map)?;
+                let phi_args = get_phi_args(
+                    builder,
+                    target_block,
+                    *target,
+                    current_block_id,
+                    phi_map,
+                    value_map,
+                )?;
                 builder.ins().jump(target_block, &phi_args);
             }
 
@@ -256,8 +263,22 @@ impl CodeGenerator {
                 let false_bb = *block_map
                     .get(false_block)
                     .ok_or_else(|| BackendCodegenError::missing_block(*false_block))?;
-                let true_args = get_phi_args(*true_block, current_block_id, phi_map, value_map)?;
-                let false_args = get_phi_args(*false_block, current_block_id, phi_map, value_map)?;
+                let true_args = get_phi_args(
+                    builder,
+                    true_bb,
+                    *true_block,
+                    current_block_id,
+                    phi_map,
+                    value_map,
+                )?;
+                let false_args = get_phi_args(
+                    builder,
+                    false_bb,
+                    *false_block,
+                    current_block_id,
+                    phi_map,
+                    value_map,
+                )?;
                 builder
                     .ins()
                     .brif(cond_val, true_bb, &true_args, false_bb, &false_args);
@@ -272,7 +293,14 @@ impl CodeGenerator {
                 let default_bb = *block_map
                     .get(default)
                     .ok_or_else(|| BackendCodegenError::missing_block(*default))?;
-                let default_args = get_phi_args(*default, current_block_id, phi_map, value_map)?;
+                let default_args = get_phi_args(
+                    builder,
+                    default_bb,
+                    *default,
+                    current_block_id,
+                    phi_map,
+                    value_map,
+                )?;
 
                 // Create switch using series of conditional branches.
                 // For intermediate "next_check" blocks we do not need PHI args
@@ -285,7 +313,14 @@ impl CodeGenerator {
                     let case_const = builder.ins().iconst(types::I64, *case_val);
                     let cmp = builder.ins().icmp(IntCC::Equal, switch_val, case_const);
 
-                    let target_args = get_phi_args(*target, current_block_id, phi_map, value_map)?;
+                    let target_args = get_phi_args(
+                        builder,
+                        target_bb,
+                        *target,
+                        current_block_id,
+                        phi_map,
+                        value_map,
+                    )?;
 
                     if idx < cases.len() - 1 {
                         let next_check = builder.create_block();

@@ -45,6 +45,21 @@ FILES = [
     "33_json_parser.spectra",
     "34_domfrontiers.spectra",
     "35_brzozowski.spectra",
+    "36_bmh_search.spectra",
+    "37_astar_grid.spectra",
+    "38_gvn_numbering.spectra",
+    "39_lru_cache.spectra",
+    "40_error_recovery.spectra",
+    "41_scope_resolution.spectra",
+    "42_taint_analysis.spectra",
+    "43_aho_corasick.spectra",
+    "44_dfa_minimization.spectra",
+    "45_model_checking.spectra",
+    "46_program_slice.spectra",
+    "47_short_circuit.spectra",
+    "48_escape_analysis.spectra",
+    "49_inline_cost.spectra",
+    "50_corpus_minimization.spectra",
 ]
 
 

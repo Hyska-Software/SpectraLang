@@ -1,0 +1,100 @@
+module error_recovery
+
+from std.io import println
+
+// Recuperacao panic-mode: em token inesperado registra erro e avanca ate
+// FIRST(F)={(,} U FOLLOW={+,-,),EOF}. Se cai em FIRST, parseia (1 erro);
+// se cai em FOLLOW, operando ausente vale 0. Tokens: 0=NUM 1=+ 2=- 3=* 4=/ 5=( 6=) 7=EOF 8=BAD.
+
+func in_sync(kind: int) returns bool {
+    if kind == 0 or kind == 5 {
+        return true
+    }
+    return kind == 1 or kind == 2 or kind == 6 or kind == 7
+}
+
+func skip_to_sync(kinds: [int], pos: [int]) {
+    while not in_sync(kinds[pos[0]]) {
+        pos[0] = pos[0] + 1
+    }
+}
+
+func parse_e(kinds: [int], values: [int], pos: [int], errors: [int]) returns int {
+    let value = parse_t(kinds, values, pos, errors)
+    while kinds[pos[0]] == 1 or kinds[pos[0]] == 2 {
+        let op = kinds[pos[0]]
+        pos[0] = pos[0] + 1
+        let right = parse_t(kinds, values, pos, errors)
+        if op == 1 {
+            value = value + right
+        } else {
+            value = value - right
+        }
+    }
+    return value
+}
+
+func parse_t(kinds: [int], values: [int], pos: [int], errors: [int]) returns int {
+    let value = parse_f(kinds, values, pos, errors)
+    while kinds[pos[0]] == 3 or kinds[pos[0]] == 4 {
+        let op = kinds[pos[0]]
+        pos[0] = pos[0] + 1
+        let right = parse_f(kinds, values, pos, errors)
+        if op == 3 {
+            value = value * right
+        } else {
+            value = value / right
+        }
+    }
+    return value
+}
+
+func parse_f(kinds: [int], values: [int], pos: [int], errors: [int]) returns int {
+    if kinds[pos[0]] == 0 {
+        let value = values[pos[0]]
+        pos[0] = pos[0] + 1
+        return value
+    }
+    if kinds[pos[0]] == 5 {
+        pos[0] = pos[0] + 1
+        let inner = parse_e(kinds, values, pos, errors)
+        if kinds[pos[0]] == 6 {
+            pos[0] = pos[0] + 1
+        } else {
+            errors[0] = errors[0] + 1
+        }
+        return inner
+    }
+    errors[0] = errors[0] + 1
+    skip_to_sync(kinds, pos)
+    if kinds[pos[0]] == 0 or kinds[pos[0]] == 5 {
+        return parse_f(kinds, values, pos, errors)
+    }
+    return 0
+}
+
+public func main() returns int {
+    let pos    = [0]
+    let errors = [0]
+    let k1     = [0, 1, 0, 3, 0, 7, 0, 0]
+    let v1     = [2, 0, 3, 0, 4, 0, 0, 0]
+    if parse_e(k1, v1, pos, errors) != 14 or errors[0] != 0 {
+        return 1
+    }
+    pos[0] = 0
+    errors[0] = 0
+    let k2 = [0, 1, 8, 0, 7, 0, 0, 0]
+    let v2 = [2, 0, 0, 3, 0, 0, 0, 0]
+    if parse_e(k2, v2, pos, errors) != 5 or errors[0] != 1 {
+        return 2
+    }
+    pos[0] = 0
+    errors[0] = 0
+    let k3 = [5, 0, 1, 0, 7, 0, 0, 0]
+    let v3 = [0, 2, 0, 3, 0, 0, 0, 0]
+    if parse_e(k3, v3, pos, errors) != 5 or errors[0] != 1 {
+        return 3
+    }
+    println("PASS error_recovery: panico sincroniza e totaliza erros")
+    return 0
+}
