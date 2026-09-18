@@ -1,0 +1,38 @@
+module abcd_elimination
+
+from std.io import println
+
+// ABCD-lite: elimina bounds-checks provados por fatos de range [lo,hi]
+// (desconhecido = known 0). Check (var,len) sai se facts[var] = [lo,hi]
+// com 0<=lo e hi<len. Diferencial implicito: so remove, nunca relaxa.
+
+public func main() returns int {
+    let chk_var = [0, 0, 1, 2, 2]
+    let chk_len = [8, 4, 8, 3, 2]
+    let flo     = [0, -1, 2]
+    let fhi     = [4, -1, 2]
+    let known   = [1, 0, 1]
+    let elim    = [0, 0, 0, 0, 0]
+    let kept    = 0
+    let c       = 0
+    while c < 5 {
+        let v = chk_var[c]
+        if known[v] == 1 and flo[v] >= 0 and fhi[v] < chk_len[c] {
+            elim[c] = 1
+        } else {
+            kept = kept + 1
+        }
+        c = c + 1
+    }
+    if elim[0] != 1 or elim[3] != 1 {
+        return 1
+    }
+    if elim[1] != 0 or elim[2] != 0 or elim[4] != 0 {
+        return 2
+    }
+    if kept != 3 {
+        return 3
+    }
+    println("PASS abcd_elimination: 2 removidos, 3 mantidos")
+    return 0
+}

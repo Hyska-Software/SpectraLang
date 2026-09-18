@@ -524,12 +524,12 @@ impl ASTLowering {
                             return left_type.clone();
                         }
                         let (left_is_float, left_is_string) = match left_type {
-                            IRType::Float => (true, false),
+                            IRType::Float | IRType::ExactFloat { .. } => (true, false),
                             IRType::String => (false, true),
                             _ => (false, false),
                         };
                         let (right_is_float, right_is_string) = match right_type {
-                            IRType::Float => (true, false),
+                            IRType::Float | IRType::ExactFloat { .. } => (true, false),
                             IRType::String => (false, true),
                             _ => (false, false),
                         };

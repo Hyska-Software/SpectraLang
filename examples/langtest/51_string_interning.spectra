@@ -1,0 +1,85 @@
+module string_interning
+
+from std.io import println
+import std.string as str
+
+// Hash-cons p/ o lexer: buffer bump + entradas (hash,off,len). Mesma string
+// => mesmo id (igualdade por id); pool cheio => -1. Sem arrays de string.
+
+func str_hash(s: string) returns int {
+    let h = 0
+    let i = 0
+    while i < str.len(s) {
+        h = h * 31 + str.char_at(s, i)
+        i = i + 1
+    }
+    return h
+}
+
+func entry_matches(buf: string, off: [int], lens: [int], slot: int, s: string) returns bool {
+    if lens[slot] != str.len(s) {
+        return false
+    }
+    let view = str.substring(buf, off[slot], off[slot] + lens[slot])
+    return view == s
+}
+
+func intern(buf: [string], hashes: [int], off: [int], lens: [int], used: [int], s: string) returns int {
+    let h = str_hash(s)
+    let i = 0
+    while i < used[0] {
+        if hashes[i] == h and entry_matches(buf[0], off, lens, i, s) {
+            return i
+        }
+        i = i + 1
+    }
+    if used[0] >= 8 {
+        return-1
+    }
+    hashes[used[0]] = h
+    off[used[0]] = str.len(buf[0])
+    lens[used[0]] = str.len(s)
+    buf[0] = buf[0] + s
+    used[0] = used[0] + 1
+    return used[0] - 1
+}
+
+public func main() returns int {
+    let buf    = [""]
+    let hashes = [0, 0, 0, 0, 0, 0, 0, 0]
+    let off    = [0, 0, 0, 0, 0, 0, 0, 0]
+    let lens   = [0, 0, 0, 0, 0, 0, 0, 0]
+    let used   = [0]
+    if intern(buf, hashes, off, lens, used, "if") != 0 {
+        return 1
+    }
+    if intern(buf, hashes, off, lens, used, "else") != 1 {
+        return 2
+    }
+    if intern(buf, hashes, off, lens, used, "if") != 0 {
+        return 3
+    }
+    if intern(buf, hashes, off, lens, used, "while") != 2 {
+        return 4
+    }
+    if intern(buf, hashes, off, lens, used, "a") != 3 {
+        return 5
+    }
+    if intern(buf, hashes, off, lens, used, "b") != 4 {
+        return 6
+    }
+    if intern(buf, hashes, off, lens, used, "c") != 5 {
+        return 7
+    }
+    if intern(buf, hashes, off, lens, used, "d") != 6 {
+        return 8
+    }
+    if intern(buf, hashes, off, lens, used, "e") != 7 {
+        return 9
+    }
+    if intern(buf, hashes, off, lens, used, "full") != -1 {
+        return 10
+    }
+    println("PASS string_interning: dedup por id, cheio nega")
+    return 0
+}

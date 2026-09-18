@@ -1,0 +1,132 @@
+module glob_matching
+
+from std.io import println
+import std.string as str
+
+// fnmatch p/ descoberta de arquivos do CLI: * (sequencia), ? (um char),
+// literais. ** equivale a *. Memo (t+1)x(p+1) achatada: -1 aberto, 0/1.
+
+func gmatch(text: string, pat: string, ti: int, pi: int, memo: [int], stride: int) returns bool {
+    let key = ti * stride + pi
+    if memo[key] != -1 {
+        return memo[key] == 1
+    }
+    let res = false
+    if pi == str.len(pat) {
+        res = ti == str.len(text)
+    } else {
+        if str.char_at(pat, pi) == 42 {
+            if gmatch(text, pat, ti, pi + 1, memo, stride) {
+                res = true
+            } else {
+                if ti < str.len(text) and gmatch(text, pat, ti + 1, pi, memo, stride) {
+                    res = true
+                }
+            }
+        } else {
+            if ti < str.len(text) {
+                let pc = str.char_at(pat, pi)
+                if pc == 63 or pc == str.char_at(text, ti) {
+                    res = gmatch(text, pat, ti + 1, pi + 1, memo, stride)
+                }
+            }
+        }
+    }
+    if res {
+        memo[key] = 1
+    } else {
+        memo[key] = 0
+    }
+    return res
+}
+
+func fresh_memo(memo: [int], n: int) {
+    let i = 0
+    while i < n {
+        memo[i] = -1
+        i = i + 1
+    }
+}
+
+public func main() returns int {
+    let memo = [
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+    ]
+    fresh_memo(memo, 48)
+    if not gmatch("hello", "h*o", 0, 0, memo, 8) {
+        return 1
+    }
+    fresh_memo(memo, 48)
+    if not gmatch("hello", "h?llo", 0, 0, memo, 8) {
+        return 2
+    }
+    fresh_memo(memo, 48)
+    if gmatch("hello", "h?lo", 0, 0, memo, 8) {
+        return 3
+    }
+    fresh_memo(memo, 48)
+    if not gmatch("abc", "*", 0, 0, memo, 8) {
+        return 4
+    }
+    fresh_memo(memo, 48)
+    if not gmatch("", "*", 0, 0, memo, 8) {
+        return 5
+    }
+    fresh_memo(memo, 48)
+    if gmatch("", "?", 0, 0, memo, 8) {
+        return 6
+    }
+    fresh_memo(memo, 48)
+    if not gmatch("ab", "a**b", 0, 0, memo, 8) {
+        return 7
+    }
+    println("PASS glob_matching: * ? ** com memo")
+    return 0
+}

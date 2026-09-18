@@ -571,7 +571,11 @@ impl ASTLowering {
     ///
     /// Only scalars are hinted here. Struct, array and tensor locals have their
     /// own storage paths, and widening this to them would move those paths.
-    fn slot_hint_for(&mut self, annotation: Option<&TypeAnnotation>, value: &Expression) -> Option<IRType> {
+    fn slot_hint_for(
+        &mut self,
+        annotation: Option<&TypeAnnotation>,
+        value: &Expression,
+    ) -> Option<IRType> {
         let scalar = |ty: IRType| match ty {
             IRType::Int | IRType::Float | IRType::Bool | IRType::String | IRType::Char => Some(ty),
             _ => None,
@@ -601,6 +605,13 @@ impl ASTLowering {
         use std::collections::HashSet;
         let mut assigned = HashSet::new();
 
+        // Scratch scope so sequential `let`s infer through earlier ones
+        // (`let y = x + 1.0` needs x's type). Real lowering runs after the
+        // pop, so no pre-pass state can leak into it. First wins, mirroring
+        // the hints discipline (shadowing inside branches resolves against
+        // whatever semantic analysis accepted).
+        self.variable_types.push_scope();
+
         for stmt in statements {
             match &stmt.kind {
                 StatementKind::Let(let_stmt) => {
@@ -610,6 +621,12 @@ impl ASTLowering {
                         if !hints.contains_key(name) {
                             if let Some(ty) = self.slot_hint_for(let_stmt.ty.as_ref(), value) {
                                 hints.insert(name.clone(), ty);
+                            }
+                        }
+                        if self.variable_types.get(name).is_none() {
+                            let inferred = self.infer_expr_ir_type(value);
+                            if !matches!(inferred, IRType::Unknown) {
+                                self.variable_types.insert(name.clone(), inferred);
                             }
                         }
                         self.collect_assigned_variables_in_expr(value, &mut assigned);
@@ -694,6 +711,7 @@ impl ASTLowering {
             }
         }
 
+        self.variable_types.pop_scope();
         assigned
     }
 

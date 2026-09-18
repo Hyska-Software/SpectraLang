@@ -120,6 +120,17 @@ impl ASTLowering {
             .filter(|param| param.ty != IRType::Void)
             .map(|param| (param.name.clone(), param.ty.clone()))
             .collect();
+        // Seed a scratch scope with parameter types so `let` hints infer
+        // through them (`let y = p + 1.0`). Unlike `lower_method`, plain
+        // functions do not keep params in `variable_types` during lowering,
+        // so this scope is popped right after the pre-pass: no leakage.
+        self.variable_types.push_scope();
+        for param in &params {
+            if param.ty != IRType::Void && self.variable_types.get(&param.name).is_none() {
+                self.variable_types
+                    .insert(param.name.clone(), param.ty.clone());
+            }
+        }
         let assigned_vars = {
             let assigned =
                 self.find_assigned_variables_with_types(&ast_func.body.statements, &mut slot_hints);
@@ -127,6 +138,7 @@ impl ASTLowering {
             names.sort();
             names
         };
+        self.variable_types.pop_scope();
         for var_name in &assigned_vars {
             let slot_type = slot_hints.get(var_name).cloned().unwrap_or(IRType::Int);
             self.allocate_slot(&mut ir_func, var_name, slot_type);

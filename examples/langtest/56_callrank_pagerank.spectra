@@ -1,0 +1,67 @@
+module callrank_pagerank
+
+from std.io import println
+
+// PageRank sobre call-graph (deteccao de hot functions p/ PGO/inline):
+// 0->1,2; 1->2,3; 2->3; 3 dangling (redistribui). d=0.85, 20 iteracoes.
+// Invariantes robustas: soma~1, tudo em (0,1), sink no topo.
+
+public func main() returns int {
+    let outdeg = [2, 2, 1, 0]
+    let succ   = [1, 2, 2, 3, 3, -1, -1, -1]
+    let sstart = [0, 2, 4, 5, 5]
+    let rank   = [0.25, 0.25, 0.25, 0.25]
+    let nxt    = [0.0, 0.0, 0.0, 0.0]
+    let iter   = 0
+    while iter < 20 {
+        let v = 0
+        while v < 4 {
+            nxt[v] = 0.15 / 4.0
+            v = v + 1
+        }
+        v = 0
+        while v < 4 {
+            if outdeg[v] == 0 {
+                let share = 0.85 * rank[v] / 4.0
+                let w     = 0
+                while w < 4 {
+                    nxt[w] = nxt[w] + share
+                    w = w + 1
+                }
+            } else {
+                let share = 0.85 * rank[v] /(outdeg[v] * 1.0)
+                let e     = sstart[v]
+                while e < sstart[v + 1] {
+                    nxt[succ[e]] = nxt[succ[e]] + share
+                    e = e + 1
+                }
+            }
+            v = v + 1
+        }
+        v = 0
+        while v < 4 {
+            rank[v] = nxt[v]
+            v = v + 1
+        }
+        iter = iter + 1
+    }
+    let sum = rank[0] + rank[1] + rank[2] + rank[3]
+    let err = sum - 1.0
+    if err < 0.0 {
+        err = 0.0 - err
+    }
+    if err > 0.001 {
+        return 1
+    }
+    if rank[0] <= 0.0 or rank[1] <= 0.0 or rank[2] <= 0.0 or rank[3] <= 0.0 {
+        return 2
+    }
+    if rank[0] >= 1.0 or rank[1] >= 1.0 or rank[2] >= 1.0 or rank[3] >= 1.0 {
+        return 3
+    }
+    if rank[3] <= rank[0] {
+        return 4
+    }
+    println("PASS callrank_pagerank: soma 1, sink no topo")
+    return 0
+}

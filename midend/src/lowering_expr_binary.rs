@@ -67,8 +67,14 @@ impl ASTLowering {
                     _ => {}
                 }
 
-                let lhs = self.lower_expression(left, ir_func);
-                let rhs = self.lower_expression(right, ir_func);
+                let mut lhs = self.lower_expression(left, ir_func);
+                let mut rhs = self.lower_expression(right, ir_func);
+                let (new_lhs, new_rhs, new_left_ty, new_right_ty) = self
+                    .widen_mixed_int_float_operands(lhs, rhs, left_ir_type, right_ir_type, ir_func);
+                lhs = new_lhs;
+                rhs = new_rhs;
+                let left_ir_type = new_left_ty;
+                let right_ir_type = new_right_ty;
 
                 if let IRType::ExactInt { signed, width } = &left_ir_type {
                     if left_ir_type == right_ir_type {
@@ -175,6 +181,42 @@ impl ASTLowering {
                 }
             }
             _ => unreachable!("lowering expression category mismatch"),
+        }
+    }
+
+    /// Implicit int→float widening for mixed arithmetic and comparisons
+    /// (semantic `can_auto_promote`: the float side wins, matching
+    /// `numeric_result_type`). Emits a typed `Cast` on the int side so
+    /// signedness survives (a backend-only fixup cannot tell `i8` from
+    /// `u8`). Without this the backend receives mismatched operand types
+    /// (e.g. `fmul.i64`) and fails verification, or panics on promoted
+    /// scalar locals. Returns the (possibly new) operands and their types.
+    pub(crate) fn widen_mixed_int_float_operands(
+        &mut self,
+        lhs: Value,
+        rhs: Value,
+        left_ty: IRType,
+        right_ty: IRType,
+        ir_func: &mut IRFunction,
+    ) -> (Value, Value, IRType, IRType) {
+        fn is_int_family(ty: &IRType) -> bool {
+            matches!(ty, IRType::Int | IRType::ExactInt { .. })
+        }
+        fn is_float_family(ty: &IRType) -> bool {
+            matches!(ty, IRType::Float | IRType::ExactFloat { .. })
+        }
+        if is_int_family(&left_ty) && is_float_family(&right_ty) {
+            let lhs = self
+                .builder
+                .build_cast(ir_func, lhs, left_ty, right_ty.clone());
+            (lhs, rhs, right_ty.clone(), right_ty)
+        } else if is_float_family(&left_ty) && is_int_family(&right_ty) {
+            let rhs = self
+                .builder
+                .build_cast(ir_func, rhs, right_ty, left_ty.clone());
+            (lhs, rhs, left_ty.clone(), left_ty)
+        } else {
+            (lhs, rhs, left_ty, right_ty)
         }
     }
 

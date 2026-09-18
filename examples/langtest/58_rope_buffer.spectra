@@ -1,0 +1,75 @@
+module rope_buffer
+
+from std.io import println
+import std.string as str
+
+// Rope p/ buffers do LSP: pecas em arrays paralelos (strs/lens), char_at
+// global caminha as pecas, split divide, flatten concatena. Tudo verificado
+// contra a string plana.
+
+func rope_len(lens: [int], n: int) returns int {
+    let total = 0
+    let i     = 0
+    while i < n {
+        total = total + lens[i]
+        i = i + 1
+    }
+    return total
+}
+
+func rope_char(strs: [string], lens: [int], n: int, idx: int) returns int {
+    let i = 0
+    while i < n {
+        if idx < lens[i] {
+            return str.char_at(strs[i], idx)
+        }
+        idx = idx - lens[i]
+        i = i + 1
+    }
+    return-1
+}
+
+func rope_flatten(strs: [string], n: int) returns string {
+    let out = ""
+    let i   = 0
+    while i < n {
+        out = out + strs[i]
+        i = i + 1
+    }
+    return out
+}
+
+public func main() returns int {
+    let strs = ["hello", " ", "world", "", "", ""]
+    let lens = [5, 1, 5, 0, 0, 0]
+    if rope_len(lens, 3) != 11 {
+        return 1
+    }
+    if rope_char(strs, lens, 3, 0) != 104 or rope_char(strs, lens, 3, 6) != 119 {
+        return 2
+    }
+    if rope_char(strs, lens, 3, 10) != 100 {
+        return 3
+    }
+    if rope_char(strs, lens, 3, 11) != -1 {
+        return 4
+    }
+    if rope_flatten(strs, 3) != "hello world" {
+        return 5
+    }
+    let left_strs  = ["hello", "", "", "", "", ""]
+    let left_lens  = [5, 0, 0, 0, 0, 0]
+    let right_strs = [" world", "", "", "", "", ""]
+    let right_lens = [6, 0, 0, 0, 0, 0]
+    if rope_flatten(left_strs, 1) + rope_flatten(right_strs, 1) != rope_flatten(strs, 3) {
+        return 6
+    }
+    if rope_len(left_lens, 1) != 5 or rope_len(right_lens, 1) != 6 {
+        return 7
+    }
+    if rope_len(left_lens, 1) + rope_len(right_lens, 1) != rope_len(lens, 3) {
+        return 8
+    }
+    println("PASS rope_buffer: split/flatten/char_at coerentes")
+    return 0
+}

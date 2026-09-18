@@ -1,0 +1,117 @@
+module minimax_ab
+
+from std.io import println
+
+// Minimax com alpha-beta no Nim (pedras 7, tira 1-3, ultimo vence):
+// posicao 7 eh N (tira 3, deixa 4 = P). Compara nos com busca pura:
+// mesmo valor, poda estrita, melhor lance 3.
+
+func solve_plain(stones: int, is_max: int, nodes: [int]) returns int {
+    nodes[0] = nodes[0] + 1
+    if stones == 0 {
+        if is_max == 1 {
+            return 0 - 1
+        }
+        return 1
+    }
+    if is_max == 1 {
+        let best = 0 - 1
+        let take = 1
+        while take <= 3 and take <= stones {
+            let v = solve_plain(stones - take, 0, nodes)
+            if v > best {
+                best = v
+            }
+            take = take + 1
+        }
+        return best
+    }
+    let best = 1
+    let take = 1
+    while take <= 3 and take <= stones {
+        let v = solve_plain(stones - take, 1, nodes)
+        if v < best {
+            best = v
+        }
+        take = take + 1
+    }
+    return best
+}
+
+func solve_ab(stones: int, is_max: int, alpha: int, beta: int, nodes: [int]) returns int {
+    nodes[0] = nodes[0] + 1
+    if stones == 0 {
+        if is_max == 1 {
+            return 0 - 1
+        }
+        return 1
+    }
+    if is_max == 1 {
+        let best = 0 - 1
+        let take = 1
+        while take <= 3 and take <= stones {
+            let v = solve_ab(stones - take, 0, alpha, beta, nodes)
+            if v > best {
+                best = v
+            }
+            if best > alpha {
+                alpha = best
+            }
+            if alpha >= beta {
+                break
+            }
+            take = take + 1
+        }
+        return best
+    }
+    let best = 1
+    let take = 1
+    while take <= 3 and take <= stones {
+        let v = solve_ab(stones - take, 1, alpha, beta, nodes)
+        if v < best {
+            best = v
+        }
+        if best < beta {
+            beta = best
+        }
+        if alpha >= beta {
+            break
+        }
+        take = take + 1
+    }
+    return best
+}
+
+func best_move_ab(stones: int, nodes: [int]) returns int {
+    let best = 0 - 1
+    let arg  = 1
+    let take = 1
+    while take <= 3 and take <= stones {
+        let v = solve_ab(stones - take, 0, 0 - 1, 1, nodes)
+        if v > best {
+            best = v
+            arg = take
+        }
+        take = take + 1
+    }
+    return arg
+}
+
+public func main() returns int {
+    let n1 = [0]
+    let v1 = solve_plain(7, 1, n1)
+    let n2 = [0]
+    let v2 = solve_ab(7, 1, 0 - 1, 1, n2)
+    if v1 != 1 or v2 != 1 {
+        return 1
+    }
+    if n2[0] >= n1[0] or n1[0] == 0 {
+        return 2
+    }
+    let n3 = [0]
+    if best_move_ab(7, n3) != 3 {
+        return 3
+    }
+    println("PASS minimax_ab: poda estrita, lance otimo 3")
+    return 0
+}

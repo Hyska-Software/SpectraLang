@@ -1,0 +1,61 @@
+module validation_530_promoted_slot_types
+
+// Regression: promoted locals must be allocated with their real type, not a
+// blanket Int. `let y = x + 1.0` (type visible only through an earlier
+// binding) used to get an Int slot: float stores then panicked the Cranelift
+// frontend when mutated across blocks — or silently miscompiled by
+// reinterpreting float bits as int. Covers let-chains, float params and
+// bool locals, with exact values (bits of 1.0 as i64 would read ~4.6e18).
+
+func bump(p: float) returns float {
+    let y = p + 1.0
+    if y > 0.0 {
+        y = y + 1.0
+    }
+    return y
+}
+
+func bneg(flag: bool) returns bool {
+    let b = not flag
+    if flag {
+        b = flag
+    }
+    return b
+}
+
+public func main() returns int {
+    let base = 1.0
+    let x = base + 0.0
+    if not (x > 0.5) {
+        return 1
+    }
+    if x > 2.0 {
+        return 2
+    }
+    if bump(1.0) != 3.0 {
+        return 3
+    }
+    if bneg(false) != true {
+        return 4
+    }
+    if bneg(true) != true {
+        return 5
+    }
+    let err = base - 1.0
+    if err < 0.0 {
+        err = 0.0 - err
+    }
+    if err != 0.0 {
+        return 6
+    }
+    if 1 == 1.5 {
+        return 7
+    }
+    if not (1 == 1.0) {
+        return 8
+    }
+    if 2 * 1.5 != 3.0 {
+        return 9
+    }
+    return 0
+}

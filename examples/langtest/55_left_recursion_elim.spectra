@@ -1,0 +1,106 @@
+module left_recursion_elim
+
+from std.io import println
+
+// Eliminacao de recursao a esquerda imediata: E->E+T|T vira E->TE',
+// E'->+TE'|eps (T->id passa intacta). NTs E=10 E'=11 T=12, + terminal 1.
+// Saida: lhs/rhs/len com E' como ultimo NT criado.
+
+public func main() returns int {
+    let plhs  = [10, 10, 12]
+    let prhs  = [10, 1, 12, 12, -1, -1, 0, -1, -1]
+    let prlen = [3, 1, 1]
+    let olhs  = [0, 0, 0, 0]
+    let orhs  = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let olen  = [0, 0, 0, 0]
+    let fresh = 11
+    let on    = 0
+    let nt    = 10
+    while nt <= 12 {
+        let rec   = [-1, -1]
+        let nrec  = 0
+        let base  = [-1, -1]
+        let nbase = 0
+        let p     = 0
+        while p < 3 {
+            if plhs[p] == nt {
+                if prlen[p] > 0 and prhs[p * 3] == nt {
+                    rec[nrec] = p
+                    nrec = nrec + 1
+                } else {
+                    base[nbase] = p
+                    nbase = nbase + 1
+                }
+            }
+            p = p + 1
+        }
+        if nrec == 0 {
+            p = 0
+            while p < 3 {
+                if plhs[p] == nt {
+                    olhs[on] = nt
+                    olen[on] = prlen[p]
+                    let k = 0
+                    while k < 3 {
+                        orhs[on * 3 + k] = prhs[p * 3 + k]
+                        k = k + 1
+                    }
+                    on = on + 1
+                }
+                p = p + 1
+            }
+        } else {
+            let nn = fresh
+            fresh = fresh + 1
+            let i = 0
+            while i < nbase {
+                let q = base[i]
+                olhs[on] = nt
+                olen[on] = prlen[q] + 1
+                let k = 0
+                while k < prlen[q] {
+                    orhs[on * 3 + k] = prhs[q * 3 + k]
+                    k = k + 1
+                }
+                orhs[on * 3 + prlen[q]] = nn
+                on = on + 1
+                i = i + 1
+            }
+            i = 0
+            while i < nrec {
+                let q = rec[i]
+                olhs[on] = nn
+                olen[on] = prlen[q]
+                let k = 1
+                while k < prlen[q] {
+                    orhs[on * 3 + k - 1] = prhs[q * 3 + k]
+                    k = k + 1
+                }
+                orhs[on * 3 + prlen[q] - 1] = nn
+                on = on + 1
+                i = i + 1
+            }
+            olhs[on] = nn
+            olen[on] = 0
+            orhs[on * 3] = -1
+            orhs[on * 3 + 1] = -1
+            orhs[on * 3 + 2] = -1
+            on = on + 1
+        }
+        nt = nt + 1
+    }
+    if on != 4 {
+        return 1
+    }
+    if olhs[0] != 10 or olhs[1] != 11 or olhs[2] != 11 or olhs[3] != 12 {
+        return 2
+    }
+    if olen[0] != 2 or olen[1] != 3 or olen[2] != 0 or olen[3] != 1 {
+        return 3
+    }
+    if orhs[0] != 12 or orhs[1] != 11 or orhs[3] != 1 or orhs[4] != 12 or orhs[5] != 11 {
+        return 4
+    }
+    println("PASS left_recursion_elim: E->TE', E'->+TE'|eps")
+    return 0
+}

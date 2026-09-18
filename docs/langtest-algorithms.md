@@ -59,6 +59,14 @@ invariantes passam e um código distinto por estágio quando alguma falha.
 | `48_escape_analysis.spectra` | Escape p/ stack | Global/arg/store propagam; só o local fica na stack |
 | `49_inline_cost.spectra` | Heurística de inline | Limiar + call-site único + vetos (recursivo/raiz/gigante) |
 | `50_corpus_minimization.spectra` | afl-cmin guloso | 6 candidatos × 8 arestas ⇒ `{A,B}` ótimo |
+| `51_string_interning.spectra` | Hash-cons (lexer) | Buffer bump + (hash,off,len); dedup por id, cheio ⇒ -1 |
+| `52_burs_tiling.spectra` | BURS bottom-up (codegen) | DP com SHL p/ `x*2`; `(a*2)+b` com custo ótimo 4 |
+| `53_abcd_elimination.spectra` | ABCD-lite (bounds) | Fatos de range removem 2 checks, mantêm 3 |
+| `54_glob_matching.spectra` | fnmatch `*?**` (CLI) | Recursão com memo; 7 casos incl. `a**b` |
+| `55_left_recursion_elim.spectra` | Eliminação (gramáticas) | `E→E+T\|T` ⇒ `E→TE'`, `E'→+TE'\|ε`, forma verificada |
+| `56_callrank_pagerank.spectra` | PageRank (PGO) | d=0.85, 20 iterações; soma~1, sink no topo |
+| `57_minimax_ab.spectra` | Minimax + alpha-beta | Nim 7: mesmo valor, poda estrita, lance ótimo 3 |
+| `58_rope_buffer.spectra` | Rope (buffers LSP) | Peças paralelas; split/flatten/char_at coerentes |
 
 Relação com o já existente: `tests/validation/524_recursion_recursive_descent_parser.spectra`
 cobre descida recursiva sobre strings; esta suíte complementa com DFA tabular,
@@ -115,7 +123,7 @@ generation`, enquanto `-O2`/`-O3` passavam (o DCE escondia o problema).
 
 Nenhum outro defeito de compilador/runtime foi encontrado nos demais
 arquivos daquela leva: `check`, `run -O0`, `run -O3`, `lint` e `fmt --check`
-passavam nos 28 arquivos então existentes (a suíte hoje tem 35).
+passavam nos 28 arquivos então existentes (a suíte hoje tem 58).
 
 ## Quarta leva (22–28): correção no próprio teste
 
@@ -125,6 +133,39 @@ passavam nos 28 arquivos então existentes (a suíte hoje tem 35).
   padrão correto antes de cada `kmp_find`. Nenhuma mudança no compilador
   nesta leva; o gate `-O0` do validador (introduzido no R527) passou em
   todos os 28 arquivos de primeira, confirmando que o fix anterior segura.
+
+## Oitava leva (51–58): dois bugs reais numéricos
+
+O `56_callrank_pagerank` (aritmética mista `int*float`) expôs dois bugs
+encadeados de tipos numéricos.
+
+1. **Widening ausente (`midend/src/lowering_expr_binary.rs`).** A semântica
+   permite `int`+`float` (`can_auto_promote`, resultado float), mas o
+   lowering repassava operandos mistos e o backend emitia `fmul.i64`
+   (verifier) ou panica em local promovido. Agora
+   `widen_mixed_int_float_operands` insere `Cast` tipado (com signedness)
+   para o lado float — cobrindo Add/Sub/Mul/Div/Rem, comparações e `==`
+   (que antes truncava `1 == 1.5` para `true` ao forçar rhs→Int!). Backend
+   `Cast` já tratava sint/uint; só faltava emitir.
+2. **Slots com tipo errado (`lowering_impl_blocks.rs` +
+   `lowering_impl_methods.rs`).** O pré-pass de slots rodava sem env:
+   `let y = x + 1.0` (tipo visível só via `let` anterior) e
+   `let y = p + 1.0` (params fora de `variable_types` em `lower_function`,
+   ao contrário de `lower_method`) caíam no fallback `Int` — e `float`/`bool`
+   mutado através de blocos panica no frontend (slot I64 + store F64).
+   Também havia `tf1` passando por acidente (bits de `1.0` lidos como int
+   dão ~4.6e18, e `> 0.0` continuava verdadeiro!). Fix: escopo scratch com
+   push/pop no pré-pass + seed sequencial first-wins de `let`s e params;
+   sem vazamento para o lowering real.
+- **Regressões:** `tests/validation/530_promoted_slot_types.spectra`
+  (cadeia de lets, param float, bool, valores exatos que pegariam a
+  reinterpretação) em `-O0`–`-O3`. O 56 virou o teste de sistema da
+  aritmética mista (soma~1 com tolerância só fecha com floats exatos).
+- **Correções nos testes da leva:** `orhs`/`olen` conferidos à mão no 55;
+  memo 48 slots dimensionado pelo `(ti,pi)` máximo no 54; `left_lens` e
+  `right_lens` do 58 passaram a ser asseridos via `rope_len`.
+- **Validação dos fixes:** `cargo test -p` midend/backend/compiler verdes,
+  suíte langtest 58/58 em default e `-O0`, sweeps abaixo.
 
 ## Sétima leva (43–50): três bugs reais de compilador
 
@@ -224,7 +265,3 @@ da faixa era silencioso (`a[10]=99; return a[10]` devolvia 99): o backend
   2 novos), `-p spectra-midend` (78), `-p spectra-compiler` (94), suíte
   langtest 35/35 em default e `-O0`, slice array-heavy (10 arquivos) em
   default e `-O0`, fixtures com mensagem exata em `-O0`–`-O3`.
-Por isso não há alteração em `compiler/`, `midend/`, `backend/` ou `runtime/`
-neste change — apenas arquivos novos sob `examples/langtest/` mais este doc e
-o validador. Se um bug real aparecer no futuro, a correção deve entrar no crate
-responsável com regressão em `tests/validation/` ou `tests/errors/`.

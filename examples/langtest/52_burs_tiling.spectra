@@ -1,0 +1,65 @@
+module burs_tiling
+
+from std.io import println
+
+// BURS bottom-up p/ selecao de instrucao: nos 0=CONST 1=VAR 2=ADD 3=MUL,
+// regras 0=LEAF 1=ADD 2=MUL 3=SHL(x*2). (a*2)+b: otimo usa SHL, custo 4.
+
+func tile(nkind: [int], nl: [int], nr: [int], aux: [int], cost: [int], rule: [int], node: int) returns int {
+    if cost[node] != -1 {
+        return cost[node]
+    }
+    let best      = 0
+    let best_rule = 0
+    if nkind[node] == 0 or nkind[node] == 1 {
+        best = 1
+        best_rule = 0
+    } else {
+        let cl = tile(nkind, nl, nr, aux, cost, rule, nl[node])
+        let cr = tile(nkind, nl, nr, aux, cost, rule, nr[node])
+        if nkind[node] == 2 {
+            best = cl + cr + 1
+            best_rule = 1
+        } else {
+            best = cl + cr + 2
+            best_rule = 2
+            if nr[node] >= 0 and nkind[nr[node]] == 0 and aux[nr[node]] == 2 {
+                let shl = cl + 1
+                if shl < best {
+                    best = shl
+                    best_rule = 3
+                }
+            }
+            if nl[node] >= 0 and nkind[nl[node]] == 0 and aux[nl[node]] == 2 {
+                let shl = cr + 1
+                if shl < best {
+                    best = shl
+                    best_rule = 3
+                }
+            }
+        }
+    }
+    cost[node] = best
+    rule[node] = best_rule
+    return best
+}
+
+public func main() returns int {
+    let nkind = [1, 0, 3, 1, 2]
+    let nl    = [-1, -1, 0, -1, 2]
+    let nr    = [-1, -1, 1, -1, 3]
+    let aux   = [0, 2, 0, 1, 0]
+    let cost  = [-1, -1, -1, -1, -1]
+    let rule  = [-1, -1, -1, -1, -1]
+    if tile(nkind, nl, nr, aux, cost, rule, 4) != 4 {
+        return 1
+    }
+    if rule[2] != 3 {
+        return 2
+    }
+    if rule[4] != 1 {
+        return 3
+    }
+    println("PASS burs_tiling: SHL escolhido, custo otimo 4")
+    return 0
+}

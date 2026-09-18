@@ -60,6 +60,14 @@ FILES = [
     "48_escape_analysis.spectra",
     "49_inline_cost.spectra",
     "50_corpus_minimization.spectra",
+    "51_string_interning.spectra",
+    "52_burs_tiling.spectra",
+    "53_abcd_elimination.spectra",
+    "54_glob_matching.spectra",
+    "55_left_recursion_elim.spectra",
+    "56_callrank_pagerank.spectra",
+    "57_minimax_ab.spectra",
+    "58_rope_buffer.spectra",
 ]
 
 
