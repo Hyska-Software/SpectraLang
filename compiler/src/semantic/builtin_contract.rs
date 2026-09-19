@@ -1053,6 +1053,10 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "func(Response, string, string) returns Response",
     ),
     (
+        "std.api.handler.with_status",
+        "func(Response, int) returns Response",
+    ),
+    (
         "std.api.handler.into_response",
         "func(Response) returns Response",
     ),

@@ -32,9 +32,16 @@ impl SemanticAnalyzer {
                         .iter()
                         .map(|p| self.type_annotation_to_type(&p.ty))
                         .collect();
+                    // A missing `returns` annotation means unit, not unknown.
+                    // Exporting `Unknown` makes importers declare an external
+                    // with an unresolved IR type (midend verification error).
+                    // Trait methods already normalize this way below.
                     let return_type = Self::async_task_type(
                         func.is_async,
-                        self.type_annotation_to_type(&func.return_type),
+                        match &func.return_type {
+                            Some(_) => self.type_annotation_to_type(&func.return_type),
+                            None => Type::Unit,
+                        },
                     );
                     exports.functions.insert(
                         func.name.clone(),
@@ -105,6 +112,36 @@ impl SemanticAnalyzer {
                             enum_struct_variants: None,
                         },
                     );
+                    // Carry the JSON derive facts so importers rebuild
+                    // attribute-faithful definitions; the midend reads the
+                    // attributes to register the derive schema. Generic
+                    // structs are skipped: their reconstructions carry no
+                    // type parameters and must not gain a concrete schema.
+                    if s.type_params.is_empty() {
+                        if let Some(derived) = self.json_struct_derives.get(&s.name) {
+                            let methods = self.methods.get(&s.name);
+                            let has_method = |name: &str| {
+                                methods.is_some_and(|table| table.contains_key(name))
+                            };
+                            exports.json_derives.insert(
+                                s.name.clone(),
+                                ExportedJsonDerive {
+                                    serialize: has_method("to_json"),
+                                    deserialize: has_method("from_json"),
+                                    fields: derived
+                                        .fields
+                                        .iter()
+                                        .map(|field| ExportedJsonField {
+                                            source_name: field.source_name.clone(),
+                                            json_name: field.json_name.clone(),
+                                            optional: field.optional,
+                                        })
+                                        .collect(),
+                                    variants: Vec::new(),
+                                },
+                            );
+                        }
+                    }
                 }
                 Item::Enum(e)
                     if e.visibility == Visibility::Public
@@ -156,6 +193,33 @@ impl SemanticAnalyzer {
                             enum_struct_variants: enum_struct_variants_opt,
                         },
                     );
+                    // Same derive-facts contract as structs above: the wire
+                    // names mirror `json_enum_names` declaration order, so
+                    // zipping with `e.variants` is exact.
+                    if e.type_params.is_empty() {
+                        if let Some(wire_names) = self.json_enum_names.get(&e.name) {
+                            let methods = self.methods.get(&e.name);
+                            let has_method = |name: &str| {
+                                methods.is_some_and(|table| table.contains_key(name))
+                            };
+                            exports.json_derives.insert(
+                                e.name.clone(),
+                                ExportedJsonDerive {
+                                    serialize: has_method("to_json"),
+                                    deserialize: has_method("from_json"),
+                                    fields: Vec::new(),
+                                    variants: e
+                                        .variants
+                                        .iter()
+                                        .zip(wire_names.iter())
+                                        .map(|(variant, wire)| {
+                                            (variant.name.clone(), wire.clone())
+                                        })
+                                        .collect(),
+                                },
+                            );
+                        }
+                    }
                 }
                 Item::Trait(trait_decl) => {
                     let methods = trait_decl
@@ -247,9 +311,15 @@ impl SemanticAnalyzer {
                             }
                         }
 
+                        // Missing `returns` annotation means unit (see the
+                        // function export above): exporting `Unknown` breaks
+                        // importers that declare the method as an external.
                         let return_type = Self::async_task_type(
                             method.is_async,
-                            self.type_annotation_to_type(&method.return_type),
+                            match &method.return_type {
+                                Some(_) => self.type_annotation_to_type(&method.return_type),
+                                None => Type::Unit,
+                            },
                         );
                         exports
                             .methods
@@ -344,9 +414,13 @@ impl SemanticAnalyzer {
                         params.push(self.type_annotation_to_type(&param.type_annotation));
                     }
                 }
+                // Same unit normalization as inherent and free functions.
                 let return_type = Self::async_task_type(
                     method.is_async,
-                    self.type_annotation_to_type(&method.return_type),
+                    match &method.return_type {
+                        Some(_) => self.type_annotation_to_type(&method.return_type),
+                        None => Type::Unit,
+                    },
                 );
 
                 exports
@@ -466,6 +540,15 @@ impl SemanticAnalyzer {
                             .types
                             .entry(public_name.clone())
                             .or_insert(reexported);
+
+                        // Derive facts travel with the type so a downstream
+                        // importer of the re-export rebuilds the same schema.
+                        if let Some(derived) = source.json_derives.get(&source_name) {
+                            exports
+                                .json_derives
+                                .entry(public_name.clone())
+                                .or_insert_with(|| derived.clone());
+                        }
 
                         if let Some(methods) = source.methods.get(&source_name) {
                             let public_methods = methods

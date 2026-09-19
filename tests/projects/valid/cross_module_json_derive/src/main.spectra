@@ -1,0 +1,68 @@
+module main
+
+import std.io
+from models import Task
+import models
+
+import service
+
+// Accepts a module-qualified imported function as a first-class value
+// (`service.describe`): the semantic pass and the midend must resolve it
+// through the import table even though it has no struct receiver.
+func apply(task: Task, f: func(Task) returns string) returns string {
+    return f(task)
+}
+
+public func main() returns int {
+    let decoded: Task = Task::from_json("{\"id\":7,\"title\":\"write docs\",\"completed\":false}")
+    if decoded.id != 7 {
+        return 1
+    }
+    if decoded.label != "write docs" {
+        return 2
+    }
+    if decoded.completed != false {
+        return 3
+    }
+
+    // Optional field: a body without `id` decodes with the zero value.
+    let body: Task = Task::from_json("{\"title\":\"untitled\",\"completed\":true}")
+    if body.id != 0 {
+        return 4
+    }
+    if body.label != "untitled" {
+        return 5
+    }
+    if body.completed != true {
+        return 6
+    }
+
+    // `label` serializes under its renamed wire name.
+    let wire: string = decoded.to_json()
+    if wire != "{\"id\":7,\"title\":\"write docs\",\"completed\":false}" {
+        return 7
+    }
+
+    // Module-qualified imported function as a value.
+    if apply(decoded, service.describe) != wire {
+        return 8
+    }
+
+    // Imported unit-return function call (Void external).
+    service.touch()
+
+    // Cross-module encode helper.
+    let built: Task = models.make_task(9, "built", false)
+    if built.to_json() != "{\"id\":9,\"title\":\"built\",\"completed\":false}" {
+        return 9
+    }
+
+    // Cross-module decode helper.
+    let via_service: Task = service.decode("{\"title\":\"via service\",\"completed\":true}")
+    if via_service.label != "via service" {
+        return 10
+    }
+
+    println(wire)
+    return 0
+}

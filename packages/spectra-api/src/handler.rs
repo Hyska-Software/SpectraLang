@@ -364,6 +364,23 @@ pub extern "C" fn with_header(ctx: *mut SpectraHostCallContext) -> i32 {
     write_response(ctx, response)
 }
 
+pub extern "C" fn with_status(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 2) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Ok(status) = u16::try_from(args[1]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let Some(mut response) = http::clone_response(args[0]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    response.status = match Status::new(status) {
+        Ok(status) => status,
+        Err(_) => return write_response(ctx, Err(HandlerError::new(500, "invalid response status"))),
+    };
+    write_response(ctx, Ok(response))
+}
+
 pub extern "C" fn into_response(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = read_args(ctx, 1) else {
         return HOST_STATUS_INVALID_ARGUMENT;

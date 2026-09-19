@@ -1,0 +1,74 @@
+module api.middleware
+
+// Cross-cutting concerns, called explicitly at the top of each handler
+// (guard style). Production follow-up: compose these through
+// `std.api.middleware` chains (see examples/api/03_middleware_composition).
+// Config travels over environment (12-factor): TASKAPI_TOKEN,
+// TASKAPI_DB_PATH, TASKAPI_PORT. No global state anywhere.
+
+from std.api.errors import ApiError, new as new_error, response as error_response
+from std.api.handler import json, status, with_header, with_status
+from std.api.http import Request, Response, method_name, request_header, request_method, request_path, status_created, status_no_content
+import std.convert as convert
+import std.env as env
+
+import std.io as io
+import std.option as option
+import std.string as str
+
+public func config_token() returns string {
+    return option.option_unwrap_or(env.env_get("TASKAPI_TOKEN"), "dev-secret-token")
+}
+
+public func config_db_path() returns string {
+    return option.option_unwrap_or(env.env_get("TASKAPI_DB_PATH"), "taskapi.db")
+}
+
+public func config_port() returns int {
+    let raw  = option.option_unwrap_or(env.env_get("TASKAPI_PORT"), "8080")
+    let port = convert.string_to_int(raw)
+    if port <= 0 {
+        return 8080
+    }
+    return port
+}
+
+public func require_bearer(req: Request) returns bool {
+    let header = request_header(req, "Authorization")
+    return header == str.concat("Bearer ", config_token())
+}
+
+public func log_request(req: Request, status_code: int) {
+    io.println(str.concat(method_name(request_method(req)), str.concat(" ", str.concat(request_path(req), str.concat(" -> ", convert.int_to_string(status_code))))))
+}
+
+public func json_ok(body: string) returns Response {
+    return with_header(json(body), "Content-Type", "application/json")
+}
+
+public func json_created(body: string) returns Response {
+    return with_header(
+        with_status(json(body), status_created()),
+        "Content-Type",
+        "application/json",
+    )
+}
+
+public func json_no_content() returns Response {
+    return status(status_no_content())
+}
+
+public func unauthorized() returns Response {
+    let error: ApiError = new_error(401, "unauthorized", "a valid bearer token is required")
+    return error_response(error)
+}
+
+public func not_found(detail: string) returns Response {
+    let error: ApiError = new_error(404, "not_found", detail)
+    return error_response(error)
+}
+
+public func bad_request(detail: string) returns Response {
+    let error: ApiError = new_error(400, "bad_request", detail)
+    return error_response(error)
+}

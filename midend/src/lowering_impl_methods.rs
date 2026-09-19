@@ -202,8 +202,17 @@ impl ASTLowering {
                 .unwrap_or(false);
             if needs_terminator {
                 let value = implicit_return_value;
+                // A non-void function whose final block has no implicit value
+                // is only reachable when the body diverges (an infinite
+                // `loop`); a valueless `return` there fails Cranelift
+                // verification against the function signature.
+                let terminator = if value.is_none() && body_return_type != IRType::Void {
+                    Terminator::Unreachable
+                } else {
+                    Terminator::Return { value }
+                };
                 if let Some(block) = ir_func.get_block_mut(current_block_id) {
-                    block.set_terminator(Terminator::Return { value });
+                    block.set_terminator(terminator);
                 }
             }
         }
@@ -403,10 +412,19 @@ impl ASTLowering {
                 .map(|block| block.terminator.is_none())
                 .unwrap_or(false);
             if needs_terminator {
+                // Same divergence rule as free functions above: a non-void
+                // method ending in a diverging statement must not emit a
+                // valueless return.
+                let terminator =
+                    if implicit_return_value.is_none() && body_return_type != IRType::Void {
+                        Terminator::Unreachable
+                    } else {
+                        Terminator::Return {
+                            value: implicit_return_value,
+                        }
+                    };
                 if let Some(block) = ir_func.get_block_mut(current_block_id) {
-                    block.set_terminator(Terminator::Return {
-                        value: implicit_return_value,
-                    });
+                    block.set_terminator(terminator);
                 }
             }
         }

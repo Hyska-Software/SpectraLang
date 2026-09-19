@@ -1,0 +1,23 @@
+module models
+
+// Cross-module JSON derive fixture. The record is declared here and
+// decoded/encoded from sibling modules; the derive facts (derive flags,
+// wire names, optionality) must travel through the module export table so
+// importers rebuild an attribute-faithful definition instead of lowering
+// `Task::from_json` into an unknown `models_Task_from_json` symbol.
+//
+// `id` is optional because request bodies omit it (the store owns the id);
+// `label` is renamed to cover `#[json(rename = "..")]` reconstruction.
+
+#[derive(Serialize, Deserialize)]
+public record Task {
+    #[json(optional)]
+    public id: int,
+    #[json(rename = "title")]
+    public label: string,
+    public completed: bool,
+}
+
+public func make_task(id: int, label: string, completed: bool) returns Task {
+    return Task { id: id, label: label, completed: completed }
+}

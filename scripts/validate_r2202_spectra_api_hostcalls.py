@@ -168,6 +168,7 @@ LEGACY_REQUIRED_HOST_CALLS = [
     "spectra.api.handler.bytes",
     "spectra.api.handler.status",
     "spectra.api.handler.with_header",
+    "spectra.api.handler.with_status",
     "spectra.api.handler.into_response",
     "spectra.api.handler.into_text_response",
     "spectra.api.handler.into_status_response",

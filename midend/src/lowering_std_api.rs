@@ -381,6 +381,7 @@ pub(crate) fn lookup_std_api_host_function(
         ("handler", "bytes") => Some(host_int("spectra.api.handler.bytes")),
         ("handler", "status") => Some(host_int("spectra.api.handler.status")),
         ("handler", "with_header") => Some(host_int("spectra.api.handler.with_header")),
+        ("handler", "with_status") => Some(host_int("spectra.api.handler.with_status")),
         ("handler", "into_response") => Some(host_int("spectra.api.handler.into_response")),
         ("handler", "into_text_response") => {
             Some(host_int("spectra.api.handler.into_text_response"))

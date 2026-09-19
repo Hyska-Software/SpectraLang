@@ -367,6 +367,7 @@ func std.api.handler.json: func(string) returns Response
 func std.api.handler.bytes: func(string) returns Response
 func std.api.handler.status: func(int) returns Response
 func std.api.handler.with_header: func(Response, string, string) returns Response
+func std.api.handler.with_status: func(Response, int) returns Response
 func std.api.handler.into_response: func(Response) returns Response
 func std.api.handler.into_text_response: func(string) returns Response
 func std.api.handler.into_status_response: func(int) returns Response

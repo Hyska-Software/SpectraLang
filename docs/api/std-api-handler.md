@@ -32,7 +32,12 @@ let ok = handler.text("created")
 let body = handler.json("{\"ok\":true}")
 let empty = handler.status(204)
 let with_id = handler.with_header(ok, "X-Request-Id", "abc")
+let created = handler.with_status(handler.json("{\"id\":7}"), 201)
 ```
+
+`with_status(response, code)` rebuilds a response with a new status while
+preserving headers and body (e.g. `201` on a JSON payload); an invalid code
+yields a `500` error response instead of a host failure.
 
 `into_text_response` and `into_status_response` are the public Spectra bridge
 for custom `IntoResponse` implementations until package-level native extern

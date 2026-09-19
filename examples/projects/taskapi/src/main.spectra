@@ -1,0 +1,104 @@
+module main
+
+// taskapi entry point. Modes via TASKAPI_MODE env (default "serve"):
+//   serve: migrate taskapi.db (or TASKAPI_DB_PATH) and listen on
+//          TASKAPI_PORT (default 8080) until interrupted.
+//   test:  point the config at an isolated database + token, boot on an
+//          ephemeral port and run the full selftest lifecycle, exit code
+//          tells whether every stage passed.
+// Usage:
+//   spectralang run examples/projects/taskapi
+//   TASKAPI_MODE=test spectralang run examples/projects/taskapi
+
+from std.api.handler import register_sync_callback
+from std.api.routing import Router, delete, get, post, put, route_id, router
+from std.api.server import Server, listen, local_port, new, serve, shutdown, state
+import std.convert as convert
+
+import std.env as env
+import std.io as io
+import std.option as option
+import std.string as str
+import std.time as time
+import api.handlers as handlers
+
+import api.middleware as mw
+import db.store as store
+import selftest
+
+public func build_router() returns Router {
+    let routes: Router = router()
+    let health         = get(routes, "/health")
+    let list           = get(routes, "/tasks")
+    let create         = post(routes, "/tasks")
+    let read           = get(routes, "/tasks/{id:\\d+}")
+    let update         = put(routes, "/tasks/{id:\\d+}")
+    let remove         = delete(routes, "/tasks/{id:\\d+}")
+    register_sync_callback(route_id(health), handlers.health)
+    register_sync_callback(route_id(list), handlers.tasks_list)
+    register_sync_callback(route_id(create), handlers.tasks_create)
+    register_sync_callback(route_id(read), handlers.tasks_read)
+    register_sync_callback(route_id(update), handlers.tasks_update)
+    register_sync_callback(route_id(remove), handlers.tasks_delete)
+    return routes
+}
+
+public func main() returns int {
+    let mode = option.option_unwrap_or(env.env_get("TASKAPI_MODE"), "serve")
+    if mode == "test" {
+        env.env_set("TASKAPI_DB_PATH", "target/taskapi-test.db")
+        env.env_set("TASKAPI_TOKEN", "test-token")
+        let db_path = mw.config_db_path()
+        if store.migrate(db_path) != true {
+            io.println("migrate failed")
+            return 1
+        }
+        let routes: Router = build_router()
+        let server: Server = new()
+        if listen(server, 0) != true {
+            io.println("listen failed")
+            return 2
+        }
+        if block_on(serve(server, routes)) != 1 {
+            io.println("serve failed")
+            return 3
+        }
+        let port = local_port(server)
+        let base = str.concat("http://127.0.0.1:", convert.int_to_string(port))
+        let code = selftest.run_all(base, mw.config_token(), db_path)
+        if shutdown(server) != true {
+            io.println("shutdown failed")
+            return 4
+        }
+        if code != 0 {
+            io.println(str.concat("selftest failed at stage ", convert.int_to_string(code)))
+            return 100 + code
+        }
+        io.println("selftest passed")
+        return 0
+    }
+    let db_path = mw.config_db_path()
+    if store.migrate(db_path) != true {
+        io.println("migrate failed")
+        return 1
+    }
+    let routes: Router = build_router()
+    let server: Server = new()
+    let port           = mw.config_port()
+    if listen(server, port) != true {
+        io.println("listen failed")
+        return 2
+    }
+    if block_on(serve(server, routes)) != 1 {
+        io.println("serve failed")
+        return 3
+    }
+    if state(server) != 2 {
+        io.println("server did not reach serving state")
+        return 4
+    }
+    io.println(str.concat("taskapi serving on port ", convert.int_to_string(port)))
+    loop {
+        time.sleep_ms(60000)
+    }
+}

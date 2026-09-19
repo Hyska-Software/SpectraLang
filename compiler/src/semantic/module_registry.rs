@@ -85,6 +85,34 @@ pub struct ExportedTraitImpl {
     pub type_args: Vec<Type>,
 }
 
+/// One JSON-derive field as seen by downstream modules.
+#[derive(Debug, Clone)]
+pub struct ExportedJsonField {
+    /// Field name in the declaring module.
+    pub source_name: String,
+    /// Wire name from `#[json(rename = "..")]` (defaults to the source name).
+    pub json_name: String,
+    /// True when the field carries `#[json(optional)]`.
+    pub optional: bool,
+}
+
+/// The `#[derive(Serialize, Deserialize)]` facts of one aggregate type.
+///
+/// `ExportedType` carries layout only. Without these facts the import
+/// reconstruction builds attribute-free AST definitions and the midend
+/// registers no derive schema, so cross-module `Type::from_json` and
+/// `value.to_json()` miscompile into unknown `Module_Type_method` calls.
+#[derive(Debug, Clone)]
+pub struct ExportedJsonDerive {
+    pub serialize: bool,
+    pub deserialize: bool,
+    /// Struct fields in declaration order (empty for enums).
+    pub fields: Vec<ExportedJsonField>,
+    /// Enum variants as `(variant name, wire name)` in declaration order
+    /// (empty for structs).
+    pub variants: Vec<(String, String)>,
+}
+
 /// A type (struct or enum) exported from a module.
 #[derive(Debug, Clone)]
 pub struct ExportedType {
@@ -133,6 +161,11 @@ pub struct ModuleExports {
     /// monomorphization in a multi-module build.
     pub generic_functions: HashMap<String, Function>,
     pub types: HashMap<String, ExportedType>,
+    /// JSON derive facts by type name, mirroring the semantic
+    /// `json_struct_derives` / `json_enum_names` tables so import
+    /// reconstruction can rebuild attribute-faithful AST definitions for
+    /// the midend.
+    pub json_derives: HashMap<String, ExportedJsonDerive>,
     pub traits: HashMap<String, ExportedTrait>,
     /// Trait implementations available to downstream modules.
     pub trait_impls: Vec<ExportedTraitImpl>,

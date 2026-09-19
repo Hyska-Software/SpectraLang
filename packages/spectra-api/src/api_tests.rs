@@ -203,6 +203,38 @@ mod tests {
     }
 
     #[test]
+    fn with_status_rebuilds_response_preserving_body() {
+        let _guard = test_guard();
+        clear_host_functions();
+        register();
+        let (st, handle) = call(
+            "spectra.api.handler.json",
+            &[alloc_spectra_string("{\"a\":1}")],
+        );
+        assert_eq!(st, HOST_STATUS_SUCCESS);
+        let (st, updated) = call("spectra.api.handler.with_status", &[handle, 201]);
+        assert_eq!(st, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call("spectra.api.http.response_status", &[updated]),
+            (HOST_STATUS_SUCCESS, 201)
+        );
+        let response = http::clone_response(updated).expect("stored response");
+        assert_eq!(response.body, b"{\"a\":1}");
+        assert_eq!(
+            response.headers.get("Content-Type"),
+            Some("application/json")
+        );
+        // An invalid status code surfaces as a 500 error response.
+        let (st, rejected) = call("spectra.api.handler.with_status", &[handle, 99]);
+        assert_eq!(st, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            call("spectra.api.http.response_status", &[rejected]),
+            (HOST_STATUS_SUCCESS, 500)
+        );
+        clear_host_functions();
+    }
+
+    #[test]
     fn registered_client_request_returns_real_task_and_response_handle() {
         let _guard = test_guard();
         clear_host_functions();

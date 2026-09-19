@@ -1,5 +1,55 @@
 use super::*;
 
+/// Rebuild the `#[derive(Serialize, Deserialize)]` attribute for an imported
+/// aggregate from its exported derive facts. Returns `None` when the type did
+/// not opt into JSON derives.
+fn json_derive_attribute(derived: &ExportedJsonDerive, span: Span) -> Option<Attribute> {
+    let mut arguments = Vec::new();
+    if derived.serialize {
+        arguments.push(AttributeArgument::Name("Serialize".to_string()));
+    }
+    if derived.deserialize {
+        arguments.push(AttributeArgument::Name("Deserialize".to_string()));
+    }
+    if arguments.is_empty() {
+        return None;
+    }
+    Some(Attribute {
+        name: "derive".to_string(),
+        arguments,
+        span,
+    })
+}
+
+/// Rebuild the `#[json(optional)]` / `#[json(rename = "..")]` attribute a
+/// derived struct field or enum variant was declared with. Returns `None`
+/// when the wire name matches the source name and the field is required.
+fn json_wire_attribute(
+    json_name: &str,
+    source_name: &str,
+    optional: bool,
+    span: Span,
+) -> Option<Attribute> {
+    let mut arguments = Vec::new();
+    if optional {
+        arguments.push(AttributeArgument::Name("optional".to_string()));
+    }
+    if json_name != source_name {
+        arguments.push(AttributeArgument::KeyValue {
+            key: "rename".to_string(),
+            value: json_name.to_string(),
+        });
+    }
+    if arguments.is_empty() {
+        return None;
+    }
+    Some(Attribute {
+        name: "json".to_string(),
+        arguments,
+        span,
+    })
+}
+
 impl SemanticAnalyzer {
     pub(crate) fn analyze_item(&mut self, item: &Item) {
         match item {
@@ -753,7 +803,10 @@ impl SemanticAnalyzer {
         }
 
         // For user (non-stdlib) modules: reconstruct AST enum/struct definitions
-        // so the midend can register their layouts before lowering.
+        // so the midend can register their layouts before lowering. JSON
+        // derive facts are rebuilt as attributes so the midend registers the
+        // same schema as in the declaring module; without them cross-module
+        // `Type::from_json` / `value.to_json()` lower to unknown symbols.
         if stdlib_path_prefix.is_none() {
             let dummy_span = import.span;
             for (type_name, type_export) in &exports.types {
@@ -765,6 +818,11 @@ impl SemanticAnalyzer {
                     } else {
                         crate::ast::Visibility::Internal
                     };
+                    let derived = exports.json_derives.get(type_name);
+                    let derive_attributes: Vec<Attribute> = derived
+                        .and_then(|d| json_derive_attribute(d, dummy_span))
+                        .into_iter()
+                        .collect();
                     if type_export.is_enum {
                         // Reconstruct ast::Enum using `members` for stable variant order.
                         let variants: Vec<crate::ast::EnumVariant> = type_export
@@ -785,10 +843,24 @@ impl SemanticAnalyzer {
                                 } else {
                                     None
                                 };
+                                let wire_name = derived
+                                    .and_then(|d| {
+                                        d.variants
+                                            .iter()
+                                            .find(|(variant, _)| variant == vname)
+                                    })
+                                    .map(|(_, wire)| wire.clone());
+                                let attributes = wire_name
+                                    .as_deref()
+                                    .and_then(|wire| {
+                                        json_wire_attribute(wire, vname, false, dummy_span)
+                                    })
+                                    .into_iter()
+                                    .collect();
                                 crate::ast::EnumVariant {
                                     name: vname.clone(),
                                     span: dummy_span,
-                                    attributes: Vec::new(),
+                                    attributes,
                                     data,
                                     struct_data,
                                 }
@@ -798,7 +870,7 @@ impl SemanticAnalyzer {
                             name: type_name.clone(),
                             span: dummy_span,
                             visibility: vis,
-                            attributes: Vec::new(),
+                            attributes: derive_attributes,
                             variants,
                             type_params: Vec::new(),
                         });
@@ -813,10 +885,24 @@ impl SemanticAnalyzer {
                                     .as_ref()
                                     .and_then(|m| m.get(fname))
                                     .cloned()?;
+                                let attributes = derived
+                                    .and_then(|d| {
+                                        d.fields.iter().find(|field| field.source_name == *fname)
+                                    })
+                                    .and_then(|field| {
+                                        json_wire_attribute(
+                                            &field.json_name,
+                                            &field.source_name,
+                                            field.optional,
+                                            dummy_span,
+                                        )
+                                    })
+                                    .into_iter()
+                                    .collect();
                                 Some(crate::ast::StructField {
                                     name: fname.clone(),
                                     span: dummy_span,
-                                    attributes: Vec::new(),
+                                    attributes,
                                     ty,
                                     visibility: crate::ast::Visibility::Public,
                                 })
@@ -826,7 +912,7 @@ impl SemanticAnalyzer {
                             name: type_name.clone(),
                             span: dummy_span,
                             visibility: vis,
-                            attributes: Vec::new(),
+                            attributes: derive_attributes,
                             fields,
                             type_params: Vec::new(),
                         });

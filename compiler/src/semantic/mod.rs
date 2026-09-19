@@ -29,9 +29,9 @@ pub mod surface;
 
 use builtin_modules::register_builtin_modules;
 use module_registry::{
-    ExportVisibility, ExportedFunction, ExportedMethod, ExportedSelfParamKind, ExportedStatic,
-    ExportedTool, ExportedTrait, ExportedTraitImpl, ExportedTraitMethod, ExportedType,
-    ModuleExports, ModuleRegistry,
+    ExportVisibility, ExportedFunction, ExportedJsonDerive, ExportedJsonField, ExportedMethod,
+    ExportedSelfParamKind, ExportedStatic, ExportedTool, ExportedTrait, ExportedTraitImpl,
+    ExportedTraitMethod, ExportedType, ModuleExports, ModuleRegistry,
 };
 
 type GenericStructDefinition = (

@@ -5495,6 +5495,25 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/139_api_handler_response_return.spectra"
 
 [[entry]]
+path = "std.api.handler.with_status"
+kind = "function"
+namespace = "std.api.handler"
+signature = "fn(Response, int) -> Response"
+params = [{ name = "arg0", ty = "Response" }, { name = "arg1", ty = "int" }]
+returns = "Response"
+ir_return = "int"
+returns_value = true
+rust_symbol = "handler::with_status"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.handler.with_status"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/README.md"
+fixture = "tests/validation/139_api_handler_response_return.spectra"
+
+[[entry]]
 path = "std.api.health"
 kind = "module"
 namespace = "std.api"

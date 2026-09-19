@@ -238,6 +238,7 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
     HostCallSpec { name: "spectra.api.handler.status", function: handler::status },
     HostCallSpec { name: "spectra.api.handler.text", function: handler::text },
     HostCallSpec { name: "spectra.api.handler.with_header", function: handler::with_header },
+    HostCallSpec { name: "spectra.api.handler.with_status", function: handler::with_status },
     HostCallSpec { name: "spectra.api.health.startup_complete", function: health::startup_complete },
     HostCallSpec { name: "spectra.api.health.startup_failed", function: health::startup_failed },
     HostCallSpec { name: "spectra.api.http.cookie", function: http::cookie },

@@ -1,0 +1,20 @@
+module service
+
+from models import Task
+
+// A function without a `returns` annotation exports unit. Importers declare
+// this as an external, so the export signature must normalize the missing
+// annotation to unit instead of `unknown` (which lowers to an unresolved IR
+// type in the importer).
+public func touch() {
+}
+
+// Consumes and produces the imported record, including its cross-module
+// derive schema (`task.to_json()` / `Task::from_json(..)`).
+public func describe(task: Task) returns string {
+    return task.to_json()
+}
+
+public func decode(raw: string) returns Task {
+    return Task::from_json(raw)
+}

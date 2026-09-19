@@ -6,6 +6,46 @@ impl SemanticAnalyzer {
             ExpressionKind::FieldAccess { object, field } => {
                 self.analyze_expression(object);
 
+                // Module-qualified function value (`handlers.health`): record
+                // the imported signature instead of a struct-field lookup.
+                let local_shadow = matches!(
+                    &object.kind,
+                    ExpressionKind::Identifier(name) if self.lookup_symbol(name).is_some()
+                );
+                if !local_shadow {
+                    if let Some(path) = namespace_path(object) {
+                        let qualified = format!("{}.{}", path, field);
+                        let signature = self
+                            .functions
+                            .get(&qualified)
+                            .map(|sig| (sig.params.clone(), sig.return_type.clone()))
+                            .or_else(|| {
+                                self.registry
+                                    .read()
+                                    .unwrap_or_else(|p| p.into_inner())
+                                    .get_module(&path)
+                                    .and_then(|exports| exports.functions.get(field))
+                                    .map(|func| {
+                                        (func.params.clone(), func.return_type.clone())
+                                    })
+                            });
+                        if let Some((params, return_type)) = signature {
+                            self.symbol_resolutions.insert(
+                                expr.span,
+                                SymbolInfo {
+                                    is_local: false,
+                                    def_span: None,
+                                    ty: Type::Fn {
+                                        params,
+                                        return_type: Box::new(return_type),
+                                    },
+                                },
+                            );
+                            return;
+                        }
+                    }
+                }
+
                 let object_type = self.infer_expression_type(object);
                 let mut field_ty = Type::Unknown;
                 let mut field_def_span = None;

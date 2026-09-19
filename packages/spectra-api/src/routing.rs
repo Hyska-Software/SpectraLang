@@ -178,7 +178,15 @@ impl Router {
         path: impl AsRef<str>,
     ) -> Result<Option<RouteMatch>, RouteError> {
         let raw = path.as_ref();
-        let segments = parse_path(raw)?;
+        // A request target may carry a query and/or fragment
+        // (`/tasks?completed=false#top`). Routing matches the path component
+        // only; handlers still read the full target through `request_path` to
+        // parse query parameters.
+        let path_only = raw
+            .split_once(['?', '#'])
+            .map(|(head, _)| head)
+            .unwrap_or(raw);
+        let segments = parse_path(path_only)?;
         let mut params = HashMap::new();
         Ok(match_node(&self.root, method, &segments, 0, &mut params)
             .map(|route_id| RouteMatch { route_id, params }))
@@ -1203,6 +1211,38 @@ mod tests {
             .add(RouteMethod::Get, "/files/public/logo.png")
             .expect_err("wildcard should conflict");
         assert!(conflict.to_string().contains("/files/public/logo.png"));
+    }
+
+    #[test]
+    fn match_path_ignores_query_string_and_fragment() {
+        let mut router = Router::default();
+        let list = router.add(RouteMethod::Get, "/tasks").expect("route");
+        let read = router.add(RouteMethod::Get, "/tasks/{id}").expect("route");
+
+        for target in [
+            "/tasks?completed=false&limit=10",
+            "/tasks?completed=false#top",
+            "/tasks#top",
+            "/tasks",
+        ] {
+            let matched = router
+                .match_path(RouteMethod::Get, target)
+                .unwrap()
+                .unwrap_or_else(|| panic!("{target} should match /tasks"));
+            assert_eq!(matched.route_id, list, "{target}");
+        }
+
+        let matched = router
+            .match_path(RouteMethod::Get, "/tasks/1?verbose=true")
+            .unwrap()
+            .expect("/tasks/1?verbose=true should match /tasks/{id}");
+        assert_eq!(matched.route_id, read);
+        assert_eq!(matched.params.get("id").map(String::as_str), Some("1"));
+
+        assert!(router
+            .match_path(RouteMethod::Get, "/tasks/1/extra?x=1")
+            .unwrap()
+            .is_none());
     }
 
     #[test]

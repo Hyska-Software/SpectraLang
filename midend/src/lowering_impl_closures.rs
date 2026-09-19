@@ -123,9 +123,12 @@ impl ASTLowering {
         let args = (1..=public_params.len())
             .map(|id| Value { id })
             .collect::<Vec<_>>();
+        // Imported function values must target the canonical linker symbol
+        // (`api.handlers::health`), not the local import spelling.
+        let callee_symbol = self.resolve_user_function_symbol(name);
         let result = self.builder.build_call(
             &mut wrapper,
-            name.to_string(),
+            callee_symbol,
             args,
             return_type != IRType::Void,
         );

@@ -1,0 +1,29 @@
+module nonvoid_infinite_loop_codegen
+
+// Regression: a non-void function whose body diverges (infinite `loop`)
+// must not lower to a valueless return terminator. The fallthrough block
+// is sealed as unreachable, so Cranelift verifies the function signature
+// instead of failing with "arguments of return must match function
+// signature".
+
+func spin_forever() returns int {
+    loop {
+    }
+}
+
+func compute_step(limit: int) returns int {
+    let value = 0
+    loop {
+        value = value + 1
+        if value >= limit {
+            return value
+        }
+    }
+}
+
+public func main() returns int {
+    if compute_step(4) != 4 {
+        return 2
+    }
+    return 0
+}

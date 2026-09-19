@@ -41,6 +41,11 @@ pub(crate) fn make_std_api_handler(prefix: &str) -> ModuleExports {
             vec![response.clone(), Type::String, Type::String],
             response.clone(),
         ),
+        (
+            "with_status",
+            vec![response.clone(), Type::Int],
+            response.clone(),
+        ),
         ("into_response", vec![response.clone()], response.clone()),
         ("into_text_response", vec![Type::String], response.clone()),
         ("into_status_response", vec![Type::Int], response.clone()),

@@ -1,0 +1,27 @@
+module models
+
+// Task: the single resource of this API. JSON shape is the wire contract:
+// {"id":1,"title":"Write docs","completed":false}. Request bodies only carry
+// `title` and `completed`: the store owns `id`, so decoding treats it as
+// optional (missing id decodes as 0 and is never trusted); serialization
+// always emits the real id. `from_json` fails loudly on missing required
+// fields, so handlers validate first (see task_schema) and never decode
+// untrusted bodies blind. The record and its fields are public so sibling
+// modules (store, handlers) can build and read tasks.
+
+from std.api.validation import ValidationSchema, field, min_length, schema
+
+#[derive(Serialize, Deserialize)]
+public record Task {
+    #[json(optional)]
+    public id: int,
+    public title: string,
+    public completed: bool,
+}
+
+public func task_schema() returns ValidationSchema {
+    let s0 = schema()
+    let s1 = field(s0, "title", 1, true)
+    let s2 = min_length(s1, "title", 1)
+    return field(s2, "completed", 3, true)
+}

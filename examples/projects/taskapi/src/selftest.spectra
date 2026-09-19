@@ -1,0 +1,132 @@
+module selftest
+
+// End-to-end suite: drives the real HTTP stack over TCP against a server
+// booted by main on an ephemeral port. Real status codes on the wire,
+// real JSON through the store layer (there is no Response-body reader on
+// purpose: bodies are asserted where they are produced/consumed).
+// Distinct non-zero codes per stage; 0 means the whole lifecycle passed.
+
+from std.api.client import Client, new as client_new, request as client_request, set_ssrf_policy
+
+from std.api.http import Request, Response, method_delete, method_get, method_post, method_put, request, request_with_body, request_with_header, response_body_len, response_status
+from std.api.security import SsrfPolicy, ssrf_allow_private_networks, ssrf_policy
+
+import std.convert as convert
+import std.string as str
+import db.store as store
+
+func authed(method: int, base: string, path: string, token: string, body: string, with_json: bool) returns Response {
+    let policy: SsrfPolicy = ssrf_allow_private_networks(ssrf_policy(), true)
+    let client: Client     = client_new()
+    set_ssrf_policy(client, policy)
+    let req: Request = request(method, str.concat(base, path))
+    if token != "" {
+        req = request_with_header(req, "Authorization", str.concat("Bearer ", token))
+    }
+    if with_json {
+        req = request_with_header(req, "Content-Type", "application/json")
+    }
+    if body != "" {
+        req = request_with_body(req, body)
+    }
+    let task: Task<Response> = client_request(client, req)
+    return block_on(task)
+}
+
+func expect(call_response: Response, expected: int, code: int) returns int {
+    if response_status(call_response) != expected {
+        return code
+    }
+    return 0
+}
+
+public func run_all(base: string, token: string, db_path: string) returns int {
+    if store.reset(db_path) != true {
+        return 1
+    }
+    let health = authed(method_get(), base, "/health", "", "", false)
+    if expect(health, 200, 10) != 0 {
+        return 10
+    }
+    if response_body_len(health) <= 0 {
+        return 11
+    }
+    let noauth = authed(method_get(), base, "/tasks", "", "", false)
+    if expect(noauth, 401, 12) != 0 {
+        return 12
+    }
+    let bad        = authed(method_post(), base, "/tasks", token, "{\"title\":\"x\"}", true)
+    let bad_status = response_status(bad)
+    if bad_status < 400 or bad_status >= 500 {
+        return 13
+    }
+    let created = authed(
+        method_post(),
+        base,
+        "/tasks",
+        token,
+        "{\"title\":\"Buy milk\",\"completed\":false}",
+        true,
+    )
+    if expect(created, 201, 14) != 0 {
+        return 14
+    }
+    if response_body_len(created) <= 0 {
+        return 15
+    }
+    if store.get_task(db_path, 1) != "{\"id\":1,\"title\":\"Buy milk\",\"completed\":false}" {
+        return 16
+    }
+    let read = authed(method_get(), base, "/tasks/1", token, "", false)
+    if expect(read, 200, 17) != 0 {
+        return 17
+    }
+    if response_body_len(read) <= 0 {
+        return 18
+    }
+    if expect(authed(method_get(), base, "/tasks/999", token, "", false), 404, 19) != 0 {
+        return 19
+    }
+    let listed = authed(method_get(), base, "/tasks?completed=false&limit=10", token, "", false)
+    if expect(listed, 200, 20) != 0 {
+        return 20
+    }
+    let updated = authed(
+        method_put(),
+        base,
+        "/tasks/1",
+        token,
+        "{\"title\":\"Buy milk\",\"completed\":true}",
+        true,
+    )
+    if expect(updated, 200, 21) != 0 {
+        return 21
+    }
+    if store.get_task(db_path, 1) != "{\"id\":1,\"title\":\"Buy milk\",\"completed\":true}" {
+        return 22
+    }
+    let bad_update = authed(method_put(), base, "/tasks/1", token, "{\"title\":\"\"}", true)
+    if response_status(bad_update) < 400 or response_status(bad_update) >= 500 {
+        return 23
+    }
+    if expect(authed(method_put(), base, "/tasks/999", token, "{\"title\":\"Buy milk\",\"completed\":true}", true), 404, 24) != 0 {
+        return 24
+    }
+    let done_only = authed(method_get(), base, "/tasks?completed=true", token, "", false)
+    if expect(done_only, 200, 25) != 0 {
+        return 25
+    }
+    if expect(authed(method_delete(), base, "/tasks/1", token, "", false), 204, 26) != 0 {
+        return 26
+    }
+    if expect(authed(method_get(), base, "/tasks/1", token, "", false), 404, 27) != 0 {
+        return 27
+    }
+    if expect(authed(method_delete(), base, "/tasks/1", token, "", false), 404, 28) != 0 {
+        return 28
+    }
+    if expect(authed(method_get(), base, "/nope", token, "", false), 404, 29) != 0 {
+        return 29
+    }
+    return 0
+}

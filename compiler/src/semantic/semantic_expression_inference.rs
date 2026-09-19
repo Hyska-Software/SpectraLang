@@ -245,6 +245,42 @@ impl SemanticAnalyzer {
                 }
             }
             ExpressionKind::FieldAccess { object, field } => {
+                // A module-qualified function used as a value
+                // (`handlers.health` passed to `register_sync_callback`)
+                // has no struct receiver: resolve it through the import
+                // table. A local binding of the same spelling wins, exactly
+                // like the module-qualified method-call path.
+                let local_shadow = matches!(
+                    &object.kind,
+                    ExpressionKind::Identifier(name) if self.lookup_symbol(name).is_some()
+                );
+                if !local_shadow {
+                    if let Some(path) = namespace_path(object) {
+                        let qualified = format!("{}.{}", path, field);
+                        if let Some(sig) = self.functions.get(&qualified) {
+                            return Type::Fn {
+                                params: sig.params.clone(),
+                                return_type: Box::new(sig.return_type.clone()),
+                            };
+                        }
+                        // No-alias imports register functions under their bare
+                        // name only; fall back to the exporting module's table
+                        // (same lookup the module-qualified call path uses).
+                        let exported = self
+                            .registry
+                            .read()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .get_module(&path)
+                            .and_then(|exports| exports.functions.get(field))
+                            .map(|func| (func.params.clone(), func.return_type.clone()));
+                        if let Some((params, return_type)) = exported {
+                            return Type::Fn {
+                                params,
+                                return_type: Box::new(return_type),
+                            };
+                        }
+                    }
+                }
                 let object_type = self.infer_expression_type(object);
                 match object_type.clone() {
                     Type::Struct { .. } | Type::Applied { .. } => self

@@ -8,6 +8,17 @@ impl ASTLowering {
     ) -> Value {
         match &expr.kind {
             ExpressionKind::FieldAccess { object, field } => {
+                // A module-qualified function value (`handlers.health`) has no
+                // struct receiver: materialize it as a zero-capture closure
+                // like a bare named function (see lower_named_function_value).
+                if let Some(path) = qualified_namespace_path(expr) {
+                    if self.imported_function_symbols.contains_key(&path)
+                        || (self.function_parameter_types.contains_key(&path)
+                            && self.function_return_types.contains_key(&path))
+                    {
+                        return self.lower_named_function_value(&path, ir_func);
+                    }
+                }
                 // Se o objeto é um identificador, buscar no struct_var_map.
                 // A reassigned local keeps its current pointer in its promoted
                 // slot, so let the generic path below resolve the base through

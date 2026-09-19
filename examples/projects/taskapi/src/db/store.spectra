@@ -1,0 +1,193 @@
+module db.store
+
+// SQLite-backed task store. One connection per call (open/close inside each
+// function): simple, correct under the server's threaded dispatch, and fast
+// enough for SQLite. A pool (`std.api.db.pool`) is the follow-up when this
+// needs to scale. `completed` travels as INTEGER 0/1 in SQL, bool in records.
+// Empty string means "not found" (handlers map it to 404).
+
+from std.api.db.sqlite import SqliteConnection, SqliteStatement, bind_int, bind_text, close, column_int, column_text, finalize, open, prepare, step
+import std.convert as convert
+
+import std.string as str
+from models import Task
+
+func open_db(db_path: string) returns SqliteConnection {
+    return open(db_path)
+}
+
+func close_db(db: SqliteConnection) returns bool {
+    return close(db)
+}
+
+func row_json(id: int, title: string, completed_int: int) returns string {
+    let done = false
+    if completed_int == 1 {
+        done = true
+    }
+    let task: Task = Task { id: id, title: title, completed: done }
+    return task.to_json()
+}
+
+public func migrate(db_path: string) returns bool {
+    let db: SqliteConnection = open_db(db_path)
+    let ddl: SqliteStatement = prepare(
+        db,
+        "CREATE TABLE IF NOT EXISTS tasks(id INTEGER PRIMARY KEY, title TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0)",
+    )
+    if step(ddl) != 2 {
+        return false
+    }
+    if finalize(ddl) != true {
+        return false
+    }
+    return close_db(db)
+}
+
+public func reset(db_path: string) returns bool {
+    let db: SqliteConnection = open_db(db_path)
+    let del: SqliteStatement = prepare(db, "DELETE FROM tasks")
+    if step(del) != 2 {
+        return false
+    }
+    if finalize(del) != true {
+        return false
+    }
+    return close_db(db)
+}
+
+public func list_tasks(db_path: string, completed_filter: int, limit: int) returns string {
+    let db: SqliteConnection = open_db(db_path)
+    let sql                  = "SELECT id, title, completed FROM tasks ORDER BY id"
+    if completed_filter == 0 or completed_filter == 1 {
+        sql = "SELECT id, title, completed FROM tasks WHERE completed = ? ORDER BY id"
+    }
+    sql = str.concat(sql, " LIMIT ")
+    sql = str.concat(sql, convert.int_to_string(limit))
+    let q: SqliteStatement = prepare(db, sql)
+    if completed_filter == 0 or completed_filter == 1 {
+        if bind_int(q, 1, completed_filter) != true {
+            return ""
+        }
+    }
+    let out   = "["
+    let first = true
+    while step(q) == 1 {
+        if first != true {
+            out = str.concat(out, ",")
+        }
+        first = false
+        out = str.concat(out, row_json(column_int(q, 0), column_text(q, 1), column_int(q, 2)))
+    }
+    if finalize(q) != true {
+        return ""
+    }
+    if close_db(db) != true {
+        return ""
+    }
+    return str.concat(out, "]")
+}
+
+public func get_task(db_path: string, id: int) returns string {
+    let db: SqliteConnection = open_db(db_path)
+    let q: SqliteStatement   = prepare(db, "SELECT id, title, completed FROM tasks WHERE id = ?")
+    if bind_int(q, 1, id) != true {
+        return ""
+    }
+    let found = ""
+    if step(q) == 1 {
+        found = row_json(column_int(q, 0), column_text(q, 1), column_int(q, 2))
+    }
+    if finalize(q) != true {
+        return ""
+    }
+    if close_db(db) != true {
+        return ""
+    }
+    return found
+}
+
+public func create_task(db_path: string, title: string, completed: bool) returns string {
+    let db: SqliteConnection = open_db(db_path)
+    let ins: SqliteStatement = prepare(db, "INSERT INTO tasks(title, completed) VALUES (?, ?)")
+    if bind_text(ins, 1, title) != true {
+        return ""
+    }
+    let done_int = 0
+    if completed {
+        done_int = 1
+    }
+    if bind_int(ins, 2, done_int) != true {
+        return ""
+    }
+    if step(ins) != 2 {
+        return ""
+    }
+    if finalize(ins) != true {
+        return ""
+    }
+    let q: SqliteStatement = prepare(db, "SELECT last_insert_rowid()")
+    let new_id             = 0
+    if step(q) == 1 {
+        new_id = column_int(q, 0)
+    }
+    if finalize(q) != true {
+        return ""
+    }
+    if close_db(db) != true {
+        return ""
+    }
+    if new_id < 1 {
+        return ""
+    }
+    return get_task(db_path, new_id)
+}
+
+public func update_task(db_path: string, id: int, title: string, completed: bool) returns string {
+    if get_task(db_path, id) == "" {
+        return ""
+    }
+    let db: SqliteConnection = open_db(db_path)
+    let upd: SqliteStatement = prepare(db, "UPDATE tasks SET title = ?, completed = ? WHERE id = ?")
+    if bind_text(upd, 1, title) != true {
+        return ""
+    }
+    let done_int = 0
+    if completed {
+        done_int = 1
+    }
+    if bind_int(upd, 2, done_int) != true {
+        return ""
+    }
+    if bind_int(upd, 3, id) != true {
+        return ""
+    }
+    if step(upd) != 2 {
+        return ""
+    }
+    if finalize(upd) != true {
+        return ""
+    }
+    if close_db(db) != true {
+        return ""
+    }
+    return get_task(db_path, id)
+}
+
+public func delete_task(db_path: string, id: int) returns bool {
+    if get_task(db_path, id) == "" {
+        return false
+    }
+    let db: SqliteConnection = open_db(db_path)
+    let del: SqliteStatement = prepare(db, "DELETE FROM tasks WHERE id = ?")
+    if bind_int(del, 1, id) != true {
+        return false
+    }
+    if step(del) != 2 {
+        return false
+    }
+    if finalize(del) != true {
+        return false
+    }
+    return close_db(db)
+}

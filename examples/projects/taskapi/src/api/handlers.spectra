@@ -1,0 +1,145 @@
+module api.handlers
+
+// One function per route, all sharing the guard pipeline: auth, validate,
+// store, respond, log. Handlers stay thin on purpose: HTTP mapping here,
+// business rules in models/store. Path ids come from the request path
+// (routes only dispatch numeric ids); query filters via std.api.query.
+
+from std.api.http import Request, Response, request_body, request_path
+from std.api.query import Query, QueryBinding, bind, binding_bool, binding_int, binding_ok, has, parse, schema, schema_field, type_bool, type_int
+from std.api.validation import ValidationResult, result_ok, result_response, validate_json
+
+import std.convert as convert
+
+import std.string as str
+from models import Task
+
+import api.middleware as mw
+import db.store as store
+import models
+
+func task_id_from_path(req: Request) returns int {
+    let tail = str.split_last(request_path(req), "/")
+    return convert.string_to_int(tail)
+}
+
+func guarded(req: Request) returns bool {
+    return mw.require_bearer(req)
+}
+
+public func health(req: Request) returns Response {
+    let resp = mw.json_ok("{\"status\":\"ok\"}")
+    mw.log_request(req, 200)
+    return resp
+}
+
+public func tasks_list(req: Request) returns Response {
+    if guarded(req) != true {
+        return mw.unauthorized()
+    }
+    let q: Query         = parse(request_path(req))
+    let qs0              = schema()
+    let qs1              = schema_field(qs0, "completed", type_bool(), false, false)
+    let qs2              = schema_field(qs1, "limit", type_int(), false, false)
+    let qb: QueryBinding = bind(q, qs2)
+    if binding_ok(qb) != true {
+        return mw.bad_request("bad query string")
+    }
+    let completed_filter = 0 - 1
+    if has(q, "completed") {
+        if binding_bool(qb, "completed", 0) {
+            completed_filter = 1
+        } else {
+            completed_filter = 0
+        }
+    }
+    let limit = 100
+    if has(q, "limit") {
+        limit = binding_int(qb, "limit", 0)
+    }
+    if limit < 1 or limit > 100 {
+        return mw.bad_request("limit must be between 1 and 100")
+    }
+    let body = store.list_tasks(mw.config_db_path(), completed_filter, limit)
+    if body == "" {
+        return mw.bad_request("store unavailable")
+    }
+    let resp = mw.json_ok(body)
+    mw.log_request(req, 200)
+    return resp
+}
+
+public func tasks_create(req: Request) returns Response {
+    if guarded(req) != true {
+        return mw.unauthorized()
+    }
+    let body                     = request_body(req)
+    let result: ValidationResult = validate_json(models.task_schema(), body)
+    if result_ok(result) != true {
+        return result_response(result)
+    }
+    let task: Task = Task::from_json(body)
+    let created    = store.create_task(mw.config_db_path(), task.title, task.completed)
+    if created == "" {
+        return mw.bad_request("could not create task")
+    }
+    let resp = mw.json_created(created)
+    mw.log_request(req, 201)
+    return resp
+}
+
+public func tasks_read(req: Request) returns Response {
+    if guarded(req) != true {
+        return mw.unauthorized()
+    }
+    let id = task_id_from_path(req)
+    if id < 1 {
+        return mw.not_found("task not found")
+    }
+    let found = store.get_task(mw.config_db_path(), id)
+    if found == "" {
+        return mw.not_found("task not found")
+    }
+    let resp = mw.json_ok(found)
+    mw.log_request(req, 200)
+    return resp
+}
+
+public func tasks_update(req: Request) returns Response {
+    if guarded(req) != true {
+        return mw.unauthorized()
+    }
+    let id = task_id_from_path(req)
+    if id < 1 {
+        return mw.not_found("task not found")
+    }
+    let body                     = request_body(req)
+    let result: ValidationResult = validate_json(models.task_schema(), body)
+    if result_ok(result) != true {
+        return result_response(result)
+    }
+    let task: Task = Task::from_json(body)
+    let updated    = store.update_task(mw.config_db_path(), id, task.title, task.completed)
+    if updated == "" {
+        return mw.not_found("task not found")
+    }
+    let resp = mw.json_ok(updated)
+    mw.log_request(req, 200)
+    return resp
+}
+
+public func tasks_delete(req: Request) returns Response {
+    if guarded(req) != true {
+        return mw.unauthorized()
+    }
+    let id = task_id_from_path(req)
+    if id < 1 {
+        return mw.not_found("task not found")
+    }
+    if store.delete_task(mw.config_db_path(), id) != true {
+        return mw.not_found("task not found")
+    }
+    let resp = mw.json_no_content()
+    mw.log_request(req, 204)
+    return resp
+}
