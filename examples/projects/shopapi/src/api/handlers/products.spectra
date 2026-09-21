@@ -1,0 +1,202 @@
+module api.handlers.products
+
+// Catalog HTTP surface. Reads are public (active products only); writes
+// require the admin role. Query binding uses std.api.query schemas so bad
+// pagination is a 400 instead of a surprise 500.
+
+from std.api.http import Request, Response, request_body, request_path
+
+from std.api.query import Query, QueryBinding, QuerySchema, bind, binding_bool, binding_int, binding_ok, binding_value, has, parse, schema, schema_field, type_bool, type_int, type_string
+from std.api.validation import ValidationResult, ValidationSchema, field, max_length, min_length, range, regex, result_ok, result_response, schema as validation_schema, validate_json
+
+from models.common import Outcome
+from models.product import ProductUpdateRequest, ProductWriteRequest
+from models.user import AuthCheck
+import api.middleware as mw
+
+import api.params as params
+import api.problem as problem
+import api.respond as respond
+
+import db.products as products_db
+import services.catalog as catalog
+import services.tokens as tokens
+
+func write_schema() returns ValidationSchema {
+    let s0  = validation_schema()
+    let s1  = field(s0, "sku", 1, true)
+    let s2  = regex(s1, "sku", "^[A-Z0-9-]{3,32}$")
+    let s3  = field(s2, "title", 1, true)
+    let s4  = min_length(s3, "title", 1)
+    let s5  = max_length(s4, "title", 120)
+    let s6  = field(s5, "category", 1, true)
+    let s7  = regex(s6, "category", "^[a-z][a-z0-9_-]{2,24}$")
+    let s8  = field(s7, "price_cents", 2, true)
+    let s9  = range(s8, "price_cents", 1, 100000000)
+    let s10 = field(s9, "stock", 2, true)
+    return range(s10, "stock", 0, 1000000)
+}
+
+func update_schema() returns ValidationSchema {
+    let s0 = validation_schema()
+    let s1 = field(s0, "title", 1, true)
+    let s2 = min_length(s1, "title", 1)
+    let s3 = max_length(s2, "title", 120)
+    let s4 = field(s3, "category", 1, true)
+    let s5 = regex(s4, "category", "^[a-z][a-z0-9_-]{2,24}$")
+    let s6 = field(s5, "price_cents", 2, true)
+    let s7 = range(s6, "price_cents", 1, 100000000)
+    let s8 = field(s7, "stock", 2, true)
+    let s9 = range(s8, "stock", 0, 1000000)
+    return field(s9, "active", 3, true)
+}
+
+func admin_guard(req: Request) returns AuthCheck {
+    let auth: AuthCheck = tokens.authenticate(req)
+    return auth
+}
+
+func list_schema() returns QuerySchema {
+    let s0 = schema()
+    let s1 = schema_field(s0, "q", type_string(), false, false)
+    let s2 = schema_field(s1, "category", type_string(), false, false)
+    let s3 = schema_field(s2, "page", type_int(), false, false)
+    let s4 = schema_field(s3, "per_page", type_int(), false, false)
+    return schema_field(s4, "include_inactive", type_bool(), false, false)
+}
+
+public func list(req: Request) returns Response {
+    let parsed: Query         = parse(request_path(req))
+    let binding: QueryBinding = bind(parsed, list_schema())
+    if binding_ok(binding) != true {
+        return mw.finish(req, problem.bad_request("invalid catalog query parameters"))
+    }
+    let search = ""
+    if has(parsed, "q") {
+        search = binding_value(binding, "q", 0)
+    }
+    let category = ""
+    if has(parsed, "category") {
+        category = binding_value(binding, "category", 0)
+    }
+    let page = 1
+    if has(parsed, "page") {
+        page = binding_int(binding, "page", 0)
+        if page < 1 {
+            page = 1
+        }
+    }
+    let per_page = 20
+    if has(parsed, "per_page") {
+        per_page = binding_int(binding, "per_page", 0)
+        if per_page < 1 {
+            per_page = 1
+        }
+        if per_page > 50 {
+            per_page = 50
+        }
+    }
+    let include_inactive = false
+    if has(parsed, "include_inactive") {
+        include_inactive = binding_bool(binding, "include_inactive", 0)
+    }
+    let auth: AuthCheck = tokens.authenticate(req)
+    if tokens.is_admin(auth) != true {
+        include_inactive = false
+    }
+    let items = products_db.list_json(search, category, include_inactive, page, per_page)
+    let total = products_db.list_total(search, category, include_inactive)
+    return mw.finish(req, respond.ok(respond.page_envelope(items, page, per_page, total)))
+}
+
+public func read(req: Request) returns Response {
+    let id = params.path_id(req)
+    if id < 1 {
+        return mw.finish(req, problem.not_found("product not found"))
+    }
+    let product = products_db.detail_json(id)
+    if product == "" {
+        return mw.finish(req, problem.not_found("product not found"))
+    }
+    return mw.finish(req, respond.ok(product))
+}
+
+public func create(req: Request) returns Response {
+    let auth = admin_guard(req)
+    if auth.ok != true {
+        return mw.finish(req, problem.respond(auth.status, auth.code, auth.detail))
+    }
+    if tokens.is_admin(auth) != true {
+        return mw.finish(req, problem.forbidden("creating products requires the admin role"))
+    }
+    let body                     = request_body(req)
+    let result: ValidationResult = validate_json(write_schema(), body)
+    if result_ok(result) != true {
+        return mw.finish(req, result_response(result))
+    }
+    let request: ProductWriteRequest = ProductWriteRequest::from_json(body)
+    let outcome: Outcome = catalog.create_product(
+        request.sku,
+        request.title,
+        request.category,
+        request.price_cents,
+        request.stock)
+    if outcome.ok != true {
+        return mw.finish(req, problem.respond(outcome.status, outcome.code, outcome.detail))
+    }
+    return mw.finish(req, respond.created(products_db.detail_json(outcome.value)))
+}
+
+public func update(req: Request) returns Response {
+    let auth = admin_guard(req)
+    if auth.ok != true {
+        return mw.finish(req, problem.respond(auth.status, auth.code, auth.detail))
+    }
+    if tokens.is_admin(auth) != true {
+        return mw.finish(req, problem.forbidden("updating products requires the admin role"))
+    }
+    let id = params.path_id(req)
+    if id < 1 {
+        return mw.finish(req, problem.not_found("product not found"))
+    }
+    let body                     = request_body(req)
+    let result: ValidationResult = validate_json(update_schema(), body)
+    if result_ok(result) != true {
+        return mw.finish(req, result_response(result))
+    }
+    let request: ProductUpdateRequest = ProductUpdateRequest::from_json(body)
+    let outcome: Outcome = catalog.update_product(
+        id,
+        request.title,
+        request.category,
+        request.price_cents,
+        request.stock,
+        request.active)
+    if outcome.ok != true {
+        return mw.finish(req, problem.respond(outcome.status, outcome.code, outcome.detail))
+    }
+    return mw.finish(req, respond.ok(products_db.detail_json(id)))
+}
+
+public func remove(req: Request) returns Response {
+    let auth = admin_guard(req)
+    if auth.ok != true {
+        return mw.finish(req, problem.respond(auth.status, auth.code, auth.detail))
+    }
+    if tokens.is_admin(auth) != true {
+        return mw.finish(req, problem.forbidden("deleting products requires the admin role"))
+    }
+    let id = params.path_id(req)
+    if id < 1 {
+        return mw.finish(req, problem.not_found("product not found"))
+    }
+    let outcome: Outcome = catalog.delete_product(id)
+    if outcome.ok != true {
+        return mw.finish(req, problem.respond(outcome.status, outcome.code, outcome.detail))
+    }
+    return mw.finish(req, respond.no_content())
+}
+
+public func preflight(req: Request) returns Response {
+    return mw.preflight(req)
+}

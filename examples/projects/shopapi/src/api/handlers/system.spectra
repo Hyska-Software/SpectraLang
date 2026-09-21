@@ -1,0 +1,65 @@
+module api.handlers.system
+
+// Operational endpoints: health, version, OpenAPI document, and metrics.
+
+from std.api.http import Request, Response
+from std.api.routing import routes_export_openapi
+import std.string as str
+from models.user import AuthCheck
+import api.middleware as mw
+
+import api.problem as problem
+import api.respond as respond
+import config
+
+import db.connection as connection
+
+import db.migrate as migrate
+
+import routes as route_table
+import services.analytics as analytics
+import services.tokens as tokens
+
+public func health(req: Request) returns Response {
+    let database_up   = connection.ping(config.db_path())
+    let migrations    = migrate.status_report()
+    let database_text = "down"
+    if database_up == true {
+        database_text = "up"
+    }
+    let body = str.builder_new(192)
+    str.builder_push(body, "{\"status\":\"")
+    if database_up == true and migrate.is_current() == true {
+        str.builder_push(body, "ok")
+    } else {
+        str.builder_push(body, "degraded")
+    }
+    str.builder_push(body, "\",\"database\":\"")
+    str.builder_push(body, database_text)
+    str.builder_push(body, "\",\"migrations\":\"")
+    str.builder_push(body, migrations)
+    str.builder_push(body, "\"}")
+    return mw.finish(req, respond.ok(str.builder_finish(body)))
+}
+
+public func version(req: Request) returns Response {
+    return mw.finish(req, respond.ok("{\"name\":\"shopapi\",\"version\":\"1.0.0\"}"))
+}
+
+public func openapi(req: Request) returns Response {
+    let document = routes_export_openapi(route_table.build(), "ShopAPI", "1.0.0")
+    return mw.finish(req, respond.ok(document))
+}
+
+// Business summary (JSON). The platform server owns `/metrics` with the
+// Prometheus text exposition, so the application summary lives at `/stats`.
+public func stats(req: Request) returns Response {
+    let auth: AuthCheck = tokens.authenticate(req)
+    if auth.ok != true {
+        return mw.finish(req, problem.respond(auth.status, auth.code, auth.detail))
+    }
+    if tokens.is_admin(auth) != true {
+        return mw.finish(req, problem.forbidden("the stats endpoint requires the admin role"))
+    }
+    return mw.finish(req, respond.ok(analytics.summary_json()))
+}

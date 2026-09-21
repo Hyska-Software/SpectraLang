@@ -1,0 +1,63 @@
+module api.middleware
+
+// Live cross-cutting behavior applied by every handler through `finish`:
+// CORS (when an Origin is present), baseline security headers, and one
+// request log line. Rate limiting, compression, and the structured logging
+// sink are validated as a middleware chain in `api.chain_checks` because
+// the platform server dispatches handlers directly in this version.
+
+from std.api.cors import CorsPolicy
+
+from std.api.http import Request, Response, method_delete, method_get, method_options, method_post, method_put, method_name, request_method, request_path, response_status
+import std.api.cors as cors
+import std.api.handler as handler
+import std.convert as convert
+import std.io as io
+import std.string as str
+import config
+
+public func policy() returns CorsPolicy {
+    let base         = cors.policy()
+    let with_origin  = cors.allow_origin(base, config.cors_origin())
+    let with_get     = cors.allow_method(with_origin, method_get())
+    let with_post    = cors.allow_method(with_get, method_post())
+    let with_put     = cors.allow_method(with_post, method_put())
+    let with_delete  = cors.allow_method(with_put, method_delete())
+    let with_options = cors.allow_method(with_delete, method_options())
+    let with_auth    = cors.allow_header(with_options, "Authorization")
+    return cors.allow_header(with_auth, "Content-Type")
+}
+
+public func security_headers(response: Response) returns Response {
+    let first  = handler.with_header(response, "X-Content-Type-Options", "nosniff")
+    let second = handler.with_header(first, "X-Frame-Options", "DENY")
+    let third  = handler.with_header(second, "Referrer-Policy", "strict-origin-when-cross-origin")
+    return handler.with_header(third, "Content-Security-Policy", "default-src 'self'")
+}
+
+public func log_request(req: Request, status: int) {
+    let line = str.builder_new(128)
+    str.builder_push(line, method_name(request_method(req)))
+    str.builder_push(line, " ")
+    str.builder_push(line, request_path(req))
+    str.builder_push(line, " -> ")
+    str.builder_push(line, convert.int_to_string(status))
+    io.println(str.builder_finish(line))
+}
+
+// Applied to every handler response, including Problem Details responses.
+public func finish(req: Request, response: Response) returns Response {
+    let polished = cors.apply(policy(), req, response)
+    let secured  = security_headers(polished)
+    log_request(req, response_status(secured))
+    return secured
+}
+
+// OPTIONS handlers reply to browser preflights; non-preflight OPTIONS falls
+// back to a plain 204 so the route contract stays predictable.
+public func preflight(req: Request) returns Response {
+    if cors.is_preflight(req) == true {
+        return cors.preflight(policy(), req)
+    }
+    return finish(req, handler.status(204))
+}

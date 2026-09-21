@@ -95,6 +95,9 @@ Use `status_reason(status)`, `status_class(status)`, and
 - `response_status(response)` returns the status code.
 - `response_header(response, name)` performs case-insensitive header lookup.
 - `response_body_len(response)` returns the current body length.
+- `response_body(response)` returns the response body as text (UTF-8, with
+  invalid byte sequences replaced), which is how clients read JSON payloads
+  from real network responses.
 
 ## Header and Cookie Validation
 

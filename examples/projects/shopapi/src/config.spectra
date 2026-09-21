@@ -1,0 +1,60 @@
+module config
+
+// Environment-driven configuration (12-factor). Every key has a development
+// default so `spectralang run examples/projects/shopapi` works out of the
+// box; production deployments override these variables.
+
+import std.convert as convert
+import std.env as env
+import std.option as option
+
+public func db_path() returns string {
+    return option.option_unwrap_or(env.env_get("SHOPAPI_DB_PATH"), "target/shopapi.db")
+}
+
+public func migrations_dir() returns string {
+    return option.option_unwrap_or(
+        env.env_get("SHOPAPI_MIGRATIONS_DIR"),
+        "examples/projects/shopapi/migrations")
+}
+
+public func port() returns int {
+    let raw  = option.option_unwrap_or(env.env_get("SHOPAPI_PORT"), "8090")
+    let port = convert.string_to_int(raw)
+    if port <= 0 {
+        return 8090
+    }
+    return port
+}
+
+public func jwt_secret() returns string {
+    return option.option_unwrap_or(
+        env.env_get("SHOPAPI_JWT_SECRET"),
+        "shopapi-dev-secret-change-me-0123456789")
+}
+
+public func token_ttl_seconds() returns int {
+    let raw = option.option_unwrap_or(env.env_get("SHOPAPI_TOKEN_TTL_SECONDS"), "3600")
+    let ttl = convert.string_to_int(raw)
+    if ttl < 60 {
+        return 3600
+    }
+    return ttl
+}
+
+public func admin_password() returns string {
+    return option.option_unwrap_or(env.env_get("SHOPAPI_ADMIN_PASSWORD"), "admin-dev-password")
+}
+
+public func cors_origin() returns string {
+    return option.option_unwrap_or(env.env_get("SHOPAPI_CORS_ORIGIN"), "https://shop.example")
+}
+
+public func max_body_bytes() returns int {
+    let raw   = option.option_unwrap_or(env.env_get("SHOPAPI_MAX_BODY_BYTES"), "262144")
+    let limit = convert.string_to_int(raw)
+    if limit < 1024 {
+        return 262144
+    }
+    return limit
+}

@@ -1,0 +1,132 @@
+module services.tokens
+
+// Authentication service.
+//
+// Password storage uses the JWT signer as a keyed HMAC: the stored digest is
+// the signature segment of a token whose HMAC key is the padded password, so
+// the plaintext never touches the database and login recomputes the same
+// signature. Production deployments should swap this for a dedicated
+// password-hashing module (argon2/bcrypt) once it exists; the interface
+// (`password_hash` / `verify_password`) stays the same.
+//
+// Bearer tokens are compact JWTs signed with the server secret. `verify`
+// enforces signature and `exp` cryptographically; the exact token string is
+// also the `sessions` primary key, which provides revocation and identity
+// lookup without decoding the payload (the language surface has no claim
+// reader yet).
+
+from std.api.http import Request, request_header
+import std.api.jwt as jwt
+
+import std.convert as convert
+
+import std.random as random
+import std.string as str
+import std.time as time
+import config
+import db.sessions as sessions_db
+import models.user
+
+const ISSUER: string = "shopapi"
+const AUDIENCE: string = "shopapi"
+
+public func password_hash(password: string) returns string {
+    let key   = str.pad_right(password, 32, 120)
+    let token = jwt.sign("HS256", key, "{\"sub\":\"shopapi-password\",\"v\":1}")
+    return str.split_last(token, ".")
+}
+
+public func verify_password(password: string, stored: string) returns bool {
+    return password_hash(password) == stored
+}
+
+public func bearer_token(req: Request) returns string {
+    let header = request_header(req, "Authorization")
+    if str.starts_with(header, "Bearer ") != true {
+        return ""
+    }
+    let token = str.substring(header, 7, str.len(header))
+    if str.len(token) == 0 {
+        return ""
+    }
+    return token
+}
+
+// Issues a signed token and records the session row (revocation ledger).
+// Returns an empty token on failure; callers map that to 500.
+public func issue(username: string, role: string, now: int) returns SessionOut {
+    let ttl        = config.token_ttl_seconds()
+    let expires_at = now + ttl
+    let jti_nonce  = random.random_int(100000000, 999999999)
+    let claims     = str.builder_new(256)
+    str.builder_push(claims, "{\"iss\":\"shopapi\",\"aud\":\"shopapi\",\"sub\":\"")
+    str.builder_push(claims, username)
+    str.builder_push(claims, "\",\"role\":\"")
+    str.builder_push(claims, role)
+    str.builder_push(claims, "\",\"jti\":\"")
+    str.builder_push(claims, convert.int_to_string(jti_nonce))
+    str.builder_push(claims, "-")
+    str.builder_push(claims, convert.int_to_string(time.monotonic_nanos()))
+    str.builder_push(claims, "\",\"exp\":")
+    str.builder_push(claims, convert.int_to_string(expires_at))
+    str.builder_push(claims, "}")
+    let token = jwt.sign("HS256", config.jwt_secret(), str.builder_finish(claims))
+    if sessions_db.insert(token, username, role, expires_at) != true {
+        return SessionOut {
+            token: "",
+            token_type: "Bearer",
+            expires_in: 0,
+            username: username,
+            role: role,
+        }
+    }
+    return SessionOut {
+        token: token,
+        token_type: "Bearer",
+        expires_in: ttl,
+        username: username,
+        role: role,
+    }
+}
+
+func denied(status: int, code: string, detail: string) returns AuthCheck {
+    return AuthCheck {
+        ok: false,
+        status: status,
+        code: code,
+        detail: detail,
+        username: "",
+        role: "",
+    }
+}
+
+public func authenticate(req: Request) returns AuthCheck {
+    let token = bearer_token(req)
+    if token == "" {
+        return denied(401, "unauthorized", "a valid bearer token is required")
+    }
+    if jwt.verify(token, "HS256", config.jwt_secret(), ISSUER, AUDIENCE, 0) != true {
+        return denied(401, "unauthorized", "the bearer token is invalid or expired")
+    }
+    let now     = time.time_now_secs()
+    let session = sessions_db.find(token, now)
+    if session.username == "" {
+        return denied(401, "unauthorized", "the session expired or was revoked")
+    }
+    return AuthCheck {
+        ok: true,
+        status: 200,
+        code: "",
+        detail: "",
+        username: session.username,
+        role: session.role,
+    }
+}
+
+public func logout(token: string) returns bool {
+    return sessions_db.delete(token)
+}
+
+public func is_admin(auth: AuthCheck) returns bool {
+    return auth.ok == true and auth.role == "admin"
+}

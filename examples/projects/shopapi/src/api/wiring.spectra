@@ -1,0 +1,115 @@
+module api.wiring
+
+// Binds every route to its handler callback. `route_table.route_id_of`
+// recovers the numeric id from the registered pattern with a concrete
+// example path, so the route table stays the single source of truth.
+
+from std.api.handler import register_sync_callback
+from std.api.http import method_delete, method_get, method_options, method_post, method_put
+from std.api.routing import Router
+import api.handlers.auth as auth_handlers
+import api.handlers.orders as order_handlers
+
+import api.handlers.products as product_handlers
+import api.handlers.system as system_handlers
+import routes as route_table
+
+public func build() returns Router {
+    let r: Router = route_table.build()
+
+    register_sync_callback(
+        route_table.route_id_of(r, method_get(), "/health"),
+        system_handlers.health,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_get(), "/version"),
+        system_handlers.version,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_get(), "/openapi.json"),
+        system_handlers.openapi,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_get(), "/stats"),
+        system_handlers.stats,
+    )
+
+    register_sync_callback(
+        route_table.route_id_of(r, method_post(), "/auth/register"),
+        auth_handlers.register,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_post(), "/auth/login"),
+        auth_handlers.login,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_post(), "/auth/logout"),
+        auth_handlers.logout,
+    )
+    register_sync_callback(route_table.route_id_of(r, method_get(), "/me"), auth_handlers.me)
+
+    register_sync_callback(
+        route_table.route_id_of(r, method_get(), "/products"),
+        product_handlers.list,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_post(), "/products"),
+        product_handlers.create,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_get(), "/products/1"),
+        product_handlers.read,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_put(), "/products/1"),
+        product_handlers.update,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_delete(), "/products/1"),
+        product_handlers.remove,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_options(), "/products"),
+        product_handlers.preflight,
+    )
+
+    register_sync_callback(
+        route_table.route_id_of(r, method_post(), "/orders"),
+        order_handlers.create,
+    )
+    register_sync_callback(route_table.route_id_of(r, method_get(), "/orders"), order_handlers.list)
+    register_sync_callback(
+        route_table.route_id_of(r, method_options(), "/orders"),
+        order_handlers.preflight,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_get(), "/orders/1"),
+        order_handlers.read,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_post(), "/orders/1/items"),
+        order_handlers.add_item,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_put(), "/orders/1/items"),
+        order_handlers.set_item,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_post(), "/orders/1/submit"),
+        order_handlers.submit,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_post(), "/orders/1/pay"),
+        order_handlers.pay,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_post(), "/orders/1/ship"),
+        order_handlers.ship,
+    )
+    register_sync_callback(
+        route_table.route_id_of(r, method_post(), "/orders/1/cancel"),
+        order_handlers.cancel,
+    )
+
+    return r
+}

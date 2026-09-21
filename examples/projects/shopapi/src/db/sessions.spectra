@@ -1,0 +1,115 @@
+module db.sessions
+
+// Opaque bearer-token sessions. The token is a signed compact JWT whose
+// `jti` is unique per login, so the database key is unforgeable and
+// revocation is a row delete. `find` treats expired rows as missing.
+
+from std.api.db.sqlite import SqliteConnection, SqliteStatement
+import std.api.db.sqlite as sqlite
+
+import config
+import db.connection as connection
+
+import models.user
+
+public func insert(token: string, username: string, role: string, expires_at: int) returns bool {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let stmt = sqlite.prepare(
+        db,
+        "INSERT OR REPLACE INTO sessions(token, username, role, expires_at) VALUES (?, ?, ?, ?)")
+    if sqlite.bind_text(stmt, 1, token) != true {
+        return false
+    }
+    if sqlite.bind_text(stmt, 2, username) != true {
+        return false
+    }
+    if sqlite.bind_text(stmt, 3, role) != true {
+        return false
+    }
+    if sqlite.bind_int(stmt, 4, expires_at) != true {
+        return false
+    }
+    if sqlite.step(stmt) != 2 {
+        sqlite.finalize(stmt)
+        return false
+    }
+    if sqlite.finalize(stmt) != true {
+        return false
+    }
+    return connection.disconnect(db)
+}
+
+public func find(token: string, now: int) returns SessionRecord {
+    let missing = SessionRecord {
+        username: "",
+        role: "",
+        expires_at: 0,
+    }
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let query = sqlite.prepare(
+        db,
+        "SELECT username, role, expires_at FROM sessions WHERE token = ? AND expires_at > ?")
+    if sqlite.bind_text(query, 1, token) != true {
+        return missing
+    }
+    if sqlite.bind_int(query, 2, now) != true {
+        return missing
+    }
+    let found = missing
+    if sqlite.step(query) == 1 {
+        found = SessionRecord {
+            username: sqlite.column_text(query, 0),
+            role: sqlite.column_text(query, 1),
+            expires_at: sqlite.column_int(query, 2),
+        }
+    }
+    if sqlite.finalize(query) != true {
+        return missing
+    }
+    if connection.disconnect(db) != true {
+        return missing
+    }
+    return found
+}
+
+public func delete(token: string) returns bool {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let stmt                 = sqlite.prepare(db, "DELETE FROM sessions WHERE token = ?")
+    if sqlite.bind_text(stmt, 1, token) != true {
+        return false
+    }
+    if sqlite.step(stmt) != 2 {
+        sqlite.finalize(stmt)
+        return false
+    }
+    if sqlite.finalize(stmt) != true {
+        return false
+    }
+    return connection.disconnect(db)
+}
+
+public func purge_expired(now: int) returns int {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let stmt                 = sqlite.prepare(db, "DELETE FROM sessions WHERE expires_at <= ?")
+    let removed              = 0
+    if sqlite.bind_int(stmt, 1, now) == true {
+        if sqlite.step(stmt) == 2 {
+            removed = 1
+        }
+    }
+    sqlite.finalize(stmt)
+    connection.disconnect(db)
+    return removed
+}
+
+public func count() returns int {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let query                = sqlite.prepare(db, "SELECT COUNT(*) FROM sessions")
+    let total                = 0
+    if sqlite.step(query) == 1 {
+        total = sqlite.column_int(query, 0)
+    }
+    sqlite.finalize(query)
+    connection.disconnect(db)
+    return total
+}

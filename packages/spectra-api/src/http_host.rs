@@ -315,6 +315,21 @@ pub extern "C" fn response_body_len(ctx: *mut SpectraHostCallContext) -> i32 {
     write_result(ctx, response.body.len() as SpectraHostValue)
 }
 
+/// Body text of a response handle. Response bodies built by the API surface
+/// (`json`, `text`, `bytes`, middleware) are UTF-8; invalid sequences are
+/// replaced instead of failing so a caller always gets a printable string.
+pub extern "C" fn response_body(ctx: *mut SpectraHostCallContext) -> i32 {
+    let Ok(args) = read_args(ctx, 1) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let store = store().lock().unwrap_or_else(|e| e.into_inner());
+    let Some(response) = store.responses.get(&args[0]) else {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    };
+    let text = String::from_utf8_lossy(&response.body);
+    write_result(ctx, alloc_spectra_string(&text))
+}
+
 pub extern "C" fn header(ctx: *mut SpectraHostCallContext) -> i32 {
     let Ok(args) = read_args(ctx, 2) else {
         return HOST_STATUS_INVALID_ARGUMENT;

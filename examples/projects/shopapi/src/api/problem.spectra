@@ -1,0 +1,36 @@
+module api.problem
+
+// RFC 7807 responses. `std.api.errors` renders the Problem Details document
+// with the matching `application/problem+json` content type.
+
+from std.api.errors import ApiError, new as new_error, response as error_response
+from std.api.http import Response
+
+public func respond(status: int, code: string, detail: string) returns Response {
+    let error: ApiError = new_error(status, code, detail)
+    return error_response(error)
+}
+
+public func bad_request(detail: string) returns Response {
+    return respond(400, "bad_request", detail)
+}
+
+public func unauthorized(detail: string) returns Response {
+    return respond(401, "unauthorized", detail)
+}
+
+public func forbidden(detail: string) returns Response {
+    return respond(403, "forbidden", detail)
+}
+
+public func not_found(detail: string) returns Response {
+    return respond(404, "not_found", detail)
+}
+
+public func conflict(detail: string) returns Response {
+    return respond(409, "conflict", detail)
+}
+
+public func internal_error(detail: string) returns Response {
+    return respond(500, "internal_error", detail)
+}

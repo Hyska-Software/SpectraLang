@@ -282,6 +282,7 @@ pub const HOST_CALLS: &[HostCallSpec] = &[
     HostCallSpec { name: "spectra.api.http.request_with_body", function: http::request_with_body },
     HostCallSpec { name: "spectra.api.http.request_with_header", function: http::request_with_header },
     HostCallSpec { name: "spectra.api.http.response", function: http::response_new },
+    HostCallSpec { name: "spectra.api.http.response_body", function: http::response_body },
     HostCallSpec { name: "spectra.api.http.response_body_len", function: http::response_body_len },
     HostCallSpec { name: "spectra.api.http.response_header", function: http::response_header },
     HostCallSpec { name: "spectra.api.http.response_new", function: http::response_new },

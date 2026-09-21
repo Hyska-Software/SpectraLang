@@ -1,0 +1,126 @@
+module api.chain_checks
+
+// Offline verification of the middleware composition used for production
+// concerns the live dispatch path does not run yet: structured logging,
+// baseline security headers, CORS, compression, and a route-scoped sliding
+// window rate limiter. The reference order is
+// logging -> security -> CORS -> compression -> rate limit.
+
+from std.api.handler import text
+from std.api.http import Request, Response, method_get, request, request_with_header, response_body_len, response_header, response_status
+from std.api.middleware import MiddlewareChain, MiddlewareHandle, chain_len, chain_new, execute_sync, last_trace, logging_len, logging_line, logging_request_id, register_compression, register_logging, register_rate_limit, register_security_headers, trace_short_circuited, use_sync
+import std.api.cors as cors
+import std.string as str
+
+const ORIGIN: string = "https://shop.example"
+
+func with_origin(req: Request) returns Request {
+    let first = request_with_header(req, "Origin", ORIGIN)
+    return request_with_header(first, "Accept-Encoding", "gzip")
+}
+
+func expect_header(response: Response, name: string, expected: string, code: int) returns int {
+    if str.contains(response_header(response, name), expected) != true {
+        return code
+    }
+    return 0
+}
+
+func expect_present(response: Response, name: string, code: int) returns int {
+    if str.len(response_header(response, name)) <= 0 {
+        return code
+    }
+    return 0
+}
+
+public func run() returns int {
+    let origin_policy = cors.allow_origin(cors.policy(), ORIGIN)
+    let cors_handle: MiddlewareHandle = cors.middleware(
+        cors.allow_method(origin_policy, method_get()))
+    let logging: MiddlewareHandle     = register_logging("text")
+    let security: MiddlewareHandle    = register_security_headers()
+    let compression: MiddlewareHandle = register_compression(1)
+    let limiter: MiddlewareHandle = register_rate_limit(
+        "sliding_window",
+        2,
+        60000,
+        "route",
+        false)
+    let chain: MiddlewareChain = use_sync(
+        use_sync(
+            use_sync(
+                use_sync(use_sync(chain_new(), logging), security),
+                cors_handle),
+            compression),
+        limiter)
+    if chain_len(chain) != 5 {
+        return 1
+    }
+
+    let first = execute_sync(
+        chain,
+        with_origin(request(method_get(), "/products")),
+        text("catalog"),
+    )
+    if response_status(first) != 200 {
+        return 2
+    }
+    if expect_header(first, "Content-Security-Policy", "default-src 'self'", 3) != 0 {
+        return 3
+    }
+    if expect_header(first, "X-Content-Type-Options", "nosniff", 4) != 0 {
+        return 4
+    }
+    if expect_header(first, "Access-Control-Allow-Origin", ORIGIN, 5) != 0 {
+        return 5
+    }
+    if expect_header(first, "Content-Encoding", "gzip", 6) != 0 {
+        return 6
+    }
+    if response_body_len(first) <= 0 {
+        return 7
+    }
+    if trace_short_circuited(last_trace()) != false {
+        return 8
+    }
+
+    let second = execute_sync(
+        chain,
+        with_origin(request(method_get(), "/products")),
+        text("catalog"),
+    )
+    if response_status(second) != 200 {
+        return 9
+    }
+    let third = execute_sync(
+        chain,
+        with_origin(request(method_get(), "/products")),
+        text("catalog"),
+    )
+    if response_status(third) != 429 {
+        return 10
+    }
+    if expect_present(third, "Retry-After", 11) != 0 {
+        return 11
+    }
+    if expect_present(third, "X-RateLimit-Limit", 12) != 0 {
+        return 12
+    }
+    if trace_short_circuited(last_trace()) != true {
+        return 13
+    }
+
+    if logging_len(logging) != 3 {
+        return 14
+    }
+    if str.starts_with(logging_request_id(logging, 0), "req-") != true {
+        return 15
+    }
+    if str.contains(logging_line(logging, 0), "status=200") != true {
+        return 16
+    }
+    if str.contains(logging_line(logging, 2), "status=429") != true {
+        return 17
+    }
+    return 0
+}

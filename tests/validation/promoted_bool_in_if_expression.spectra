@@ -1,0 +1,64 @@
+module promoted_bool_in_if_expression
+
+// Regression: a bool local first assigned inside an `if` expression body and
+// then used as a record field must receive a Bool promoted-slot hint. The
+// slot pre-pass only walked statement bodies, so the local was promoted to a
+// default Int slot and Cranelift panicked with "declared type of variable
+// ... doesn't match type of value" while returning the aggregate.
+
+public record Decision {
+    public code: int,
+    public accepted: bool,
+}
+
+func decide(value: int, enabled: bool) returns Decision {
+    if enabled == true {
+        let accepted = false
+        if value > 0 {
+            accepted = true
+        }
+        return Decision { code: value, accepted: accepted }
+    }
+    return Decision { code: 0, accepted: false }
+}
+
+func nested_label(value: int) returns string {
+    let label = "none"
+    if value > 0 {
+        let positive = true
+        if value > 10 {
+            positive = false
+        }
+        if positive == true {
+            label = "small"
+        } else {
+            label = "large"
+        }
+    }
+    return label
+}
+
+public func main() returns int {
+    let positive = decide(3, true)
+    if positive.code != 3 or positive.accepted != true {
+        return 1
+    }
+    let zero = decide(0, true)
+    if zero.accepted != false {
+        return 2
+    }
+    let disabled = decide(3, false)
+    if disabled.code != 0 or disabled.accepted != false {
+        return 3
+    }
+    if nested_label(5) != "small" {
+        return 4
+    }
+    if nested_label(50) != "large" {
+        return 5
+    }
+    if nested_label(0) != "none" {
+        return 6
+    }
+    return 0
+}

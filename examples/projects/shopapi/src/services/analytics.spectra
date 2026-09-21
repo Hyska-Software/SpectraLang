@@ -1,0 +1,36 @@
+module services.analytics
+
+// Aggregates for /metrics. Counts are cheap primary-key/index scans and the
+// response is assembled with the string builder so the JSON stays valid for
+// empty tables.
+
+import std.convert as convert
+import std.string as str
+import db.orders as orders_db
+import db.products as products_db
+
+import db.sessions as sessions_db
+import db.users as users_db
+import models.order
+
+import models.product
+import models.user
+
+public func summary_json() returns string {
+    let low_stock = products_db.low_stock_count(10)
+    let report    = str.builder_new(256)
+    str.builder_push(report, "{\"users\":")
+    str.builder_push(report, convert.int_to_string(users_db.count()))
+    str.builder_push(report, ",\"sessions\":")
+    str.builder_push(report, convert.int_to_string(sessions_db.count()))
+    str.builder_push(report, ",\"products\":")
+    str.builder_push(report, convert.int_to_string(products_db.count()))
+    str.builder_push(report, ",\"low_stock_products\":")
+    str.builder_push(report, convert.int_to_string(low_stock))
+    str.builder_push(report, ",\"orders\":")
+    str.builder_push(report, convert.int_to_string(orders_db.count()))
+    str.builder_push(report, ",\"orders_by_status\":")
+    str.builder_push(report, orders_db.status_counts_json())
+    str.builder_push(report, "}")
+    return str.builder_finish(report)
+}

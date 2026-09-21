@@ -1,0 +1,110 @@
+module db.users
+
+// User persistence. Sentinel contract used across the db layer:
+//   id > 0  success (row id)
+//   id == 0 not found / generic failure
+//   id == -1 uniqueness conflict
+
+from std.api.db.sqlite import SqliteConnection, SqliteStatement
+import std.api.db.sqlite as sqlite
+
+import config
+import db.connection as connection
+
+import models.user
+
+public func create(username: string, password_hash: string, role: string, now: int) returns int {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let existing             = sqlite.prepare(db, "SELECT id FROM users WHERE username = ?")
+    let duplicate            = false
+    if sqlite.bind_text(existing, 1, username) == true {
+        if sqlite.step(existing) == 1 {
+            duplicate = true
+        }
+    }
+    sqlite.finalize(existing)
+    if duplicate == true {
+        connection.disconnect(db)
+        return 0 - 1
+    }
+
+    let insert = sqlite.prepare(
+        db,
+        "INSERT INTO users(username, password_hash, role, created_at) VALUES (?, ?, ?, ?)")
+    if sqlite.bind_text(insert, 1, username) != true {
+        return 0
+    }
+    if sqlite.bind_text(insert, 2, password_hash) != true {
+        return 0
+    }
+    if sqlite.bind_text(insert, 3, role) != true {
+        return 0
+    }
+    if sqlite.bind_int(insert, 4, now) != true {
+        return 0
+    }
+    if sqlite.step(insert) != 2 {
+        sqlite.finalize(insert)
+        return 0
+    }
+    if sqlite.finalize(insert) != true {
+        return 0
+    }
+
+    let rowid  = sqlite.prepare(db, "SELECT last_insert_rowid()")
+    let new_id = 0
+    if sqlite.step(rowid) == 1 {
+        new_id = sqlite.column_int(rowid, 0)
+    }
+    sqlite.finalize(rowid)
+    if connection.disconnect(db) != true {
+        return 0
+    }
+    return new_id
+}
+
+public func find(username: string) returns UserRecord {
+    let missing = UserRecord {
+        id: 0,
+        username: "",
+        password_hash: "",
+        role: "",
+        created_at: 0,
+    }
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let query = sqlite.prepare(
+        db,
+        "SELECT id, username, password_hash, role, created_at FROM users WHERE username = ?")
+    if sqlite.bind_text(query, 1, username) != true {
+        return missing
+    }
+    let found = missing
+    if sqlite.step(query) == 1 {
+        found = UserRecord {
+            id: sqlite.column_int(query, 0),
+            username: sqlite.column_text(query, 1),
+            password_hash: sqlite.column_text(query, 2),
+            role: sqlite.column_text(query, 3),
+            created_at: sqlite.column_int(query, 4),
+        }
+    }
+    if sqlite.finalize(query) != true {
+        return missing
+    }
+    if connection.disconnect(db) != true {
+        return missing
+    }
+    return found
+}
+
+public func count() returns int {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let query                = sqlite.prepare(db, "SELECT COUNT(*) FROM users")
+    let total                = 0
+    if sqlite.step(query) == 1 {
+        total = sqlite.column_int(query, 0)
+    }
+    sqlite.finalize(query)
+    connection.disconnect(db)
+    return total
+}

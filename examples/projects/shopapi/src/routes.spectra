@@ -1,0 +1,52 @@
+module routes
+
+// Single source of truth for the route table. `build()` registers every
+// route and attaches the derive-generated JSON Schemas as OpenAPI
+// request-body hints; `route_id_of` recovers a route id from its method and
+// a concrete example path (used when registering handler callbacks).
+
+from std.api.http import method_delete, method_get, method_options, method_post, method_put
+
+from std.api.routing import Route, Router, delete, get, match_route_id, post, put, route_add, route_match, router, routes_set_request_schema
+import models.product
+
+public func build() returns Router {
+    let r: Router               = router()
+    let health: Route           = get(r, "/health")
+    let version: Route          = get(r, "/version")
+    let openapi: Route          = get(r, "/openapi.json")
+    let stats: Route            = get(r, "/stats")
+    let register: Route         = post(r, "/auth/register")
+    let login: Route            = post(r, "/auth/login")
+    let logout: Route           = post(r, "/auth/logout")
+    let me: Route               = get(r, "/me")
+    let products_list: Route    = get(r, "/products")
+    let products_create: Route  = post(r, "/products")
+    let products_options: Route = route_add(r, method_options(), "/products")
+    let products_read: Route    = get(r, "/products/{id:\\d+}")
+    let products_update: Route  = put(r, "/products/{id:\\d+}")
+    let products_delete: Route  = delete(r, "/products/{id:\\d+}")
+    let orders_create: Route    = post(r, "/orders")
+    let orders_list: Route      = get(r, "/orders")
+    let orders_options: Route   = route_add(r, method_options(), "/orders")
+    let orders_read: Route      = get(r, "/orders/{id:\\d+}")
+    let order_item_add: Route   = post(r, "/orders/{id:\\d+}/items")
+    let order_item_set: Route   = put(r, "/orders/{id:\\d+}/items")
+    let order_submit: Route     = post(r, "/orders/{id:\\d+}/submit")
+    let order_pay: Route        = post(r, "/orders/{id:\\d+}/pay")
+    let order_ship: Route       = post(r, "/orders/{id:\\d+}/ship")
+    let order_cancel: Route     = post(r, "/orders/{id:\\d+}/cancel")
+
+    routes_set_request_schema(r, method_post(), "/products", ProductWriteRequest::json_schema())
+    routes_set_request_schema(
+        r,
+        method_put(),
+        "/products/{id}",
+        ProductUpdateRequest::json_schema())
+    return r
+}
+
+public func route_id_of(r: Router, method: int, path: string) returns int {
+    let hit = route_match(r, method, path)
+    return match_route_id(hit)
+}

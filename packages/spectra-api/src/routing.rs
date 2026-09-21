@@ -502,7 +502,7 @@ fn detect_conflict(
                 detect_conflict(child, routes, method, segments, candidate, index + 1)?;
             }
         }
-        RouteSegment::Param { constraint, .. } => {
+        RouteSegment::Param { name, constraint } => {
             for literal_child in node.literals.values() {
                 if subtree_has_method(literal_child, method) {
                     return Err(conflict(
@@ -514,7 +514,17 @@ fn detect_conflict(
                 }
             }
             if let Some(existing) = &node.param {
-                if constraints_overlap(existing.constraint.as_deref(), constraint.as_deref())
+                // The tree stores a single parameter edge per node, so
+                // sibling routes may share it only when the parameter name
+                // and constraint are identical. When they are, the recursion
+                // below decides conflicts from the remaining segments:
+                // `/orders/{id}/items` and `/orders/{id}/submit` are
+                // distinct literal continuations and coexist, while two
+                // routes ending at the same node are still rejected.
+                let shares_edge = existing.name == *name
+                    && existing.constraint.as_deref() == constraint.as_deref();
+                if !shares_edge
+                    && constraints_overlap(existing.constraint.as_deref(), constraint.as_deref())
                     && subtree_has_method(&existing.node, method)
                 {
                     return Err(conflict(
@@ -1243,6 +1253,55 @@ mod tests {
             .match_path(RouteMethod::Get, "/tasks/1/extra?x=1")
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn sibling_literal_segments_under_a_shared_param_edge_coexist() {
+        let mut router = Router::default();
+        let items = router
+            .add(RouteMethod::Post, r"/orders/{id:\d+}/items")
+            .expect("items route");
+        let submit = router
+            .add(RouteMethod::Post, r"/orders/{id:\d+}/submit")
+            .expect("submit route");
+        let read = router
+            .add(RouteMethod::Get, r"/orders/{id:\d+}")
+            .expect("read route");
+
+        let add = router
+            .match_path(RouteMethod::Post, "/orders/7/items")
+            .unwrap()
+            .expect("items match");
+        assert_eq!(add.route_id, items);
+        assert_eq!(add.params.get("id").map(String::as_str), Some("7"));
+        let submit_match = router
+            .match_path(RouteMethod::Post, "/orders/7/submit")
+            .unwrap()
+            .expect("submit match");
+        assert_eq!(submit_match.route_id, submit);
+        let read_match = router
+            .match_path(RouteMethod::Get, "/orders/7")
+            .unwrap()
+            .expect("read match");
+        assert_eq!(read_match.route_id, read);
+        assert!(router
+            .match_path(RouteMethod::Post, "/orders/7")
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn same_shape_param_routes_still_conflict() {
+        let mut router = Router::default();
+        router.add(RouteMethod::Get, "/users/{id}").expect("param");
+        let duplicate = router
+            .add(RouteMethod::Get, "/users/{name}")
+            .expect_err("same shape param route must conflict");
+        assert!(duplicate.to_string().contains("/users/{name}"));
+        let same_leaf = router
+            .add(RouteMethod::Post, "/users/{id}")
+            .expect("different method may share the edge");
+        assert!(same_leaf > 0);
     }
 
     #[test]

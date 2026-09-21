@@ -1,0 +1,41 @@
+module api.params
+
+// Path and query parsing helpers for the live request path.
+//
+// Route parameters are extracted by segment arithmetic instead of
+// `route_match` because a long-lived server must not allocate a router per
+// request. The path is first stripped of its query string, mirroring the
+// router's own matching rule, then walked from the end:
+//   segment_from_end("/orders/7/items", 1) == "items"
+//   segment_from_end("/orders/7/items", 2) == "7"
+
+from std.api.http import Request, request_path
+import std.convert as convert
+import std.string as str
+
+public func segment_from_end(raw_path: string, from_end: int) returns string {
+    let remaining = str.split_first(raw_path, "?")
+    let index     = 0
+    while index < from_end {
+        let tail = str.split_last(remaining, "/")
+        index = index + 1
+        if index == from_end {
+            return tail
+        }
+        if str.len(remaining) <= str.len(tail) {
+            return ""
+        }
+        remaining = str.substring(remaining, 0, str.len(remaining) - str.len(tail) - 1)
+    }
+    return ""
+}
+
+// Numeric path id: 0 when absent or not a number (handlers map that to 404).
+public func path_id(req: Request) returns int {
+    return convert.string_to_int(segment_from_end(request_path(req), 1))
+}
+
+// Numeric id one segment above the tail (`/orders/{id}/items`).
+public func parent_id(req: Request) returns int {
+    return convert.string_to_int(segment_from_end(request_path(req), 2))
+}

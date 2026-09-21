@@ -1817,9 +1817,9 @@ baselines.
   `std.api.*`, `spectra.api.*` host calls, `packages/spectra-api`,
   HTTP/1.1-first delivery, `rustls`, and Phase 21 async dependencies)
 - `R-2202` `spectra-api` Rust crate and host call registration (complete;
-  `packages/spectra-api` links against `spectra-runtime`, registers 559 public
+  `packages/spectra-api` links against `spectra-runtime`, registers 560 public
   `spectra.api.*` host calls through the runtime host-call registry, satisfies
-  the runtime's 559-name required namespace, exposes
+  the runtime's 560-name required namespace, exposes
   `spectra_api_register_host_calls`, and is validated by
   `scripts/validate_r2202_spectra_api_hostcalls.py`)
 - `R-2203` `std.api.*` semantic and tooling surface (complete; virtual

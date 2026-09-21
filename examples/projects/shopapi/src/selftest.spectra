@@ -1,0 +1,580 @@
+module selftest
+
+// End-to-end suite. Drives the real HTTP stack over TCP against the server
+// booted by main on an ephemeral port, then verifies status codes, response
+// bodies (via `response_body`), headers, and database side effects. Every
+// stage returns a distinct non-zero code so a failure names its cause.
+
+from std.api.client import Client, new as client_new, request as client_request, set_ssrf_policy
+
+from std.api.http import Request, Response, method_delete, method_get, method_options, method_post, method_put, request, request_with_body, request_with_header, response_body, response_body_len, response_header, response_status
+from std.api.security import SsrfPolicy, ssrf_allow_private_networks, ssrf_policy
+
+import std.api.json as json
+import std.convert as convert
+
+import std.string as str
+
+import api.chain_checks as chain_checks
+import db.orders as orders_db
+import db.products as products_db
+import models.order
+import models.product
+
+const ORIGIN: string = "https://shop.example"
+const WIDGET_SKU: string = "TEST-WIDGET-01"
+
+func send(
+    method: int,
+    base: string,
+    path: string,
+    token: string,
+    body: string,
+    with_json: bool,
+    origin: string) returns Response {
+    let policy: SsrfPolicy = ssrf_allow_private_networks(ssrf_policy(), true)
+    let client: Client     = client_new()
+    set_ssrf_policy(client, policy)
+    let req: Request = request(method, str.concat(base, path))
+    if token != "" {
+        req = request_with_header(req, "Authorization", str.concat("Bearer ", token))
+    }
+    if with_json == true {
+        req = request_with_header(req, "Content-Type", "application/json")
+    }
+    if origin != "" {
+        req = request_with_header(req, "Origin", origin)
+        req = request_with_header(req, "Access-Control-Request-Method", "GET")
+    }
+    if body != "" {
+        req = request_with_body(req, body)
+    }
+    let task: Task<Response> = client_request(client, req)
+    return block_on(task)
+}
+
+func plain(method: int, base: string, path: string) returns Response {
+    return send(method, base, path, "", "", false, "")
+}
+
+func authed(
+    method: int,
+    base: string,
+    path: string,
+    token: string,
+    body: string,
+    with_json: bool) returns Response {
+    return send(method, base, path, token, body, with_json, "")
+}
+
+func expect(response: Response, status: int, code: int) returns int {
+    if response_status(response) != status {
+        return code
+    }
+    return 0
+}
+
+func expect_body(response: Response, needle: string, code: int) returns int {
+    if str.contains(response_body(response), needle) != true {
+        return code
+    }
+    return 0
+}
+
+func expect_no_body(response: Response, needle: string, code: int) returns int {
+    if str.contains(response_body(response), needle) == true {
+        return code
+    }
+    return 0
+}
+
+func json_field(body: string, key: string) returns string {
+    let root = json.parse(body)
+    if root == 0 {
+        return ""
+    }
+    let value = json.value_get(root, key)
+    let text  = ""
+    if value != 0 {
+        text = json.value_text(value)
+        json.value_free(value)
+    }
+    json.value_free(root)
+    return text
+}
+
+func credentials(username: string, password: string) returns string {
+    let body = str.builder_new(96)
+    str.builder_push(body, "{\"username\":\"")
+    str.builder_push(body, username)
+    str.builder_push(body, "\",\"password\":\"")
+    str.builder_push(body, password)
+    str.builder_push(body, "\"}")
+    return str.builder_finish(body)
+}
+
+func login(base: string, username: string, password: string) returns string {
+    let response = authed(
+        method_post(),
+        base,
+        "/auth/login",
+        "",
+        credentials(username, password),
+        true,
+    )
+    if response_status(response) != 200 {
+        return ""
+    }
+    return json_field(response_body(response), "token")
+}
+
+func add_item_body(product_id: int, quantity: int) returns string {
+    let body = str.builder_new(64)
+    str.builder_push(body, "{\"product_id\":")
+    str.builder_push(body, convert.int_to_string(product_id))
+    str.builder_push(body, ",\"quantity\":")
+    str.builder_push(body, convert.int_to_string(quantity))
+    str.builder_push(body, "}")
+    return str.builder_finish(body)
+}
+
+func add_item(
+    base: string,
+    token: string,
+    order_id: int,
+    product_id: int,
+    quantity: int,
+    method: int) returns Response {
+    let path = str.builder_new(64)
+    str.builder_push(path, "/orders/")
+    str.builder_push(path, convert.int_to_string(order_id))
+    str.builder_push(path, "/items")
+    return authed(
+        method,
+        base,
+        str.builder_finish(path),
+        token,
+        add_item_body(product_id, quantity),
+        true,
+    )
+}
+
+func action(base: string, token: string, order_id: int, verb: string) returns Response {
+    let path = str.builder_new(64)
+    str.builder_push(path, "/orders/")
+    str.builder_push(path, convert.int_to_string(order_id))
+    str.builder_push(path, "/")
+    str.builder_push(path, verb)
+    return authed(method_post(), base, str.builder_finish(path), token, "{}", true)
+}
+
+func order_path(order_id: int) returns string {
+    let path = str.builder_new(32)
+    str.builder_push(path, "/orders/")
+    str.builder_push(path, convert.int_to_string(order_id))
+    return str.builder_finish(path)
+}
+
+func product_path(product_id: int) returns string {
+    let path = str.builder_new(32)
+    str.builder_push(path, "/products/")
+    str.builder_push(path, convert.int_to_string(product_id))
+    return str.builder_finish(path)
+}
+
+public func run_all(base: string) returns int {
+    // Offline middleware composition first: it needs no network and fails
+    // fast when the platform chain regresses.
+    let chain = chain_checks.run()
+    if chain != 0 {
+        return 1000 + chain
+    }
+
+    // ---- Operational endpoints ------------------------------------------
+    let health       = plain(method_get(), base, "/health")
+    let health_check = expect(health, 200, 10)
+    if health_check != 0 {
+        return 10
+    }
+    if expect_body(health, "\"status\":\"ok\"", 11) != 0 {
+        return 11
+    }
+    let version = plain(method_get(), base, "/version")
+    if expect(version, 200, 12) != 0 {
+        return 12
+    }
+    if expect_body(version, "\"version\":\"1.0.0\"", 13) != 0 {
+        return 13
+    }
+    let openapi = plain(method_get(), base, "/openapi.json")
+    if expect(openapi, 200, 14) != 0 {
+        return 14
+    }
+    if expect_body(openapi, "\"/products\"", 15) != 0 {
+        return 15
+    }
+    if expect_body(openapi, "requestBody", 16) != 0 {
+        return 16
+    }
+    // `/metrics` is the platform's built-in Prometheus exposition (public).
+    let prometheus = plain(method_get(), base, "/metrics")
+    if expect(prometheus, 200, 17) != 0 {
+        return 17
+    }
+    if expect_body(prometheus, "spectra_http_requests_total", 18) != 0 {
+        return 18
+    }
+
+    // ---- Registration and login -----------------------------------------
+    if expect(
+        authed(method_post(), base, "/auth/register", "", credentials("customer1", "customer-one-pass"), true),
+        201,
+        20) != 0 {
+        return 20
+    }
+    if expect(
+        authed(method_post(), base, "/auth/register", "", credentials("customer1", "customer-one-pass"), true),
+        409,
+        21) != 0 {
+        return 21
+    }
+    if expect(
+        authed(method_post(), base, "/auth/register", "", credentials("customer1", "short"), true),
+        422,
+        22) != 0 {
+        return 22
+    }
+    if expect(
+        authed(method_post(), base, "/auth/login", "", credentials("customer1", "wrong-password"), true),
+        401,
+        23) != 0 {
+        return 23
+    }
+    let customer_token = login(base, "customer1", "customer-one-pass")
+    if customer_token == "" {
+        return 24
+    }
+    let me = authed(method_get(), base, "/me", customer_token, "", false)
+    if expect(me, 200, 25) != 0 {
+        return 25
+    }
+    if expect_body(me, "\"username\":\"customer1\"", 26) != 0 {
+        return 26
+    }
+    if expect(plain(method_get(), base, "/me"), 401, 27) != 0 {
+        return 27
+    }
+
+    // ---- Catalog reads ---------------------------------------------------
+    let catalog = plain(method_get(), base, "/products?per_page=2")
+    if expect(catalog, 200, 30) != 0 {
+        return 30
+    }
+    if expect_body(catalog, "KEYB-MECH-87", 31) != 0 {
+        return 31
+    }
+    if expect_body(catalog, "\"has_more\":true", 32) != 0 {
+        return 32
+    }
+    let search = plain(method_get(), base, "/products?q=Keyboard")
+    if expect(search, 200, 33) != 0 {
+        return 33
+    }
+    if expect_body(search, "KEYB-MECH-87", 34) != 0 {
+        return 34
+    }
+    if expect_no_body(search, "MOUSE-ERG-01", 35) != 0 {
+        return 35
+    }
+    let capped = plain(method_get(), base, "/products?per_page=999")
+    if expect(capped, 200, 36) != 0 {
+        return 36
+    }
+    if expect_body(capped, "\"per_page\":50", 37) != 0 {
+        return 37
+    }
+    if expect(plain(method_get(), base, "/products?page=abc"), 400, 38) != 0 {
+        return 38
+    }
+
+    // ---- Admin catalog writes -------------------------------------------
+    let admin_token = login(base, "admin", "admin-dev-password")
+    if admin_token == "" {
+        return 40
+    }
+    if expect(
+        authed(
+            method_post(),
+            base,
+            "/products",
+            customer_token,
+            "{\"sku\":\"NOPE-000\",\"title\":\"Nope\",\"category\":\"misc\",\"price_cents\":100,\"stock\":1}",
+            true),
+        403,
+        41) != 0 {
+        return 41
+    }
+    let created = authed(
+        method_post(),
+        base,
+        "/products",
+        admin_token,
+        str.concat("{\"sku\":\"", str.concat(WIDGET_SKU, "\",\"title\":\"Test Widget\",\"category\":\"accessories\",\"price_cents\":3300,\"stock\":5}")),
+        true)
+    if expect(created, 201, 42) != 0 {
+        return 42
+    }
+    if expect_body(created, "\"active\":true", 43) != 0 {
+        return 43
+    }
+    if expect(
+        authed(
+            method_post(),
+            base,
+            "/products",
+            admin_token,
+            str.concat("{\"sku\":\"", str.concat(WIDGET_SKU, "\",\"title\":\"Dup\",\"category\":\"accessories\",\"price_cents\":100,\"stock\":1}")),
+            true),
+        409,
+        44) != 0 {
+        return 44
+    }
+    if expect(
+        authed(
+            method_post(),
+            base,
+            "/products",
+            admin_token,
+            "{\"sku\":\"BAD-PRICE-1\",\"title\":\"Bad\",\"category\":\"accessories\",\"price_cents\":0,\"stock\":1}",
+            true),
+        422,
+        45) != 0 {
+        return 45
+    }
+    let widget_id = products_db.find_id(WIDGET_SKU)
+    if widget_id < 1 {
+        return 46
+    }
+    if expect(plain(method_get(), base, product_path(widget_id)), 200, 47) != 0 {
+        return 47
+    }
+    let updated = authed(
+        method_put(),
+        base,
+        product_path(widget_id),
+        admin_token,
+        "{\"title\":\"Test Widget\",\"category\":\"accessories\",\"price_cents\":3300,\"stock\":5,\"active\":true}",
+        true)
+    if expect(updated, 200, 48) != 0 {
+        return 48
+    }
+    if expect_body(updated, "\"stock\":5", 49) != 0 {
+        return 49
+    }
+
+    // ---- Checkout lifecycle ---------------------------------------------
+    let draft = authed(
+        method_post(),
+        base,
+        "/orders",
+        customer_token,
+        "{\"note\":\"selftest\"}",
+        true,
+    )
+    if expect(draft, 201, 50) != 0 {
+        return 50
+    }
+    if expect_body(draft, "\"status\":\"draft\"", 51) != 0 {
+        return 51
+    }
+    let order_id = orders_db.last_id_for("customer1")
+    if order_id < 1 {
+        return 52
+    }
+    let line_item = add_item(base, customer_token, order_id, widget_id, 2, method_post())
+    if expect(line_item, 200, 53) != 0 {
+        return 53
+    }
+    if expect_body(line_item, "\"quantity\":2", 54) != 0 {
+        return 54
+    }
+    if expect_body(line_item, "\"total_cents\":6600", 55) != 0 {
+        return 55
+    }
+    // Stock is still untouched while the order is a draft.
+    if expect_body(plain(method_get(), base, product_path(widget_id)), "\"stock\":5", 56) != 0 {
+        return 56
+    }
+    if expect(add_item(base, customer_token, order_id, widget_id, 0, method_post()), 422, 57) != 0 {
+        return 57
+    }
+    let removed = add_item(base, customer_token, order_id, widget_id, 0, method_put())
+    if expect(removed, 200, 58) != 0 {
+        return 58
+    }
+    if expect_body(removed, "\"items\":[]", 59) != 0 {
+        return 59
+    }
+    if expect(add_item(base, customer_token, order_id, widget_id, 2, method_post()), 200, 60) != 0 {
+        return 60
+    }
+    if expect(action(base, customer_token, order_id, "submit"), 200, 61) != 0 {
+        return 61
+    }
+    // Submitting reserved the stock (5 - 2).
+    if expect_body(plain(method_get(), base, product_path(widget_id)), "\"stock\":3", 62) != 0 {
+        return 62
+    }
+
+    // A second draft cannot be submitted beyond available stock.
+    let draft2 = authed(method_post(), base, "/orders", customer_token, "{}", true)
+    if expect(draft2, 201, 63) != 0 {
+        return 63
+    }
+    let order2_id = orders_db.last_id_for("customer1")
+    if expect(add_item(base, customer_token, order2_id, widget_id, 99, method_post()), 200, 64) != 0 {
+        return 64
+    }
+    if expect(action(base, customer_token, order2_id, "submit"), 409, 65) != 0 {
+        return 65
+    }
+    if expect(action(base, customer_token, order2_id, "cancel"), 200, 66) != 0 {
+        return 66
+    }
+    // The failed submit reserved nothing and the draft cancel restocked
+    // nothing: the reservation from order 1 is untouched.
+    if expect_body(plain(method_get(), base, product_path(widget_id)), "\"stock\":3", 67) != 0 {
+        return 67
+    }
+
+    // ---- Payment, shipping, and invalid transitions ----------------------
+    if expect(action(base, customer_token, order_id, "pay"), 200, 70) != 0 {
+        return 70
+    }
+    if expect(action(base, customer_token, order_id, "ship"), 403, 71) != 0 {
+        return 71
+    }
+    if expect(action(base, admin_token, order_id, "ship"), 200, 72) != 0 {
+        return 72
+    }
+    if expect(action(base, admin_token, order_id, "cancel"), 409, 73) != 0 {
+        return 73
+    }
+    if expect(action(base, customer_token, order_id, "pay"), 409, 74) != 0 {
+        return 74
+    }
+    if expect(action(base, admin_token, order2_id, "ship"), 409, 75) != 0 {
+        return 75
+    }
+
+    // ---- Order listing scopes -------------------------------------------
+    let admin_orders = authed(method_get(), base, "/orders", admin_token, "", false)
+    if expect(admin_orders, 200, 80) != 0 {
+        return 80
+    }
+    if expect_body(admin_orders, "\"shipped\"", 81) != 0 {
+        return 81
+    }
+    if expect_body(admin_orders, "\"cancelled\"", 82) != 0 {
+        return 82
+    }
+    let filtered = authed(
+        method_get(),
+        base,
+        "/orders?status=shipped&customer=customer1",
+        admin_token,
+        "",
+        false,
+    )
+    if expect(filtered, 200, 83) != 0 {
+        return 83
+    }
+    if expect_no_body(filtered, "\"cancelled\"", 84) != 0 {
+        return 84
+    }
+    if expect(
+        authed(method_get(), base, "/orders?status=bogus", customer_token, "", false),
+        400,
+        85) != 0 {
+        return 85
+    }
+
+    // ---- Cross-customer isolation ---------------------------------------
+    if expect(
+        authed(method_post(), base, "/auth/register", "", credentials("customer2", "customer-two-pass"), true),
+        201,
+        90) != 0 {
+        return 90
+    }
+    let customer2_token = login(base, "customer2", "customer-two-pass")
+    if customer2_token == "" {
+        return 91
+    }
+    if expect(authed(method_get(), base, order_path(order_id), customer2_token, "", false), 403, 92) != 0 {
+        return 92
+    }
+    let own_orders = authed(method_get(), base, "/orders", customer2_token, "", false)
+    if expect(own_orders, 200, 93) != 0 {
+        return 93
+    }
+    if expect_body(own_orders, "\"items\":[]", 94) != 0 {
+        return 94
+    }
+
+    // ---- Not found -------------------------------------------------------
+    if expect(plain(method_get(), base, "/products/999999"), 404, 95) != 0 {
+        return 95
+    }
+    if expect(authed(method_get(), base, "/orders/999999", admin_token, "", false), 404, 96) != 0 {
+        return 96
+    }
+    if expect(plain(method_get(), base, "/does-not-exist"), 404, 97) != 0 {
+        return 97
+    }
+
+    // ---- CORS and security headers on the live path ----------------------
+    let live_cors = send(method_get(), base, "/products", "", "", false, ORIGIN)
+    if expect(live_cors, 200, 100) != 0 {
+        return 100
+    }
+    if response_header(live_cors, "access-control-allow-origin") != ORIGIN {
+        return 101
+    }
+    if response_header(live_cors, "x-content-type-options") != "nosniff" {
+        return 102
+    }
+    let preflight = send(method_options(), base, "/products", "", "", false, ORIGIN)
+    if response_status(preflight) != 200 and response_status(preflight) != 204 {
+        return 103
+    }
+    if response_header(preflight, "access-control-allow-origin") != ORIGIN {
+        return 104
+    }
+    if str.len(response_header(preflight, "access-control-allow-methods")) <= 0 {
+        return 105
+    }
+
+    // ---- Business stats role gate ---------------------------------------
+    let stats_admin = authed(method_get(), base, "/stats", admin_token, "", false)
+    if expect(stats_admin, 200, 110) != 0 {
+        return 110
+    }
+    if expect_body(stats_admin, "\"orders_by_status\"", 111) != 0 {
+        return 111
+    }
+    if expect(authed(method_get(), base, "/stats", customer_token, "", false), 403, 112) != 0 {
+        return 112
+    }
+
+    // ---- Logout revokes the session -------------------------------------
+    if expect(authed(method_post(), base, "/auth/logout", customer2_token, "", false), 204, 120) != 0 {
+        return 120
+    }
+    if expect(authed(method_get(), base, "/me", customer2_token, "", false), 401, 121) != 0 {
+        return 121
+    }
+    if response_body_len(health) <= 0 {
+        return 122
+    }
+    return 0
+}

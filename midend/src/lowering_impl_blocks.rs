@@ -700,11 +700,15 @@ impl ASTLowering {
                     }
                 }
                 StatementKind::Expression(expr) => {
-                    self.collect_assigned_variables_in_expr(expr, &mut assigned);
+                    assigned.extend(
+                        self.collect_assigned_variables_in_expr_with_types(expr, hints),
+                    );
                 }
                 StatementKind::Return(ret) => {
                     if let Some(value) = &ret.value {
-                        self.collect_assigned_variables_in_expr(value, &mut assigned);
+                        assigned.extend(
+                            self.collect_assigned_variables_in_expr_with_types(value, hints),
+                        );
                     }
                 }
                 _ => {}
@@ -712,6 +716,161 @@ impl ASTLowering {
         }
 
         self.variable_types.pop_scope();
+        assigned
+    }
+
+    /// Hint-aware twin of [`Self::collect_assigned_variables_in_expr`] used
+    /// by the promoted-slot pre-pass. Plain `if`/`unless`/`match` are
+    /// expressions in this AST, so assignments inside their bodies are only
+    /// reachable through expression traversal; without this pass a `bool`
+    /// local assigned inside an `if` body never receives a `Bool` slot hint,
+    /// is promoted to an `Int` slot, and panics in the Cranelift frontend
+    /// when the real value type is stored.
+    pub(crate) fn collect_assigned_variables_in_expr_with_types(
+        &mut self,
+        expr: &Expression,
+        hints: &mut std::collections::HashMap<String, IRType>,
+    ) -> std::collections::HashSet<String> {
+        use std::collections::HashSet;
+        let mut assigned = HashSet::new();
+        match &expr.kind {
+            ExpressionKind::Block(block)
+            | ExpressionKind::DifferentiableBlock(block)
+            | ExpressionKind::AsyncBlock(block) => {
+                assigned.extend(self.find_assigned_variables_with_types(&block.statements, hints));
+            }
+            ExpressionKind::Binary { left, right, .. } => {
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(left, hints));
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(right, hints));
+            }
+            ExpressionKind::Unary { operand, .. }
+            | ExpressionKind::Try(operand)
+            | ExpressionKind::Await(operand)
+            | ExpressionKind::Grouping(operand) => {
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(operand, hints));
+            }
+            ExpressionKind::Range { start, end, .. } => {
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(start, hints));
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(end, hints));
+            }
+            ExpressionKind::Call { callee, arguments } => {
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(callee, hints));
+                for argument in arguments {
+                    assigned
+                        .extend(self.collect_assigned_variables_in_expr_with_types(argument, hints));
+                }
+            }
+            ExpressionKind::If {
+                condition,
+                then_block,
+                elif_blocks,
+                else_block,
+            } => {
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(condition, hints));
+                assigned.extend(self.find_assigned_variables_with_types(&then_block.statements, hints));
+                for (condition, block) in elif_blocks {
+                    assigned.extend(self.collect_assigned_variables_in_expr_with_types(condition, hints));
+                    assigned
+                        .extend(self.find_assigned_variables_with_types(&block.statements, hints));
+                }
+                if let Some(else_block) = else_block {
+                    assigned.extend(
+                        self.find_assigned_variables_with_types(&else_block.statements, hints),
+                    );
+                }
+            }
+            ExpressionKind::Unless {
+                condition,
+                then_block,
+                else_block,
+            } => {
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(condition, hints));
+                assigned.extend(self.find_assigned_variables_with_types(&then_block.statements, hints));
+                if let Some(else_block) = else_block {
+                    assigned.extend(
+                        self.find_assigned_variables_with_types(&else_block.statements, hints),
+                    );
+                }
+            }
+            ExpressionKind::ArrayLiteral { elements }
+            | ExpressionKind::TupleLiteral { elements } => {
+                for element in elements {
+                    assigned
+                        .extend(self.collect_assigned_variables_in_expr_with_types(element, hints));
+                }
+            }
+            ExpressionKind::IndexAccess { array, index } => {
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(array, hints));
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(index, hints));
+            }
+            ExpressionKind::TupleAccess { tuple, .. } => {
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(tuple, hints));
+            }
+            ExpressionKind::StructLiteral { fields, .. } => {
+                for (_, value) in fields {
+                    assigned
+                        .extend(self.collect_assigned_variables_in_expr_with_types(value, hints));
+                }
+            }
+            ExpressionKind::FieldAccess { object, .. } => {
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(object, hints));
+            }
+            ExpressionKind::EnumVariant {
+                data, struct_data, ..
+            } => {
+                if let Some(values) = data {
+                    for value in values {
+                        assigned
+                            .extend(self.collect_assigned_variables_in_expr_with_types(value, hints));
+                    }
+                }
+                if let Some(fields) = struct_data {
+                    for (_, value) in fields {
+                        assigned
+                            .extend(self.collect_assigned_variables_in_expr_with_types(value, hints));
+                    }
+                }
+            }
+            ExpressionKind::Match { scrutinee, arms } => {
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(scrutinee, hints));
+                for arm in arms {
+                    if let Some(guard) = &arm.guard {
+                        assigned
+                            .extend(self.collect_assigned_variables_in_expr_with_types(guard, hints));
+                    }
+                    assigned
+                        .extend(self.collect_assigned_variables_in_expr_with_types(&arm.body, hints));
+                }
+            }
+            ExpressionKind::MethodCall {
+                object, arguments, ..
+            } => {
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(object, hints));
+                for argument in arguments {
+                    assigned
+                        .extend(self.collect_assigned_variables_in_expr_with_types(argument, hints));
+                }
+            }
+            ExpressionKind::Lambda { body, .. } => {
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(body, hints));
+            }
+            ExpressionKind::Cast { expr, .. } => {
+                assigned.extend(self.collect_assigned_variables_in_expr_with_types(expr, hints));
+            }
+            ExpressionKind::FString(parts) => {
+                for part in parts {
+                    if let spectra_compiler::ast::FStringPart::Interpolated(expr) = part {
+                        assigned
+                            .extend(self.collect_assigned_variables_in_expr_with_types(expr, hints));
+                    }
+                }
+            }
+            ExpressionKind::Identifier(_)
+            | ExpressionKind::NumberLiteral(_)
+            | ExpressionKind::StringLiteral(_)
+            | ExpressionKind::BoolLiteral(_)
+            | ExpressionKind::CharLiteral(_) => {}
+        }
         assigned
     }
 

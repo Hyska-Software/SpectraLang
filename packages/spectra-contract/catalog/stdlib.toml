@@ -6471,6 +6471,25 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
+path = "std.api.http.response_body"
+kind = "function"
+namespace = "std.api.http"
+signature = "fn(Response) -> string"
+params = [{ name = "arg0", ty = "Response" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+rust_symbol = "http::response_body"
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.api.http.response_body"
+maturity = "stable"
+owner = "web"
+docs = "docs/api/std-api-http-types.md"
+fixture = "tests/validation/134_http_core_types.spectra"
+
+[[entry]]
 path = "std.api.http.response_body_len"
 kind = "function"
 namespace = "std.api.http"

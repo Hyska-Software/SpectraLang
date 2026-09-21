@@ -1,0 +1,32 @@
+module db.connection
+
+// Thin connection helpers. Every db module opens the database per call
+// (open/close inside the function): simple, correct under the server's
+// threaded dispatch, and sufficient for SQLite workloads. A connection pool
+// (`std.api.db.pool`) is the documented follow-up for higher concurrency.
+
+from std.api.db.sqlite import SqliteConnection
+import std.api.db.sqlite as sqlite
+
+public func connect(path: string) returns SqliteConnection {
+    return sqlite.open(path)
+}
+
+public func disconnect(db: SqliteConnection) returns bool {
+    return sqlite.close(db)
+}
+
+// Cheap liveness probe used by /health.
+public func ping(path: string) returns bool {
+    let db: SqliteConnection = sqlite.open(path)
+    let stmt                 = sqlite.prepare(db, "SELECT 1")
+    let alive                = false
+    if sqlite.step(stmt) == 1 {
+        alive = sqlite.column_int(stmt, 0) == 1
+    }
+    sqlite.finalize(stmt)
+    if sqlite.close(db) != true {
+        return false
+    }
+    return alive
+}

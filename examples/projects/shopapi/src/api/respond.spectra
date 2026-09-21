@@ -1,0 +1,56 @@
+module api.respond
+
+// Success-path response construction and the pagination envelope shared by
+// list endpoints.
+
+from std.api.http import Response
+import std.api.handler as handler
+
+import std.convert as convert
+import std.string as str
+
+public func json_status(status: int, body: string) returns Response {
+    return handler.with_header(
+        handler.with_status(handler.json(body), status),
+        "Content-Type",
+        "application/json")
+}
+
+public func ok(body: string) returns Response {
+    return json_status(200, body)
+}
+
+public func created(body: string) returns Response {
+    return json_status(201, body)
+}
+
+public func no_content() returns Response {
+    return handler.status(204)
+}
+
+// `items_json` is an already-encoded JSON array (SQL JSON1 or a builder).
+public func page_envelope(
+    items_json: string,
+    page: int,
+    per_page: int,
+    total: int
+) returns string {
+    let has_more  = page * per_page < total
+    let more_text = "false"
+    if has_more == true {
+        more_text = "true"
+    }
+    let envelope = str.builder_new(256)
+    str.builder_push(envelope, "{\"items\":")
+    str.builder_push(envelope, items_json)
+    str.builder_push(envelope, ",\"page\":")
+    str.builder_push(envelope, convert.int_to_string(page))
+    str.builder_push(envelope, ",\"per_page\":")
+    str.builder_push(envelope, convert.int_to_string(per_page))
+    str.builder_push(envelope, ",\"total\":")
+    str.builder_push(envelope, convert.int_to_string(total))
+    str.builder_push(envelope, ",\"has_more\":")
+    str.builder_push(envelope, more_text)
+    str.builder_push(envelope, "}")
+    return str.builder_finish(envelope)
+}

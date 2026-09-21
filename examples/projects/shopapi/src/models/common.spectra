@@ -1,0 +1,33 @@
+module models.common
+
+// Outcome is the service-layer result contract: handlers translate it into
+// an HTTP response without re-checking business rules.
+
+public record Outcome {
+    public ok: bool,
+    public status: int,
+    public code: string,
+    public detail: string,
+    // Numeric payload: created/updated row id, or total cents where useful.
+    public value: int,
+}
+
+public func success(status: int, value: int) returns Outcome {
+    return Outcome {
+        ok: true,
+        status: status,
+        code: "",
+        detail: "",
+        value: value,
+    }
+}
+
+public func failure(status: int, code: string, detail: string) returns Outcome {
+    return Outcome {
+        ok: false,
+        status: status,
+        code: code,
+        detail: detail,
+        value: 0,
+    }
+}

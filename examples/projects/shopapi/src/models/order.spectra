@@ -1,0 +1,87 @@
+module models.order
+
+// Order wire records and the order state machine. Status travels as an int
+// in SQLite and as a lowercase string on the wire:
+//   draft -> submitted -> paid -> shipped
+//   draft | submitted | paid -> cancelled (stock restored when reserved)
+
+#[derive(Serialize, Deserialize)]
+public record ItemRequest {
+    public product_id: int,
+    public quantity: int,
+}
+
+#[derive(Serialize, Deserialize)]
+public record NoteRequest {
+    #[json(optional)]
+    public note: string,
+}
+
+public record OrderRecord {
+    public id: int,
+    public customer: string,
+    public status: int,
+    public note: string,
+    public total_cents: int,
+    public created_at: int,
+    public updated_at: int,
+}
+
+public func status_draft() returns int {
+    return 0
+}
+
+public func status_submitted() returns int {
+    return 1
+}
+
+public func status_paid() returns int {
+    return 2
+}
+
+public func status_shipped() returns int {
+    return 3
+}
+
+public func status_cancelled() returns int {
+    return 4
+}
+
+public func status_name(status: int) returns string {
+    if status == 0 {
+        return "draft"
+    }
+    if status == 1 {
+        return "submitted"
+    }
+    if status == 2 {
+        return "paid"
+    }
+    if status == 3 {
+        return "shipped"
+    }
+    if status == 4 {
+        return "cancelled"
+    }
+    return "unknown"
+}
+
+// Returns -1 for an unknown status name, which query handling maps to 400.
+public func status_from_name(name: string) returns int {
+    if name == "draft" {
+        return 0
+    }
+    if name == "submitted" {
+        return 1
+    }
+    if name == "paid" {
+        return 2
+    }
+    if name == "shipped" {
+        return 3
+    }
+    if name == "cancelled" {
+        return 4
+    }
+    return 0 - 1
+}

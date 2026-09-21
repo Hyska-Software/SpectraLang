@@ -1,0 +1,105 @@
+module api.handlers.auth
+
+// Registration, login, session introspection, and logout.
+
+from std.api.http import Request, Response, request_body
+from std.api.validation import ValidationResult, ValidationSchema, field, max_length, min_length, regex, result_ok, result_response, schema, validate_json
+import std.time as time
+
+from models.user import AuthCheck, Credentials, SessionOut, UserOut, UserRecord
+import api.middleware as mw
+import api.problem as problem
+
+import api.respond as respond
+
+import db.sessions as sessions_db
+import db.users as users_db
+import services.tokens as tokens
+
+func credentials_schema() returns ValidationSchema {
+    let s0 = schema()
+    let s1 = field(s0, "username", 1, true)
+    let s2 = regex(s1, "username", "^[a-z0-9_]{3,32}$")
+    let s3 = field(s2, "password", 1, true)
+    let s4 = min_length(s3, "password", 8)
+    return max_length(s4, "password", 72)
+}
+
+func login_schema() returns ValidationSchema {
+    let s0 = schema()
+    let s1 = field(s0, "username", 1, true)
+    return field(s1, "password", 1, true)
+}
+
+func user_json(user_id: int, username: string, role: string, created_at: int) returns string {
+    let out = UserOut {
+        id: user_id,
+        username: username,
+        role: role,
+        created_at: created_at,
+    }
+    return out.to_json()
+}
+
+public func register(req: Request) returns Response {
+    let body                     = request_body(req)
+    let result: ValidationResult = validate_json(credentials_schema(), body)
+    if result_ok(result) != true {
+        return mw.finish(req, result_response(result))
+    }
+    let credentials: Credentials = Credentials::from_json(body)
+    let now                      = time.time_now_secs()
+    let hash                     = tokens.password_hash(credentials.password)
+    let id                       = users_db.create(credentials.username, hash, "customer", now)
+    if id == 0 - 1 {
+        return mw.finish(req, problem.conflict("username already registered"))
+    }
+    if id <= 0 {
+        return mw.finish(req, problem.internal_error("could not create the account"))
+    }
+    return mw.finish(req, respond.created(user_json(id, credentials.username, "customer", now)))
+}
+
+public func login(req: Request) returns Response {
+    let body                     = request_body(req)
+    let result: ValidationResult = validate_json(login_schema(), body)
+    if result_ok(result) != true {
+        return mw.finish(req, result_response(result))
+    }
+    let credentials: Credentials = Credentials::from_json(body)
+    let user                     = users_db.find(credentials.username)
+    if user.id == 0 {
+        return mw.finish(req, problem.unauthorized("invalid username or password"))
+    }
+    if tokens.verify_password(credentials.password, user.password_hash) != true {
+        return mw.finish(req, problem.unauthorized("invalid username or password"))
+    }
+    let now = time.time_now_secs()
+    sessions_db.purge_expired(now)
+    let session: SessionOut = tokens.issue(user.username, user.role, now)
+    if session.token == "" {
+        return mw.finish(req, problem.internal_error("could not issue a session"))
+    }
+    return mw.finish(req, respond.ok(session.to_json()))
+}
+
+public func me(req: Request) returns Response {
+    let auth: AuthCheck = tokens.authenticate(req)
+    if auth.ok != true {
+        return mw.finish(req, problem.respond(auth.status, auth.code, auth.detail))
+    }
+    let user = users_db.find(auth.username)
+    if user.id == 0 {
+        return mw.finish(req, problem.unauthorized("the account no longer exists"))
+    }
+    return mw.finish(req, respond.ok(user_json(user.id, user.username, user.role, user.created_at)))
+}
+
+public func logout(req: Request) returns Response {
+    let auth: AuthCheck = tokens.authenticate(req)
+    if auth.ok != true {
+        return mw.finish(req, problem.respond(auth.status, auth.code, auth.detail))
+    }
+    tokens.logout(tokens.bearer_token(req))
+    return mw.finish(req, respond.no_content())
+}

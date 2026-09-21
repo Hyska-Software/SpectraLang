@@ -1,0 +1,266 @@
+module api.handlers.orders
+
+// Order HTTP surface. Every operation authenticates first; ownership and
+// state-machine rules live in `services.checkout` so handlers only translate
+// `Outcome` into responses.
+
+from std.api.http import Request, Response, request_body, request_path
+
+from std.api.query import Query, QueryBinding, QuerySchema, bind, binding_int, binding_ok, binding_value, has, parse, schema, schema_field, type_int, type_string
+from std.api.validation import ValidationResult, ValidationSchema, field, max_length, range, regex, result_ok, result_response, schema as validation_schema, validate_json
+
+from models.common import Outcome
+from models.order import ItemRequest, NoteRequest, OrderRecord, status_from_name
+from models.product import ProductSnapshot
+from models.user import AuthCheck
+
+import api.middleware as mw
+import api.params as params
+import api.problem as problem
+import api.respond as respond
+
+import db.orders as orders_db
+import services.checkout as checkout
+import services.tokens as tokens
+
+func note_schema() returns ValidationSchema {
+    let s0 = validation_schema()
+    let s1 = field(s0, "note", 1, false)
+    let s2 = max_length(s1, "note", 200)
+    return regex(s2, "note", "^[A-Za-z0-9 ,.'!?()_-]{0,200}$")
+}
+
+func add_item_schema() returns ValidationSchema {
+    let s0 = validation_schema()
+    let s1 = field(s0, "product_id", 2, true)
+    let s2 = range(s1, "product_id", 1, 1000000000)
+    let s3 = field(s2, "quantity", 2, true)
+    return range(s3, "quantity", 1, 99)
+}
+
+func set_item_schema() returns ValidationSchema {
+    let s0 = validation_schema()
+    let s1 = field(s0, "product_id", 2, true)
+    let s2 = range(s1, "product_id", 1, 1000000000)
+    let s3 = field(s2, "quantity", 2, true)
+    return range(s3, "quantity", 0, 99)
+}
+
+func list_schema() returns QuerySchema {
+    let s0 = schema()
+    let s1 = schema_field(s0, "status", type_string(), false, false)
+    let s2 = schema_field(s1, "customer", type_string(), false, false)
+    let s3 = schema_field(s2, "page", type_int(), false, false)
+    return schema_field(s3, "per_page", type_int(), false, false)
+}
+
+func guard(req: Request) returns AuthCheck {
+    return tokens.authenticate(req)
+}
+
+func denied(req: Request, auth: AuthCheck) returns Response {
+    return mw.finish(req, problem.respond(auth.status, auth.code, auth.detail))
+}
+
+func outcome_response(req: Request, outcome: Outcome, success_status: int, order_id: int) returns Response {
+    if outcome.ok != true {
+        return mw.finish(req, problem.respond(outcome.status, outcome.code, outcome.detail))
+    }
+    if success_status == 204 {
+        return mw.finish(req, respond.no_content())
+    }
+    return mw.finish(req, respond.json_status(success_status, orders_db.detail_json(order_id)))
+}
+
+public func create(req: Request) returns Response {
+    let auth = guard(req)
+    if auth.ok != true {
+        return denied(req, auth)
+    }
+    let body = request_body(req)
+    if body == "" {
+        body = "{}"
+    }
+    let result: ValidationResult = validate_json(note_schema(), body)
+    if result_ok(result) != true {
+        return mw.finish(req, result_response(result))
+    }
+    let request: NoteRequest = NoteRequest::from_json(body)
+    let outcome: Outcome     = checkout.create_order(auth.username, request.note)
+    if outcome.ok != true {
+        return mw.finish(req, problem.respond(outcome.status, outcome.code, outcome.detail))
+    }
+    return mw.finish(req, respond.created(orders_db.detail_json(outcome.value)))
+}
+
+public func list(req: Request) returns Response {
+    let auth = guard(req)
+    if auth.ok != true {
+        return denied(req, auth)
+    }
+    let parsed: Query         = parse(request_path(req))
+    let binding: QueryBinding = bind(parsed, list_schema())
+    if binding_ok(binding) != true {
+        return mw.finish(req, problem.bad_request("invalid order query parameters"))
+    }
+    let status = 0 - 1
+    if has(parsed, "status") {
+        status = status_from_name(binding_value(binding, "status", 0))
+        if status < 0 {
+            return mw.finish(req, problem.bad_request("unknown order status filter"))
+        }
+    }
+    let customer_filter = ""
+    if has(parsed, "customer") {
+        customer_filter = binding_value(binding, "customer", 0)
+    }
+    let page = 1
+    if has(parsed, "page") {
+        page = binding_int(binding, "page", 0)
+        if page < 1 {
+            page = 1
+        }
+    }
+    let per_page = 20
+    if has(parsed, "per_page") {
+        per_page = binding_int(binding, "per_page", 0)
+        if per_page < 1 {
+            per_page = 1
+        }
+        if per_page > 100 {
+            per_page = 100
+        }
+    }
+    let is_admin = tokens.is_admin(auth)
+    let scope    = auth.username
+    if is_admin == true and customer_filter != "" {
+        scope = customer_filter
+    }
+    let include_all = is_admin == true and customer_filter == ""
+    let items       = orders_db.list_json(include_all, scope, status, page, per_page)
+    let total       = orders_db.list_total(include_all, scope, status)
+    return mw.finish(req, respond.ok(respond.page_envelope(items, page, per_page, total)))
+}
+
+public func read(req: Request) returns Response {
+    let auth = guard(req)
+    if auth.ok != true {
+        return denied(req, auth)
+    }
+    let id = params.path_id(req)
+    if id < 1 {
+        return mw.finish(req, problem.not_found("order not found"))
+    }
+    let row = orders_db.row(id)
+    if row.id == 0 {
+        return mw.finish(req, problem.not_found("order not found"))
+    }
+    if tokens.is_admin(auth) != true and row.customer != auth.username {
+        return mw.finish(req, problem.forbidden("the order belongs to another customer"))
+    }
+    return mw.finish(req, respond.ok(orders_db.detail_json(id)))
+}
+
+public func add_item(req: Request) returns Response {
+    let auth = guard(req)
+    if auth.ok != true {
+        return denied(req, auth)
+    }
+    let order_id = params.parent_id(req)
+    if order_id < 1 {
+        return mw.finish(req, problem.not_found("order not found"))
+    }
+    let body                     = request_body(req)
+    let result: ValidationResult = validate_json(add_item_schema(), body)
+    if result_ok(result) != true {
+        return mw.finish(req, result_response(result))
+    }
+    let request: ItemRequest = ItemRequest::from_json(body)
+    let outcome: Outcome = checkout.add_item(
+        order_id,
+        request.product_id,
+        request.quantity,
+        auth.username,
+        tokens.is_admin(auth))
+    return outcome_response(req, outcome, 200, order_id)
+}
+
+public func set_item(req: Request) returns Response {
+    let auth = guard(req)
+    if auth.ok != true {
+        return denied(req, auth)
+    }
+    let order_id = params.parent_id(req)
+    if order_id < 1 {
+        return mw.finish(req, problem.not_found("order not found"))
+    }
+    let body                     = request_body(req)
+    let result: ValidationResult = validate_json(set_item_schema(), body)
+    if result_ok(result) != true {
+        return mw.finish(req, result_response(result))
+    }
+    let request: ItemRequest = ItemRequest::from_json(body)
+    let outcome: Outcome = checkout.add_item(
+        order_id,
+        request.product_id,
+        request.quantity,
+        auth.username,
+        tokens.is_admin(auth))
+    return outcome_response(req, outcome, 200, order_id)
+}
+
+public func submit(req: Request) returns Response {
+    let auth = guard(req)
+    if auth.ok != true {
+        return denied(req, auth)
+    }
+    let order_id = params.parent_id(req)
+    if order_id < 1 {
+        return mw.finish(req, problem.not_found("order not found"))
+    }
+    let outcome: Outcome = checkout.submit(order_id, auth.username, tokens.is_admin(auth))
+    return outcome_response(req, outcome, 200, order_id)
+}
+
+public func pay(req: Request) returns Response {
+    let auth = guard(req)
+    if auth.ok != true {
+        return denied(req, auth)
+    }
+    let order_id = params.parent_id(req)
+    if order_id < 1 {
+        return mw.finish(req, problem.not_found("order not found"))
+    }
+    let outcome: Outcome = checkout.pay(order_id, auth.username, tokens.is_admin(auth))
+    return outcome_response(req, outcome, 200, order_id)
+}
+
+public func ship(req: Request) returns Response {
+    let auth = guard(req)
+    if auth.ok != true {
+        return denied(req, auth)
+    }
+    let order_id = params.parent_id(req)
+    if order_id < 1 {
+        return mw.finish(req, problem.not_found("order not found"))
+    }
+    let outcome: Outcome = checkout.ship(order_id, auth.username, tokens.is_admin(auth))
+    return outcome_response(req, outcome, 200, order_id)
+}
+
+public func cancel(req: Request) returns Response {
+    let auth = guard(req)
+    if auth.ok != true {
+        return denied(req, auth)
+    }
+    let order_id = params.parent_id(req)
+    if order_id < 1 {
+        return mw.finish(req, problem.not_found("order not found"))
+    }
+    let outcome: Outcome = checkout.cancel(order_id, auth.username, tokens.is_admin(auth))
+    return outcome_response(req, outcome, 200, order_id)
+}
+
+public func preflight(req: Request) returns Response {
+    return mw.preflight(req)
+}

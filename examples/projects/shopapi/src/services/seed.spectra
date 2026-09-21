@@ -1,0 +1,22 @@
+module services.seed
+
+// Deterministic bootstrap data that cannot be expressed in SQL: the admin
+// account needs the runtime password hash. Catalog seed rows live in
+// migration 0003 because SQL can express them directly.
+
+import std.time as time
+import config
+import db.users as users_db
+import models.user
+
+import services.tokens as tokens
+
+public func ensure_admin() returns bool {
+    let existing = users_db.find("admin")
+    if existing.id > 0 {
+        return true
+    }
+    let hash = tokens.password_hash(config.admin_password())
+    let id   = users_db.create("admin", hash, "admin", time.time_now_secs())
+    return id > 0
+}

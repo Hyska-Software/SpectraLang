@@ -337,6 +337,7 @@ fn make_std_api_http(prefix: &str) -> ModuleExports {
             Type::String,
         ),
         ("response_body_len", vec![response.clone()], Type::Int),
+        ("response_body", vec![response.clone()], Type::String),
         ("header", vec![Type::String, Type::String], header.clone()),
         ("header_name", vec![header.clone()], Type::String),
         ("header_value", vec![header], Type::String),

@@ -297,6 +297,12 @@ mod tests {
             call("spectra.api.http.response_body_len", &[response]),
             (HOST_STATUS_SUCCESS, "client response".len() as i64)
         );
+        let (body_status, body_value) = call("spectra.api.http.response_body", &[response]);
+        assert_eq!(body_status, HOST_STATUS_SUCCESS);
+        assert_eq!(
+            read_spectra_string(body_value).expect("response body string"),
+            "client response"
+        );
 
         let mut server = server;
         server.shutdown().expect("client endpoint shutdown");

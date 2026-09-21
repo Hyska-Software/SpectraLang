@@ -1,0 +1,400 @@
+module db.products
+
+// Product persistence and catalog queries. Wire JSON is built by SQLite's
+// JSON1 functions (`json_object` / `json_group_array`), which escape user
+// text correctly by construction — no hand-rolled JSON escaping anywhere.
+
+from std.api.db.sqlite import SqliteConnection, SqliteStatement
+import std.api.db.sqlite as sqlite
+
+import std.convert as convert
+import std.string as str
+import config
+import db.connection as connection
+
+import models.product
+
+// Returns the new row id, -1 for a duplicate sku, 0 for other failures.
+public func create(
+    sku: string,
+    title: string,
+    category: string,
+    price_cents: int,
+    stock: int,
+    now: int) returns int {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let existing             = sqlite.prepare(db, "SELECT id FROM products WHERE sku = ?")
+    let duplicate            = false
+    if sqlite.bind_text(existing, 1, sku) == true {
+        if sqlite.step(existing) == 1 {
+            duplicate = true
+        }
+    }
+    sqlite.finalize(existing)
+    if duplicate == true {
+        connection.disconnect(db)
+        return 0 - 1
+    }
+
+    let insert = sqlite.prepare(
+        db,
+        "INSERT INTO products(sku, title, category, price_cents, stock, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)")
+    if sqlite.bind_text(insert, 1, sku) != true {
+        return 0
+    }
+    if sqlite.bind_text(insert, 2, title) != true {
+        return 0
+    }
+    if sqlite.bind_text(insert, 3, category) != true {
+        return 0
+    }
+    if sqlite.bind_int(insert, 4, price_cents) != true {
+        return 0
+    }
+    if sqlite.bind_int(insert, 5, stock) != true {
+        return 0
+    }
+    if sqlite.bind_int(insert, 6, now) != true {
+        return 0
+    }
+    if sqlite.bind_int(insert, 7, now) != true {
+        return 0
+    }
+    if sqlite.step(insert) != 2 {
+        sqlite.finalize(insert)
+        return 0
+    }
+    if sqlite.finalize(insert) != true {
+        return 0
+    }
+
+    let rowid  = sqlite.prepare(db, "SELECT last_insert_rowid()")
+    let new_id = 0
+    if sqlite.step(rowid) == 1 {
+        new_id = sqlite.column_int(rowid, 0)
+    }
+    sqlite.finalize(rowid)
+    if connection.disconnect(db) != true {
+        return 0
+    }
+    return new_id
+}
+
+// Returns 1 updated, -1 not found, 0 failure.
+public func update(
+    id: int,
+    title: string,
+    category: string,
+    price_cents: int,
+    stock: int,
+    active: bool,
+    now: int) returns int {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let existing             = exists_on(db, id)
+    if existing != true {
+        connection.disconnect(db)
+        return 0 - 1
+    }
+    let active_int = 0
+    if active == true {
+        active_int = 1
+    }
+    let stmt = sqlite.prepare(
+        db,
+        "UPDATE products SET title = ?, category = ?, price_cents = ?, stock = ?, active = ?, updated_at = ? WHERE id = ?")
+    if sqlite.bind_text(stmt, 1, title) != true {
+        return 0
+    }
+    if sqlite.bind_text(stmt, 2, category) != true {
+        return 0
+    }
+    if sqlite.bind_int(stmt, 3, price_cents) != true {
+        return 0
+    }
+    if sqlite.bind_int(stmt, 4, stock) != true {
+        return 0
+    }
+    if sqlite.bind_int(stmt, 5, active_int) != true {
+        return 0
+    }
+    if sqlite.bind_int(stmt, 6, now) != true {
+        return 0
+    }
+    if sqlite.bind_int(stmt, 7, id) != true {
+        return 0
+    }
+    if sqlite.step(stmt) != 2 {
+        sqlite.finalize(stmt)
+        return 0
+    }
+    if sqlite.finalize(stmt) != true {
+        return 0
+    }
+    if connection.disconnect(db) != true {
+        return 0
+    }
+    return 1
+}
+
+// Soft delete: 1 removed, -1 not found, 0 failure.
+public func soft_delete(id: int, now: int) returns int {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    if exists_on(db, id) != true {
+        connection.disconnect(db)
+        return 0 - 1
+    }
+    let stmt = sqlite.prepare(db, "UPDATE products SET active = 0, updated_at = ? WHERE id = ?")
+    if sqlite.bind_int(stmt, 1, now) != true {
+        return 0
+    }
+    if sqlite.bind_int(stmt, 2, id) != true {
+        return 0
+    }
+    if sqlite.step(stmt) != 2 {
+        sqlite.finalize(stmt)
+        return 0
+    }
+    if sqlite.finalize(stmt) != true {
+        return 0
+    }
+    if connection.disconnect(db) != true {
+        return 0
+    }
+    return 1
+}
+
+func exists_on(db: SqliteConnection, id: int) returns bool {
+    let query = sqlite.prepare(db, "SELECT 1 FROM products WHERE id = ?")
+    let found = false
+    if sqlite.bind_int(query, 1, id) == true {
+        if sqlite.step(query) == 1 {
+            found = true
+        }
+    }
+    sqlite.finalize(query)
+    return found
+}
+
+// Full snapshot for validation and stock operations inside a transaction.
+public func snapshot_on(db: SqliteConnection, id: int) returns ProductSnapshot {
+    let missing = ProductSnapshot {
+        id: 0,
+        sku: "",
+        title: "",
+        category: "",
+        price_cents: 0,
+        stock: 0,
+        active: false,
+    }
+    let query = sqlite.prepare(
+        db,
+        "SELECT id, sku, title, category, price_cents, stock, active FROM products WHERE id = ?")
+    if sqlite.bind_int(query, 1, id) != true {
+        return missing
+    }
+    let found = missing
+    if sqlite.step(query) == 1 {
+        let active_int = sqlite.column_int(query, 6)
+        let active     = false
+        if active_int == 1 {
+            active = true
+        }
+        found = ProductSnapshot {
+            id: sqlite.column_int(query, 0),
+            sku: sqlite.column_text(query, 1),
+            title: sqlite.column_text(query, 2),
+            category: sqlite.column_text(query, 3),
+            price_cents: sqlite.column_int(query, 4),
+            stock: sqlite.column_int(query, 5),
+            active: active,
+        }
+    }
+    sqlite.finalize(query)
+    return found
+}
+
+// Single product as wire JSON ("" when missing).
+public func detail_json(id: int) returns string {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let text                 = detail_json_on(db, id)
+    connection.disconnect(db)
+    return text
+}
+
+public func detail_json_on(db: SqliteConnection, id: int) returns string {
+    let query = sqlite.prepare(
+        db,
+        "SELECT json_object('id', id, 'sku', sku, 'title', title, 'category', category, 'price_cents', price_cents, 'stock', stock, 'active', json(CASE WHEN active = 1 THEN 'true' ELSE 'false' END)) FROM products WHERE id = ?")
+    if sqlite.bind_int(query, 1, id) != true {
+        return ""
+    }
+    let text = ""
+    if sqlite.step(query) == 1 {
+        text = sqlite.column_text(query, 0)
+    }
+    sqlite.finalize(query)
+    return text
+}
+
+func list_predicate(
+    q: string,
+    category: string,
+    include_inactive: bool) returns string {
+    let predicate = " WHERE 1 = 1"
+    if include_inactive != true {
+        predicate = str.concat(predicate, " AND active = 1")
+    }
+    if q != "" {
+        predicate = str.concat(predicate, " AND title LIKE ?")
+    }
+    if category != "" {
+        predicate = str.concat(predicate, " AND category = ?")
+    }
+    return predicate
+}
+
+func bind_list_filters(
+    stmt: SqliteStatement,
+    q: string,
+    category: string) returns bool {
+    let index = 1
+    if q != "" {
+        if sqlite.bind_text(stmt, index, str.concat("%", str.concat(q, "%"))) != true {
+            return false
+        }
+        index = index + 1
+    }
+    if category != "" {
+        if sqlite.bind_text(stmt, index, category) != true {
+            return false
+        }
+        index = index + 1
+    }
+    return true
+}
+
+public func list_total(q: string, category: string, include_inactive: bool) returns int {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let sql = str.concat(
+        "SELECT COUNT(*) FROM products",
+        list_predicate(q, category, include_inactive),
+    )
+    let stmt = sqlite.prepare(db, sql)
+    if bind_list_filters(stmt, q, category) != true {
+        sqlite.finalize(stmt)
+        return 0
+    }
+    let total = 0
+    if sqlite.step(stmt) == 1 {
+        total = sqlite.column_int(stmt, 0)
+    }
+    sqlite.finalize(stmt)
+    connection.disconnect(db)
+    return total
+}
+
+public func list_json(
+    q: string,
+    category: string,
+    include_inactive: bool,
+    page: int,
+    per_page: int) returns string {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let offset = (page - 1) * per_page
+    let base = "SELECT COALESCE(json_group_array(json_object('id', id, 'sku', sku, 'title', title, 'category', category, 'price_cents', price_cents, 'stock', stock, 'active', json(CASE WHEN active = 1 THEN 'true' ELSE 'false' END))), '[]') FROM products"
+    let sql = str.concat(base, list_predicate(q, category, include_inactive))
+    let ordered = str.concat(sql, " ORDER BY id")
+    let paged = str.concat(ordered, str.concat(" LIMIT ", convert.int_to_string(per_page)))
+    let windowed = str.concat(paged, str.concat(" OFFSET ", convert.int_to_string(offset)))
+    let stmt = sqlite.prepare(db, windowed)
+    if bind_list_filters(stmt, q, category) != true {
+        sqlite.finalize(stmt)
+        return ""
+    }
+    let text = ""
+    if sqlite.step(stmt) == 1 {
+        text = sqlite.column_text(stmt, 0)
+    }
+    sqlite.finalize(stmt)
+    connection.disconnect(db)
+    return text
+}
+
+public func decrease_stock_on(db: SqliteConnection, id: int, qty: int) returns bool {
+    let stmt = sqlite.prepare(
+        db,
+        "UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?",
+    )
+    if sqlite.bind_int(stmt, 1, qty) != true {
+        return false
+    }
+    if sqlite.bind_int(stmt, 2, id) != true {
+        return false
+    }
+    if sqlite.bind_int(stmt, 3, qty) != true {
+        return false
+    }
+    if sqlite.step(stmt) != 2 {
+        sqlite.finalize(stmt)
+        return false
+    }
+    return sqlite.finalize(stmt)
+}
+
+public func increase_stock_on(db: SqliteConnection, id: int, qty: int) returns bool {
+    let stmt = sqlite.prepare(db, "UPDATE products SET stock = stock + ? WHERE id = ?")
+    if sqlite.bind_int(stmt, 1, qty) != true {
+        return false
+    }
+    if sqlite.bind_int(stmt, 2, id) != true {
+        return false
+    }
+    if sqlite.step(stmt) != 2 {
+        sqlite.finalize(stmt)
+        return false
+    }
+    return sqlite.finalize(stmt)
+}
+
+// Row id for a sku (0 when absent); used by the self-test to resolve ids
+// deterministically without parsing response bodies.
+public func find_id(sku: string) returns int {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let query                = sqlite.prepare(db, "SELECT id FROM products WHERE sku = ?")
+    if sqlite.bind_text(query, 1, sku) != true {
+        return 0
+    }
+    let found = 0
+    if sqlite.step(query) == 1 {
+        found = sqlite.column_int(query, 0)
+    }
+    sqlite.finalize(query)
+    connection.disconnect(db)
+    return found
+}
+
+public func count() returns int {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let query                = sqlite.prepare(db, "SELECT COUNT(*) FROM products")
+    let total                = 0
+    if sqlite.step(query) == 1 {
+        total = sqlite.column_int(query, 0)
+    }
+    sqlite.finalize(query)
+    connection.disconnect(db)
+    return total
+}
+public func low_stock_count(threshold: int) returns int {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let query = sqlite.prepare(db, "SELECT COUNT(*) FROM products WHERE active = 1 AND stock <= ?")
+    if sqlite.bind_int(query, 1, threshold) != true {
+        return 0
+    }
+    let total = 0
+    if sqlite.step(query) == 1 {
+        total = sqlite.column_int(query, 0)
+    }
+    sqlite.finalize(query)
+    connection.disconnect(db)
+    return total
+}

@@ -1,0 +1,40 @@
+module db.migrate
+
+// Versioned migrations live in `migrations/` as paired
+// `<version>_<name>.up.sql` / `.down.sql` files. The platform migrator
+// applies pending versions in order and records checksums in the database,
+// so re-running is a no-op and drift is reported by `status_report`.
+
+from std.api.db.sqlite import SqliteConnection
+
+import std.api.db.migrate as migrate
+import std.api.db.sqlite as sqlite
+import std.string as str
+import config
+
+import db.connection as connection
+
+public func apply_all() returns int {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let applied              = migrate.apply_sqlite(db, config.migrations_dir())
+    if connection.disconnect(db) != true {
+        return 0 - 1
+    }
+    return applied
+}
+
+public func status_report() returns string {
+    let db: SqliteConnection = connection.connect(config.db_path())
+    let report               = migrate.status_sqlite(db, config.migrations_dir())
+    if connection.disconnect(db) != true {
+        return "unavailable"
+    }
+    // The host report is multi-line; the first line is the summary
+    // (`applied=N pending=N drift=N`) used by /health.
+    return str.split_first(report, "\n")
+}
+
+public func is_current() returns bool {
+    let summary = status_report()
+    return str.contains(summary, "pending=0") and str.contains(summary, "drift=0")
+}

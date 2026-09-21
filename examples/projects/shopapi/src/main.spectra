@@ -1,0 +1,115 @@
+module main
+
+// shopapi entry point. Modes via SHOPAPI_MODE (default "serve"):
+//   serve: apply pending migrations, bootstrap the admin account, and serve
+//          on SHOPAPI_PORT (default 8090) until interrupted.
+//   test:  point the configuration at an isolated database, boot on an
+//          ephemeral port and run the full end-to-end self-test; the exit
+//          code names the failing stage.
+// Usage:
+//   spectralang run examples/projects/shopapi
+//   SHOPAPI_MODE=test spectralang run examples/projects/shopapi
+
+import std.api.health as health
+import std.api.server as srv
+import std.convert as convert
+import std.env as env
+import std.fs as fs
+
+import std.io as io
+import std.option as option
+import std.result as result
+import std.string as str
+import std.time as time
+import api.wiring as wiring
+import config
+import db.migrate as migrate
+import selftest
+import services.seed as seed
+
+public func boot() returns int {
+    let applied = migrate.apply_all()
+    if applied < 0 {
+        io.println("migrations failed")
+        return 1
+    }
+    if migrate.is_current() != true {
+        io.println(str.concat("migrations incomplete: ", migrate.status_report()))
+        return 1
+    }
+    if seed.ensure_admin() != true {
+        io.println("admin bootstrap failed")
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    let mode = option.option_unwrap_or(env.env_get("SHOPAPI_MODE"), "serve")
+
+    if mode == "test" {
+        env.env_set("SHOPAPI_DB_PATH", "target/shopapi-test.db")
+        env.env_set("SHOPAPI_ADMIN_PASSWORD", "admin-dev-password")
+        let db_file = config.db_path()
+        if result.result_unwrap_or(fs.fs_exists(db_file), false) == true {
+            let removed = result.result_unwrap_or(fs.fs_remove(db_file), false)
+            if removed != true {
+                io.println("could not remove the previous test database")
+                return 1
+            }
+        }
+        if boot() != 0 {
+            return 1
+        }
+        let routes = wiring.build()
+        let server = srv.new()
+        if srv.listen(server, 0) != true {
+            io.println("listen failed")
+            return 2
+        }
+        if block_on(srv.serve(server, routes)) != 1 {
+            io.println("serve failed")
+            return 3
+        }
+        let base = str.concat("http://127.0.0.1:", convert.int_to_string(srv.local_port(server)))
+        let code = selftest.run_all(base)
+        if srv.shutdown(server) != true {
+            io.println("shutdown failed")
+            return 4
+        }
+        if code != 0 {
+            io.println(str.concat("shopapi selftest failed at stage ", convert.int_to_string(code)))
+            return 100 + code
+        }
+        io.println("shopapi selftest passed")
+        return 0
+    }
+
+    if boot() != 0 {
+        return 1
+    }
+    let routes = wiring.build()
+    let server = srv.new()
+    if srv.set_max_body_bytes(server, config.max_body_bytes()) != true {
+        io.println("could not configure the body limit")
+        return 1
+    }
+    let port = config.port()
+    if srv.listen(server, port) != true {
+        io.println("listen failed")
+        return 2
+    }
+    if block_on(srv.serve(server, routes)) != 1 {
+        io.println("serve failed")
+        return 3
+    }
+    if srv.state(server) != 2 {
+        io.println("server did not reach serving state")
+        return 4
+    }
+    health.startup_complete()
+    io.println(str.concat("shopapi serving on port ", convert.int_to_string(port)))
+    loop {
+        time.sleep_ms(60000)
+    }
+}

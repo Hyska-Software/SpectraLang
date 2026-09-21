@@ -1,0 +1,46 @@
+module models.product
+
+// Product wire records. `ProductWriteRequest` is the create contract (POST),
+// `ProductUpdateRequest` the full-replace contract (PUT) with the active
+// flag used for soft deletes.
+
+#[derive(Serialize, Deserialize)]
+public record ProductWriteRequest {
+    public sku: string,
+    public title: string,
+    public category: string,
+    public price_cents: int,
+    public stock: int,
+}
+
+#[derive(Serialize, Deserialize)]
+public record ProductUpdateRequest {
+    public title: string,
+    public category: string,
+    public price_cents: int,
+    public stock: int,
+    public active: bool,
+}
+
+#[derive(Serialize)]
+public record ProductOut {
+    public id: int,
+    public sku: string,
+    public title: string,
+    public category: string,
+    public price_cents: int,
+    public stock: int,
+    public active: bool,
+}
+
+// Database snapshot used by the checkout service. `id == 0` means "not
+// found"; a zero id can never be persisted because SQLite row ids start at 1.
+public record ProductSnapshot {
+    public id: int,
+    public sku: string,
+    public title: string,
+    public category: string,
+    public price_cents: int,
+    public stock: int,
+    public active: bool,
+}

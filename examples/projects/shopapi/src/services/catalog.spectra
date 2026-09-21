@@ -1,0 +1,63 @@
+module services.catalog
+
+// Catalog business rules on top of `db.products`: SKU uniqueness is a 409,
+// missing rows are 404, and everything else is a 500. Handlers only map
+// `Outcome` to responses.
+
+import std.time as time
+
+import db.products as products_db
+import models.common
+
+import models.product
+
+public func create_product(
+    sku: string,
+    title: string,
+    category: string,
+    price_cents: int,
+    stock: int) returns Outcome {
+    let id = products_db.create(sku, title, category, price_cents, stock, time.time_now_secs())
+    if id == 0 - 1 {
+        return failure(409, "conflict", "a product with this sku already exists")
+    }
+    if id <= 0 {
+        return failure(500, "internal_error", "could not create the product")
+    }
+    return success(201, id)
+}
+
+public func update_product(
+    id: int,
+    title: string,
+    category: string,
+    price_cents: int,
+    stock: int,
+    active: bool) returns Outcome {
+    let updated = products_db.update(
+        id,
+        title,
+        category,
+        price_cents,
+        stock,
+        active,
+        time.time_now_secs())
+    if updated == 0 - 1 {
+        return failure(404, "not_found", "product not found")
+    }
+    if updated != 1 {
+        return failure(500, "internal_error", "could not update the product")
+    }
+    return success(200, id)
+}
+
+public func delete_product(id: int) returns Outcome {
+    let removed = products_db.soft_delete(id, time.time_now_secs())
+    if removed == 0 - 1 {
+        return failure(404, "not_found", "product not found")
+    }
+    if removed != 1 {
+        return failure(500, "internal_error", "could not delete the product")
+    }
+    return success(204, id)
+}

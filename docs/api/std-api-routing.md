@@ -66,7 +66,11 @@ let id = match_param_int(hit, "id")
 
 Route registration is intentionally conservative. Literal, parameter, and
 wildcard patterns that can match the same method/path are rejected with a
-conflict message containing both patterns.
+conflict message containing both patterns. Two parameter segments can share
+the same edge only when their name and constraint match; distinct literal
+continuations under that shared edge are allowed, so
+`/orders/{id:\d+}/items` and `/orders/{id:\d+}/submit` coexist while
+`/users/{id}` and `/users/{name}` conflict.
 
 ```spectra
 let first = get(routes, "/users/{id}")

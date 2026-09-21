@@ -1,0 +1,204 @@
+module services.checkout
+
+// Order lifecycle. Every state change runs inside one SQLite transaction:
+// authorization and state checks, stock verification, the stock movement and
+// the status update either all commit or none do.
+//
+// State machine:
+//   draft -> submitted (reserves stock) -> paid -> shipped
+//   draft | submitted | paid -> cancelled (restores stock when reserved)
+//
+// Every operation takes the actor and the admin flag so ownership rules are
+// enforced in one place; handlers never inspect order rows for policy.
+
+from std.api.db.sqlite import SqliteConnection
+import std.api.db.sqlite as sqlite
+import std.string as str
+import std.time as time
+
+import config
+import db.connection as connection
+import db.orders as orders_db
+
+import db.products as products_db
+import models.common
+import models.order
+import models.product
+
+func rollback_and(opened: SqliteConnection, outcome: Outcome) returns Outcome {
+    sqlite.rollback(opened)
+    connection.disconnect(opened)
+    return outcome
+}
+
+func commit_and(opened: SqliteConnection, order_id: int) returns Outcome {
+    if sqlite.commit(opened) != true {
+        return rollback_and(opened, failure(500, "internal_error", "could not commit the order"))
+    }
+    connection.disconnect(opened)
+    return success(200, order_id)
+}
+
+public func create_order(customer: string, note: string) returns Outcome {
+    let id = orders_db.create(customer, note, time.time_now_secs())
+    if id <= 0 {
+        return failure(500, "internal_error", "could not create the order")
+    }
+    return success(201, id)
+}
+
+public func add_item(
+    order_id: int,
+    product_id: int,
+    quantity: int,
+    actor: string,
+    is_admin: bool) returns Outcome {
+    let opened: SqliteConnection = connection.connect(config.db_path())
+    if sqlite.begin(opened) != true {
+        connection.disconnect(opened)
+        return failure(500, "internal_error", "could not start a transaction")
+    }
+    let row = orders_db.row_on(opened, order_id)
+    if row.id == 0 {
+        return rollback_and(opened, failure(404, "not_found", "order not found"))
+    }
+    if is_admin != true and row.customer != actor {
+        return rollback_and(
+            opened,
+            failure(403, "forbidden", "the order belongs to another customer"),
+        )
+    }
+    if row.status != 0 {
+        return rollback_and(
+            opened,
+            failure(409, "conflict", "items can only change while the order is a draft"))
+    }
+    let product = products_db.snapshot_on(opened, product_id)
+    if product.id == 0 {
+        return rollback_and(opened, failure(404, "not_found", "product not found"))
+    }
+    if product.active != true {
+        return rollback_and(opened, failure(409, "conflict", "the product is no longer available"))
+    }
+    if orders_db.upsert_item_on(opened, order_id, product, quantity) != true {
+        return rollback_and(
+            opened,
+            failure(500, "internal_error", "could not persist the order item"),
+        )
+    }
+    orders_db.touch_total_on(opened, order_id)
+    return commit_and(opened, order_id)
+}
+
+public func submit(order_id: int, actor: string, is_admin: bool) returns Outcome {
+    let opened: SqliteConnection = connection.connect(config.db_path())
+    if sqlite.begin(opened) != true {
+        connection.disconnect(opened)
+        return failure(500, "internal_error", "could not start a transaction")
+    }
+    let row = orders_db.row_on(opened, order_id)
+    if row.id == 0 {
+        return rollback_and(opened, failure(404, "not_found", "order not found"))
+    }
+    if is_admin != true and row.customer != actor {
+        return rollback_and(
+            opened,
+            failure(403, "forbidden", "the order belongs to another customer"),
+        )
+    }
+    if row.status != 0 {
+        return rollback_and(opened, failure(409, "conflict", "only a draft order can be submitted"))
+    }
+    if row.total_cents <= 0 {
+        return rollback_and(opened, failure(409, "conflict", "the order has no items"))
+    }
+    let insufficient = orders_db.insufficient_titles_on(opened, order_id)
+    if insufficient != "" {
+        return rollback_and(
+            opened,
+            failure(409, "conflict", str.concat("insufficient stock for: ", insufficient)))
+    }
+    if orders_db.reserve_stock_on(opened, order_id) != true {
+        return rollback_and(opened, failure(500, "internal_error", "could not reserve stock"))
+    }
+    if orders_db.set_status_on(opened, order_id, 1, time.time_now_secs()) != true {
+        return rollback_and(opened, failure(500, "internal_error", "could not update the order"))
+    }
+    return commit_and(opened, order_id)
+}
+
+public func pay(order_id: int, actor: string, is_admin: bool) returns Outcome {
+    return transition(order_id, actor, is_admin, 1, 2, "only a submitted order can be paid")
+}
+
+public func ship(order_id: int, actor: string, is_admin: bool) returns Outcome {
+    if is_admin != true {
+        return failure(403, "forbidden", "shipping requires the admin role")
+    }
+    return transition(order_id, actor, is_admin, 2, 3, "only a paid order can be shipped")
+}
+
+public func cancel(order_id: int, actor: string, is_admin: bool) returns Outcome {
+    let opened: SqliteConnection = connection.connect(config.db_path())
+    if sqlite.begin(opened) != true {
+        connection.disconnect(opened)
+        return failure(500, "internal_error", "could not start a transaction")
+    }
+    let row = orders_db.row_on(opened, order_id)
+    if row.id == 0 {
+        return rollback_and(opened, failure(404, "not_found", "order not found"))
+    }
+    if is_admin != true and row.customer != actor {
+        return rollback_and(
+            opened,
+            failure(403, "forbidden", "the order belongs to another customer"),
+        )
+    }
+    if row.status == 4 {
+        return rollback_and(opened, failure(409, "conflict", "the order is already cancelled"))
+    }
+    if row.status == 3 {
+        return rollback_and(opened, failure(409, "conflict", "a shipped order cannot be cancelled"))
+    }
+    if row.status >= 1 {
+        if orders_db.restock_on(opened, order_id) != true {
+            return rollback_and(opened, failure(500, "internal_error", "could not restore stock"))
+        }
+    }
+    if orders_db.set_status_on(opened, order_id, 4, time.time_now_secs()) != true {
+        return rollback_and(opened, failure(500, "internal_error", "could not update the order"))
+    }
+    return commit_and(opened, order_id)
+}
+
+// Shared submitted->paid and paid->shipped transition.
+func transition(
+    order_id: int,
+    actor: string,
+    is_admin: bool,
+    from_status: int,
+    to_status: int,
+    conflict_detail: string) returns Outcome {
+    let opened: SqliteConnection = connection.connect(config.db_path())
+    if sqlite.begin(opened) != true {
+        connection.disconnect(opened)
+        return failure(500, "internal_error", "could not start a transaction")
+    }
+    let row = orders_db.row_on(opened, order_id)
+    if row.id == 0 {
+        return rollback_and(opened, failure(404, "not_found", "order not found"))
+    }
+    if is_admin != true and row.customer != actor {
+        return rollback_and(
+            opened,
+            failure(403, "forbidden", "the order belongs to another customer"),
+        )
+    }
+    if row.status != from_status {
+        return rollback_and(opened, failure(409, "conflict", conflict_detail))
+    }
+    if orders_db.set_status_on(opened, order_id, to_status, time.time_now_secs()) != true {
+        return rollback_and(opened, failure(500, "internal_error", "could not update the order"))
+    }
+    return commit_and(opened, order_id)
+}

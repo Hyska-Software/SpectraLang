@@ -703,6 +703,10 @@ pub const STD_API_PUBLIC_FUNCTIONS: &[(&str, &str)] = &[
         "std.api.http.response_body_len",
         "func(Response) returns int",
     ),
+    (
+        "std.api.http.response_body",
+        "func(Response) returns string",
+    ),
     ("std.api.http.header", "func(string, string) returns Header"),
     ("std.api.http.header_name", "func(Header) returns string"),
     ("std.api.http.header_value", "func(Header) returns string"),

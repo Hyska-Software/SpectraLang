@@ -219,6 +219,7 @@ func std.api.http.response_new: func(int) returns Response
 func std.api.http.response_status: func(Response) returns int
 func std.api.http.response_header: func(Response, string) returns string
 func std.api.http.response_body_len: func(Response) returns int
+func std.api.http.response_body: func(Response) returns string
 func std.api.http.header: func(string, string) returns Header
 func std.api.http.header_name: func(Header) returns string
 func std.api.http.header_value: func(Header) returns string

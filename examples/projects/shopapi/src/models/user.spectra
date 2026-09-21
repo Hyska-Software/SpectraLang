@@ -1,0 +1,56 @@
+module models.user
+
+// User-facing wire records and the authorization result carried between the
+// token service and the handlers. All records are public with public fields
+// because they cross module boundaries.
+
+#[derive(Serialize, Deserialize)]
+public record Credentials {
+    public username: string,
+    public password: string,
+}
+
+#[derive(Serialize)]
+public record UserOut {
+    public id: int,
+    public username: string,
+    public role: string,
+    public created_at: int,
+}
+
+#[derive(Serialize)]
+public record SessionOut {
+    public token: string,
+    public token_type: string,
+    public expires_in: int,
+    public username: string,
+    public role: string,
+}
+
+// Database row for a user, including the secret material. Never serialized
+// directly; handlers map it to `UserOut`.
+public record UserRecord {
+    public id: int,
+    public username: string,
+    public password_hash: string,
+    public role: string,
+    public created_at: int,
+}
+
+// Database row for an issued session.
+public record SessionRecord {
+    public username: string,
+    public role: string,
+    public expires_at: int,
+}
+
+// Result of authenticating a request. `ok == false` carries the HTTP status
+// and RFC 7807 problem code the handler must return verbatim.
+public record AuthCheck {
+    public ok: bool,
+    public status: int,
+    public code: string,
+    public detail: string,
+    public username: string,
+    public role: string,
+}

@@ -111,6 +111,7 @@ pub(crate) fn lookup_std_api_host_function(
             Some(host_string("spectra.api.http.cookie_error_message"))
         }
         ("http", "status") => Some(host_int("spectra.api.http.status")),
+        ("http", "response_body") => Some(host_string("spectra.api.http.response_body")),
         ("json", "validate") => Some(host_bool("spectra.api.json.validate")),
         ("json", "kind") => Some(host_int("spectra.api.json.kind")),
         ("json", "parse") => Some(host_int("spectra.api.json.parse")),
@@ -381,7 +382,6 @@ pub(crate) fn lookup_std_api_host_function(
         ("handler", "bytes") => Some(host_int("spectra.api.handler.bytes")),
         ("handler", "status") => Some(host_int("spectra.api.handler.status")),
         ("handler", "with_header") => Some(host_int("spectra.api.handler.with_header")),
-        ("handler", "with_status") => Some(host_int("spectra.api.handler.with_status")),
         ("handler", "into_response") => Some(host_int("spectra.api.handler.into_response")),
         ("handler", "into_text_response") => {
             Some(host_int("spectra.api.handler.into_text_response"))
@@ -406,6 +406,7 @@ pub(crate) fn lookup_std_api_host_function(
         }
         ("handler", "dispatch_sync") => Some(host_int("spectra.api.handler.dispatch_sync")),
         ("handler", "dispatch_async") => Some(host_int("spectra.api.handler.dispatch_async")),
+        ("handler", "with_status") => Some(host_int("spectra.api.handler.with_status")),
         ("middleware", "chain") => Some(host_int("spectra.api.middleware.chain")),
         ("middleware", "chain_new") => Some(host_int("spectra.api.middleware.chain_new")),
         ("middleware", "chain_len") => Some(host_int("spectra.api.middleware.chain_len")),
