@@ -284,9 +284,14 @@ impl ASTLowering {
                     IRType::Array { element_type, size } => (
                         *element_type,
                         // Size 0 is the `[T]` parameter placeholder ("unknown
-                        // length", not "empty"): only a known positive length
-                        // can back a runtime check.
-                        if size > 0 { Some(size) } else { None },
+                        // length", not "empty"): a known length backs a static
+                        // check, and an unsized parameter resolves to the
+                        // runtime length the caller passed.
+                        if size > 0 {
+                            Some(ArrayBound::Static(size))
+                        } else {
+                            self.dynamic_array_bound(array)
+                        },
                     ),
                     other => {
                         return self.invalid_value(format!(

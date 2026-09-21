@@ -214,19 +214,33 @@ impl CodeGenerator {
 
                 let index_val = get_value(index)?;
 
-                // User array indexing with a statically known length traps
-                // via `spectra_rt_panic` ("array index out of bounds", exit
-                // 101) instead of computing an unchecked address. The
-                // unsigned compare also catches negative indices. Mirrors
+                // User array indexing with a bound traps via
+                // `spectra_rt_panic` ("array index out of bounds", exit 101)
+                // instead of computing an unchecked address. The unsigned
+                // compare also catches negative indices. `Static` compares
+                // against a constant; `Dynamic` compares against the hidden
+                // length parameter and treats zero as "unknown length" (the
+                // caller could not supply one), which skips the check. Mirrors
                 // `emit_checked_int_divrem`'s panic/continue split.
-                if let Some(len) = bound {
-                    let len_val = builder.ins().iconst(types::I64, *len as i64);
+                if let Some(bound) = bound {
                     let panic_block = builder.create_block();
                     let continue_block = builder.create_block();
-                    let in_bounds =
-                        builder
-                            .ins()
-                            .icmp(IntCC::UnsignedLessThan, index_val, len_val);
+                    let in_bounds = match bound {
+                        spectra_midend::ir::ArrayBound::Static(len) => {
+                            let len_val = builder.ins().iconst(types::I64, *len as i64);
+                            builder
+                                .ins()
+                                .icmp(IntCC::UnsignedLessThan, index_val, len_val)
+                        }
+                        spectra_midend::ir::ArrayBound::Dynamic(value) => {
+                            let len_val = get_value(value)?;
+                            let unknown = builder.ins().icmp_imm(IntCC::Equal, len_val, 0);
+                            let within = builder
+                                .ins()
+                                .icmp(IntCC::UnsignedLessThan, index_val, len_val);
+                            builder.ins().bor(unknown, within)
+                        }
+                    };
                     builder.ins().brif(
                         in_bounds,
                         continue_block,

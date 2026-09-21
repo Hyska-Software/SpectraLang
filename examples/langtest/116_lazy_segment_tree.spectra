@@ -1,0 +1,194 @@
+module lazy_segment_tree
+
+from std.io import println
+
+// Range-add/range-max segment tree with lazy propagation, cross-checked
+// against a brute-force oracle after every batch of updates.
+
+func build(tree: [int], node: int, lo: int, hi: int, data: [int]) {
+    if lo == hi {
+        tree[node] = data[lo]
+        return
+    }
+    let mid = (lo + hi) / 2
+    build(tree, node * 2, lo, mid, data)
+    build(tree, node * 2 + 1, mid + 1, hi, data)
+    if tree[node * 2] > tree[node * 2 + 1] {
+        tree[node] = tree[node * 2]
+    } else {
+        tree[node] = tree[node * 2 + 1]
+    }
+}
+
+func apply(node: int, delta: int, tree: [int], lazy: [int]) {
+    tree[node] = tree[node] + delta
+    lazy[node] = lazy[node] + delta
+}
+
+func push(node: int, tree: [int], lazy: [int]) {
+    if lazy[node] != 0 {
+        apply(node * 2, lazy[node], tree, lazy)
+        apply(node * 2 + 1, lazy[node], tree, lazy)
+        lazy[node] = 0
+    }
+}
+
+func update(tree: [int], lazy: [int], node: int, lo: int, hi: int, left: int, right: int, delta: int) {
+    if right < lo or hi < left {
+        return
+    }
+    if left <= lo and hi <= right {
+        apply(node, delta, tree, lazy)
+        return
+    }
+    push(node, tree, lazy)
+    let mid = (lo + hi) / 2
+    update(tree, lazy, node * 2, lo, mid, left, right, delta)
+    update(tree, lazy, node * 2 + 1, mid + 1, hi, left, right, delta)
+    if tree[node * 2] > tree[node * 2 + 1] {
+        tree[node] = tree[node * 2]
+    } else {
+        tree[node] = tree[node * 2 + 1]
+    }
+}
+
+func query(tree: [int], lazy: [int], node: int, lo: int, hi: int, left: int, right: int) returns int {
+    if right < lo or hi < left {
+        return 0 - 1000000
+    }
+    if left <= lo and hi <= right {
+        return tree[node]
+    }
+    push(node, tree, lazy)
+    let mid       = (lo + hi) / 2
+    let left_max  = query(tree, lazy, node * 2, lo, mid, left, right)
+    let right_max = query(tree, lazy, node * 2 + 1, mid + 1, hi, left, right)
+    if left_max > right_max {
+        return left_max
+    }
+    return right_max
+}
+
+func oracle(data: [int], left: int, right: int) returns int {
+    let best = data[left]
+    let i    = left
+    while i <= right {
+        if data[i] > best {
+            best = data[i]
+        }
+        i = i + 1
+    }
+    return best
+}
+
+func naive_add(data: [int], left: int, right: int, delta: int) {
+    let i = left
+    while i <= right {
+        data[i] = data[i] + delta
+        i = i + 1
+    }
+}
+
+func same_range(tree: [int], lazy: [int], data: [int], left: int, right: int) returns bool {
+    return query(tree, lazy, 1, 0, 7, left, right) == oracle(data, left, right)
+}
+
+func check_batch(tree: [int], lazy: [int], data: [int]) returns bool {
+    return same_range(tree, lazy, data, 0, 7) and same_range(tree, lazy, data, 2, 5) and same_range(tree, lazy, data, 0, 3) and same_range(tree, lazy, data, 4, 7) and same_range(tree, lazy, data, 5, 5)
+}
+
+public func main() returns int {
+    let data = [5, 2, 8, 1, 9, 3, 7, 4]
+    let tree = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    let lazy = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    build(tree, 1, 0, 7, data)
+    if not check_batch(tree, lazy, data) {
+        return 1
+    }
+    update(tree, lazy, 1, 0, 7, 2, 5, 3)
+    naive_add(data, 2, 5, 3)
+    if not check_batch(tree, lazy, data) {
+        return 2
+    }
+    update(tree, lazy, 1, 0, 7, 0, 7, 0 - 5)
+    naive_add(data, 0, 7, 0 - 5)
+    if not check_batch(tree, lazy, data) {
+        return 3
+    }
+    update(tree, lazy, 1, 0, 7, 3, 3, 100)
+    naive_add(data, 3, 3, 100)
+    if not check_batch(tree, lazy, data) {
+        return 4
+    }
+    if query(tree, lazy, 1, 0, 7, 3, 3) != 99 {
+        return 5
+    }
+    println("PASS lazy_segment_tree: range add + range max with oracle")
+    return 0
+}

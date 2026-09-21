@@ -1,0 +1,100 @@
+module sliding_window_max
+
+from std.io import println
+
+// Sliding window maximum with a monotonic deque of indices, verified against
+// brute force for every window of every width, including duplicates and
+// negative values.
+
+func window_max(values: [int], n: int, width: int, out: [int]) {
+    let deque = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let head  = 0
+    let tail  = 0
+    let i     = 0
+    while i < n {
+        while tail > head and values[deque[tail - 1]] <= values[i] {
+            tail = tail - 1
+        }
+        deque[tail] = i
+        tail = tail + 1
+        if deque[head] <= i - width {
+            head = head + 1
+        }
+        if i + 1 >= width {
+            out[i + 1 - width] = values[deque[head]]
+        }
+        i = i + 1
+    }
+}
+
+func brute_window(values: [int], n: int, width: int, out: [int]) returns int {
+    let count = n - width + 1
+    let start = 0
+    while start < count {
+        let best = values[start]
+        let i    = start + 1
+        while i < start + width {
+            if values[i] > best {
+                best = values[i]
+            }
+            i = i + 1
+        }
+        out[start] = best
+        start = start + 1
+    }
+    return count
+}
+
+func compare_all(values: [int], n: int, width: int, fast: [int], brute: [int]) returns bool {
+    let count = n - width + 1
+    window_max(values, n, width, fast)
+    brute_window(values, n, width, brute)
+    let i = 0
+    while i < count {
+        if fast[i] != brute[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+public func main() returns int {
+    let values = [1, 3, 0 - 1, 0 - 3, 5, 3, 6, 7]
+    let fast   = [0, 0, 0, 0, 0, 0, 0, 0]
+    let brute  = [0, 0, 0, 0, 0, 0, 0, 0]
+    let known  = [3, 3, 5, 5, 6, 7]
+    window_max(values, 8, 3, fast)
+    let i = 0
+    while i < 6 {
+        if fast[i] != known[i] {
+            return 1 + i
+        }
+        i = i + 1
+    }
+    let width = 1
+    while width <= 8 {
+        if not compare_all(values, 8, width, fast, brute) {
+            return 10 + width
+        }
+        width = width + 1
+    }
+    let duplicates = [5, 5, 1, 5, 1, 1, 5, 5]
+    width = 1
+    while width <= 8 {
+        if not compare_all(duplicates, 8, width, fast, brute) {
+            return 20 + width
+        }
+        width = width + 1
+    }
+    let negatives = [0 - 5, 0 - 1, 0 - 9, 0 - 3, 0 - 2, 0 - 7, 0 - 4, 0 - 8]
+    width = 1
+    while width <= 8 {
+        if not compare_all(negatives, 8, width, fast, brute) {
+            return 30 + width
+        }
+        width = width + 1
+    }
+    println("PASS sliding_window_max: monotonic deque + exhaustive oracle")
+    return 0
+}

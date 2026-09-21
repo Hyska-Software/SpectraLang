@@ -3,9 +3,9 @@
 
 use crate::builder::IRBuilder;
 use crate::ir::{
-    Constant, ExternalFunction, FloatWidth as IRFloatWidth, Function as IRFunction, Global,
-    Instruction, IntWidth as IRIntWidth, LocalDebugInfo, Module as IRModule, Parameter, SourceSpan,
-    Terminator, Type as IRType, Value,
+    ArrayBound, Constant, ExternalFunction, FloatWidth as IRFloatWidth, Function as IRFunction,
+    Global, Instruction, IntWidth as IRIntWidth, LocalDebugInfo, Module as IRModule, Parameter,
+    SourceSpan, Terminator, Type as IRType, Value,
 };
 use crate::layout;
 use spectra_compiler::ast::{
@@ -503,6 +503,16 @@ pub struct ASTLowering {
     /// Tracks public parameter types so a named function can be materialized
     /// as a closure value with the hidden environment ABI.
     function_parameter_types: HashMap<String, Vec<IRType>>,
+    /// Runtime lengths for the current function's unsized `[T]` parameters,
+    /// keyed by binding name. Indexing the binding checks against this value;
+    /// the definition appends one hidden `Int` parameter per entry in
+    /// `hidden_array_params`.
+    array_param_sizes: HashMap<String, Value>,
+    /// Public-argument positions of the unsized `[T]` parameters for every
+    /// lowered function and method. The definition appends the hidden length
+    /// parameters in this order and every direct call appends the matching
+    /// length arguments, so both sides derive from one source.
+    hidden_array_params: HashMap<String, Vec<usize>>,
     /// Maps bare imported names to their full stdlib path for unqualified call resolution.
     /// Populated from `Module::std_import_aliases` at the start of `lower_module()`.
     /// e.g. "print" → ["std", "io", "print"]

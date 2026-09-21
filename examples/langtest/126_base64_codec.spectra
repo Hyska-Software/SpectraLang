@@ -1,0 +1,158 @@
+module base64_codec
+
+from std.io import println
+import std.string as str
+
+// RFC 4648 base64 with padding, packed with arithmetic instead of bitwise
+// operators and decoded through a comparison-based reverse lookup.
+
+func alphabet_sextet(value: int) returns string {
+    let alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    return str.substring(alpha, value, value + 1)
+}
+
+func encode(text: string) returns string {
+    let n   = str.len(text)
+    let out = ""
+    let i   = 0
+    while i + 3 <= n {
+        let packed = str.char_at(text, i) *
+            65536 +
+            str.char_at(text, i + 1) *
+            256 +
+            str.char_at(text, i + 2)
+        out = out + alphabet_sextet(packed / 262144)
+        out = out + alphabet_sextet((packed / 4096) % 64)
+        out = out + alphabet_sextet((packed / 64) % 64)
+        out = out + alphabet_sextet(packed % 64)
+        i = i + 3
+    }
+    let rest = n - i
+    if rest == 1 {
+        let packed = str.char_at(text, i) * 65536
+        out = out + alphabet_sextet(packed / 262144)
+        out = out + alphabet_sextet((packed / 4096) % 64)
+        out = out + "=="
+    } else {
+        if rest == 2 {
+            let packed = str.char_at(text, i) * 65536 + str.char_at(text, i + 1) * 256
+            out = out + alphabet_sextet(packed / 262144)
+            out = out + alphabet_sextet((packed / 4096) % 64)
+            out = out + alphabet_sextet((packed / 64) % 64)
+            out = out + "="
+        }
+    }
+    return out
+}
+
+func value_of(code: int) returns int {
+    if code >= 65 and code <= 90 {
+        return code - 65
+    }
+    if code >= 97 and code <= 122 {
+        return code - 71
+    }
+    if code >= 48 and code <= 57 {
+        return code + 4
+    }
+    if code == 43 {
+        return 62
+    }
+    if code == 47 {
+        return 63
+    }
+    return 0 - 1
+}
+
+func decode(text: string, out: [int]) returns int {
+    let n     = str.len(text)
+    let count = 0
+    let i     = 0
+    while i + 4 <= n {
+        let first  = value_of(str.char_at(text, i))
+        let second = value_of(str.char_at(text, i + 1))
+        let third  = str.char_at(text, i + 2)
+        let fourth = str.char_at(text, i + 3)
+        let packed = first * 262144 + second * 4096
+        out[count] = packed / 65536
+        count = count + 1
+        if third == 61 {
+            i = i + 4
+        } else {
+            packed = packed + value_of(third) * 64
+            out[count] = (packed / 256) % 256
+            count = count + 1
+            if fourth == 61 {
+                i = i + 4
+            } else {
+                packed = packed + value_of(fourth)
+                out[count] = packed % 256
+                count = count + 1
+                i = i + 4
+            }
+        }
+    }
+    return count
+}
+
+func roundtrip(text: string, bytes: [int]) returns bool {
+    let encoded = encode(text)
+    let count   = decode(encoded, bytes)
+    if count != str.len(text) {
+        return false
+    }
+    let i = 0
+    while i < count {
+        if bytes[i] != str.char_at(text, i) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+public func main() returns int {
+    if encode("") != "" {
+        return 1
+    }
+    if encode("M") != "TQ==" {
+        return 2
+    }
+    if encode("Ma") != "TWE=" {
+        return 3
+    }
+    if encode("Man") != "TWFu" {
+        return 4
+    }
+    if encode("Hello, World!") != "SGVsbG8sIFdvcmxkIQ==" {
+        return 5
+    }
+    // 64 capacity covers the longest sample below (43 bytes). Decoding through
+    // a function parameter is not length-checked (see the langtest notes on
+    // unsized array parameters), so the buffer must be sized for the worst case.
+    let bytes = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    if decode("TWFu", bytes) != 3 or bytes[0] != 77 or bytes[1] != 97 or bytes[2] != 110 {
+        return 6
+    }
+    if decode("TWE=", bytes) != 2 or bytes[0] != 77 or bytes[1] != 97 {
+        return 7
+    }
+    if decode("TQ==", bytes) != 1 or bytes[0] != 77 {
+        return 8
+    }
+    let samples = ["banana", "mississippi", "The quick brown fox jumps over the lazy dog"]
+    let i       = 0
+    while i < 3 {
+        if not roundtrip(samples[i], bytes) {
+            return 10 + i
+        }
+        i = i + 1
+    }
+    println("PASS base64_codec: RFC 4648 vectors + padded roundtrip")
+    return 0
+}

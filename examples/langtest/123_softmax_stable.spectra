@@ -1,0 +1,137 @@
+module softmax_stable
+
+from std.io import println
+import std.math as m
+
+// Numerically stable softmax with a max-shifted exponential built from range
+// reduction plus a Taylor series. The shift invariance and the pow_f oracle
+// both check the stability trick that keeps large logits finite.
+
+func exp_reduced(x: float) returns float {
+    let k      = 0
+    let scaled = x
+    while scaled > 0.35 or scaled < 0.0 - 0.35 {
+        scaled = scaled / 2.0
+        k = k + 1
+    }
+    let term = 1.0
+    let sum  = 1.0
+    let i    = 1
+    while i <= 12 {
+        term = term * scaled /(i * 1.0)
+        sum = sum + term
+        i = i + 1
+    }
+    let result = sum
+    i = 0
+    while i < k {
+        result = result * result
+        i = i + 1
+    }
+    return result
+}
+
+func softmax(logits: [float], n: int, out: [float]) {
+    let best = logits[0]
+    let i    = 1
+    while i < n {
+        if logits[i] > best {
+            best = logits[i]
+        }
+        i = i + 1
+    }
+    let total = 0.0
+    i = 0
+    while i < n {
+        out[i] = exp_reduced(logits[i] - best)
+        total = total + out[i]
+        i = i + 1
+    }
+    i = 0
+    while i < n {
+        out[i] = out[i] / total
+        i = i + 1
+    }
+}
+
+func close(a: float, b: float, tolerance: float) returns bool {
+    let d = a - b
+    if d < 0.0 {
+        d = 0.0 - d
+    }
+    return d <= tolerance
+}
+
+func sum(values: [float], n: int) returns float {
+    let total = 0.0
+    let i     = 0
+    while i < n {
+        total = total + values[i]
+        i = i + 1
+    }
+    return total
+}
+
+public func main() returns int {
+    if not close(exp_reduced(0.0), 1.0, 0.000001) {
+        return 1
+    }
+    if not close(exp_reduced(1.0), m.e_const(), 0.000001) {
+        return 2
+    }
+    if not close(exp_reduced(0.0 - 2.0), 0.1353352832, 0.000001) {
+        return 3
+    }
+    if not close(exp_reduced(10.0), 22026.4657948, 0.001) {
+        return 4
+    }
+    let logits = [1.0, 2.0, 3.0]
+    let probs  = [0.0, 0.0, 0.0]
+    softmax(logits, 3, probs)
+    if not close(sum(probs, 3), 1.0, 0.000001) {
+        return 5
+    }
+    if not(probs[2] > probs[1] and probs[1] > probs[0]) {
+        return 6
+    }
+    let expected = m.pow_f(m.e_const(), 1.0) /(m.pow_f(m.e_const(), 1.0) + m.pow_f(m.e_const(), 0.0) + m.pow_f(m.e_const(), 0.0 - 1.0))
+    if not close(probs[2], expected, 0.000001) {
+        return 7
+    }
+    let shifted       = [101.0, 102.0, 103.0]
+    let shifted_probs = [0.0, 0.0, 0.0]
+    softmax(shifted, 3, shifted_probs)
+    let i = 0
+    while i < 3 {
+        if not close(probs[i], shifted_probs[i], 0.000000001) {
+            return 8
+        }
+        i = i + 1
+    }
+    let extreme       = [1000.0, 1001.0, 1002.0]
+    let extreme_probs = [0.0, 0.0, 0.0]
+    softmax(extreme, 3, extreme_probs)
+    if not close(sum(extreme_probs, 3), 1.0, 0.000001) {
+        return 9
+    }
+    if not(extreme_probs[2] > extreme_probs[1] and extreme_probs[1] > extreme_probs[0]) {
+        return 10
+    }
+    let uniform       = [0.0, 0.0, 0.0, 0.0]
+    let uniform_probs = [0.0, 0.0, 0.0, 0.0]
+    softmax(uniform, 4, uniform_probs)
+    let loss = 0.0 - m.log_f(uniform_probs[0])
+    if not close(loss, 1.3862943611, 0.000001) {
+        return 11
+    }
+    let confident       = [0.0, 0.0, 5.0, 0.0]
+    let confident_probs = [0.0, 0.0, 0.0, 0.0]
+    softmax(confident, 4, confident_probs)
+    let correct_loss = 0.0 - m.log_f(confident_probs[2])
+    let wrong_loss   = 0.0 - m.log_f(confident_probs[0])
+    if correct_loss > 0.05 or wrong_loss < 4.0 {
+        return 12
+    }
+    println("PASS softmax_stable: stable exp + shift invariance + cross-entropy")
+    return 0
+}

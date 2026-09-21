@@ -1,0 +1,86 @@
+module parameter_bounds
+
+from std.io import println
+
+// Runtime bounds for unsized `[T]` parameters: the definition takes a hidden
+// length and every call site passes the size it knows. In-bounds access must
+// keep working through direct calls, forwarding, methods, recursion and
+// coroutines; the out-of-bounds case traps with exit 101 (see the fixtures in
+// tests/errors).
+
+func read_in_bounds(values: [int], n: int) returns int {
+    let total = 0
+    let i     = 0
+    while i < n {
+        total = total + values[i]
+        i = i + 1
+    }
+    return total
+}
+
+func forward(values: [int], n: int) returns int {
+    return read_in_bounds(values, n)
+}
+
+func write_all(out: [int], n: int, value: int) {
+    let i = 0
+    while i < n {
+        out[i] = value
+        i = i + 1
+    }
+}
+
+func recurse_sum(values: [int], n: int, index: int) returns int {
+    if index >= n {
+        return 0
+    }
+    return values[index] + recurse_sum(values, n, index + 1)
+}
+
+async func async_sum(values: [int], n: int) returns int {
+    let total = 0
+    let i     = 0
+    while i < n {
+        total = total + values[i]
+        i = i + 1
+    }
+    return total
+}
+
+record Box {
+    bias: int,
+}
+
+impl Box {
+    func total(self, values: [int], n: int) returns int {
+        return read_in_bounds(values, n) + self.bias
+    }
+}
+
+public func main() returns int {
+    let data = [10, 20, 30, 40]
+    if read_in_bounds(data, 4) != 100 {
+        return 1
+    }
+    if forward(data, 4) != 100 {
+        return 2
+    }
+    let out = [0, 0, 0]
+    write_all(out, 3, 7)
+    if out[0] != 7 or out[2] != 7 {
+        return 3
+    }
+    if recurse_sum(data, 4, 0) != 100 {
+        return 4
+    }
+    let box = Box { bias: 5 }
+    if box.total(data, 3) != 65 {
+        return 5
+    }
+    let task = async_sum(data, 4)
+    if block_on(task) != 100 {
+        return 6
+    }
+    println("PASS parameter_bounds: in-bounds access across all call paths")
+    return 0
+}

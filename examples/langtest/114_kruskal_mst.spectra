@@ -1,0 +1,95 @@
+module kruskal_mst
+
+from std.io import println
+
+// Kruskal minimum spanning tree over a sorted edge list with union-by-size.
+// A disconnected graph reports -1 instead of a partial forest weight.
+
+func find(parent: [int], node: int) returns int {
+    let root = node
+    while parent[root] != root {
+        root = parent[root]
+    }
+    return root
+}
+
+func united(parent: [int], sizes: [int], a: int, b: int) returns bool {
+    let ra = find(parent, a)
+    let rb = find(parent, b)
+    if ra == rb {
+        return false
+    }
+    if sizes[ra] < sizes[rb] {
+        let hold = ra
+        ra = rb
+        rb = hold
+    }
+    parent[rb] = ra
+    sizes[ra] = sizes[ra] + sizes[rb]
+    return true
+}
+
+func sort_edges(edges: [int], m: int) {
+    let i = 1
+    while i < m {
+        let a = edges[i * 3]
+        let b = edges[i * 3 + 1]
+        let w = edges[i * 3 + 2]
+        let j = i
+        while j > 0 and w < edges[(j - 1) * 3 + 2] {
+            edges[j * 3] = edges[(j - 1) * 3]
+            edges[j * 3 + 1] = edges[(j - 1) * 3 + 1]
+            edges[j * 3 + 2] = edges[(j - 1) * 3 + 2]
+            j = j - 1
+        }
+        edges[j * 3] = a
+        edges[j * 3 + 1] = b
+        edges[j * 3 + 2] = w
+        i = i + 1
+    }
+}
+
+func mst_weight(edges: [int], m: int, n: int) returns int {
+    sort_edges(edges, m)
+    let parent = [0, 1, 2, 3, 4]
+    let sizes  = [1, 1, 1, 1, 1]
+    let total  = 0
+    let chosen = 0
+    let i      = 0
+    while i < m and chosen < n - 1 {
+        let w = edges[i * 3 + 2]
+        if united(parent, sizes, edges[i * 3], edges[i * 3 + 1]) {
+            total = total + w
+            chosen = chosen + 1
+        }
+        i = i + 1
+    }
+    if chosen < n - 1 {
+        return 0 - 1
+    }
+    return total
+}
+
+public func main() returns int {
+    let edges = [
+        0, 1, 2,
+        0, 3, 6,
+        1, 2, 3,
+        1, 3, 8,
+        1, 4, 5,
+        2, 4, 7,
+        3, 4, 9,
+    ]
+    if mst_weight(edges, 7, 5) != 16 {
+        return 1
+    }
+    if edges[2] != 2 or edges[5] != 3 or edges[8] != 5 {
+        return 2
+    }
+    let forest = [0, 1, 3, 2, 3, 4]
+    if mst_weight(forest, 2, 5) != 0 - 1 {
+        return 3
+    }
+    println("PASS kruskal_mst: sorted edges + union-by-size")
+    return 0
+}

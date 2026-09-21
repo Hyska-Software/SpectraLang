@@ -172,7 +172,7 @@ impl IRBuilder {
         ptr: Value,
         index: Value,
         element_type: crate::ir::Type,
-        bound: Option<usize>,
+        bound: Option<crate::ir::ArrayBound>,
     ) -> Value {
         self.try_emit(func, |result| InstructionKind::GetElementPtr {
             result,

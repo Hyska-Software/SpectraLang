@@ -1240,9 +1240,14 @@ fn remap_instruction_operands(
             remap_value(ptr, map);
             remap_value(value, map);
         }
-        InstructionKind::GetElementPtr { ptr, index, .. } => {
+        InstructionKind::GetElementPtr {
+            ptr, index, bound, ..
+        } => {
             remap_value(ptr, map);
             remap_value(index, map);
+            if let Some(crate::ir::ArrayBound::Dynamic(value)) = bound {
+                remap_value(value, map);
+            }
         }
         InstructionKind::FieldPtr { ptr, .. } => remap_value(ptr, map),
         InstructionKind::Call { args, .. } | InstructionKind::HostCall { args, .. } => {
@@ -1356,7 +1361,14 @@ fn collect_instruction_uses(instruction: &Instruction, out: &mut Vec<usize>) {
         }
         | InstructionKind::EscapeManualAlloc { ptr: operand, .. } => out.push(operand.id),
         InstructionKind::Store { ptr, value } => out.extend([ptr.id, value.id]),
-        InstructionKind::GetElementPtr { ptr, index, .. } => out.extend([ptr.id, index.id]),
+        InstructionKind::GetElementPtr {
+            ptr, index, bound, ..
+        } => {
+            out.extend([ptr.id, index.id]);
+            if let Some(crate::ir::ArrayBound::Dynamic(value)) = bound {
+                out.push(value.id);
+            }
+        }
         InstructionKind::FieldPtr { ptr, .. } => out.push(ptr.id),
         InstructionKind::Call { args, .. } | InstructionKind::HostCall { args, .. } => {
             out.extend(args.iter().map(|arg| arg.id))
@@ -1597,11 +1609,18 @@ fn shift_body_values(function: &mut IRFunction, amount: usize) {
                 // move with the shift, otherwise dynamic dispatch inside a coroutine
                 // indexes the vtable with a stale id (silent wrong callee/offset).
                 InstructionKind::GetElementPtr {
-                    result, ptr, index, ..
+                    result,
+                    ptr,
+                    index,
+                    bound,
+                    ..
                 } => {
                     shift(result, amount);
                     shift(ptr, amount);
                     shift(index, amount);
+                    if let Some(crate::ir::ArrayBound::Dynamic(value)) = bound {
+                        shift(value, amount);
+                    }
                 }
                 InstructionKind::Store { ptr, value } => {
                     shift(ptr, amount);

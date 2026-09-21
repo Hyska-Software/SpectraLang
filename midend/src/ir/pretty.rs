@@ -213,7 +213,10 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                     fmt_type(element_type)
                 );
                 match bound {
-                    Some(len) => format!("{base}, bound {len}"),
+                    Some(crate::ir::ArrayBound::Static(len)) => format!("{base}, bound {len}"),
+                    Some(crate::ir::ArrayBound::Dynamic(value)) => {
+                        format!("{base}, bound dynamic v{}", value.id)
+                    }
                     None => base,
                 }
             }

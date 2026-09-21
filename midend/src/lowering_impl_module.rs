@@ -297,6 +297,18 @@ impl ASTLowering {
             self.function_parameter_types
                 .entry(name.clone())
                 .or_insert(parameter_types);
+            let positions: Vec<usize> = params
+                .iter()
+                .enumerate()
+                .filter(|(_, param)| matches!(self.lower_type(param), IRType::Array { size: 0, .. }))
+                .map(|(index, _)| index)
+                .collect();
+            if !positions.is_empty() {
+                let canonical = self.resolve_user_function_symbol(name);
+                self.hidden_array_params
+                    .insert(name.clone(), positions.clone());
+                self.hidden_array_params.insert(canonical, positions);
+            }
         }
 
         // Pre-register return types of imported user functions and methods
@@ -513,6 +525,10 @@ impl ASTLowering {
                             })
                             .collect(),
                     );
+                    let positions = self.unsized_positions_from_function_params(&func.params);
+                    if !positions.is_empty() {
+                        self.hidden_array_params.insert(func.name.clone(), positions);
+                    }
                     let body_return_type = func
                         .return_type
                         .as_ref()
@@ -531,6 +547,10 @@ impl ASTLowering {
             } else if let Item::Impl(impl_block) = item {
                 for method in &impl_block.methods {
                     let mangled = format!("{}_{}", impl_block.type_name, method.name);
+                    let positions = self.unsized_positions_from_method_params(&method.params);
+                    if !positions.is_empty() {
+                        self.hidden_array_params.insert(mangled.clone(), positions);
+                    }
                     let body_return_type = method
                         .return_type
                         .as_ref()
@@ -550,6 +570,10 @@ impl ASTLowering {
             } else if let Item::TraitImpl(trait_impl) = item {
                 for method in &trait_impl.methods {
                     let mangled = format!("{}_{}", trait_impl.type_name, method.name);
+                    let positions = self.unsized_positions_from_method_params(&method.params);
+                    if !positions.is_empty() {
+                        self.hidden_array_params.insert(mangled.clone(), positions);
+                    }
                     let body_return_type = method
                         .return_type
                         .as_ref()
@@ -570,6 +594,10 @@ impl ASTLowering {
                     self.collect_default_trait_methods(&trait_impl.trait_name, &trait_impl.methods)
                 {
                     let mangled = format!("{}_{}", trait_impl.type_name, method.name);
+                    let positions = self.unsized_positions_from_method_params(&method.params);
+                    if !positions.is_empty() {
+                        self.hidden_array_params.insert(mangled.clone(), positions);
+                    }
                     let return_type = method
                         .return_type
                         .as_ref()

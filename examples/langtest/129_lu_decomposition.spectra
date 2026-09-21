@@ -1,0 +1,180 @@
+module lu_decomposition
+
+from std.io import println
+import std.math as m
+
+// LU decomposition with partial pivoting: P*A = L*U, L is unit lower, U is
+// upper, and the factorization solves A*x = b against known solutions.
+
+func close(a: float, b: float) returns bool {
+    let d = a - b
+    if d < 0.0 {
+        d = 0.0 - d
+    }
+    return d < 0.000000001
+}
+
+func decompose(a: [float], n: int, lu: [float], perm: [int]) {
+    let i = 0
+    while i < n {
+        perm[i] = i
+        let j = 0
+        while j < n {
+            lu[i * n + j] = a[i * n + j]
+            j = j + 1
+        }
+        i = i + 1
+    }
+    let k = 0
+    while k < n {
+        let pivot         = k
+        let best          = m.abs_f(lu[k * n + k])
+        let candidate_row = k + 1
+        while candidate_row < n {
+            let magnitude = m.abs_f(lu[candidate_row * n + k])
+            if magnitude > best {
+                best = magnitude
+                pivot = candidate_row
+            }
+            candidate_row = candidate_row + 1
+        }
+        if pivot != k {
+            let j = 0
+            while j < n {
+                let hold = lu[k * n + j]
+                lu[k * n + j] = lu[pivot * n + j]
+                lu[pivot * n + j] = hold
+                j = j + 1
+            }
+            let hold_perm = perm[k]
+            perm[k] = perm[pivot]
+            perm[pivot] = hold_perm
+        }
+        let row = k + 1
+        while row < n {
+            let factor = lu[row * n + k] / lu[k * n + k]
+            lu[row * n + k] = factor
+            let j = k + 1
+            while j < n {
+                lu[row * n + j] = lu[row * n + j] - factor * lu[k * n + j]
+                j = j + 1
+            }
+            row = row + 1
+        }
+        k = k + 1
+    }
+}
+
+func multiply(left: [float], right: [float], n: int, out: [float]) {
+    let i = 0
+    while i < n {
+        let j = 0
+        while j < n {
+            let total = 0.0
+            let k     = 0
+            while k < n {
+                total = total + left[i * n + k] * right[k * n + j]
+                k = k + 1
+            }
+            out[i * n + j] = total
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+func factorization_holds(a: [float], lu: [float], perm: [int], n: int) returns bool {
+    let lower    = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let upper    = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let permuted = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let i        = 0
+    while i < n {
+        let j = 0
+        while j < n {
+            if i > j {
+                lower[i * n + j] = lu[i * n + j]
+            } else {
+                if i == j {
+                    lower[i * n + j] = 1.0
+                }
+                upper[i * n + j] = lu[i * n + j]
+            }
+            permuted[i * n + j] = a[perm[i] * n + j]
+            j = j + 1
+        }
+        i = i + 1
+    }
+    let product = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    multiply(lower, upper, n, product)
+    i = 0
+    while i < n * n {
+        if not close(product[i], permuted[i]) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+func solve(lu: [float], perm: [int], b: [float], n: int, x: [float]) {
+    let y = [0.0, 0.0, 0.0]
+    let i = 0
+    while i < n {
+        let total = b[perm[i]]
+        let j     = 0
+        while j < i {
+            total = total - lu[i * n + j] * y[j]
+            j = j + 1
+        }
+        y[i] = total
+        i = i + 1
+    }
+    i = n - 1
+    while i >= 0 {
+        let total = y[i]
+        let j     = i + 1
+        while j < n {
+            total = total - lu[i * n + j] * x[j]
+            j = j + 1
+        }
+        x[i] = total / lu[i * n + i]
+        i = i - 1
+    }
+}
+
+public func main() returns int {
+    let a2    = [4.0, 3.0, 6.0, 3.0]
+    let lu2   = [0.0, 0.0, 0.0, 0.0]
+    let perm2 = [0, 0]
+    decompose(a2, 2, lu2, perm2)
+    if perm2[0] != 1 or perm2[1] != 0 {
+        return 1
+    }
+    if not factorization_holds(a2, lu2, perm2, 2) {
+        return 2
+    }
+    let b2 = [10.0, 12.0]
+    let x2 = [0.0, 0.0]
+    solve(lu2, perm2, b2, 2, x2)
+    if not close(x2[0], 1.0) or not close(x2[1], 2.0) {
+        return 3
+    }
+    let a3    = [2.0, 1.0, 1.0, 4.0, 0.0 - 6.0, 0.0, 0.0 - 2.0, 7.0, 2.0]
+    let lu3   = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let perm3 = [0, 0, 0]
+    decompose(a3, 3, lu3, perm3)
+    if perm3[0] != 1 {
+        return 4
+    }
+    if not factorization_holds(a3, lu3, perm3, 3) {
+        return 5
+    }
+    let b3 = [5.0, 0.0 - 2.0, 9.0]
+    let x3 = [0.0, 0.0, 0.0]
+    solve(lu3, perm3, b3, 3, x3)
+    if not close(x3[0], 1.0) or not close(x3[1], 1.0) or not close(x3[2], 2.0) {
+        return 6
+    }
+    println("PASS lu_decomposition: PA = LU + partial pivoting solve")
+    return 0
+}

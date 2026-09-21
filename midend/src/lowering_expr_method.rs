@@ -56,27 +56,25 @@ impl ASTLowering {
                 if let Some(function_name) =
                     self.imported_user_function_name(object, method_name)
                 {
-                    let call_args = arguments
+                    let mut call_args: Vec<Value> = arguments
                         .iter()
                         .map(|argument| self.lower_expression(argument, ir_func))
                         .collect();
+                    let resolved = self.resolve_user_function_symbol(&function_name);
+                    self.append_hidden_size_args(
+                        &[resolved.as_str(), function_name.as_str()],
+                        arguments,
+                        &mut call_args,
+                        ir_func,
+                    );
                     if self.user_function_returns_unit(&function_name) {
-                        self.builder.build_call(
-                            ir_func,
-                            self.resolve_user_function_symbol(&function_name),
-                            call_args,
-                            false,
-                        );
+                        self.builder
+                            .build_call(ir_func, resolved.clone(), call_args, false);
                         return self.builder.build_const_int(ir_func, 0);
                     }
                     return self.require_value(
                         self.builder
-                            .build_call(
-                                ir_func,
-                                self.resolve_user_function_symbol(&function_name),
-                                call_args,
-                                true,
-                            ),
+                            .build_call(ir_func, resolved, call_args, true),
                         "qualified user-module function call did not produce its declared result",
                     );
                 }
@@ -169,6 +167,23 @@ impl ASTLowering {
 
                 // 5. Fazer a chamada de função
                 let resolved_symbol = self.resolve_user_function_symbol(&function_name);
+                let mut hidden_positions = self.hidden_size_positions(&function_name);
+                if hidden_positions.is_empty() {
+                    hidden_positions = self.hidden_size_positions(&resolved_symbol);
+                }
+                for position in hidden_positions {
+                    // `self` is position 0 and is never an array; later
+                    // positions map to `arguments[position - 1]`.
+                    let value = if position == 0 {
+                        self.builder.build_const_int(ir_func, 0)
+                    } else {
+                        match arguments.get(position - 1) {
+                            Some(argument) => self.hidden_size_argument(argument, ir_func),
+                            None => self.builder.build_const_int(ir_func, 0),
+                        }
+                    };
+                    call_args.push(value);
+                }
                 if self.user_function_returns_unit(&function_name)
                     || self.user_function_returns_unit(&resolved_symbol)
                 {

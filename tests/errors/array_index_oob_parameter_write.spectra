@@ -1,0 +1,17 @@
+module array_index_oob_parameter_write
+
+// Expected behavior: JIT/AOT execution prints
+//   runtime error: array index out of bounds
+// to stderr and terminates the process with exit code 101
+// (spectra_rt_panic), instead of corrupting the caller's stack.
+// Before hidden lengths this write was silent: the `[int]` parameter lowers
+// to size 0 and the index carried no runtime bound.
+func write_at(values: [int], index: int, value: int) {
+    values[index] = value
+}
+
+public func main() returns int {
+    let values = [10, 20, 30]
+    write_at(values, 3, 99)
+    return values[0]
+}

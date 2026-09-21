@@ -70,6 +70,21 @@ impl ASTLowering {
                     let function_name = format!("{}_{}", struct_name, variant_name);
                     let mut args = vec![receiver];
                     args.extend(call_args);
+                    let positions = self.hidden_size_positions(&function_name);
+                    for position in positions {
+                        // Position 0 is the receiver, never an array; later
+                        // positions map to `data[position]` because `data[0]`
+                        // is the receiver.
+                        let value = if position == 0 {
+                            self.builder.build_const_int(ir_func, 0)
+                        } else {
+                            match data.as_ref().and_then(|expressions| expressions.get(position)) {
+                                Some(argument) => self.hidden_size_argument(argument, ir_func),
+                                None => self.builder.build_const_int(ir_func, 0),
+                            }
+                        };
+                        args.push(value);
+                    }
                     return self.require_value(
                         self.builder.build_call(
                             ir_func,
@@ -132,14 +147,29 @@ impl ASTLowering {
                     }
                     let function_name = format!("{}_{}", enum_name, variant_name);
                     let mut call_args: Vec<Value> = Vec::new();
+                    let mut call_exprs: Vec<Expression> = Vec::new();
                     if let Some(data_exprs) = data {
                         for arg in data_exprs.iter() {
                             call_args.push(self.lower_expression(arg, ir_func));
+                            call_exprs.push(arg.clone());
                         }
                     } else if let Some(named_fields) = struct_data {
                         for (_, val_expr) in named_fields.iter() {
                             call_args.push(self.lower_expression(val_expr, ir_func));
                         }
+                    }
+                    if call_exprs.is_empty() {
+                        // Named-field arguments already lack positional
+                        // ordering; forward "unknown length" for any hidden
+                        // parameter so the ABI stays aligned.
+                        self.append_hidden_size_zeros(&[function_name.as_str()], &mut call_args, ir_func);
+                    } else {
+                        self.append_hidden_size_args(
+                            &[function_name.as_str()],
+                            &call_exprs,
+                            &mut call_args,
+                            ir_func,
+                        );
                     }
                     return self.require_value(
                         self.builder.build_call(
@@ -170,9 +200,11 @@ impl ASTLowering {
                         || self.generic_functions.contains_key(&callee)
                     {
                         let mut call_args: Vec<Value> = Vec::new();
+                        let mut call_exprs: Vec<Expression> = Vec::new();
                         if let Some(data_exprs) = data {
                             for arg in data_exprs.iter() {
                                 call_args.push(self.lower_expression(arg, ir_func));
+                                call_exprs.push(arg.clone());
                             }
                         } else if let Some(named_fields) = struct_data {
                             for (_, val_expr) in named_fields.iter() {
@@ -196,6 +228,20 @@ impl ASTLowering {
                         } else {
                             self.resolve_user_function_symbol(&qualified_callee)
                         };
+                        if call_exprs.is_empty() {
+                            self.append_hidden_size_zeros(
+                                &[final_name.as_str(), callee.as_str(), qualified_callee.as_str()],
+                                &mut call_args,
+                                ir_func,
+                            );
+                        } else {
+                            self.append_hidden_size_args(
+                                &[final_name.as_str(), callee.as_str(), qualified_callee.as_str()],
+                                &call_exprs,
+                                &mut call_args,
+                                ir_func,
+                            );
+                        }
                         return self.require_value(
                             self.builder
                                 .build_call(ir_func, final_name, call_args, true),

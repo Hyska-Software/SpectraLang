@@ -1,0 +1,206 @@
+module z_algorithm
+
+from std.io import println
+import std.string as str
+
+// Linear Z-array: z[i] is the length of the longest prefix of the text that
+// also starts at i. Pattern matching concatenates pattern + '#' + text and
+// counts the positions where z equals the pattern length, against a naive
+// oracle for both the count and the first index.
+
+func z_array(text: string, z: [int]) returns int {
+    let n = str.len(text)
+    if n == 0 {
+        return 0
+    }
+    z[0] = n
+    let l = 0
+    let r = 0
+    let i = 1
+    while i < n {
+        let k = 0
+        if i <= r {
+            k = z[i - l]
+            if r - i + 1 < k {
+                k = r - i + 1
+            }
+        }
+        while i + k < n and str.char_at(text, k) == str.char_at(text, i + k) {
+            k = k + 1
+        }
+        z[i] = k
+        if i + k - 1 > r {
+            l = i
+            r = i + k - 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+func naive_count(text: string, pattern: string) returns int {
+    let n = str.len(text)
+    let p = str.len(pattern)
+    if p == 0 or p > n {
+        return 0
+    }
+    let count = 0
+    let i     = 0
+    while i + p <= n {
+        let k       = 0
+        let matched = 1
+        while k < p {
+            if str.char_at(text, i + k) != str.char_at(pattern, k) {
+                matched = 0
+                break
+            }
+            k = k + 1
+        }
+        if matched == 1 {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+func naive_first(text: string, pattern: string) returns int {
+    let n = str.len(text)
+    let p = str.len(pattern)
+    if p == 0 or p > n {
+        return 0 - 1
+    }
+    let i = 0
+    while i + p <= n {
+        let k       = 0
+        let matched = 1
+        while k < p {
+            if str.char_at(text, i + k) != str.char_at(pattern, k) {
+                matched = 0
+                break
+            }
+            k = k + 1
+        }
+        if matched == 1 {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+func z_count(text: string, pattern: string, scratch: [int]) returns int {
+    let p = str.len(pattern)
+    if p == 0 {
+        return 0
+    }
+    let combined = pattern + "#" + text
+    let n        = z_array(combined, scratch)
+    let count    = 0
+    let i        = 1
+    while i < n {
+        if scratch[i] == p {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+func z_first(text: string, pattern: string, scratch: [int]) returns int {
+    let p = str.len(pattern)
+    if p == 0 {
+        return 0 - 1
+    }
+    let combined = pattern + "#" + text
+    let n        = z_array(combined, scratch)
+    let i        = 1
+    while i < n {
+        if scratch[i] == p {
+            return i - p - 1
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+public func main() returns int {
+    let z = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    let known = [10, 1, 0, 0, 2, 1, 0, 3, 1, 0]
+    if z_array("aabxaayaab", z) != 10 {
+        return 1
+    }
+    let i = 0
+    while i < 10 {
+        if z[i] != known[i] {
+            return 2 + i
+        }
+        i = i + 1
+    }
+    let five = [5, 4, 3, 2, 1]
+    if z_array("aaaaa", z) != 5 {
+        return 20
+    }
+    i = 0
+    while i < 5 {
+        if z[i] != five[i] {
+            return 21 + i
+        }
+        i = i + 1
+    }
+    let text           = "aabxaayaab"
+    let patterns       = ["aab", "xaa", "xyz", "a", "aabxaayaab"]
+    let expected_count = [2, 1, 0, 6, 1]
+    let expected_first = [0, 3, 0 - 1, 0, 0]
+    i = 0
+    while i < 5 {
+        if z_count(text, patterns[i], z) != expected_count[i] {
+            return 30 + i
+        }
+        if naive_count(text, patterns[i]) != expected_count[i] {
+            return 40 + i
+        }
+        if z_first(text, patterns[i], z) != expected_first[i] {
+            return 50 + i
+        }
+        if naive_first(text, patterns[i]) != expected_first[i] {
+            return 60 + i
+        }
+        i = i + 1
+    }
+    println("PASS z_algorithm: known Z values + naive matching oracle")
+    return 0
+}

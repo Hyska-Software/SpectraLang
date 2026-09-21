@@ -1,0 +1,135 @@
+module quickselect_order
+
+from std.io import println
+
+// Quickselect with median-of-three pivot and Lomuto partition: the k-th
+// smallest element matches the sorted array for every k, and the partition
+// invariant is checked explicitly on fresh copies.
+
+func swap_at(values: [int], i: int, j: int) {
+    let hold = values[i]
+    values[i] = values[j]
+    values[j] = hold
+}
+
+func partition(values: [int], left: int, right: int) returns int {
+    let mid = (left + right) / 2
+    if values[mid] < values[left] {
+        swap_at(values, mid, left)
+    }
+    if values[right] < values[left] {
+        swap_at(values, right, left)
+    }
+    if values[right] < values[mid] {
+        swap_at(values, right, mid)
+    }
+    swap_at(values, mid, right)
+    let pivot = values[right]
+    let store = left
+    let i     = left
+    while i < right {
+        if values[i] < pivot {
+            swap_at(values, store, i)
+            store = store + 1
+        }
+        i = i + 1
+    }
+    swap_at(values, store, right)
+    return store
+}
+
+func select(values: [int], left: int, right: int, rank: int) returns int {
+    if left == right {
+        return values[left]
+    }
+    let pivot_index = partition(values, left, right)
+    if rank == pivot_index {
+        return values[rank]
+    }
+    if rank < pivot_index {
+        return select(values, left, pivot_index - 1, rank)
+    }
+    return select(values, pivot_index + 1, right, rank)
+}
+
+func sorted_copy(values: [int], n: int, out: [int]) {
+    let i = 0
+    while i < n {
+        out[i] = values[i]
+        i = i + 1
+    }
+    i = 1
+    while i < n {
+        let current = out[i]
+        let j       = i
+        while j > 0 and current < out[j - 1] {
+            out[j] = out[j - 1]
+            j = j - 1
+        }
+        out[j] = current
+        i = i + 1
+    }
+}
+
+func check_all_ranks(values: [int], n: int, scratch: [int], sorted: [int]) returns bool {
+    sorted_copy(values, n, sorted)
+    let k = 0
+    while k < n {
+        let i = 0
+        while i < n {
+            scratch[i] = values[i]
+            i = i + 1
+        }
+        if select(scratch, 0, n - 1, k) != sorted[k] {
+            return false
+        }
+        k = k + 1
+    }
+    return true
+}
+
+public func main() returns int {
+    let values  = [7, 2, 9, 4, 1, 8, 3, 6, 5, 0]
+    let scratch = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let sorted  = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    if not check_all_ranks(values, 10, scratch, sorted) {
+        return 1
+    }
+    let i = 0
+    while i < 10 {
+        scratch[i] = values[i]
+        i = i + 1
+    }
+    let pivot_index = partition(scratch, 0, 9)
+    if scratch[pivot_index] != sorted[pivot_index] {
+        return 2
+    }
+    i = 0
+    while i < pivot_index {
+        if scratch[i] > scratch[pivot_index] {
+            return 3
+        }
+        i = i + 1
+    }
+    i = pivot_index + 1
+    while i < 10 {
+        if scratch[i] < scratch[pivot_index] {
+            return 4
+        }
+        i = i + 1
+    }
+    let duplicates = [5, 5, 1, 1, 5, 1, 5, 1, 1, 5]
+    if not check_all_ranks(duplicates, 10, scratch, sorted) {
+        return 5
+    }
+    let ascending = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    if not check_all_ranks(ascending, 10, scratch, sorted) {
+        return 6
+    }
+    let descending = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+    if not check_all_ranks(descending, 10, scratch, sorted) {
+        return 7
+    }
+    println("PASS quickselect_order: every rank + partition invariant")
+    return 0
+}

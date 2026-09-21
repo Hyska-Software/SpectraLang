@@ -250,13 +250,12 @@ pub enum InstructionKind {
         ptr: Value,
         index: Value,
         element_type: Type,
-        /// Static upper bound for user array indexing (`Some(len)` checks
-        /// `0 <= index < len` in the backend, trapping via `spectra_rt_panic`
-        /// with "array index out of bounds"). `None` for internal GEPs
-        /// (closure slots, enum tags, constant-driven walks) and for arrays
-        /// whose length is unknown at compile time (`[T]` parameters lower
-        /// to size 0, which means "unknown", not "empty").
-        bound: Option<usize>,
+        /// Accepted bounds for user array indexing. `Static(len)` checks
+        /// `index < len`; `Dynamic(value)` compares against the runtime length
+        /// the caller passed as a hidden parameter, and a dynamic value of zero
+        /// means "unknown length" (skip the check). `None` for internal GEPs
+        /// (closure slots, enum tags, constant-driven walks).
+        bound: Option<ArrayBound>,
     },
     /// Pointer arithmetic with a constant byte offset for aggregate fields.
     /// Used for struct/tuple/enum fields whose layout requires padding and
@@ -492,6 +491,18 @@ pub enum Terminator {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Value {
     pub id: usize,
+}
+
+/// Runtime length backing a user array index (`GetElementPtr`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArrayBound {
+    /// Compile-time length from a known array type.
+    Static(usize),
+    /// Runtime length carried by the hidden size parameter of an unsized
+    /// `[T]` parameter. Zero means the caller could not supply a length
+    /// (function values, foreign callbacks): the backend skips the check,
+    /// which is the behavior that existed before hidden lengths.
+    Dynamic(Value),
 }
 
 /// IR Type system

@@ -23,7 +23,7 @@ impl ASTLowering {
 
     pub(crate) fn lower_function(&mut self, ast_func: &ASTFunction) -> IRFunction {
         // Convert parameters
-        let params: Vec<Parameter> = ast_func
+        let mut params: Vec<Parameter> = ast_func
             .params
             .iter()
             .enumerate()
@@ -37,6 +37,33 @@ impl ASTLowering {
                     .unwrap_or(IRType::Void),
             })
             .collect();
+
+        // Unsized `[T]` parameters lower to length 0 ("unknown"). Append one
+        // hidden `Int` length parameter per such position so callers can hand
+        // the true length down and indexing inside the body can trap instead
+        // of silently corrupting memory. Every direct call site appends the
+        // matching arguments (see `append_hidden_size_args`).
+        let hidden_positions: Vec<usize> = params
+            .iter()
+            .enumerate()
+            .filter(|(_, param)| matches!(param.ty, IRType::Array { size: 0, .. }))
+            .map(|(index, _)| index)
+            .collect();
+        let mut hidden_sizes: Vec<(String, Value)> = Vec::new();
+        if !hidden_positions.is_empty() {
+            self.hidden_array_params
+                .insert(ast_func.name.clone(), hidden_positions.clone());
+            for position in &hidden_positions {
+                let id = params.len();
+                let public_name = params[*position].name.clone();
+                params.push(Parameter {
+                    id,
+                    name: format!("__len_{public_name}"),
+                    ty: IRType::Int,
+                });
+                hidden_sizes.push((public_name, Value { id }));
+            }
+        }
 
         // Create function
         let body_return_type = ast_func
@@ -84,7 +111,14 @@ impl ASTLowering {
         self.range_map.clear();
         self.struct_var_map.clear();
         self.drop_excluded_names.clear();
+        self.array_param_sizes.clear();
+        for (name, value) in &hidden_sizes {
+            self.array_param_sizes.insert(name.clone(), *value);
+        }
         for (idx, param) in params.iter().enumerate() {
+            if idx >= ast_func.params.len() {
+                break;
+            }
             let value = Value { id: idx };
             self.value_map.insert(param.name.clone(), value);
 
@@ -236,7 +270,7 @@ impl ASTLowering {
 
         // Convert method parameters to IR parameters.
         // `self` parameters become a parameter typed as the owning struct/enum.
-        let params: Vec<Parameter> = method
+        let mut params: Vec<Parameter> = method
             .params
             .iter()
             .enumerate()
@@ -292,6 +326,28 @@ impl ASTLowering {
             body_return_type.clone()
         };
 
+        // Same hidden length parameters as `lower_function`; `self` is never an
+        // array, so the positions stay aligned with `[self, args...]`.
+        let hidden_positions = self.unsized_positions_from_method_params(&method.params);
+        let mut hidden_sizes: Vec<(String, Value)> = Vec::new();
+        if !hidden_positions.is_empty() {
+            let canonical = self.resolve_user_function_symbol(&mangled_name);
+            self.hidden_array_params
+                .insert(mangled_name.clone(), hidden_positions.clone());
+            self.hidden_array_params
+                .insert(canonical, hidden_positions.clone());
+            for position in &hidden_positions {
+                let id = params.len();
+                let public_name = params[*position].name.clone();
+                params.push(Parameter {
+                    id,
+                    name: format!("__len_{public_name}"),
+                    ty: IRType::Int,
+                });
+                hidden_sizes.push((public_name, Value { id }));
+            }
+        }
+
         self.function_return_types
             .insert(mangled_name.clone(), return_type.clone());
 
@@ -308,8 +364,15 @@ impl ASTLowering {
         self.range_map.clear();
         self.struct_var_map.clear();
         self.drop_excluded_names.clear();
+        self.array_param_sizes.clear();
+        for (name, value) in &hidden_sizes {
+            self.array_param_sizes.insert(name.clone(), *value);
+        }
 
         for (idx, param) in params.iter().enumerate() {
+            if idx >= method.params.len() {
+                break;
+            }
             if method
                 .params
                 .get(idx)

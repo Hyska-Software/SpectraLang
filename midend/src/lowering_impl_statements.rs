@@ -315,10 +315,15 @@ impl ASTLowering {
                             IRType::Array { element_type, size } => (
                                 *element_type,
                                 // Size 0 is the `[T]` parameter placeholder
-                                // ("unknown length"): only a known positive
-                                // length can back a runtime check. Strings
-                                // have dynamic length: no static bound.
-                                if size > 0 { Some(size) } else { None },
+                                // ("unknown length"): a known length backs a
+                                // static check and an unsized parameter
+                                // resolves to the caller's runtime length.
+                                // Strings have dynamic length: no static bound.
+                                if size > 0 {
+                                    Some(ArrayBound::Static(size))
+                                } else {
+                                    self.dynamic_array_bound(array)
+                                },
                             ),
                             // Strings are packed byte buffers: element access
                             // is byte-granular (1-byte stride, 1-byte store).

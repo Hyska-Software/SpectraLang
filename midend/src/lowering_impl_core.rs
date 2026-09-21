@@ -65,6 +65,8 @@ impl ASTLowering {
             trait_implementations: HashMap::new(),
             function_return_types: HashMap::new(),
             function_parameter_types: HashMap::new(),
+            array_param_sizes: HashMap::new(),
+            hidden_array_params: HashMap::new(),
             std_import_aliases: HashMap::new(),
             imported_function_symbols: HashMap::new(),
             lambda_counter: 0,
@@ -112,6 +114,161 @@ impl ASTLowering {
     /// calls and closure calls).
     pub(crate) fn user_function_returns_unit(&self, name: &str) -> bool {
         matches!(self.function_return_types.get(name), Some(IRType::Void))
+    }
+
+    /// Public-argument positions of the unsized `[T]` parameters of
+    /// `function`. The definition appends one hidden length parameter per
+    /// position (see `lower_function`/`lower_method`), so every direct call
+    /// must append the matching length arguments in the same order. The
+    /// result is cached because call sites ask repeatedly.
+    pub(crate) fn hidden_size_positions(&mut self, function: &str) -> Vec<usize> {
+        if let Some(positions) = self.hidden_array_params.get(function) {
+            return positions.clone();
+        }
+        let positions = if let Some(types) = self.function_parameter_types.get(function).cloned() {
+            types
+                .iter()
+                .enumerate()
+                .filter(|(_, ty)| matches!(ty, IRType::Array { size: 0, .. }))
+                .map(|(index, _)| index)
+                .collect()
+        } else if let Some(function) = self.generic_functions.get(function).cloned() {
+            // Generic functions are skipped by the second pass; derive the
+            // positions from their AST. A specialized clone keeps the same
+            // parameter order, so the positions stay valid.
+            self.unsized_positions_from_function_params(&function.params)
+        } else {
+            Vec::new()
+        };
+        self.hidden_array_params
+            .insert(function.to_string(), positions.clone());
+        positions
+    }
+
+    pub(crate) fn unsized_positions_from_function_params(
+        &self,
+        params: &[spectra_compiler::ast::FunctionParam],
+    ) -> Vec<usize> {
+        let mut positions = Vec::new();
+        for (index, param) in params.iter().enumerate() {
+            let is_unsized = param
+                .ty
+                .as_ref()
+                .is_some_and(|annotation| matches!(self.lower_type_annotation(annotation), IRType::Array { size: 0, .. }));
+            if is_unsized {
+                positions.push(index);
+            }
+        }
+        positions
+    }
+
+    /// Positions of unsized `[T]` parameters in an impl/trait method. `self`
+    /// occupies position 0 and is never an array, so raw indices stay aligned
+    /// with the method call's `[self, args...]` layout.
+    pub(crate) fn unsized_positions_from_method_params(
+        &self,
+        params: &[spectra_compiler::ast::Parameter],
+    ) -> Vec<usize> {
+        let mut positions = Vec::new();
+        for (index, param) in params.iter().enumerate() {
+            if param.is_self {
+                continue;
+            }
+            let is_unsized = param
+                .type_annotation
+                .as_ref()
+                .is_some_and(|annotation| matches!(self.lower_type_annotation(annotation), IRType::Array { size: 0, .. }));
+            if is_unsized {
+                positions.push(index);
+            }
+        }
+        positions
+    }
+
+    /// The length argument appended for an unsized `[T]` parameter: a static
+    /// size when the argument's type knows one, the caller's own hidden length
+    /// when the argument is one of its unsized parameters, and zero when the
+    /// length is unknown at this call site (the check is skipped).
+    pub(crate) fn hidden_size_argument(
+        &mut self,
+        argument: &Expression,
+        ir_func: &mut IRFunction,
+    ) -> Value {
+        if let IRType::Array { size, .. } = self.infer_expr_ir_type(argument) {
+            if size > 0 {
+                return self.builder.build_const_int(ir_func, size as i64);
+            }
+        }
+        if let ExpressionKind::Identifier(name) = &argument.kind {
+            if let Some(value) = self.array_param_sizes.get(name).copied() {
+                return value;
+            }
+        }
+        if let ExpressionKind::ArrayLiteral { elements } = &argument.kind {
+            return self.builder.build_const_int(ir_func, elements.len() as i64);
+        }
+        self.builder.build_const_int(ir_func, 0)
+    }
+
+    /// Appends the hidden length arguments for a direct call whose public
+    /// arguments are the AST expressions `arguments` (already lowered into
+    /// `arg_values`). `candidates` are the callee spellings to try, mirroring
+    /// the dual lookup used for return types.
+    pub(crate) fn append_hidden_size_args(
+        &mut self,
+        candidates: &[&str],
+        arguments: &[Expression],
+        arg_values: &mut Vec<Value>,
+        ir_func: &mut IRFunction,
+    ) {
+        let mut positions = Vec::new();
+        for candidate in candidates {
+            positions = self.hidden_size_positions(candidate);
+            if !positions.is_empty() {
+                break;
+            }
+        }
+        for position in positions {
+            let value = match arguments.get(position) {
+                Some(argument) => self.hidden_size_argument(argument, ir_func),
+                None => self.builder.build_const_int(ir_func, 0),
+            };
+            arg_values.push(value);
+        }
+    }
+
+    /// Appends zero ("unknown length") hidden arguments for a call whose
+    /// values do not carry AST expressions, such as the function-value
+    /// wrapper, which forwards the public ABI it was created for.
+    pub(crate) fn append_hidden_size_zeros(
+        &mut self,
+        candidates: &[&str],
+        arg_values: &mut Vec<Value>,
+        ir_func: &mut IRFunction,
+    ) {
+        let mut positions = Vec::new();
+        for candidate in candidates {
+            positions = self.hidden_size_positions(candidate);
+            if !positions.is_empty() {
+                break;
+            }
+        }
+        for _ in positions {
+            arg_values.push(self.builder.build_const_int(ir_func, 0));
+        }
+    }
+
+    /// Runtime bound for indexing `array` when its static size is unknown:
+    /// only a direct reference to an unsized `[T]` parameter (or a name that
+    /// forwards one) resolves to a hidden length.
+    pub(crate) fn dynamic_array_bound(&self, array: &Expression) -> Option<ArrayBound> {
+        if let ExpressionKind::Identifier(name) = &array.kind {
+            return self
+                .array_param_sizes
+                .get(name)
+                .map(|value| ArrayBound::Dynamic(*value));
+        }
+        None
     }
 
     pub fn set_source_file(&mut self, file: impl Into<String>) {

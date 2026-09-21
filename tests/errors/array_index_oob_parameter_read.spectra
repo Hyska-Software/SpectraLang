@@ -1,0 +1,16 @@
+module array_index_oob_parameter_read
+
+// Expected behavior: JIT/AOT execution prints
+//   runtime error: array index out of bounds
+// to stderr and terminates the process with exit code 101
+// (spectra_rt_panic), instead of reading past the caller's array.
+// The read goes through an unsized `[int]` parameter, so the bound is the
+// hidden length the call site passes down, not a static size.
+func read_at(values: [int], index: int) returns int {
+    return values[index]
+}
+
+public func main() returns int {
+    let values = [10, 20, 30]
+    return read_at(values, 3)
+}

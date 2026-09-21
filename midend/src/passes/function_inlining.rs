@@ -475,7 +475,15 @@ fn remap_instruction(
             ptr: map_value(*ptr, values),
             index: map_value(*index, values),
             element_type: element_type.clone(),
-            bound: *bound,
+            bound: match bound {
+                Some(crate::ir::ArrayBound::Static(len)) => {
+                    Some(crate::ir::ArrayBound::Static(*len))
+                }
+                Some(crate::ir::ArrayBound::Dynamic(value)) => {
+                    Some(crate::ir::ArrayBound::Dynamic(map_value(*value, values)))
+                }
+                None => None,
+            },
         },
         InstructionKind::FieldPtr {
             result,

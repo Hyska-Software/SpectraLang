@@ -1,0 +1,97 @@
+module miller_rabin_primes
+
+from std.io import println
+
+// Miller-Rabin with the first twelve prime bases, plus modular exponentiation.
+// The Carmichael numbers prove the Fermat pseudoprime trap MR catches.
+
+func mod_pow(base: int, exponent: int, modulus: int) returns int {
+    let result = 1
+    let b      = base % modulus
+    let e      = exponent
+    while e > 0 {
+        if e % 2 == 1 {
+            result = (result * b) % modulus
+        }
+        b = (b * b) % modulus
+        e = e / 2
+    }
+    return result
+}
+
+func is_prime(n: int) returns bool {
+    if n < 2 {
+        return false
+    }
+    let small = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]
+    let i     = 0
+    while i < 12 {
+        if n == small[i] {
+            return true
+        }
+        if n % small[i] == 0 {
+            return false
+        }
+        i = i + 1
+    }
+    let d = n - 1
+    let s = 0
+    while d % 2 == 0 {
+        d = d / 2
+        s = s + 1
+    }
+    i = 0
+    while i < 12 {
+        let x = mod_pow(small[i], d, n)
+        if x != 1 and x != n - 1 {
+            let r         = 1
+            let composite = 1
+            while r < s {
+                x = (x * x) % n
+                if x == n - 1 {
+                    composite = 0
+                    break
+                }
+                r = r + 1
+            }
+            if composite == 1 {
+                return false
+            }
+        }
+        i = i + 1
+    }
+    return true
+}
+
+public func main() returns int {
+    if mod_pow(3, 644, 645) != 36 {
+        return 1
+    }
+    if mod_pow(2, 10, 1000) != 24 or mod_pow(7, 0, 13) != 1 or mod_pow(5, 3, 13) != 8 {
+        return 2
+    }
+    let primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 7919, 104729, 1299709]
+    let i      = 0
+    while i < 15 {
+        if not is_prime(primes[i]) {
+            return 10 + i
+        }
+        i = i + 1
+    }
+    let composites = [0, 1, 4, 561, 1105, 1729, 7917, 104730, 1299710]
+    i = 0
+    while i < 9 {
+        if is_prime(composites[i]) {
+            return 30 + i
+        }
+        i = i + 1
+    }
+    if mod_pow(2, 560, 561) != 1 {
+        return 40
+    }
+    if is_prime(561) {
+        return 41
+    }
+    println("PASS miller_rabin_primes: modpow + Fermat traps + primality")
+    return 0
+}

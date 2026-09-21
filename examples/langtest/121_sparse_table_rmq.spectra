@@ -1,0 +1,144 @@
+module sparse_table_rmq
+
+from std.io import println
+
+// Sparse table for static range-minimum queries: O(n log n) build, O(1) query
+// with two overlapping power-of-two windows, checked against brute force for
+// every range of two arrays.
+
+func build_logs(logs: [int], n: int) {
+    logs[1] = 0
+    let i = 2
+    while i <= n {
+        logs[i] = logs[i / 2] + 1
+        i = i + 1
+    }
+}
+
+func build_table(values: [int], n: int, table: [int]) {
+    let i = 0
+    while i < n {
+        table[i] = values[i]
+        i = i + 1
+    }
+    let k    = 1
+    let span = 2
+    while span <= n {
+        i = 0
+        while i + span <= n {
+            let left  = table[(k - 1) * n + i]
+            let right = table[(k - 1) * n + i + span / 2]
+            if left < right {
+                table[k * n + i] = left
+            } else {
+                table[k * n + i] = right
+            }
+            i = i + 1
+        }
+        k = k + 1
+        span = span * 2
+    }
+}
+
+func rmq(table: [int], logs: [int], n: int, left: int, right: int) returns int {
+    let k    = logs[right - left + 1]
+    let span = 1
+    let i    = 0
+    while i < k {
+        span = span * 2
+        i = i + 1
+    }
+    let a = table[k * n + left]
+    let b = table[k * n + right - span + 1]
+    if a < b {
+        return a
+    }
+    return b
+}
+
+func brute_min(values: [int], left: int, right: int) returns int {
+    let best = values[left]
+    let i    = left
+    while i <= right {
+        if values[i] < best {
+            best = values[i]
+        }
+        i = i + 1
+    }
+    return best
+}
+
+func exhaustive(values: [int], n: int, table: [int], logs: [int]) returns bool {
+    let left = 0
+    while left < n {
+        let right = left
+        while right < n {
+            if rmq(table, logs, n, left, right) != brute_min(values, left, right) {
+                return false
+            }
+            right = right + 1
+        }
+        left = left + 1
+    }
+    return true
+}
+
+public func main() returns int {
+    let values = [5, 2, 8, 1, 9, 3, 7, 4]
+    let logs   = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let table  = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    build_logs(logs, 8)
+    if logs[8] != 3 or logs[1] != 0 or logs[5] != 2 {
+        return 1
+    }
+    build_table(values, 8, table)
+    if not exhaustive(values, 8, table, logs) {
+        return 2
+    }
+    if rmq(table, logs, 8, 0, 7) != 1 or rmq(table, logs, 8, 2, 5) != 1 or rmq(table, logs, 8, 4, 7) != 3 {
+        return 3
+    }
+    let duplicates = [0 - 3, 7, 0 - 3, 0, 5, 0 - 9, 2, 2]
+    build_table(duplicates, 8, table)
+    if not exhaustive(duplicates, 8, table, logs) {
+        return 4
+    }
+    if rmq(table, logs, 8, 0, 7) != 0 - 9 or rmq(table, logs, 8, 2, 3) != 0 - 3 {
+        return 5
+    }
+    println("PASS sparse_table_rmq: O(1) queries + exhaustive oracle")
+    return 0
+}

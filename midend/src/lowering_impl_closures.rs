@@ -120,12 +120,17 @@ impl ASTLowering {
         let entry = wrapper.add_block("entry");
         let saved_block = self.builder.get_current_block();
         self.builder.set_current_block(entry);
-        let args = (1..=public_params.len())
+        let mut args = (1..=public_params.len())
             .map(|id| Value { id })
             .collect::<Vec<_>>();
         // Imported function values must target the canonical linker symbol
         // (`api.handlers::health`), not the local import spelling.
         let callee_symbol = self.resolve_user_function_symbol(name);
+        // The wrapper exposes the public ABI, so any hidden length parameter
+        // of the callee is forwarded as zero ("unknown"): a function value can
+        // be called from anywhere and its array lengths are not part of the
+        // closure type.
+        self.append_hidden_size_zeros(&[callee_symbol.as_str(), name], &mut args, &mut wrapper);
         let result = self.builder.build_call(
             &mut wrapper,
             callee_symbol,

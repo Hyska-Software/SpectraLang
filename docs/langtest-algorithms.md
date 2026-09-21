@@ -120,11 +120,29 @@ invariantes passam e um código distinto por estágio quando alguma falha.
 | `109_rolling_hash.spectra` | Hash polinomial | Prefix hashes, busca por janela e confirmação contra colisões |
 | `110_wavelet_kth.spectra` | Wavelet matrix | Partições estáveis por bits e seleção k-ésima em subfaixas |
 | `111_treap_order_stats.spectra` | Treap | Rotações, erase, tamanhos de subárvore e estatísticas de ordem |
+| `112_bellman_ford_negative.spectra` | Bellman-Ford | Arestas negativas, relaxamento por rodadas e detecção de ciclo negativo |
+| `113_floyd_warshall_closure.spectra` | Floyd-Warshall | Caminhos mínimos entre todos os pares, fecho transitivo e diagonal negativa |
+| `114_kruskal_mst.spectra` | Kruskal | Ordenação de arestas, union-by-size e peso da árvore geradora mínima |
+| `115_manacher_palindromes.spectra` | Manacher | Raios ímpares e pares verificados contra contagem quadrática |
+| `116_lazy_segment_tree.spectra` | Segment tree lazy | Adição em faixa e máximo em faixa com oráculo de força bruta |
+| `117_miller_rabin_primes.spectra` | Miller-Rabin | Exponenciação modular, números de Carmichael e primalidade determinística |
+| `118_crc32_checksum.spectra` | CRC-32 | XOR aritmético, tabela refletida e variante bit a bit como oráculo |
+| `119_gale_shapley_matching.spectra` | Gale-Shapley | Casamento estável com enumeração exaustiva e checagem de otimalidade |
+| `120_lis_patience.spectra` | LIS (patience) | Comprimento O(n log n), reconstrução e subseqüência válida verificada |
+| `121_sparse_table_rmq.spectra` | Sparse table | Mínimo em faixa O(1) com oráculo exaustivo para todos os intervalos |
+| `122_skip_list_search.spectra` | Skip list | Níveis determinísticos por moedas fixas, busca, duplicata e ordem |
+| `123_softmax_stable.spectra` | Softmax estável | Expoente com redução de faixa, invariância ao deslocamento e cross-entropy |
+| `124_z_algorithm.spectra` | Z-algorithm | Z-array linear com valores conhecidos e busca contra oráculo ingênuo |
+| `125_burrows_wheeler.spectra` | Burrows-Wheeler | Transformada por rotações e inversa por LF com índice primário |
+| `126_base64_codec.spectra` | Base64 | RFC 4648 com packing aritmético, padding e roundtrip |
+| `127_sliding_window_max.spectra` | Janela deslizante | Máximo por deque monotônica com oráculo exaustivo para toda largura |
+| `128_quickselect_order.spectra` | Quickselect | Mediana-de-três e Lomuto; todas as ordens + invariante de partição |
+| `129_lu_decomposition.spectra` | LU com pivoteamento | PA = LU, L unitária e solução de sistema por substituições |
 
 Relação com o já existente: `tests/validation/524_recursion_recursive_descent_parser.spectra`
 cobre descida recursiva sobre strings; esta suíte complementa com DFA tabular,
 LL(1) sobre tokens, Pratt iterativo, unificação, dataflow, fuzzing diferencial e
-ddmin — nenhum duplica o 524. A suíte atual contém 111 arquivos e o validador
+ddmin — nenhum duplica o 524. A suíte atual contém 129 arquivos e o validador
 `scripts/validate_langtest_algorithms.py` mantém a lista executável sincronizada
 com esta tabela.
 
@@ -188,6 +206,95 @@ passavam nos 28 arquivos então existentes.
   padrão correto antes de cada `kmp_find`. Nenhuma mudança no compilador
   nesta leva; o gate `-O0` do validador (introduzido no R527) passou em
   todos os 28 arquivos de primeira, confirmando que o fix anterior segura.
+
+## Décima oitava leva (124–129): crash real isolado em parâmetros `[T]`
+
+Esta leva cobre Z-algorithm, Burrows-Wheeler, base64, janela deslizante,
+quickselect e decomposição LU. Dois oráculos do próprio teste estavam errados e
+foram corrigidos:
+
+- `126_base64_codec.spectra` — o buffer de decodificação tinha 24 posições, mas
+  a amostra mais longa decodifica 43 bytes; o buffer passou a 64.
+- `128_quickselect_order.spectra` — a asserção esperava o valor `4` no pivô,
+  confundindo a mediana da amostra (7, 1, 0) com a mediana do array; a
+  invariante correta é `scratch[pivot_index] == sorted[pivot_index]`.
+
+### Defeito real reproduzido: índice fora dos limites através de parâmetro `[T]`
+
+O buffer curto do `126` não trapou: ele **corrompeu memória e derrubou o
+processo** com `0xC0000005` (access violation) depois de imprimir `PASS`. A
+redução mínima prova duas metades distintas do contrato:
+
+```spectra
+// Índice local OOB: trap determinístico.
+let small = [0, 0, 0]
+let i = 0
+while i < 10 { small[i] = i; i = i + 1 }
+// => runtime error: array index out of bounds (exit 101)
+
+// Índice OOB através de parâmetro: silencioso.
+func write_into(out: [int], count: int) {
+    let i = 0
+    while i < count { out[i] = i; i = i + 1 }
+}
+let small = [0, 0, 0]
+write_into(small, 10)
+// => imprime "finished" e aborta com access violation
+```
+
+**Causa raiz:** `[T]`/`array<T>` em parâmetros baixa para `IRType::Array` de
+tamanho 0; os sites de leitura e escrita só anexam `bound` quando o tamanho é
+conhecido (`size > 0`), então o `GetElementPtr` dentro do callee é emitido sem
+checagem. O tamanho verdadeiro vive apenas com o chamador.
+
+**Correção real (trabalho futuro já registrado, agora com reprodução):** o
+`GetElementPtr` precisa aceitar um bound dinâmico (`Static(usize) |
+Dynamic(Value)`) alimentado por um parâmetro oculto de tamanho, com o chamador
+passando o tamanho conhecido ou `0` (desconhecido) — ou fat pointers completos.
+Isso é uma mudança de ABI/modelo de memória que atravessa lowering de funções e
+métodos, chamadas diretas e UFCS, wrappers de função-como-valor, monomorfização,
+renumeração de async, inliner, verificador, DCE e backend. Não é um bugfix
+localizado; por isso o defeito está documentado aqui e não foi parcialmente
+corrigido.
+
+Validação final da leva: os 129 arquivos passaram em default, `-O0`, `-O3`,
+`check`, `fmt --check` e `lint`; os seis arquivos novos também passaram em AOT.
+
+## Décima sétima leva (118–123): correções nos próprios algoritmos
+
+Esta leva cobre checksum com XOR aritmético, casamento estável com oráculo
+exaustivo, subseqüência crescente com reconstrução, consultas de mínimo em
+faixa, skip list determinística e softmax numericamente estável. A primeira
+execução não exigiu nenhuma correção de algoritmo; a única correção de arquivo
+foi estrutural:
+
+- `118_crc32_checksum.spectra` — a primeira versão declarava 274 entradas na
+  tabela literal em vez de 256; o arquivo foi reescrito com a tabela em 16
+  linhas de 16 zeros (`table_is_zero` torna a contagem verificável em runtime)
+  e com a função recebendo a tabela já construída.
+
+Nenhum defeito do compilador foi reproduzido nesta leva; os seis algoritmos
+passaram em `check`, execução default e `-O0` já na primeira execução válida.
+Validação final da leva: os 123 arquivos passaram em default, `-O0`, `-O3`,
+`check`, `fmt --check` e `lint`; os seis arquivos novos também passaram em
+AOT.
+
+## Décima sexta leva (112–117): correções nos próprios algoritmos
+
+Esta leva cobre caminhos com arestas negativas, fecho transitivo, árvore
+geradora mínima, palíndromos em tempo linear, atualização de faixa com lazy
+propagation e primalidade determinística. A primeira execução encontrou e
+corrigiu um problema no próprio teste:
+
+- `116_lazy_segment_tree.spectra` — a verificação final esperava `101`, mas o
+  valor exato é `99` (`1 + 3 - 5 + 100`); o oráculo de força bruta já validava
+  a árvore em todos os lotes, então a asserção absoluta foi corrigida.
+
+Nenhum desses casos exigiu alteração do compilador: os diagnósticos foram
+reproduzidos, explicados e corrigidos nos algoritmos `.spectra`.
+Validação final da leva: os 117 arquivos passaram em default, `-O0`, `-O3`,
+`check`, `fmt --check` e `lint`; os seis arquivos novos também passaram em
+AOT.
 
 ## Décima quinta leva (106–111): correções nos próprios algoritmos
 

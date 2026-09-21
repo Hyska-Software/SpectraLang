@@ -1277,7 +1277,7 @@ mod tests {
     /// Builds `fn name() -> int { alloca [4 x int]; return base[1]; }` with a
     /// static bound so the backend must emit the OOB panic path.
     fn bounded_gep_function(name: &str) -> IRFunction {
-        use spectra_midend::ir::{InstructionKind, Terminator, Value};
+        use spectra_midend::ir::{ArrayBound, InstructionKind, Terminator, Value};
 
         let mut func = IRFunction::new(name, vec![], IRType::Int);
         let entry_block_id = func.add_block("entry");
@@ -1301,7 +1301,7 @@ mod tests {
             ptr: base,
             index,
             element_type: IRType::Int,
-            bound: Some(4),
+            bound: Some(ArrayBound::Static(4)),
         });
         let loaded = Value { id: 3 };
         entry_block.add_instruction(InstructionKind::Load {
@@ -1341,6 +1341,85 @@ mod tests {
         );
         // Panic literals are embedded as packed UTF-8 bytes with a
         // single-byte NUL terminator, so search for the raw byte pattern.
+        let expected: Vec<u8> = "array index out of bounds"
+            .bytes()
+            .chain(std::iter::once(0))
+            .collect();
+        assert!(
+            bytes.windows(expected.len()).any(|window| window == expected),
+            "AOT object does not embed the panic message"
+        );
+    }
+
+    /// Builds `fn name(len: int) -> int { alloca [4 x int]; return base[len]; }`
+    /// with a dynamic bound (the hidden-size parameter path), so the backend
+    /// must compare against a runtime length instead of a constant.
+    fn dynamic_bounded_gep_function(name: &str) -> IRFunction {
+        use spectra_midend::ir::{ArrayBound, InstructionKind, Parameter, Terminator, Value};
+
+        let mut func = IRFunction::new(
+            name,
+            vec![Parameter {
+                id: 0,
+                name: "len".to_string(),
+                ty: IRType::Int,
+            }],
+            IRType::Int,
+        );
+        let entry_block_id = func.add_block("entry");
+        let entry_block = func.get_block_mut(entry_block_id).unwrap();
+        let base = Value { id: 1 };
+        entry_block.add_instruction(InstructionKind::Alloca {
+            result: base,
+            ty: IRType::Array {
+                element_type: Box::new(IRType::Int),
+                size: 4,
+            },
+        });
+        let elem_ptr = Value { id: 2 };
+        entry_block.add_instruction(InstructionKind::GetElementPtr {
+            result: elem_ptr,
+            ptr: base,
+            index: Value { id: 0 },
+            element_type: IRType::Int,
+            bound: Some(ArrayBound::Dynamic(Value { id: 0 })),
+        });
+        let loaded = Value { id: 3 };
+        entry_block.add_instruction(InstructionKind::Load {
+            result: loaded,
+            ptr: elem_ptr,
+            ty: IRType::Int,
+        });
+        entry_block.set_terminator(Terminator::Return {
+            value: Some(loaded),
+        });
+        func
+    }
+
+    #[test]
+    fn dynamic_bounded_gep_lowering_passes_verifier() {
+        // The hidden-length bound must lower through the same checked path as
+        // the static bound: verifier-clean JIT output with the panic block.
+        let mut codegen = CodeGenerator::new();
+        let func = dynamic_bounded_gep_function("dynamic_bounded_gep");
+        assert!(codegen.declare_function(&func).is_ok());
+        assert!(codegen.define_function(&func, &std::collections::HashMap::new()).is_ok());
+    }
+
+    #[test]
+    fn aot_dynamic_bounded_gep_references_spectra_rt_panic() {
+        let name = "aot_dynamic_bounded_gep";
+        let mut module = IRModule::new(name);
+        module.add_function(dynamic_bounded_gep_function(name));
+
+        let bytes = crate::AotCodeGenerator::new()
+            .compile_to_object(&module, &crate::AotOptions::default())
+            .expect("AOT compile of dynamic bounded-gep module");
+        let haystack = String::from_utf8_lossy(&bytes);
+        assert!(
+            haystack.contains("spectra_rt_panic"),
+            "AOT object does not reference spectra_rt_panic"
+        );
         let expected: Vec<u8> = "array index out of bounds"
             .bytes()
             .chain(std::iter::once(0))

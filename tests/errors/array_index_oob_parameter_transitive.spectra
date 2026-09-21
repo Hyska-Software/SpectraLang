@@ -1,0 +1,19 @@
+module array_index_oob_parameter_transitive
+
+// Expected behavior: JIT/AOT execution prints
+//   runtime error: array index out of bounds
+// to stderr and terminates the process with exit code 101
+// (spectra_rt_panic). The caller's length must travel through `forward` into
+// `read_at` so the check still fires two frames below the array literal.
+func read_at(values: [int], index: int) returns int {
+    return values[index]
+}
+
+func forward(values: [int], index: int) returns int {
+    return read_at(values, index)
+}
+
+public func main() returns int {
+    let values = [10, 20, 30]
+    return forward(values, 3)
+}

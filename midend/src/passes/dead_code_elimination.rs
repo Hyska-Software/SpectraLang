@@ -118,9 +118,14 @@ impl DeadCodeElimination {
                 used.insert(ptr.id);
                 used.insert(value.id);
             }
-            InstructionKind::GetElementPtr { ptr, index, .. } => {
+            InstructionKind::GetElementPtr {
+                ptr, index, bound, ..
+            } => {
                 used.insert(ptr.id);
                 used.insert(index.id);
+                if let Some(crate::ir::ArrayBound::Dynamic(value)) = bound {
+                    used.insert(value.id);
+                }
             }
             InstructionKind::FieldPtr { ptr, .. } => {
                 used.insert(ptr.id);

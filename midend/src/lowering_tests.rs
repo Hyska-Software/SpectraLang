@@ -273,6 +273,63 @@ mod tests {
     }
 
     #[test]
+    fn unsized_array_parameter_indexing_checks_the_hidden_length() {
+        // The definition appends one hidden `Int` length parameter after the
+        // public ones, indexing the parameter gets a dynamic bound naming that
+        // value, and the call site appends the length it knows. Before this,
+        // an out-of-bounds index through a `[T]` parameter corrupted memory
+        // silently because the static bound was 0 ("unknown").
+        let ir = lower_source(
+            r#"
+            module parameter_bounds
+
+            func read_at(values: [int], index: int) returns int {
+                return values[index]
+            }
+
+            func main() returns int {
+                return read_at([10, 20, 30], 1)
+            }
+            "#,
+        );
+
+        let read_at = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "read_at")
+            .expect("read_at must be lowered");
+        assert_eq!(
+            read_at.params.len(),
+            3,
+            "public parameters plus one hidden length"
+        );
+        assert_eq!(read_at.params[2].name, "__len_values");
+
+        let main = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main must be lowered");
+        let call_args = main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .find_map(|instruction| match &instruction.kind {
+                crate::ir::InstructionKind::Call { args, .. } => Some(args.clone()),
+                _ => None,
+            })
+            .expect("main must call read_at");
+        assert_eq!(
+            call_args.len(),
+            3,
+            "the call appends the array literal length"
+        );
+
+        let pretty = crate::ir::pretty::format_module(&ir);
+        assert!(pretty.contains("bound dynamic"), "{pretty}");
+    }
+
+    #[test]
     fn empty_array_binding_lowers_without_a_loop() {
         let ir = lower_source(
             r#"

@@ -468,7 +468,15 @@ fn instruction_operands(instruction: &Instruction) -> Vec<Value> {
         }
         | InstructionKind::EscapeManualAlloc { ptr: operand, .. } => vec![*operand],
         InstructionKind::Store { ptr, value } => vec![*ptr, *value],
-        InstructionKind::GetElementPtr { ptr, index, .. } => vec![*ptr, *index],
+        InstructionKind::GetElementPtr {
+            ptr, index, bound, ..
+        } => {
+            let mut operands = vec![*ptr, *index];
+            if let Some(crate::ir::ArrayBound::Dynamic(value)) = bound {
+                operands.push(*value);
+            }
+            operands
+        }
         InstructionKind::FieldPtr { ptr, .. } => vec![*ptr],
         InstructionKind::Call { args, .. } | InstructionKind::HostCall { args, .. } => args.clone(),
         InstructionKind::CallIndirect { fn_ptr, args, .. } => {

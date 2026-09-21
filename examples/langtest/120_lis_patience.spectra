@@ -1,0 +1,161 @@
+module lis_patience
+
+from std.io import println
+
+// Longest increasing subsequence with patience sorting (O(n log n)) and
+// reconstruction, verified against a quadratic DP oracle plus a real
+// subsequence check of the rebuilt values.
+
+func oracle_length(values: [int], n: int) returns int {
+    let dp   = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    let best = 0
+    let i    = 0
+    while i < n {
+        dp[i] = 1
+        let j = 0
+        while j < i {
+            if values[j] < values[i] and dp[j] + 1 > dp[i] {
+                dp[i] = dp[j] + 1
+            }
+            j = j + 1
+        }
+        if dp[i] > best {
+            best = dp[i]
+        }
+        i = i + 1
+    }
+    return best
+}
+
+func patience_length(values: [int], n: int) returns int {
+    let tails  = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let length = 0
+    let i      = 0
+    while i < n {
+        let lo = 0
+        let hi = length
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if tails[mid] < values[i] {
+                lo = mid + 1
+            } else {
+                hi = mid
+            }
+        }
+        tails[lo] = values[i]
+        if lo == length {
+            length = length + 1
+        }
+        i = i + 1
+    }
+    return length
+}
+
+func reconstruct(values: [int], n: int, out: [int]) returns int {
+    if n == 0 {
+        return 0
+    }
+    let tails      = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let tail_index = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let parent     = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let length     = 0
+    let i          = 0
+    while i < n {
+        let lo = 0
+        let hi = length
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if tails[mid] < values[i] {
+                lo = mid + 1
+            } else {
+                hi = mid
+            }
+        }
+        if lo > 0 {
+            parent[i] = tail_index[lo - 1]
+        } else {
+            parent[i] = 0 - 1
+        }
+        tails[lo] = values[i]
+        tail_index[lo] = i
+        if lo == length {
+            length = length + 1
+        }
+        i = i + 1
+    }
+    let cursor = tail_index[length - 1]
+    let k      = length - 1
+    while k >= 0 {
+        out[k] = values[cursor]
+        cursor = parent[cursor]
+        k = k - 1
+    }
+    return length
+}
+
+func strictly_increasing(candidate: [int], length: int) returns bool {
+    let i = 1
+    while i < length {
+        if candidate[i - 1] >= candidate[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+func is_subsequence(values: [int], n: int, candidate: [int], length: int) returns bool {
+    let cursor = 0
+    let i      = 0
+    while i < n and cursor < length {
+        if values[i] == candidate[cursor] {
+            cursor = cursor + 1
+        }
+        i = i + 1
+    }
+    return cursor == length
+}
+
+public func main() returns int {
+    let flat = [
+        10, 9, 2, 5, 3, 7, 101, 18,
+        3, 10, 2, 1, 20,
+        1, 2, 3, 4, 5,
+        5, 4, 3, 2, 1,
+        7, 7, 7,
+    ]
+    let starts     = [0, 8, 13, 18, 23]
+    let lengths    = [8, 5, 5, 5, 3]
+    let expected   = [4, 3, 5, 1, 1]
+    let work       = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let rebuilt    = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let case_index = 0
+    while case_index < 5 {
+        let n     = lengths[case_index]
+        let start = starts[case_index]
+        let i     = 0
+        while i < n {
+            work[i] = flat[start + i]
+            i = i + 1
+        }
+        let oracle = oracle_length(work, n)
+        if oracle != expected[case_index] {
+            return 1 + case_index
+        }
+        if patience_length(work, n) != oracle {
+            return 10 + case_index
+        }
+        if reconstruct(work, n, rebuilt) != oracle {
+            return 20 + case_index
+        }
+        if not strictly_increasing(rebuilt, oracle) {
+            return 30 + case_index
+        }
+        if not is_subsequence(work, n, rebuilt, oracle) {
+            return 40 + case_index
+        }
+        case_index = case_index + 1
+    }
+    println("PASS lis_patience: O(n log n) length + reconstruction + oracle")
+    return 0
+}

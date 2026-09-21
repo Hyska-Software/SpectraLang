@@ -1,0 +1,115 @@
+module floyd_warshall_closure
+
+from std.io import println
+
+// Floyd-Warshall for all-pairs shortest paths, the transitive closure of the
+// same graph and negative-cycle detection from the distance matrix diagonal.
+
+func initialize(weights: [int], n: int, dist: [int]) {
+    let i = 0
+    while i < n * n {
+        if weights[i] == 0 {
+            dist[i] = 1000000
+        } else {
+            dist[i] = weights[i]
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < n {
+        dist[i * n + i] = 0
+        i = i + 1
+    }
+}
+
+func all_pairs(dist: [int], n: int) {
+    let k = 0
+    while k < n {
+        let i = 0
+        while i < n {
+            if dist[i * n + k] < 1000000 {
+                let j = 0
+                while j < n {
+                    if dist[k * n + j] < 1000000 {
+                        let candidate = dist[i * n + k] + dist[k * n + j]
+                        if candidate < dist[i * n + j] {
+                            dist[i * n + j] = candidate
+                        }
+                    }
+                    j = j + 1
+                }
+            }
+            i = i + 1
+        }
+        k = k + 1
+    }
+}
+
+func closure(dist: [int], n: int, reach: [int]) {
+    let i = 0
+    while i < n * n {
+        if dist[i] < 1000000 {
+            reach[i] = 1
+        } else {
+            reach[i] = 0
+        }
+        i = i + 1
+    }
+}
+
+func has_negative_cycle(dist: [int], n: int) returns bool {
+    let i = 0
+    while i < n {
+        if dist[i * n + i] < 0 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+public func main() returns int {
+    let weights = [
+        0, 5, 0, 10,
+        0, 0, 3, 0,
+        0, 0, 0, 1,
+        0, 0, 0, 0,
+    ]
+    let dist = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    initialize(weights, 4, dist)
+    all_pairs(dist, 4)
+    let want = [
+        0, 5, 8, 9,
+        1000000, 0, 3, 4,
+        1000000, 1000000, 0, 1,
+        1000000, 1000000, 1000000, 0,
+    ]
+    let i = 0
+    while i < 16 {
+        if dist[i] != want[i] {
+            return 1 + i
+        }
+        i = i + 1
+    }
+    let reach = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    closure(dist, 4, reach)
+    if reach[0] != 1 or reach[3] != 1 or reach[4] != 0 or reach[8] != 0 or reach[15] != 1 {
+        return 20
+    }
+    if has_negative_cycle(dist, 4) {
+        return 21
+    }
+    let cycle_weights = [
+        0, 1, 0,
+        0, 0, 0 - 3,
+        1, 0, 0,
+    ]
+    let cycle_dist = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    initialize(cycle_weights, 3, cycle_dist)
+    all_pairs(cycle_dist, 3)
+    if not has_negative_cycle(cycle_dist, 3) {
+        return 22
+    }
+    println("PASS floyd_warshall_closure: APSP + closure + negative cycle")
+    return 0
+}
