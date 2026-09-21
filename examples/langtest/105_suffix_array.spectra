@@ -1,0 +1,92 @@
+module suffix_array
+
+from std.io import println
+import std.string as str
+
+// Prefix-doubling suffix array with insertion sort for a small deterministic
+// corpus. The rank pair comparator makes every doubling round observable.
+
+func suffix_before(rank: [int], a: int, b: int, n: int, width: int) returns bool {
+    if rank[a] < rank[b] {
+        return true
+    }
+    if rank[a] > rank[b] {
+        return false
+    }
+    let ar = -1
+    let br = -1
+    if a + width < n {
+        ar = rank[a + width]
+    }
+    if b + width < n {
+        br = rank[b + width]
+    }
+    return ar < br
+}
+
+func sort_suffixes(sa: [int], rank: [int], n: int, width: int) {
+    let i = 1
+    while i < n {
+        let suffix = sa[i]
+        let j      = i
+        while j > 0 and suffix_before(rank, suffix, sa[j - 1], n, width) {
+            sa[j] = sa[j - 1]
+            j = j - 1
+        }
+        sa[j] = suffix
+        i = i + 1
+    }
+}
+
+func build_suffix_array(text: string, sa: [int], n: int) {
+    let rank      = [0, 0, 0, 0, 0, 0, 0, 0]
+    let next_rank = [0, 0, 0, 0, 0, 0, 0, 0]
+    let i         = 0
+    while i < n {
+        sa[i] = i
+        rank[i] = str.char_at(text, i)
+        i = i + 1
+    }
+    let width = 1
+    while width < n {
+        sort_suffixes(sa, rank, n, width)
+        next_rank[sa[0]] = 0
+        i = 1
+        let classes = 1
+        while i < n {
+            if rank[sa[i]] != rank[sa[i - 1]] or suffix_before(rank, sa[i - 1], sa[i], n, width) or suffix_before(rank, sa[i], sa[i - 1], n, width) {
+                classes = classes + 1
+            }
+            next_rank[sa[i]] = classes - 1
+            i = i + 1
+        }
+        i = 0
+        while i < n {
+            rank[i] = next_rank[i]
+            i = i + 1
+        }
+        if classes == n {
+            break
+        }
+        width = width * 2
+    }
+}
+
+public func main() returns int {
+    let text     = "banana"
+    let suffixes = [0, 0, 0, 0, 0, 0]
+    build_suffix_array(text, suffixes, 6)
+    let want = [5, 3, 1, 0, 4, 2]
+    let i    = 0
+    while i < 6 {
+        if suffixes[i] != want[i] {
+            return 1 + i
+        }
+        i = i + 1
+    }
+    if str.substring(text, suffixes[0], 6) != "a" or str.substring(text, suffixes[5], 6) != "nana" {
+        return 10
+    }
+    println("PASS suffix_array: prefix doubling + banana order")
+    return 0
+}

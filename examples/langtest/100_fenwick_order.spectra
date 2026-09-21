@@ -1,0 +1,88 @@
+module fenwick_order
+
+from std.io import println
+
+// Fenwick tree for point updates, prefix sums, and order statistics.
+// lowbit is expressed arithmetically so the test also covers integer loops.
+
+func lowbit(value: int) returns int {
+    let remainder = value
+    let result    = 1
+    while remainder % 2 == 0 {
+        result = result * 2
+        remainder = remainder / 2
+    }
+    return result
+}
+
+func add(bit: [int], n: int, index: int, delta: int) {
+    let cursor = index + 1
+    while cursor <= n {
+        bit[cursor - 1] = bit[cursor - 1] + delta
+        cursor = cursor + lowbit(cursor)
+    }
+}
+
+func prefix_sum(bit: [int], index: int) returns int {
+    let cursor = index
+    let total  = 0
+    while cursor > 0 {
+        total = total + bit[cursor - 1]
+        cursor = cursor - lowbit(cursor)
+    }
+    return total
+}
+
+func highest_power_of_two(n: int) returns int {
+    let power = 1
+    while power * 2 <= n {
+        power = power * 2
+    }
+    return power
+}
+
+func select_kth(bit: [int], n: int, target: int) returns int {
+    let index     = 0
+    let remaining = target
+    let step      = highest_power_of_two(n)
+    while step > 0 {
+        let next = index + step
+        if next <= n and bit[next - 1] < remaining {
+            remaining = remaining - bit[next - 1]
+            index = next
+        }
+        step = step / 2
+    }
+    return index
+}
+
+public func main() returns int {
+    let bit         = [0, 0, 0, 0, 0, 0]
+    let frequencies = [2, 0, 3, 1, 0, 2]
+    let i           = 0
+    while i < 6 {
+        add(bit, 6, i, frequencies[i])
+        i = i + 1
+    }
+    if prefix_sum(bit, 0) != 0 or prefix_sum(bit, 1) != 2 or prefix_sum(bit, 3) != 5 {
+        return 1
+    }
+    if prefix_sum(bit, 6) != 8 {
+        return 2
+    }
+    let want    = [0, 0, 2, 2, 5]
+    let targets = [1, 2, 3, 5, 8]
+    i = 0
+    while i < 5 {
+        if select_kth(bit, 6, targets[i]) != want[i] {
+            return 10 + i
+        }
+        i = i + 1
+    }
+    add(bit, 6, 1, 4)
+    if prefix_sum(bit, 2) != 6 or select_kth(bit, 6, 3) != 1 {
+        return 20
+    }
+    println("PASS fenwick_order: prefix sums + kth selection")
+    return 0
+}

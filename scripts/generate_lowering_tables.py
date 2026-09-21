@@ -287,7 +287,7 @@ LAYOUT: tuple[FileLayout, ...] = (
                 "header header_name header_value cookie cookie_name cookie_value cookie_with_options "
                 "cookie_path cookie_domain cookie_max_age cookie_secure cookie_http_only cookie_same_site "
                 "cookie_header response_with_cookie cookie_sign cookie_verify cookie_is_expired "
-                "cookie_error_code cookie_error_message status"
+                "cookie_error_code cookie_error_message status response_body"
                 ),
             ),
             Group(
@@ -403,7 +403,7 @@ LAYOUT: tuple[FileLayout, ...] = (
                 "text json bytes status with_header into_response into_text_response into_status_response "
                 "error error_response error_code error_message last_error_message register_sync "
                 "register_async register_sync_callback register_async_callback dispatch_sync "
-                "dispatch_async"
+                "dispatch_async with_status"
                 ),
             ),
             Group(

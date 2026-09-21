@@ -1,0 +1,78 @@
+module radix_sort
+
+from std.io import println
+
+// Stable LSD radix sort for non-negative decimal integers.
+// The parallel id array makes stability observable for duplicate keys.
+
+func radix_pass(values: [int], ids: [int], work_values: [int], work_ids: [int], n: int, exponent: int) {
+    let counts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let i      = 0
+    while i < n {
+        let digit = (values[i] / exponent) % 10
+        counts[digit] = counts[digit] + 1
+        i = i + 1
+    }
+    let digit = 1
+    while digit < 10 {
+        counts[digit] = counts[digit] + counts[digit - 1]
+        digit = digit + 1
+    }
+    let positions = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    positions[0] = 0
+    digit = 1
+    while digit < 10 {
+        positions[digit] = counts[digit - 1]
+        digit = digit + 1
+    }
+    i = 0
+    while i < n {
+        digit = (values[i] / exponent) % 10
+        let position = positions[digit]
+        work_values[position] = values[i]
+        work_ids[position] = ids[i]
+        positions[digit] = position + 1
+        i = i + 1
+    }
+    i = 0
+    while i < n {
+        values[i] = work_values[i]
+        ids[i] = work_ids[i]
+        i = i + 1
+    }
+}
+
+func sort(values: [int], ids: [int], n: int) {
+    let work_values = [0, 0, 0, 0, 0, 0, 0, 0]
+    let work_ids    = [0, 0, 0, 0, 0, 0, 0, 0]
+    let exponent    = 1
+    while exponent <= 1000 {
+        radix_pass(values, ids, work_values, work_ids, n, exponent)
+        exponent = exponent * 10
+    }
+}
+
+public func main() returns int {
+    let values = [170, 45, 75, 90, 802, 24, 2, 66]
+    let ids    = [0, 1, 2, 3, 4, 5, 6, 7]
+    sort(values, ids, 8)
+    let want = [2, 24, 45, 66, 75, 90, 170, 802]
+    let i    = 0
+    while i < 8 {
+        if values[i] != want[i] {
+            return 1 + i
+        }
+        i = i + 1
+    }
+    let repeated     = [12, 12, 3, 12]
+    let repeated_ids = [0, 1, 2, 3]
+    sort(repeated, repeated_ids, 4)
+    if repeated[0] != 3 or repeated_ids[0] != 2 {
+        return 20
+    }
+    if repeated[1] != 12 or repeated_ids[1] != 0 or repeated_ids[2] != 1 or repeated_ids[3] != 3 {
+        return 21
+    }
+    println("PASS radix_sort: LSD passes + stable duplicates")
+    return 0
+}

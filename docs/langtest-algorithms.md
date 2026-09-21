@@ -107,11 +107,20 @@ invariantes passam e um código distinto por estágio quando alguma falha.
 | `96_fft_butterfly.spectra` | FFT radix-2 (numerics) | DFT exata + roundtrip com tolerância |
 | `97_soundex_search.spectra` | Soundex (busca fuzzy LSP) | Pares clássicos colidem (Euler/Ellery…) |
 | `98_vlq_sourcemap.spectra` | VLQ base64 (debugger) | Vetores A/C/D + roundtrip em 7 valores |
+| `99_dijkstra_heap.spectra` | Dijkstra + min-heap | Caminhos mínimos com entradas obsoletas no heap e vértices inalcançáveis |
+| `100_fenwick_order.spectra` | Fenwick tree | Atualização pontual, soma prefixada e seleção do k-ésimo elemento |
+| `101_radix_sort.spectra` | Radix sort LSD | Passes decimais estáveis, com ids paralelos para observar duplicatas |
+| `102_rollback_dsu.spectra` | DSU com rollback | União por tamanho, snapshots e histórico reversível incluindo união redundante |
+| `103_interval_sweep.spectra` | Sweep line de intervalos | Máximo de sobreposição em intervalos fechados, com empate início antes de fim |
+| `104_bloom_filter.spectra` | Bloom filter | Três hashes determinísticos, ausência de falsos negativos e falso positivo permitido |
+| `105_suffix_array.spectra` | Suffix array | Prefix doubling, ranks por pares e ordenação dos sufixos de `banana` |
 
 Relação com o já existente: `tests/validation/524_recursion_recursive_descent_parser.spectra`
 cobre descida recursiva sobre strings; esta suíte complementa com DFA tabular,
 LL(1) sobre tokens, Pratt iterativo, unificação, dataflow, fuzzing diferencial e
-ddmin — nenhum duplica o 524.
+ddmin — nenhum duplica o 524. A suíte atual contém 105 arquivos e o validador
+`scripts/validate_langtest_algorithms.py` mantém a lista executável sincronizada
+com esta tabela.
 
 ## Como executar
 
@@ -163,7 +172,7 @@ generation`, enquanto `-O2`/`-O3` passavam (o DCE escondia o problema).
 
 Nenhum outro defeito de compilador/runtime foi encontrado nos demais
 arquivos daquela leva: `check`, `run -O0`, `run -O3`, `lint` e `fmt --check`
-passavam nos 28 arquivos então existentes (a suíte hoje tem 58).
+passavam nos 28 arquivos então existentes.
 
 ## Quarta leva (22–28): correção no próprio teste
 
@@ -173,6 +182,36 @@ passavam nos 28 arquivos então existentes (a suíte hoje tem 58).
   padrão correto antes de cada `kmp_find`. Nenhuma mudança no compilador
   nesta leva; o gate `-O0` do validador (introduzido no R527) passou em
   todos os 28 arquivos de primeira, confirmando que o fix anterior segura.
+
+## Décima quarta leva (99–105): correções nos próprios algoritmos
+
+Os sete algoritmos novos cobrem grafos, árvores indexadas, ordenação estável,
+conectividade temporal, intervalos inclusivos, filtros probabilísticos e
+strings. A primeira execução encontrou e corrigiu três falhas nos próprios
+testes:
+
+- `102_rollback_dsu.spectra` — uma união entre componentes já conectados foi
+  marcada como sucesso; a expectativa agora valida a operação redundante e seu
+  registro reversível.
+- `103_interval_sweep.spectra` — a inserção comparava a posição já deslocada,
+  não o candidato salvo; a ordenação agora preserva o início antes do fim no
+  mesmo ponto.
+- `105_suffix_array.spectra` — a criação de classes usava `not before`,
+  separando pares iguais; a comparação agora separa somente quando uma das duas
+  direções é estritamente anterior.
+
+Nenhum defeito do compilador foi confirmado nessa leva: as falhas reproduzidas
+foram invariantes incorretas dos algoritmos e foram corrigidas nos `.spectra`.
+O gate integrado também encontrou uma inconsistência de geração já existente:
+`response_body` e `with_status` estavam sendo colocados automaticamente nos
+lowerings, mas faltavam no `LAYOUT` declarativo de
+`scripts/generate_lowering_tables.py`. Os dois nomes foram adicionados ao
+layout explícito; `R-3207` voltou a validar os 1035 arms gerados.
+
+Validação desta leva: `validate_langtest_algorithms.py` passou 105/105 em
+default e `-O0`, os 105 passaram em `-O3`, os sete novos passaram em AOT,
+`check`, `fmt --check` e `lint`, e os testes de `spectra-compiler`,
+`spectra-midend` e `spectra-backend` permaneceram verdes.
 
 ## Décima terceira leva (91–98): só correções no próprio teste
 

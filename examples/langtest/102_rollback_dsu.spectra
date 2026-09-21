@@ -1,0 +1,103 @@
+module rollback_dsu
+
+from std.io import println
+
+// Disjoint-set union with union-by-size and rollback snapshots.
+// Every successful or redundant union records one reversible history item.
+
+func find_root(parent: [int], node: int) returns int {
+    let root = node
+    while parent[root] != root {
+        root = parent[root]
+    }
+    return root
+}
+
+func unite(parent: [int], sizes: [int], changed_child: [int], changed_root: [int], old_size: [int], top: [int], a: int, b: int) returns bool {
+    let left  = find_root(parent, a)
+    let right = find_root(parent, b)
+    if left == right {
+        changed_child[top[0]] = 0 - 1
+        changed_root[top[0]] = 0 - 1
+        old_size[top[0]] = 0
+        top[0] = top[0] + 1
+        return false
+    }
+    let root  = left
+    let child = right
+    if sizes[root] < sizes[child] {
+        root = right
+        child = left
+    }
+    changed_child[top[0]] = child
+    changed_root[top[0]] = root
+    old_size[top[0]] = sizes[root]
+    top[0] = top[0] + 1
+    parent[child] = root
+    sizes[root] = sizes[root] + sizes[child]
+    return true
+}
+
+func rollback(parent: [int], sizes: [int], changed_child: [int], changed_root: [int], old_size: [int], top: [int], snapshot: int) {
+    while top[0] > snapshot {
+        top[0] = top[0] - 1
+        let child = changed_child[top[0]]
+        if child != -1 {
+            let root = changed_root[top[0]]
+            parent[child] = child
+            sizes[root] = old_size[top[0]]
+        }
+    }
+}
+
+func connected(parent: [int], a: int, b: int) returns bool {
+    return find_root(parent, a) == find_root(parent, b)
+}
+
+public func main() returns int {
+    let parent        = [0, 1, 2, 3, 4, 5]
+    let sizes         = [1, 1, 1, 1, 1, 1]
+    let changed_child = [0, 0, 0, 0, 0, 0, 0, 0]
+    let changed_root  = [0, 0, 0, 0, 0, 0, 0, 0]
+    let old_size      = [0, 0, 0, 0, 0, 0, 0, 0]
+    let top           = [0]
+    if not unite(parent, sizes, changed_child, changed_root, old_size, top, 0, 1) {
+        return 1
+    }
+    if not unite(parent, sizes, changed_child, changed_root, old_size, top, 1, 2) {
+        return 2
+    }
+    let snapshot = top[0]
+    if not unite(parent, sizes, changed_child, changed_root, old_size, top, 3, 4) {
+        return 3
+    }
+    if not unite(parent, sizes, changed_child, changed_root, old_size, top, 2, 3) {
+        return 4
+    }
+    if unite(parent, sizes, changed_child, changed_root, old_size, top, 0, 4) {
+        return 5
+    }
+    if not connected(parent, 0, 4) or sizes[find_root(parent, 0)] != 5 {
+        return 6
+    }
+    rollback(parent, sizes, changed_child, changed_root, old_size, top, snapshot)
+    if connected(parent, 0, 3) or connected(parent, 3, 4) {
+        return 7
+    }
+    if not connected(parent, 0, 2) or sizes[find_root(parent, 0)] != 3 {
+        return 8
+    }
+    if unite(parent, sizes, changed_child, changed_root, old_size, top, 0, 2) {
+        return 9
+    }
+    rollback(parent, sizes, changed_child, changed_root, old_size, top, 0)
+    let i = 0
+    while i < 6 {
+        if parent[i] != i or sizes[i] != 1 {
+            return 10
+        }
+        i = i + 1
+    }
+    println("PASS rollback_dsu: snapshots + reversible unions")
+    return 0
+}

@@ -108,6 +108,13 @@ FILES = [
     "96_fft_butterfly.spectra",
     "97_soundex_search.spectra",
     "98_vlq_sourcemap.spectra",
+    "99_dijkstra_heap.spectra",
+    "100_fenwick_order.spectra",
+    "101_radix_sort.spectra",
+    "102_rollback_dsu.spectra",
+    "103_interval_sweep.spectra",
+    "104_bloom_filter.spectra",
+    "105_suffix_array.spectra",
 ]
 
 

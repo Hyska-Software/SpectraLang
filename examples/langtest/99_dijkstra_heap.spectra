@@ -1,0 +1,120 @@
+module dijkstra_heap
+
+from std.io import println
+
+// Dijkstra with a binary min-heap and stale-entry skipping.
+// The graph is a dense, fixed-size representation used by the backend tests.
+
+func heap_swap(nodes: [int], distances: [int], i: int, j: int) {
+    let tn = nodes[i]
+    nodes[i] = nodes[j]
+    nodes[j] = tn
+    let td = distances[i]
+    distances[i] = distances[j]
+    distances[j] = td
+}
+
+func heap_push(nodes: [int], distances: [int], size: [int], node: int, distance: int) {
+    let i = size[0]
+    nodes[i] = node
+    distances[i] = distance
+    size[0] = size[0] + 1
+    while i > 0 {
+        let parent = (i - 1) / 2
+        if distances[i] < distances[parent] {
+            heap_swap(nodes, distances, i, parent)
+            i = parent
+        } else {
+            break
+        }
+    }
+}
+
+func heap_pop(nodes: [int], distances: [int], size: [int], out_node: [int]) returns int {
+    if size[0] == 0 {
+        return 0 - 1
+    }
+    let top = distances[0]
+    out_node[0] = nodes[0]
+    size[0] = size[0] - 1
+    if size[0] > 0 {
+        nodes[0] = nodes[size[0]]
+        distances[0] = distances[size[0]]
+    }
+    let i = 0
+    while i < size[0] {
+        let left     = i * 2 + 1
+        let right    = i * 2 + 2
+        let smallest = i
+        if left < size[0] and distances[left] < distances[smallest] {
+            smallest = left
+        }
+        if right < size[0] and distances[right] < distances[smallest] {
+            smallest = right
+        }
+        if smallest == i {
+            break
+        }
+        heap_swap(nodes, distances, i, smallest)
+        i = smallest
+    }
+    return top
+}
+
+func shortest_paths(weights: [int], n: int, source: int, out: [int]) {
+    let i = 0
+    while i < n {
+        out[i] = 1000000
+        i = i + 1
+    }
+    let nodes       = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let distances   = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let size        = [0]
+    let popped_node = [0]
+    out[source] = 0
+    heap_push(nodes, distances, size, source, 0)
+    while size[0] > 0 {
+        let popped_distance = heap_pop(nodes, distances, size, popped_node)
+        let u               = popped_node[0]
+        if popped_distance == out[u] {
+            let v = 0
+            while v < n {
+                let weight = weights[u * n + v]
+                if weight > 0 and popped_distance + weight < out[v] {
+                    out[v] = popped_distance + weight
+                    heap_push(nodes, distances, size, v, out[v])
+                }
+                v = v + 1
+            }
+        }
+    }
+}
+
+public func main() returns int {
+    let weights = [
+        0, 7, 9, 0, 0, 14,
+        7, 0, 10, 15, 0, 0,
+        9, 10, 0, 11, 0, 2,
+        0, 15, 11, 0, 6, 0,
+        0, 0, 0, 6, 0, 9,
+        14, 0, 2, 0, 9, 0,
+    ]
+    let distances = [0, 0, 0, 0, 0, 0]
+    shortest_paths(weights, 6, 0, distances)
+    let want = [0, 7, 9, 20, 20, 11]
+    let i    = 0
+    while i < 6 {
+        if distances[i] != want[i] {
+            return 1 + i
+        }
+        i = i + 1
+    }
+    let isolated           = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let isolated_distances = [0, 0, 0]
+    shortest_paths(isolated, 3, 0, isolated_distances)
+    if isolated_distances[0] != 0 or isolated_distances[1] != 1000000 or isolated_distances[2] != 1000000 {
+        return 10
+    }
+    println("PASS dijkstra_heap: shortest paths + stale entries")
+    return 0
+}

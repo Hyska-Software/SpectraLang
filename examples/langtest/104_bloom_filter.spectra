@@ -1,0 +1,64 @@
+module bloom_filter
+
+from std.io import println
+
+// Deterministic Bloom filter over 97 active bits in a fixed backing array and
+// three independent hashes. False positives are permitted; inserted values
+// must never be negatives.
+
+func hash1(value: int) returns int {
+    return(value * 17 + 3) % 97
+}
+
+func hash2(value: int) returns int {
+    return(value * 31 + 11) % 97
+}
+
+func hash3(value: int) returns int {
+    return(value * 43 + 19) % 97
+}
+
+func add(bits: [int], value: int) {
+    bits[hash1(value)] = 1
+    bits[hash2(value)] = 1
+    bits[hash3(value)] = 1
+}
+
+func might_contain(bits: [int], value: int) returns bool {
+    return bits[hash1(value)] == 1 and bits[hash2(value)] == 1 and bits[hash3(value)] == 1
+}
+
+func count_set(bits: [int], n: int) returns int {
+    let count = 0
+    let i     = 0
+    while i < n {
+        count = count + bits[i]
+        i = i + 1
+    }
+    return count
+}
+
+public func main() returns int {
+    let bits = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    add(bits, 10)
+    add(bits, 22)
+    add(bits, 37)
+    add(bits, 99)
+    if not might_contain(bits, 10) or not might_contain(bits, 22) or not might_contain(bits, 37) or not might_contain(bits, 99) {
+        return 1
+    }
+    if might_contain(bits, 3) or might_contain(bits, 5) {
+        return 2
+    }
+    if count_set(bits, 97) != 12 {
+        return 3
+    }
+    println("PASS bloom_filter: no false negatives + deterministic hashes")
+    return 0
+}
