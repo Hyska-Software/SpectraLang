@@ -243,22 +243,51 @@ write_into(small, 10)
 ```
 
 **Causa raiz:** `[T]`/`array<T>` em parâmetros baixa para `IRType::Array` de
-tamanho 0; os sites de leitura e escrita só anexam `bound` quando o tamanho é
-conhecido (`size > 0`), então o `GetElementPtr` dentro do callee é emitido sem
-checagem. O tamanho verdadeiro vive apenas com o chamador.
+tamanho 0; os sites de leitura e escrita só anexavam `bound` quando o tamanho
+era conhecido (`size > 0`), então o `GetElementPtr` dentro do callee era emitido
+sem checagem. O tamanho verdadeiro vivia apenas com o chamador.
 
-**Correção real (trabalho futuro já registrado, agora com reprodução):** o
-`GetElementPtr` precisa aceitar um bound dinâmico (`Static(usize) |
-Dynamic(Value)`) alimentado por um parâmetro oculto de tamanho, com o chamador
-passando o tamanho conhecido ou `0` (desconhecido) — ou fat pointers completos.
-Isso é uma mudança de ABI/modelo de memória que atravessa lowering de funções e
-métodos, chamadas diretas e UFCS, wrappers de função-como-valor, monomorfização,
-renumeração de async, inliner, verificador, DCE e backend. Não é um bugfix
-localizado; por isso o defeito está documentado aqui e não foi parcialmente
-corrigido.
+### Correção implementada: parâmetro oculto de comprimento (bound dinâmico)
 
-Validação final da leva: os 129 arquivos passaram em default, `-O0`, `-O3`,
-`check`, `fmt --check` e `lint`; os seis arquivos novos também passaram em AOT.
+O defeito foi corrigido de forma completa:
+
+- `ir::ArrayBound` substitui `Option<usize>` em `GetElementPtr`:
+  `Static(usize)` para tamanhos conhecidos e `Dynamic(Value)` para o
+  comprimento em runtime. Um valor dinâmico `0` significa "desconhecido" e
+  mantém o comportamento antigo (sem checagem) apenas nos caminhos que não
+  conseguem fornecer o tamanho.
+- Toda função ou método com parâmetro `[T]` ganha um parâmetro oculto `Int`
+  após os públicos (`__len_<nome>`, registrado em `hidden_array_params`); o
+  lowering da definição popula `array_param_sizes` para o corpo.
+- Todo chamador direto anexa o argumento de comprimento: tamanho estático
+  quando o tipo do argumento conhece um, o próprio parâmetro oculto quando o
+  argumento é outro parâmetro `[T]` (propagação transitiva), o tamanho do
+  literal de array, ou `0` quando não há como saber. Cobrem-se chamadas
+  diretas, funções de módulo qualificadas, métodos, UFCS, funções associadas e
+  o wrapper de função-como-valor (que encaminha `0`, pois o ABI público de
+  closures não carrega comprimentos).
+- Os sites de indexação (leitura e escrita) anexam `ArrayBound::Dynamic` para
+  parâmetros `[T]`; o backend emite `index < len || len == 0` com o mesmo bloco
+  de panic do bound estático, e o inliner, o verificador, o DCE e a
+  renumeração de async transportam o valor do bound.
+
+**Limite residual, explícito:** funções passadas como valor (closures de host
+callbacks) continuam recebendo comprimento desconhecido, porque o tipo de
+closure não carrega tamanhos; arrays que atravessam esses callbacks seguem sem
+checagem. Cobertura nova:
+
+- `examples/langtest/130_parameter_bounds.spectra` — acesso in-bounds por
+  chamada direta, repasse, escrita, recursão, método e coroutine.
+- `tests/errors/array_index_oob_parameter_read.spectra`,
+  `..._write.spectra` e `..._transitive.spectra` — trap `exit 101` em
+  default, `-O0` e `-O3` (JIT) e AOT.
+- Testes unitários: `unsized_array_parameter_indexing_checks_the_hidden_length`
+  (midend), `dynamic_bounded_gep_lowering_passes_verifier` e
+  `aot_dynamic_bounded_gep_references_spectra_rt_panic` (backend).
+
+Validação final da leva: os 130 arquivos da suíte passaram em default, `-O0`,
+`-O3`, `check`, `fmt --check` e `lint`; os arquivos novos também passaram em
+AOT, e as crates do compilador, runtime, API, agente e CLI permaneceram verdes.
 
 ## Décima sétima leva (118–123): correções nos próprios algoritmos
 
@@ -547,9 +576,10 @@ da faixa era silencioso (`a[10]=99; return a[10]` devolvia 99): o backend
   (registrados em `run_tests.ps1` `runtimeErrorFixtures`, falham com 101 em
   `-O0`–`-O3`) + 2 testes de backend (`bounded_gep_lowering_passes_verifier`,
   `aot_bounded_gep_references_spectra_rt_panic`, cobrindo JIT e AOT).
-- **Limites honestos (não cobertos):** params `[T]` baixam para `[0 x int]`
-  (tamanho desconhecido no callee) — seguem silenciosos e exigem fat
-  pointers (trabalho futuro); escritas em `String` têm length dinâmico
+- **Limites honestos (não cobertos naquela leva):** params `[T]` baixavam
+  para `[0 x int]` (tamanho desconhecido no callee) e seguiam silenciosos;
+  isso foi resolvido na décima oitava leva com o parâmetro oculto de
+  comprimento (bound dinâmico). Escritas em `String` têm length dinâmico
   (leituras já vão por `char_at`, que retorna -1). Cópias (`let b = a`)
   **são** cobertas: o frontend propaga o tipo dimensionado (`[int; 3]`),
   então o bound acompanha o valor (travado pelo fixture `_copy`).
