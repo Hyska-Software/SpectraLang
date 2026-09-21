@@ -1,0 +1,81 @@
+module rolling_hash
+
+from std.io import println
+import std.string as str
+
+// Polynomial rolling hash with a direct comparison after hash matches.
+// The second check prevents a hash collision from becoming a false match.
+
+func normalize(value: int, modulus: int) returns int {
+    if value < 0 {
+        return value + modulus
+    }
+    return value
+}
+
+func build_prefix(text: string, base: int, modulus: int, prefix: [int], power: [int]) {
+    prefix[0] = 0
+    power[0] = 1
+    let i = 0
+    while i < str.len(text) {
+        prefix[i + 1] = (prefix[i] * base + str.char_at(text, i)) % modulus
+        power[i + 1] = (power[i] * base) % modulus
+        i = i + 1
+    }
+}
+
+func substring_hash(prefix: [int], power: [int], left: int, right: int, modulus: int) returns int {
+    return normalize((prefix[right] - prefix[left] * power[right - left]) % modulus, modulus)
+}
+
+func same_at(text: string, pattern: string, position: int) returns bool {
+    let i = 0
+    while i < str.len(pattern) {
+        if str.char_at(text, position + i) != str.char_at(pattern, i) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+func find(text: string, pattern: string) returns int {
+    if str.len(pattern) == 0 {
+        return 0
+    }
+    let prefix  = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let power   = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let modulus = 1000003
+    let base    = 911
+    build_prefix(text, base, modulus, prefix, power)
+    let pattern_prefix = [0, 0, 0, 0, 0, 0]
+    let pattern_power  = [0, 0, 0, 0, 0, 0]
+    build_prefix(pattern, base, modulus, pattern_prefix, pattern_power)
+    let wanted = substring_hash(pattern_prefix, pattern_power, 0, str.len(pattern), modulus)
+    let i      = 0
+    while i + str.len(pattern) <= str.len(text) {
+        let got = substring_hash(prefix, power, i, i + str.len(pattern), modulus)
+        if got == wanted and same_at(text, pattern, i) {
+            return i
+        }
+        i = i + 1
+    }
+    return-1
+}
+
+public func main() returns int {
+    if find("abracadabra", "cada") != 4 or find("abracadabra", "abra") != 0 {
+        return 1
+    }
+    if find("abracadabra", "cadb") != -1 or find("abracadabra", "") != 0 {
+        return 2
+    }
+    let prefix = [0, 0, 0, 0, 0, 0, 0]
+    let power  = [0, 0, 0, 0, 0, 0, 0]
+    build_prefix("abcabc", 911, 1000003, prefix, power)
+    if substring_hash(prefix, power, 0, 3, 1000003) != substring_hash(prefix, power, 3, 6, 1000003) {
+        return 3
+    }
+    println("PASS rolling_hash: prefix hashes + collision-safe search")
+    return 0
+}

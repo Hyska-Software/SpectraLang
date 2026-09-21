@@ -115,6 +115,12 @@ FILES = [
     "103_interval_sweep.spectra",
     "104_bloom_filter.spectra",
     "105_suffix_array.spectra",
+    "106_hungarian_assignment.spectra",
+    "107_edmonds_karp.spectra",
+    "108_suffix_automaton.spectra",
+    "109_rolling_hash.spectra",
+    "110_wavelet_kth.spectra",
+    "111_treap_order_stats.spectra",
 ]
 
 

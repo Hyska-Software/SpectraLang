@@ -1,0 +1,143 @@
+module suffix_automaton
+
+from std.io import println
+import std.string as str
+
+// Suffix automaton for the alphabet a..c. Clones are copied explicitly so
+// substring membership and the distinct-substring count share one structure.
+
+func kind(character: int) returns int {
+    return character - 97
+}
+
+func transition(next: [int], state: int, character: int) returns int {
+    return next[state * 3 + character]
+}
+
+func build(text: string, next: [int], link: [int], length: [int], size: [int]) {
+    let i = 0
+    while i < 30 {
+        next[i] = -1
+        i = i + 1
+    }
+    i = 0
+    while i < 10 {
+        link[i] = -1
+        length[i] = 0
+        i = i + 1
+    }
+    size[0] = 1
+    let last = 0
+    i = 0
+    while i < str.len(text) {
+        let character = kind(str.char_at(text, i))
+        let current   = size[0]
+        size[0] = size[0] + 1
+        length[current] = length[last] + 1
+        let state = last
+        while state != -1 and transition(next, state, character) == -1 {
+            next[state * 3 + character] = current
+            state = link[state]
+        }
+        if state == -1 {
+            link[current] = 0
+        } else {
+            let target = transition(next, state, character)
+            if length[state] + 1 == length[target] {
+                link[current] = target
+            } else {
+                let clone = size[0]
+                size[0] = size[0] + 1
+                length[clone] = length[state] + 1
+                link[clone] = link[target]
+                let copy = 0
+                while copy < 3 {
+                    next[clone * 3 + copy] = next[target * 3 + copy]
+                    copy = copy + 1
+                }
+                while state != -1 and transition(next, state, character) == target {
+                    next[state * 3 + character] = clone
+                    state = link[state]
+                }
+                link[target] = clone
+                link[current] = clone
+            }
+        }
+        last = current
+        i = i + 1
+    }
+}
+
+func contains(next: [int], text: string) returns bool {
+    let state = 0
+    let i     = 0
+    while i < str.len(text) {
+        let character = kind(str.char_at(text, i))
+        state = transition(next, state, character)
+        if state == -1 {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+func distinct_substrings(link: [int], length: [int], size: int) returns int {
+    let total = 0
+    let state = 1
+    while state < size {
+        total = total + length[state] - length[link[state]]
+        state = state + 1
+    }
+    return total
+}
+
+public func main() returns int {
+    let next = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    let link   = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let length = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let size   = [0]
+    build("ababa", next, link, length, size)
+    if not contains(next, "aba") or not contains(next, "bab") or not contains(next, "ababa") {
+        return 1
+    }
+    if contains(next, "ac") or contains(next, "c") {
+        return 2
+    }
+    if distinct_substrings(link, length, size[0]) != 9 {
+        return 3
+    }
+    println("PASS suffix_automaton: clones + distinct substrings")
+    return 0
+}

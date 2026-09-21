@@ -1,0 +1,122 @@
+module wavelet_kth
+
+from std.io import println
+
+// Three-level wavelet matrix for values in [0, 7]. Prefix-one counts map a
+// range through each stable zero/one partition and answer range kth queries.
+
+func build(values: [int], n: int, prefix: [int], middle: [int]) {
+    let work  = [0, 0, 0, 0, 0, 0, 0, 0]
+    let bit   = 4
+    let level = 0
+    while bit > 0 {
+        prefix[level * (n + 1)] = 0
+        let ones = 0
+        let i    = 0
+        while i < n {
+            if values[i] >= bit {
+                ones = ones + 1
+            }
+            prefix[level * (n + 1) + i + 1] = ones
+            i = i + 1
+        }
+        middle[level] = n - ones
+        let zero_cursor = 0
+        let one_cursor  = middle[level]
+        i = 0
+        while i < n {
+            if values[i] < bit {
+                work[zero_cursor] = values[i]
+                zero_cursor = zero_cursor + 1
+            } else {
+                work[one_cursor] = values[i] - bit
+                one_cursor = one_cursor + 1
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < n {
+            values[i] = work[i]
+            i = i + 1
+        }
+        bit = bit / 2
+        level = level + 1
+    }
+}
+
+func kth(prefix: [int], middle: [int], n: int, left: int, right: int, rank: int) returns int {
+    let l      = left
+    let r      = right
+    let wanted = rank
+    let value  = 0
+    let bit    = 4
+    let level  = 0
+    while bit > 0 {
+        let base        = level * (n + 1)
+        let ones_left   = prefix[base + l]
+        let ones_right  = prefix[base + r]
+        let zeros_left  = l - ones_left
+        let zeros_right = r - ones_right
+        let zero_count  = zeros_right - zeros_left
+        if wanted < zero_count {
+            l = zeros_left
+            r = zeros_right
+        } else {
+            value = value + bit
+            wanted = wanted - zero_count
+            l = middle[level] + ones_left
+            r = middle[level] + ones_right
+        }
+        bit = bit / 2
+        level = level + 1
+    }
+    return value
+}
+
+public func main() returns int {
+    let values = [3, 1, 4, 1, 5, 2, 6, 0]
+    let prefix = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    let middle = [0, 0, 0]
+    build(values, 8, prefix, middle)
+    if kth(prefix, middle, 8, 0, 8, 0) != 0 or kth(prefix, middle, 8, 0, 8, 4) != 3 or kth(prefix, middle, 8, 0, 8, 7) != 6 {
+        return 1
+    }
+    if kth(prefix, middle, 8, 1, 6, 3) != 4 or kth(prefix, middle, 8, 2, 5, 1) != 4 {
+        return 2
+    }
+    println("PASS wavelet_kth: stable partitions + range selection")
+    return 0
+}

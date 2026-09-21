@@ -114,11 +114,17 @@ invariantes passam e um código distinto por estágio quando alguma falha.
 | `103_interval_sweep.spectra` | Sweep line de intervalos | Máximo de sobreposição em intervalos fechados, com empate início antes de fim |
 | `104_bloom_filter.spectra` | Bloom filter | Três hashes determinísticos, ausência de falsos negativos e falso positivo permitido |
 | `105_suffix_array.spectra` | Suffix array | Prefix doubling, ranks por pares e ordenação dos sufixos de `banana` |
+| `106_hungarian_assignment.spectra` | Hungarian | Atribuição quadrada de custo mínimo com potenciais e caminhos alternantes |
+| `107_edmonds_karp.spectra` | Edmonds-Karp | Fluxo máximo por BFS no grafo residual, incluindo arestas reversas |
+| `108_suffix_automaton.spectra` | Suffix automaton | Clones de estados, membership de substrings e contagem distinta |
+| `109_rolling_hash.spectra` | Hash polinomial | Prefix hashes, busca por janela e confirmação contra colisões |
+| `110_wavelet_kth.spectra` | Wavelet matrix | Partições estáveis por bits e seleção k-ésima em subfaixas |
+| `111_treap_order_stats.spectra` | Treap | Rotações, erase, tamanhos de subárvore e estatísticas de ordem |
 
 Relação com o já existente: `tests/validation/524_recursion_recursive_descent_parser.spectra`
 cobre descida recursiva sobre strings; esta suíte complementa com DFA tabular,
 LL(1) sobre tokens, Pratt iterativo, unificação, dataflow, fuzzing diferencial e
-ddmin — nenhum duplica o 524. A suíte atual contém 105 arquivos e o validador
+ddmin — nenhum duplica o 524. A suíte atual contém 111 arquivos e o validador
 `scripts/validate_langtest_algorithms.py` mantém a lista executável sincronizada
 com esta tabela.
 
@@ -183,6 +189,27 @@ passavam nos 28 arquivos então existentes.
   nesta leva; o gate `-O0` do validador (introduzido no R527) passou em
   todos os 28 arquivos de primeira, confirmando que o fix anterior segura.
 
+## Décima quinta leva (106–111): correções nos próprios algoritmos
+
+Esta leva adiciona atribuição ótima, fluxo residual, automatos de strings,
+hashing incremental, consultas em faixa e uma árvore balanceada com estatísticas
+de ordem. A primeira execução encontrou e corrigiu três problemas nos próprios
+testes:
+
+- `107_edmonds_karp.spectra` — `from` é palavra reservada pela sintaxe de
+  imports; o vértice temporário foi renomeado para `current`.
+- `109_rolling_hash.spectra` — a expectativa comparava `bcd` com `abc`; o
+  oráculo agora compara as duas ocorrências de `abc` em `abcabc`.
+- `111_treap_order_stats.spectra` — `merge` precisava receber prioridades para
+  manter a propriedade de heap; `erase` e `contains` foram corrigidos para
+  propagar os argumentos e descendentes corretos.
+
+Nenhum desses casos exigiu alteração do compilador: os diagnósticos foram
+reproduzidos, explicados e corrigidos nos algoritmos `.spectra`.
+Validação final da leva: os 111 arquivos passaram em default, `-O0`, `-O3`,
+`check`, `fmt --check` e `lint`; os seis arquivos novos também passaram em
+AOT.
+
 ## Décima quarta leva (99–105): correções nos próprios algoritmos
 
 Os sete algoritmos novos cobrem grafos, árvores indexadas, ordenação estável,
@@ -208,8 +235,8 @@ lowerings, mas faltavam no `LAYOUT` declarativo de
 `scripts/generate_lowering_tables.py`. Os dois nomes foram adicionados ao
 layout explícito; `R-3207` voltou a validar os 1035 arms gerados.
 
-Validação desta leva: `validate_langtest_algorithms.py` passou 105/105 em
-default e `-O0`, os 105 passaram em `-O3`, os sete novos passaram em AOT,
+Validação desta leva: `validate_langtest_algorithms.py` passou 111/111 em
+default e `-O0`, os 111 passaram em `-O3`, os seis novos passaram em AOT,
 `check`, `fmt --check` e `lint`, e os testes de `spectra-compiler`,
 `spectra-midend` e `spectra-backend` permaneceram verdes.
 

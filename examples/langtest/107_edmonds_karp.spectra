@@ -1,0 +1,90 @@
+module edmonds_karp
+
+from std.io import println
+
+// Edmonds-Karp maximum flow with an explicit residual matrix.
+// Reverse flow is stored as a negative entry, so every augmentation uses the
+// same residual-capacity expression in both directions.
+
+func bfs(capacity: [int], flow: [int], n: int, source: int, sink: int, parent: [int]) returns bool {
+    let i = 0
+    while i < n {
+        parent[i] = 0 - 2
+        i = i + 1
+    }
+    parent[source] = 0 - 1
+    let queue = [0, 0, 0, 0, 0, 0]
+    let head  = 0
+    let tail  = 0
+    queue[tail] = source
+    tail = tail + 1
+    while head < tail and parent[sink] == -2 {
+        let current = queue[head]
+        head = head + 1
+        let to = 0
+        while to < n {
+            let residual = capacity[current * n + to] - flow[current * n + to]
+            if parent[to] == -2 and residual > 0 {
+                parent[to] = current
+                queue[tail] = to
+                tail = tail + 1
+            }
+            to = to + 1
+        }
+    }
+    return parent[sink] != -2
+}
+
+func max_flow(capacity: [int], n: int, source: int, sink: int) returns int {
+    let flow = [
+        0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0,
+    ]
+    let parent = [0, 0, 0, 0, 0, 0]
+    let total  = 0
+    while bfs(capacity, flow, n, source, sink, parent) {
+        let bottleneck = 1000000
+        let current    = sink
+        while current != source {
+            let previous = parent[current]
+            let residual = capacity[previous * n + current] - flow[previous * n + current]
+            if residual < bottleneck {
+                bottleneck = residual
+            }
+            current = previous
+        }
+        current = sink
+        while current != source {
+            let previous = parent[current]
+            flow[previous * n + current] = flow[previous * n + current] + bottleneck
+            flow[current * n + previous] = flow[current * n + previous] - bottleneck
+            current = previous
+        }
+        total = total + bottleneck
+    }
+    return total
+}
+
+public func main() returns int {
+    let capacity = [
+        0, 16, 13, 0, 0, 0,
+        0, 0, 10, 12, 0, 0,
+        0, 4, 0, 0, 14, 0,
+        0, 0, 9, 0, 0, 20,
+        0, 0, 0, 7, 0, 4,
+        0, 0, 0, 0, 0, 0,
+    ]
+    if max_flow(capacity, 6, 0, 5) != 23 {
+        return 1
+    }
+    let disconnected = [0, 3, 0, 0, 0, 0, 0, 0, 0]
+    if max_flow(disconnected, 3, 0, 2) != 0 {
+        return 2
+    }
+    println("PASS edmonds_karp: residual graph + maximum flow")
+    return 0
+}
