@@ -522,11 +522,16 @@ impl ASTLowering {
             let Some((block_id, position)) = found else {
                 break;
             };
-            let block_index = body
+            let Some(block_index) = body
                 .blocks
                 .iter()
                 .position(|block| block.id == block_id)
-                .unwrap();
+            else {
+                self.error(format!(
+                    "async lowering found await in missing basic block {block_id}"
+                ));
+                break;
+            };
             let old = body.blocks[block_index].clone();
             let InstructionKind::Await {
                 result,
@@ -534,7 +539,10 @@ impl ASTLowering {
                 output_type,
             } = old.instructions[position].kind.clone()
             else {
-                unreachable!()
+                self.error(format!(
+                    "async lowering lost await marker in basic block {block_id}"
+                ));
+                break;
             };
             let before = old.instructions[..position].to_vec();
             let after = old.instructions[position + 1..].to_vec();
@@ -1060,8 +1068,11 @@ impl ASTLowering {
         let drop_entry = drop_func.add_block("drop");
         drop_func.suspension_barrier = true;
         drop_func.async_layout = Some(layout.clone());
-        drop_func.get_block_mut(drop_entry).unwrap().terminator =
-            Some(Terminator::Return { value: None });
+        if let Some(block) = drop_func.get_block_mut(drop_entry) {
+            block.terminator = Some(Terminator::Return { value: None });
+        } else {
+            self.error("async lowering could not initialize coroutine drop block");
+        }
         self.pending_coroutines.push(drop_func);
         self.pending_coroutines.push(body);
 
@@ -1081,10 +1092,9 @@ impl ASTLowering {
             .unwrap_or(0);
         let entry = ramp.add_block("entry");
         let frame = ramp.next_value();
-        ramp.get_block_mut(entry)
-            .unwrap()
-            .instructions
-            .push(Instruction {
+        let task = ramp.next_value();
+        if let Some(block) = ramp.get_block_mut(entry) {
+            block.instructions.push(Instruction {
                 id: 0,
                 kind: InstructionKind::FrameAlloc {
                     result: frame,
@@ -1093,11 +1103,8 @@ impl ASTLowering {
                 },
                 source_span: None,
             });
-        for (index, param) in source_params.iter().enumerate() {
-            ramp.get_block_mut(entry)
-                .unwrap()
-                .instructions
-                .push(Instruction {
+            for (index, param) in source_params.iter().enumerate() {
+                block.instructions.push(Instruction {
                     id: index + 1,
                     kind: InstructionKind::FrameStore {
                         frame,
@@ -1106,12 +1113,8 @@ impl ASTLowering {
                     },
                     source_span: None,
                 });
-        }
-        let task = ramp.next_value();
-        ramp.get_block_mut(entry)
-            .unwrap()
-            .instructions
-            .push(Instruction {
+            }
+            block.instructions.push(Instruction {
                 id: source_params.len() + 1,
                 kind: InstructionKind::CoroutineCreate {
                     result: task,
@@ -1122,8 +1125,10 @@ impl ASTLowering {
                 },
                 source_span: None,
             });
-        ramp.get_block_mut(entry).unwrap().terminator =
-            Some(Terminator::Return { value: Some(task) });
+            block.terminator = Some(Terminator::Return { value: Some(task) });
+        } else {
+            self.error("async lowering could not initialize coroutine ramp block");
+        }
         ramp
     }
 }

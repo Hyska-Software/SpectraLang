@@ -374,6 +374,25 @@ impl SemanticAnalyzer {
             self.fill_method_call_types_in_item(item);
         }
 
+        // Publish the semantic type table for the midend.  Keeping this
+        // source-of-truth table on the AST avoids a second, subtly different
+        // inference implementation in lowering.  Sort by source position so
+        // cached builds and tooling snapshots remain deterministic despite the
+        // backing HashMap's iteration order.
+        module.resolved_expression_types = self
+            .symbol_resolutions
+            .iter()
+            .map(|(span, info)| (*span, info.ty.clone()))
+            .collect();
+        module.resolved_expression_types.sort_by_key(|(span, _)| {
+            (
+                span.start,
+                span.end,
+                span.start_location.line,
+                span.start_location.column,
+            )
+        });
+
         // Flush qualified-path function discoveries so the midend knows
         // about cross-module calls that weren't brought in via `import`.
         module

@@ -39,6 +39,7 @@ impl ASTLowering {
             source_file: "<unknown>".to_string(),
             builder: IRBuilder::new(),
             current_function: None,
+            resolved_expression_types: HashMap::new(),
             value_map: ScopeStack::new(),
             variable_types: TypeScopeStack::new(),
             alloca_map: HashMap::new(),
@@ -552,7 +553,7 @@ impl ASTLowering {
     /// so this sentinel can never reach verification or backend codegen.
     pub(crate) fn invalid_value(&mut self, message: impl Into<String>) -> Value {
         self.error(message);
-        Value { id: usize::MAX }
+        Value::invalid()
     }
 
     pub(crate) fn require_value(

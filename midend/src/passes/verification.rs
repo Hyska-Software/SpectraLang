@@ -5,22 +5,48 @@ use crate::ir::{Instruction, InstructionKind, Module, Terminator, Value};
 /// Performs structural verification of the IR and returns a list of problems if any were found.
 pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
-    let global_names: HashSet<&str> = module
-        .globals
-        .iter()
-        .map(|global| global.name.as_str())
-        .collect();
-    let function_names: HashSet<&str> = module
-        .functions
-        .iter()
-        .map(|function| function.name.as_str())
-        .chain(
-            module
-                .external_functions
-                .iter()
-                .map(|function| function.name.as_str()),
-        )
-        .collect();
+    let mut global_names = HashSet::new();
+    for global in &module.globals {
+        if !global_names.insert(global.name.as_str()) {
+            errors.push(format!(
+                "Module contains duplicate global symbol '{}'",
+                global.name
+            ));
+        }
+    }
+
+    let mut function_names = HashSet::new();
+    for function in &module.functions {
+        if !function_names.insert(function.name.as_str()) {
+            errors.push(format!(
+                "Module contains duplicate function symbol '{}'",
+                function.name
+            ));
+        }
+    }
+    for function in &module.external_functions {
+        if !function_names.insert(function.name.as_str()) {
+            errors.push(format!(
+                "Module contains duplicate function or external symbol '{}'",
+                function.name
+            ));
+        }
+    }
+
+    let mut function_signatures: HashMap<String, (Vec<crate::ir::Type>, crate::ir::Type)> =
+        HashMap::new();
+    for function in &module.functions {
+        function_signatures.insert(
+            function.name.clone(),
+            (function.params.iter().map(|parameter| parameter.ty.clone()).collect(), function.return_type.clone()),
+        );
+    }
+    for function in &module.external_functions {
+        function_signatures.insert(
+            function.name.clone(),
+            (function.params.clone(), function.return_type.clone()),
+        );
+    }
 
     for external in &module.external_functions {
         if type_contains_unknown(&external.return_type)
@@ -75,28 +101,83 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
         }
 
         let block_ids: HashSet<usize> = function.blocks.iter().map(|block| block.id).collect();
-        let mut defined_values: HashSet<usize> =
-            function.params.iter().map(|param| param.id).collect();
+
+        // Record actual CFG predecessors once so phi nodes can be checked
+        // against real incoming edges rather than only against existing IDs.
+        let mut predecessors: HashMap<usize, HashSet<usize>> = HashMap::new();
+        for block in &function.blocks {
+            let targets = block_successors(block.terminator.as_ref());
+            for target in targets {
+                predecessors.entry(target).or_default().insert(block.id);
+            }
+        }
+
+        let entry_block = function.blocks[0].id;
+        let reachable_blocks = reachable_blocks(function, &block_ids, entry_block);
+        let dominators = compute_dominators(
+            &block_ids,
+            &predecessors,
+            &reachable_blocks,
+            entry_block,
+        );
+
+        // Keep every definition location.  A global set is sufficient to
+        // detect a missing value, but it incorrectly accepts a use that occurs
+        // before its definition or on a sibling CFG branch.  The location map
+        // below is used for real SSA availability checks later in this pass.
+        let mut definitions: HashMap<usize, Vec<ValueDefinition>> = HashMap::new();
+        let mut frame_load_ids = HashSet::new();
+        for parameter in &function.params {
+            if parameter.id == Value::INVALID_ID {
+                errors.push(format!(
+                    "Function '{}' has invalid sentinel parameter value {}",
+                    function.name,
+                    Value::INVALID_ID
+                ));
+            }
+            register_definition(
+                &mut definitions,
+                &mut errors,
+                &function.name,
+                "parameter",
+                None,
+                0,
+                Value {
+                    id: parameter.id,
+                },
+                false,
+            );
+        }
 
         for block in &function.blocks {
-            for instruction in &block.instructions {
+            for (instruction_index, instruction) in block.instructions.iter().enumerate() {
                 if let Some(result) = instruction_result(instruction) {
-                    if !defined_values.insert(result.id)
-                        && !matches!(instruction.kind, InstructionKind::FrameLoad { .. })
-                    {
-                        errors.push(format!(
-                            "Function '{}' defines value {} more than once",
-                            function.name, result.id
-                        ));
+                    let is_frame_load = matches!(instruction.kind, InstructionKind::FrameLoad { .. });
+                    if is_frame_load {
+                        frame_load_ids.insert(result.id);
                     }
+                    register_definition(
+                        &mut definitions,
+                        &mut errors,
+                        &function.name,
+                        &block.label,
+                        Some(block.id),
+                        instruction_index,
+                        result,
+                        is_frame_load,
+                    );
                 }
                 if let InstructionKind::CoroutinePollChild { status, .. } = &instruction.kind {
-                    if !defined_values.insert(status.id) {
-                        errors.push(format!(
-                            "Function '{}' defines value {} more than once",
-                            function.name, status.id
-                        ));
-                    }
+                    register_definition(
+                        &mut definitions,
+                        &mut errors,
+                        &function.name,
+                        &block.label,
+                        Some(block.id),
+                        instruction_index,
+                        *status,
+                        false,
+                    );
                 }
             }
         }
@@ -128,12 +209,17 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                     }
                     Terminator::Return { value } => {
                         if let Some(value) = value {
-                            check_value_defined(
+                            check_value_available(
                                 &mut errors,
                                 &function.name,
                                 &block.label,
                                 *value,
-                                &defined_values,
+                                block.id,
+                                block.instructions.len(),
+                                None,
+                                &definitions,
+                                &frame_load_ids,
+                                &dominators,
                             );
                         }
                     }
@@ -143,12 +229,17 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                         false_block,
                         ..
                     } => {
-                        check_value_defined(
+                        check_value_available(
                             &mut errors,
                             &function.name,
                             &block.label,
                             *condition,
-                            &defined_values,
+                            block.id,
+                            block.instructions.len(),
+                            None,
+                            &definitions,
+                            &frame_load_ids,
+                            &dominators,
                         );
                         if !block_ids.contains(true_block) {
                             errors.push(format!(
@@ -168,12 +259,17 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                         cases,
                         default,
                     } => {
-                        check_value_defined(
+                        check_value_available(
                             &mut errors,
                             &function.name,
                             &block.label,
                             *value,
-                            &defined_values,
+                            block.id,
+                            block.instructions.len(),
+                            None,
+                            &definitions,
+                            &frame_load_ids,
+                            &dominators,
                         );
                         if !block_ids.contains(default) {
                             errors.push(format!(
@@ -181,7 +277,14 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                                 function.name, block.label, default
                             ));
                         }
-                        for (_, target) in cases {
+                        let mut case_values = HashSet::new();
+                        for (case_value, target) in cases {
+                            if !case_values.insert(*case_value) {
+                                errors.push(format!(
+                                    "Function '{}', block '{}' has duplicate switch case value {}",
+                                    function.name, block.label, case_value
+                                ));
+                            }
                             if !block_ids.contains(target) {
                                 errors.push(format!(
                                     "Function '{}', block '{}' has switch with unknown case target {}",
@@ -194,7 +297,7 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                 }
             }
 
-            for instruction in &block.instructions {
+            for (instruction_index, instruction) in block.instructions.iter().enumerate() {
                 match &instruction.kind {
                     InstructionKind::GlobalAddr { name, .. }
                         if !global_names.contains(name.as_str()) =>
@@ -223,6 +326,50 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                     _ => {}
                 }
 
+                if let InstructionKind::Call {
+                    function: callee,
+                    args,
+                    result,
+                    ..
+                } = &instruction.kind
+                {
+                    if let Some((parameters, return_type)) = function_signatures.get(callee) {
+                        if args.len() != parameters.len() {
+                            errors.push(format!(
+                                "Function '{}', block '{}' calls '{}' with {} arguments, expected {}",
+                                function.name,
+                                block.label,
+                                callee,
+                                args.len(),
+                                parameters.len()
+                            ));
+                        }
+                        if *return_type == crate::ir::Type::Void && result.is_some() {
+                            errors.push(format!(
+                                "Function '{}', block '{}' records a result for void function call '{}'",
+                                function.name, block.label, callee
+                            ));
+                        }
+                    }
+                }
+
+                if let InstructionKind::CallIndirect {
+                    args,
+                    signature_params,
+                    ..
+                } = &instruction.kind
+                {
+                    if args.len() != signature_params.len() {
+                        errors.push(format!(
+                            "Function '{}', block '{}' performs an indirect call with {} arguments, expected {}",
+                            function.name,
+                            block.label,
+                            args.len(),
+                            signature_params.len()
+                        ));
+                    }
+                }
+
                 if let Some(unresolved) = instruction_unresolved_type(instruction) {
                     errors.push(format!(
                         "Function '{}', block '{}' contains unresolved IR type in {}",
@@ -230,14 +377,21 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                     ));
                 }
 
-                for operand in instruction_operands(instruction) {
-                    check_value_defined(
-                        &mut errors,
-                        &function.name,
-                        &block.label,
-                        operand,
-                        &defined_values,
-                    );
+                if !matches!(instruction.kind, InstructionKind::Phi { .. }) {
+                    for operand in instruction_operands(instruction) {
+                        check_value_available(
+                            &mut errors,
+                            &function.name,
+                            &block.label,
+                            operand,
+                            block.id,
+                            instruction_index,
+                            None,
+                            &definitions,
+                            &frame_load_ids,
+                            &dominators,
+                        );
+                    }
                 }
 
                 if let InstructionKind::Phi {
@@ -259,6 +413,27 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                                 "Function '{}', block '{}' contains phi referencing unknown predecessor block {}",
                                 function.name, block.label, pred
                             ));
+                        } else if !predecessors
+                            .get(&block.id)
+                            .is_some_and(|incoming| incoming.contains(pred))
+                        {
+                            errors.push(format!(
+                                "Function '{}', block '{}' contains phi incoming from block {} which is not a predecessor",
+                                function.name, block.label, pred
+                            ));
+                        } else if let Some(predecessor) = function.get_block(*pred) {
+                            check_value_available(
+                                &mut errors,
+                                &function.name,
+                                &block.label,
+                                *value,
+                                block.id,
+                                predecessor.instructions.len(),
+                                Some(*pred),
+                                &definitions,
+                                &frame_load_ids,
+                                &dominators,
+                            );
                         }
 
                         if let Some(existing) = seen.insert(*pred, *value) {
@@ -352,6 +527,18 @@ fn instruction_unresolved_type(instruction: &Instruction) -> Option<String> {
         InstructionKind::AsyncReady { output_type, .. } => {
             type_is_unresolved(output_type).then(|| "async result".to_string())
         }
+        InstructionKind::Await { output_type, .. } => {
+            type_is_unresolved(output_type).then(|| "await result".to_string())
+        }
+        InstructionKind::FrameLoad { ty, .. } => {
+            type_is_unresolved(ty).then(|| "coroutine frame load".to_string())
+        }
+        InstructionKind::CoroutineCreate { output_type, .. } => {
+            type_is_unresolved(output_type).then(|| "coroutine creation result".to_string())
+        }
+        InstructionKind::CoroutinePollChild { output_type, .. } => {
+            type_is_unresolved(output_type).then(|| "child coroutine result".to_string())
+        }
         InstructionKind::Cast { from_ty, to_ty, .. } => {
             (type_is_unresolved(from_ty) || type_is_unresolved(to_ty)).then(|| "cast".to_string())
         }
@@ -359,19 +546,211 @@ fn instruction_unresolved_type(instruction: &Instruction) -> Option<String> {
     }
 }
 
-fn check_value_defined(
+#[derive(Debug, Clone, Copy)]
+struct ValueDefinition {
+    block_id: Option<usize>,
+    instruction_index: usize,
+    is_frame_load: bool,
+}
+
+fn register_definition(
+    definitions: &mut HashMap<usize, Vec<ValueDefinition>>,
+    errors: &mut Vec<String>,
+    function_name: &str,
+    block_label: &str,
+    block_id: Option<usize>,
+    instruction_index: usize,
+    value: Value,
+    is_frame_load: bool,
+) {
+    if value.id == Value::INVALID_ID {
+        errors.push(format!(
+            "Function '{}', block '{}' contains invalid sentinel value {}",
+            function_name,
+            block_label,
+            Value::INVALID_ID
+        ));
+    }
+
+    let existing = definitions.entry(value.id).or_default();
+    // Frame reloads are the one deliberate exception to the ordinary
+    // single-definition rule. Async lowering may materialize the same logical
+    // source value at multiple resume points; all ordinary SSA definitions must
+    // still remain unique.
+    if !existing.is_empty() && (!is_frame_load || existing.iter().any(|def| !def.is_frame_load)) {
+        errors.push(format!(
+            "Function '{}' defines value {} more than once",
+            function_name, value.id
+        ));
+    }
+    existing.push(ValueDefinition {
+        block_id,
+        instruction_index,
+        is_frame_load,
+    });
+}
+
+fn check_value_available(
     errors: &mut Vec<String>,
     function_name: &str,
     block_label: &str,
     value: Value,
-    defined_values: &HashSet<usize>,
+    use_block: usize,
+    use_index: usize,
+    edge_predecessor: Option<usize>,
+    definitions: &HashMap<usize, Vec<ValueDefinition>>,
+    frame_load_ids: &HashSet<usize>,
+    dominators: &HashMap<usize, HashSet<usize>>,
 ) {
-    if !defined_values.contains(&value.id) {
+    if value.id == Value::INVALID_ID {
+        errors.push(format!(
+            "Function '{}', block '{}' uses invalid sentinel value {}",
+            function_name,
+            block_label,
+            Value::INVALID_ID
+        ));
+        return;
+    }
+
+    let Some(value_definitions) = definitions.get(&value.id) else {
         errors.push(format!(
             "Function '{}', block '{}' uses undefined value {}",
             function_name, block_label, value.id
         ));
+        return;
+    };
+
+    // A frame reload is a task-local memory read rather than a conventional
+    // SSA definition.  Its source slot is valid at every resume point, so the
+    // generated ID may intentionally be encountered outside ordinary CFG
+    // dominance. Fresh IDs are still used for all newly prepended reloads.
+    if frame_load_ids.contains(&value.id)
+        && value_definitions.iter().any(|definition| definition.is_frame_load)
+    {
+        return;
     }
+
+    let context_block = edge_predecessor.unwrap_or(use_block);
+    let available = value_definitions.iter().any(|definition| {
+        let Some(definition_block) = definition.block_id else {
+            // Function parameters dominate every block.
+            return true;
+        };
+
+        if definition_block == context_block {
+            definition.instruction_index < use_index
+        } else {
+            dominators
+                .get(&context_block)
+                .is_some_and(|dominated| dominated.contains(&definition_block))
+        }
+    });
+
+    if !available {
+        errors.push(format!(
+            "Function '{}', block '{}' uses value {} before its definition or outside its defining CFG path",
+            function_name, block_label, value.id
+        ));
+    }
+}
+
+fn block_successors(terminator: Option<&Terminator>) -> Vec<usize> {
+    match terminator {
+        Some(Terminator::Branch { target }) => vec![*target],
+        Some(Terminator::CondBranch {
+            true_block,
+            false_block,
+            ..
+        }) => vec![*true_block, *false_block],
+        Some(Terminator::Switch {
+            cases, default, ..
+        }) => cases
+            .iter()
+            .map(|(_, target)| *target)
+            .chain(std::iter::once(*default))
+            .collect(),
+        Some(Terminator::Return { .. }) | Some(Terminator::Unreachable) | None => Vec::new(),
+    }
+}
+
+fn reachable_blocks(
+    function: &crate::ir::Function,
+    block_ids: &HashSet<usize>,
+    entry_block: usize,
+) -> HashSet<usize> {
+    let mut reachable = HashSet::new();
+    let mut worklist = vec![entry_block];
+    while let Some(block_id) = worklist.pop() {
+        if !block_ids.contains(&block_id) || !reachable.insert(block_id) {
+            continue;
+        }
+        if let Some(block) = function.get_block(block_id) {
+            for successor in block_successors(block.terminator.as_ref()) {
+                if block_ids.contains(&successor) {
+                    worklist.push(successor);
+                }
+            }
+        }
+    }
+    reachable
+}
+
+fn compute_dominators(
+    block_ids: &HashSet<usize>,
+    predecessors: &HashMap<usize, HashSet<usize>>,
+    reachable: &HashSet<usize>,
+    entry_block: usize,
+) -> HashMap<usize, HashSet<usize>> {
+    let mut dominators = HashMap::new();
+    for block_id in block_ids {
+        let initial = if *block_id == entry_block {
+            HashSet::from([*block_id])
+        } else if !reachable.contains(block_id) {
+            // Unreachable blocks still get local ordering validation. Values
+            // defined in the function entry are nevertheless in lexical scope
+            // there (the lowering of an infinite loop may leave a dead exit
+            // block containing stores that use entry allocas), so retain the
+            // entry as a conservative dominator for those blocks.
+            HashSet::from([entry_block, *block_id])
+        } else {
+            reachable.clone()
+        };
+        dominators.insert(*block_id, initial);
+    }
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for block_id in reachable {
+            if *block_id == entry_block {
+                continue;
+            }
+
+            let incoming = predecessors
+                .get(block_id)
+                .into_iter()
+                .flat_map(|preds| preds.iter())
+                .filter(|pred| reachable.contains(pred));
+            let mut intersection = reachable.clone();
+            let mut has_predecessor = false;
+            for predecessor in incoming {
+                has_predecessor = true;
+                if let Some(predecessor_dominators) = dominators.get(predecessor) {
+                    intersection.retain(|candidate| predecessor_dominators.contains(candidate));
+                }
+            }
+            if !has_predecessor {
+                intersection.clear();
+            }
+            intersection.insert(*block_id);
+
+            if dominators.get(block_id) != Some(&intersection) {
+                dominators.insert(*block_id, intersection);
+                changed = true;
+            }
+        }
+    }
+    dominators
 }
 
 fn instruction_result(instruction: &Instruction) -> Option<Value> {
@@ -502,9 +881,17 @@ fn instruction_operands(instruction: &Instruction) -> Vec<Value> {
         InstructionKind::CoroutineSubscribe { task, parent } => vec![*task, *parent],
         InstructionKind::CoroutineWake { task }
         | InstructionKind::CoroutineSuspend { task, .. }
-        | InstructionKind::CoroutineComplete { task, .. }
-        | InstructionKind::CoroutineError { task, .. }
         | InstructionKind::CoroutineCancelled { task } => vec![*task],
+        InstructionKind::CoroutineComplete { task, value } => {
+            let mut operands = vec![*task];
+            operands.extend(value.iter().copied());
+            operands
+        }
+        InstructionKind::CoroutineError { task, error } => {
+            let mut operands = vec![*task];
+            operands.extend(error.iter().copied());
+            operands
+        }
         InstructionKind::CoroutinePollReturn { status } => vec![*status],
         InstructionKind::Alloca { .. }
         | InstructionKind::GlobalAddr { .. }
@@ -583,6 +970,25 @@ mod tests {
 
         let result = verify_module(&module);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn allows_repeated_diagnostic_labels_with_unique_block_ids() {
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("repeated_labels", Vec::new(), Type::Void);
+        let first = function.add_block("if.then");
+        let second = function.add_block("if.then");
+
+        if let Some(block) = function.get_block_mut(first) {
+            block.set_terminator(Terminator::Branch { target: second });
+        }
+        if let Some(block) = function.get_block_mut(second) {
+            block.set_terminator(Terminator::Return { value: None });
+        }
+        module.add_function(function);
+
+        verify_module(&module)
+            .expect("diagnostic labels may repeat when block IDs remain unique");
     }
 
     #[test]
@@ -667,6 +1073,147 @@ mod tests {
         assert!(errors
             .iter()
             .any(|error| error.contains("calls unknown function 'missing'")));
+    }
+
+    #[test]
+    fn rejects_use_before_definition_in_the_same_block() {
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("use_before_def", Vec::new(), Type::Void);
+        let entry = function.add_block("entry");
+        if let Some(block) = function.get_block_mut(entry) {
+            block.instructions.push(crate::ir::Instruction {
+                id: 0,
+                kind: crate::ir::InstructionKind::Add {
+                    result: Value { id: 0 },
+                    lhs: Value { id: 1 },
+                    rhs: Value { id: 1 },
+                },
+                source_span: None,
+            });
+            block.instructions.push(crate::ir::Instruction {
+                id: 1,
+                kind: crate::ir::InstructionKind::ConstInt {
+                    result: Value { id: 1 },
+                    value: 1,
+                },
+                source_span: None,
+            });
+            block.set_terminator(Terminator::Return { value: None });
+        }
+        module.add_function(function);
+
+        let errors = verify_module(&module).expect_err("use-before-definition must fail");
+        assert!(errors.iter().any(|error| {
+            error.contains("uses value 1 before its definition")
+        }));
+    }
+
+    #[test]
+    fn rejects_value_defined_on_a_non_dominating_branch() {
+        let mut module = IRModule::new("test");
+        let mut function = Function::new(
+            "non_dominating_use",
+            vec![Parameter {
+                id: 0,
+                name: "condition".into(),
+                ty: Type::Bool,
+            }],
+            Type::Void,
+        );
+        let entry = function.add_block("entry");
+        let left = function.add_block("left");
+        let right = function.add_block("right");
+        let exit = function.add_block("exit");
+
+        if let Some(block) = function.get_block_mut(entry) {
+            block.set_terminator(Terminator::CondBranch {
+                condition: Value { id: 0 },
+                true_block: left,
+                false_block: right,
+            });
+        }
+        if let Some(block) = function.get_block_mut(left) {
+            block.instructions.push(crate::ir::Instruction {
+                id: 0,
+                kind: crate::ir::InstructionKind::ConstInt {
+                    result: Value { id: 1 },
+                    value: 42,
+                },
+                source_span: None,
+            });
+            block.set_terminator(Terminator::Branch { target: exit });
+        }
+        if let Some(block) = function.get_block_mut(right) {
+            block.set_terminator(Terminator::Branch { target: exit });
+        }
+        if let Some(block) = function.get_block_mut(exit) {
+            block.set_terminator(Terminator::Return { value: Some(Value { id: 1 }) });
+        }
+        module.add_function(function);
+
+        let errors = verify_module(&module).expect_err("non-dominating use must fail");
+        assert!(errors.iter().any(|error| {
+            error.contains("uses value 1 before its definition or outside its defining CFG path")
+        }));
+    }
+
+    #[test]
+    fn verifies_optional_coroutine_operands() {
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("coroutine_operands", Vec::new(), Type::Void);
+        let entry = function.add_block("entry");
+        let task = if let Some(block) = function.get_block_mut(entry) {
+            block.instructions.push(crate::ir::Instruction {
+                id: 0,
+                kind: crate::ir::InstructionKind::ConstInt {
+                    result: Value { id: 0 },
+                    value: 1,
+                },
+                source_span: None,
+            });
+            block.instructions.push(crate::ir::Instruction {
+                id: 1,
+                kind: crate::ir::InstructionKind::CoroutineComplete {
+                    task: Value { id: 0 },
+                    value: Some(Value { id: 99 }),
+                },
+                source_span: None,
+            });
+            block.set_terminator(Terminator::Return { value: None });
+            Value { id: 0 }
+        } else {
+            unreachable!("the entry block was just created");
+        };
+        let _ = task;
+        module.add_function(function);
+
+        let errors = verify_module(&module).expect_err("missing coroutine payload must fail");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("uses undefined value 99")));
+    }
+
+    #[test]
+    fn rejects_direct_call_with_wrong_arity() {
+        let mut module = IRModule::new("test");
+        module.external_functions.push(crate::ir::ExternalFunction {
+            name: "callee".into(),
+            params: vec![Type::Int, Type::Int],
+            return_type: Type::Void,
+        });
+
+        let mut function = Function::new("caller", Vec::new(), Type::Void);
+        let entry = function.add_block("entry");
+        let mut builder = IRBuilder::new();
+        builder.set_current_block(entry);
+        builder.build_call(&mut function, "callee".into(), Vec::new(), false);
+        builder.build_return(&mut function, None);
+        module.add_function(function);
+
+        let errors = verify_module(&module).expect_err("wrong call arity must fail");
+        assert!(errors.iter().any(|error| {
+            error.contains("calls 'callee' with 0 arguments, expected 2")
+        }));
     }
 
     #[test]

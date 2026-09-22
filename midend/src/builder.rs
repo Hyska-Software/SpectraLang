@@ -1,12 +1,20 @@
 // IR Builder - constructs IR from AST
 
 use crate::ir::{Function, InstructionKind, SourceSpan, Terminator, Type, Value};
+use std::cell::RefCell;
 
 /// Builder for constructing IR
 pub struct IRBuilder {
     current_function: Option<usize>,
     current_block: Option<usize>,
     current_span: Option<SourceSpan>,
+    /// Builder operations historically failed silently when the current block
+    /// was missing.  That left a synthetic `usize::MAX` value in the lowering
+    /// state, where it could surface much later as an opaque backend failure.
+    /// Keep the value-returning builder API (the lowering code relies on it),
+    /// but retain an explicit diagnostic that `ASTLowering` must drain before
+    /// exposing a module to optimization or code generation.
+    errors: RefCell<Vec<String>>,
 }
 
 impl IRBuilder {
@@ -15,6 +23,7 @@ impl IRBuilder {
             current_function: None,
             current_block: None,
             current_span: None,
+            errors: RefCell::new(Vec::new()),
         }
     }
 
@@ -34,6 +43,27 @@ impl IRBuilder {
         self.current_block
     }
 
+    /// Take all structural builder errors accumulated since construction (or
+    /// the previous call).  Lowering converts these into `MidendError`s before
+    /// the IR can reach a pass or backend.
+    pub fn take_errors(&self) -> Vec<String> {
+        std::mem::take(&mut *self.errors.borrow_mut())
+    }
+
+    pub fn has_errors(&self) -> bool {
+        !self.errors.borrow().is_empty()
+    }
+
+    fn record_error(&self, message: impl Into<String>) {
+        self.errors.borrow_mut().push(format!(
+            "IR builder error{}: {}",
+            self.current_function
+                .map(|function| format!(" in function index {}", function))
+                .unwrap_or_default(),
+            message.into()
+        ));
+    }
+
     // -----------------------------------------------------------------------
     // Private helper: allocate a value ID and emit an instruction into the
     // current block only when both the block handle and the block itself exist.
@@ -45,11 +75,15 @@ impl IRBuilder {
         F: FnOnce(Value) -> InstructionKind,
     {
         let Some(block_id) = self.current_block else {
-            // No active block: return a sentinel instead of wasting a value ID.
-            return Value { id: usize::MAX };
+            self.record_error("attempted to emit a value without an active basic block");
+            return Value::invalid();
         };
         let Some(pos) = func.blocks.iter().position(|b| b.id == block_id) else {
-            return Value { id: usize::MAX };
+            self.record_error(format!(
+                "attempted to emit a value into unknown basic block {}",
+                block_id
+            ));
+            return Value::invalid();
         };
         let result = func.next_value();
         let kind = make_kind(result);
@@ -146,13 +180,20 @@ impl IRBuilder {
     }
 
     pub fn build_store(&self, func: &mut Function, ptr: Value, value: Value) {
-        if let Some(block_id) = self.current_block {
-            if let Some(block) = func.get_block_mut(block_id) {
-                block.add_instruction(InstructionKind::Store { ptr, value });
-                if let Some(instruction) = block.instructions.last_mut() {
-                    instruction.source_span = self.current_span.clone();
-                }
-            }
+        let Some(block_id) = self.current_block else {
+            self.record_error("attempted to emit a store without an active basic block");
+            return;
+        };
+        let Some(block) = func.get_block_mut(block_id) else {
+            self.record_error(format!(
+                "attempted to emit a store into unknown basic block {}",
+                block_id
+            ));
+            return;
+        };
+        block.add_instruction(InstructionKind::Store { ptr, value });
+        if let Some(instruction) = block.instructions.last_mut() {
+            instruction.source_span = self.current_span.clone();
         }
     }
 
@@ -196,11 +237,20 @@ impl IRBuilder {
     }
 
     pub fn build_escape_manual_alloc(&self, func: &mut Function, ptr: Value) {
-        if let Some(block_id) = self.current_block {
-            if let Some(block) = func.get_block_mut(block_id) {
-                block.add_instruction(InstructionKind::EscapeManualAlloc { ptr });
-            }
-        }
+        let Some(block_id) = self.current_block else {
+            self.record_error(
+                "attempted to emit an allocation escape without an active basic block",
+            );
+            return;
+        };
+        let Some(block) = func.get_block_mut(block_id) else {
+            self.record_error(format!(
+                "attempted to emit an allocation escape into unknown basic block {}",
+                block_id
+            ));
+            return;
+        };
+        block.add_instruction(InstructionKind::EscapeManualAlloc { ptr });
     }
 
     pub fn build_copy(&self, func: &mut Function, source: Value) -> Value {
@@ -257,19 +307,33 @@ impl IRBuilder {
     }
 
     pub fn build_return(&self, func: &mut Function, value: Option<Value>) {
-        if let Some(block_id) = self.current_block {
-            if let Some(block) = func.get_block_mut(block_id) {
-                block.set_terminator(Terminator::Return { value });
-            }
-        }
+        let Some(block_id) = self.current_block else {
+            self.record_error("attempted to emit a return without an active basic block");
+            return;
+        };
+        let Some(block) = func.get_block_mut(block_id) else {
+            self.record_error(format!(
+                "attempted to emit a return into unknown basic block {}",
+                block_id
+            ));
+            return;
+        };
+        block.set_terminator(Terminator::Return { value });
     }
 
     pub fn build_branch(&self, func: &mut Function, target: usize) {
-        if let Some(block_id) = self.current_block {
-            if let Some(block) = func.get_block_mut(block_id) {
-                block.set_terminator(Terminator::Branch { target });
-            }
-        }
+        let Some(block_id) = self.current_block else {
+            self.record_error("attempted to emit a branch without an active basic block");
+            return;
+        };
+        let Some(block) = func.get_block_mut(block_id) else {
+            self.record_error(format!(
+                "attempted to emit a branch from unknown basic block {}",
+                block_id
+            ));
+            return;
+        };
+        block.set_terminator(Terminator::Branch { target });
     }
 
     pub fn build_cond_branch(
@@ -279,23 +343,39 @@ impl IRBuilder {
         true_block: usize,
         false_block: usize,
     ) {
-        if let Some(block_id) = self.current_block {
-            if let Some(block) = func.get_block_mut(block_id) {
-                block.set_terminator(Terminator::CondBranch {
-                    condition,
-                    true_block,
-                    false_block,
-                });
-            }
-        }
+        let Some(block_id) = self.current_block else {
+            self.record_error(
+                "attempted to emit a conditional branch without an active basic block",
+            );
+            return;
+        };
+        let Some(block) = func.get_block_mut(block_id) else {
+            self.record_error(format!(
+                "attempted to emit a conditional branch from unknown basic block {}",
+                block_id
+            ));
+            return;
+        };
+        block.set_terminator(Terminator::CondBranch {
+            condition,
+            true_block,
+            false_block,
+        });
     }
 
     pub fn build_unreachable(&self, func: &mut Function) {
-        if let Some(block_id) = self.current_block {
-            if let Some(block) = func.get_block_mut(block_id) {
-                block.set_terminator(Terminator::Unreachable);
-            }
-        }
+        let Some(block_id) = self.current_block else {
+            self.record_error("attempted to emit unreachable without an active basic block");
+            return;
+        };
+        let Some(block) = func.get_block_mut(block_id) else {
+            self.record_error(format!(
+                "attempted to emit unreachable into unknown basic block {}",
+                block_id
+            ));
+            return;
+        };
+        block.set_terminator(Terminator::Unreachable);
     }
 
     pub fn build_call(
@@ -305,8 +385,17 @@ impl IRBuilder {
         args: Vec<Value>,
         has_return: bool,
     ) -> Option<Value> {
-        let block_id = self.current_block?;
-        let pos = func.blocks.iter().position(|b| b.id == block_id)?;
+        let Some(block_id) = self.current_block else {
+            self.record_error("attempted to emit a call without an active basic block");
+            return None;
+        };
+        let Some(pos) = func.blocks.iter().position(|b| b.id == block_id) else {
+            self.record_error(format!(
+                "attempted to emit a call into unknown basic block {}",
+                block_id
+            ));
+            return None;
+        };
         let result = if has_return {
             Some(func.next_value())
         } else {
@@ -350,8 +439,17 @@ impl IRBuilder {
         has_return: bool,
         result_type: Option<Type>,
     ) -> Option<Value> {
-        let block_id = self.current_block?;
-        let pos = func.blocks.iter().position(|b| b.id == block_id)?;
+        let Some(block_id) = self.current_block else {
+            self.record_error("attempted to emit a host call without an active basic block");
+            return None;
+        };
+        let Some(pos) = func.blocks.iter().position(|b| b.id == block_id) else {
+            self.record_error(format!(
+                "attempted to emit a host call into unknown basic block {}",
+                block_id
+            ));
+            return None;
+        };
         let result = if has_return {
             Some(func.next_value())
         } else {
@@ -384,8 +482,19 @@ impl IRBuilder {
         sig_params: Vec<crate::ir::Type>,
         sig_return: crate::ir::Type,
     ) -> Option<Value> {
-        let block_id = self.current_block?;
-        let pos = func.blocks.iter().position(|b| b.id == block_id)?;
+        let Some(block_id) = self.current_block else {
+            self.record_error(
+                "attempted to emit an indirect call without an active basic block",
+            );
+            return None;
+        };
+        let Some(pos) = func.blocks.iter().position(|b| b.id == block_id) else {
+            self.record_error(format!(
+                "attempted to emit an indirect call into unknown basic block {}",
+                block_id
+            ));
+            return None;
+        };
         let has_return = sig_return != crate::ir::Type::Void;
         let result = if has_return {
             Some(func.next_value())
@@ -479,5 +588,36 @@ impl IRBuilder {
 impl Default for IRBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_emission_is_reported_and_returns_only_internal_poison() {
+        let builder = IRBuilder::new();
+        let mut function = Function::new("missing_block", Vec::new(), Type::Void);
+
+        let value = builder.build_const_int(&mut function, 1);
+
+        assert_eq!(value.id, Value::INVALID_ID);
+        let errors = builder.take_errors();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("without an active basic block"));
+    }
+
+    #[test]
+    fn unknown_block_is_not_silently_dropped() {
+        let mut builder = IRBuilder::new();
+        let mut function = Function::new("unknown_block", Vec::new(), Type::Void);
+        builder.set_current_block(99);
+
+        builder.build_return(&mut function, None);
+
+        let errors = builder.take_errors();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("unknown basic block 99"));
     }
 }

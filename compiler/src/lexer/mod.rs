@@ -6,25 +6,94 @@ use crate::{
 
 pub struct Lexer<'source> {
     source: &'source str,
+    /// Byte offset of `source[0]` inside the enclosing file. Zero for a
+    /// normal top-level lex; f-string interpolation sub-parsing sets it so
+    /// the inner expression receives absolute, file-unique spans instead of
+    /// restarting at offset 0 (where every interpolation would collide in
+    /// span-keyed tables such as the semantic type facts).
+    origin_offset: usize,
+    /// 1-based line/column of `source[0]` inside the enclosing file.
+    origin_location: Location,
+}
+
+/// Indexed character access used by the tokenizer.
+///
+/// Spectra's identifiers and punctuation are ASCII, which is also the common
+/// case for source files.  The old lexer eagerly materialized a `(byte,
+/// char)` tuple for every character, doubling the live memory of an ASCII
+/// source before tokenization even began.  Keep indexed access for the
+/// existing scanner, but read ASCII directly from the source bytes and only
+/// allocate a Unicode index for genuinely non-ASCII input.
+struct CharacterTable<'source> {
+    source: &'source str,
+    unicode: Option<Vec<(usize, char)>>,
+}
+
+impl<'source> CharacterTable<'source> {
+    fn new(source: &'source str) -> Self {
+        let unicode = if source.is_ascii() {
+            None
+        } else {
+            Some(source.char_indices().collect())
+        };
+        Self { source, unicode }
+    }
+
+    fn len(&self) -> usize {
+        self.unicode
+            .as_ref()
+            .map_or(self.source.len(), Vec::len)
+    }
+
+    fn get(&self, index: usize) -> Option<(usize, char)> {
+        if let Some(unicode) = &self.unicode {
+            return unicode.get(index).copied();
+        }
+        self.source
+            .as_bytes()
+            .get(index)
+            .map(|byte| (index, *byte as char))
+    }
 }
 
 impl<'source> Lexer<'source> {
     pub fn new(source: &'source str) -> Self {
-        Self { source }
+        Self {
+            source,
+            origin_offset: 0,
+            origin_location: Location::new(1, 1),
+        }
+    }
+
+    /// Lex `source` as if it began at `origin_offset` / `origin_location` of
+    /// the enclosing file. Used to lex one f-string interpolation so its
+    /// tokens keep positions inside the real source text.
+    pub fn with_origin(
+        source: &'source str,
+        origin_offset: usize,
+        origin_location: Location,
+    ) -> Self {
+        Self {
+            source,
+            origin_offset,
+            origin_location,
+        }
     }
 
     pub fn tokenize(&self) -> Result<Vec<Token>, Vec<LexError>> {
         let mut tokens = Vec::new();
         let mut errors = Vec::new();
 
-        let characters: Vec<(usize, char)> = self.source.char_indices().collect();
+        let characters = CharacterTable::new(self.source);
         let mut index = 0;
         let length = characters.len();
-        let mut line = 1;
-        let mut column = 1;
+        let mut line = self.origin_location.line;
+        let mut column = self.origin_location.column;
 
         while index < length {
-            let (offset, ch) = characters[index];
+            let Some((offset, ch)) = characters.get(index) else {
+                break;
+            };
             let start_location = Location::new(line, column);
 
             match ch {
@@ -36,7 +105,9 @@ impl<'source> Lexer<'source> {
                     bump_position(ch, &mut line, &mut column);
                     index += 1;
                 }
-                '/' if index + 1 < length && characters[index + 1].1 == '/' => {
+                '/' if index + 1 < length
+                    && characters.get(index + 1).is_some_and(|(_, ch)| ch == '/') =>
+                {
                     // Consume line comment start
                     bump_position('/', &mut line, &mut column);
                     index += 1;
@@ -44,7 +115,9 @@ impl<'source> Lexer<'source> {
                     index += 1;
 
                     while index < length {
-                        let (_, comment_char) = characters[index];
+                        let Some((_, comment_char)) = characters.get(index) else {
+                            break;
+                        };
                         if comment_char == '\n' {
                             break;
                         }
@@ -52,7 +125,9 @@ impl<'source> Lexer<'source> {
                         index += 1;
                     }
                 }
-                '/' if index + 1 < length && characters[index + 1].1 == '*' => {
+                '/' if index + 1 < length
+                    && characters.get(index + 1).is_some_and(|(_, ch)| ch == '*') =>
+                {
                     // Consume block comment /* ... */
                     bump_position('/', &mut line, &mut column);
                     index += 1;
@@ -61,10 +136,12 @@ impl<'source> Lexer<'source> {
 
                     let mut closed = false;
                     while index < length {
-                        let (_, comment_char) = characters[index];
+                        let Some((_, comment_char)) = characters.get(index) else {
+                            break;
+                        };
                         if comment_char == '*'
                             && index + 1 < length
-                            && characters[index + 1].1 == '/'
+                            && characters.get(index + 1).is_some_and(|(_, ch)| ch == '/')
                         {
                             bump_position('*', &mut line, &mut column);
                             index += 1;
@@ -91,7 +168,10 @@ impl<'source> Lexer<'source> {
                 }
                 ch if is_identifier_start(ch) => {
                     // Special case: f"..." is an f-string literal, not an identifier
-                    if ch == 'f' && index + 1 < length && characters[index + 1].1 == '"' {
+                    if ch == 'f'
+                        && index + 1 < length
+                        && characters.get(index + 1).is_some_and(|(_, ch)| ch == '"')
+                    {
                         // Consume 'f'
                         bump_position('f', &mut line, &mut column);
                         index += 1;
@@ -104,10 +184,17 @@ impl<'source> Lexer<'source> {
                         let mut terminated = false;
 
                         while index < length {
-                            let (_, sc) = characters[index];
+                            let Some((_, sc)) = characters.get(index) else {
+                                break;
+                            };
                             if sc == '\\' && index + 1 < length {
-                                let (_, escaped) = characters[index + 1];
-                                let escape_offset = characters[index].0;
+                                let Some((_, escaped)) = characters.get(index + 1) else {
+                                    break;
+                                };
+                                let escape_offset = characters
+                                    .get(index)
+                                    .map(|(offset, _)| offset)
+                                    .unwrap_or(self.source.len());
                                 let escape_start = Location::new(line, column);
                                 bump_position('\\', &mut line, &mut column);
                                 bump_position(escaped, &mut line, &mut column);
@@ -155,7 +242,10 @@ impl<'source> Lexer<'source> {
                         }
 
                         let end_offset = if index < length {
-                            characters[index].0
+                            characters
+                                .get(index)
+                                .map(|(offset, _)| offset)
+                                .unwrap_or(self.source.len())
                         } else {
                             self.source.len()
                         };
@@ -188,7 +278,9 @@ impl<'source> Lexer<'source> {
                     bump_position(ch, &mut line, &mut column);
                     let mut end_index = index + 1;
                     while end_index < length {
-                        let (_, next_char) = characters[end_index];
+                        let Some((_, next_char)) = characters.get(end_index) else {
+                            break;
+                        };
                         if is_identifier_continue(next_char) {
                             bump_position(next_char, &mut line, &mut column);
                             end_index += 1;
@@ -198,7 +290,10 @@ impl<'source> Lexer<'source> {
                     }
 
                     let end_offset = if end_index < length {
-                        characters[end_index].0
+                        characters
+                            .get(end_index)
+                            .map(|(offset, _)| offset)
+                            .unwrap_or(self.source.len())
                     } else {
                         self.source.len()
                     };
@@ -220,10 +315,10 @@ impl<'source> Lexer<'source> {
                     // Radix prefixes: 0x (hexadecimal), 0o (octal), 0b (binary).
                     // The prefix selects which digit alphabet plus `_` may follow.
                     let radix = if ch == '0' && end_index < length {
-                        match characters[end_index].1 {
-                            'x' => Some((16u32, "hexadecimal")),
-                            'o' => Some((8u32, "octal")),
-                            'b' => Some((2u32, "binary")),
+                        match characters.get(end_index).map(|(_, ch)| ch) {
+                            Some('x') => Some((16u32, "hexadecimal")),
+                            Some('o') => Some((8u32, "octal")),
+                            Some('b') => Some((2u32, "binary")),
                             _ => None,
                         }
                     } else {
@@ -236,7 +331,9 @@ impl<'source> Lexer<'source> {
 
                     match radix {
                         Some((_radix_value, radix_name)) => {
-                            bump_position(characters[end_index].1, &mut line, &mut column);
+                            if let Some((_, prefix)) = characters.get(end_index) {
+                                bump_position(prefix, &mut line, &mut column);
+                            }
                             end_index += 1;
 
                             let is_radix_digit = |c: char| match _radix_value {
@@ -248,7 +345,9 @@ impl<'source> Lexer<'source> {
                             let mut saw_digit = false;
                             let mut prev_was_digit = false;
                             while end_index < length {
-                                let (_, next_char) = characters[end_index];
+                                let Some((_, next_char)) = characters.get(end_index) else {
+                                    break;
+                                };
                                 if is_radix_digit(next_char) {
                                     saw_digit = true;
                                     prev_was_digit = true;
@@ -257,8 +356,13 @@ impl<'source> Lexer<'source> {
                                 } else if next_char == '_' {
                                     let separator_ok = prev_was_digit
                                         && end_index + 1 < length
-                                        && is_radix_digit(characters[end_index + 1].1);
-                                    let separator_offset = characters[end_index].0;
+                                        && characters
+                                            .get(end_index + 1)
+                                            .is_some_and(|(_, ch)| is_radix_digit(ch));
+                                    let separator_offset = characters
+                                        .get(end_index)
+                                        .map(|(offset, _)| offset)
+                                        .unwrap_or(self.source.len());
                                     let separator_start = Location::new(line, column);
                                     bump_position('_', &mut line, &mut column);
                                     end_index += 1;
@@ -317,7 +421,9 @@ impl<'source> Lexer<'source> {
                             let mut prev_was_digit = true;
 
                             while end_index < length {
-                                let (_, next_char) = characters[end_index];
+                                let Some((_, next_char)) = characters.get(end_index) else {
+                                    break;
+                                };
                                 if next_char.is_ascii_digit() {
                                     prev_was_digit = true;
                                     bump_position(next_char, &mut line, &mut column);
@@ -325,8 +431,13 @@ impl<'source> Lexer<'source> {
                                 } else if next_char == '_' {
                                     let separator_ok = prev_was_digit
                                         && end_index + 1 < length
-                                        && characters[end_index + 1].1.is_ascii_digit();
-                                    let separator_offset = characters[end_index].0;
+                                        && characters
+                                            .get(end_index + 1)
+                                            .is_some_and(|(_, ch)| ch.is_ascii_digit());
+                                    let separator_offset = characters
+                                        .get(end_index)
+                                        .map(|(offset, _)| offset)
+                                        .unwrap_or(self.source.len());
                                     let separator_start = Location::new(line, column);
                                     bump_position('_', &mut line, &mut column);
                                     end_index += 1;
@@ -353,7 +464,9 @@ impl<'source> Lexer<'source> {
                                     && !seen_dot
                                     && !seen_exponent
                                     && end_index + 1 < length
-                                    && characters[end_index + 1].1.is_ascii_digit()
+                                    && characters
+                                        .get(end_index + 1)
+                                        .is_some_and(|(_, ch)| ch.is_ascii_digit())
                                 {
                                     seen_dot = true;
                                     prev_was_digit = true;
@@ -366,12 +479,21 @@ impl<'source> Lexer<'source> {
                                     // Exponent marker: an optional +/- sign followed
                                     // by at least one digit.
                                     let unsigned_digit = end_index + 1 < length
-                                        && characters[end_index + 1].1.is_ascii_digit();
+                                        && characters
+                                            .get(end_index + 1)
+                                            .is_some_and(|(_, ch)| ch.is_ascii_digit());
                                     let signed_digit = end_index + 2 < length
-                                        && matches!(characters[end_index + 1].1, '+' | '-')
-                                        && characters[end_index + 2].1.is_ascii_digit();
+                                        && characters
+                                            .get(end_index + 1)
+                                            .is_some_and(|(_, ch)| matches!(ch, '+' | '-'))
+                                        && characters
+                                            .get(end_index + 2)
+                                            .is_some_and(|(_, ch)| ch.is_ascii_digit());
                                     if !(unsigned_digit || signed_digit) {
-                                        let marker_offset = characters[end_index].0;
+                                        let marker_offset = characters
+                                            .get(end_index)
+                                            .map(|(offset, _)| offset)
+                                            .unwrap_or(self.source.len());
                                         let marker_start = Location::new(line, column);
                                         bump_position(next_char, &mut line, &mut column);
                                         end_index += 1;
@@ -398,13 +520,13 @@ impl<'source> Lexer<'source> {
                                     bump_position(next_char, &mut line, &mut column);
                                     end_index += 1;
                                     if end_index < length
-                                        && matches!(characters[end_index].1, '+' | '-')
+                                        && characters
+                                            .get(end_index)
+                                            .is_some_and(|(_, ch)| matches!(ch, '+' | '-'))
                                     {
-                                        bump_position(
-                                            characters[end_index].1,
-                                            &mut line,
-                                            &mut column,
-                                        );
+                                        if let Some((_, sign)) = characters.get(end_index) {
+                                            bump_position(sign, &mut line, &mut column);
+                                        }
                                         end_index += 1;
                                     }
                                 } else {
@@ -415,7 +537,10 @@ impl<'source> Lexer<'source> {
                     }
 
                     let end_offset = if end_index < length {
-                        characters[end_index].0
+                        characters
+                            .get(end_index)
+                            .map(|(offset, _)| offset)
+                            .unwrap_or(self.source.len())
                     } else {
                         self.source.len()
                     };
@@ -438,11 +563,18 @@ impl<'source> Lexer<'source> {
                     let mut terminated = false;
 
                     while scan < length {
-                        let (_, sc) = characters[scan];
+                        let Some((_, sc)) = characters.get(scan) else {
+                            break;
+                        };
                         if sc == '\\' && scan + 1 < length {
                             // Escape sequence
-                            let (_, escaped) = characters[scan + 1];
-                            let escape_offset = characters[scan].0;
+                            let Some((_, escaped)) = characters.get(scan + 1) else {
+                                break;
+                            };
+                            let escape_offset = characters
+                                .get(scan)
+                                .map(|(offset, _)| offset)
+                                .unwrap_or(self.source.len());
                             let escape_start = Location::new(line, column);
                             bump_position('\\', &mut line, &mut column);
                             bump_position(escaped, &mut line, &mut column);
@@ -496,7 +628,10 @@ impl<'source> Lexer<'source> {
                     }
 
                     let end_offset = if scan < length {
-                        characters[scan].0
+                        characters
+                            .get(scan)
+                            .map(|(offset, _)| offset)
+                            .unwrap_or(self.source.len())
                     } else {
                         self.source.len()
                     };
@@ -527,10 +662,14 @@ impl<'source> Lexer<'source> {
                     let mut terminated = false;
 
                     if scan < length {
-                        let (_, sc) = characters[scan];
+                        let Some((_, sc)) = characters.get(scan) else {
+                            break;
+                        };
                         if sc == '\\' && scan + 1 < length {
                             // Escape sequence
-                            let (_, escaped) = characters[scan + 1];
+                            let Some((_, escaped)) = characters.get(scan + 1) else {
+                                break;
+                            };
                             bump_position('\\', &mut line, &mut column);
                             bump_position(escaped, &mut line, &mut column);
                             let ch_val = match escaped {
@@ -551,14 +690,19 @@ impl<'source> Lexer<'source> {
                         }
                     }
 
-                    if scan < length && characters[scan].1 == '\'' {
+                    if scan < length
+                        && characters.get(scan).is_some_and(|(_, ch)| ch == '\'')
+                    {
                         bump_position('\'', &mut line, &mut column);
                         scan += 1;
                         terminated = true;
                     }
 
                     let end_offset = if scan < length {
-                        characters[scan].0
+                        characters
+                            .get(scan)
+                            .map(|(offset, _)| offset)
+                            .unwrap_or(self.source.len())
                     } else {
                         self.source.len()
                     };
@@ -597,7 +741,7 @@ impl<'source> Lexer<'source> {
                 ch if is_symbol_char(ch) => {
                     // Check for two-character operators
                     let next_char = if index + 1 < length {
-                        Some(characters[index + 1].1)
+                        characters.get(index + 1).map(|(_, ch)| ch)
                     } else {
                         None
                     };
@@ -612,7 +756,7 @@ impl<'source> Lexer<'source> {
                         // Range operators: ..= and ..
                         ('.', Some('.')) => {
                             let third = if index + 2 < length {
-                                Some(characters[index + 2].1)
+                                characters.get(index + 2).map(|(_, ch)| ch)
                             } else {
                                 None
                             };
@@ -654,13 +798,18 @@ impl<'source> Lexer<'source> {
                     };
 
                     for _ in 0..chars_consumed {
-                        let (_, current_char) = characters[index];
+                        let Some((_, current_char)) = characters.get(index) else {
+                            break;
+                        };
                         bump_position(current_char, &mut line, &mut column);
                         index += 1;
                     }
 
                     let end_offset = if index < length {
-                        characters[index].0
+                        characters
+                            .get(index)
+                            .map(|(offset, _)| offset)
+                            .unwrap_or(self.source.len())
                     } else {
                         self.source.len()
                     };
@@ -696,6 +845,19 @@ impl<'source> Lexer<'source> {
             Location::new(line, column),
         );
         tokens.push(Token::new(TokenKind::EndOfFile, eof_span));
+
+        // Offsets above are relative to this lex buffer; rebase them onto the
+        // enclosing file when the buffer is a fragment (f-string `{...}`).
+        if self.origin_offset != 0 {
+            for token in &mut tokens {
+                token.span.start += self.origin_offset;
+                token.span.end += self.origin_offset;
+            }
+            for error in &mut errors {
+                error.span.start += self.origin_offset;
+                error.span.end += self.origin_offset;
+            }
+        }
 
         if errors.is_empty() {
             Ok(tokens)
@@ -762,6 +924,19 @@ fn bump_position(ch: char, line: &mut usize, column: &mut usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn character_table_avoids_ascii_materialization_and_preserves_unicode_offsets() {
+        let ascii = CharacterTable::new("module main");
+        assert!(ascii.unicode.is_none());
+        assert_eq!(ascii.len(), 11);
+        assert_eq!(ascii.get(7), Some((7, 'm')));
+
+        let unicode = CharacterTable::new("let café");
+        assert!(unicode.unicode.is_some());
+        assert_eq!(unicode.get(4), Some((4, 'c')));
+        assert_eq!(unicode.get(7), Some((7, 'é')));
+    }
 
     #[test]
     fn lexes_basic_tokens() {

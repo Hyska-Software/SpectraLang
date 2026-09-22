@@ -84,10 +84,27 @@ impl SemanticAnalyzer {
 
                 // Se type_name ainda não foi preenchido, inferir agora
                 if type_name.is_none() {
-                    let obj_type = self.infer_expression_type(object);
+                    // The fourth pass runs after function-body scopes have
+                    // been popped, so a bare identifier can no longer be
+                    // recovered from `lookup_symbol`.  Its expression fact
+                    // was recorded during the real analysis pass; prefer it
+                    // when the scope-based fallback is unknown.  This keeps
+                    // generic receivers and unit enums nominal for lowering
+                    // (`Boxed<int>::set`, `Role::to_json`) instead of
+                    // degrading them to an untyped/int representation.
+                    let inferred = self.infer_expression_type(object);
+                    let obj_type = if matches!(inferred, Type::Unknown) {
+                        self.symbol_resolutions
+                            .get(&object.span)
+                            .map(|info| info.ty.clone())
+                            .unwrap_or(inferred)
+                    } else {
+                        inferred
+                    };
                     *type_name = match obj_type {
-                        Type::Struct { name } => Some(name),
-                        Type::Enum { name, .. } => Some(name),
+                        Type::Struct { name }
+                        | Type::Enum { name, .. }
+                        | Type::Applied { name, .. } => Some(name),
                         _ => None,
                     };
                 }

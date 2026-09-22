@@ -228,9 +228,12 @@ where
 
         // Register the exports of this module so subsequent modules can import it.
         let exports = semantic.collect_module_exports(&ast, self.package_name.clone());
-        if let Ok(mut reg) = self.registry.write() {
-            reg.register_module(ast.name.clone(), exports);
-        }
+        let mut reg = self
+            .registry
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        reg.register_module(ast.name.clone(), exports);
+        drop(reg);
 
         let lint_diagnostics = lint_module(&ast, &self.options.lint);
         let mut lint_warnings: Vec<LintDiagnostic> = Vec::new();

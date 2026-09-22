@@ -23,6 +23,11 @@ impl ASTLowering {
     pub fn lower_module(&mut self, ast_module: &ASTModule) -> Result<IRModule, Vec<MidendError>> {
         let mut ir_module = IRModule::new(&ast_module.name);
         ir_module.source_file = Some(self.source_file.clone());
+        self.resolved_expression_types = ast_module
+            .resolved_expression_types
+            .iter()
+            .map(|(span, ty)| (*span, ty.clone()))
+            .collect();
         self.lambda_prefix = ast_module
             .name
             .chars()
@@ -281,9 +286,25 @@ impl ASTLowering {
             if self.is_inlined_derive_method(name) {
                 continue;
             }
+            let parameter_types: Vec<IRType> =
+                params.iter().map(|param| self.lower_type(param)).collect();
+            let positions: Vec<usize> = parameter_types
+                .iter()
+                .enumerate()
+                .filter(|(_, ty)| matches!(ty, IRType::Array { size: 0, .. }))
+                .map(|(index, _)| index)
+                .collect();
+            // A definition appends one hidden length parameter per unsized
+            // `[T]` position (see `lower_function`) and every direct call
+            // appends the matching length argument. Mirror that ABI in the
+            // import declaration: an external that stops at the public
+            // parameters disagrees with its own module's call sites, which
+            // both IR verification and AOT import signatures compare against.
+            let mut external_params = parameter_types.clone();
+            external_params.extend(std::iter::repeat(IRType::Int).take(positions.len()));
             let external = ExternalFunction {
                 name: self.resolve_user_function_symbol(name),
-                params: params.iter().map(|param| self.lower_type(param)).collect(),
+                params: external_params,
                 return_type: self.lower_type(return_type),
             };
             if !ir_module
@@ -293,16 +314,9 @@ impl ASTLowering {
             {
                 ir_module.external_functions.push(external);
             }
-            let parameter_types = params.iter().map(|param| self.lower_type(param)).collect();
             self.function_parameter_types
                 .entry(name.clone())
                 .or_insert(parameter_types);
-            let positions: Vec<usize> = params
-                .iter()
-                .enumerate()
-                .filter(|(_, param)| matches!(self.lower_type(param), IRType::Array { size: 0, .. }))
-                .map(|(index, _)| index)
-                .collect();
             if !positions.is_empty() {
                 let canonical = self.resolve_user_function_symbol(name);
                 self.hidden_array_params
@@ -706,6 +720,16 @@ impl ASTLowering {
         // Mark direct self-tail-recursion so the backend can emit native
         // Cranelift `return_call`s (see passes::tail_call_marking).
         crate::passes::tail_call_marking::mark_tail_self_recursion(&mut ir_module);
+
+        // The builder keeps the historical value-returning API for the many
+        // lowering helpers, but records every failed emission (missing block,
+        // unknown block, or missing terminator context).  Convert those
+        // structural failures into ordinary midend diagnostics here.  This is
+        // deliberately before returning `Ok`: no poison value can reach IR
+        // verification, optimization, or the backend.
+        for builder_error in self.builder.take_errors() {
+            self.errors.push(MidendError::new(builder_error));
+        }
 
         if self.errors.is_empty() {
             Ok(ir_module)

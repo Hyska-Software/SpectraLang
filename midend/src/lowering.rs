@@ -443,6 +443,10 @@ pub struct ASTLowering {
     source_file: String,
     builder: IRBuilder,
     current_function: Option<IRFunction>,
+    /// Semantic type facts keyed by source span.  Lowering uses these as the
+    /// primary type source and falls back only for compiler-generated or
+    /// synthetic expressions that have no semantic span entry.
+    resolved_expression_types: HashMap<Span, ASTType>,
     value_map: ScopeStack,
     variable_types: TypeScopeStack,
     /// Maps variable names to their allocated memory locations (for mutable variables)

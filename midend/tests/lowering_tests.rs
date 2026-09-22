@@ -198,6 +198,7 @@ fn make_module(name: &str, items: Vec<Item>) -> Module {
         imported_trait_decls: Vec::new(),
         imported_static_globals: Vec::new(),
         imported_agent_tools: Vec::new(),
+        resolved_expression_types: Vec::new(),
     }
 }
 

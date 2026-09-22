@@ -143,6 +143,7 @@ pub fn analyze_modules(modules: &mut [&mut Module]) -> Result<(), Vec<SemanticEr
     // filesystem order puts an importer first. This keeps forward imports and
     // public re-exports deterministic across project layouts.
     let mut pending: Vec<&mut Module> = modules.iter_mut().map(|module| &mut **module).collect();
+    let mut analyzed_names = HashSet::new();
     while !pending.is_empty() {
         let pending_names: HashSet<String> =
             pending.iter().map(|module| module.name.clone()).collect();
@@ -160,7 +161,9 @@ pub fn analyze_modules(modules: &mut [&mut Module]) -> Result<(), Vec<SemanticEr
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
                         .get_module(&path)
                         .is_some();
-                    registered || !pending_names.contains(&path)
+                    registered
+                        || analyzed_names.contains(&path)
+                        || !pending_names.contains(&path)
                 })
         });
         let Some(next_index) = next_index else {
@@ -173,14 +176,20 @@ pub fn analyze_modules(modules: &mut [&mut Module]) -> Result<(), Vec<SemanticEr
             break;
         };
         let module = pending.remove(next_index);
+        let module_name = module.name.clone();
         let mut analyzer = SemanticAnalyzer::new_with_registry(Arc::clone(&registry), None);
-        analyzer.set_current_module_name(Some(module.name.clone()));
+        analyzer.set_current_module_name(Some(module_name.clone()));
         let module_errors = analyzer.analyze_module(module);
 
-        // Register the exports of this module so subsequent modules can import it.
-        let exports = analyzer.collect_module_exports(module, None);
-        let mut reg = registry.write().unwrap_or_else(|p| p.into_inner());
-        reg.register_module(module.name.clone(), exports);
+        analyzed_names.insert(module_name.clone());
+        // Publish only a semantically valid module contract.  A failed module
+        // still counts as processed above so its importers can report their own
+        // diagnostics, but its partial symbols cannot leak into the registry.
+        if module_errors.is_empty() {
+            let exports = analyzer.collect_module_exports(module, None);
+            let mut reg = registry.write().unwrap_or_else(|p| p.into_inner());
+            reg.register_module(module_name, exports);
+        }
 
         errors.extend(module_errors);
     }
@@ -618,23 +627,27 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
     let b: Vec<char> = b.chars().collect();
     let m = a.len();
     let n = b.len();
-    let mut dp = vec![vec![0usize; n + 1]; m + 1];
-    for (i, row) in dp.iter_mut().enumerate() {
-        row[0] = i;
-    }
-    for (j, value) in dp[0].iter_mut().enumerate() {
-        *value = j;
-    }
+
+    // Only the previous row is needed for the recurrence.  Suggestions are
+    // computed for every unknown name against the registry, so avoiding the
+    // quadratic matrix materially reduces transient memory without changing
+    // the exact distance.
+    let mut previous: Vec<usize> = (0..=n).collect();
+    let mut current = vec![0usize; n + 1];
     for i in 1..=m {
+        current[0] = i;
         for j in 1..=n {
-            dp[i][j] = if a[i - 1] == b[j - 1] {
-                dp[i - 1][j - 1]
+            current[j] = if a[i - 1] == b[j - 1] {
+                previous[j - 1]
             } else {
-                1 + dp[i - 1][j].min(dp[i][j - 1]).min(dp[i - 1][j - 1])
+                1 + previous[j]
+                    .min(current[j - 1])
+                    .min(previous[j - 1])
             };
         }
+        std::mem::swap(&mut previous, &mut current);
     }
-    dp[m][n]
+    previous[n]
 }
 
 /// Format a `Type` for display in user-facing error messages.

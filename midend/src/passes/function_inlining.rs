@@ -107,6 +107,22 @@ fn is_inline_candidate(function: &Function, call_graph: &HashMap<String, HashSet
                 | InstructionKind::CallIndirect { .. }
                 | InstructionKind::FuncAddr { .. }
                 | InstructionKind::AsyncReady { .. }
+                | InstructionKind::AutodiffStep { .. }
+                | InstructionKind::Await { .. }
+                | InstructionKind::FrameAlloc { .. }
+                | InstructionKind::FrameStore { .. }
+                | InstructionKind::FrameLoad { .. }
+                | InstructionKind::StateLoad { .. }
+                | InstructionKind::StateStore { .. }
+                | InstructionKind::CoroutineCreate { .. }
+                | InstructionKind::CoroutinePollChild { .. }
+                | InstructionKind::CoroutineSubscribe { .. }
+                | InstructionKind::CoroutineWake { .. }
+                | InstructionKind::CoroutineSuspend { .. }
+                | InstructionKind::CoroutineComplete { .. }
+                | InstructionKind::CoroutineError { .. }
+                | InstructionKind::CoroutineCancelled { .. }
+                | InstructionKind::CoroutinePollReturn { .. }
                 | InstructionKind::MakeDynFatPtr { .. }
                 | InstructionKind::LoadDynDataPtr { .. }
                 | InstructionKind::LoadDynVtablePtr { .. }
@@ -179,11 +195,15 @@ fn inline_calls_in_function(
     while let Some((block_index, instruction_index, candidate_name)) =
         find_inline_call(function, candidates)
     {
-        let candidate = candidates
-            .get(&candidate_name)
-            .expect("candidate disappeared")
-            .clone();
-        inline_call(function, block_index, instruction_index, &candidate);
+        let Some(candidate) = candidates.get(&candidate_name).cloned() else {
+            // The candidate map is built once per round, but keeping this
+            // guard makes the pass total if discovery and rewriting evolve
+            // independently in the future.
+            break;
+        };
+        if !inline_call(function, block_index, instruction_index, &candidate) {
+            break;
+        }
         modified = true;
     }
     modified
@@ -212,7 +232,7 @@ fn inline_call(
     block_index: usize,
     instruction_index: usize,
     candidate: &InlineCandidate,
-) {
+) -> bool {
     let call_instruction = caller.blocks[block_index].instructions[instruction_index].clone();
     let (call_result, callee_name, call_args) = match &call_instruction.kind {
         InstructionKind::Call {
@@ -221,7 +241,7 @@ fn inline_call(
             args,
             ..
         } => (*result, function.clone(), args.clone()),
-        _ => unreachable!("inline_call called for non-call"),
+        _ => return false,
     };
 
     let continuation_id = caller.next_block_id;
@@ -357,6 +377,8 @@ fn inline_call(
             }
         }
     }
+
+    true
 }
 
 fn clone_instruction(
@@ -512,20 +534,41 @@ fn remap_instruction(
             // names stale blocks and the backend reports a missing incoming.
             incoming: incoming
                 .iter()
-                .map(|(value, block)| (map_value(*value, values), blocks[block]))
+                .map(|(value, block)| {
+                    (
+                        map_value(*value, values),
+                        blocks.get(block).copied().unwrap_or(*block),
+                    )
+                })
                 .collect(),
         },
         InstructionKind::ConstInt { result, value } => InstructionKind::ConstInt {
             result: map_value(*result, values),
             value: *value,
         },
+        InstructionKind::ConstIntTyped { result, value, ty } => InstructionKind::ConstIntTyped {
+            result: map_value(*result, values),
+            value: *value,
+            ty: ty.clone(),
+        },
         InstructionKind::ConstFloat { result, value } => InstructionKind::ConstFloat {
             result: map_value(*result, values),
             value: *value,
         },
+        InstructionKind::ConstFloatTyped { result, value, ty } => {
+            InstructionKind::ConstFloatTyped {
+                result: map_value(*result, values),
+                value: *value,
+                ty: ty.clone(),
+            }
+        }
         InstructionKind::ConstBool { result, value } => InstructionKind::ConstBool {
             result: map_value(*result, values),
             value: *value,
+        },
+        InstructionKind::ConstString { result, value } => InstructionKind::ConstString {
+            result: map_value(*result, values),
+            value: value.clone(),
         },
         InstructionKind::Cast {
             result,
@@ -564,7 +607,7 @@ fn clone_terminator(
             target: continuation_id,
         }),
         Some(Terminator::Branch { target }) => Some(Terminator::Branch {
-            target: blocks[target],
+            target: blocks.get(target).copied().unwrap_or(*target),
         }),
         Some(Terminator::CondBranch {
             condition,
@@ -572,8 +615,8 @@ fn clone_terminator(
             false_block,
         }) => Some(Terminator::CondBranch {
             condition: map_value(*condition, values),
-            true_block: blocks[true_block],
-            false_block: blocks[false_block],
+            true_block: blocks.get(true_block).copied().unwrap_or(*true_block),
+            false_block: blocks.get(false_block).copied().unwrap_or(*false_block),
         }),
         Some(Terminator::Switch {
             value,
@@ -583,9 +626,11 @@ fn clone_terminator(
             value: map_value(*value, values),
             cases: cases
                 .iter()
-                .map(|(case, block)| (*case, blocks[block]))
+                .map(|(case, block)| {
+                    (*case, blocks.get(block).copied().unwrap_or(*block))
+                })
                 .collect(),
-            default: blocks[default],
+            default: blocks.get(default).copied().unwrap_or(*default),
         }),
         Some(Terminator::Unreachable) => Some(Terminator::Unreachable),
         None => None,

@@ -500,6 +500,11 @@ fn fs_write_append_and_overwrite_create_nested_parents() {
 
 #[test]
 fn fs_invalid_paths_return_safe_values_without_panicking() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    crate::ffi::spectra_rt_manual_clear();
+
     let empty = test_string("");
     for (host, args) in [
         (FS_WRITE, vec![empty, test_string("ignored")]),
@@ -529,6 +534,7 @@ fn fs_invalid_paths_return_safe_values_without_panicking() {
     }
     assert!(!child.exists());
     std::fs::remove_dir_all(&dir).ok();
+    crate::ffi::spectra_rt_manual_clear();
 }
 
 unsafe fn tagged_result_parts(tagged: SpectraHostValue) -> (SpectraHostValue, SpectraHostValue) {

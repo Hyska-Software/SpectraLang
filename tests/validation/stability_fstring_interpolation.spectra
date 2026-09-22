@@ -1,0 +1,56 @@
+module stability_fstring_spans
+
+// Regression for f-string interpolation spans. Interpolated expressions used
+// to be sub-lexed as standalone snippets, so every `{expr}` restarted at byte
+// offset 0 of the file. Span-keyed semantic type facts therefore collided:
+// `{alpha}` (int) and `{gamma}` (string) both published `0..5`, and lowering
+// picked up whichever type survived. The losing expression skipped its
+// int-to-string conversion and passed a raw integer to `string.concat`,
+// which crashed the drop example (`validate_r207_struct_layout`) instead of
+// printing the value.
+//
+// Both cases below are deliberately the same length (`alpha`/`gamma`,
+// `self.left`/`self.right`) so the relative spans collide under the old
+// behavior.
+
+record Pair {
+    public left: string,
+    public right: int,
+}
+
+impl Pair {
+    public func label( & self) returns string {
+        f"{self.left}|{self.right}"
+    }
+}
+
+public func main() returns int {
+    let alpha = 41
+    let gamma = "5"
+
+    let first = f"{alpha}"
+    if first != "41" {
+        return 1
+    }
+
+    let second = f"{gamma}"
+    if second != "5" {
+        return 2
+    }
+
+    let pair = Pair { left: "x", right: 7 }
+    if pair.label() != "x|7" {
+        return 3
+    }
+
+    // Mixed types inside one interpolation set, including a bool and a
+    // float, must each pick their own conversion.
+    let ratio = 2.5
+    let ready = true
+    let mixed = f"{alpha}/{ratio}/{ready}"
+    if mixed != "41/2.5/true" {
+        return 4
+    }
+
+    return 0
+}

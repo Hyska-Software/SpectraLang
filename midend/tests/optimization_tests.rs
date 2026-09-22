@@ -148,6 +148,72 @@ fn test_constant_folding_mul() {
 }
 
 #[test]
+fn test_constant_folding_reaches_a_fixed_point_for_chains() {
+    let mut function = Function::new("constant_chain", Vec::new(), Type::Void);
+    let entry = function.add_block("entry");
+    // Keep normal source ordering and SSA IDs for the chain.
+    let mut builder = spectra_midend::builder::IRBuilder::new();
+    builder.set_current_block(entry);
+    let five = builder.build_const_int(&mut function, 5);
+    let three = builder.build_const_int(&mut function, 3);
+    let sum = builder.build_add(&mut function, five, three);
+    let two = builder.build_const_int(&mut function, 2);
+    let product = builder.build_mul(&mut function, sum, two);
+    builder.build_return(&mut function, None);
+
+    let mut module = Module::new("constant_chain");
+    module.add_function(function);
+    assert!(constant_folding::run(&mut module));
+
+    assert!(module.functions[0].blocks[0].instructions.iter().any(|instruction| {
+        matches!(
+            instruction.kind,
+            InstructionKind::ConstInt {
+                result: Value { id },
+                value: 16
+            } if id == product.id
+        )
+    }));
+}
+
+#[test]
+fn test_dce_preserves_coroutine_payload_operands() {
+    let mut function = Function::new("coroutine_payload", Vec::new(), Type::Void);
+    let entry = function.add_block("entry");
+    let mut builder = spectra_midend::builder::IRBuilder::new();
+    builder.set_current_block(entry);
+    let task = builder.build_const_int(&mut function, 7);
+    let payload = builder.build_const_int(&mut function, 42);
+    if let Some(block) = function.get_block_mut(entry) {
+        block.add_instruction(InstructionKind::CoroutineComplete {
+            task,
+            value: Some(payload),
+        });
+        block.set_terminator(Terminator::Return { value: None });
+    }
+
+    let mut module = Module::new("coroutine_payload");
+    module.add_function(function);
+    dead_code_elimination::run(&mut module);
+
+    let instructions = &module.functions[0].blocks[0].instructions;
+    assert!(instructions.iter().any(|instruction| matches!(
+        instruction.kind,
+        InstructionKind::ConstInt {
+            result: Value { id },
+            value: 7
+        } if id == task.id
+    )));
+    assert!(instructions.iter().any(|instruction| matches!(
+        instruction.kind,
+        InstructionKind::ConstInt {
+            result: Value { id },
+            value: 42
+        } if id == payload.id
+    )));
+}
+
+#[test]
 fn test_dead_code_elimination_basic() {
     // Create module with unused computation
     let mut module = Module {
@@ -735,6 +801,76 @@ fn test_function_inlining_allows_stack_safe_alloca_helpers() {
             .any(|instruction| matches!(instruction.kind, InstructionKind::Alloca { .. })),
         "stack-safe alloca should not block inlining"
     );
+}
+
+#[test]
+fn test_function_inlining_remaps_typed_and_string_constants() {
+    let mut helper = Function::new("typed_constants", Vec::new(), Type::Int);
+    let helper_entry = helper.add_block("entry");
+    if let Some(block) = helper.get_block_mut(helper_entry) {
+        block.add_instruction(InstructionKind::ConstIntTyped {
+            result: Value { id: 0 },
+            value: 7,
+            ty: Type::Int,
+        });
+        block.add_instruction(InstructionKind::ConstString {
+            result: Value { id: 1 },
+            value: "unused".into(),
+        });
+        block.set_terminator(Terminator::Return {
+            value: Some(Value { id: 0 }),
+        });
+    }
+
+    let mut caller = Function::new("main", Vec::new(), Type::Int);
+    let caller_entry = caller.add_block("entry");
+    if let Some(block) = caller.get_block_mut(caller_entry) {
+        block.add_instruction(InstructionKind::Call {
+            result: Some(Value { id: 0 }),
+            function: "typed_constants".into(),
+            args: Vec::new(),
+            is_tail: false,
+        });
+        block.set_terminator(Terminator::Return {
+            value: Some(Value { id: 0 }),
+        });
+    }
+    caller.next_value_id = 1;
+
+    let mut module = Module::new("typed_constants");
+    module.add_function(helper);
+    module.add_function(caller);
+
+    assert!(function_inlining::run(&mut module));
+    let main = module
+        .functions
+        .iter()
+        .find(|function| function.name == "main")
+        .expect("main function");
+    let instructions: Vec<_> = main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+
+    assert!(instructions
+        .iter()
+        .all(|instruction| !matches!(instruction.kind, InstructionKind::Call { .. })));
+    assert!(instructions.iter().any(|instruction| matches!(
+        instruction.kind,
+        InstructionKind::ConstIntTyped {
+            result: Value { id },
+            value: 7,
+            ..
+        } if id != 0
+    )));
+    assert!(instructions.iter().any(|instruction| matches!(
+        instruction.kind,
+        InstructionKind::ConstString {
+            result: Value { id },
+            ref value,
+        } if id != 0 && value == "unused"
+    )));
 }
 
 #[test]

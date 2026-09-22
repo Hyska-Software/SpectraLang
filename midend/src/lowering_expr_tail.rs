@@ -121,14 +121,19 @@ impl ASTLowering {
                 // subscription, wake, and frame operations. Lowering it to a
                 // blocking host call would execute async bodies eagerly.
                 let result = ir_func.next_value();
-                ir_func
-                    .get_block_mut(self.builder.get_current_block().unwrap())
-                    .expect("current block exists while lowering await")
-                    .add_instruction(InstructionKind::Await {
-                        result,
-                        task,
-                        output_type,
-                    });
+                let Some(block_id) = self.builder.get_current_block() else {
+                    return self.invalid_value("await lowering requires an active basic block");
+                };
+                let Some(block) = ir_func.get_block_mut(block_id) else {
+                    return self.invalid_value(format!(
+                        "await lowering targets unknown basic block {block_id}"
+                    ));
+                };
+                block.add_instruction(InstructionKind::Await {
+                    result,
+                    task,
+                    output_type,
+                });
                 result
             }
             ExpressionKind::Range {

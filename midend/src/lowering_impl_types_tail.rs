@@ -140,9 +140,12 @@ impl ASTLowering {
             ASTType::Char => IRType::Char,
             ASTType::Unit => IRType::Void,
             ASTType::Unknown => IRType::Unknown,
-            ASTType::Array { element_type, .. } => IRType::Array {
+            ASTType::Array { element_type, size } => IRType::Array {
                 element_type: Box::new(self.lower_type(element_type)),
-                size: 0,
+                // The IR uses zero for an unsized/dynamic sequence.  Preserve
+                // semantic facts for fixed arrays instead of erasing their
+                // length at the semantic-to-IR boundary.
+                size: size.unwrap_or(0),
             },
             ASTType::Tuple { elements } => {
                 // Converter cada tipo do elemento

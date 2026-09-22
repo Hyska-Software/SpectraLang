@@ -671,6 +671,20 @@ impl Function {
     }
 }
 
+impl Value {
+    /// ID used only as an internal recovery value after the builder has
+    /// recorded a structural error.  `ASTLowering` drains those errors before
+    /// returning an IR module, and the verifier rejects this ID as an extra
+    /// safety net; it is never a valid SSA value.
+    pub const INVALID_ID: usize = usize::MAX;
+
+    pub const fn invalid() -> Self {
+        Self {
+            id: Self::INVALID_ID,
+        }
+    }
+}
+
 impl BasicBlock {
     pub fn add_instruction(&mut self, kind: InstructionKind) -> usize {
         let id = self.instructions.len();

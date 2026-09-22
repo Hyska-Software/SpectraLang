@@ -97,21 +97,44 @@ impl ASTLowering {
                 }
 
                 // 2. Determinar o tipo do objeto
-                let obj_type_name = if let Some(name) = type_name {
-                    // Tipo já foi preenchido pelo semantic analyzer
-                    name.clone()
-                } else {
-                    match self.infer_expr_ir_type(object) {
-                        IRType::Struct { name, .. } => name,
-                        IRType::Enum { name, .. } => name,
-                        other => {
-                            return self.invalid_value(format!(
-                                "Could not determine object type for method call '{method_name}' (inferred type: {:?})",
-                                other
-                            ));
+                // Generic applications carry the concrete ABI nominal in
+                // their representation (`Boxed_int`), while unit enums are
+                // represented as plain integer tags. Prefer the IR nominal
+                // when available, and use the semantic `type_name` for the
+                // unit-enum case.
+                let obj_type_name = self
+                    .ir_nominal_name(&obj_ir_type)
+                    .map(str::to_string)
+                    .or_else(|| type_name.clone())
+                    .or_else(|| {
+                        self.resolved_expression_types
+                            .get(&object.span)
+                            .and_then(|ty| match ty {
+                                spectra_compiler::ast::Type::Struct { name }
+                                | spectra_compiler::ast::Type::Enum { name }
+                                | spectra_compiler::ast::Type::Applied { name, .. } => {
+                                    Some(name.clone())
+                                }
+                                _ => None,
+                            })
+                    })
+                    .or_else(|| match &obj_ir_type {
+                        IRType::Struct { name, .. } | IRType::Enum { name, .. } => {
+                            Some(name.clone())
                         }
-                    }
-                };
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| {
+                        // Keep the diagnostic on the normal lowering error
+                        // path rather than indexing an absent nominal name.
+                        "unknown".to_string()
+                    });
+                if obj_type_name == "unknown" {
+                    return self.invalid_value(format!(
+                        "Could not determine object type for method call '{method_name}' (inferred type: {:?})",
+                        obj_ir_type
+                    ));
+                }
 
                 if method_name == "to_json" {
                     if self.json_struct_schemas.contains_key(&obj_type_name) {
@@ -151,6 +174,38 @@ impl ASTLowering {
                                 concrete_types,
                             };
                             let mangled = request.mangled_name();
+                            // Publish the specialized signature before the
+                            // call is emitted. A generic `set` method has a
+                            // `Void` return, and without this early fact the
+                            // caller records a phantom SSA result before the
+                            // pending specialization is lowered.
+                            if let Some((method, type_params)) =
+                                self.generic_impl_methods.get(&generic_key).cloned()
+                            {
+                                let mut type_map = HashMap::new();
+                                for (type_param, concrete_type) in
+                                    type_params.iter().zip(request.concrete_types.iter())
+                                {
+                                    type_map.insert(type_param.name.clone(), concrete_type.clone());
+                                }
+                                let return_type = method
+                                    .return_type
+                                    .as_ref()
+                                    .map(|annotation| {
+                                        self.lower_type_annotation_with_map(annotation, &type_map)
+                                    })
+                                    .unwrap_or(IRType::Void);
+                                let return_type = if method.is_async {
+                                    IRType::Task {
+                                        output: Box::new(return_type),
+                                    }
+                                } else {
+                                    return_type
+                                };
+                                self.function_return_types
+                                    .entry(mangled.clone())
+                                    .or_insert(return_type);
+                            }
                             if !self.generated_specializations.contains_key(&mangled) {
                                 self.pending_method_specializations.push(request);
                             }

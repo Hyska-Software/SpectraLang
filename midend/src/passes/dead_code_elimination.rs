@@ -193,9 +193,57 @@ impl DeadCodeElimination {
             } => {
                 used.insert(value.id);
             }
-            // Restantes no catch-all não têm operandos `Value`:
-            // Alloca, GlobalAddr, ManualAlloc, FuncAddr,
-            // ConstInt/ConstIntTyped/ConstFloat/ConstFloatTyped/ConstBool/ConstString.
+            InstructionKind::Await { task, .. } => {
+                used.insert(task.id);
+            }
+            InstructionKind::FrameStore { frame, value, .. } => {
+                used.insert(frame.id);
+                used.insert(value.id);
+            }
+            InstructionKind::FrameLoad { frame, .. }
+            | InstructionKind::StateLoad { frame, .. } => {
+                used.insert(frame.id);
+            }
+            InstructionKind::StateStore { frame, .. } => {
+                used.insert(frame.id);
+            }
+            InstructionKind::CoroutineCreate { frame, .. } => {
+                used.insert(frame.id);
+            }
+            InstructionKind::CoroutinePollChild { status, result, task, .. } => {
+                used.insert(status.id);
+                used.insert(task.id);
+                if let Some(result) = result {
+                    used.insert(result.id);
+                }
+            }
+            InstructionKind::CoroutineSubscribe { task, parent } => {
+                used.insert(task.id);
+                used.insert(parent.id);
+            }
+            InstructionKind::CoroutineWake { task }
+            | InstructionKind::CoroutineSuspend { task, .. }
+            | InstructionKind::CoroutineCancelled { task } => {
+                used.insert(task.id);
+            }
+            InstructionKind::CoroutineComplete { task, value } => {
+                used.insert(task.id);
+                if let Some(value) = value {
+                    used.insert(value.id);
+                }
+            }
+            InstructionKind::CoroutineError { task, error } => {
+                used.insert(task.id);
+                if let Some(error) = error {
+                    used.insert(error.id);
+                }
+            }
+            InstructionKind::CoroutinePollReturn { status } => {
+                used.insert(status.id);
+            }
+            // Remaining instructions have no Value operands:
+            // Alloca, GlobalAddr, ManualAlloc, FuncAddr, constants, and
+            // terminal coroutine markers without payloads.
             _ => {}
         }
     }
@@ -235,11 +283,19 @@ impl DeadCodeElimination {
             | InstructionKind::LoadDynDataPtr { result, .. }
             | InstructionKind::LoadDynVtablePtr { result, .. }
             | InstructionKind::LoadVtableSlot { result, .. }
-            | InstructionKind::AsyncReady { result, .. } => Some(result.id),
+            | InstructionKind::AsyncReady { result, .. }
+            | InstructionKind::FrameAlloc { result, .. }
+            | InstructionKind::FrameLoad { result, .. }
+            | InstructionKind::StateLoad { result, .. }
+            | InstructionKind::CoroutineCreate { result, .. }
+            | InstructionKind::Await { result, .. } => Some(result.id),
             InstructionKind::Call { result, .. }
             | InstructionKind::HostCall { result, .. }
             | InstructionKind::CallIndirect { result, .. }
-            | InstructionKind::AutodiffStep { result, .. } => result.as_ref().map(|r| r.id),
+            | InstructionKind::AutodiffStep { result, .. }
+            | InstructionKind::CoroutinePollChild { result, .. } => {
+                result.as_ref().map(|r| r.id)
+            }
             _ => None,
         }
     }
@@ -251,6 +307,17 @@ impl DeadCodeElimination {
                 | InstructionKind::Call { .. }
                 | InstructionKind::CallIndirect { .. }
                 | InstructionKind::HostCall { .. }
+                | InstructionKind::CoroutineCreate { .. }
+                | InstructionKind::CoroutinePollChild { .. }
+                | InstructionKind::CoroutineSubscribe { .. }
+                | InstructionKind::CoroutineWake { .. }
+                | InstructionKind::CoroutineSuspend { .. }
+                | InstructionKind::CoroutineComplete { .. }
+                | InstructionKind::CoroutineError { .. }
+                | InstructionKind::CoroutineCancelled { .. }
+                | InstructionKind::CoroutinePollReturn { .. }
+                | InstructionKind::FrameStore { .. }
+                | InstructionKind::StateStore { .. }
                 // AutodiffStep acumula gradientes no backward pass: nunca eliminar.
                 | InstructionKind::AutodiffStep { .. }
         )

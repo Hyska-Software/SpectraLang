@@ -217,6 +217,13 @@ impl Parser {
 
     /// Splits f-string raw template into literal and interpolated parts,
     /// then sub-parses inner expressions.
+    ///
+    /// The interpolation text is lexed with the byte offset and line/column
+    /// of its real position in the file (`span` covers the whole `f"..."`
+    /// token, whose first two bytes are `f"`). Absolute spans keep every
+    /// inner expression unique: relative spans restart at `0..N` for each
+    /// interpolation, so span-keyed tables (semantic type facts consumed by
+    /// lowering) would silently mix unrelated expressions together.
     pub(crate) fn parse_fstring_parts(
         &mut self,
         raw: &str,
@@ -227,6 +234,29 @@ impl Parser {
         let mut parts = Vec::new();
         let chars: Vec<char> = raw.chars().collect();
         let mut i = 0;
+
+        // Position of `chars[walked]` in the enclosing file. The raw template
+        // starts right after the `f"` header of the token.
+        const FSTRING_HEADER_BYTES: usize = 2;
+        let mut walked = 0usize;
+        let mut walked_bytes = 0usize;
+        let mut walk_line = span.start_location.line;
+        let mut walk_column = span.start_location.column + FSTRING_HEADER_BYTES;
+        macro_rules! advance_to {
+            ($target:expr) => {
+                while walked < ($target).min(chars.len()) {
+                    let ch = chars[walked];
+                    walked_bytes += ch.len_utf8();
+                    if ch == '\n' {
+                        walk_line += 1;
+                        walk_column = 1;
+                    } else {
+                        walk_column += 1;
+                    }
+                    walked += 1;
+                }
+            };
+        }
 
         while i < chars.len() {
             if chars[i] == '{' {
@@ -247,7 +277,12 @@ impl Parser {
                 }
                 // chars[i+1..j] is the expression source
                 let expr_src: String = chars[i + 1..j].iter().collect();
-                let sub_tokens_result = Lexer::new(&expr_src).tokenize();
+                advance_to!(i + 1);
+                let origin_offset = span.start + FSTRING_HEADER_BYTES + walked_bytes;
+                let origin_location = crate::span::Location::new(walk_line, walk_column);
+                advance_to!(j + 1);
+                let sub_tokens_result =
+                    Lexer::with_origin(&expr_src, origin_offset, origin_location).tokenize();
                 match sub_tokens_result {
                     Ok(sub_tokens) => {
                         let mut sub_parser = Parser::new(sub_tokens);

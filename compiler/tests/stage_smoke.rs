@@ -1,6 +1,7 @@
 use spectra_compiler::{
     analyze_modules, CompilationOptions, CompilationPipeline, CompilerError, Lexer, Parser,
 };
+use spectra_compiler::ast::Type;
 
 fn parse_module(source: &str) -> spectra_compiler::Module {
     let tokens = Lexer::new(source).tokenize().expect("lexer should succeed");
@@ -32,6 +33,13 @@ fn frontend_and_semantic_accepts_valid_program() {
     assert!(
         result.is_ok(),
         "semantic analysis should succeed: {result:?}"
+    );
+    assert!(
+        module
+            .resolved_expression_types
+            .iter()
+            .any(|(_, ty)| matches!(ty, Type::Int)),
+        "semantic analysis must publish expression type facts for lowering"
     );
 }
 
@@ -383,5 +391,66 @@ fn analyze_modules_reports_self_import_as_circular_without_processing() {
                     && error.message.contains("loopback -> loopback")
         ),
         "expected coded E028 for the self-import: {errors:?}"
+    );
+}
+
+#[test]
+fn fstring_interpolation_facts_use_absolute_unique_spans() {
+    // Interpolated expressions are sub-parsed from the f-string template.
+    // Their spans must be rebased onto the real file offsets: relative spans
+    // restart at `0..N` for every interpolation, so two same-length names of
+    // different types (`alpha`/`gamma`, both `0..5`) collide in the
+    // span-keyed fact table and lowering reuses the wrong type, skipping the
+    // int-to-string conversion.
+    let source = r#"
+        module fstring_spans
+
+        public func main() returns int {
+            let alpha = 41
+            let gamma = "5"
+            let first = f"{alpha}"
+            let second = f"{gamma}"
+            if first != "41" {
+                return 1
+            }
+            if second != "5" {
+                return 2
+            }
+            return 0
+        }
+    "#;
+
+    let mut module = parse_module(source);
+    let mut modules = vec![&mut module];
+    analyze_modules(modules.as_mut_slice())
+        .expect("f-string interpolation should analyze without diagnostics");
+
+    let alpha_offset = source
+        .find("{alpha}")
+        .expect("source contains the alpha interpolation")
+        + 1;
+    let gamma_offset = source
+        .find("{gamma}")
+        .expect("source contains the gamma interpolation")
+        + 1;
+    assert_ne!(
+        alpha_offset, gamma_offset,
+        "the two interpolations sit in different f-strings"
+    );
+    assert!(
+        module
+            .resolved_expression_types
+            .iter()
+            .any(|(span, ty)| span.start == alpha_offset && matches!(ty, Type::Int)),
+        "alpha must publish its Int fact at its absolute file offset: {:?}",
+        module.resolved_expression_types
+    );
+    assert!(
+        module
+            .resolved_expression_types
+            .iter()
+            .any(|(span, ty)| span.start == gamma_offset && matches!(ty, Type::String)),
+        "gamma must publish its String fact at its absolute file offset: {:?}",
+        module.resolved_expression_types
     );
 }

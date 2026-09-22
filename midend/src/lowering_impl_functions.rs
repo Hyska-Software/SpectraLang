@@ -1,8 +1,32 @@
 use super::*;
 
 impl ASTLowering {
-    /// Infere o tipo IR de uma expressão AST (análise simplificada)
+    /// Resolve the IR type of an expression.
+    ///
+    /// Semantic analysis is the source of truth for user-written expressions.
+    /// The recursive fallback remains for generated expressions and for the
+    /// standalone midend tests that intentionally construct ASTs without a
+    /// semantic pass.
     pub(crate) fn infer_expr_ir_type(&mut self, expr: &Expression) -> IRType {
+        if let ExpressionKind::Identifier(name) = &expr.kind {
+            // `array<T>` is an unsized source annotation, while an array
+            // literal bound to a local has a concrete stack extent tracked by
+            // lowering.  That sidecar is more precise than the semantic span
+            // fact for this one runtime representation detail.
+            if let Some(info) = self.array_map.get(name) {
+                return IRType::Array {
+                    element_type: Box::new(info.element_type.clone()),
+                    size: info.size,
+                };
+            }
+        }
+        if let Some(semantic_type) = self.resolved_expression_types.get(&expr.span).cloned() {
+            let resolved = self.lower_type(&semantic_type);
+            if !Self::ir_type_contains_unknown(&resolved) {
+                return resolved;
+            }
+        }
+
         match &expr.kind {
             ExpressionKind::NumberLiteral(s) => {
                 if spectra_compiler::numeric::number_literal_is_float(s) {
@@ -44,6 +68,11 @@ impl ASTLowering {
                         fields,
                     }
                 } else if let Some(info) = self.array_map.get(name) {
+                    // The semantic annotation `array<T>` is intentionally
+                    // unsized, but a literal-bound local has a concrete stack
+                    // extent recorded by the lowering sidecar.  Prefer that
+                    // runtime fact over the source-span type so `for` loops
+                    // can use the same fixed-array index path as the literal.
                     IRType::Array {
                         element_type: Box::new(info.element_type.clone()),
                         size: info.size,
@@ -358,25 +387,41 @@ impl ASTLowering {
                         .unwrap_or(IRType::Unknown);
                 }
 
-                if let IRType::DynTrait { trait_name, .. } = self.infer_expr_ir_type(object) {
+                let object_ir_type = self.infer_expr_ir_type(object);
+                if let IRType::DynTrait { trait_name, .. } = &object_ir_type {
                     if let Some((_, return_type)) = self
                         .trait_method_signatures
-                        .get(&trait_name)
+                        .get(trait_name)
                         .and_then(|methods| methods.get(method_name))
                     {
                         return return_type.clone();
                     }
                 }
 
-                let obj_type_name = if let Some(name) = type_name {
-                    name.clone()
-                } else {
-                    match self.infer_expr_ir_type(object) {
-                        IRType::Struct { name, .. } => name,
-                        IRType::Enum { name, .. } => name,
-                        _ => return IRType::Unknown,
-                    }
-                };
+                let obj_type_name = self
+                    .ir_nominal_name(&object_ir_type)
+                    .map(str::to_string)
+                    .or_else(|| type_name.clone())
+                    .or_else(|| {
+                        self.resolved_expression_types
+                            .get(&object.span)
+                            .and_then(|ty| match ty {
+                                spectra_compiler::ast::Type::Struct { name }
+                                | spectra_compiler::ast::Type::Enum { name }
+                                | spectra_compiler::ast::Type::Applied { name, .. } => {
+                                    Some(name.clone())
+                                }
+                                _ => None,
+                            })
+                    })
+                    .or_else(|| match object_ir_type {
+                        IRType::Struct { name, .. } | IRType::Enum { name, .. } => Some(name),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                if obj_type_name.is_empty() {
+                    return IRType::Unknown;
+                }
                 // Derive-generated JSON methods have no lowered function body;
                 // report their declared types so callers (e.g. string
                 // interpolation) convert the real value instead of Unknown.

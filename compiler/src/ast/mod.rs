@@ -144,6 +144,12 @@ pub struct Module {
     /// function of every imported module that declares tools, which is how a
     /// cross-module tool becomes reachable by address.
     pub imported_agent_tools: Vec<ImportedAgentTool>,
+    /// Type facts produced by semantic analysis for expression spans.  The
+    /// midend consumes these facts instead of independently re-inferring every
+    /// expression, keeping semantic validation and lowering on one contract.
+    /// Parser-created modules leave this empty; the semantic pass fills it
+    /// before the backend pipeline runs.
+    pub resolved_expression_types: Vec<(Span, Type)>,
 }
 
 /// One `#[agent_tool]` an import brought into scope (R-3222).
@@ -172,6 +178,7 @@ impl Module {
             imported_generic_functions: Vec::new(),
             imported_trait_decls: Vec::new(),
             imported_agent_tools: Vec::new(),
+            resolved_expression_types: Vec::new(),
         }
     }
 }
