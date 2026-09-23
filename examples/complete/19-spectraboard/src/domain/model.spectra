@@ -1,0 +1,104 @@
+module domain.model
+
+import std.string as string
+
+public record Task {
+    public id: int,
+    public status: string,
+    public priority: int,
+    public due: string,
+    public tag: string,
+    public created_at: int,
+    public updated_at: int,
+    public title: string,
+}
+
+public func priority_value(name: string) returns int {
+    if name == "low" {
+        return 1
+    }
+    if name == "normal" {
+        return 2
+    }
+    if name == "high" {
+        return 3
+    }
+    return 0
+}
+
+public func priority_name(value: int) returns string {
+    if value == 1 {
+        return "low"
+    }
+    if value == 2 {
+        return "normal"
+    }
+    if value == 3 {
+        return "high"
+    }
+    return "invalid"
+}
+
+public func valid_priority(value: int) returns bool {
+    return value >= 1 and value <= 3
+}
+
+func digit_at(value: string, index: int) returns int {
+    let codepoint = string.char_at(value, index)
+    if codepoint < 48 or codepoint > 57 {
+        return-1
+    }
+    return codepoint - 48
+}
+
+func number_at(value: string, start: int, width: int) returns int {
+    let output = 0
+    let offset = 0
+    while offset < width {
+        let digit = digit_at(value, start + offset)
+        if digit < 0 {
+            return-1
+        }
+        output = output * 10 + digit
+        offset = offset + 1
+    }
+    return output
+}
+
+public func valid_due_date(value: string) returns bool {
+    if value == "" {
+        return true
+    }
+    if string.len(value) != 10 or string.char_at(value, 4) != 45 or string.char_at(value, 7) != 45 {
+        return false
+    }
+    let year  = number_at(value, 0, 4)
+    let month = number_at(value, 5, 2)
+    let day   = number_at(value, 8, 2)
+    if year < 1 or month < 1 or month > 12 or day < 1 {
+        return false
+    }
+    let maximum = 31
+    if month == 4 or month == 6 or month == 9 or month == 11 {
+        maximum = 30
+    } else if month == 2 {
+        maximum = 28
+        if year % 400 == 0 or(year % 4 == 0 and year % 100 != 0) {
+            maximum = 29
+        }
+    }
+    return day <= maximum
+}
+
+public func valid_task(task: Task) returns bool {
+    if task.id < 1 or(task.status != "open" and task.status != "done") {
+        return false
+    }
+    if not valid_priority(task.priority) or not valid_due_date(task.due) {
+        return false
+    }
+    if string.trim(task.title) == "" or task.created_at < 0 or task.updated_at < task.created_at {
+        return false
+    }
+    return true
+}

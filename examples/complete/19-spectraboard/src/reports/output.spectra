@@ -1,0 +1,46 @@
+module reports.output
+
+import std.convert as convert
+from domain.model import Task
+import domain.model as model
+
+public func task_line(task: Task) returns string {
+    let state = "[ ]"
+    if task.status == "done" {
+        state = "[x]"
+    }
+    let output = "#" +
+        convert.int_to_string(task.id) +
+        " " +
+        state +
+        " [" +
+        model.priority_name(task.priority) +
+        "] "
+    if task.due == "" {
+        output = output + "sem prazo"
+    } else {
+        output = output + "até " + task.due
+    }
+    if task.tag != "" {
+        output = output + " @" + task.tag
+    }
+    return output + " — " + task.title
+}
+
+public func task_details(task: Task) returns string {
+    return "ID: " + convert.int_to_string(task.id) + "\n" +
+        "Título: " + task.title + "\n" +
+        "Estado: " + task.status + "\n" +
+        "Prioridade: " + model.priority_name(task.priority) + "\n" +
+        "Prazo: " + if task.due == "" { "sem prazo"} else { task.due} + "\n" +
+        "Tag: " + if task.tag == "" { "sem tag"} else { task.tag} + "\n" +
+        "Criada (Unix): " + convert.int_to_string(task.created_at) + "\n" +
+        "Atualizada (Unix): " + convert.int_to_string(task.updated_at)
+}
+
+public func summary(total: int, open: int, done: int, high_open: int) returns string {
+    return "Tarefas: " + convert.int_to_string(total) + "\n" +
+        "Abertas: " + convert.int_to_string(open) + "\n" +
+        "Concluídas: " + convert.int_to_string(done) + "\n" +
+        "Alta prioridade abertas: " + convert.int_to_string(high_open)
+}

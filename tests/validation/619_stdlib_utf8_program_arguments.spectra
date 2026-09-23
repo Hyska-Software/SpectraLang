@@ -1,0 +1,26 @@
+module validation_stdlib_utf8_program_arguments
+
+import std.env as env
+import std.option as option
+
+const UNICODE_ARGUMENT = "título Ω — café"
+const FOLLOWING_ARGUMENT = "next-argument"
+
+public func main() returns int {
+    let argument_count = env.env_args_count()
+    if argument_count == 1 {
+        return 0
+    }
+    if argument_count != 3 {
+        return 1
+    }
+    let unicode_argument = env.env_arg_option(1)
+    let following_argument = env.env_arg_option(2)
+    if option.is_none(unicode_argument) or option.option_unwrap(unicode_argument) != UNICODE_ARGUMENT {
+        return 2
+    }
+    if option.is_none(following_argument) or option.option_unwrap(following_argument) != FOLLOWING_ARGUMENT {
+        return 3
+    }
+    return 0
+}

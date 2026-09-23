@@ -1,0 +1,57 @@
+module validation.self_tests
+
+import std.io as io
+from domain.codec import ParsedTask
+from domain.model import Task
+import domain.codec as codec
+import domain.model as model
+
+func fail(message: string) returns bool {
+    io.eprintln("self-test falhou: " + message)
+    return false
+}
+
+public func run() returns bool {
+    if model.priority_value("low") != 1 or model.priority_value("normal") != 2 or model.priority_value("high") != 3 {
+        return fail("mapeamento de prioridades")
+    }
+    if model.priority_value("urgent") != 0 {
+        return fail("prioridade desconhecida foi aceita")
+    }
+    if not model.valid_due_date("2024-02-29") or model.valid_due_date("2023-02-29") {
+        return fail("validação de ano bissexto")
+    }
+    if model.valid_due_date("2026-04-31") or model.valid_due_date("2026-13-01") or model.valid_due_date("26-01-01") {
+        return fail("datas fora do calendário foram aceitas")
+    }
+    let raw = "revisar\tparser\nporcentagem 100% — Spectra"
+    if codec.decode_field(codec.encode_field(raw)) != raw {
+        return fail("escape de texto UTF-8 e separadores")
+    }
+    let sample = Task {
+        id: 7,
+        status: "open",
+        priority: 3,
+        due: "2024-02-29",
+        tag: "compiler%tests",
+        created_at: 100,
+        updated_at: 101,
+        title: raw,
+    }
+    let encoded = codec.serialize_task(sample)
+    let parsed  = codec.parse_task(codec.row_at(encoded, 0))
+    if not parsed.valid or parsed.task.id != sample.id or parsed.task.title != sample.title {
+        return fail("serialização e leitura de tarefa não fazem round-trip")
+    }
+    if parsed.task.tag != sample.tag or parsed.task.due != sample.due or parsed.task.priority != sample.priority {
+        return fail("campos opcionais e prioridade não fizeram round-trip")
+    }
+    if codec.parse_task("7\topen\t3\t2024-02-29\ttag\t100\t101") .valid {
+        return fail("registro com coluna faltando foi aceito")
+    }
+    if codec.row_count("primeira\nsegunda\n") != 2 or codec.row_at("primeira\nsegunda\n", 1) != "segunda" {
+        return fail("leitura de linhas do banco")
+    }
+    io.println("9 verificações do domínio e da serialização passaram.")
+    return true
+}

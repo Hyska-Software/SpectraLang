@@ -1,0 +1,53 @@
+module main
+
+import std.io as io
+from cli.parser import Command
+from services.tasks import ServiceResult
+import cli.parser as parser
+import services.tasks as tasks
+import validation.self_tests as self_tests
+
+public func main() returns int {
+    let command = parser.parse()
+    if not command.valid {
+        io.eprintln("erro: " + command.error)
+        print_usage()
+        return 64
+    }
+    if command.name == "help" or command.name == "--help" or command.name == "-h" {
+        print_usage()
+        return 0
+    }
+    if command.name == "self-test" {
+        if self_tests.run() {
+            return 0
+        }
+        return 1
+    }
+    let result = tasks.execute(command)
+    if not result.ok {
+        io.eprintln("erro: " + result.error)
+        return 1
+    }
+    if result.output != "" {
+        io.println(result.output)
+    }
+    return 0
+}
+
+public func print_usage() returns int {
+    io.println("spectraboard — quadro local de tarefas em SpectraLang")
+    io.println("")
+    io.println("Uso:")
+    io.println("  spectraboard init")
+    io.println("  spectraboard add --title <texto> [--priority low|normal|high] [--due AAAA-MM-DD] [--tag nome]")
+    io.println("  spectraboard list [--status all|open|done] [--priority low|normal|high] [--tag nome]")
+    io.println("  spectraboard show <id>")
+    io.println("  spectraboard edit <id> [--title <texto>] [--priority low|normal|high] [--due AAAA-MM-DD|none] [--tag nome|none]")
+    io.println("  spectraboard complete <id>")
+    io.println("  spectraboard reopen <id>")
+    io.println("  spectraboard remove <id>")
+    io.println("  spectraboard summary")
+    io.println("  spectraboard self-test")
+    return 0
+}

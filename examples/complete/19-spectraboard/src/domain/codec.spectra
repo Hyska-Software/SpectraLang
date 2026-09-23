@@ -1,0 +1,157 @@
+module domain.codec
+
+import std.convert as convert
+import std.string as string
+from domain.model import Task
+import domain.model as model
+
+public record ParsedTask {
+    public task: Task,
+    public valid: bool,
+    public error: string,
+}
+
+public func encode_field(value: string) returns string {
+    let percent = string.replace(value, "%", "%25")
+    let tabs    = string.replace(percent, "\t", "%09")
+    let lines   = string.replace(tabs, "\n", "%0A")
+    return string.replace(lines, "\r", "%0D")
+}
+
+public func decode_field(value: string) returns string {
+    let lines    = string.replace(value, "%0A", "\n")
+    let carriage = string.replace(lines, "%0D", "\r")
+    let tabs     = string.replace(carriage, "%09", "\t")
+    return string.replace(tabs, "%25", "%")
+}
+
+public func serialize_task(task: Task) returns string {
+    return convert.int_to_string(task.id) + "\t" +
+        task.status + "\t" +
+        convert.int_to_string(task.priority) + "\t" +
+        encode_field(task.due) + "\t" +
+        encode_field(task.tag) + "\t" +
+        convert.int_to_string(task.created_at) + "\t" +
+        convert.int_to_string(task.updated_at) + "\t" +
+        encode_field(task.title) + "\n"
+}
+
+public func row_count(source: string) returns int {
+    let total = string.len(source)
+    let start = 0
+    let count = 0
+    while start < total {
+        let remaining = string.substring(source, start, total)
+        let end       = string.index_of(remaining, "\n")
+        count = count + 1
+        if end < 0 {
+            start = total
+        } else {
+            start = start + end + 1
+        }
+    }
+    return count
+}
+
+public func row_at(source: string, requested: int) returns string {
+    let total = string.len(source)
+    let start = 0
+    let index = 0
+    while start < total {
+        let remaining = string.substring(source, start, total)
+        let end       = string.index_of(remaining, "\n")
+        let row       = ""
+        if end < 0 {
+            row = remaining
+            start = total
+        } else {
+            row = string.substring(remaining, 0, end)
+            start = start + end + 1
+        }
+        if index == requested {
+            return row
+        }
+        index = index + 1
+    }
+    return ""
+}
+
+public func field_count(row: string) returns int {
+    let count = 1
+    let start = 0
+    while start<string.len(row) {
+        let remaining = string.substring(row, start, string.len(row))
+        let end       = string.index_of(remaining, "\t")
+        if end < 0 {
+            start = string.len(row)
+        } else {
+            count = count + 1
+            start = start + end + 1
+        }
+    }
+    return count
+}
+
+public func field_at(row: string, requested: int) returns string {
+    if requested < 0 {
+        return ""
+    }
+    let start = 0
+    let index = 0
+    while index < requested {
+        let remaining = string.substring(row, start, string.len(row))
+        let end       = string.index_of(remaining, "\t")
+        if end < 0 {
+            return ""
+        }
+        start = start + end + 1
+        index = index + 1
+    }
+    let remaining = string.substring(row, start, string.len(row))
+    let end       = string.index_of(remaining, "\t")
+    if end < 0 {
+        return remaining
+    }
+    return string.substring(remaining, 0, end)
+}
+
+public func parse_task(row: string) returns ParsedTask {
+    let empty = Task {
+        id: 0,
+        status: "",
+        priority: 0,
+        due: "",
+        tag: "",
+        created_at: 0,
+        updated_at: 0,
+        title: "",
+    }
+    if field_count(row) != 8 {
+        return ParsedTask { task: empty, valid: false, error: "registro de tarefa deve ter 8 campos" }
+    }
+    let id         = convert.string_to_int_or(field_at(row, 0), -1)
+    let status     = field_at(row, 1)
+    let priority   = convert.string_to_int_or(field_at(row, 2), -1)
+    let due        = decode_field(field_at(row, 3))
+    let tag        = decode_field(field_at(row, 4))
+    let created_at = convert.string_to_int_or(field_at(row, 5), -1)
+    let updated_at = convert.string_to_int_or(field_at(row, 6), -1)
+    let title      = decode_field(field_at(row, 7))
+    let task       = Task {
+        id: id,
+        status: status,
+        priority: priority,
+        due: due,
+        tag: tag,
+        created_at: created_at,
+        updated_at: updated_at,
+        title: title,
+    }
+    if not model.valid_task(task) {
+        return ParsedTask { task: empty, valid: false, error: "campos da tarefa são inválidos" }
+    }
+    if serialize_task(task) != row + "\n" {
+        return ParsedTask { task: empty, valid: false, error: "registro de tarefa não está em formato canônico" }
+    }
+    return ParsedTask { task: task, valid: true, error: "" }
+}

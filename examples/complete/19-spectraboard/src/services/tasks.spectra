@@ -1,0 +1,376 @@
+module services.tasks
+
+from std.collections import List
+import std.collections as collections
+import std.convert as convert
+import std.string as string
+import std.time as time
+from cli.parser import Command
+from domain.codec import ParsedTask
+from domain.model import Task
+from storage.database import DatabaseRead
+import domain.codec as codec
+import domain.model as model
+import reports.output as output
+import storage.database as database
+
+public record ServiceResult {
+    public ok: bool,
+    public output: string,
+    public error: string,
+}
+
+record LoadedTasks {
+    tasks: List<Task>,
+    next_id: int,
+    valid: bool,
+    error: string,
+}
+
+func success(message: string) returns ServiceResult {
+    return ServiceResult { ok: true, output: message, error: "" }
+}
+
+func failure(message: string) returns ServiceResult {
+    return ServiceResult { ok: false, output: "", error: message }
+}
+
+func invalid_store(tasks: List<Task>, message: string) returns LoadedTasks {
+    collections.list_free(tasks)
+    let empty: List<Task> = collections.list_new()
+    return LoadedTasks { tasks: empty, next_id: 1, valid: false, error: message }
+}
+
+func load_tasks() returns LoadedTasks {
+    let empty: List<Task> = collections.list_new()
+    let stored            = database.read()
+    if not stored.valid {
+        return LoadedTasks { tasks: empty, next_id: 1, valid: false, error: stored.error }
+    }
+    if stored.rows != "" and not string.ends_with(stored.rows, "\n") {
+        return invalid_store(empty, "o último registro do banco está truncado")
+    }
+    let count    = codec.row_count(stored.rows)
+    let prior_id = 0
+    let i        = 0
+    while i < count {
+        let row    = codec.row_at(stored.rows, i)
+        let parsed = codec.parse_task(row)
+        if not parsed.valid {
+            return invalid_store(
+                empty,
+                "registro " + convert.int_to_string(i + 1) + " inválido: " + parsed.error,
+            )
+        }
+        if parsed.task.id <= prior_id {
+            return invalid_store(empty, "IDs duplicados ou fora de ordem no banco")
+        }
+        if parsed.task.id >= stored.next_id {
+            return invalid_store(empty, "próximo ID não avança além das tarefas persistidas")
+        }
+        collections.list_push(empty, parsed.task)
+        prior_id = parsed.task.id
+        i = i + 1
+    }
+    return LoadedTasks { tasks: empty, next_id: stored.next_id, valid: true, error: "" }
+}
+
+func save_tasks(tasks: List<Task>, next_id: int) returns bool {
+    let rows     = ""
+    let prior_id = 0
+    for task in tasks {
+        if not model.valid_task(task) or task.id <= prior_id or task.id >= next_id {
+            return false
+        }
+        rows = rows + codec.serialize_task(task)
+        prior_id = task.id
+    }
+    return database.write(rows, next_id)
+}
+
+func find_task(tasks: List<Task>, id: int) returns Task {
+    let empty = Task {
+        id: 0,
+        status: "",
+        priority: 0,
+        due: "",
+        tag: "",
+        created_at: 0,
+        updated_at: 0,
+        title: "",
+    }
+    for task in tasks {
+        if task.id == id {
+            return task
+        }
+    }
+    return empty
+}
+
+func parse_id(value: string) returns int {
+    let id = convert.string_to_int_or(value, -1)
+    if id < 1 {
+        return-1
+    }
+    return id
+}
+
+func create_task(command: Command) returns ServiceResult {
+    if string.trim(command.title) == "" {
+        return failure("o título não pode ficar vazio")
+    }
+    let priority = model.priority_value(command.priority)
+    if priority == 0 {
+        return failure("prioridade inválida; use low, normal ou high")
+    }
+    if not model.valid_due_date(command.due) {
+        return failure("prazo inválido; use uma data real no formato AAAA-MM-DD")
+    }
+    let loaded = load_tasks()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let now = time.time_now_secs()
+    if now < 0 {
+        collections.list_free(loaded.tasks)
+        return failure("o relógio do sistema retornou um horário inválido")
+    }
+    let task = Task {
+        id: loaded.next_id,
+        status: "open",
+        priority: priority,
+        due: command.due,
+        tag: command.tag,
+        created_at: now,
+        updated_at: now,
+        title: string.trim(command.title),
+    }
+    if not model.valid_task(task) {
+        collections.list_free(loaded.tasks)
+        return failure("os campos informados não formam uma tarefa válida")
+    }
+    collections.list_push(loaded.tasks, task)
+    let saved = save_tasks(loaded.tasks, loaded.next_id + 1)
+    collections.list_free(loaded.tasks)
+    if not saved {
+        return failure("não foi possível gravar a tarefa; o banco anterior foi preservado")
+    }
+    return success("Tarefa #" + convert.int_to_string(task.id) + " criada: " + task.title)
+}
+
+func list_tasks(command: Command) returns ServiceResult {
+    let loaded = load_tasks()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let text = "Tarefas de " + command.filter_status
+    if command.filter_priority != "" {
+        text = text + " com prioridade " + command.filter_priority
+    }
+    if command.filter_tag != "" {
+        text = text + " com tag " + command.filter_tag
+    }
+    text = text + ":\n"
+    let found = 0
+    for task in loaded.tasks {
+        let matches = (command.filter_status == "all" or task.status == command.filter_status) and
+        (command.filter_priority == "" or model.priority_name(task.priority) == command.filter_priority) and
+        (command.filter_tag == "" or task.tag == command.filter_tag)
+        if matches {
+            text = text + output.task_line(task) + "\n"
+            found = found + 1
+        }
+    }
+    collections.list_free(loaded.tasks)
+    if found == 0 {
+        return success(text + "Nenhuma tarefa encontrada.")
+    }
+    return success(text)
+}
+
+func show_task(command: Command) returns ServiceResult {
+    let id = parse_id(command.id_text)
+    if id < 1 {
+        return failure("ID inválido: " + command.id_text)
+    }
+    let loaded = load_tasks()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let task = find_task(loaded.tasks, id)
+    collections.list_free(loaded.tasks)
+    if task.id == 0 {
+        return failure("tarefa não encontrada: #" + convert.int_to_string(id))
+    }
+    return success(output.task_details(task))
+}
+
+func update_task(command: Command, target_status: string) returns ServiceResult {
+    let id = parse_id(command.id_text)
+    if id < 1 {
+        return failure("ID inválido: " + command.id_text)
+    }
+    if command.name == "edit" and command.title_set and string.trim(command.title) == "" {
+        return failure("o título não pode ficar vazio")
+    }
+    if command.name == "edit" and command.priority_set and model.priority_value(command.priority) == 0 {
+        return failure("prioridade inválida; use low, normal ou high")
+    }
+    if command.name == "edit" and command.due_set and not model.valid_due_date(command.due) {
+        return failure("prazo inválido; use uma data real no formato AAAA-MM-DD")
+    }
+    let loaded = load_tasks()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let replacement: List<Task> = collections.list_new()
+    let found                   = false
+    let changed                 = false
+    let now                     = time.time_now_secs()
+    if now < 0 {
+        collections.list_free(loaded.tasks)
+        collections.list_free(replacement)
+        return failure("o relógio do sistema retornou um horário inválido")
+    }
+    for existing in loaded.tasks {
+        let task = existing
+        if task.id == id {
+            found = true
+            if command.name == "edit" {
+                if command.title_set {
+                    task.title = string.trim(command.title)
+                }
+                if command.priority_set {
+                    task.priority = model.priority_value(command.priority)
+                }
+                if command.due_set {
+                    task.due = command.due
+                }
+                if command.tag_set {
+                    task.tag = command.tag
+                }
+                changed = true
+            } else if task.status != target_status {
+                task.status = target_status
+                changed = true
+            }
+            if changed {
+                task.updated_at = now
+                if task.updated_at < task.created_at {
+                    task.updated_at = task.created_at
+                }
+            }
+        }
+        collections.list_push(replacement, task)
+    }
+    if not found {
+        collections.list_free(loaded.tasks)
+        collections.list_free(replacement)
+        return failure("tarefa não encontrada: #" + convert.int_to_string(id))
+    }
+    if not changed {
+        collections.list_free(loaded.tasks)
+        collections.list_free(replacement)
+        return success("Tarefa #" + convert.int_to_string(id) + " já está " + target_status + ".")
+    }
+    collections.list_free(loaded.tasks)
+    let saved = save_tasks(replacement, loaded.next_id)
+    collections.list_free(replacement)
+    if not saved {
+        return failure("não foi possível atualizar a tarefa; o banco anterior foi preservado")
+    }
+    if command.name == "edit" {
+        return success("Tarefa #" + convert.int_to_string(id) + " atualizada.")
+    }
+    return success("Tarefa #" + convert.int_to_string(id) + " marcada como " + target_status + ".")
+}
+
+func remove_task(command: Command) returns ServiceResult {
+    let id = parse_id(command.id_text)
+    if id < 1 {
+        return failure("ID inválido: " + command.id_text)
+    }
+    let loaded = load_tasks()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let remaining: List<Task> = collections.list_new()
+    let found                 = false
+    for task in loaded.tasks {
+        if task.id == id {
+            found = true
+        } else {
+            collections.list_push(remaining, task)
+        }
+    }
+    if not found {
+        collections.list_free(loaded.tasks)
+        collections.list_free(remaining)
+        return failure("tarefa não encontrada: #" + convert.int_to_string(id))
+    }
+    collections.list_free(loaded.tasks)
+    let saved = save_tasks(remaining, loaded.next_id)
+    collections.list_free(remaining)
+    if not saved {
+        return failure("não foi possível remover a tarefa; o banco anterior foi preservado")
+    }
+    return success("Tarefa #" + convert.int_to_string(id) + " removida.")
+}
+
+func summarize() returns ServiceResult {
+    let loaded = load_tasks()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let total      = collections.list_len(loaded.tasks)
+    let open_count = 0
+    let done_count = 0
+    let high_open  = 0
+    for task in loaded.tasks {
+        if task.status == "open" {
+            open_count = open_count + 1
+            if task.priority == 3 {
+                high_open = high_open + 1
+            }
+        } else {
+            done_count = done_count + 1
+        }
+    }
+    collections.list_free(loaded.tasks)
+    return success(output.summary(total, open_count, done_count, high_open))
+}
+
+public func execute(command: Command) returns ServiceResult {
+    if command.name == "init" {
+        let initialized = database.initialize()
+        if not initialized.valid {
+            return failure(initialized.error)
+        }
+        return success("SpectraBoard inicializado em .spectraboard.")
+    }
+    if command.name == "add" {
+        return create_task(command)
+    }
+    if command.name == "list" {
+        return list_tasks(command)
+    }
+    if command.name == "show" {
+        return show_task(command)
+    }
+    if command.name == "edit" {
+        return update_task(command, "")
+    }
+    if command.name == "complete" {
+        return update_task(command, "done")
+    }
+    if command.name == "reopen" {
+        return update_task(command, "open")
+    }
+    if command.name == "remove" {
+        return remove_task(command)
+    }
+    if command.name == "summary" {
+        return summarize()
+    }
+    return failure("comando ainda não implementado: " + command.name)
+}

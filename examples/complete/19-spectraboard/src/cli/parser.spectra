@@ -1,0 +1,208 @@
+module cli.parser
+
+import std.env as env
+import std.option as option
+import std.string as string
+import domain.model as model
+
+public record Command {
+    public name: string,
+    public id_text: string,
+    public title: string,
+    public priority: string,
+    public due: string,
+    public tag: string,
+    public filter_status: string,
+    public filter_priority: string,
+    public filter_tag: string,
+    public title_set: bool,
+    public priority_set: bool,
+    public due_set: bool,
+    public tag_set: bool,
+    public valid: bool,
+    public error: string,
+}
+
+func empty_command() returns Command {
+    return Command {
+        name: "",
+        id_text: "",
+        title: "",
+        priority: "normal",
+        due: "",
+        tag: "",
+        filter_status: "all",
+        filter_priority: "",
+        filter_tag: "",
+        title_set: false,
+        priority_set: false,
+        due_set: false,
+        tag_set: false,
+        valid: false,
+        error: "",
+    }
+}
+
+func argument_count() returns int {
+    return env.env_args_count()
+}
+
+func argument_at(index: int) returns string {
+    let value = env.env_arg(index)
+    if option.is_none(value) {
+        return ""
+    }
+    return option.option_unwrap(value)
+}
+
+func fail(parsed: Command, message: string) returns Command {
+    parsed.valid = false
+    parsed.error = message
+    return parsed
+}
+
+func parse_fields(parsed: Command, start: int, adding: bool) returns Command {
+    let count = argument_count()
+    let index = start
+    while index < count {
+        let key = argument_at(index)
+        if index + 1 >= count {
+            return fail(parsed, "faltou valor para " + key)
+        }
+        let value = argument_at(index + 1)
+        if key == "-t" or key == "--title" {
+            if parsed.title_set or string.trim(value) == "" {
+                return fail(parsed, "informe um único título não vazio com --title")
+            }
+            parsed.title = value
+            parsed.title_set = true
+        } else if key == "--priority" {
+            if parsed.priority_set or model.priority_value(value) == 0 {
+                return fail(parsed, "prioridade inválida; use low, normal ou high")
+            }
+            parsed.priority = value
+            parsed.priority_set = true
+        } else if key == "--due" {
+            if parsed.due_set {
+                return fail(parsed, "use --due no máximo uma vez")
+            }
+            if value == "none" {
+                parsed.due = ""
+            } else {
+                parsed.due = value
+            }
+            parsed.due_set = true
+        } else if key == "--tag" {
+            if parsed.tag_set or string.trim(value) == "" {
+                return fail(parsed, "informe uma única tag não vazia com --tag")
+            }
+            if value == "none" {
+                parsed.tag = ""
+            } else {
+                parsed.tag = value
+            }
+            parsed.tag_set = true
+        } else {
+            return fail(parsed, "argumento inválido para " + parsed.name + ": " + key)
+        }
+        index = index + 2
+    }
+    if adding and not parsed.title_set {
+        return fail(
+            parsed,
+            "uso: spectraboard add --title <texto> [--priority low|normal|high] [--due AAAA-MM-DD] [--tag nome]",
+        )
+    }
+    if not adding and not(parsed.title_set or parsed.priority_set or parsed.due_set or parsed.tag_set) {
+        return fail(parsed, "informe pelo menos um campo para editar")
+    }
+    parsed.valid = true
+    return parsed
+}
+
+func parse_list(parsed: Command) returns Command {
+    let count        = argument_count()
+    let index        = 2
+    let status_set   = false
+    let priority_set = false
+    let tag_set      = false
+    while index < count {
+        let key = argument_at(index)
+        if index + 1 >= count {
+            return fail(parsed, "faltou valor para " + key)
+        }
+        let value = argument_at(index + 1)
+        if key == "--status" {
+            if status_set or(value != "all" and value != "open" and value != "done") {
+                return fail(parsed, "status inválido; use all, open ou done")
+            }
+            parsed.filter_status = value
+            status_set = true
+        } else if key == "--priority" {
+            if priority_set or model.priority_value(value) == 0 {
+                return fail(parsed, "prioridade inválida; use low, normal ou high")
+            }
+            parsed.filter_priority = value
+            priority_set = true
+        } else if key == "--tag" {
+            if tag_set or string.trim(value) == "" {
+                return fail(parsed, "informe uma única tag não vazia com --tag")
+            }
+            parsed.filter_tag = value
+            tag_set = true
+        } else {
+            return fail(parsed, "filtro inválido para list: " + key)
+        }
+        index = index + 2
+    }
+    parsed.valid = true
+    return parsed
+}
+
+public func parse() returns Command {
+    let parsed = empty_command()
+    let count  = argument_count()
+    if count < 2 {
+        return fail(parsed, "informe um comando; use spectraboard help")
+    }
+    parsed.name = argument_at(1)
+    if parsed.name == "help" or parsed.name == "--help" or parsed.name == "-h" {
+        if count != 2 {
+            return fail(parsed, "help não aceita argumentos")
+        }
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "init" or parsed.name == "list" or parsed.name == "summary" or parsed.name == "self-test" {
+        if parsed.name == "list" {
+            return parse_list(parsed)
+        }
+        if count != 2 {
+            return fail(parsed, parsed.name + " não aceita argumentos")
+        }
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "add" {
+        return parse_fields(parsed, 2, true)
+    }
+    if parsed.name == "edit" {
+        if count < 4 {
+            return fail(
+                parsed,
+                "uso: spectraboard edit <id> --title|--priority|--due|--tag <valor>",
+            )
+        }
+        parsed.id_text = argument_at(2)
+        return parse_fields(parsed, 3, false)
+    }
+    if parsed.name == "show" or parsed.name == "complete" or parsed.name == "reopen" or parsed.name == "remove" {
+        if count != 3 or argument_at(2) == "" {
+            return fail(parsed, "uso: spectraboard " + parsed.name + " <id>")
+        }
+        parsed.id_text = argument_at(2)
+        parsed.valid = true
+        return parsed
+    }
+    return fail(parsed, "comando desconhecido: " + parsed.name)
+}

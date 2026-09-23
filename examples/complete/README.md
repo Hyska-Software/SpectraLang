@@ -1,8 +1,9 @@
 # Spectra complete example projects
 
-18 complete `.spectra` projects. Projects 01–17 are self-validating and print an
-`ok` line; `18-spectragit` is an interactive local version-control CLI with its
-own self-test and AOT integration harness.
+19 complete `.spectra` projects. Projects 01–17 are self-validating and print an
+`ok` line; `18-spectragit` is a local version-control CLI and `19-spectraboard`
+is a separate local task-board CLI. Both have their own self-test and AOT
+integration harness.
 
 Run any project (from the repo root):
 
@@ -14,6 +15,12 @@ Run the spectragit self-test through JIT with:
 
 ```powershell
 spectralang run examples/complete/18-spectragit -- self-test
+```
+
+Run the SpectraBoard self-test through JIT with:
+
+```powershell
+spectralang run examples/complete/19-spectraboard -- self-test
 ```
 
 ## Functional projects
@@ -34,6 +41,7 @@ spectralang run examples/complete/18-spectragit -- self-test
 | 16 | `16-api-service-platform` | API service: domain JSON, SQLite repository/migrations, query validation, routing, handlers, middleware, security policy, events, OpenAPI, server lifecycle, report and cleanup (`API SERVICE PLATFORM ok`) |
 | 17 | `17-agent-operations-center` | Agent operations: governed tools, capability policy, memory, journal, approval, budget, taint, compensation/rollback, MCP surface, telemetry, and durable replay (`AGENT OPERATIONS CENTER ok`) |
 | 18 | `18-spectragit` | Local text version control CLI in SpectraLang: blobs/trees/commits, branches, line diff, restore, timelines, snapshots, inspection, and deterministic self-tests |
+| 19 | `19-spectraboard` | Independent task-board CLI with nested modules, task lifecycle, filtering, UTF-8 persistence, atomic writes, backup recovery and AOT integration |
 
 ## Performance comparisons (Spectra vs Go vs Rust)
 

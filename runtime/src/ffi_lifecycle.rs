@@ -965,29 +965,105 @@ pub extern "C" fn spectra_rt_startup() {
 /// return the program's own arguments rather than the CLI's arguments.
 ///
 /// # Safety
-/// `argv` must be a valid C-style array of `argc` null-terminated UTF-8
-/// strings, as provided by the OS through the C `main(argc, argv)` signature.
+/// On non-Windows targets, when `argc` and `argv` are used, `argv` must be a
+/// valid C-style array of `argc` non-null pointers to null-terminated strings.
+/// The Windows implementation reads the native process arguments instead,
+/// because the narrow C `argv` encoding is not guaranteed to be UTF-8.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn spectra_rt_startup_with_args(argc: i32, argv: *const *const u8) {
     initialize();
     crate::register();
-    if argv.is_null() || argc <= 0 {
-        return;
-    }
-    let args: Vec<String> = (0..argc as usize)
-        .filter_map(|i| unsafe {
-            let ptr = *argv.add(i);
-            if ptr.is_null() {
-                return None;
-            }
-            let len = (0..).take_while(|&j| *ptr.add(j) != 0).count();
-            str::from_utf8(slice::from_raw_parts(ptr, len))
-                .ok()
-                .map(str::to_owned)
-        })
-        .collect();
+    #[cfg(target_os = "windows")]
+    let args = {
+        let _ = (argc, argv);
+        native_process_arguments()
+    };
+    #[cfg(not(target_os = "windows"))]
+    let args = unsafe { decode_argv_utf8(argc, argv) }.unwrap_or_else(native_process_arguments);
     crate::ffi::set_program_args(args);
+}
+
+/// Converts native process arguments without panicking on non-Unicode values.
+fn native_process_arguments() -> Vec<String> {
+    std::env::args_os()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect()
+}
+
+/// Decodes a complete C `argv` vector as UTF-8. A single invalid or null entry
+/// rejects the whole vector so callers can fall back without shifting indexes.
+///
+/// # Safety
+/// If `argc` is positive, `argv` must point to an array of `argc` pointers;
+/// every non-null pointer must point to a readable null-terminated byte string.
+#[cfg(any(not(target_os = "windows"), test))]
+unsafe fn decode_argv_utf8(argc: i32, argv: *const *const u8) -> Option<Vec<String>> {
+    if argv.is_null() || argc <= 0 {
+        return None;
+    }
+    let mut decoded = Vec::with_capacity(argc as usize);
+    for index in 0..argc as usize {
+        let argument = unsafe { *argv.add(index) };
+        if argument.is_null() {
+            return None;
+        }
+        let length = unsafe {
+            (0..)
+                .take_while(|&offset| *argument.add(offset) != 0)
+                .count()
+        };
+        let bytes = unsafe { slice::from_raw_parts(argument, length) };
+        decoded.push(str::from_utf8(bytes).ok()?.to_owned());
+    }
+    Some(decoded)
+}
+
+#[cfg(test)]
+mod argv_decoder_tests {
+    use super::decode_argv_utf8;
+
+    #[test]
+    fn decodes_all_utf8_arguments_and_preserves_positions() {
+        let executable = b"spectraboard\0";
+        let title = "Corrigir resolução / Ω\0".as_bytes();
+        let following = b"--priority\0";
+        let argv = [executable.as_ptr(), title.as_ptr(), following.as_ptr()];
+
+        let decoded = unsafe { decode_argv_utf8(argv.len() as i32, argv.as_ptr()) };
+
+        assert_eq!(
+            decoded,
+            Some(vec![
+                "spectraboard".to_owned(),
+                "Corrigir resolução / Ω".to_owned(),
+                "--priority".to_owned(),
+            ])
+        );
+    }
+
+    #[test]
+    fn rejects_the_whole_vector_when_one_argument_is_not_utf8() {
+        let executable = b"spectraboard\0";
+        let invalid = [0xE3, 0x28, 0xA1, 0];
+        let following = b"--priority\0";
+        let argv = [executable.as_ptr(), invalid.as_ptr(), following.as_ptr()];
+
+        let decoded = unsafe { decode_argv_utf8(argv.len() as i32, argv.as_ptr()) };
+
+        assert!(decoded.is_none());
+    }
+
+    #[test]
+    fn rejects_null_entries_instead_of_shifting_later_arguments() {
+        let executable = b"spectraboard\0";
+        let following = b"--priority\0";
+        let argv = [executable.as_ptr(), std::ptr::null(), following.as_ptr()];
+
+        let decoded = unsafe { decode_argv_utf8(argv.len() as i32, argv.as_ptr()) };
+
+        assert!(decoded.is_none());
+    }
 }
 
 /// Called at the end of every AOT executable's native `main` shim.
