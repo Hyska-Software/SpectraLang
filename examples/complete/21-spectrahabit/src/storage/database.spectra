@@ -1,0 +1,175 @@
+module storage.database
+
+import std.collections as collections
+import std.convert as convert
+import std.fs as fs
+import std.result as result
+import std.string as string
+
+const ROOT = ".spectrahabit"
+const DATABASE = ".spectrahabit/habits.db"
+const TEMPORARY = ".spectrahabit/habits.db.tmp"
+const BACKUP = ".spectrahabit/habits.db.bak"
+const HEADER = "SPECTRAHABIT\t1\t"
+
+public record DatabaseRead {
+    public rows: string,
+    public next_id: int,
+    public valid: bool,
+    public error: string,
+}
+
+func raw_exists(path: string) returns bool {
+    let exists = fs.fs_exists(path)
+    if result.is_err(exists) {
+        return false
+    }
+    return result.result_unwrap(exists)
+}
+
+func remove_file_if_present(path: string) returns bool {
+    if not raw_exists(path) {
+        return true
+    }
+    let removed = fs.fs_remove(path)
+    return result.is_ok(removed) and result.result_unwrap(removed)
+}
+
+func has_valid_header(content: string) returns bool {
+    let end = string.index_of(content, "\n")
+    if end < 0 {
+        return false
+    }
+    let header = string.substring(content, 0, end)
+    if not string.starts_with(header, HEADER) {
+        return false
+    }
+    let next_text = string.substring(header, string.len(HEADER), string.len(header))
+    let next_id   = convert.string_to_int_or(next_text, -1)
+    return next_id > 0 and convert.int_to_string(next_id) == next_text
+}
+
+func recover_database() returns bool {
+    if raw_exists(DATABASE) {
+        remove_file_if_present(BACKUP)
+        remove_file_if_present(TEMPORARY)
+        return true
+    }
+    if raw_exists(BACKUP) {
+        let restored = fs.rename(BACKUP, DATABASE)
+        if result.is_err(restored) or not result.result_unwrap(restored) {
+            return false
+        }
+        remove_file_if_present(TEMPORARY)
+        return true
+    }
+    if raw_exists(TEMPORARY) {
+        let loaded   = fs.fs_read(TEMPORARY)
+        let promoted = false
+        if result.is_ok(loaded) and has_valid_header(result.result_unwrap(loaded)) {
+            let moved = fs.rename(TEMPORARY, DATABASE)
+            promoted = result.is_ok(moved) and result.result_unwrap(moved)
+        }
+        if promoted {
+            return true
+        }
+        if not remove_file_if_present(TEMPORARY) {
+            return false
+        }
+    }
+    return false
+}
+
+func atomic_write(content: string) returns bool {
+    if (raw_exists(DATABASE) or raw_exists(BACKUP)) and not recover_database() {
+        return false
+    }
+    if not remove_file_if_present(TEMPORARY) {
+        return false
+    }
+    let wrote = fs.fs_write(TEMPORARY, content)
+    if result.is_err(wrote) or not result.result_unwrap(wrote) {
+        return false
+    }
+    let verified = fs.fs_read(TEMPORARY)
+    if result.is_err(verified) or result.result_unwrap(verified) != content {
+        return false
+    }
+    let had_database = raw_exists(DATABASE)
+    if had_database {
+        if not remove_file_if_present(BACKUP) {
+            return false
+        }
+        let moved_old = fs.rename(DATABASE, BACKUP)
+        if result.is_err(moved_old) or not result.result_unwrap(moved_old) {
+            return false
+        }
+    }
+    let moved_new = fs.rename(TEMPORARY, DATABASE)
+    if result.is_err(moved_new) or not result.result_unwrap(moved_new) {
+        if had_database and raw_exists(BACKUP) {
+            let restored = fs.rename(BACKUP, DATABASE)
+            if result.is_err(restored) or not result.result_unwrap(restored) {
+                return false
+            }
+        }
+        return false
+    }
+    remove_file_if_present(BACKUP)
+    return true
+}
+
+public func initialize() returns DatabaseRead {
+    if raw_exists(DATABASE) or raw_exists(BACKUP) or raw_exists(TEMPORARY) {
+        if recover_database() {
+            return DatabaseRead { rows: "", next_id: 1, valid: false, error: "o arquivo de hábitos já foi inicializado" }
+        }
+    }
+    if raw_exists(ROOT) {
+        let listed = fs.read_dir(ROOT)
+        if result.is_err(listed) {
+            return DatabaseRead { rows: "", next_id: 1, valid: false, error: "não foi possível inspecionar .spectrahabit" }
+        }
+        let files = result.result_unwrap(listed)
+        let empty = collections.list_len(files) == 0
+        collections.list_free(files)
+        if not empty {
+            return DatabaseRead { rows: "", next_id: 1, valid: false, error: "há dados desconhecidos em .spectrahabit; o arquivo não foi sobrescrito" }
+        }
+    }
+    let created = fs.create_dir_all(ROOT)
+    if result.is_err(created) {
+        return DatabaseRead { rows: "", next_id: 1, valid: false, error: "não foi possível criar .spectrahabit" }
+    }
+    if not atomic_write(HEADER + "1\n") {
+        return DatabaseRead { rows: "", next_id: 1, valid: false, error: "não foi possível gravar o arquivo inicial" }
+    }
+    return DatabaseRead { rows: "", next_id: 1, valid: true, error: "" }
+}
+
+public func read() returns DatabaseRead {
+    if not recover_database() or not raw_exists(DATABASE) {
+        return DatabaseRead { rows: "", next_id: 1, valid: false, error: "arquivo de hábitos ausente; execute spectrahabit init" }
+    }
+    let loaded = fs.fs_read(DATABASE)
+    if result.is_err(loaded) {
+        return DatabaseRead { rows: "", next_id: 1, valid: false, error: "não foi possível ler .spectrahabit/habits.db" }
+    }
+    let content = result.result_unwrap(loaded)
+    let end     = string.index_of(content, "\n")
+    if end < 0 or not has_valid_header(content) {
+        return DatabaseRead { rows: "", next_id: 1, valid: false, error: "cabeçalho do arquivo ausente, incompatível ou corrompido" }
+    }
+    let header    = string.substring(content, 0, end)
+    let next_text = string.substring(header, string.len(HEADER), string.len(header))
+    let next_id   = convert.string_to_int_or(next_text, -1)
+    let rows      = string.substring(content, end + 1, string.len(content))
+    return DatabaseRead { rows: rows, next_id: next_id, valid: true, error: "" }
+}
+
+public func write(rows: string, next_id: int) returns bool {
+    if next_id < 1 {
+        return false
+    }
+    return atomic_write(HEADER + convert.int_to_string(next_id) + "\n" + rows)
+}

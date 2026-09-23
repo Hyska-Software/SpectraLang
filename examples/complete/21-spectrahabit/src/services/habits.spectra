@@ -1,0 +1,561 @@
+module services.habits
+
+from std.collections import List
+import std.collections as collections
+import std.convert as convert
+import std.string as string
+import std.time as time
+from cli.parser import Command
+from domain.codec import ParsedRecord
+from domain.model import Checkin
+from domain.model import Habit
+from storage.database import DatabaseRead
+import domain.codec as codec
+import domain.model as model
+import reports.output as output
+import storage.database as database
+
+public record ServiceResult {
+    public ok: bool,
+    public output: string,
+    public error: string,
+}
+
+record LoadedHabits {
+    habits: List<Habit>,
+    checkins: List<Checkin>,
+    next_id: int,
+    valid: bool,
+    error: string,
+}
+
+func success(message: string) returns ServiceResult {
+    return ServiceResult { ok: true, output: message, error: "" }
+}
+
+func failure(message: string) returns ServiceResult {
+    return ServiceResult { ok: false, output: "", error: message }
+}
+
+func empty_habits() returns List<Habit> {
+    let habits: List<Habit> = collections.list_new()
+    return habits
+}
+
+func empty_checkins() returns List<Checkin> {
+    let checkins: List<Checkin> = collections.list_new()
+    return checkins
+}
+
+func invalid_load(habits: List<Habit>, checkins: List<Checkin>, message: string) returns LoadedHabits {
+    collections.list_free(habits)
+    collections.list_free(checkins)
+    return LoadedHabits {
+        habits: empty_habits(),
+        checkins: empty_checkins(),
+        next_id: 1,
+        valid: false,
+        error: message,
+    }
+}
+
+func find_habit(habits: List<Habit>, id: int) returns Habit {
+    let empty = Habit { id: 0, state: "", weekly_goal: 0, created_at: 0, name: "" }
+    for habit in habits {
+        if habit.id == id {
+            return habit
+        }
+    }
+    return empty
+}
+
+func contains_habit(habits: List<Habit>, id: int) returns bool {
+    for habit in habits {
+        if habit.id == id {
+            return true
+        }
+    }
+    return false
+}
+
+func has_checkin(checkins: List<Checkin>, habit_id: int, date: string) returns bool {
+    for checkin in checkins {
+        if checkin.habit_id == habit_id and checkin.date == date {
+            return true
+        }
+    }
+    return false
+}
+
+func count_checkins(checkins: List<Checkin>, habit_id: int) returns int {
+    let count = 0
+    for checkin in checkins {
+        if checkin.habit_id == habit_id {
+            count = count + 1
+        }
+    }
+    return count
+}
+
+func load_habits() returns LoadedHabits {
+    let habits   = empty_habits()
+    let checkins = empty_checkins()
+    let stored   = database.read()
+    if not stored.valid {
+        return LoadedHabits { habits: habits, checkins: checkins, next_id: 1, valid: false, error: stored.error }
+    }
+    if stored.rows != "" and not string.ends_with(stored.rows, "\n") {
+        return invalid_load(habits, checkins, "o último registro está truncado")
+    }
+    let count       = codec.row_count(stored.rows)
+    let prior_id    = 0
+    let saw_checkin = false
+    let index       = 0
+    while index < count {
+        let row    = codec.row_at(stored.rows, index)
+        let parsed = codec.parse_record(row)
+        if not parsed.valid {
+            return invalid_load(
+                habits,
+                checkins,
+                "registro " + convert.int_to_string(index + 1) + " inválido: " + parsed.error,
+            )
+        }
+        if parsed.record_type == "H" {
+            if saw_checkin or parsed.habit.id <= prior_id or parsed.habit.id >= stored.next_id {
+                return invalid_load(
+                    habits,
+                    checkins,
+                    "hábitos fora de ordem ou contador de IDs inválido",
+                )
+            }
+            collections.list_push(habits, parsed.habit)
+            prior_id = parsed.habit.id
+        } else {
+            saw_checkin = true
+            if not contains_habit(habits, parsed.checkin.habit_id) {
+                return invalid_load(habits, checkins, "check-in aponta para um hábito inexistente")
+            }
+            if has_checkin(checkins, parsed.checkin.habit_id, parsed.checkin.date) {
+                return invalid_load(habits, checkins, "há check-ins duplicados para o mesmo dia")
+            }
+            collections.list_push(checkins, parsed.checkin)
+        }
+        index = index + 1
+    }
+    return LoadedHabits { habits: habits, checkins: checkins, next_id: stored.next_id, valid: true, error: "" }
+}
+
+func save_habits(habits: List<Habit>, checkins: List<Checkin>, next_id: int) returns bool {
+    let rows     = ""
+    let prior_id = 0
+    for habit in habits {
+        if not model.valid_habit(habit) or habit.id <= prior_id or habit.id >= next_id {
+            return false
+        }
+        rows = rows + codec.serialize_habit(habit)
+        prior_id = habit.id
+    }
+    let checkin_index = 0
+    for checkin in checkins {
+        if not model.valid_checkin(checkin) or not contains_habit(habits, checkin.habit_id) {
+            return false
+        }
+        let prior_index = 0
+        for earlier in checkins {
+            if prior_index < checkin_index and earlier.habit_id == checkin.habit_id and earlier.date == checkin.date {
+                return false
+            }
+            prior_index = prior_index + 1
+        }
+        rows = rows + codec.serialize_checkin(checkin)
+        checkin_index = checkin_index + 1
+    }
+    return database.write(rows, next_id)
+}
+
+func parse_id(value: string) returns int {
+    let id = convert.string_to_int_or(value, -1)
+    if id < 1 or convert.int_to_string(id) != value {
+        return-1
+    }
+    return id
+}
+
+func add_habit(command: Command) returns ServiceResult {
+    let loaded = load_habits()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let now = time.time_now_secs()
+    if now < 0 {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        return failure("o relógio do sistema retornou um horário inválido")
+    }
+    let habit = Habit {
+        id: loaded.next_id,
+        state: "active",
+        weekly_goal: command.goal,
+        created_at: now,
+        name: string.trim(command.title),
+    }
+    if not model.valid_habit(habit) {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        return failure("os campos informados não formam um hábito válido")
+    }
+    collections.list_push(loaded.habits, habit)
+    let saved = save_habits(loaded.habits, loaded.checkins, loaded.next_id + 1)
+    collections.list_free(loaded.habits)
+    collections.list_free(loaded.checkins)
+    if not saved {
+        return failure("não foi possível salvar o hábito; o arquivo anterior foi preservado")
+    }
+    return success("Hábito #" + convert.int_to_string(habit.id) + " criado: " + habit.name)
+}
+
+func list_habits(command: Command) returns ServiceResult {
+    let loaded = load_habits()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let text  = "Hábitos:\n"
+    let found = 0
+    for habit in loaded.habits {
+        if command.include_archived or habit.state == "active" {
+            text = text + output.habit_line(habit, count_checkins(loaded.checkins, habit.id)) + "\n"
+            found = found + 1
+        }
+    }
+    collections.list_free(loaded.habits)
+    collections.list_free(loaded.checkins)
+    if found == 0 {
+        return success(text + "Nenhum hábito encontrado.")
+    }
+    return success(text)
+}
+
+func checkin_habit(command: Command) returns ServiceResult {
+    let id = parse_id(command.id_text)
+    if id < 1 {
+        return failure("ID inválido: " + command.id_text)
+    }
+    let loaded = load_habits()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let habit = find_habit(loaded.habits, id)
+    if habit.id == 0 {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        return failure("hábito não encontrado: #" + convert.int_to_string(id))
+    }
+    if habit.state != "active" {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        return failure("não é possível registrar check-in em um hábito arquivado")
+    }
+    if has_checkin(loaded.checkins, id, command.date) {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        return failure("já existe check-in para esse hábito nessa data")
+    }
+    let checkin = Checkin { habit_id: id, date: command.date, note: string.trim(command.note) }
+    if not model.valid_checkin(checkin) {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        return failure("os campos informados não formam um check-in válido")
+    }
+    collections.list_push(loaded.checkins, checkin)
+    let saved = save_habits(loaded.habits, loaded.checkins, loaded.next_id)
+    collections.list_free(loaded.habits)
+    collections.list_free(loaded.checkins)
+    if not saved {
+        return failure("não foi possível salvar o check-in; o arquivo anterior foi preservado")
+    }
+    return success("Check-in registrado para #" + convert.int_to_string(id) + " em " + command.date)
+}
+
+func uncheck_habit(command: Command) returns ServiceResult {
+    let id     = parse_id(command.id_text)
+    let loaded = load_habits()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    if not contains_habit(loaded.habits, id) {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        return failure("hábito não encontrado: #" + convert.int_to_string(id))
+    }
+    let remaining = empty_checkins()
+    let removed   = false
+    for checkin in loaded.checkins {
+        if checkin.habit_id == id and checkin.date == command.date {
+            removed = true
+        } else {
+            collections.list_push(remaining, checkin)
+        }
+    }
+    if not removed {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        collections.list_free(remaining)
+        return failure("check-in não encontrado para essa data")
+    }
+    collections.list_free(loaded.checkins)
+    let saved = save_habits(loaded.habits, remaining, loaded.next_id)
+    collections.list_free(loaded.habits)
+    collections.list_free(remaining)
+    if not saved {
+        return failure("não foi possível remover o check-in; o arquivo anterior foi preservado")
+    }
+    return success("Check-in de #" + convert.int_to_string(id) + " em " + command.date + " removido")
+}
+
+func show_history(command: Command) returns ServiceResult {
+    let id     = parse_id(command.id_text)
+    let loaded = load_habits()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let habit = find_habit(loaded.habits, id)
+    if habit.id == 0 {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        return failure("hábito não encontrado: #" + convert.int_to_string(id))
+    }
+    let text  = "Histórico de #" + convert.int_to_string(id) + " — " + habit.name + ":\n"
+    let count = 0
+    for checkin in loaded.checkins {
+        if checkin.habit_id == id {
+            text = text + output.checkin_line(checkin) + "\n"
+            count = count + 1
+        }
+    }
+    collections.list_free(loaded.habits)
+    collections.list_free(loaded.checkins)
+    if count == 0 {
+        return success(text + "Nenhum check-in registrado.")
+    }
+    return success(text)
+}
+
+func streak_for(checkins: List<Checkin>, habit_id: int, end_date: string) returns int {
+    let expected = end_date
+    let streak   = 0
+    while expected != "" and has_checkin(checkins, habit_id, expected) {
+        streak = streak + 1
+        expected = model.previous_date(expected)
+    }
+    return streak
+}
+
+func show_streak(command: Command) returns ServiceResult {
+    let id     = parse_id(command.id_text)
+    let loaded = load_habits()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let habit = find_habit(loaded.habits, id)
+    if habit.id == 0 {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        return failure("hábito não encontrado: #" + convert.int_to_string(id))
+    }
+    let days = streak_for(loaded.checkins, id, command.date)
+    let text = output.streak(habit, command.date, days)
+    collections.list_free(loaded.habits)
+    collections.list_free(loaded.checkins)
+    return success(text)
+}
+
+func weekly_report(command: Command) returns ServiceResult {
+    let end_date = model.add_days(command.date, 6)
+    if end_date == "" {
+        return failure("não foi possível calcular o fim da semana")
+    }
+    let loaded = load_habits()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let text  = "Semana " + command.date + ".." + end_date + ":\n"
+    let found = 0
+    for habit in loaded.habits {
+        if habit.state == "active" {
+            let completed = 0
+            for checkin in loaded.checkins {
+                if checkin.habit_id == habit.id and model.date_in_range(checkin.date, command.date, end_date) {
+                    completed = completed + 1
+                }
+            }
+            text = text + output.week_line(habit, command.date, end_date, completed) + "\n"
+            found = found + 1
+        }
+    }
+    collections.list_free(loaded.habits)
+    collections.list_free(loaded.checkins)
+    if found == 0 {
+        return success(text + "Nenhum hábito ativo.")
+    }
+    return success(text)
+}
+
+func change_goal(command: Command) returns ServiceResult {
+    let id     = parse_id(command.id_text)
+    let loaded = load_habits()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let replacement  = empty_habits()
+    let found        = false
+    let changed_name = ""
+    for existing in loaded.habits {
+        let habit = existing
+        if habit.id == id {
+            if habit.state != "active" {
+                collections.list_free(loaded.habits)
+                collections.list_free(loaded.checkins)
+                collections.list_free(replacement)
+                return failure("não é possível alterar a meta de um hábito arquivado")
+            }
+            habit.weekly_goal = command.goal
+            found = true
+            changed_name = habit.name
+        }
+        collections.list_push(replacement, habit)
+    }
+    if not found {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        collections.list_free(replacement)
+        return failure("hábito não encontrado: #" + convert.int_to_string(id))
+    }
+    collections.list_free(loaded.habits)
+    let saved = save_habits(replacement, loaded.checkins, loaded.next_id)
+    collections.list_free(replacement)
+    collections.list_free(loaded.checkins)
+    if not saved {
+        return failure("não foi possível atualizar a meta; o arquivo anterior foi preservado")
+    }
+    return success("Meta de #" + convert.int_to_string(id) + " — " + changed_name + " atualizada para " +
+        convert.int_to_string(command.goal) + " dias por semana")
+}
+
+func archive_habit(command: Command) returns ServiceResult {
+    let id     = parse_id(command.id_text)
+    let loaded = load_habits()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let replacement      = empty_habits()
+    let found            = false
+    let already_archived = false
+    for existing in loaded.habits {
+        let habit = existing
+        if habit.id == id {
+            found = true
+            if habit.state == "archived" {
+                already_archived = true
+            } else {
+                habit.state = "archived"
+            }
+        }
+        collections.list_push(replacement, habit)
+    }
+    if not found {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        collections.list_free(replacement)
+        return failure("hábito não encontrado: #" + convert.int_to_string(id))
+    }
+    if already_archived {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        collections.list_free(replacement)
+        return success("Hábito #" + convert.int_to_string(id) + " já está arquivado")
+    }
+    collections.list_free(loaded.habits)
+    let saved = save_habits(replacement, loaded.checkins, loaded.next_id)
+    collections.list_free(replacement)
+    collections.list_free(loaded.checkins)
+    if not saved {
+        return failure("não foi possível arquivar o hábito; o arquivo anterior foi preservado")
+    }
+    return success("Hábito #" + convert.int_to_string(id) + " arquivado")
+}
+
+func remove_habit(command: Command) returns ServiceResult {
+    let id     = parse_id(command.id_text)
+    let loaded = load_habits()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    if not contains_habit(loaded.habits, id) {
+        collections.list_free(loaded.habits)
+        collections.list_free(loaded.checkins)
+        return failure("hábito não encontrado: #" + convert.int_to_string(id))
+    }
+    let remaining_habits   = empty_habits()
+    let remaining_checkins = empty_checkins()
+    for habit in loaded.habits {
+        if habit.id != id {
+            collections.list_push(remaining_habits, habit)
+        }
+    }
+    for checkin in loaded.checkins {
+        if checkin.habit_id != id {
+            collections.list_push(remaining_checkins, checkin)
+        }
+    }
+    collections.list_free(loaded.habits)
+    collections.list_free(loaded.checkins)
+    let saved = save_habits(remaining_habits, remaining_checkins, loaded.next_id)
+    collections.list_free(remaining_habits)
+    collections.list_free(remaining_checkins)
+    if not saved {
+        return failure("não foi possível remover o hábito; o arquivo anterior foi preservado")
+    }
+    return success("Hábito #" + convert.int_to_string(id) + " e seu histórico removidos")
+}
+
+public func execute(command: Command) returns ServiceResult {
+    if command.name == "init" {
+        let initialized = database.initialize()
+        if not initialized.valid {
+            return failure(initialized.error)
+        }
+        return success("SpectraHabit inicializado em .spectrahabit.")
+    }
+    if command.name == "add" {
+        return add_habit(command)
+    }
+    if command.name == "list" {
+        return list_habits(command)
+    }
+    if command.name == "checkin" {
+        return checkin_habit(command)
+    }
+    if command.name == "uncheck" {
+        return uncheck_habit(command)
+    }
+    if command.name == "history" {
+        return show_history(command)
+    }
+    if command.name == "streak" {
+        return show_streak(command)
+    }
+    if command.name == "week" {
+        return weekly_report(command)
+    }
+    if command.name == "goal" {
+        return change_goal(command)
+    }
+    if command.name == "archive" {
+        return archive_habit(command)
+    }
+    if command.name == "remove" {
+        return remove_habit(command)
+    }
+    return failure("comando desconhecido: " + command.name)
+}

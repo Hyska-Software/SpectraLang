@@ -1,0 +1,57 @@
+module main
+
+import std.io as io
+from cli.parser import Command
+from services.habits import ServiceResult
+import cli.parser as parser
+import services.habits as habits
+import validation.self_tests as self_tests
+
+public func main() returns int {
+    let command = parser.parse()
+    if not command.valid {
+        io.eprintln("erro: " + command.error)
+        print_usage()
+        return 64
+    }
+    if command.name == "help" or command.name == "--help" or command.name == "-h" {
+        print_usage()
+        return 0
+    }
+    if command.name == "self-test" {
+        if self_tests.run() {
+            return 0
+        }
+        return 1
+    }
+    let result = habits.execute(command)
+    if not result.ok {
+        io.eprintln("erro: " + result.error)
+        return 1
+    }
+    if result.output != "" {
+        io.println(result.output)
+    }
+    return 0
+}
+
+public func print_usage() returns int {
+    io.println("SpectraHabit — rastreador local de hábitos em SpectraLang")
+    io.println("")
+    io.println("Uso:")
+    io.println("  spectrahabit init")
+    io.println("  spectrahabit add <dias-por-semana 1..7> <nome>")
+    io.println("  spectrahabit list [--all]")
+    io.println("  spectrahabit checkin <id> <AAAA-MM-DD> [nota]")
+    io.println("  spectrahabit uncheck <id> <AAAA-MM-DD>")
+    io.println("  spectrahabit history <id>")
+    io.println("  spectrahabit streak <id> [data-final]")
+    io.println("  spectrahabit week <início-da-semana>")
+    io.println("  spectrahabit goal <id> <dias-por-semana 1..7>")
+    io.println("  spectrahabit archive <id>")
+    io.println("  spectrahabit remove <id>")
+    io.println("  spectrahabit self-test")
+    io.println("")
+    io.println("Check-ins usam datas UTC e podem ser registrados retroativamente.")
+    return 0
+}

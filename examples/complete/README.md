@@ -1,9 +1,10 @@
 # Spectra complete example projects
 
-20 complete `.spectra` projects. Projects 01–17 are self-validating and print an
+21 complete `.spectra` projects. Projects 01–17 are self-validating and print an
 `ok` line; `18-spectragit` is a local version-control CLI, `19-spectraboard` is
-a local task-board CLI, and `20-spectraledger` is a local personal-finance CLI.
-Projects 18–20 have their own self-test and AOT integration harness.
+a local task-board CLI, `20-spectraledger` is a local personal-finance CLI, and
+`21-spectrahabit` is a local habit tracker. Projects 18–21 have their own
+self-test and AOT integration harness.
 
 Run any project (from the repo root):
 
@@ -29,6 +30,12 @@ Run the SpectraLedger self-test through JIT with:
 spectralang run examples/complete/20-spectraledger -- self-test
 ```
 
+Run the SpectraHabit self-test through JIT with:
+
+```powershell
+spectralang run examples/complete/21-spectrahabit -- self-test
+```
+
 ## Functional projects
 
 | # | Project | What it covers |
@@ -49,6 +56,7 @@ spectralang run examples/complete/20-spectraledger -- self-test
 | 18 | `18-spectragit` | Local text version control CLI in SpectraLang: blobs/trees/commits, branches, line diff, restore, timelines, snapshots, inspection, and deterministic self-tests |
 | 19 | `19-spectraboard` | Independent task-board CLI with nested modules, task lifecycle, filtering, UTF-8 persistence, atomic writes, backup recovery and AOT integration |
 | 20 | `20-spectraledger` | Personal-finance CLI with nested modules, income and expense tracking, exact cent arithmetic, monthly category budgets, reports, UTF-8 persistence, backup recovery and AOT integration |
+| 21 | `21-spectrahabit` | Habit-tracking CLI with nested modules, UTC calendar validation, dated check-ins, daily streaks, weekly goals and reports, UTF-8 persistence, backup recovery and JIT/AOT integration |
 
 ## Performance comparisons (Spectra vs Go vs Rust)
 

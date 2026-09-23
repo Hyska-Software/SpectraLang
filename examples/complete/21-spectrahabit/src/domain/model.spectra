@@ -1,0 +1,220 @@
+module domain.model
+
+import std.convert as convert
+import std.string as string
+import std.time as time
+
+public record Habit {
+    public id: int,
+    public state: string,
+    public weekly_goal: int,
+    public created_at: int,
+    public name: string,
+}
+
+public record Checkin {
+    public habit_id: int,
+    public date: string,
+    public note: string,
+}
+
+func digit_at(value: string, index: int) returns int {
+    let codepoint = string.char_at(value, index)
+    if codepoint < 48 or codepoint > 57 {
+        return-1
+    }
+    return codepoint - 48
+}
+
+func number_at(value: string, start: int, width: int) returns int {
+    let output = 0
+    let offset = 0
+    while offset < width {
+        let digit = digit_at(value, start + offset)
+        if digit < 0 {
+            return-1
+        }
+        output = output * 10 + digit
+        offset = offset + 1
+    }
+    return output
+}
+
+func days_in_month(year: int, month: int) returns int {
+    if month == 4 or month == 6 or month == 9 or month == 11 {
+        return 30
+    }
+    if month == 2 {
+        if year % 400 == 0 or(year % 4 == 0 and year % 100 != 0) {
+            return 29
+        }
+        return 28
+    }
+    return 31
+}
+
+func pad_two(value: int) returns string {
+    let text = convert.int_to_string(value)
+    if value < 10 {
+        return "0" + text
+    }
+    return text
+}
+
+func pad_year(value: int) returns string {
+    let text = convert.int_to_string(value)
+    if value < 10 {
+        return "000" + text
+    }
+    if value < 100 {
+        return "00" + text
+    }
+    if value < 1000 {
+        return "0" + text
+    }
+    return text
+}
+
+func date_from_parts(year: int, month: int, day: int) returns string {
+    return pad_year(year) + "-" + pad_two(month) + "-" + pad_two(day)
+}
+
+public func valid_date(value: string) returns bool {
+    if string.len(value) != 10 or string.char_at(value, 4) != 45 or string.char_at(value, 7) != 45 {
+        return false
+    }
+    let year  = number_at(value, 0, 4)
+    let month = number_at(value, 5, 2)
+    let day   = number_at(value, 8, 2)
+    if year < 1 or month < 1 or month > 12 or day < 1 {
+        return false
+    }
+    return day <= days_in_month(year, month)
+}
+
+public func current_utc_date() returns string {
+    let now = time.time_now_secs()
+    if now < 0 {
+        return ""
+    }
+    let utc = time.unix_to_utc(now)
+    return date_from_parts(time.utc_year(utc), time.utc_month(utc), time.utc_day(utc))
+}
+
+public func not_future_date(value: string) returns bool {
+    if not valid_date(value) {
+        return false
+    }
+    let now = time.time_now_secs()
+    if now < 0 {
+        return false
+    }
+    let utc           = time.unix_to_utc(now)
+    let current_year  = time.utc_year(utc)
+    let current_month = time.utc_month(utc)
+    let current_day   = time.utc_day(utc)
+    let year          = number_at(value, 0, 4)
+    let month         = number_at(value, 5, 2)
+    let day           = number_at(value, 8, 2)
+    if year != current_year {
+        return year < current_year
+    }
+    if month != current_month {
+        return month < current_month
+    }
+    return day <= current_day
+}
+
+public func date_ordinal(value: string) returns int {
+    if not valid_date(value) {
+        return-1
+    }
+    let year        = number_at(value, 0, 4)
+    let month       = number_at(value, 5, 2)
+    let day         = number_at(value, 8, 2)
+    let prior_year  = year - 1
+    let ordinal     = 365 * prior_year + prior_year / 4 - prior_year / 100 + prior_year / 400
+    let month_index = 1
+    let total       = ordinal
+    while month_index < month {
+        total = total + days_in_month(year, month_index)
+        month_index = month_index + 1
+    }
+    return total + day
+}
+
+public func next_date(value: string) returns string {
+    if not valid_date(value) {
+        return ""
+    }
+    let year  = number_at(value, 0, 4)
+    let month = number_at(value, 5, 2)
+    let day   = number_at(value, 8, 2)
+    if day < days_in_month(year, month) {
+        return date_from_parts(year, month, day + 1)
+    }
+    if month < 12 {
+        return date_from_parts(year, month + 1, 1)
+    }
+    if year < 9999 {
+        return date_from_parts(year + 1, 1, 1)
+    }
+    return ""
+}
+
+public func previous_date(value: string) returns string {
+    if not valid_date(value) {
+        return ""
+    }
+    let year  = number_at(value, 0, 4)
+    let month = number_at(value, 5, 2)
+    let day   = number_at(value, 8, 2)
+    if day > 1 {
+        return date_from_parts(year, month, day - 1)
+    }
+    if month > 1 {
+        return date_from_parts(year, month - 1, days_in_month(year, month - 1))
+    }
+    if year > 1 {
+        return date_from_parts(year - 1, 12, 31)
+    }
+    return ""
+}
+
+public func add_days(value: string, days: int) returns string {
+    if not valid_date(value) or days < 0 or days > 31 {
+        return ""
+    }
+    let result = value
+    let index  = 0
+    while index < days {
+        result = next_date(result)
+        if result == "" {
+            return ""
+        }
+        index = index + 1
+    }
+    return result
+}
+
+public func valid_goal(value: int) returns bool {
+    return value >= 1 and value <= 7
+}
+
+public func valid_habit(habit: Habit) returns bool {
+    return habit.id > 0 and(habit.state == "active" or habit.state == "archived") and
+    valid_goal(habit.weekly_goal) and habit.created_at >= 0 and
+    string.trim(habit.name) != "" and string.len(habit.name) <= 80
+}
+
+public func valid_checkin(checkin: Checkin) returns bool {
+    return checkin.habit_id > 0 and not_future_date(checkin.date) and string.len(checkin.note) <=
+        200
+}
+
+public func date_in_range(value: string, start: string, end: string) returns bool {
+    let ordinal = date_ordinal(value)
+    let first   = date_ordinal(start)
+    let last    = date_ordinal(end)
+    return ordinal >= 0 and first >= 0 and last >= first and ordinal >= first and ordinal <= last
+}

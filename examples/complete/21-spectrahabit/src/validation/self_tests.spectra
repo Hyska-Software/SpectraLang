@@ -1,0 +1,63 @@
+module validation.self_tests
+
+import std.io as io
+from domain.codec import ParsedRecord
+from domain.model import Checkin
+from domain.model import Habit
+import domain.codec as codec
+import domain.model as model
+
+func fail(message: string) returns bool {
+    io.eprintln("self-test falhou: " + message)
+    return false
+}
+
+public func run() returns bool {
+    if not model.valid_date("2024-02-29") or model.valid_date("2023-02-29") or model.valid_date("2026-04-31") {
+        return fail("validação gregoriana e ano bissexto")
+    }
+    if model.next_date("2024-02-29") != "2024-03-01" or model.previous_date("2024-03-01") != "2024-02-29" {
+        return fail("transição de datas bissextas")
+    }
+    if model.date_ordinal("2024-03-01") - model.date_ordinal("2024-02-29") != 1 or
+    model.add_days("2026-12-29", 6) != "2027-01-04" {
+        return fail("ordem civil e intervalo de sete dias")
+    }
+    if not model.not_future_date("2000-01-01") or model.not_future_date(model.next_date(model.current_utc_date())) or
+    not model.not_future_date(model.current_utc_date()) {
+        return fail("limite de check-in em UTC")
+    }
+    if not model.valid_goal(1) or not model.valid_goal(7) or model.valid_goal(0) or model.valid_goal(8) {
+        return fail("meta semanal fora do intervalo")
+    }
+    let original = "Leitura\tmatinal\n100% — São Paulo"
+    if codec.decode_field(codec.encode_field(original)) != original {
+        return fail("escape de UTF-8, separadores e porcentagem")
+    }
+    let habit = Habit {
+        id: 4,
+        state: "active",
+        weekly_goal: 5,
+        created_at: 100,
+        name: original,
+    }
+    let parsed_habit = codec.parse_record(codec.row_at(codec.serialize_habit(habit), 0))
+    if not parsed_habit.valid or parsed_habit.habit.id != habit.id or parsed_habit.habit.name != habit.name {
+        return fail("round-trip persistido de hábito")
+    }
+    let checkin        = Checkin { habit_id: 4, date: "2024-02-29", note: original }
+    let parsed_checkin = codec.parse_record(codec.row_at(codec.serialize_checkin(checkin), 0))
+    if not parsed_checkin.valid or parsed_checkin.checkin.date != checkin.date or parsed_checkin.checkin.note != checkin.note {
+        return fail("round-trip persistido de check-in")
+    }
+    let bad_habit   = codec.parse_record("H\t4\tactive\t8\t100\tNome")
+    let bad_checkin = codec.parse_record("C\t4\t2024-02-30\tnota")
+    if bad_habit.valid or bad_checkin.valid {
+        return fail("registros inválidos foram aceitos")
+    }
+    if codec.row_count("um\ndois\n") != 2 or codec.field_count("a\tb\tc") != 3 or codec.field_at("a\tb\tc", 2) != "c" {
+        return fail("leitura de linhas e campos persistidos")
+    }
+    io.println("SpectraHabit self-test: 10 verificações passaram.")
+    return true
+}

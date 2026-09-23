@@ -1,0 +1,170 @@
+module domain.codec
+
+import std.convert as convert
+import std.string as string
+from domain.model import Checkin
+from domain.model import Habit
+import domain.model as model
+
+public record ParsedRecord {
+    public record_type: string,
+    public habit: Habit,
+    public checkin: Checkin,
+    public valid: bool,
+    public error: string,
+}
+
+func empty_habit() returns Habit {
+    return Habit { id: 0, state: "", weekly_goal: 0, created_at: 0, name: "" }
+}
+
+func empty_checkin() returns Checkin {
+    return Checkin { habit_id: 0, date: "", note: "" }
+}
+
+public func encode_field(value: string) returns string {
+    let percent = string.replace(value, "%", "%25")
+    let tabs    = string.replace(percent, "\t", "%09")
+    let lines   = string.replace(tabs, "\n", "%0A")
+    return string.replace(lines, "\r", "%0D")
+}
+
+public func decode_field(value: string) returns string {
+    let lines    = string.replace(value, "%0A", "\n")
+    let carriage = string.replace(lines, "%0D", "\r")
+    let tabs     = string.replace(carriage, "%09", "\t")
+    return string.replace(tabs, "%25", "%")
+}
+
+public func serialize_habit(habit: Habit) returns string {
+    return "H\t" + convert.int_to_string(habit.id) + "\t" + habit.state + "\t" +
+        convert.int_to_string(habit.weekly_goal) + "\t" + convert.int_to_string(habit.created_at) + "\t" +
+        encode_field(habit.name) + "\n"
+}
+
+public func serialize_checkin(checkin: Checkin) returns string {
+    return "C\t" + convert.int_to_string(checkin.habit_id) + "\t" + checkin.date + "\t" +
+        encode_field(checkin.note) + "\n"
+}
+
+public func row_count(source: string) returns int {
+    let total = string.len(source)
+    let start = 0
+    let count = 0
+    while start < total {
+        let remaining = string.substring(source, start, total)
+        let end       = string.index_of(remaining, "\n")
+        count = count + 1
+        if end < 0 {
+            start = total
+        } else {
+            start = start + end + 1
+        }
+    }
+    return count
+}
+
+public func row_at(source: string, requested: int) returns string {
+    let total = string.len(source)
+    let start = 0
+    let index = 0
+    while start < total {
+        let remaining = string.substring(source, start, total)
+        let end       = string.index_of(remaining, "\n")
+        let row       = ""
+        if end < 0 {
+            row = remaining
+            start = total
+        } else {
+            row = string.substring(remaining, 0, end)
+            start = start + end + 1
+        }
+        if index == requested {
+            return row
+        }
+        index = index + 1
+    }
+    return ""
+}
+
+public func field_count(row: string) returns int {
+    let count = 1
+    let start = 0
+    while start<string.len(row) {
+        let remaining = string.substring(row, start, string.len(row))
+        let end       = string.index_of(remaining, "\t")
+        if end < 0 {
+            start = string.len(row)
+        } else {
+            count = count + 1
+            start = start + end + 1
+        }
+    }
+    return count
+}
+
+public func field_at(row: string, requested: int) returns string {
+    if requested < 0 {
+        return ""
+    }
+    let start = 0
+    let index = 0
+    while index < requested {
+        let remaining = string.substring(row, start, string.len(row))
+        let end       = string.index_of(remaining, "\t")
+        if end < 0 {
+            return ""
+        }
+        start = start + end + 1
+        index = index + 1
+    }
+    let remaining = string.substring(row, start, string.len(row))
+    let end       = string.index_of(remaining, "\t")
+    if end < 0 {
+        return remaining
+    }
+    return string.substring(remaining, 0, end)
+}
+
+public func parse_record(row: string) returns ParsedRecord {
+    let blank_habit   = empty_habit()
+    let blank_checkin = empty_checkin()
+    let record_type   = field_at(row, 0)
+    if record_type == "H" {
+        if field_count(row) != 6 {
+            return ParsedRecord { record_type: "", habit: blank_habit, checkin: blank_checkin, valid: false, error: "registro de hábito deve ter 6 campos" }
+        }
+        let habit = Habit {
+            id: convert.string_to_int_or(field_at(row, 1), -1),
+            state: field_at(row, 2),
+            weekly_goal: convert.string_to_int_or(field_at(row, 3), -1),
+            created_at: convert.string_to_int_or(field_at(row, 4), -1),
+            name: decode_field(field_at(row, 5)),
+        }
+        if not model.valid_habit(habit) {
+            return ParsedRecord { record_type: "", habit: blank_habit, checkin: blank_checkin, valid: false, error: "campos do hábito são inválidos" }
+        }
+        if serialize_habit(habit) != row + "\n" {
+            return ParsedRecord { record_type: "", habit: blank_habit, checkin: blank_checkin, valid: false, error: "hábito fora do formato canônico" }
+        }
+        return ParsedRecord { record_type: "H", habit: habit, checkin: blank_checkin, valid: true, error: "" }
+    }
+    if record_type == "C" {
+        if field_count(row) != 4 {
+            return ParsedRecord { record_type: "", habit: blank_habit, checkin: blank_checkin, valid: false, error: "registro de check-in deve ter 4 campos" }
+        }
+        let checkin = Checkin {
+            habit_id: convert.string_to_int_or(field_at(row, 1), -1),
+            date: field_at(row, 2),
+            note: decode_field(field_at(row, 3)),
+        }
+        if not model.valid_checkin(checkin) {
+            return ParsedRecord { record_type: "", habit: blank_habit, checkin: blank_checkin, valid: false, error: "campos do check-in são inválidos" }
+        }
+        if serialize_checkin(checkin) != row + "\n" {
+            return ParsedRecord { record_type: "", habit: blank_habit, checkin: blank_checkin, valid: false, error: "check-in fora do formato canônico" }
+        }
+        return ParsedRecord { record_type: "C", habit: blank_habit, checkin: checkin, valid: true, error: "" }
+    }
+    return ParsedRecord { record_type: "", habit: blank_habit, checkin: blank_checkin, valid: false, error: "tipo de registro desconhecido" }
+}

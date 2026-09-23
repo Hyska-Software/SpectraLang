@@ -1,0 +1,176 @@
+module cli.parser
+
+import std.convert as convert
+import std.env as env
+import std.option as option
+import std.string as string
+import domain.model as model
+
+public record Command {
+    public name: string,
+    public id_text: string,
+    public goal: int,
+    public date: string,
+    public title: string,
+    public note: string,
+    public include_archived: bool,
+    public valid: bool,
+    public error: string,
+}
+
+func empty_command() returns Command {
+    return Command {
+        name: "", id_text: "", goal: 0, date: "", title: "", note: "",
+        include_archived: false, valid: false, error: "",
+    }
+}
+
+func argument_count() returns int {
+    return env.env_args_count()
+}
+
+func argument_at(index: int) returns string {
+    let value = env.env_arg(index)
+    if option.is_none(value) {
+        return ""
+    }
+    return option.option_unwrap(value)
+}
+
+func fail(parsed: Command, message: string) returns Command {
+    parsed.valid = false
+    parsed.error = message
+    return parsed
+}
+
+func valid_id_text(value: string) returns bool {
+    let id = convert.string_to_int_or(value, -1)
+    return id > 0 and convert.int_to_string(id) == value
+}
+
+public func parse() returns Command {
+    let parsed = empty_command()
+    let count  = argument_count()
+    if count < 2 {
+        return fail(parsed, "informe um comando; use spectrahabit help")
+    }
+    parsed.name = argument_at(1)
+    if parsed.name == "help" or parsed.name == "--help" or parsed.name == "-h" or
+    parsed.name == "init" or parsed.name == "self-test" {
+        if count != 2 {
+            return fail(parsed, parsed.name + " não aceita argumentos extras")
+        }
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "add" {
+        if count != 4 {
+            return fail(parsed, "uso: spectrahabit add <dias-por-semana 1..7> <nome>")
+        }
+        parsed.goal = convert.string_to_int_or(argument_at(2), -1)
+        parsed.title = argument_at(3)
+        if not model.valid_goal(parsed.goal) {
+            return fail(parsed, "a meta semanal deve ficar entre 1 e 7 dias")
+        }
+        if string.trim(parsed.title) == "" or string.len(parsed.title) > 80 {
+            return fail(parsed, "o nome deve ter de 1 a 80 caracteres")
+        }
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "list" {
+        if count == 3 and argument_at(2) == "--all" {
+            parsed.include_archived = true
+            parsed.valid = true
+            return parsed
+        }
+        if count != 2 {
+            return fail(parsed, "uso: spectrahabit list [--all]")
+        }
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "checkin" {
+        if (count != 4 and count != 5) or not valid_id_text(argument_at(2)) {
+            return fail(parsed, "uso: spectrahabit checkin <id> <AAAA-MM-DD> [nota]")
+        }
+        parsed.id_text = argument_at(2)
+        parsed.date = argument_at(3)
+        if not model.not_future_date(parsed.date) {
+            return fail(parsed, "a data deve ser válida e não pode estar no futuro UTC")
+        }
+        if count == 5 {
+            parsed.note = argument_at(4)
+            if string.len(parsed.note) > 200 {
+                return fail(parsed, "a nota aceita até 200 caracteres")
+            }
+        }
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "uncheck" {
+        if count != 4 or not valid_id_text(argument_at(2)) or not model.not_future_date(argument_at(3)) {
+            return fail(parsed, "uso: spectrahabit uncheck <id> <data válida até hoje UTC>")
+        }
+        parsed.id_text = argument_at(2)
+        parsed.date = argument_at(3)
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "history" {
+        if count != 3 or not valid_id_text(argument_at(2)) {
+            return fail(parsed, "uso: spectrahabit history <id>")
+        }
+        parsed.id_text = argument_at(2)
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "streak" {
+        if count != 3 and count != 4 {
+            return fail(parsed, "uso: spectrahabit streak <id> [data-final]")
+        }
+        if not valid_id_text(argument_at(2)) {
+            return fail(parsed, "ID de hábito inválido")
+        }
+        parsed.id_text = argument_at(2)
+        if count == 4 {
+            parsed.date = argument_at(3)
+        } else {
+            parsed.date = model.current_utc_date()
+        }
+        if not model.not_future_date(parsed.date) {
+            return fail(parsed, "a data final deve ser válida e não pode estar no futuro UTC")
+        }
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "week" {
+        if count != 3 or not model.not_future_date(argument_at(2)) {
+            return fail(parsed, "uso: spectrahabit week <início da semana até hoje UTC>")
+        }
+        parsed.date = argument_at(2)
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "goal" {
+        if count != 4 or not valid_id_text(argument_at(2)) {
+            return fail(parsed, "uso: spectrahabit goal <id> <dias-por-semana 1..7>")
+        }
+        parsed.id_text = argument_at(2)
+        parsed.goal = convert.string_to_int_or(argument_at(3), -1)
+        if not model.valid_goal(parsed.goal) {
+            return fail(parsed, "a meta semanal deve ficar entre 1 e 7 dias")
+        }
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "archive" or parsed.name == "remove" {
+        if count != 3 or not valid_id_text(argument_at(2)) {
+            return fail(parsed, "uso: spectrahabit " + parsed.name + " <id>")
+        }
+        parsed.id_text = argument_at(2)
+        parsed.valid = true
+        return parsed
+    }
+    return fail(parsed, "comando desconhecido: " + parsed.name)
+}
