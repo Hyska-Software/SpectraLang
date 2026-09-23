@@ -11,7 +11,7 @@ pub(crate) fn ml_classification_loss(
         let Some((shape, scores, requires_grad)) = ml_tensor_float_data(args[0] as usize) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let Some(targets) = ml_tensor_int_data(args[1] as usize) else {
+        let Some(targets) = ml_tensor_class_indices(args[1] as usize) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
         if shape.len() != 2 || targets.len() != shape[0] {
@@ -21,7 +21,9 @@ pub(crate) fn ml_classification_loss(
         let mut loss = 0.0;
         let mut grad = vec![0.0; scores.len()];
         for row in 0..batch {
-            let target = targets[row] as usize;
+            let Ok(target) = usize::try_from(targets[row]) else {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            };
             if target >= classes {
                 return HOST_STATUS_INVALID_ARGUMENT;
             }

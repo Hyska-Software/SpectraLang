@@ -1411,6 +1411,85 @@ fn tensor_native_apply_bce_matches_analytic_and_finite_difference() {
     let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[0]);
 }
 
+#[test]
+fn ml_cross_entropy_accepts_integral_float_class_labels() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    crate::ffi::spectra_rt_manual_clear();
+    let _ = call_host(TENSOR_FREE_ALL, &[]);
+    let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[1]);
+
+    let logits = tensor_alloc(
+        TensorDType::Float,
+        vec![2, 2],
+        f64_values_to_host(&[3.0, 0.0, 0.0, 3.0]),
+    )
+    .expect("alloc logits") as SpectraHostValue;
+    assert_eq!(
+        call_host(TENSOR_REQUIRES_GRAD, &[logits, 1]).0,
+        HOST_STATUS_SUCCESS
+    );
+    let labels = tensor_alloc(
+        TensorDType::Float,
+        vec![2],
+        f64_values_to_host(&[0.0, 1.0]),
+    )
+    .expect("alloc float labels") as SpectraHostValue;
+    let (status, loss) = call_host(ML_CROSS_ENTROPY_LOSS, &[logits, labels]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(call_host(TENSOR_BACKWARD, &[loss]).0, HOST_STATUS_SUCCESS);
+    let (status, grad) = call_host(TENSOR_GRAD, &[logits]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (_, gradients, _) = ml_tensor_float_data(grad as usize).expect("logit gradients");
+    assert_eq!(gradients.len(), 4);
+    assert!(gradients.iter().all(|value| value.is_finite()));
+
+    let fractional_labels = tensor_alloc(
+        TensorDType::Float,
+        vec![2],
+        f64_values_to_host(&[0.5, 1.0]),
+    )
+    .expect("alloc fractional labels") as SpectraHostValue;
+    assert_eq!(
+        call_host(ML_CROSS_ENTROPY_LOSS, &[logits, fractional_labels]).0,
+        HOST_STATUS_INVALID_ARGUMENT
+    );
+    let negative_labels = tensor_alloc(
+        TensorDType::Float,
+        vec![2],
+        f64_values_to_host(&[-1.0, 1.0]),
+    )
+    .expect("alloc negative labels") as SpectraHostValue;
+    assert_eq!(
+        call_host(ML_CROSS_ENTROPY_LOSS, &[logits, negative_labels]).0,
+        HOST_STATUS_INVALID_ARGUMENT
+    );
+    let out_of_range_labels = tensor_alloc(
+        TensorDType::Float,
+        vec![2],
+        f64_values_to_host(&[0.0, 2.0]),
+    )
+    .expect("alloc out-of-range labels") as SpectraHostValue;
+    assert_eq!(
+        call_host(ML_CROSS_ENTROPY_LOSS, &[logits, out_of_range_labels]).0,
+        HOST_STATUS_INVALID_ARGUMENT
+    );
+    let non_finite_labels = tensor_alloc(
+        TensorDType::Float,
+        vec![2],
+        f64_values_to_host(&[0.0, f64::NAN]),
+    )
+    .expect("alloc non-finite labels") as SpectraHostValue;
+    assert_eq!(
+        call_host(ML_CROSS_ENTROPY_LOSS, &[logits, non_finite_labels]).0,
+        HOST_STATUS_INVALID_ARGUMENT
+    );
+
+    let _ = call_host(TENSOR_FREE_ALL, &[]);
+    let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[0]);
+}
+
 /// Compiler-native gradient checks for conv2d / max_pool2d / dropout
 /// (backend opcodes 20-22): analytic formulas plus central finite
 /// differences (1e-6) through the forward hosts. Dropout is stochastic,

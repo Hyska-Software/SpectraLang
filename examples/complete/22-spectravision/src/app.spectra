@@ -1,0 +1,77 @@
+module app
+
+import std.convert as convert
+import std.io as io
+import std.ml as ml
+import std.tensor as tensor
+from evaluation.evaluate import Evaluation
+from training.fit import TrainingResult
+from vision.network import Network
+import data.ingest as ingest
+import evaluation.evaluate as evaluate
+import training.fit as fit
+import vision.checkpoint as checkpoint
+import vision.network as network
+
+const DATASET_PATH = "examples/complete/22-spectravision/data/orientation.csv"
+const ARTIFACT_PATH = "target/complete-spectravision/model.spar"
+
+public func run() returns int {
+    tensor.free_all()
+    tensor.seed(22022)
+    tensor.set_grad_enabled( true)
+
+    let dataset = ingest.load(DATASET_PATH)
+    if dataset == 0 or ml.dataset_len(dataset) != 16 {
+        io.eprintln("erro: dataset de orientação inválido; esperado 16 imagens")
+        return 1
+    }
+    let training_set = ml.dataset_train_split(dataset, 12)
+    let test_set     = ml.dataset_test_split(dataset, 12)
+    if training_set == 0 or test_set == 0 {
+        io.eprintln("erro: não foi possível separar treino e teste")
+        return 1
+    }
+
+    let model = network.create()
+    if ml.module_parameter_count(model.module_handle) != 6 {
+        io.eprintln("erro: registro da CNN deveria conter seis parâmetros")
+        return 1
+    }
+    let trained = fit.train(model, training_set, 60, 4)
+    tensor.set_grad_enabled( false)
+    let training_score = evaluate.run(trained.model, training_set)
+    let scored         = evaluate.run(trained.model, test_set)
+    io.println(
+        "training: epochs=" + convert.int_to_string(trained.epochs) +
+            " steps=" + convert.int_to_string(trained.steps) +
+            " loss=" + convert.float_to_string(trained.final_loss) +
+            " metrics=" + training_score.metrics
+    )
+    if scored.correct != scored.count {
+        io.eprintln("erro: acurácia de teste abaixo do fixture esperado")
+        io.eprintln(scored.metrics)
+        tensor.free_all()
+        return 1
+    }
+
+    let reloaded = checkpoint.save_and_load(trained.model, ARTIFACT_PATH)
+    if reloaded.module_handle == 0 {
+        io.eprintln("erro: checkpoint da CNN não pôde ser validado e recarregado")
+        tensor.free_all()
+        return 1
+    }
+    let reloaded_score = evaluate.run(reloaded, test_set)
+    if reloaded_score.correct != scored.correct {
+        io.eprintln("erro: previsões mudaram após recarregar o checkpoint")
+        tensor.free_all()
+        return 1
+    }
+
+    io.println("SPECTRAVISION ok architecture=conv2d-relu-global-maxpool-mlp classes=2")
+    io.println("test: " + scored.metrics)
+    io.println("checkpoint: " + ARTIFACT_PATH + " reload=verified")
+    tensor.free_all()
+    tensor.set_grad_enabled( false)
+    return 0
+}

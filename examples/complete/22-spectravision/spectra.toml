@@ -1,0 +1,5 @@
+[project]
+name = "22-spectravision"
+version = "1.0.0"
+entry = "src/main.spectra"
+src_dirs = ["src"]

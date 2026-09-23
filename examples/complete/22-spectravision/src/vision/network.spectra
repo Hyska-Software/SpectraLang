@@ -1,0 +1,60 @@
+module vision.network
+
+import std.ml as ml
+import std.tensor as tensor
+
+public record Network {
+    public module_handle: int,
+    public conv_kernel: int,
+    public conv_bias: int,
+    public hidden_weights: int,
+    public hidden_bias: int,
+    public class_weights: int,
+    public class_bias: int,
+}
+
+public func create() returns Network {
+    let registry    = ml.module_new()
+    let conv_kernel = tensor.requires_grad(tensor.normal_f(36, 0.0, 0.18), true)
+    let conv_bias   = tensor.requires_grad(tensor.full_f(4, 0.0), true)
+    let hidden_weights = tensor.requires_grad(
+        tensor.reshape(tensor.normal_f(32, 0.0, 0.30), 4, 8),
+        true,
+    )
+    let hidden_bias = tensor.requires_grad(tensor.full_f(8, 0.0), true)
+    let class_weights = tensor.requires_grad(
+        tensor.reshape(tensor.normal_f(16, 0.0, 0.35), 8, 2),
+        true,
+    )
+    let class_bias = tensor.requires_grad(tensor.full_f(2, 0.0), true)
+
+    ml.module_add_parameter(registry, conv_kernel)
+    ml.module_add_parameter(registry, conv_bias)
+    ml.module_add_parameter(registry, hidden_weights)
+    ml.module_add_parameter(registry, hidden_bias)
+    ml.module_add_parameter(registry, class_weights)
+    ml.module_add_parameter(registry, class_bias)
+
+    return Network {
+        module_handle: registry,
+        conv_kernel: conv_kernel,
+        conv_bias: conv_bias,
+        hidden_weights: hidden_weights,
+        hidden_bias: hidden_bias,
+        class_weights: class_weights,
+        class_bias: class_bias,
+    }
+}
+
+public func forward(model: Network, images: int, batch: int, training: bool) returns int {
+    ml.module_set_training(model.module_handle, training)
+    let convolved = ml.conv2d(images, model.conv_kernel, model.conv_bias, batch, 1, 6, 6, 4, 3, 3)
+    let activated = tensor.relu(convolved)
+    let local_pool = ml.max_pool2d(activated, batch, 4, 4, 4, 2, 2)
+    let pooled = ml.max_pool2d(local_pool, batch, 4, 2, 2, 2, 2)
+    let flattened = tensor.reshape(pooled, batch, 4)
+    let hidden = ml.linear(flattened, model.hidden_weights, model.hidden_bias)
+    let hidden_activation = tensor.relu(hidden)
+    let dropped = ml.dropout(hidden_activation, 0.15, training)
+    return ml.linear(dropped, model.class_weights, model.class_bias)
+}

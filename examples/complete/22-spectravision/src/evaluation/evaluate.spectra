@@ -1,0 +1,46 @@
+module evaluation.evaluate
+
+import std.ml as ml
+import std.tensor as tensor
+from vision.network import Network
+import vision.network as network
+
+public record Evaluation {
+    public expected: int,
+    public predicted: int,
+    public metrics: string,
+    public correct: int,
+    public count: int,
+}
+
+public func run(model: Network, dataset: int) returns Evaluation {
+    let count        = ml.dataset_len(dataset)
+    let loader       = ml.dataloader_new(dataset, count, 0)
+    let raw_features = ml.dataloader_batch_features(loader, 0)
+    let raw_labels   = ml.dataloader_batch_labels(loader, 0)
+    let features     = tensor.reshape(raw_features, count, 36)
+    let logits       = network.forward(model, features, count, false)
+    let expected     = tensor.full(count, 0)
+    let predicted    = tensor.full(count, 0)
+    let correct      = 0
+    let index        = 0
+    while index < count {
+        let actual     = tensor.get_f(raw_labels, index) as int
+        let class_zero = tensor.get2_f(logits, index, 0)
+        let class_one  = tensor.get2_f(logits, index, 1)
+        let guess      = if class_zero > class_one { 0} else { 1}
+        tensor.set(expected, index, actual)
+        tensor.set(predicted, index, guess)
+        if actual == guess {
+            correct = correct + 1
+        }
+        index = index + 1
+    }
+    return Evaluation {
+        expected: expected,
+        predicted: predicted,
+        metrics: ml.metrics_classification(expected, predicted),
+        correct: correct,
+        count: count,
+    }
+}

@@ -1,0 +1,7 @@
+module data.ingest
+
+import std.ml as ml
+
+public func load(path: string) returns int {
+    return ml.dataset_from_csv(path, 0, 1)
+}

@@ -235,6 +235,30 @@ pub(crate) fn ml_tensor_int_data(handle: usize) -> Option<Vec<i64>> {
     })
 }
 
+/// Read class indices from integer labels or from finite, integer-valued
+/// floating-point labels produced by numeric dataset readers.
+pub(crate) fn ml_tensor_class_indices(handle: usize) -> Option<Vec<i64>> {
+    with_tensor_registry(|registry| {
+        let tensor = registry.get(handle)?;
+        match tensor.dtype {
+            TensorDType::Int => Some(tensor.materialize()),
+            TensorDType::Float => {
+                let upper_exclusive = -(i64::MIN as f64);
+                let values = tensor_values_as_f64(tensor);
+                if values.iter().any(|value| {
+                    !value.is_finite()
+                        || value.fract() != 0.0
+                        || *value < i64::MIN as f64
+                        || *value >= upper_exclusive
+                }) {
+                    return None;
+                }
+                Some(values.into_iter().map(|value| value as i64).collect())
+            }
+        }
+    })
+}
+
 pub(crate) fn ml_store_float_tensor(handle: usize, values: Vec<f64>) -> bool {
     with_tensor_registry(|registry| {
         let Some(tensor) = registry.get_mut(handle) else {

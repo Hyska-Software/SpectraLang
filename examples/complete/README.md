@@ -1,10 +1,11 @@
 # Spectra complete example projects
 
-21 complete `.spectra` projects. Projects 01–17 are self-validating and print an
+22 complete `.spectra` projects. Projects 01–17 are self-validating and print an
 `ok` line; `18-spectragit` is a local version-control CLI, `19-spectraboard` is
-a local task-board CLI, `20-spectraledger` is a local personal-finance CLI, and
-`21-spectrahabit` is a local habit tracker. Projects 18–21 have their own
-self-test and AOT integration harness.
+a local task-board CLI, `20-spectraledger` is a local personal-finance CLI,
+`21-spectrahabit` is a local habit tracker, and `22-spectravision` is an
+end-to-end convolutional image classifier. Projects 18–22 have their own
+integration harnesses.
 
 Run any project (from the repo root):
 
@@ -36,6 +37,12 @@ Run the SpectraHabit self-test through JIT with:
 spectralang run examples/complete/21-spectrahabit -- self-test
 ```
 
+Run the SpectraVision training and evaluation pipeline through JIT with:
+
+```powershell
+spectralang run examples/complete/22-spectravision
+```
+
 ## Functional projects
 
 | # | Project | What it covers |
@@ -57,6 +64,7 @@ spectralang run examples/complete/21-spectrahabit -- self-test
 | 19 | `19-spectraboard` | Independent task-board CLI with nested modules, task lifecycle, filtering, UTF-8 persistence, atomic writes, backup recovery and AOT integration |
 | 20 | `20-spectraledger` | Personal-finance CLI with nested modules, income and expense tracking, exact cent arithmetic, monthly category budgets, reports, UTF-8 persistence, backup recovery and AOT integration |
 | 21 | `21-spectrahabit` | Habit-tracking CLI with nested modules, UTC calendar validation, dated check-ins, daily streaks, weekly goals and reports, UTF-8 persistence, backup recovery and JIT/AOT integration |
+| 22 | `22-spectravision` | CNN for 6×6 grayscale images: CSV datasets, splits, minibatches, conv2d, ReLU, max-pool, dropout, autodiff, AdamW, classification metrics, checkpoint reload and JIT/AOT integration |
 
 ## Performance comparisons (Spectra vs Go vs Rust)
 

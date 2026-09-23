@@ -1,0 +1,48 @@
+module training.fit
+
+import std.ml as ml
+import std.tensor as tensor
+from vision.network import Network
+from vision.optimizer import AdamState
+import vision.network as network
+import vision.optimizer as optimizer
+
+public record TrainingResult {
+    public model: Network,
+    public epochs: int,
+    public steps: int,
+    public final_loss: float,
+}
+
+func train_batch(model: Network, state: AdamState, features: int, labels: int, batch: int, step: int) returns float {
+    optimizer.zero_grad(model)
+    let logits = network.forward(model, features, batch, true)
+    let loss   = ml.cross_entropy_loss(logits, labels)
+    tensor.backward(loss)
+    let rate = ml.exp_lr(0.025, 0.998, step)
+    optimizer.update(model, state, rate, step)
+    return tensor.get_f(loss, 0)
+}
+
+public func train(model: Network, dataset: int, epochs: int, batch_size: int) returns TrainingResult {
+    let loader     = ml.dataloader_new(dataset, batch_size, 22022)
+    let batches    = ml.dataloader_batch_count(loader)
+    let state      = optimizer.create(model)
+    let epoch      = 0
+    let step       = 0
+    let final_loss = 0.0
+    while epoch < epochs {
+        let batch_index = 0
+        while batch_index < batches {
+            let raw_features = ml.dataloader_batch_features(loader, batch_index)
+            let labels       = ml.dataloader_batch_labels(loader, batch_index)
+            let batch        = tensor.len(raw_features) / 36
+            let features     = tensor.reshape(raw_features, batch, 36)
+            final_loss = train_batch(model, state, features, labels, batch, step + 1)
+            step = step + 1
+            batch_index = batch_index + 1
+        }
+        epoch = epoch + 1
+    }
+    return TrainingResult { model: model, epochs: epoch, steps: step, final_loss: final_loss }
+}

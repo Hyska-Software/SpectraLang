@@ -1,0 +1,126 @@
+module vision.optimizer
+
+import std.ml as ml
+import std.tensor as tensor
+from vision.network import Network
+import vision.network as network
+
+public record AdamState {
+    public conv_kernel_first: int,
+    public conv_kernel_second: int,
+    public conv_bias_first: int,
+    public conv_bias_second: int,
+    public hidden_weights_first: int,
+    public hidden_weights_second: int,
+    public hidden_bias_first: int,
+    public hidden_bias_second: int,
+    public class_weights_first: int,
+    public class_weights_second: int,
+    public class_bias_first: int,
+    public class_bias_second: int,
+}
+
+func moments(parameter: int) returns int {
+    return tensor.full_f(tensor.len(parameter), 0.0)
+}
+
+public func create(model: Network) returns AdamState {
+    return AdamState {
+        conv_kernel_first: moments(model.conv_kernel),
+        conv_kernel_second: moments(model.conv_kernel),
+        conv_bias_first: moments(model.conv_bias),
+        conv_bias_second: moments(model.conv_bias),
+        hidden_weights_first: moments(model.hidden_weights),
+        hidden_weights_second: moments(model.hidden_weights),
+        hidden_bias_first: moments(model.hidden_bias),
+        hidden_bias_second: moments(model.hidden_bias),
+        class_weights_first: moments(model.class_weights),
+        class_weights_second: moments(model.class_weights),
+        class_bias_first: moments(model.class_bias),
+        class_bias_second: moments(model.class_bias),
+    }
+}
+
+func clear(model: Network) returns int {
+    tensor.zero_grad(model.conv_kernel)
+    tensor.zero_grad(model.conv_bias)
+    tensor.zero_grad(model.hidden_weights)
+    tensor.zero_grad(model.hidden_bias)
+    tensor.zero_grad(model.class_weights)
+    tensor.zero_grad(model.class_bias)
+    return 0
+}
+
+public func update(model: Network, state: AdamState, rate: float, step: int) returns int {
+    ml.adamw_step(
+        model.conv_kernel,
+        state.conv_kernel_first,
+        state.conv_kernel_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.conv_bias,
+        state.conv_bias_first,
+        state.conv_bias_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0,
+    )
+    ml.adamw_step(
+        model.hidden_weights,
+        state.hidden_weights_first,
+        state.hidden_weights_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.hidden_bias,
+        state.hidden_bias_first,
+        state.hidden_bias_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0,
+    )
+    ml.adamw_step(
+        model.class_weights,
+        state.class_weights_first,
+        state.class_weights_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.class_bias,
+        state.class_bias_first,
+        state.class_bias_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0,
+    )
+    return 0
+}
+
+public func zero_grad(model: Network) returns int {
+    return clear(model)
+}

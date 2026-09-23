@@ -48,15 +48,25 @@ Validated example:
 .\target\debug\spectralang.exe run examples\ai\logistic_regression_train_export.spectra
 ```
 
+For multiclass classification, `cross_entropy_loss` consumes a rank-2 logits
+tensor and one class index per row. Labels can be integer tensors or numeric
+float tensors whose values are finite whole numbers; CSV dataset readers return
+numeric labels as floats, so this lets their dataloader batches feed the loss
+directly. Fractional, non-finite, negative, or out-of-range class indices are
+rejected.
+
 ## Modules And Layers
 
 `std.ml` module handles allow examples to express a model boundary while keeping
 the current compiler/runtime contract explicit.
 
 ```spectra
-let model_handle = ml.module_create()
-let dense = ml.linear_layer_create(4, 2)
-ml.module_add_layer(model_handle, dense)
+let model_handle = ml.module_new()
+let weights = tensor.requires_grad(tensor.reshape(tensor.full_f(8, 0.1), 4, 2), true)
+let bias = tensor.requires_grad(tensor.full_f(2, 0.0), true)
+ml.module_add_parameter(model_handle, weights)
+ml.module_add_parameter(model_handle, bias)
+let logits = ml.linear(tensor.full2_f(3, 4, 1.0), weights, bias)
 ```
 
 Validated example:
@@ -72,12 +82,21 @@ Use tensor-backed datasets for reproducible AI examples:
 ```spectra
 let features = tensor.reshape(tensor.full_f(4, 1.0), 4, 1)
 let labels = tensor.full_f(4, 2.0)
-let dataset = ml.dataset_from_tensors(features, labels)
-let loader = ml.dataloader_create(dataset, 2, true, 7)
-let batch = ml.dataloader_next(loader)
+let dataset = ml.dataset_from_tensors(features, labels, 4)
+let loader = ml.dataloader_new(dataset, 2, 7)
+let batch_features = ml.dataloader_batch_features(loader, 0)
+let batch_labels = ml.dataloader_batch_labels(loader, 0)
 ```
 
-The `true, 7` arguments request deterministic shuffling with seed `7`.
+The third dataloader argument is a deterministic shuffle seed; `0` preserves
+row order.
+
+## Convolutional Example
+
+[`examples/complete/22-spectravision`](../../examples/complete/22-spectravision/README.md)
+is an executable CPU example that composes `std.ml.conv2d`, ReLU, max pooling,
+linear layers, dropout, cross-entropy, autodiff and AdamW, then evaluates and
+reloads a checkpoint in both JIT and AOT execution.
 
 ## Production Rules For Examples
 

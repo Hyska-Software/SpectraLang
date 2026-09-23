@@ -1,0 +1,68 @@
+module vision.checkpoint
+
+import std.fs as fs
+import std.ml as ml
+import std.result as result
+from vision.network import Network
+import vision.network as network
+
+public func save_and_load(model: Network, path: string) returns Network {
+    let parent = "target/complete-spectravision"
+    if result.is_err(fs.create_dir_all(parent)) {
+        return Network { module_handle: 0, conv_kernel: 0, conv_bias: 0, hidden_weights: 0, hidden_bias: 0, class_weights: 0, class_bias: 0 }
+    }
+
+    let artifact = ml.artifact_new("spectravision", "1", "checkpoint")
+    if artifact == 0 {
+        return Network { module_handle: 0, conv_kernel: 0, conv_bias: 0, hidden_weights: 0, hidden_bias: 0, class_weights: 0, class_bias: 0 }
+    }
+    let architecture_set = ml.artifact_set_metadata(
+        artifact,
+        "architecture",
+        "conv2d-4-relu-global-maxpool-mlp-8",
+    )
+    let input_set         = ml.artifact_set_metadata(artifact, "input", "1x6x6 grayscale")
+    let classes_set       = ml.artifact_set_metadata(artifact, "classes", "horizontal,vertical")
+    let metadata          = architecture_set and input_set and classes_set
+    let conv_kernel_saved = ml.artifact_add_tensor(artifact, "conv_kernel", model.conv_kernel)
+    let conv_bias_saved   = ml.artifact_add_tensor(artifact, "conv_bias", model.conv_bias)
+    let hidden_weights_saved = ml.artifact_add_tensor(
+        artifact,
+        "hidden_weights",
+        model.hidden_weights,
+    )
+    let hidden_bias_saved = ml.artifact_add_tensor(artifact, "hidden_bias", model.hidden_bias)
+    let class_weights_saved = ml.artifact_add_tensor(artifact, "class_weights", model.class_weights)
+    let class_bias_saved = ml.artifact_add_tensor(artifact, "class_bias", model.class_bias)
+    let tensors = conv_kernel_saved and conv_bias_saved and hidden_weights_saved and hidden_bias_saved and class_weights_saved and class_bias_saved
+    let artifact_saved = ml.artifact_save(artifact, path)
+    let artifact_valid = ml.artifact_validate(path)
+    let saved = metadata and tensors and artifact_saved and artifact_valid
+    ml.artifact_free(artifact)
+    if not saved {
+        return Network { module_handle: 0, conv_kernel: 0, conv_bias: 0, hidden_weights: 0, hidden_bias: 0, class_weights: 0, class_bias: 0 }
+    }
+
+    let loaded = ml.artifact_load(path)
+    if loaded == 0 or ml.artifact_metadata(loaded, "architecture") != "conv2d-4-relu-global-maxpool-mlp-8" {
+        return Network { module_handle: 0, conv_kernel: 0, conv_bias: 0, hidden_weights: 0, hidden_bias: 0, class_weights: 0, class_bias: 0 }
+    }
+    let restored = Network {
+        module_handle: ml.module_new(),
+        conv_kernel: ml.artifact_tensor(loaded, "conv_kernel"),
+        conv_bias: ml.artifact_tensor(loaded, "conv_bias"),
+        hidden_weights: ml.artifact_tensor(loaded, "hidden_weights"),
+        hidden_bias: ml.artifact_tensor(loaded, "hidden_bias"),
+        class_weights: ml.artifact_tensor(loaded, "class_weights"),
+        class_bias: ml.artifact_tensor(loaded, "class_bias"),
+    }
+    ml.module_add_parameter(restored.module_handle, restored.conv_kernel)
+    ml.module_add_parameter(restored.module_handle, restored.conv_bias)
+    ml.module_add_parameter(restored.module_handle, restored.hidden_weights)
+    ml.module_add_parameter(restored.module_handle, restored.hidden_bias)
+    ml.module_add_parameter(restored.module_handle, restored.class_weights)
+    ml.module_add_parameter(restored.module_handle, restored.class_bias)
+    ml.module_set_training(restored.module_handle, false)
+    ml.artifact_free(loaded)
+    return restored
+}
