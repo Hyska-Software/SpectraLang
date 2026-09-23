@@ -743,6 +743,7 @@ fn probe_memory(addr: usize, len: usize) -> MemoryProbe {
 #[cfg(all(not(target_os = "windows"), any(target_os = "linux", target_os = "android")))]
 fn scan_executable_ranges() -> Vec<(usize, usize)> {
     read_maps()
+        .into_iter()
         .filter(|(_, _, perms)| perms.as_bytes().get(2) == Some(&b'x'))
         .map(|(start, end, _)| (start, end - start))
         .collect()
@@ -762,22 +763,26 @@ fn scan_executable_ranges() -> Vec<(usize, usize)> {
 }
 
 #[cfg(all(not(target_os = "windows"), any(target_os = "linux", target_os = "android")))]
-fn read_maps() -> impl Iterator<Item = (usize, usize, String)> {
+fn read_maps() -> Vec<(usize, usize, String)> {
     let text = std::fs::read_to_string("/proc/self/maps").unwrap_or_default();
-    text.lines().filter_map(|line| {
-        let mut parts = line.split_whitespace();
-        let range = parts.next()?;
-        let perms = parts.next()?.to_string();
-        let (start, end) = range.split_once('-')?;
-        let start = usize::from_str_radix(start, 16).ok()?;
-        let end = usize::from_str_radix(end, 16).ok()?;
-        Some((start, end, perms))
-    })
+    text.lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let range = parts.next()?;
+            let perms = parts.next()?.to_string();
+            let (start, end) = range.split_once('-')?;
+            let start = usize::from_str_radix(start, 16).ok()?;
+            let end = usize::from_str_radix(end, 16).ok()?;
+            Some((start, end, perms))
+        })
+        .collect()
 }
 
 #[cfg(all(not(target_os = "windows"), any(target_os = "linux", target_os = "android")))]
 fn maps_region(addr: usize) -> Option<(usize, usize, String)> {
-    read_maps().find(|(start, end, _)| *start <= addr && addr < *end)
+    read_maps()
+        .into_iter()
+        .find(|(start, end, _)| *start <= addr && addr < *end)
 }
 
 /// Registered executable code ranges. Windows' main image is covered by the
