@@ -1,0 +1,75 @@
+module self_tests
+
+import std.io as io
+import codec
+import display
+import paths
+
+public func run() returns bool {
+    let repeated_a = codec.object_id("blob", "same content")
+    let repeated_b = codec.object_id("blob", "same content")
+    if repeated_a != repeated_b {
+        io.eprintln("self-test 1 falhou: hash não determinístico")
+        return false
+    }
+    if repeated_a == codec.object_id("blob", "different content") {
+        io.eprintln("self-test 2 falhou: conteúdos diferentes receberam o mesmo hash")
+        return false
+    }
+    if repeated_a == codec.object_id("tree", "same content") {
+        io.eprintln("self-test 3 falhou: tipos de objeto não estão separados")
+        return false
+    }
+
+    let encoded = codec.encode_field("pasta\tlinha\n100%")
+    if codec.decode_field(encoded) != "pasta\tlinha\n100%" {
+        io.eprintln("self-test 4 falhou: escape de campos não faz round-trip")
+        return false
+    }
+
+    let rows = codec.serialize_entry("src/alpha.spectra", "sg1-alpha") +
+        codec.serialize_entry("docs/nested/beta.spectra", "sg1-beta")
+    let canonical = codec.normalize_entries(rows)
+    if codec.entry_count(canonical) != 2 {
+        io.eprintln("self-test 5 falhou: contagem de entradas")
+        return false
+    }
+    if codec.entry_path(codec.row_at(canonical, 0)) != "docs/nested/beta.spectra" {
+        io.eprintln("self-test 6 falhou: tree não foi ordenada por caminho")
+        return false
+    }
+    if codec.normalize_entries(canonical) != canonical {
+        io.eprintln("self-test 7 falhou: serialização não é idempotente")
+        return false
+    }
+
+    let base = codec.serialize_entry("a.spectra", "sg1-a") +
+        codec.serialize_entry("b.spectra", "sg1-b")
+    let changes = codec.serialize_entry("a.spectra", "-") +
+        codec.serialize_entry("c.spectra", "sg1-c")
+    let changed = codec.apply_changes(base, changes)
+    if codec.entry_count(changed) != 2 or codec.blob_for(changed, "a.spectra") != "" or codec.blob_for(changed, "b.spectra") != "sg1-b" or codec.blob_for(changed, "c.spectra") != "sg1-c" {
+        io.eprintln("self-test 8 falhou: aplicação de inclusão e remoção")
+        return false
+    }
+
+    if not display.test_line_counts() {
+        return false
+    }
+
+    if paths.normalize("src//./alpha.spectra/") != "src/alpha.spectra" {
+        io.eprintln("self-test 12 falhou: normalização de separadores e componentes .")
+        return false
+    }
+    if paths.normalize("../outside.txt") != "" {
+        io.eprintln("self-test 13 falhou: rejeição de caminho acima da raiz")
+        return false
+    }
+    if paths.normalize(".spectragit/HEAD") != "" {
+        io.eprintln("self-test 14 falhou: exclusão do diretório interno")
+        return false
+    }
+
+    io.println("spectragit self-test: 14 verificações passaram")
+    return true
+}

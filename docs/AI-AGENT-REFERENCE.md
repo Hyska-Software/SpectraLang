@@ -1586,7 +1586,7 @@ integers. Operations whose result may be absent return `Option<T>`.
 | `list_remove_at<T>` | `(List<T>, int) returns Option<T>` | Remove at index or `None` |
 | `list_contains<T>` | `(List<T>, T) returns bool` | Contains value? |
 | `list_index_of<T>` | `(List<T>, T) returns int` | First index or `-1` |
-| `list_sort` | `(List<int>) returns unit` | Sort ascending in-place |
+| `list_sort<T>` | `(List<T>) returns unit` | Sort `int`, exact integers, floats, bool, UTF-8 strings, or chars ascending in-place; other types have no implicit order |
 | `list_sort_by` | `(List<int>, func(int,int) returns int) returns unit` | Sort with comparator |
 | `list_map` | `(List<int>, func(int) returns int) returns List<int>` | Map to a new list |
 | `list_filter` | `(List<int>, func(int) returns bool) returns List<int>` | Filter to a new list |

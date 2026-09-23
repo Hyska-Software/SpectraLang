@@ -608,8 +608,11 @@ pub extern "C" fn spectra_rt_list_index_of_fast(
 
 #[no_mangle]
 #[inline(never)]
-pub extern "C" fn spectra_rt_list_sort_fast(handle: SpectraHostValue) -> i32 {
-    crate::stdlib::list_sort_fast(handle as usize)
+pub extern "C" fn spectra_rt_list_sort_typed_fast(
+    handle: SpectraHostValue,
+    kind: SpectraHostValue,
+) -> i32 {
+    crate::stdlib::list_sort_typed_fast(handle as usize, kind)
 }
 
 #[no_mangle]

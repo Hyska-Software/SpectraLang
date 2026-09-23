@@ -14,6 +14,13 @@ Demonstrações gerais da linguagem e fixtures de regressão históricas:
 - `type_system_demo.spectra`, `traits_demo.spectra` — sistema de tipos e traits
 - `test_*.spectra` — micro-exemplos históricos de construtos específicos
 
+## examples/complete — projetos integrados
+
+O índice dos 18 projetos integrados está em [complete/README.md](complete/README.md).
+O exemplo `18-spectragit` é um CLI local de controle de versão escrito em
+SpectraLang; os comandos e limites estão em seu
+[README](complete/18-spectragit/README.md).
+
 ## examples/stdlib — biblioteca padrão
 
 Sessenta exemplos executáveis que exercitam as APIs `std.*`; cada um

@@ -7,6 +7,9 @@ use serde::Deserialize;
 
 include!(concat!(env!("OUT_DIR"), "/catalog_generated.rs"));
 
+/// Compiler/runtime ABI tags for type-directed `std.collections.list_sort`.
+pub mod collection_sort;
+
 pub const CATALOG_SOURCE: &str = include_str!("../catalog/stdlib.toml");
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]

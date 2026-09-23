@@ -212,16 +212,81 @@ pub(crate) extern "C" fn std_list_sort(ctx: *mut SpectraHostCallContext) -> i32 
     }
     unsafe {
         let ctx_ref = &mut *ctx;
-        if ctx_ref.arg_len != 1 || ctx_ref.args.is_null() {
+        if ctx_ref.arg_len != 2 || ctx_ref.args.is_null() {
             return HOST_STATUS_INVALID_ARGUMENT;
         }
         let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
         let handle = args[0] as usize;
-        let _ = with_list_registry(|registry| registry.sort_asc(handle));
+        let status = crate::stdlib::list_sort_typed_fast(handle, args[1]);
+        if status != HOST_STATUS_SUCCESS {
+            return status;
+        }
         if ctx_ref.result_len > 0 && !ctx_ref.results.is_null() {
             let results = slice::from_raw_parts_mut(ctx_ref.results, ctx_ref.result_len);
             results[0] = 0;
         }
     }
+
     HOST_STATUS_SUCCESS
+}
+
+#[cfg(test)]
+mod list_sort_dispatch_tests {
+    use super::*;
+    use std::ffi::CString;
+
+    #[test]
+    fn generic_host_dispatch_sorts_with_the_compiler_type_tag() {
+        let _guard = crate::runtime_test_guard();
+        crate::ffi::spectra_rt_manual_clear();
+
+        let alpha = CString::new("a").expect("valid string");
+        let zeta = CString::new("z").expect("valid string");
+        let handle = crate::stdlib::list_create(&[
+            zeta.as_ptr() as SpectraHostValue,
+            alpha.as_ptr() as SpectraHostValue,
+        ])
+        .expect("list creation");
+        let arguments = [handle, spectra_contract::collection_sort::STRING];
+        let mut results = [0_i64];
+        let mut context = SpectraHostCallContext {
+            args: arguments.as_ptr(),
+            arg_len: arguments.len(),
+            results: results.as_mut_ptr(),
+            result_len: results.len(),
+            invoke_fn: None,
+        };
+
+        assert_eq!(std_list_sort(&mut context), HOST_STATUS_SUCCESS);
+        let sorted = crate::stdlib::list_elements(handle).expect("sorted list values");
+        assert_eq!(
+            sorted,
+            vec![
+                alpha.as_ptr() as SpectraHostValue,
+                zeta.as_ptr() as SpectraHostValue
+            ]
+        );
+        assert_eq!(results[0], 0);
+
+        crate::ffi::spectra_rt_manual_clear();
+    }
+
+    #[test]
+    fn generic_host_dispatch_rejects_sort_without_a_type_tag() {
+        let arguments = [0_i64];
+        let mut results = [0_i64];
+        let mut context = SpectraHostCallContext {
+            args: arguments.as_ptr(),
+            arg_len: arguments.len(),
+            results: results.as_mut_ptr(),
+            result_len: results.len(),
+            invoke_fn: None,
+        };
+
+        assert_eq!(
+            std_list_sort(&mut context),
+            HOST_STATUS_INVALID_ARGUMENT,
+            "untyped calls must not fall back to sorting raw handle words"
+        );
+    }
 }

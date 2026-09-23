@@ -1,0 +1,454 @@
+module repo
+
+from std.collections import List
+import std.collections as collections
+import std.convert as convert
+import std.env as env
+import std.fs as fs
+import std.option as option
+import std.result as result
+import std.string as string
+import codec
+import paths
+
+const META = ".spectragit"
+const OBJECTS = ".spectragit/objects"
+const HEAD = ".spectragit/HEAD"
+const INDEX = ".spectragit/index"
+const BRANCHES = ".spectragit/refs/heads"
+const SNAPSHOTS = ".spectragit/refs/snapshots"
+const CORRUPT = "\t!SG_CORRUPT!"
+
+record ObjectData {
+    kind: string,
+    payload: string,
+    valid: bool,
+}
+
+public func path_exists(path: string) returns bool {
+    let exists = fs.fs_exists(path)
+    if result.is_err(exists) {
+        return false
+    }
+    return result.result_unwrap(exists)
+}
+
+public func read_text(path: string) returns string {
+    let loaded = fs.fs_read(path)
+    if result.is_err(loaded) {
+        return ""
+    }
+    return result.result_unwrap(loaded)
+}
+
+public func is_error_value(value: string) returns bool {
+    return string.starts_with(value, "\t!SG_")
+}
+
+public func safe_write(path: string, content: string) returns bool {
+    let temporary = path + ".tmp"
+    let backup    = path + ".bak"
+    let wrote     = fs.fs_write(temporary, content)
+    if result.is_err(wrote) or result.result_unwrap(wrote) != true {
+        return false
+    }
+    let verify = fs.fs_read(temporary)
+    if result.is_err(verify) or result.result_unwrap(verify) != content {
+        return false
+    }
+    if path_exists(path) {
+        if path_exists(backup) {
+            let ignored_remove = fs.fs_remove(backup)
+        }
+        let moved_old = fs.rename(path, backup)
+        if result.is_err(moved_old) or result.result_unwrap(moved_old) != true {
+            return false
+        }
+        let moved_new = fs.rename(temporary, path)
+        if result.is_err(moved_new) or result.result_unwrap(moved_new) != true {
+            let restored = fs.rename(backup, path)
+            if result.is_err(restored) or result.result_unwrap(restored) != true {
+                return false
+            }
+            return false
+        }
+        fs.fs_remove(backup)
+        return true
+    }
+    let moved = fs.rename(temporary, path)
+    if result.is_err(moved) or result.result_unwrap(moved) != true {
+        return false
+    }
+    return true
+}
+
+public func init_repo() returns bool {
+    if path_exists(META) {
+        return false
+    }
+    if result.is_err(fs.create_dir_all(OBJECTS)) {
+        return false
+    }
+    if result.is_err(fs.create_dir_all(BRANCHES)) {
+        return false
+    }
+    if result.is_err(fs.create_dir_all(SNAPSHOTS)) {
+        return false
+    }
+    if not safe_write(HEAD, "main") or not safe_write(INDEX, "") or not safe_write(BRANCHES + "/main", "") {
+        return false
+    }
+    if not safe_write(META + "/config", "format\t1\n") {
+        return false
+    }
+    return true
+}
+
+public func ready() returns bool {
+    return path_exists(META + "/config") and read_text(META + "/config") == "format\t1\n" and
+    path_exists(HEAD) and path_exists(INDEX) and path_exists(OBJECTS)
+}
+
+public func current_branch() returns string {
+    return string.trim(read_text(HEAD))
+}
+
+public func branch_path(name: string) returns string {
+    if not paths.valid_name(name) {
+        return ""
+    }
+    return BRANCHES + "/" + name
+}
+
+public func branch_exists(name: string) returns bool {
+    let path = branch_path(name)
+    return path != "" and path_exists(path)
+}
+
+public func branch_tip(name: string) returns string {
+    let path = branch_path(name)
+    if path == "" or not path_exists(path) {
+        return ""
+    }
+    return string.trim(read_text(path))
+}
+
+public func write_branch_tip(name: string, id: string) returns bool {
+    let path = branch_path(name)
+    if path == "" or not path_exists(path) {
+        return false
+    }
+    return safe_write(path, id)
+}
+
+public func set_current_branch(name: string) returns bool {
+    return branch_exists(name) and safe_write(HEAD, name)
+}
+
+public func list_branches() returns List<string> {
+    let names: List<string> = collections.list_new()
+    let listed              = fs.read_dir(BRANCHES)
+    if result.is_err(listed) {
+        return names
+    }
+    let entries = result.result_unwrap(listed)
+    for name in entries {
+        collections.list_push(names, name)
+    }
+    collections.list_free(entries)
+    collections.list_sort(names)
+    return names
+}
+
+public func create_branch(name: string) returns bool {
+    if not paths.valid_name(name) or branch_exists(name) {
+        return false
+    }
+    return safe_write(branch_path(name), branch_tip(current_branch()))
+}
+
+public func write_object(kind: string, payload: string) returns string {
+    let raw  = kind + "\n" + payload
+    let id   = codec.hash_text(raw)
+    let path = OBJECTS + "/" + id
+    if path_exists(path) {
+        let prior = fs.fs_read(path)
+        if result.is_err(prior) or result.result_unwrap(prior) != raw {
+            return ""
+        }
+        return id
+    }
+    if not safe_write(path, raw) {
+        return ""
+    }
+    let check = fs.fs_read(path)
+    if result.is_err(check) or result.result_unwrap(check) != raw {
+        return ""
+    }
+    return id
+}
+
+func read_object(id: string) returns ObjectData {
+    let invalid = ObjectData { kind: "", payload: "", valid: false }
+    if not string.starts_with(id, "sg1-") or string.contains(id, "/") or string.contains(id, "\\") {
+        return invalid
+    }
+    let loaded = fs.fs_read(OBJECTS + "/" + id)
+    if result.is_err(loaded) {
+        return invalid
+    }
+    let raw = result.result_unwrap(loaded)
+    if codec.hash_text(raw) != id {
+        return invalid
+    }
+    let newline = string.index_of(raw, "\n")
+    if newline < 1 {
+        return invalid
+    }
+    return ObjectData {
+        kind: string.substring(raw, 0, newline),
+        payload: string.substring(raw, newline + 1, string.len(raw)),
+        valid: true,
+    }
+}
+
+public func object_kind(id: string) returns string {
+    let object = read_object(id)
+    if not object.valid {
+        return ""
+    }
+    return object.kind
+}
+
+public func write_blob(content: string) returns string {
+    return write_object("blob", content)
+}
+
+public func object_payload(id: string) returns string {
+    let object = read_object(id)
+    if not object.valid {
+        return ""
+    }
+    return object.payload
+}
+
+public func read_blob(id: string) returns string {
+    let object = read_object(id)
+    if not object.valid or object.kind != "blob" {
+        return ""
+    }
+    return object.payload
+}
+
+func validate_entries(entries: string, allow_tombstones: bool) returns bool {
+    let count = codec.entry_count(entries)
+    let i     = 0
+    while i < count {
+        let row  = codec.row_at(entries, i)
+        let path = codec.entry_path(row)
+        let blob = codec.entry_blob(row)
+        if not paths.is_safe_file(path) or paths.normalize(path) != path {
+            return false
+        }
+        if blob == "-" and allow_tombstones {
+            i = i + 1
+        } else if string.starts_with(blob, "sg1-") {
+            let object = read_object(blob)
+            if not object.valid or object.kind != "blob" {
+                return false
+            }
+            i = i + 1
+        } else {
+            return false
+        }
+    }
+    let normalized = codec.normalize_entries(entries)
+    if normalized != entries {
+        return false
+    }
+    return true
+}
+
+public func validate_tree(id: string) returns bool {
+    let object = read_object(id)
+    if not object.valid or object.kind != "tree" or not validate_entries(object.payload, false) {
+        return false
+    }
+    let count = codec.entry_count(object.payload)
+    let i     = 0
+    while i < count {
+        let blob = read_object(codec.entry_blob(codec.row_at(object.payload, i)))
+        if not blob.valid or blob.kind != "blob" {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+public func read_tree(id: string) returns string {
+    let object = read_object(id)
+    if not object.valid or object.kind != "tree" or not validate_tree(id) {
+        return CORRUPT
+    }
+    return object.payload
+}
+
+public func write_tree(entries: string) returns string {
+    let canonical = codec.normalize_entries(entries)
+    if not validate_entries(canonical, false) {
+        return ""
+    }
+    return write_object("tree", canonical)
+}
+
+public func apply_tree_changes(base: string, changes: string) returns string {
+    if not validate_entries(base, false) or not validate_entries(changes, true) {
+        return CORRUPT
+    }
+    return codec.apply_changes(base, changes)
+}
+
+public func index_valid() returns bool {
+    if not path_exists(INDEX) {
+        return false
+    }
+    let raw = read_text(INDEX)
+    return validate_entries(raw, true)
+}
+
+public func read_index() returns string {
+    if not path_exists(INDEX) or not index_valid() {
+        return CORRUPT
+    }
+    return read_text(INDEX)
+}
+
+public func write_index(changes: string) returns bool {
+    let canonical = codec.normalize_entries(changes)
+    if not index_entries_valid(canonical) {
+        return false
+    }
+    return safe_write(INDEX, canonical)
+}
+
+public func index_entries_valid(changes: string) returns bool {
+    let canonical = codec.normalize_entries(changes)
+    return validate_entries(canonical, true)
+}
+
+public func read_commit_payload(id: string) returns string {
+    let object = read_object(id)
+    if not object.valid or object.kind != "commit" {
+        return ""
+    }
+    let tree      = codec.field_value(object.payload, "tree")
+    let time_text = codec.field_value(object.payload, "time")
+    let message   = codec.decode_field(codec.field_value(object.payload, "message"))
+    if tree == "" or convert.string_to_int_or(time_text, -1) < 0 or message == "" or not validate_tree(tree) {
+        return ""
+    }
+    let parent = codec.field_value(object.payload, "parent")
+    if parent != "" {
+        let parent_object = read_object(parent)
+        if not parent_object.valid or parent_object.kind != "commit" {
+            return ""
+        }
+    }
+    return object.payload
+}
+
+public func commit_valid(id: string) returns bool {
+    return read_commit_payload(id) != ""
+}
+
+public func current_tree() returns string {
+    let tip = branch_tip(current_branch())
+    if tip == "" {
+        return ""
+    }
+    let payload = read_commit_payload(tip)
+    if payload == "" {
+        return CORRUPT
+    }
+    return read_tree(codec.field_value(payload, "tree"))
+}
+
+public func store_commit(parent: string, tree: string, author: string, timestamp: int, message: string) returns string {
+    if not validate_tree(tree) or timestamp < 0 or string.trim(message) == "" {
+        return ""
+    }
+    if parent != "" and not commit_valid(parent) {
+        return ""
+    }
+    return write_object("commit", codec.serialize_commit(parent, tree, author, timestamp, message))
+}
+
+public func current_state_valid() returns bool {
+    let branch = current_branch()
+    if not branch_exists(branch) or not path_exists(INDEX) or not index_valid() {
+        return false
+    }
+    let tip = branch_tip(branch)
+    if tip == "" {
+        return true
+    }
+    return commit_valid(tip)
+}
+
+public func author_name() returns string {
+    let configured = env.env_get("SPECTRAGIT_AUTHOR")
+    if option.is_some(configured) {
+        let value = string.trim(option.option_unwrap(configured))
+        if value != "" {
+            return value
+        }
+    }
+    let username = env.env_get("USERNAME")
+    if option.is_some(username) {
+        return option.option_unwrap(username)
+    }
+    let user = env.env_get("USER")
+    if option.is_some(user) {
+        return option.option_unwrap(user)
+    }
+    return "desconhecido"
+}
+
+public func snapshot_path(name: string) returns string {
+    if not paths.valid_name(name) {
+        return ""
+    }
+    return SNAPSHOTS + "/" + name
+}
+
+public func list_snapshots() returns List<string> {
+    let names: List<string> = collections.list_new()
+    let listed              = fs.read_dir(SNAPSHOTS)
+    if result.is_err(listed) {
+        return names
+    }
+    let entries = result.result_unwrap(listed)
+    for name in entries {
+        collections.list_push(names, name)
+    }
+    collections.list_free(entries)
+    collections.list_sort(names)
+    return names
+}
+
+public func snapshot_tree(name: string) returns string {
+    let path = snapshot_path(name)
+    if path == "" or not path_exists(path) {
+        return ""
+    }
+    return string.trim(read_text(path))
+}
+
+public func write_snapshot(name: string, tree: string) returns bool {
+    let path = snapshot_path(name)
+    if path == "" or path_exists(path) or not validate_tree(tree) {
+        return false
+    }
+    return safe_write(path, tree)
+}

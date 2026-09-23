@@ -634,6 +634,109 @@ mod tests {
     }
 
     #[test]
+    fn list_sort_lowering_passes_the_concrete_element_kind() {
+        let ir = lower_source(
+            r#"
+            module typed_list_sort_tags
+
+            from std.collections import List
+            import std.collections as collections
+
+            func sort_all() returns int {
+                let words: List<string> = collections.list_new()
+                let integers: List<int> = collections.list_new()
+                let unsigned: List<u8> = collections.list_new()
+                let fractions: List<f32> = collections.list_new()
+                let signed_narrow: List<i8> = collections.list_new()
+                let unsigned_wide: List<u64> = collections.list_new()
+                collections.list_sort(words)
+                collections.list_sort(integers)
+                collections.list_sort(unsigned)
+                collections.list_sort(fractions)
+                collections.list_sort(signed_narrow)
+                collections.list_sort(unsigned_wide)
+                return 0
+            }
+            "#,
+        );
+
+        let function = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "sort_all")
+            .expect("sort_all function should be lowered");
+        let mut constants = std::collections::HashMap::new();
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                if let crate::ir::InstructionKind::ConstInt { result, value } = &instruction.kind {
+                    constants.insert(result.id, *value);
+                }
+            }
+        }
+
+        let mut kinds = Vec::new();
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                let crate::ir::InstructionKind::HostCall { host, args, .. } = &instruction.kind
+                else {
+                    continue;
+                };
+                if host != "spectra.std.collections.list_sort" {
+                    continue;
+                }
+                assert_eq!(args.len(), 2, "typed list_sort needs its hidden kind tag");
+                kinds.push(
+                    constants
+                        .get(&args[1].id)
+                        .copied()
+                        .expect("list_sort kind must be an integer constant"),
+                );
+            }
+        }
+        assert_eq!(
+            kinds,
+            vec![
+                spectra_contract::collection_sort::STRING,
+                spectra_contract::collection_sort::INT,
+                spectra_contract::collection_sort::UNSIGNED_EXACT_BASE + 8,
+                spectra_contract::collection_sort::FLOAT,
+                spectra_contract::collection_sort::SIGNED_EXACT_BASE + 8,
+                spectra_contract::collection_sort::UNSIGNED_EXACT_BASE + 64,
+            ]
+        );
+    }
+
+    #[test]
+    fn list_sort_rejects_unordered_aggregate_elements() {
+        let source = r#"
+            module unordered_list_sort
+
+            from std.collections import List
+            import std.collections as collections
+
+            record Key {
+                value: int,
+            }
+
+            func sort_all() returns int {
+                let keys: List<Key> = collections.list_new()
+                collections.list_sort(keys)
+                return 0
+            }
+            "#;
+        let tokens = Lexer::new(source).tokenize().expect("lexing should pass");
+        let mut module = Parser::new(tokens).parse().expect("parsing should pass");
+        analyze_modules(&mut [&mut module]).expect("semantic analysis should pass");
+        let error = ASTLowering::new()
+            .lower_module(&module)
+            .expect_err("aggregate sorting has no implicit ordering");
+        assert!(
+            format!("{error:?}").contains("std.collections.list_sort supports only"),
+            "unexpected lowering diagnostic: {error:?}"
+        );
+    }
+
+    #[test]
     fn scalar_map_calls_use_allocation_table_free_fast_variants() {
         let ir = lower_source(
             r#"

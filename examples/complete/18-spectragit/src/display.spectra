@@ -1,0 +1,503 @@
+module display
+
+from std.collections import List
+import std.collections as collections
+import std.convert as convert
+import std.io as io
+import std.option as option
+import std.string as string
+import codec
+import repo
+import worktree
+
+public record LineCounts {
+    added: int,
+    removed: int,
+}
+
+public func add_paths(entries: string, paths: List<string>) returns int {
+    let count = codec.entry_count(entries)
+    let i     = 0
+    while i < count {
+        let path = codec.entry_path(codec.row_at(entries, i))
+        if path != "" and not collections.list_contains(paths, path) {
+            collections.list_push(paths, path)
+        }
+        i = i + 1
+    }
+    return collections.list_len(paths)
+}
+
+public func union_paths(first: string, second: string, third: string) returns List<string> {
+    let paths: List<string> = collections.list_new()
+    add_paths(first, paths)
+    add_paths(second, paths)
+    add_paths(third, paths)
+    collections.list_sort(paths)
+    return paths
+}
+
+public func display_blob_for(entries: string, path: string) returns string {
+    return codec.blob_for(entries, path)
+}
+
+public func change_code(before: string, after: string) returns string {
+    if before == after {
+        return ""
+    }
+    if before == "" {
+        return "A"
+    }
+    if after == "" {
+        return "D"
+    }
+    return "M"
+}
+
+public func change_label(code: string) returns string {
+    if code == "A" {
+        return "adicionado"
+    }
+    if code == "D" {
+        return "removido"
+    }
+    if code == "M" {
+        return "modificado"
+    }
+    return ""
+}
+
+public func show_status() returns bool {
+    if not repo.current_state_valid() {
+        io.eprintln("erro: HEAD, índice, branch ou objetos do repositório estão ausentes ou corrompidos")
+        return false
+    }
+    let head   = repo.current_tree()
+    let staged = repo.read_index()
+    if repo.is_error_value(head) or repo.is_error_value(staged) {
+        io.eprintln("erro: tree ou índice corrompido")
+        return false
+    }
+    let index_tree = repo.apply_tree_changes(head, staged)
+    if repo.is_error_value(index_tree) {
+        io.eprintln("erro: staging incompatível com o snapshot atual")
+        return false
+    }
+    let working = worktree.scan_all( false)
+    if repo.is_error_value(working) {
+        return false
+    }
+    let all_paths = union_paths(head, index_tree, working)
+    io.println("Na branch " + repo.current_branch())
+    io.println("Alterações staged:")
+    let staged_count    = 0
+    let unstaged_count  = 0
+    let untracked_count = 0
+    for path in all_paths {
+        let code = change_code(display_blob_for(head, path), display_blob_for(index_tree, path))
+        if code != "" {
+            io.println("  " + code + " " + path)
+            staged_count = staged_count + 1
+        }
+    }
+    io.println("Alterações fora do staging:")
+    for path in all_paths {
+        let before = display_blob_for(index_tree, path)
+        let after  = display_blob_for(working, path)
+        let code   = change_code(before, after)
+        if code != "" and not(display_blob_for(head, path) == "" and before == "" and after != "") {
+            io.println("  " + code + " " + path)
+            unstaged_count = unstaged_count + 1
+        }
+    }
+    io.println("Não rastreados:")
+    for path in all_paths {
+        if display_blob_for(head, path) == "" and display_blob_for(index_tree, path) == "" and display_blob_for(working, path) != "" {
+            io.println("  ? " + path)
+            untracked_count = untracked_count + 1
+        }
+    }
+    if staged_count == 0 and unstaged_count == 0 and untracked_count == 0 {
+        io.println("árvore de trabalho limpa")
+    }
+    collections.list_free(all_paths)
+    return true
+}
+
+public func worktree_is_clean() returns bool {
+    if not repo.current_state_valid() {
+        return false
+    }
+    let head   = repo.current_tree()
+    let staged = repo.read_index()
+    if repo.is_error_value(head) or repo.is_error_value(staged) or staged != "" {
+        return false
+    }
+    let working = worktree.scan_all( false)
+    if repo.is_error_value(working) {
+        return false
+    }
+    let count = codec.entry_count(head)
+    let i     = 0
+    while i < count {
+        let path = codec.entry_path(codec.row_at(head, i))
+        if codec.blob_for(head, path) != codec.blob_for(working, path) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+public func line_counts(old_text: string, new_text: string) returns LineCounts {
+    if old_text == new_text {
+        return LineCounts { added: 0, removed: 0 }
+    }
+    let old_lines = string.replace(old_text, "\r\n", "\n")
+    let new_lines = string.replace(new_text, "\r\n", "\n")
+    let old_parts = string.split_by(old_lines, "\n")
+    let new_parts = string.split_by(new_lines, "\n")
+    let old_len   = collections.list_len(old_parts)
+    let new_len   = collections.list_len(new_parts)
+    if string.ends_with(old_lines, "\n") and old_len > 0 {
+        old_len = old_len - 1
+    }
+    if string.ends_with(new_lines, "\n") and new_len > 0 {
+        new_len = new_len - 1
+    }
+    let prefix = 0
+    while prefix < old_len and prefix < new_len {
+        let old_line = option.option_unwrap(collections.list_get_option(old_parts, prefix))
+        let new_line = option.option_unwrap(collections.list_get_option(new_parts, prefix))
+        if old_line != new_line {
+            break
+        }
+        prefix = prefix + 1
+    }
+    let suffix = 0
+    while suffix < old_len - prefix and suffix < new_len - prefix {
+        let old_index = old_len - 1 - suffix
+        let new_index = new_len - 1 - suffix
+        let old_line  = option.option_unwrap(collections.list_get_option(old_parts, old_index))
+        let new_line  = option.option_unwrap(collections.list_get_option(new_parts, new_index))
+        if old_line != new_line {
+            break
+        }
+        suffix = suffix + 1
+    }
+    let counts = LineCounts { added: new_len - prefix - suffix, removed: old_len - prefix - suffix }
+    collections.list_free(old_parts)
+    collections.list_free(new_parts)
+    return counts
+}
+
+public func test_line_counts() returns bool {
+    let inserted = line_counts("alpha\nbeta\n", "alpha\ngamma\nbeta\n")
+    if inserted.added != 1 or inserted.removed != 0 {
+        io.eprintln("self-test 9 falhou: contagem de linha inserida")
+        return false
+    }
+    let deleted = line_counts("alpha\ngamma\nbeta\n", "alpha\nbeta\n")
+    if deleted.added != 0 or deleted.removed != 1 {
+        io.eprintln("self-test 10 falhou: contagem de linha removida")
+        return false
+    }
+    let replaced = line_counts("alpha\nbeta\n", "alpha\ncharlie\n")
+    if replaced.added != 1 or replaced.removed != 1 {
+        io.eprintln("self-test 11 falhou: contagem de linha substituída")
+        return false
+    }
+    return true
+}
+
+public func print_line_patch(path: string, old_text: string, new_text: string) returns LineCounts {
+    let normalized_old = string.replace(old_text, "\r\n", "\n")
+    let normalized_new = string.replace(new_text, "\r\n", "\n")
+    let counts         = line_counts(normalized_old, normalized_new)
+    let old_label      = "a/" + path
+    let new_label      = "b/" + path
+    if old_text == "" {
+        old_label = "/dev/null"
+    }
+    if new_text == "" {
+        new_label = "/dev/null"
+    }
+    io.println("--- " + old_label)
+    io.println("+++ " + new_label)
+    if old_text == new_text {
+        return counts
+    }
+    let old_parts = string.split_by(normalized_old, "\n")
+    let new_parts = string.split_by(normalized_new, "\n")
+    let old_len   = collections.list_len(old_parts)
+    let new_len   = collections.list_len(new_parts)
+    if string.ends_with(normalized_old, "\n") and old_len > 0 {
+        old_len = old_len - 1
+    }
+    if string.ends_with(normalized_new, "\n") and new_len > 0 {
+        new_len = new_len - 1
+    }
+    let prefix = 0
+    while prefix < old_len and prefix < new_len {
+        if option.option_unwrap(collections.list_get_option(old_parts, prefix)) != option.option_unwrap(collections.list_get_option(new_parts, prefix)) {
+            break
+        }
+        prefix = prefix + 1
+    }
+    let suffix = 0
+    while suffix < old_len - prefix and suffix < new_len - prefix {
+        if option.option_unwrap(collections.list_get_option(old_parts, old_len - 1 - suffix)) != option.option_unwrap(collections.list_get_option(new_parts, new_len - 1 - suffix)) {
+            break
+        }
+        suffix = suffix + 1
+    }
+    let i = prefix
+    while i < old_len - suffix {
+        io.println("- " + option.option_unwrap(collections.list_get_option(old_parts, i)))
+        i = i + 1
+    }
+    let j = prefix
+    while j < new_len - suffix {
+        io.println("+ " + option.option_unwrap(collections.list_get_option(new_parts, j)))
+        j = j + 1
+    }
+    collections.list_free(old_parts)
+    collections.list_free(new_parts)
+    return counts
+}
+
+public func diff_worktree(staged_only: bool) returns bool {
+    if not repo.current_state_valid() {
+        io.eprintln("erro: objetos do repositório estão ausentes ou corrompidos")
+        return false
+    }
+    let head        = repo.current_tree()
+    let changes     = repo.read_index()
+    let staged_tree = repo.apply_tree_changes(head, changes)
+    let left        = head
+    let right       = ""
+    if staged_only {
+        right = staged_tree
+    } else {
+        left = staged_tree
+        right = worktree.scan_all( false)
+    }
+    if repo.is_error_value(right) or repo.is_error_value(staged_tree) {
+        io.eprintln("erro: não foi possível calcular o diff")
+        return false
+    }
+    let paths = union_paths(left, right, right)
+    let total = 0
+    for path in paths {
+        let old_id = display_blob_for(left, path)
+        let new_id = display_blob_for(right, path)
+        if old_id != new_id and(staged_only or old_id != "" or display_blob_for(head, path) != "") {
+            io.println("diff " + change_label(change_code(old_id, new_id)) + ": " + path)
+            let old_text = ""
+            let new_text = ""
+            if old_id != "" {
+                old_text = repo.read_blob(old_id)
+            }
+            if new_id != "" {
+                if staged_only {
+                    new_text = repo.read_blob(new_id)
+                } else {
+                    let loaded_text = worktree.read_live_file(path)
+                    if worktree.live_file_read_failed(loaded_text) {
+                        io.eprintln("erro: não foi possível ler " + path + " para o diff")
+                        return false
+                    }
+                    new_text = worktree.live_file_content(loaded_text)
+                }
+            }
+            print_line_patch(path, old_text, new_text)
+            total = total + 1
+        }
+    }
+    if total == 0 {
+        io.println("Nenhuma diferença.")
+    }
+    collections.list_free(paths)
+    return true
+}
+
+public func print_commit(id: string, payload: string) returns int {
+    io.println("commit " + id)
+    io.println("Autor: " + codec.decode_field(codec.field_value(payload, "author")))
+    io.println("Data Unix: " + codec.field_value(payload, "time"))
+    io.println("    " + codec.decode_field(codec.field_value(payload, "message")))
+    io.println("")
+    return 0
+}
+
+public func log_history() returns bool {
+    if not repo.current_state_valid() {
+        io.eprintln("erro: histórico ausente ou corrompido")
+        return false
+    }
+    let id = repo.branch_tip(repo.current_branch())
+    if id == "" {
+        io.println("Nenhum commit nesta branch.")
+        return true
+    }
+    let seen: List<string> = collections.list_new()
+    while id != "" {
+        if collections.list_contains(seen, id) {
+            io.eprintln("erro: ciclo encontrado no histórico em " + id)
+            collections.list_free(seen)
+            return false
+        }
+        collections.list_push(seen, id)
+        let payload = repo.read_commit_payload(id)
+        if payload == "" {
+            io.eprintln("erro: commit corrompido ou ausente: " + id)
+            collections.list_free(seen)
+            return false
+        }
+        print_commit(id, payload)
+        id = codec.field_value(payload, "parent")
+    }
+    collections.list_free(seen)
+    return true
+}
+
+public func timeline() returns bool {
+    if not repo.current_state_valid() {
+        io.eprintln("erro: branches ou histórico ausentes ou corrompidos")
+        return false
+    }
+    let names   = repo.list_branches()
+    let current = repo.current_branch()
+    io.println("Branches:")
+    for name in names {
+        let marker = if name == current { "* "} else { "  "}
+        let tip    = repo.branch_tip(name)
+        if tip == "" {
+            io.println(marker + name + " -> (sem commits)")
+        } else {
+            let payload = repo.read_commit_payload(tip)
+            if payload == "" {
+                io.println(marker + name + " -> [commit corrompido: " + tip + "]")
+            } else {
+                io.println(marker + name + " -> " + tip + " " + codec.decode_field(codec.field_value(payload, "message")))
+            }
+        }
+    }
+    let id = repo.branch_tip(current)
+    io.println("Histórico de " + current + ":")
+    let seen: List<string> = collections.list_new()
+    while id != "" and not collections.list_contains(seen, id) {
+        collections.list_push(seen, id)
+        let payload = repo.read_commit_payload(id)
+        if payload == "" {
+            break
+        }
+        io.println("  o " + id + " " + codec.decode_field(codec.field_value(payload, "message")))
+        id = codec.field_value(payload, "parent")
+    }
+    collections.list_free(seen)
+    collections.list_free(names)
+    return true
+}
+
+public func inspect_object(id: string) returns bool {
+    let kind = repo.object_kind(id)
+    if kind == "" {
+        io.eprintln("erro: objeto inexistente ou corrompido: " + id)
+        return false
+    }
+    let payload = repo.object_payload(id)
+    io.println("Objeto " + id)
+    io.println("Tipo: " + kind)
+    if kind == "blob" {
+        io.println("Tamanho: " + convert.int_to_string(string.len(payload)) + " bytes")
+        io.println("Conteúdo:")
+        io.println(payload)
+        return true
+    }
+    if kind == "tree" {
+        if not repo.validate_tree(id) {
+            io.eprintln("erro: tree inválida")
+            return false
+        }
+        let count = codec.entry_count(payload)
+        let i     = 0
+        while i < count {
+            let row = codec.row_at(payload, i)
+            io.println("  " + codec.entry_blob(row) + " " + codec.entry_path(row))
+            i = i + 1
+        }
+        return true
+    }
+    if kind == "commit" {
+        if not repo.commit_valid(id) {
+            io.eprintln("erro: commit inválido")
+            return false
+        }
+        io.println("Tree: " + codec.field_value(payload, "tree"))
+        io.println("Pai: " + codec.field_value(payload, "parent"))
+        io.println("Autor: " + codec.decode_field(codec.field_value(payload, "author")))
+        io.println("Data Unix: " + codec.field_value(payload, "time"))
+        io.println("Mensagem: " + codec.decode_field(codec.field_value(payload, "message")))
+        return true
+    }
+    io.eprintln("erro: tipo de objeto desconhecido")
+    return false
+}
+
+public func explain_commit(id: string) returns bool {
+    let payload = repo.read_commit_payload(id)
+    if payload == "" {
+        io.eprintln("erro: commit inexistente ou corrompido: " + id)
+        return false
+    }
+    let newer     = repo.read_tree(codec.field_value(payload, "tree"))
+    let older     = ""
+    let parent_id = codec.field_value(payload, "parent")
+    if parent_id != "" {
+        let parent_payload = repo.read_commit_payload(parent_id)
+        if parent_payload == "" {
+            io.eprintln("erro: commit pai corrompido: " + parent_id)
+            return false
+        }
+        older = repo.read_tree(codec.field_value(parent_payload, "tree"))
+    }
+    let paths         = union_paths(older, newer, newer)
+    let added         = 0
+    let removed       = 0
+    let modified      = 0
+    let lines_added   = 0
+    let lines_removed = 0
+    for path in paths {
+        let old_id = display_blob_for(older, path)
+        let new_id = display_blob_for(newer, path)
+        if old_id != new_id {
+            let old_text = ""
+            let new_text = ""
+            if old_id != "" {
+                old_text = repo.read_blob(old_id)
+            }
+            if new_id != "" {
+                new_text = repo.read_blob(new_id)
+            }
+            let counts = line_counts(old_text, new_text)
+            lines_added = lines_added + counts.added
+            lines_removed = lines_removed + counts.removed
+            if old_id == "" {
+                added = added + 1
+                io.println("  + " + path)
+            } else if new_id == "" {
+                removed = removed + 1
+                io.println("  - " + path)
+            } else {
+                modified = modified + 1
+                io.println("  ~ " + path)
+            }
+        }
+    }
+    io.println("Commit " + id)
+    io.println("Arquivos: " + convert.int_to_string(added + removed + modified) + " (" + convert.int_to_string(added) + " adicionados, " + convert.int_to_string(removed) + " removidos, " + convert.int_to_string(modified) + " modificados)")
+    io.println("Linhas aproximadas: +" + convert.int_to_string(lines_added) + " -" + convert.int_to_string(lines_removed))
+    collections.list_free(paths)
+    return true
+}

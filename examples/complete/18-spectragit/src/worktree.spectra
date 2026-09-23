@@ -1,0 +1,167 @@
+module worktree
+
+from std.collections import List
+import std.collections as collections
+import std.fs as fs
+import std.io as io
+import std.option as option
+import std.result as result
+import std.string as string
+import codec
+import paths
+import repo
+
+const SCAN_ERROR = "\t!SG_SCAN_ERROR!"
+const LIVE_CONTENT = "\t!SG_LIVE_OK!"
+
+public func scan_into(disk_path: string, relative_path: string, depth: int, persist_blobs: bool) returns string {
+    if depth > 64 {
+        io.eprintln("erro: a varredura excedeu 64 níveis; verifique diretórios cíclicos")
+        return SCAN_ERROR
+    }
+    let listed = fs.read_dir(disk_path)
+    if result.is_ok(listed) {
+        let names  = result.result_unwrap(listed)
+        let output = ""
+        for name in names {
+            if not(relative_path == "" and name == ".spectragit") {
+                let child_disk     = disk_path + "/" + name
+                let child_relative = if relative_path ==
+                    "" { name} else { relative_path + "/" + name}
+                let child_data = scan_into(child_disk, child_relative, depth + 1, persist_blobs)
+                if string.starts_with(child_data, SCAN_ERROR) {
+                    collections.list_free(names)
+                    return SCAN_ERROR
+                }
+                output = output + child_data
+            }
+        }
+        collections.list_free(names)
+        return output
+    }
+
+    if not repo.path_exists(disk_path) {
+        return ""
+    }
+    let loaded = fs.fs_read(disk_path)
+    if result.is_err(loaded) {
+        io.eprintln("erro: não foi possível ler " + relative_path)
+        return SCAN_ERROR
+    }
+    let content = result.result_unwrap(loaded)
+    let blob    = codec.object_id("blob", content)
+    if persist_blobs {
+        let stored = repo.write_blob(content)
+        if stored == "" or stored != blob {
+            io.eprintln("erro: não foi possível armazenar o conteúdo de " + relative_path)
+            return SCAN_ERROR
+        }
+    }
+    return codec.serialize_entry(relative_path, blob)
+}
+
+public func scan_all(persist_blobs: bool) returns string {
+    let result_text = scan_into(".", "", 0, persist_blobs)
+    if string.starts_with(result_text, SCAN_ERROR) {
+        return SCAN_ERROR
+    }
+    return codec.normalize_entries(result_text)
+}
+
+public func read_live_file(path: string) returns string {
+    let loaded = fs.fs_read(path)
+    if result.is_err(loaded) {
+        return SCAN_ERROR
+    }
+    return LIVE_CONTENT + result.result_unwrap(loaded)
+}
+
+public func live_file_read_failed(value: string) returns bool {
+    return string.starts_with(value, SCAN_ERROR)
+}
+
+public func live_file_content(value: string) returns string {
+    if not string.starts_with(value, LIVE_CONTENT) {
+        return ""
+    }
+    return string.substring(value, string.len(LIVE_CONTENT), string.len(value))
+}
+
+public func stage_scope(scope_value: string) returns bool {
+    let scope = paths.normalize(scope_value)
+    if scope == "" {
+        io.eprintln("erro: caminho inválido ou fora do repositório: " + scope_value)
+        return false
+    }
+    if not repo.current_state_valid() {
+        io.eprintln("erro: repositório, índice ou objetos corrompidos")
+        return false
+    }
+    let head    = repo.current_tree()
+    let changes = repo.read_index()
+    if repo.is_error_value(head) or repo.is_error_value(changes) {
+        io.eprintln("erro: tree ou índice corrompido")
+        return false
+    }
+    let exists  = scope == "." or repo.path_exists(scope)
+    let scanned = ""
+    if exists {
+        if scope == "." {
+            scanned = scan_all( true)
+        } else {
+            scanned = scan_into(scope, scope, 0, true)
+        }
+        if string.starts_with(scanned, SCAN_ERROR) {
+            io.eprintln("erro: a varredura falhou; o staging não foi alterado")
+            return false
+        }
+    }
+    let known = exists or codec.has_scope(head, scope) or codec.has_scope(changes, scope)
+    if not known {
+        io.eprintln("erro: caminho inexistente e sem arquivos versionados: " + scope)
+        return false
+    }
+    let updated    = codec.remove_scope(changes, scope)
+    let head_count = codec.entry_count(head)
+    let i          = 0
+    while i < head_count {
+        let path = codec.entry_path(codec.row_at(head, i))
+        if paths.in_scope(path, scope) and codec.blob_for(scanned, path) == "" {
+            updated = codec.set_entry(updated, path, "-")
+        }
+        i = i + 1
+    }
+    let scan_count = codec.entry_count(scanned)
+    let j          = 0
+    while j < scan_count {
+        let row  = codec.row_at(scanned, j)
+        let path = codec.entry_path(row)
+        let blob = codec.entry_blob(row)
+        if paths.in_scope(path, scope) and codec.blob_for(head, path) != blob {
+            updated = codec.set_entry(updated, path, blob)
+        }
+        j = j + 1
+    }
+    let saved = repo.write_index(codec.normalize_entries(updated))
+    if not saved {
+        io.eprintln("erro: staging inválido ou impossível de persistir")
+        return false
+    }
+    return true
+}
+
+public func stage_paths(values: List<string>) returns bool {
+    if collections.list_len(values) == 0 {
+        io.eprintln("erro: informe ao menos um caminho para adicionar")
+        return false
+    }
+    let i = 0
+    while i < collections.list_len(values) {
+        let path = option.option_unwrap(collections.list_get_option(values, i))
+        if not stage_scope(path) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}

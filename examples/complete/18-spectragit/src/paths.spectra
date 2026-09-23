@@ -1,0 +1,75 @@
+module paths
+
+import std.string as string
+
+public func normalize(value: string) returns string {
+    let path = string.replace(value, "\\", "/")
+    if path == "" or string.starts_with(path, "/") or string.contains(path, ":") {
+        return ""
+    }
+    if string.contains(path, "\n") or string.contains(path, "\r") or string.contains(path, "\t") {
+        return ""
+    }
+    let normalized = ""
+    let remaining  = path
+    while string.len(remaining) > 0 {
+        let separator = string.index_of(remaining, "/")
+        let component = ""
+        if separator < 0 {
+            component = remaining
+            remaining = ""
+        } else {
+            component = string.substring(remaining, 0, separator)
+            remaining = string.substring(remaining, separator + 1, string.len(remaining))
+        }
+        if component == ".." {
+            return ""
+        }
+        if component != "" and component != "." {
+            if normalized == "" {
+                normalized = component
+            } else {
+                normalized = normalized + "/" + component
+            }
+        }
+    }
+    if normalized == "" {
+        return "."
+    }
+    if normalized == ".spectragit" or string.starts_with(normalized, ".spectragit/") {
+        return ""
+    }
+    return normalized
+}
+
+public func is_safe_file(value: string) returns bool {
+    let path = normalize(value)
+    return path != "" and path != "."
+}
+
+public func valid_name(value: string) returns bool {
+    let length = string.len(value)
+    if length < 1 or length > 64 or value == "." or value == ".." {
+        return false
+    }
+    let index     = 0
+    let codepoint = string.char_at(value, index)
+    while codepoint >= 0 {
+        let letter = (codepoint >= 65 and codepoint <= 90) or(codepoint >= 97 and codepoint <= 122)
+        let digit = codepoint >= 48 and codepoint <= 57
+        let punctuation = codepoint == 45 or codepoint == 95 or codepoint == 46
+        if not letter and not digit and not punctuation {
+            return false
+        }
+        index = index + 1
+        codepoint = string.char_at(value, index)
+    }
+    return true
+}
+
+public func in_scope(path: string, scope: string) returns bool {
+    if scope == "." or scope == "" {
+        return true
+    }
+    return path == scope or string.starts_with(path, scope + "/")
+}

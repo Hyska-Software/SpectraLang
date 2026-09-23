@@ -1,0 +1,124 @@
+module main
+
+import std.collections as collections
+import std.io as io
+from arguments import Command
+import arguments
+import display
+import operations
+import repo
+import self_tests
+import worktree
+
+public func main() returns int {
+    let command = arguments.parse()
+    if not command.valid {
+        io.eprintln("erro: " + command.error)
+        print_usage()
+        collections.list_free(command.paths)
+        return 64
+    }
+    if command.name == "help" or command.name == "--help" or command.name == "-h" {
+        print_usage()
+        collections.list_free(command.paths)
+        return 0
+    }
+    if command.name == "init" {
+        let ok = operations.initialize()
+        collections.list_free(command.paths)
+        if ok {
+            return 0
+        }
+        return 1
+    }
+    if command.name == "self-test" {
+        let ok = self_tests.run()
+        collections.list_free(command.paths)
+        if ok {
+            return 0
+        }
+        return 1
+    }
+    if not repo.ready() {
+        io.eprintln("erro: repositório ausente, incompleto ou incompatível; execute spectragit init em um diretório novo")
+        collections.list_free(command.paths)
+        return 1
+    }
+    let ok = dispatch(command)
+    collections.list_free(command.paths)
+    if ok {
+        return 0
+    }
+    return 1
+}
+
+public func dispatch(command: Command) returns bool {
+    if command.name == "status" {
+        return display.show_status()
+    }
+    if command.name == "add" {
+        let ok = worktree.stage_paths(command.paths)
+        if ok {
+            io.println("Caminhos adicionados ao staging.")
+        }
+        return ok
+    }
+    if command.name == "commit" {
+        return operations.create_commit(command.message)
+    }
+    if command.name == "log" {
+        return display.log_history()
+    }
+    if command.name == "diff" {
+        return display.diff_worktree(command.staged_only)
+    }
+    if command.name == "branch" {
+        return operations.branch_command(command.first)
+    }
+    if command.name == "checkout" {
+        return operations.checkout(command.first)
+    }
+    if command.name == "restore" {
+        return operations.restore_path(command.first, command.second)
+    }
+    if command.name == "explain" {
+        return display.explain_commit(command.first)
+    }
+    if command.name == "timeline" {
+        return display.timeline()
+    }
+    if command.name == "inspect" {
+        return display.inspect_object(command.first)
+    }
+    if command.name == "snapshot" {
+        if command.first == "create" {
+            return operations.create_snapshot(command.second)
+        }
+        if command.first == "list" {
+            return operations.show_snapshots()
+        }
+        return operations.restore_snapshot(command.second)
+    }
+    return false
+}
+
+public func print_usage() returns int {
+    io.println("spectragit — versionador local escrito em SpectraLang")
+    io.println("")
+    io.println("Uso:")
+    io.println("  spectragit init")
+    io.println("  spectragit status")
+    io.println("  spectragit add <arquivo|diretório|.>")
+    io.println("  spectragit commit -m <mensagem>")
+    io.println("  spectragit log")
+    io.println("  spectragit diff [--staged]")
+    io.println("  spectragit branch [nome]")
+    io.println("  spectragit checkout <branch>")
+    io.println("  spectragit restore <arquivo> [--source <commit>]")
+    io.println("  spectragit explain <commit>")
+    io.println("  spectragit timeline")
+    io.println("  spectragit snapshot <create|list|restore> [nome]")
+    io.println("  spectragit inspect <hash>")
+    io.println("  spectragit self-test  (hash, caminhos, serialização, ordenação e diff por linhas)")
+    return 0
+}

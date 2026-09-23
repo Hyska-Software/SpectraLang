@@ -1,0 +1,367 @@
+module operations
+
+from std.collections import List
+import std.collections as collections
+import std.convert as convert
+import std.fs as fs
+import std.io as io
+import std.option as option
+import std.result as result
+import std.string as string
+import std.time as time
+import codec
+import display
+import paths
+import repo
+import worktree
+
+public func initialize() returns bool {
+    if repo.path_exists(".spectragit") {
+        io.eprintln("erro: este diretório já contém .spectragit")
+        return false
+    }
+    if not repo.init_repo() {
+        io.eprintln("erro: não foi possível inicializar o repositório")
+        return false
+    }
+    io.println("Repositório spectragit inicializado na branch main.")
+    return true
+}
+
+public func create_commit(message: string) returns bool {
+    if not repo.current_state_valid() {
+        io.eprintln("erro: repositório ou histórico corrompido")
+        return false
+    }
+    let clean_message = string.trim(message)
+    if clean_message == "" {
+        io.eprintln("erro: a mensagem do commit não pode ficar vazia")
+        return false
+    }
+    let staged = repo.read_index()
+    let head   = repo.current_tree()
+    if repo.is_error_value(staged) or repo.is_error_value(head) {
+        io.eprintln("erro: índice ou snapshot corrompido")
+        return false
+    }
+    if codec.entry_count(staged) == 0 {
+        io.eprintln("erro: staging vazio; use spectragit add antes do commit")
+        return false
+    }
+    let next = repo.apply_tree_changes(head, staged)
+    if repo.is_error_value(next) {
+        io.eprintln("erro: staging incompatível com o snapshot atual")
+        return false
+    }
+    if next == head {
+        io.eprintln("erro: não há alterações staged para criar um commit")
+        return false
+    }
+    let tree_id = repo.write_tree(next)
+    if tree_id == "" {
+        io.eprintln("erro: não foi possível gravar a tree")
+        return false
+    }
+    let timestamp = time.time_now_secs()
+    if timestamp < 0 {
+        io.eprintln("erro: o relógio do sistema não forneceu um horário válido")
+        return false
+    }
+    let parent    = repo.branch_tip(repo.current_branch())
+    let commit_id = repo.store_commit(parent, tree_id, repo.author_name(), timestamp, clean_message)
+    if commit_id == "" {
+        io.eprintln("erro: não foi possível gravar o commit")
+        return false
+    }
+    if not repo.write_branch_tip(repo.current_branch(), commit_id) {
+        io.eprintln("erro: o commit foi gravado, mas a referência da branch não foi atualizada")
+        return false
+    }
+    if not repo.write_index("") {
+        io.eprintln("aviso: commit criado, mas o staging não pôde ser limpo")
+    }
+    io.println("[" + repo.current_branch() + " " + commit_id + "] " + clean_message)
+    return true
+}
+
+public func branch_command(name: string) returns bool {
+    if name == "" {
+        let branches = repo.list_branches()
+        let current  = repo.current_branch()
+        for branch in branches {
+            let mark = if branch == current { "* "} else { "  "}
+            let tip  = repo.branch_tip(branch)
+            if tip == "" {
+                io.println(mark + branch + " (sem commits)")
+            } else {
+                io.println(mark + branch + " " + tip)
+            }
+        }
+        collections.list_free(branches)
+        return true
+    }
+    if not paths.valid_name(name) {
+        io.eprintln("erro: nome de branch inválido: " + name)
+        return false
+    }
+    if repo.branch_exists(name) {
+        io.eprintln("erro: a branch já existe: " + name)
+        return false
+    }
+    if not repo.create_branch(name) {
+        io.eprintln("erro: não foi possível criar a branch " + name)
+        return false
+    }
+    io.println("Branch criada: " + name)
+    return true
+}
+
+public func write_file_from_blob(path: string, blob: string) returns bool {
+    if not paths.is_safe_file(path) or repo.object_kind(blob) != "blob" {
+        return false
+    }
+    return repo.safe_write(path, repo.object_payload(blob))
+}
+
+public func replace_tree(source: string, target: string) returns bool {
+    let source_count = codec.entry_count(source)
+    let i            = 0
+    while i < source_count {
+        let old_row  = codec.row_at(source, i)
+        let old_path = codec.entry_path(old_row)
+        if codec.blob_for(target, old_path) == "" and repo.path_exists(old_path) {
+            let removed = fs.fs_remove(old_path)
+            if result.is_err(removed) {
+                return false
+            }
+        }
+        i = i + 1
+    }
+    let target_count = codec.entry_count(target)
+    let j            = 0
+    while j < target_count {
+        let row = codec.row_at(target, j)
+        if not write_file_from_blob(codec.entry_path(row), codec.entry_blob(row)) {
+            return false
+        }
+        j = j + 1
+    }
+    return true
+}
+
+public func replacement_preserves_untracked(current_tree: string, target_tree: string) returns bool {
+    let working = worktree.scan_all( false)
+    if repo.is_error_value(working) {
+        io.eprintln("erro: não foi possível verificar os caminhos locais antes da operação")
+        return false
+    }
+    let working_count = codec.entry_count(working)
+    let i             = 0
+    while i < working_count {
+        let path = codec.entry_path(codec.row_at(working, i))
+        if codec.blob_for(current_tree, path) == "" {
+            let target_count = codec.entry_count(target_tree)
+            let j            = 0
+            while j < target_count {
+                let target_path = codec.entry_path(codec.row_at(target_tree, j))
+                if paths.in_scope(path, target_path) or paths.in_scope(target_path, path) {
+                    if not(path == target_path and codec.blob_for(working, path) == codec.blob_for(target_tree, target_path)) {
+                        io.eprintln("erro: a operação substituiria conteúdo não rastreado: " + path)
+                        return false
+                    }
+                }
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+
+    let target_count = codec.entry_count(target_tree)
+    let k            = 0
+    while k < target_count {
+        let path = codec.entry_path(codec.row_at(target_tree, k))
+        if codec.blob_for(current_tree, path) == "" and repo.path_exists(path) {
+            let listed = fs.read_dir(path)
+            if result.is_ok(listed) {
+                collections.list_free(result.result_unwrap(listed))
+                io.eprintln("erro: a operação substituiria um diretório local: " + path)
+                return false
+            }
+        }
+        k = k + 1
+    }
+    return true
+}
+
+public func checkout(name: string) returns bool {
+    if not paths.valid_name(name) or not repo.branch_exists(name) {
+        io.eprintln("erro: branch inexistente ou inválida: " + name)
+        return false
+    }
+    if name == repo.current_branch() {
+        io.println("A branch atual já é " + name + ".")
+        return true
+    }
+    if not display.worktree_is_clean() {
+        io.eprintln("erro: checkout exige staging vazio e nenhum arquivo rastreado modificado")
+        io.eprintln("salve as alterações em um commit ou snapshot antes de trocar de branch")
+        return false
+    }
+    let old_tree    = repo.current_tree()
+    let target_id   = repo.branch_tip(name)
+    let target_tree = ""
+    if target_id != "" {
+        if not repo.commit_valid(target_id) {
+            io.eprintln("erro: branch de destino aponta para commit corrompido")
+            return false
+        }
+        let commit_payload = repo.read_commit_payload(target_id)
+        target_tree = repo.read_tree(codec.field_value(commit_payload, "tree"))
+        if repo.is_error_value(target_tree) {
+            io.eprintln("erro: tree da branch de destino está corrompida")
+            return false
+        }
+    }
+    if not replacement_preserves_untracked(old_tree, target_tree) {
+        return false
+    }
+    if not replace_tree(old_tree, target_tree) {
+        replace_tree(target_tree, old_tree)
+        io.eprintln("erro: checkout falhou; o estado anterior foi restaurado quando possível")
+        return false
+    }
+    if not repo.set_current_branch(name) {
+        replace_tree(target_tree, old_tree)
+        io.eprintln("erro: não foi possível atualizar HEAD; arquivos anteriores restaurados quando possível")
+        return false
+    }
+    if not repo.write_index("") {
+        io.eprintln("aviso: branch trocada, mas o staging não pôde ser limpo")
+    }
+    io.println("Agora na branch " + name + ".")
+    return true
+}
+
+public func restore_path(path_value: string, source_id: string) returns bool {
+    if not repo.current_state_valid() {
+        io.eprintln("erro: repositório ou histórico corrompido")
+        return false
+    }
+    let path = paths.normalize(path_value)
+    if not paths.is_safe_file(path) {
+        io.eprintln("erro: caminho inválido ou fora do repositório: " + path_value)
+        return false
+    }
+    let tree = repo.current_tree()
+    if source_id != "" {
+        if not repo.commit_valid(source_id) {
+            io.eprintln("erro: commit de origem inexistente ou corrompido: " + source_id)
+            return false
+        }
+        let commit_payload = repo.read_commit_payload(source_id)
+        tree = repo.read_tree(codec.field_value(commit_payload, "tree"))
+    }
+    if repo.is_error_value(tree) {
+        io.eprintln("erro: snapshot de origem corrompido")
+        return false
+    }
+    let source_blob  = codec.blob_for(tree, path)
+    let current_tree = repo.current_tree()
+    let current_blob = codec.blob_for(current_tree, path)
+    if source_blob == "" and current_blob == "" and not repo.path_exists(path) {
+        io.eprintln("erro: o caminho não existe na versão indicada: " + path)
+        return false
+    }
+    if source_blob != "" {
+        if not write_file_from_blob(path, source_blob) {
+            io.eprintln("erro: não foi possível restaurar " + path)
+            return false
+        }
+    }
+    if source_blob == "" and repo.path_exists(path) {
+        let removed = fs.fs_remove(path)
+        if result.is_err(removed) {
+            io.eprintln("erro: não foi possível remover " + path)
+            return false
+        }
+    }
+    let changes = repo.read_index()
+    if repo.is_error_value(changes) {
+        io.eprintln("erro: índice corrompido")
+        return false
+    }
+    let updated = codec.remove_entry(changes, path)
+    if not repo.write_index(updated) {
+        io.eprintln("erro: arquivo restaurado, mas o staging não pôde ser atualizado")
+        return false
+    }
+    io.println("Restaurado: " + path)
+    return true
+}
+
+public func create_snapshot(name: string) returns bool {
+    if not paths.valid_name(name) {
+        io.eprintln("erro: nome de snapshot inválido: " + name)
+        return false
+    }
+    if repo.path_exists(repo.snapshot_path(name)) {
+        io.eprintln("erro: snapshot já existe: " + name)
+        return false
+    }
+    let entries = worktree.scan_all( true)
+    if repo.is_error_value(entries) {
+        return false
+    }
+    let tree = repo.write_tree(entries)
+    if tree == "" or not repo.write_snapshot(name, tree) {
+        io.eprintln("erro: não foi possível salvar o snapshot")
+        return false
+    }
+    io.println("Snapshot criado: " + name + " (" + tree + ")")
+    return true
+}
+
+public func restore_snapshot(name: string) returns bool {
+    let tree_id = repo.snapshot_tree(name)
+    if tree_id == "" or not repo.validate_tree(tree_id) {
+        io.eprintln("erro: snapshot inexistente ou corrompido: " + name)
+        return false
+    }
+    if not display.worktree_is_clean() {
+        io.eprintln("erro: restauração de snapshot exige staging vazio e nenhum arquivo rastreado modificado")
+        return false
+    }
+    let old_tree    = repo.current_tree()
+    let target_tree = repo.read_tree(tree_id)
+    if repo.is_error_value(target_tree) {
+        io.eprintln("erro: tree do snapshot está corrompida")
+        return false
+    }
+    if not replacement_preserves_untracked(old_tree, target_tree) {
+        return false
+    }
+    if not replace_tree(old_tree, target_tree) {
+        replace_tree(target_tree, old_tree)
+        io.eprintln("erro: snapshot não pôde ser restaurado; estado anterior recuperado quando possível")
+        return false
+    }
+    if not repo.write_index("") {
+        replace_tree(target_tree, old_tree)
+        io.eprintln("erro: staging não pôde ser limpo; arquivos anteriores foram restaurados")
+        return false
+    }
+    io.println("Snapshot restaurado: " + name)
+    return true
+}
+
+public func show_snapshots() returns bool {
+    let names = repo.list_snapshots()
+    if collections.list_len(names) == 0 {
+        io.println("Nenhum snapshot nomeado.")
+    }
+    for name in names {
+        io.println(name + " " + repo.snapshot_tree(name))
+    }
+    collections.list_free(names)
+    return true
+}

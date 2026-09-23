@@ -872,11 +872,28 @@ let idx = col.list_index_of(lista, 20)
 
 #### `list_sort<T>(list: List<T>) -> unit`
 
-**PT-BR:** Ordena a lista em ordem crescente in-place.  
-**EN-US:** Sorts the list in ascending order in-place.
+**PT-BR:** Ordena a lista em ordem crescente, alterando-a no local. Aceita
+`int`, inteiros exatos com sinal ou sem sinal, `float`, `f32`, `f64`, `bool`,
+`string` e `char`. Strings são comparadas pelos bytes UTF-8, sem considerar
+locale; floats seguem a ordem total IEEE 754. Tipos agregados, como records,
+não têm uma ordem implícita e geram um diagnóstico no lowering.
+
+**EN-US:** Sorts the list in ascending order in-place. Supports `int`, signed
+or unsigned exact-width integers, `float`, `f32`, `f64`, `bool`, `string`, and
+`char`. Strings are compared by UTF-8 bytes without locale collation; floats
+use IEEE 754 total ordering. Aggregate types such as records have no implicit
+ordering and produce a lowering diagnostic.
 
 ```spectra
 col.list_sort(lista)
+```
+
+```spectra
+let caminhos: List<string> = col.list_new()
+col.list_push(caminhos, "src/z.spectra")
+col.list_push(caminhos, "src/a.spectra")
+col.list_sort(caminhos)
+// caminhos agora contém "src/a.spectra", "src/z.spectra"
 ```
 
 #### `list_clear<T>(list: List<T>) -> unit`

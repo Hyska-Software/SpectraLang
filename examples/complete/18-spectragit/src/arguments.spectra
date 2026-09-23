@@ -1,0 +1,166 @@
+module arguments
+
+from std.collections import List
+import std.collections as collections
+import std.env as env
+import std.option as option
+import std.string as string
+
+public record Command {
+    public name: string,
+    public first: string,
+    public second: string,
+    public message: string,
+    public staged_only: bool,
+    public paths: List<string>,
+    public valid: bool,
+    public error: string,
+}
+
+public func empty_command() returns Command {
+    let paths: List<string> = collections.list_new()
+    return Command { name: "", first: "", second: "", message: "", staged_only: false, paths: paths, valid: false, error: "" }
+}
+
+public func argument_count() returns int {
+    return env.env_args_count()
+}
+
+public func argument_at(index: int) returns string {
+    let value = env.env_arg(index)
+    if option.is_none(value) {
+        return ""
+    }
+    return option.option_unwrap(value)
+}
+
+public func fail(parsed: Command, message: string) returns Command {
+    parsed.valid = false
+    parsed.error = message
+    return parsed
+}
+
+public func parse() returns Command {
+    let parsed = empty_command()
+    let count  = argument_count()
+    if count < 2 {
+        return fail(parsed, "informe um comando")
+    }
+    parsed.name = argument_at(1)
+    if parsed.name == "--help" or parsed.name == "-h" or parsed.name == "help" {
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "self-test" {
+        if count != 2 {
+            return fail(parsed, "uso: spectragit self-test")
+        }
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "init" or parsed.name == "status" or parsed.name == "log" or parsed.name == "timeline" {
+        if count != 2 {
+            return fail(parsed, "o comando " + parsed.name + " não aceita argumentos")
+        }
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "add" {
+        if count < 3 {
+            return fail(parsed, "uso: spectragit add <caminho|.>")
+        }
+        let index = 2
+        while index < count {
+            collections.list_push(parsed.paths, argument_at(index))
+            index = index + 1
+        }
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "commit" {
+        if count < 4 or argument_at(2) != "-m" {
+            return fail(parsed, "uso: spectragit commit -m <mensagem>")
+        }
+        let message = ""
+        let index   = 3
+        while index < count {
+            if message != "" {
+                message = message + " "
+            }
+            message = message + argument_at(index)
+            index = index + 1
+        }
+        parsed.message = message
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "diff" {
+        if count == 2 {
+            parsed.valid = true
+            return parsed
+        }
+        if count == 3 and argument_at(2) == "--staged" {
+            parsed.staged_only = true
+            parsed.valid = true
+            return parsed
+        }
+        return fail(parsed, "uso: spectragit diff [--staged]")
+    }
+    if parsed.name == "branch" {
+        if count == 2 {
+            parsed.valid = true
+            return parsed
+        }
+        if count == 3 {
+            parsed.first = argument_at(2)
+            parsed.valid = true
+            return parsed
+        }
+        return fail(parsed, "uso: spectragit branch [nome]")
+    }
+    if parsed.name == "checkout" {
+        if count != 3 {
+            return fail(parsed, "uso: spectragit checkout <branch>")
+        }
+        parsed.first = argument_at(2)
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "restore" {
+        if count == 3 {
+            parsed.first = argument_at(2)
+            parsed.valid = true
+            return parsed
+        }
+        if count == 5 and argument_at(3) == "--source" {
+            parsed.first = argument_at(2)
+            parsed.second = argument_at(4)
+            parsed.valid = true
+            return parsed
+        }
+        return fail(parsed, "uso: spectragit restore <arquivo> [--source <commit>]")
+    }
+    if parsed.name == "explain" or parsed.name == "inspect" {
+        if count != 3 {
+            return fail(parsed, "uso: spectragit " + parsed.name + " <hash>")
+        }
+        parsed.first = argument_at(2)
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "snapshot" {
+        if count == 3 and argument_at(2) == "list" {
+            parsed.first = "list"
+            parsed.valid = true
+            return parsed
+        }
+        if count == 4 and(argument_at(2) == "create" or argument_at(2) == "restore") {
+            parsed.first = argument_at(2)
+            parsed.second = argument_at(3)
+            parsed.valid = true
+            return parsed
+        }
+        return fail(parsed, "uso: spectragit snapshot <create|list|restore> [nome]")
+    }
+    return fail(parsed, "comando desconhecido: " + parsed.name)
+}

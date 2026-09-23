@@ -48,6 +48,28 @@ impl ASTLowering {
         arg_exprs: &[Expression],
         ir_func: &mut IRFunction,
     ) -> Vec<Value> {
+        if runtime_name == "spectra.std.collections.list_sort" {
+            let list_type = arg_exprs
+                .first()
+                .map(|argument| self.infer_expr_ir_type(argument));
+            let sort_kind = list_type
+                .as_ref()
+                .and_then(Self::list_sort_kind_for_list_type);
+            let sort_kind = sort_kind.unwrap_or_else(|| {
+                self.error(format!(
+                    "std.collections.list_sort supports only int, exact integers, float, bool, string, and char elements; found {}",
+                    list_type
+                        .as_ref()
+                        .map(|ty| format!("{ty:?}"))
+                        .unwrap_or_else(|| "no list argument".to_string())
+                ));
+                spectra_contract::collection_sort::INVALID
+            });
+            let kind_value = self.builder.build_const_int(ir_func, sort_kind);
+            let mut shaped = arg_values;
+            shaped.push(kind_value);
+            return shaped;
+        }
         if !matches!(
             runtime_name,
             "spectra.std.io.print"
@@ -70,6 +92,74 @@ impl ASTLowering {
             paired.push(*arg_val);
         }
         paired
+    }
+
+    fn list_sort_kind_for_list_type(list_type: &IRType) -> Option<i64> {
+        if let Some(args) = Self::ir_generic_args_static(list_type, "List") {
+            return Self::list_sort_kind_for_element_type(args.first()?);
+        }
+
+        let IRType::Struct { name, .. } = Self::ir_type_representation_static(list_type) else {
+            return None;
+        };
+        let element_name = name.strip_prefix("List_")?;
+        let element_type = match element_name {
+            "int" => IRType::Int,
+            "float" => IRType::Float,
+            "bool" => IRType::Bool,
+            "string" => IRType::String,
+            "char" => IRType::Char,
+            "i8" => Self::exact_int_sort_type(true, IRIntWidth::I8),
+            "i16" => Self::exact_int_sort_type(true, IRIntWidth::I16),
+            "i32" => Self::exact_int_sort_type(true, IRIntWidth::I32),
+            "i64" => Self::exact_int_sort_type(true, IRIntWidth::I64),
+            "u8" => Self::exact_int_sort_type(false, IRIntWidth::I8),
+            "u16" => Self::exact_int_sort_type(false, IRIntWidth::I16),
+            "u32" => Self::exact_int_sort_type(false, IRIntWidth::I32),
+            "u64" => Self::exact_int_sort_type(false, IRIntWidth::I64),
+            "isize" => Self::exact_int_sort_type(true, IRIntWidth::Isize),
+            "usize" => Self::exact_int_sort_type(false, IRIntWidth::Usize),
+            "f32" => IRType::ExactFloat {
+                width: IRFloatWidth::F32,
+            },
+            "f64" => IRType::ExactFloat {
+                width: IRFloatWidth::F64,
+            },
+            _ => return None,
+        };
+        Self::list_sort_kind_for_element_type(&element_type)
+    }
+
+    fn exact_int_sort_type(signed: bool, width: IRIntWidth) -> IRType {
+        IRType::ExactInt { signed, width }
+    }
+
+    fn list_sort_kind_for_element_type(element_type: &IRType) -> Option<i64> {
+        use spectra_contract::collection_sort as sort_kind;
+
+        match Self::ir_type_representation_static(element_type) {
+            IRType::Int => Some(sort_kind::INT),
+            IRType::Float | IRType::ExactFloat { .. } => Some(sort_kind::FLOAT),
+            IRType::Bool => Some(sort_kind::BOOL),
+            IRType::String => Some(sort_kind::STRING),
+            IRType::Char => Some(sort_kind::CHAR),
+            IRType::ExactInt { signed, width } => {
+                let width = match width {
+                    IRIntWidth::I8 => 8,
+                    IRIntWidth::I16 => 16,
+                    IRIntWidth::I32 => 32,
+                    IRIntWidth::I64 | IRIntWidth::Isize | IRIntWidth::Usize => 64,
+                };
+                Some(
+                    if *signed {
+                        sort_kind::SIGNED_EXACT_BASE
+                    } else {
+                        sort_kind::UNSIGNED_EXACT_BASE
+                    } + width,
+                )
+            }
+            _ => None,
+        }
     }
 
     pub(crate) fn refine_host_function_descriptor(

@@ -396,7 +396,7 @@ impl RuntimeImport {
             Self::ListRemoveAt => "spectra_rt_list_remove_at_fast",
             Self::ListRemoveAtOption => "spectra_rt_list_remove_at_option_fast",
             Self::ListIndexOf => "spectra_rt_list_index_of_fast",
-            Self::ListSort => "spectra_rt_list_sort_fast",
+            Self::ListSort => "spectra_rt_list_sort_typed_fast",
             Self::MapGet => "spectra_rt_map_get_fast",
             Self::MapGetOption => "spectra_rt_map_get_option_fast",
             Self::MapRemove => "spectra_rt_map_remove_fast",
@@ -500,7 +500,7 @@ impl RuntimeImport {
             Self::ListRemoveAt => (I64_I64, I64),
             Self::ListRemoveAtOption => (I64_I64, I64),
             Self::ListIndexOf => (I64_I64, I64),
-            Self::ListSort => (I64, I32),
+            Self::ListSort => (I64_I64, I32),
             Self::MapGet => (I64_I64, I64),
             Self::MapGetOption => (I64_I64, I64),
             Self::MapRemove => (I64_I64, I64),
@@ -631,7 +631,7 @@ impl RuntimeImport {
                 crate::ffi::spectra_rt_list_remove_at_option_fast as *const u8
             }
             Self::ListIndexOf => crate::ffi::spectra_rt_list_index_of_fast as *const u8,
-            Self::ListSort => crate::ffi::spectra_rt_list_sort_fast as *const u8,
+            Self::ListSort => crate::ffi::spectra_rt_list_sort_typed_fast as *const u8,
             Self::MapGet => crate::ffi::spectra_rt_map_get_fast as *const u8,
             Self::MapGetOption => crate::ffi::spectra_rt_map_get_option_fast as *const u8,
             Self::MapRemove => crate::ffi::spectra_rt_map_remove_fast as *const u8,
@@ -1207,6 +1207,26 @@ mod tests {
         assert_eq!(
             std::mem::align_of::<SpectraHostCallCache>(),
             std::mem::align_of::<usize>()
+        );
+    }
+
+    #[test]
+    fn list_sort_abi_includes_a_typed_ordering_tag() {
+        let signature = RuntimeImport::ListSort.signature();
+        assert_eq!(signature.params, [AbiScalar::I64, AbiScalar::I64]);
+        assert_eq!(signature.returns, [AbiScalar::I32]);
+        assert_eq!(
+            RuntimeImport::ListSort.symbol(),
+            "spectra_rt_list_sort_typed_fast"
+        );
+        assert_eq!(FastHostCall::ListSort.arity(), 2);
+        assert_eq!(
+            resolve_host_call("spectra.std.collections.list_sort", 2),
+            HostCallClass::Fast(FastHostCall::ListSort)
+        );
+        assert_eq!(
+            resolve_host_call("spectra.std.collections.list_sort", 1),
+            HostCallClass::Generic
         );
     }
 

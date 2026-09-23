@@ -1,0 +1,254 @@
+module codec
+
+from std.collections import List
+import std.collections as collections
+import std.convert as convert
+import std.option as option
+import std.string as string
+
+// This deterministic multi-lane hash is isolated so a stronger digest can replace it.
+public func hash_text(value: string) returns string {
+    let a         = 5381
+    let b         = 52711
+    let c         = 7919
+    let index     = 0
+    let codepoint = string.char_at(value, index)
+    while codepoint >= 0 {
+        a = (a * 33 + codepoint) % 2147483647
+        b = (b * 65599 + codepoint) % 2147483629
+        c = (c * 131 + codepoint) % 2147483587
+        index = index + 1
+        codepoint = string.char_at(value, index)
+    }
+    return "sg1-" +
+        convert.int_to_string(a) +
+        "-" +
+        convert.int_to_string(b) +
+        "-" +
+        convert.int_to_string(c)
+}
+
+public func serialize_entry(path: string, blob: string) returns string {
+    return encode_field(path) + "\t" + blob + "\n"
+}
+
+public func object_id(kind: string, payload: string) returns string {
+    return hash_text(kind + "\n" + payload)
+}
+
+public func encode_field(value: string) returns string {
+    let encoded = string.replace(value, "%", "%25")
+    let tabs    = string.replace(encoded, "\t", "%09")
+    let lines   = string.replace(tabs, "\n", "%0A")
+    return string.replace(lines, "\r", "%0D")
+}
+
+public func decode_field(value: string) returns string {
+    let lines    = string.replace(value, "%0A", "\n")
+    let carriage = string.replace(lines, "%0D", "\r")
+    let tabs     = string.replace(carriage, "%09", "\t")
+    return string.replace(tabs, "%25", "%")
+}
+
+public func row_at(source: string, requested: int) returns string {
+    let total = string.len(source)
+    let start = 0
+    let index = 0
+    while start < total {
+        let remaining = string.substring(source, start, total)
+        let end       = string.index_of(remaining, "\n")
+        let row       = ""
+        if end < 0 {
+            row = remaining
+            start = total
+        } else {
+            row = string.substring(remaining, 0, end)
+            start = start + end + 1
+        }
+        if index == requested {
+            return row
+        }
+        index = index + 1
+    }
+    return ""
+}
+
+public func entry_count(source: string) returns int {
+    let total = string.len(source)
+    let start = 0
+    let count = 0
+    while start < total {
+        let remaining = string.substring(source, start, total)
+        let end       = string.index_of(remaining, "\n")
+        if end < 0 {
+            if remaining != "" {
+                count = count + 1
+            }
+            start = total
+        } else {
+            if end > 0 {
+                count = count + 1
+            }
+            start = start + end + 1
+        }
+    }
+    return count
+}
+
+public func entry_path(row: string) returns string {
+    let separator = string.index_of(row, "\t")
+    if separator < 1 {
+        return ""
+    }
+    return decode_field(string.substring(row, 0, separator))
+}
+
+public func entry_blob(row: string) returns string {
+    let separator = string.index_of(row, "\t")
+    if separator < 1 or separator + 1 >= string.len(row) {
+        return ""
+    }
+    return string.substring(row, separator + 1, string.len(row))
+}
+
+public func blob_for(entries: string, path: string) returns string {
+    let count = entry_count(entries)
+    let i     = 0
+    while i < count {
+        let row = row_at(entries, i)
+        if entry_path(row) == path {
+            return entry_blob(row)
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+public func set_entry(entries: string, path: string, blob: string) returns string {
+    let output = ""
+    let found  = false
+    let count  = entry_count(entries)
+    let i      = 0
+    while i < count {
+        let row = row_at(entries, i)
+        if entry_path(row) == path {
+            if not found {
+                output = output + serialize_entry(path, blob)
+                found = true
+            }
+        } else {
+            output = output + row + "\n"
+        }
+        i = i + 1
+    }
+    if not found {
+        output = output + serialize_entry(path, blob)
+    }
+    return normalize_entries(output)
+}
+
+public func remove_entry(entries: string, path: string) returns string {
+    let output = ""
+    let count  = entry_count(entries)
+    let i      = 0
+    while i < count {
+        let row = row_at(entries, i)
+        if entry_path(row) != path {
+            output = output + row + "\n"
+        }
+        i = i + 1
+    }
+    return normalize_entries(output)
+}
+
+public func remove_scope(entries: string, scope: string) returns string {
+    let output = ""
+    let count  = entry_count(entries)
+    let i      = 0
+    while i < count {
+        let row    = row_at(entries, i)
+        let path   = entry_path(row)
+        let inside = scope == "." or path == scope or string.starts_with(path, scope + "/")
+        if not inside {
+            output = output + row + "\n"
+        }
+        i = i + 1
+    }
+    return normalize_entries(output)
+}
+
+public func has_scope(entries: string, scope: string) returns bool {
+    let count = entry_count(entries)
+    let i     = 0
+    while i < count {
+        let path = entry_path(row_at(entries, i))
+        if scope == "." or path == scope or string.starts_with(path, scope + "/") {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+public func apply_changes(base: string, changes: string) returns string {
+    let output = base
+    let count  = entry_count(changes)
+    let i      = 0
+    while i < count {
+        let row  = row_at(changes, i)
+        let path = entry_path(row)
+        let blob = entry_blob(row)
+        if blob == "-" {
+            output = remove_entry(output, path)
+        } else if path != "" and blob != "" {
+            output = set_entry(output, path, blob)
+        }
+        i = i + 1
+    }
+    return normalize_entries(output)
+}
+
+public func normalize_entries(entries: string) returns string {
+    let paths: List<string> = collections.list_new()
+    let count               = entry_count(entries)
+    let i                   = 0
+    while i < count {
+        let path = entry_path(row_at(entries, i))
+        if path != "" and not collections.list_contains(paths, path) {
+            collections.list_push(paths, path)
+        }
+        i = i + 1
+    }
+    collections.list_sort(paths)
+    let output = ""
+    for path in paths {
+        let blob = blob_for(entries, path)
+        if blob != "" {
+            output = output + serialize_entry(path, blob)
+        }
+    }
+    collections.list_free(paths)
+    return output
+}
+
+public func field_value(source: string, key: string) returns string {
+    let prefix = key + "\t"
+    let count  = entry_count(source)
+    let i      = 0
+    while i < count {
+        let row = row_at(source, i)
+        if string.starts_with(row, prefix) {
+            return string.substring(row, string.len(prefix), string.len(row))
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+public func serialize_commit(parent: string, tree: string, author: string, timestamp: int, message: string) returns string {
+    return "parent\t" + parent + "\n" +
+        "tree\t" + tree + "\n" +
+        "author\t" + encode_field(author) + "\n" +
+        "time\t" + convert.int_to_string(timestamp) + "\n" +
+        "message\t" + encode_field(message) + "\n"
+}

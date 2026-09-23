@@ -1,0 +1,96 @@
+module validation_618_stdlib_list_sort_typed
+
+from std.collections import List
+import std.collections as collections
+import std.option as option
+import std.string as strings
+
+public func main() returns int {
+    let empty_strings: List<string> = collections.list_new()
+    collections.list_sort(empty_strings)
+    if collections.list_len(empty_strings) != 0 {
+        return 1
+    }
+
+    let paths: List<string> = collections.list_new()
+    collections.list_push(paths, strings.concat("src/", "é.spectra"))
+    collections.list_push(paths, strings.concat("src/", "z.spectra"))
+    collections.list_push(paths, strings.concat("src/a/", "sub.spectra"))
+    collections.list_push(paths, strings.concat("src/", "a.spectra"))
+    collections.list_push(paths, strings.concat("src/", "a.spectra"))
+    collections.list_sort(paths)
+    if option.option_unwrap(collections.list_get(paths, 0)) != "src/a.spectra" {
+        return 2
+    }
+    if option.option_unwrap(collections.list_get(paths, 1)) != "src/a.spectra" {
+        return 3
+    }
+    if option.option_unwrap(collections.list_get(paths, 2)) != "src/a/sub.spectra" {
+        return 4
+    }
+    if option.option_unwrap(collections.list_get(paths, 3)) != "src/z.spectra" {
+        return 5
+    }
+    if option.option_unwrap(collections.list_get(paths, 4)) != "src/é.spectra" {
+        return 6
+    }
+
+    let integers: List<int> = collections.list_new()
+    collections.list_push(integers, 9)
+    collections.list_push(integers, -4)
+    collections.list_push(integers, 0)
+    collections.list_sort(integers)
+    if option.option_unwrap(collections.list_get(integers, 0)) != -4 {
+        return 7
+    }
+    if option.option_unwrap(collections.list_get(integers, 2)) != 9 {
+        return 8
+    }
+
+    let fractions: List<f32> = collections.list_new()
+    let positive: f32        = 2.5
+    let negative: f32        = -1.5
+    let middle: f32          = 0.25
+    collections.list_push(fractions, positive)
+    collections.list_push(fractions, negative)
+    collections.list_push(fractions, middle)
+    collections.list_sort(fractions)
+    if option.option_unwrap(collections.list_get(fractions, 0)) != negative {
+        return 9
+    }
+
+    let flags: List<bool> = collections.list_new()
+    collections.list_push(flags, true)
+    collections.list_push(flags, false)
+    collections.list_sort(flags)
+    if option.option_unwrap(collections.list_get(flags, 0)) {
+        return 10
+    }
+
+    let octets: List<u8> = collections.list_new()
+    let high: u8         = 255
+    let low: u8          = 10
+    collections.list_push(octets, high)
+    collections.list_push(octets, low)
+    collections.list_sort(octets)
+    if option.option_unwrap(collections.list_get(octets, 0)) as int != 10 {
+        return 11
+    }
+
+    let letters: List<char> = collections.list_new()
+    collections.list_push(letters, 'é')
+    collections.list_push(letters, 'A')
+    collections.list_sort(letters)
+    if option.option_unwrap(collections.list_get(letters, 0)) != 'A' {
+        return 12
+    }
+
+    collections.list_free(empty_strings)
+    collections.list_free(paths)
+    collections.list_free(integers)
+    collections.list_free(fractions)
+    collections.list_free(flags)
+    collections.list_free(octets)
+    collections.list_free(letters)
+    return 0
+}

@@ -109,8 +109,8 @@ pub fn list_index_of_fast(handle: usize, value: SpectraHostValue) -> SpectraHost
     with_list_registry(|registry| registry.index_of(handle, value)).unwrap_or(-1)
 }
 
-pub fn list_sort_fast(handle: usize) -> i32 {
-    match with_list_registry(|registry| registry.sort_asc(handle)) {
+pub fn list_sort_typed_fast(handle: usize, kind: i64) -> i32 {
+    match with_list_registry(|registry| registry.sort_asc_typed(handle, kind)) {
         Ok(()) => HOST_STATUS_SUCCESS,
         Err(code) => code,
     }
