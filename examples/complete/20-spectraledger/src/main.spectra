@@ -1,0 +1,53 @@
+module main
+
+import std.io as io
+from cli.parser import Command
+from services.ledger import ServiceResult
+import cli.parser as parser
+import services.ledger as ledger
+import validation.self_tests as self_tests
+
+public func main() returns int {
+    let command = parser.parse()
+    if not command.valid {
+        io.eprintln("erro: " + command.error)
+        print_usage()
+        return 64
+    }
+    if command.name == "help" or command.name == "--help" or command.name == "-h" {
+        print_usage()
+        return 0
+    }
+    if command.name == "self-test" {
+        if self_tests.run() {
+            return 0
+        }
+        return 1
+    }
+    let result = ledger.execute(command)
+    if not result.ok {
+        io.eprintln("erro: " + result.error)
+        return 1
+    }
+    if result.output != "" {
+        io.println(result.output)
+    }
+    return 0
+}
+
+public func print_usage() returns int {
+    io.println("SpectraLedger — controle financeiro local em SpectraLang")
+    io.println("")
+    io.println("Uso:")
+    io.println("  spectraledger init")
+    io.println("  spectraledger add <income|expense> <AAAA-MM-DD> <valor> <categoria> <descrição>")
+    io.println("  spectraledger list [--month AAAA-MM] [--kind income|expense] [--category nome]")
+    io.println("  spectraledger remove <id>")
+    io.println("  spectraledger summary [AAAA-MM]")
+    io.println("  spectraledger budget set <AAAA-MM> <categoria> <limite>")
+    io.println("  spectraledger budget list [AAAA-MM]")
+    io.println("  spectraledger self-test")
+    io.println("")
+    io.println("Valores usam ponto decimal na entrada (ex.: 25.90); relatórios usam vírgula.")
+    return 0
+}

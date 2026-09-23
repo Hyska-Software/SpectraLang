@@ -1,0 +1,204 @@
+module cli.parser
+
+import std.convert as convert
+import std.env as env
+import std.option as option
+import std.string as string
+import domain.model as model
+
+public record Command {
+    public name: string,
+    public kind: string,
+    public date: string,
+    public amount_cents: int,
+    public category: string,
+    public description: string,
+    public month: string,
+    public filter_kind: string,
+    public filter_category: string,
+    public id_text: string,
+    public valid: bool,
+    public error: string,
+}
+
+func empty_command() returns Command {
+    return Command {
+        name: "", kind: "", date: "", amount_cents: 0, category: "",
+        description: "", month: "", filter_kind: "", filter_category: "",
+        id_text: "", valid: false, error: "",
+    }
+}
+
+func argument_count() returns int {
+    return env.env_args_count()
+}
+
+func argument_at(index: int) returns string {
+    let value = env.env_arg(index)
+    if option.is_none(value) {
+        return ""
+    }
+    return option.option_unwrap(value)
+}
+
+func fail(parsed: Command, message: string) returns Command {
+    parsed.valid = false
+    parsed.error = message
+    return parsed
+}
+
+func parse_list(parsed: Command) returns Command {
+    let count        = argument_count()
+    let index        = 2
+    let month_set    = false
+    let kind_set     = false
+    let category_set = false
+    while index < count {
+        let key = argument_at(index)
+        if index + 1 >= count {
+            return fail(parsed, "faltou valor para " + key)
+        }
+        let value = argument_at(index + 1)
+        if key == "--month" {
+            if month_set or not model.valid_month(value) {
+                return fail(parsed, "mês inválido; use AAAA-MM")
+            }
+            parsed.month = value
+            month_set = true
+        } else if key == "--kind" {
+            if kind_set or not model.valid_kind(value) {
+                return fail(parsed, "tipo inválido; use income ou expense")
+            }
+            parsed.filter_kind = value
+            kind_set = true
+        } else if key == "--category" {
+            if category_set or not model.valid_category(value) {
+                return fail(parsed, "categoria inválida; use letras minúsculas, números e hífens")
+            }
+            parsed.filter_category = value
+            category_set = true
+        } else {
+            return fail(parsed, "filtro inválido para list: " + key)
+        }
+        index = index + 2
+    }
+    parsed.valid = true
+    return parsed
+}
+
+public func parse() returns Command {
+    let parsed = empty_command()
+    let count  = argument_count()
+    if count < 2 {
+        return fail(parsed, "informe um comando; use spectraledger help")
+    }
+    parsed.name = argument_at(1)
+    if parsed.name == "help" or parsed.name == "--help" or parsed.name == "-h" or
+    parsed.name == "init" or parsed.name == "list" or parsed.name == "summary" or
+    parsed.name == "self-test" {
+        if parsed.name == "list" {
+            return parse_list(parsed)
+        }
+        if parsed.name == "summary" {
+            if count == 3 and model.valid_month(argument_at(2)) {
+                parsed.month = argument_at(2)
+                parsed.valid = true
+                return parsed
+            }
+            if count == 2 and parsed.name == "summary" {
+                parsed.valid = true
+                return parsed
+            }
+            if count != 2 {
+                return fail(parsed, "uso: spectraledger summary [AAAA-MM]")
+            }
+        }
+        if count != 2 {
+            return fail(parsed, parsed.name + " não aceita argumentos extras")
+        }
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "add" {
+        if count != 7 {
+            return fail(
+                parsed,
+                "uso: spectraledger add <income|expense> <AAAA-MM-DD> <valor> <categoria> <descrição>",
+            )
+        }
+        parsed.kind = argument_at(2)
+        parsed.date = argument_at(3)
+        parsed.amount_cents = model.money_to_cents(argument_at(4))
+        parsed.category = argument_at(5)
+        parsed.description = argument_at(6)
+        if not model.valid_kind(parsed.kind) {
+            return fail(parsed, "tipo inválido; use income ou expense")
+        }
+        if not model.valid_date(parsed.date) {
+            return fail(parsed, "data inválida; informe uma data real no formato AAAA-MM-DD")
+        }
+        if parsed.amount_cents <= 0 {
+            return fail(parsed, "valor inválido; use um valor positivo com até duas casas decimais")
+        }
+        if not model.valid_category(parsed.category) {
+            return fail(parsed, "categoria inválida; use letras minúsculas, números e hífens")
+        }
+        if string.trim(parsed.description) == "" or string.len(parsed.description) > 300 {
+            return fail(parsed, "a descrição deve ter de 1 a 300 caracteres")
+        }
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "remove" {
+        if count != 3 or convert.string_to_int_or(argument_at(2), -1) < 1 {
+            return fail(parsed, "uso: spectraledger remove <id positivo>")
+        }
+        parsed.id_text = argument_at(2)
+        parsed.valid = true
+        return parsed
+    }
+    if parsed.name == "budget" {
+        if count >= 3 and argument_at(2) == "set" {
+            if count != 6 {
+                return fail(parsed, "uso: spectraledger budget set <AAAA-MM> <categoria> <limite>")
+            }
+            parsed.name = "budget-set"
+            parsed.month = argument_at(3)
+            parsed.category = argument_at(4)
+            parsed.amount_cents = model.money_to_cents(argument_at(5))
+            if not model.valid_month(parsed.month) {
+                return fail(parsed, "mês inválido; use AAAA-MM")
+            }
+            if not model.valid_category(parsed.category) {
+                return fail(parsed, "categoria inválida; use letras minúsculas, números e hífens")
+            }
+            if parsed.amount_cents <= 0 {
+                return fail(
+                    parsed,
+                    "limite inválido; use um valor positivo com até duas casas decimais",
+                )
+            }
+            parsed.valid = true
+            return parsed
+        }
+        if count >= 3 and argument_at(2) == "list" {
+            if count == 4 and model.valid_month(argument_at(3)) {
+                parsed.name = "budget-list"
+                parsed.month = argument_at(3)
+                parsed.valid = true
+                return parsed
+            }
+            if count == 3 {
+                parsed.name = "budget-list"
+                parsed.valid = true
+                return parsed
+            }
+            return fail(parsed, "uso: spectraledger budget list [AAAA-MM]")
+        }
+        return fail(parsed, "use budget set ou budget list")
+    }
+    if parsed.name == "list" {
+        return parse_list(parsed)
+    }
+    return fail(parsed, "comando desconhecido: " + parsed.name)
+}

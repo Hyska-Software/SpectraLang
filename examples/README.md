@@ -16,13 +16,16 @@ Demonstrações gerais da linguagem e fixtures de regressão históricas:
 
 ## examples/complete — projetos integrados
 
-O índice dos 19 projetos integrados está em [complete/README.md](complete/README.md).
+O índice dos 20 projetos integrados está em [complete/README.md](complete/README.md).
 O exemplo `18-spectragit` é um CLI local de controle de versão escrito em
 SpectraLang; os comandos e limites estão em seu
 [README](complete/18-spectragit/README.md).
 O exemplo `19-spectraboard` é um organizador local de tarefas em módulos; seu
 CLI, persistência e verificações estão no
 [README](complete/19-spectraboard/README.md).
+O exemplo `20-spectraledger` é um controle financeiro local em módulos; seu
+CLI, ledger em centavos inteiros, orçamentos mensais e verificações estão no
+[README](complete/20-spectraledger/README.md).
 
 ## examples/stdlib — biblioteca padrão
 

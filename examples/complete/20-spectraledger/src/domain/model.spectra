@@ -1,0 +1,171 @@
+module domain.model
+
+import std.convert as convert
+import std.string as string
+
+public record Transaction {
+    public id: int,
+    public date: string,
+    public kind: string,
+    public amount_cents: int,
+    public category: string,
+    public created_at: int,
+    public description: string,
+}
+
+public record Budget {
+    public month: string,
+    public category: string,
+    public limit_cents: int,
+}
+
+func digit_at(value: string, index: int) returns int {
+    let codepoint = string.char_at(value, index)
+    if codepoint < 48 or codepoint > 57 {
+        return-1
+    }
+    return codepoint - 48
+}
+
+func number_at(value: string, start: int, width: int) returns int {
+    let output = 0
+    let offset = 0
+    while offset < width {
+        let digit = digit_at(value, start + offset)
+        if digit < 0 {
+            return-1
+        }
+        output = output * 10 + digit
+        offset = offset + 1
+    }
+    return output
+}
+
+func digits_to_int(value: string) returns int {
+    if string.len(value) == 0 or string.len(value) > 9 {
+        return-1
+    }
+    let output = 0
+    let index  = 0
+    while index<string.len(value) {
+        let digit = digit_at(value, index)
+        if digit < 0 {
+            return-1
+        }
+        output = output * 10 + digit
+        index = index + 1
+    }
+    return output
+}
+
+public func valid_date(value: string) returns bool {
+    if string.len(value) != 10 or string.char_at(value, 4) != 45 or string.char_at(value, 7) != 45 {
+        return false
+    }
+    let year  = number_at(value, 0, 4)
+    let month = number_at(value, 5, 2)
+    let day   = number_at(value, 8, 2)
+    if year < 1 or month < 1 or month > 12 or day < 1 {
+        return false
+    }
+    let maximum = 31
+    if month == 4 or month == 6 or month == 9 or month == 11 {
+        maximum = 30
+    } else if month == 2 {
+        maximum = 28
+        if year % 400 == 0 or(year % 4 == 0 and year % 100 != 0) {
+            maximum = 29
+        }
+    }
+    return day <= maximum
+}
+
+public func valid_month(value: string) returns bool {
+    if string.len(value) != 7 or string.char_at(value, 4) != 45 {
+        return false
+    }
+    let year  = number_at(value, 0, 4)
+    let month = number_at(value, 5, 2)
+    return year >= 1 and month >= 1 and month <= 12
+}
+
+public func money_to_cents(value: string) returns int {
+    let separator = string.index_of(value, ".")
+    if separator < 0 {
+        let whole = digits_to_int(value)
+        if whole < 0 {
+            return-1
+        }
+        return whole * 100
+    }
+    if separator == 0 or string.index_of(string.substring(value, separator + 1, string.len(value)), ".") >= 0 {
+        return-1
+    }
+    let whole         = digits_to_int(string.substring(value, 0, separator))
+    let fraction_text = string.substring(value, separator + 1, string.len(value))
+    if whole < 0 or string.len(fraction_text) < 1 or string.len(fraction_text) > 2 {
+        return-1
+    }
+    let fraction = digits_to_int(fraction_text)
+    if fraction < 0 {
+        return-1
+    }
+    if string.len(fraction_text) == 1 {
+        return whole * 100 + fraction * 10
+    }
+    return whole * 100 + fraction
+}
+
+public func money_text(amount_cents: int) returns string {
+    let sign     = ""
+    let absolute = amount_cents
+    if amount_cents < 0 {
+        sign = "-"
+        absolute = 0 - amount_cents
+    }
+    let whole         = absolute / 100
+    let fraction      = absolute % 100
+    let fraction_text = ""
+    if fraction < 10 {
+        fraction_text = "0" + convert.int_to_string(fraction)
+    } else {
+        fraction_text = convert.int_to_string(fraction)
+    }
+    return sign + convert.int_to_string(whole) + "," + fraction_text
+}
+
+public func valid_category(value: string) returns bool {
+    let length = string.len(value)
+    if length < 1 or length > 32 or string.char_at(value, 0) == 45 or string.char_at(value, length - 1) == 45 {
+        return false
+    }
+    let prior_hyphen = false
+    let index        = 0
+    while index < length {
+        let codepoint = string.char_at(value, index)
+        let is_letter = codepoint >= 97 and codepoint <= 122
+        let is_digit  = codepoint >= 48 and codepoint <= 57
+        let is_hyphen = codepoint == 45
+        if not(is_letter or is_digit or is_hyphen) or(prior_hyphen and is_hyphen) {
+            return false
+        }
+        prior_hyphen = is_hyphen
+        index = index + 1
+    }
+    return true
+}
+
+public func valid_kind(value: string) returns bool {
+    return value == "income" or value == "expense"
+}
+
+public func valid_transaction(transaction: Transaction) returns bool {
+    return transaction.id > 0 and valid_date(transaction.date) and
+    valid_kind(transaction.kind) and transaction.amount_cents > 0 and
+    valid_category(transaction.category) and transaction.created_at >= 0 and
+    string.trim(transaction.description) != "" and string.len(transaction.description) <= 300
+}
+
+public func valid_budget(budget: Budget) returns bool {
+    return valid_month(budget.month) and valid_category(budget.category) and budget.limit_cents > 0
+}

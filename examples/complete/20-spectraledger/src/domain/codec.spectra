@@ -1,0 +1,182 @@
+module domain.codec
+
+import std.convert as convert
+import std.string as string
+from domain.model import Budget
+from domain.model import Transaction
+import domain.model as model
+
+public record ParsedRecord {
+    public record_type: string,
+    public transaction: Transaction,
+    public budget: Budget,
+    public valid: bool,
+    public error: string,
+}
+
+func empty_transaction() returns Transaction {
+    return Transaction {
+        id: 0,
+        date: "",
+        kind: "",
+        amount_cents: 0,
+        category: "",
+        created_at: 0,
+        description: "",
+    }
+}
+
+func empty_budget() returns Budget {
+    return Budget { month: "", category: "", limit_cents: 0 }
+}
+
+public func encode_field(value: string) returns string {
+    let percent = string.replace(value, "%", "%25")
+    let tabs    = string.replace(percent, "\t", "%09")
+    let lines   = string.replace(tabs, "\n", "%0A")
+    return string.replace(lines, "\r", "%0D")
+}
+
+public func decode_field(value: string) returns string {
+    let lines    = string.replace(value, "%0A", "\n")
+    let carriage = string.replace(lines, "%0D", "\r")
+    let tabs     = string.replace(carriage, "%09", "\t")
+    return string.replace(tabs, "%25", "%")
+}
+
+public func serialize_transaction(transaction: Transaction) returns string {
+    return "T\t" + convert.int_to_string(transaction.id) + "\t" +
+        transaction.date + "\t" + transaction.kind + "\t" +
+        convert.int_to_string(transaction.amount_cents) + "\t" +
+        transaction.category + "\t" + convert.int_to_string(transaction.created_at) + "\t" +
+        encode_field(transaction.description) + "\n"
+}
+
+public func serialize_budget(budget: Budget) returns string {
+    return "B\t" + budget.month + "\t" + budget.category + "\t" +
+        convert.int_to_string(budget.limit_cents) + "\n"
+}
+
+public func row_count(source: string) returns int {
+    let total = string.len(source)
+    let start = 0
+    let count = 0
+    while start < total {
+        let remaining = string.substring(source, start, total)
+        let end       = string.index_of(remaining, "\n")
+        count = count + 1
+        if end < 0 {
+            start = total
+        } else {
+            start = start + end + 1
+        }
+    }
+    return count
+}
+
+public func row_at(source: string, requested: int) returns string {
+    let total = string.len(source)
+    let start = 0
+    let index = 0
+    while start < total {
+        let remaining = string.substring(source, start, total)
+        let end       = string.index_of(remaining, "\n")
+        let row       = ""
+        if end < 0 {
+            row = remaining
+            start = total
+        } else {
+            row = string.substring(remaining, 0, end)
+            start = start + end + 1
+        }
+        if index == requested {
+            return row
+        }
+        index = index + 1
+    }
+    return ""
+}
+
+public func field_count(row: string) returns int {
+    let count = 1
+    let start = 0
+    while start<string.len(row) {
+        let remaining = string.substring(row, start, string.len(row))
+        let end       = string.index_of(remaining, "\t")
+        if end < 0 {
+            start = string.len(row)
+        } else {
+            count = count + 1
+            start = start + end + 1
+        }
+    }
+    return count
+}
+
+public func field_at(row: string, requested: int) returns string {
+    if requested < 0 {
+        return ""
+    }
+    let start = 0
+    let index = 0
+    while index < requested {
+        let remaining = string.substring(row, start, string.len(row))
+        let end       = string.index_of(remaining, "\t")
+        if end < 0 {
+            return ""
+        }
+        start = start + end + 1
+        index = index + 1
+    }
+    let remaining = string.substring(row, start, string.len(row))
+    let end       = string.index_of(remaining, "\t")
+    if end < 0 {
+        return remaining
+    }
+    return string.substring(remaining, 0, end)
+}
+
+public func parse_record(row: string) returns ParsedRecord {
+    let empty_tx    = empty_transaction()
+    let empty_b     = empty_budget()
+    let record_type = field_at(row, 0)
+    if record_type == "T" {
+        if field_count(row) != 8 {
+            return ParsedRecord { record_type: "", transaction: empty_tx, budget: empty_b, valid: false, error: "registro de transação deve ter 8 campos" }
+        }
+        let transaction = Transaction {
+            id: convert.string_to_int_or(field_at(row, 1), -1),
+            date: field_at(row, 2),
+            kind: field_at(row, 3),
+            amount_cents: convert.string_to_int_or(field_at(row, 4), -1),
+            category: field_at(row, 5),
+            created_at: convert.string_to_int_or(field_at(row, 6), -1),
+            description: decode_field(field_at(row, 7)),
+        }
+        if not model.valid_transaction(transaction) {
+            return ParsedRecord { record_type: "", transaction: empty_tx, budget: empty_b, valid: false, error: "campos da transação são inválidos" }
+        }
+        if serialize_transaction(transaction) != row + "\n" {
+            return ParsedRecord { record_type: "", transaction: empty_tx, budget: empty_b, valid: false, error: "transação fora do formato canônico" }
+        }
+        return ParsedRecord { record_type: "T", transaction: transaction, budget: empty_b, valid: true, error: "" }
+    }
+    if record_type == "B" {
+        if field_count(row) != 4 {
+            return ParsedRecord { record_type: "", transaction: empty_tx, budget: empty_b, valid: false, error: "registro de orçamento deve ter 4 campos" }
+        }
+        let budget = Budget {
+            month: field_at(row, 1),
+            category: field_at(row, 2),
+            limit_cents: convert.string_to_int_or(field_at(row, 3), -1),
+        }
+        if not model.valid_budget(budget) {
+            return ParsedRecord { record_type: "", transaction: empty_tx, budget: empty_b, valid: false, error: "campos do orçamento são inválidos" }
+        }
+        if serialize_budget(budget) != row + "\n" {
+            return ParsedRecord { record_type: "", transaction: empty_tx, budget: empty_b, valid: false, error: "orçamento fora do formato canônico" }
+        }
+        return ParsedRecord { record_type: "B", transaction: empty_tx, budget: budget, valid: true, error: "" }
+    }
+    return ParsedRecord { record_type: "", transaction: empty_tx, budget: empty_b, valid: false, error: "tipo de registro desconhecido" }
+}

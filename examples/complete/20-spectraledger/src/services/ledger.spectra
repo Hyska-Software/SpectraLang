@@ -1,0 +1,381 @@
+module services.ledger
+
+from std.collections import List
+import std.collections as collections
+import std.convert as convert
+import std.string as string
+import std.time as time
+from cli.parser import Command
+from domain.codec import ParsedRecord
+from domain.model import Budget
+from domain.model import Transaction
+from storage.database import DatabaseRead
+import domain.codec as codec
+import domain.model as model
+import reports.output as output
+import storage.database as database
+
+public record ServiceResult {
+    public ok: bool,
+    public output: string,
+    public error: string,
+}
+
+record LoadedLedger {
+    transactions: List<Transaction>,
+    budgets: List<Budget>,
+    next_id: int,
+    valid: bool,
+    error: string,
+}
+
+func success(message: string) returns ServiceResult {
+    return ServiceResult { ok: true, output: message, error: "" }
+}
+
+func failure(message: string) returns ServiceResult {
+    return ServiceResult { ok: false, output: "", error: message }
+}
+
+func empty_transactions() returns List<Transaction> {
+    let transactions: List<Transaction> = collections.list_new()
+    return transactions
+}
+
+func empty_budgets() returns List<Budget> {
+    let budgets: List<Budget> = collections.list_new()
+    return budgets
+}
+
+func invalid_load(transactions: List<Transaction>, budgets: List<Budget>, message: string) returns LoadedLedger {
+    collections.list_free(transactions)
+    collections.list_free(budgets)
+    return LoadedLedger {
+        transactions: empty_transactions(),
+        budgets: empty_budgets(),
+        next_id: 1,
+        valid: false,
+        error: message,
+    }
+}
+
+func load_ledger() returns LoadedLedger {
+    let transactions = empty_transactions()
+    let budgets      = empty_budgets()
+    let stored       = database.read()
+    if not stored.valid {
+        return LoadedLedger { transactions: transactions, budgets: budgets, next_id: 1, valid: false, error: stored.error }
+    }
+    if stored.rows != "" and not string.ends_with(stored.rows, "\n") {
+        return invalid_load(transactions, budgets, "o último registro do ledger está truncado")
+    }
+    let count      = codec.row_count(stored.rows)
+    let prior_id   = 0
+    let saw_budget = false
+    let index      = 0
+    while index < count {
+        let row    = codec.row_at(stored.rows, index)
+        let parsed = codec.parse_record(row)
+        if not parsed.valid {
+            return invalid_load(
+                transactions,
+                budgets,
+                "registro " + convert.int_to_string(index + 1) + " inválido: " + parsed.error,
+            )
+        }
+        if parsed.record_type == "T" {
+            if saw_budget or parsed.transaction.id <= prior_id or parsed.transaction.id >= stored.next_id {
+                return invalid_load(
+                    transactions,
+                    budgets,
+                    "transações fora de ordem ou contador de IDs inválido",
+                )
+            }
+            collections.list_push(transactions, parsed.transaction)
+            prior_id = parsed.transaction.id
+        } else {
+            saw_budget = true
+            let duplicate = false
+            for existing in budgets {
+                if existing.month == parsed.budget.month and existing.category == parsed.budget.category {
+                    duplicate = true
+                }
+            }
+            if duplicate {
+                return invalid_load(
+                    transactions,
+                    budgets,
+                    "há orçamentos duplicados para o mesmo mês e categoria",
+                )
+            }
+            collections.list_push(budgets, parsed.budget)
+        }
+        index = index + 1
+    }
+    return LoadedLedger { transactions: transactions, budgets: budgets, next_id: stored.next_id, valid: true, error: "" }
+}
+
+func save_ledger(transactions: List<Transaction>, budgets: List<Budget>, next_id: int) returns bool {
+    let rows     = ""
+    let prior_id = 0
+    for transaction in transactions {
+        if not model.valid_transaction(transaction) or transaction.id <= prior_id or transaction.id >= next_id {
+            return false
+        }
+        rows = rows + codec.serialize_transaction(transaction)
+        prior_id = transaction.id
+    }
+    let budget_index = 0
+    for budget in budgets {
+        if not model.valid_budget(budget) {
+            return false
+        }
+        let prior_index = 0
+        for prior in budgets {
+            if prior_index < budget_index and prior.month == budget.month and prior.category == budget.category {
+                return false
+            }
+            prior_index = prior_index + 1
+        }
+        rows = rows + codec.serialize_budget(budget)
+        budget_index = budget_index + 1
+    }
+    return database.write(rows, next_id)
+}
+
+func add_transaction(command: Command) returns ServiceResult {
+    let loaded = load_ledger()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let now = time.time_now_secs()
+    if now < 0 {
+        collections.list_free(loaded.transactions)
+        collections.list_free(loaded.budgets)
+        return failure("o relógio do sistema retornou um horário inválido")
+    }
+    let transaction = Transaction {
+        id: loaded.next_id,
+        date: command.date,
+        kind: command.kind,
+        amount_cents: command.amount_cents,
+        category: command.category,
+        created_at: now,
+        description: string.trim(command.description),
+    }
+    if not model.valid_transaction(transaction) {
+        collections.list_free(loaded.transactions)
+        collections.list_free(loaded.budgets)
+        return failure("os campos informados não formam uma transação válida")
+    }
+    collections.list_push(loaded.transactions, transaction)
+    let saved = save_ledger(loaded.transactions, loaded.budgets, loaded.next_id + 1)
+    collections.list_free(loaded.transactions)
+    collections.list_free(loaded.budgets)
+    if not saved {
+        return failure("não foi possível gravar a transação; o ledger anterior foi preservado")
+    }
+    return success("Transação #" + convert.int_to_string(transaction.id) + " registrada: " +
+        transaction.kind + " R$ " + model.money_text(transaction.amount_cents) + " em " + transaction.category)
+}
+
+func list_transactions(command: Command) returns ServiceResult {
+    let loaded = load_ledger()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let heading = "Transações"
+    if command.month != "" {
+        heading = heading + " de " + command.month
+    }
+    if command.filter_kind != "" {
+        heading = heading + " / " + command.filter_kind
+    }
+    if command.filter_category != "" {
+        heading = heading + " / " + command.filter_category
+    }
+    let text  = heading + ":\n"
+    let found = 0
+    for transaction in loaded.transactions {
+        let month_matches = command.month == "" or string.starts_with(
+            transaction.date,
+            command.month,
+        )
+        let kind_matches     = command.filter_kind == "" or transaction.kind == command.filter_kind
+        let category_matches = command.filter_category ==
+            "" or transaction.category ==
+            command.filter_category
+        if month_matches and kind_matches and category_matches {
+            text = text + output.transaction_line(transaction) + "\n"
+            found = found + 1
+        }
+    }
+    collections.list_free(loaded.transactions)
+    collections.list_free(loaded.budgets)
+    if found == 0 {
+        return success(text + "Nenhuma transação encontrada.")
+    }
+    return success(text)
+}
+
+func remove_transaction(command: Command) returns ServiceResult {
+    let id = convert.string_to_int_or(command.id_text, -1)
+    if id < 1 or convert.int_to_string(id) != command.id_text {
+        return failure("ID inválido: " + command.id_text)
+    }
+    let loaded = load_ledger()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let remaining = empty_transactions()
+    let found     = false
+    for transaction in loaded.transactions {
+        if transaction.id == id {
+            found = true
+        } else {
+            collections.list_push(remaining, transaction)
+        }
+    }
+    if not found {
+        collections.list_free(loaded.transactions)
+        collections.list_free(loaded.budgets)
+        collections.list_free(remaining)
+        return failure("transação não encontrada: #" + convert.int_to_string(id))
+    }
+    collections.list_free(loaded.transactions)
+    let saved = save_ledger(remaining, loaded.budgets, loaded.next_id)
+    collections.list_free(remaining)
+    collections.list_free(loaded.budgets)
+    if not saved {
+        return failure("não foi possível remover a transação; o ledger anterior foi preservado")
+    }
+    return success("Transação #" + convert.int_to_string(id) + " removida.")
+}
+
+func budget_spending(transactions: List<Transaction>, month: string, category: string) returns int {
+    let spent = 0
+    for transaction in transactions {
+        if transaction.kind == "expense" and string.starts_with(transaction.date, month) and transaction.category == category {
+            spent = spent + transaction.amount_cents
+        }
+    }
+    return spent
+}
+
+func set_budget(command: Command) returns ServiceResult {
+    let loaded = load_ledger()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let replacement = empty_budgets()
+    let updated = false
+    let budget = Budget { month: command.month, category: command.category, limit_cents: command.amount_cents }
+    for existing in loaded.budgets {
+        if existing.month == budget.month and existing.category == budget.category {
+            collections.list_push(replacement, budget)
+            updated = true
+        } else {
+            collections.list_push(replacement, existing)
+        }
+    }
+    if not updated {
+        collections.list_push(replacement, budget)
+    }
+    let saved = save_ledger(loaded.transactions, replacement, loaded.next_id)
+    collections.list_free(loaded.transactions)
+    collections.list_free(loaded.budgets)
+    collections.list_free(replacement)
+    if not saved {
+        return failure("não foi possível gravar o orçamento; o ledger anterior foi preservado")
+    }
+    return success("Orçamento de " + budget.category + " para " + budget.month +
+        " definido: R$ " + model.money_text(budget.limit_cents))
+}
+
+func list_budgets(command: Command) returns ServiceResult {
+    let loaded = load_ledger()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let heading = "Orçamentos"
+    if command.month != "" {
+        heading = heading + " de " + command.month
+    }
+    let text  = heading + ":\n"
+    let found = 0
+    for budget in loaded.budgets {
+        if command.month == "" or budget.month == command.month {
+            text = text +
+                output.budget_line(budget, budget_spending(loaded.transactions, budget.month, budget.category)) +
+                "\n"
+            found = found + 1
+        }
+    }
+    collections.list_free(loaded.transactions)
+    collections.list_free(loaded.budgets)
+    if found == 0 {
+        return success(text + "Nenhum orçamento encontrado.")
+    }
+    return success(text)
+}
+
+func summarize(command: Command) returns ServiceResult {
+    let loaded = load_ledger()
+    if not loaded.valid {
+        return failure(loaded.error)
+    }
+    let month = command.month
+    if month == "" {
+        month = "todos os meses"
+    }
+    let income   = 0
+    let expenses = 0
+    for transaction in loaded.transactions {
+        let matches = command.month == "" or string.starts_with(transaction.date, command.month)
+        if matches and transaction.kind == "income" {
+            income = income + transaction.amount_cents
+        } else if matches and transaction.kind == "expense" {
+            expenses = expenses + transaction.amount_cents
+        }
+    }
+    let over_budget = 0
+    for budget in loaded.budgets {
+        if (command.month == "" or budget.month == command.month) and
+        budget_spending(loaded.transactions, budget.month, budget.category) > budget.limit_cents {
+            over_budget = over_budget + 1
+        }
+    }
+    let text = output.summary(month, income, expenses, over_budget)
+    collections.list_free(loaded.transactions)
+    collections.list_free(loaded.budgets)
+    return success(text)
+}
+
+public func execute(command: Command) returns ServiceResult {
+    if command.name == "init" {
+        let initialized = database.initialize()
+        if not initialized.valid {
+            return failure(initialized.error)
+        }
+        return success("SpectraLedger inicializado em .spectraledger.")
+    }
+    if command.name == "add" {
+        return add_transaction(command)
+    }
+    if command.name == "list" {
+        return list_transactions(command)
+    }
+    if command.name == "remove" {
+        return remove_transaction(command)
+    }
+    if command.name == "budget-set" {
+        return set_budget(command)
+    }
+    if command.name == "budget-list" {
+        return list_budgets(command)
+    }
+    if command.name == "summary" {
+        return summarize(command)
+    }
+    return failure("comando desconhecido: " + command.name)
+}

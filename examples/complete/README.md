@@ -1,9 +1,9 @@
 # Spectra complete example projects
 
-19 complete `.spectra` projects. Projects 01–17 are self-validating and print an
-`ok` line; `18-spectragit` is a local version-control CLI and `19-spectraboard`
-is a separate local task-board CLI. Both have their own self-test and AOT
-integration harness.
+20 complete `.spectra` projects. Projects 01–17 are self-validating and print an
+`ok` line; `18-spectragit` is a local version-control CLI, `19-spectraboard` is
+a local task-board CLI, and `20-spectraledger` is a local personal-finance CLI.
+Projects 18–20 have their own self-test and AOT integration harness.
 
 Run any project (from the repo root):
 
@@ -21,6 +21,12 @@ Run the SpectraBoard self-test through JIT with:
 
 ```powershell
 spectralang run examples/complete/19-spectraboard -- self-test
+```
+
+Run the SpectraLedger self-test through JIT with:
+
+```powershell
+spectralang run examples/complete/20-spectraledger -- self-test
 ```
 
 ## Functional projects
@@ -42,6 +48,7 @@ spectralang run examples/complete/19-spectraboard -- self-test
 | 17 | `17-agent-operations-center` | Agent operations: governed tools, capability policy, memory, journal, approval, budget, taint, compensation/rollback, MCP surface, telemetry, and durable replay (`AGENT OPERATIONS CENTER ok`) |
 | 18 | `18-spectragit` | Local text version control CLI in SpectraLang: blobs/trees/commits, branches, line diff, restore, timelines, snapshots, inspection, and deterministic self-tests |
 | 19 | `19-spectraboard` | Independent task-board CLI with nested modules, task lifecycle, filtering, UTF-8 persistence, atomic writes, backup recovery and AOT integration |
+| 20 | `20-spectraledger` | Personal-finance CLI with nested modules, income and expense tracking, exact cent arithmetic, monthly category budgets, reports, UTF-8 persistence, backup recovery and AOT integration |
 
 ## Performance comparisons (Spectra vs Go vs Rust)
 

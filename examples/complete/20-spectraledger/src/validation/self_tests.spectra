@@ -1,0 +1,64 @@
+module validation.self_tests
+
+import std.io as io
+from domain.codec import ParsedRecord
+from domain.model import Budget
+from domain.model import Transaction
+import domain.codec as codec
+import domain.model as model
+
+func fail(message: string) returns bool {
+    io.eprintln("self-test falhou: " + message)
+    return false
+}
+
+public func run() returns bool {
+    if not model.valid_date("2024-02-29") or model.valid_date("2023-02-29") or model.valid_date("2026-04-31") {
+        return fail("validação de datas e ano bissexto")
+    }
+    if not model.valid_month("2026-09") or model.valid_month("2026-13") or model.valid_month("0000-01") {
+        return fail("validação do período mensal")
+    }
+    if model.money_to_cents("25.90") != 2590 or model.money_to_cents("8.4") != 840 or model.money_text(5) != "0,05" {
+        return fail("conversão decimal exata para centavos")
+    }
+    if model.money_to_cents("0") != 0 or model.money_to_cents("12.345") != -1 or model.money_to_cents("1.x") != -1 {
+        return fail("valores monetários inválidos não foram recusados")
+    }
+    if not model.valid_category("mercado-2") or model.valid_category("Mercado") or model.valid_category("-food") {
+        return fail("validação das categorias")
+    }
+    let original = "Almoço\tno centro\n100% — São Paulo"
+    if codec.decode_field(codec.encode_field(original)) != original {
+        return fail("escape UTF-8, delimitadores, quebras de linha e porcentagem")
+    }
+    let transaction = Transaction {
+        id: 7,
+        date: "2026-09-12",
+        kind: "expense",
+        amount_cents: 1250,
+        category: "alimentacao",
+        created_at: 100,
+        description: original,
+    }
+    let parsed_transaction = codec.parse_record(codec.row_at(codec.serialize_transaction(transaction), 0))
+    if not parsed_transaction.valid or parsed_transaction.transaction.id != transaction.id or
+    parsed_transaction.transaction.description != transaction.description or
+    parsed_transaction.transaction.amount_cents != transaction.amount_cents {
+        return fail("round-trip persistido de transação")
+    }
+    let budget        = Budget { month: "2026-09", category: "alimentacao", limit_cents: 12500 }
+    let parsed_budget = codec.parse_record(codec.row_at(codec.serialize_budget(budget), 0))
+    if not parsed_budget.valid or parsed_budget.budget.month != budget.month or parsed_budget.budget.limit_cents != budget.limit_cents {
+        return fail("round-trip persistido de orçamento")
+    }
+    let malformed = codec.parse_record("T\t7\t2026-09-12\texpense\t1250\talimentacao\t100")
+    if malformed.valid {
+        return fail("registro truncado foi aceito")
+    }
+    if codec.row_count("primeira\nsegunda\n") != 2 or codec.field_count("a\tb\tc") != 3 or codec.field_at("a\tb\tc", 2) != "c" {
+        return fail("leitura de registros e campos")
+    }
+    io.println("SpectraLedger self-test: 10 verificações passaram.")
+    return true
+}

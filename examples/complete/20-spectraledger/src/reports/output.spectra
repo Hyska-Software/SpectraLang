@@ -1,0 +1,32 @@
+module reports.output
+
+import std.convert as convert
+from domain.model import Budget
+from domain.model import Transaction
+import domain.model as model
+
+public func transaction_line(transaction: Transaction) returns string {
+    return "#" + convert.int_to_string(transaction.id) + " " + transaction.kind + " " +
+        transaction.date + " R$ " + model.money_text(transaction.amount_cents) +
+        " @" + transaction.category + " — " + transaction.description
+}
+
+public func summary(month: string, income_cents: int, expense_cents: int, over_budget: int) returns string {
+    return "Resumo de " + month + "\n" +
+        "Receitas: R$ " + model.money_text(income_cents) + "\n" +
+        "Despesas: R$ " + model.money_text(expense_cents) + "\n" +
+        "Saldo: R$ " + model.money_text(income_cents - expense_cents) + "\n" +
+        "Orçamentos excedidos: " + convert.int_to_string(over_budget)
+}
+
+public func budget_line(budget: Budget, spent_cents: int) returns string {
+    let status = "dentro do limite"
+    if spent_cents > budget.limit_cents {
+        status = "excedido"
+    }
+    return budget.month + " @" + budget.category +
+        " limite=R$ " + model.money_text(budget.limit_cents) +
+        " gasto=R$ " + model.money_text(spent_cents) +
+        " restante=R$ " + model.money_text(budget.limit_cents - spent_cents) +
+        " [" + status + "]"
+}
