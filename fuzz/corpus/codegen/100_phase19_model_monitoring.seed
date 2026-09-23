@@ -1,0 +1,104 @@
+module phase19_model_monitoring
+
+import std.serve as serve
+import std.tensor as tensor
+import std.string as str
+public func main() returns int {
+    serve.reset()
+
+    let reference_server = serve.server_new(2)
+    if serve.server_set_model_version(reference_server, "model-v1") {
+        let ok_version = 1
+        if ok_version != 1 {
+            return 1
+        }
+    } else {
+        return 1
+    }
+    // Real linear model W=[[2]], b=[0], relu: request x infers to 2*x so the
+    // original result assertions (10->20, 20->40, 110->220, 120->240) hold.
+    let weights = tensor.full2_f(1, 1, 2.0)
+    let biases = tensor.full_f(1, 0.0)
+    if serve.server_register_model_linear(reference_server, weights, biases, 0) != 1 {
+        return 1
+    }
+    serve.server_warmup(reference_server)
+    let first  = serve.server_enqueue(reference_server, 10)
+    let second = serve.server_enqueue(reference_server, 20)
+    if serve.server_process_batch(reference_server, 2) != 2 {
+        return 2
+    }
+    if serve.server_result(reference_server, first) != 20 {
+        return 3
+    }
+    if serve.server_result(reference_server, second) != 40 {
+        return 4
+    }
+
+    let snapshot = serve.server_monitoring_snapshot(reference_server)
+    if str.contains(snapshot, "\"model_version\":\"model-v1\"") {
+        let ok_snapshot = 1
+        if ok_snapshot != 1 {
+            return 5
+        }
+    } else {
+        return 5
+    }
+    if str.contains(snapshot, "\"requests\":2") {
+        let ok_requests = 1
+        if ok_requests != 1 {
+            return 6
+        }
+    } else {
+        return 6
+    }
+    let reference = serve.server_distribution_summary(reference_server)
+    if str.contains(reference, "spectra.serve.distribution_summary.v1") {
+        let ok_reference = 1
+        if ok_reference != 1 {
+            return 7
+        }
+    } else {
+        return 7
+    }
+
+    let live_server = serve.server_new(2)
+    if serve.server_register_model_linear(live_server, weights, biases, 0) != 1 {
+        return 8
+    }
+    serve.server_warmup(live_server)
+    let live_a = serve.server_enqueue(live_server, 110)
+    let live_b = serve.server_enqueue(live_server, 120)
+    if serve.server_process_batch(live_server, 2) != 2 {
+        return 8
+    }
+    if serve.server_result(live_server, live_a) != 220 {
+        return 9
+    }
+    if serve.server_result(live_server, live_b) != 240 {
+        return 10
+    }
+    let live  = serve.server_distribution_summary(live_server)
+    let drift = serve.drift_check(reference, live, 100)
+    if str.contains(drift, "\"drifted\":true") {
+        let ok_drift = 1
+        if ok_drift != 1 {
+            return 11
+        }
+    } else {
+        return 11
+    }
+
+    let audit = serve.server_audit_log(reference_server)
+    let path  = serve.export_monitoring(
+        reference_server,
+        "target/r1903/monitoring-export.json",
+        reference,
+        drift,
+        audit
+    )
+    if str.contains(path, "monitoring-export.json") {
+        return 0
+    }
+    return 12
+}

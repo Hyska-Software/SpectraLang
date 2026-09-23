@@ -196,7 +196,7 @@ impl MetricsRegistry {
             return Err(MetricsError::InvalidHelp);
         }
         let label_names = validate_label_names(labels)?;
-        let mut definitions = self.inner.definitions.lock().unwrap();
+        let mut definitions = self.inner.definitions.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(existing) = definitions.get(&name) {
             if existing.kind == kind
                 && existing.help == help
@@ -245,7 +245,7 @@ impl MetricsRegistry {
             return Err(MetricsError::InvalidValue);
         }
         let key = self.series_key(name, labels)?;
-        let definitions = self.inner.definitions.lock().unwrap();
+        let definitions = self.inner.definitions.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let definition = definitions
             .get(name)
             .ok_or_else(|| MetricsError::UnknownMetric(name.into()))?;
@@ -254,7 +254,7 @@ impl MetricsRegistry {
         }
         let buckets = definition.buckets.clone();
         drop(definitions);
-        let mut values = self.inner.values.lock().unwrap();
+        let mut values = self.inner.values.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let entry = values.entry(key).or_insert_with(|| MetricValue::Histogram {
             counts: vec![0; buckets.len()],
             sum: 0.0,
@@ -284,7 +284,7 @@ impl MetricsRegistry {
             return Err(MetricsError::InvalidValue);
         }
         let key = self.series_key(name, labels)?;
-        let definitions = self.inner.definitions.lock().unwrap();
+        let definitions = self.inner.definitions.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let definition = definitions
             .get(name)
             .ok_or_else(|| MetricsError::UnknownMetric(name.into()))?;
@@ -295,7 +295,7 @@ impl MetricsRegistry {
             return Err(MetricsError::IncompatibleMetric(name.into()));
         }
         drop(definitions);
-        let mut values = self.inner.values.lock().unwrap();
+        let mut values = self.inner.values.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if !values.contains_key(&key) && values.len() >= MAX_SERIES {
             return Err(MetricsError::CardinalityLimit);
         }
@@ -312,7 +312,7 @@ impl MetricsRegistry {
     }
 
     fn series_key(&self, name: &str, labels: &[(&str, &str)]) -> Result<SeriesKey, MetricsError> {
-        let definitions = self.inner.definitions.lock().unwrap();
+        let definitions = self.inner.definitions.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let definition = definitions
             .get(name)
             .ok_or_else(|| MetricsError::UnknownMetric(name.into()))?;
@@ -336,8 +336,8 @@ impl MetricsRegistry {
     }
 
     pub fn render_prometheus(&self) -> String {
-        let definitions = self.inner.definitions.lock().unwrap();
-        let values = self.inner.values.lock().unwrap();
+        let definitions = self.inner.definitions.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let values = self.inner.values.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut output = String::new();
         for (name, definition) in definitions.iter() {
             output.push_str(&format!(

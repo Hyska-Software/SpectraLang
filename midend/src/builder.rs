@@ -107,11 +107,45 @@ impl IRBuilder {
     }
 
     pub fn build_div(&self, func: &mut Function, lhs: Value, rhs: Value) -> Value {
-        self.try_emit(func, |result| InstructionKind::Div { result, lhs, rhs })
+        self.build_div_signedness(func, lhs, rhs, false)
+    }
+
+    /// Emit `Div` with an explicit machine signedness (`unsigned = true`
+    /// selects `udiv` in the backend).
+    pub fn build_div_signedness(
+        &self,
+        func: &mut Function,
+        lhs: Value,
+        rhs: Value,
+        unsigned: bool,
+    ) -> Value {
+        self.try_emit(func, |result| InstructionKind::Div {
+            result,
+            lhs,
+            rhs,
+            unsigned,
+        })
     }
 
     pub fn build_rem(&self, func: &mut Function, lhs: Value, rhs: Value) -> Value {
-        self.try_emit(func, |result| InstructionKind::Rem { result, lhs, rhs })
+        self.build_rem_signedness(func, lhs, rhs, false)
+    }
+
+    /// Emit `Rem` with an explicit machine signedness (`unsigned = true`
+    /// selects `urem` in the backend).
+    pub fn build_rem_signedness(
+        &self,
+        func: &mut Function,
+        lhs: Value,
+        rhs: Value,
+        unsigned: bool,
+    ) -> Value {
+        self.try_emit(func, |result| InstructionKind::Rem {
+            result,
+            lhs,
+            rhs,
+            unsigned,
+        })
     }
 
     pub fn build_eq(&self, func: &mut Function, lhs: Value, rhs: Value) -> Value {
@@ -123,19 +157,83 @@ impl IRBuilder {
     }
 
     pub fn build_lt(&self, func: &mut Function, lhs: Value, rhs: Value) -> Value {
-        self.try_emit(func, |result| InstructionKind::Lt { result, lhs, rhs })
+        self.build_lt_signedness(func, lhs, rhs, false)
+    }
+
+    /// Emit `Lt` with an explicit machine signedness (see `InstructionKind::Lt::unsigned`).
+    pub fn build_lt_signedness(
+        &self,
+        func: &mut Function,
+        lhs: Value,
+        rhs: Value,
+        unsigned: bool,
+    ) -> Value {
+        self.try_emit(func, |result| InstructionKind::Lt {
+            result,
+            lhs,
+            rhs,
+            unsigned,
+        })
     }
 
     pub fn build_le(&self, func: &mut Function, lhs: Value, rhs: Value) -> Value {
-        self.try_emit(func, |result| InstructionKind::Le { result, lhs, rhs })
+        self.build_le_signedness(func, lhs, rhs, false)
+    }
+
+    /// Emit `Le` with an explicit machine signedness (see `InstructionKind::Lt::unsigned`).
+    pub fn build_le_signedness(
+        &self,
+        func: &mut Function,
+        lhs: Value,
+        rhs: Value,
+        unsigned: bool,
+    ) -> Value {
+        self.try_emit(func, |result| InstructionKind::Le {
+            result,
+            lhs,
+            rhs,
+            unsigned,
+        })
     }
 
     pub fn build_gt(&self, func: &mut Function, lhs: Value, rhs: Value) -> Value {
-        self.try_emit(func, |result| InstructionKind::Gt { result, lhs, rhs })
+        self.build_gt_signedness(func, lhs, rhs, false)
+    }
+
+    /// Emit `Gt` with an explicit machine signedness (see `InstructionKind::Lt::unsigned`).
+    pub fn build_gt_signedness(
+        &self,
+        func: &mut Function,
+        lhs: Value,
+        rhs: Value,
+        unsigned: bool,
+    ) -> Value {
+        self.try_emit(func, |result| InstructionKind::Gt {
+            result,
+            lhs,
+            rhs,
+            unsigned,
+        })
     }
 
     pub fn build_ge(&self, func: &mut Function, lhs: Value, rhs: Value) -> Value {
-        self.try_emit(func, |result| InstructionKind::Ge { result, lhs, rhs })
+        self.build_ge_signedness(func, lhs, rhs, false)
+    }
+
+    /// Emit `Ge` with an explicit machine signedness (see `InstructionKind::Lt::unsigned`).
+    pub fn build_ge_signedness(
+        &self,
+        func: &mut Function,
+        lhs: Value,
+        rhs: Value,
+        unsigned: bool,
+    ) -> Value {
+        self.try_emit(func, |result| InstructionKind::Ge {
+            result,
+            lhs,
+            rhs,
+            unsigned,
+        })
     }
 
     pub fn build_and(&self, func: &mut Function, lhs: Value, rhs: Value) -> Value {

@@ -1,0 +1,18 @@
+// Teste 6: While loop
+module while_loop
+
+func sum_to_n(n: int) returns int {
+    let sum = 0
+    let i   = 1
+
+    while i <= n {
+        sum = sum + i
+        i = i + 1
+    }
+
+    return sum
+}
+
+func main() returns int {
+    return sum_to_n(10)
+}

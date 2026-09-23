@@ -1,0 +1,56 @@
+// Integer literal boundaries must preserve signed minima and unsigned bits.
+module integer_literal_boundaries
+
+import std.numeric as numeric
+
+const CONST_MAXIMUM: u64 = 18446744073709551615
+static STATIC_MAXIMUM: u64 = 18446744073709551615
+
+func echo_u64(value: u64) returns u64 {
+    return value
+}
+
+public func main() returns int {
+    let signed_min: int = -9223372036854775808
+    if signed_min != -9223372036854775808 {
+        return 1
+    }
+
+    let narrow_min: i8 = -128
+    if (narrow_min as int) != -128 {
+        return 2
+    }
+
+    let above_i64: u64 = 9223372036854775808
+    let unsigned_max: u64 = 18446744073709551615
+    let const_maximum: u64 = CONST_MAXIMUM
+    if const_maximum != unsigned_max {
+        return 6
+    }
+    if not (CONST_MAXIMUM > above_i64) {
+        return 7
+    }
+    if STATIC_MAXIMUM != unsigned_max {
+        return 8
+    }
+
+    let called_max: u64 = echo_u64(18446744073709551615)
+    if called_max != unsigned_max {
+        return 5
+    }
+    let method_max: u64 = numeric.wrapping_add_u64(18446744073709551615, 0)
+    if method_max != unsigned_max {
+        return 9
+    }
+    if not (unsigned_max > above_i64) {
+        return 3
+    }
+
+    let two: u64 = 2
+    let one: u64 = 1
+    if unsigned_max % two != one {
+        return 4
+    }
+
+    return 0
+}

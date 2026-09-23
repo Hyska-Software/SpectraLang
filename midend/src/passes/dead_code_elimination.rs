@@ -25,8 +25,8 @@ impl Pass for DeadCodeElimination {
             if func.suspension_barrier {
                 continue;
             }
-            // Itera até fixpoint: remover uma instrução morta pode revelar que
-            // os produtores dos seus operandos também se tornaram mortos.
+            // Iterate to a fixed point: removing a dead instruction can reveal
+            // that its operands' producers also became dead.
             loop {
                 let mut used_values: HashSet<usize> = HashSet::new();
 
@@ -172,7 +172,7 @@ impl DeadCodeElimination {
                     used.insert(value.id);
                 }
             }
-            // AutodiffStep: marca todos os operandos do kernel reverso.
+            // AutodiffStep: mark every operand of the reverse kernel.
             InstructionKind::AutodiffStep {
                 output,
                 upstream,
@@ -210,12 +210,12 @@ impl DeadCodeElimination {
             InstructionKind::CoroutineCreate { frame, .. } => {
                 used.insert(frame.id);
             }
-            InstructionKind::CoroutinePollChild { status, result, task, .. } => {
-                used.insert(status.id);
+            // `task` is the only operand here. `status` and `result` are
+            // *definitions* of this instruction (verification registers both
+            // as results), so inserting them would wrongly mark this node's
+            // own outputs as "used by someone else".
+            InstructionKind::CoroutinePollChild { task, .. } => {
                 used.insert(task.id);
-                if let Some(result) = result {
-                    used.insert(result.id);
-                }
             }
             InstructionKind::CoroutineSubscribe { task, parent } => {
                 used.insert(task.id);
@@ -301,26 +301,41 @@ impl DeadCodeElimination {
     }
 
     fn has_side_effects(instr: &InstructionKind) -> bool {
-        matches!(
-            instr,
+        match instr {
             InstructionKind::Store { .. }
-                | InstructionKind::Call { .. }
-                | InstructionKind::CallIndirect { .. }
-                | InstructionKind::HostCall { .. }
-                | InstructionKind::CoroutineCreate { .. }
-                | InstructionKind::CoroutinePollChild { .. }
-                | InstructionKind::CoroutineSubscribe { .. }
-                | InstructionKind::CoroutineWake { .. }
-                | InstructionKind::CoroutineSuspend { .. }
-                | InstructionKind::CoroutineComplete { .. }
-                | InstructionKind::CoroutineError { .. }
-                | InstructionKind::CoroutineCancelled { .. }
-                | InstructionKind::CoroutinePollReturn { .. }
-                | InstructionKind::FrameStore { .. }
-                | InstructionKind::StateStore { .. }
-                // AutodiffStep acumula gradientes no backward pass: nunca eliminar.
-                | InstructionKind::AutodiffStep { .. }
-        )
+            | InstructionKind::Call { .. }
+            | InstructionKind::CallIndirect { .. }
+            | InstructionKind::HostCall { .. }
+            | InstructionKind::CoroutineCreate { .. }
+            | InstructionKind::CoroutinePollChild { .. }
+            | InstructionKind::CoroutineSubscribe { .. }
+            | InstructionKind::CoroutineWake { .. }
+            | InstructionKind::CoroutineSuspend { .. }
+            | InstructionKind::CoroutineComplete { .. }
+            | InstructionKind::CoroutineError { .. }
+            | InstructionKind::CoroutineCancelled { .. }
+            | InstructionKind::CoroutinePollReturn { .. }
+            | InstructionKind::FrameStore { .. }
+            | InstructionKind::StateStore { .. }
+            // AutodiffStep accumulates gradients in the backward pass: never
+            // eliminate it.
+            | InstructionKind::AutodiffStep { .. } => true,
+            // A GEP with an accepted bound (`Static` or `Dynamic`) is where the
+            // backend emits the array-bounds panic branch. Deleting the GEP
+            // would delete the trap, so bound-carrying GEPs are effectful.
+            // Bound-less GEPs are pure address arithmetic and stay removable.
+            InstructionKind::GetElementPtr { bound, .. } => bound.is_some(),
+            // Integer division/remainder can trap (division by zero and
+            // `MIN / -1` overflow); the backend emits the corresponding panic
+            // branches, and `constant_folding` refuses to fold those cases for
+            // the same reason. This pass has no type map, so it cannot tell an
+            // integer `Div`/`Rem` from a floating-point one: both are kept
+            // conservatively. Dropping dead *float* divisions is a missed
+            // optimization, while dropping a dead integer division would be a
+            // miscompilation.
+            InstructionKind::Div { .. } | InstructionKind::Rem { .. } => true,
+            _ => false,
+        }
     }
 }
 
@@ -330,7 +345,7 @@ impl Default for DeadCodeElimination {
     }
 }
 
-/// Free helper — cria e executa o passo em uma única chamada.
+/// Free helper — create and run the pass in a single call.
 pub fn run(module: &mut crate::ir::Module) -> bool {
     DeadCodeElimination::new().run(module)
 }

@@ -13,6 +13,10 @@ pub enum ExportVisibility {
     Public,
     /// Visible only to modules within the same package (`spectra.toml` `name`).
     Internal,
+    /// Visible only to the declaring module. Used for struct *field*
+    /// visibility: private fields are still exported (importers need the
+    /// layout for lowering) but cross-module access is rejected.
+    Private,
 }
 
 /// A function exported from a module.
@@ -123,6 +127,11 @@ pub struct ExportedType {
     pub is_enum: bool,
     /// For structs: field name -> type annotation.
     pub struct_fields: Option<HashMap<String, TypeAnnotation>>,
+    /// For structs: field name -> declared visibility. Importers keep the
+    /// real field visibility so `private`/`internal` field access can be
+    /// enforced across module boundaries; `None` (builtins and legacy
+    /// exports) means every exported field is treated as `public`.
+    pub struct_field_visibility: Option<HashMap<String, ExportVisibility>>,
     /// For enums: variant name -> tuple payload types (None for unit/struct-data variants).
     pub enum_variants: Option<HashMap<String, Option<Vec<TypeAnnotation>>>>,
     /// For enums: variant name -> named-field list, for struct-data variants only.

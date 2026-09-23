@@ -423,7 +423,9 @@ impl ASTLowering {
                     enum_name, variant_name
                 ))
             }
-            _ => unreachable!("lowering expression category mismatch"),
+            _ => self.invalid_value(
+                "lower_expression_enum called with a non-enum-variant expression",
+            ),
         }
     }
 }

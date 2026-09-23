@@ -1,0 +1,1 @@
+requires Redis plus __SPECTRA_REDIS_URL__ placeholder substitution (environment-dependent driver fixture)

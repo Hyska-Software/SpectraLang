@@ -545,6 +545,9 @@ pub struct ASTLowering {
     lowering_async_poll: bool,
     /// expression itself only determines part of the generic argument list.
     current_expected_annotation: Option<TypeAnnotation>,
+    /// Expected IR type for a call argument whose source annotation is not
+    /// available at the expression lowering site.
+    current_expected_ir_type: Option<IRType>,
     /// Maps trait names to their methods in declaration order (for vtable slot lookup).
     trait_method_order: HashMap<String, Vec<String>>,
     /// Maps trait names to method signatures for dyn dispatch and type inference.
@@ -555,6 +558,9 @@ pub struct ASTLowering {
     errors: Vec<MidendError>,
     /// Compile-time constants lowered as literals at each use site.
     const_values: HashMap<String, LoweredConstValue>,
+    /// Declared IR types for compile-time constants, preserving exact-width
+    /// signedness at every use site.
+    const_types: HashMap<String, IRType>,
     /// Module-level mutable globals lowered to IR globals and addressed by name.
     static_globals: HashMap<String, (String, IRType)>,
     /// Borrowed receiver parameters are visible in `struct_var_map` but are

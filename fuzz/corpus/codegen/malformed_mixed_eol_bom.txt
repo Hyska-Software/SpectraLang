@@ -1,0 +1,5 @@
+﻿module m
+let s = "crlf"
+let t = 'c'let u = 1
+
+   	 

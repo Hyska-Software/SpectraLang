@@ -8,12 +8,49 @@ impl ASTLowering {
     ) -> Value {
         match &expr.kind {
             ExpressionKind::NumberLiteral(n) => {
+                let expected_ir_type = self
+                    .current_expected_annotation
+                    .clone()
+                    .map(|annotation| self.lower_type_annotation(&annotation))
+                    .or_else(|| self.current_expected_ir_type.clone())
+                    .or_else(|| {
+                        self.resolved_expression_types
+                            .get(&expr.span)
+                            .cloned()
+                            .map(|semantic_type| self.lower_type(&semantic_type))
+                            .filter(|ty| !Self::ir_type_contains_unknown(ty))
+                    });
+                // The semantic pass accepts literals above i64::MAX only in
+                // an unsigned exact-width context. Preserve their bits rather
+                // than letting the shared i64 parser reinterpret them as f64.
+                if !spectra_compiler::numeric::number_literal_is_float(n) {
+                    if let Some(ty) = expected_ir_type.clone() {
+                        if matches!(
+                            &ty,
+                            IRType::ExactInt {
+                                signed: false,
+                                width: _
+                            }
+                        ) {
+                            if let Some(value) =
+                                spectra_compiler::numeric::parse_number_literal_as_i128(n)
+                            {
+                                if value >= 0 && (value as u128) <= u64::MAX as u128 {
+                                    return self.builder.build_const_int_typed(
+                                        ir_func,
+                                        value as u64 as i64,
+                                        ty,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
                 // The token carries raw text; the shared parser understands
                 // radix prefixes, `_` separators, and scientific notation.
                 match spectra_compiler::numeric::parse_number_literal(n) {
                     Some(spectra_compiler::numeric::ParsedNumber::Int(int_val)) => {
-                        if let Some(annotation) = self.current_expected_annotation.clone() {
-                            let ty = self.lower_type_annotation(&annotation);
+                        if let Some(ty) = expected_ir_type.clone() {
                             if matches!(ty, IRType::ExactInt { .. }) {
                                 self.builder.build_const_int_typed(ir_func, int_val, ty)
                             } else {
@@ -24,8 +61,7 @@ impl ASTLowering {
                         }
                     }
                     Some(spectra_compiler::numeric::ParsedNumber::Float(float_val)) => {
-                        if let Some(annotation) = self.current_expected_annotation.clone() {
-                            let ty = self.lower_type_annotation(&annotation);
+                        if let Some(ty) = expected_ir_type {
                             if matches!(ty, IRType::ExactFloat { .. }) {
                                 self.builder.build_const_float_typed(ir_func, float_val, ty)
                             } else {
@@ -45,7 +81,13 @@ impl ASTLowering {
             ExpressionKind::Identifier(name) => {
                 // Check if this is an array - return pointer directly
                 if let Some(value) = self.const_values.get(name).cloned() {
-                    self.emit_const_value(&value, ir_func)
+                    let saved_expected = self.current_expected_ir_type.clone();
+                    if self.current_expected_ir_type.is_none() {
+                        self.current_expected_ir_type = self.const_types.get(name).cloned();
+                    }
+                    let value = self.emit_const_value(&value, ir_func);
+                    self.current_expected_ir_type = saved_expected;
+                    value
                 }
                 // Module-level mutable statics are addressed through an IR
                 // global and loaded on every use; they are not copied into a
@@ -81,7 +123,9 @@ impl ASTLowering {
                     self.invalid_value(format!("unresolved identifier '{}' during lowering", name))
                 }
             }
-            _ => unreachable!("lowering expression category mismatch"),
+            _ => self.invalid_value(
+                "lower_expression_literals called with a non-literal expression",
+            ),
         }
     }
 }

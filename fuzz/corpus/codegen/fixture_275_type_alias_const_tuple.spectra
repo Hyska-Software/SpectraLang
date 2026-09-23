@@ -1,0 +1,19 @@
+module bug_hunt_v2_275_type_alias_const_tuple
+
+type Pair = (int, string)
+const BASE: int = 40 + 2
+
+func make_pair() returns Pair {
+    (BASE, "spectra")
+}
+
+public func main() returns int {
+    let pair: Pair = make_pair()
+    if pair.0 != 42 {
+        return 1
+    }
+    if pair.1 != "spectra" {
+        return 2
+    }
+    return 0
+}

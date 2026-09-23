@@ -1,0 +1,19 @@
+// Teste 4: Operações lógicas
+module logic
+
+func test_logic() returns bool {
+    let a = true
+    let b = false
+
+    let and_result = a and b
+    let or_result  = a or b
+    let not_a      = not a
+    let not_b      = not b
+
+    return or_result
+}
+
+func main() returns int {
+    let result = test_logic()
+    return 0
+}

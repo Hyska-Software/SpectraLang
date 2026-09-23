@@ -1,0 +1,16 @@
+// Teste 10: Unless (negação de if)
+module test_unless
+
+func test_unless(value: int) returns int {
+    if not value < 10 {
+        return 100
+    } else {
+        return 0
+    }
+}
+
+func main() returns int {
+    let r1 = test_unless(15)
+    let r2 = test_unless(5)
+    return r1 + r2
+}

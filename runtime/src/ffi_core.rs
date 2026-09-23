@@ -1,7 +1,8 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, RwLock};
 use std::{mem, ptr, slice, str};
 
 use crate::abi::SpectraHostCallCache;
@@ -11,18 +12,28 @@ use crate::initialize;
 
 /// Program arguments forwarded from the host to Spectra code.
 /// Set by the JIT runner before execution or by [`spectra_rt_startup_with_args`]
-/// in AOT executables. Uses `OnceLock` so it can be set exactly once per process.
-static PROGRAM_ARGV: OnceLock<Vec<String>> = OnceLock::new();
+/// in AOT executables. An `RwLock<Option<Vec<String>>>` so every call
+/// overwrites the previous value: a REPL or package-test loop that runs many
+/// programs in one process must see the arguments of the *current* program,
+/// not the ones from the first `set_program_args` call.
+static PROGRAM_ARGV: RwLock<Option<Vec<String>>> = RwLock::new(None);
 
-/// Returns the program arguments if they have been set, otherwise `None`.
-pub(crate) fn get_program_args() -> Option<&'static Vec<String>> {
-    PROGRAM_ARGV.get()
+/// Returns a snapshot of the program arguments if they have been set,
+/// otherwise `None`.
+pub(crate) fn get_program_args() -> Option<Vec<String>> {
+    PROGRAM_ARGV
+        .read()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .clone()
 }
 
 /// Sets the program arguments visible to `std.env` host functions.
-/// Subsequent calls are silently ignored (can only be set once per process).
+/// Each call overwrites the previously stored arguments (the store is
+/// process-wide and deliberately not a `OnceLock`: see [`PROGRAM_ARGV`]).
 pub fn set_program_args(args: Vec<String>) {
-    let _ = PROGRAM_ARGV.set(args);
+    *PROGRAM_ARGV
+        .write()
+        .unwrap_or_else(|poison| poison.into_inner()) = Some(args);
 }
 use crate::memory::ManualBox;
 
@@ -112,12 +123,79 @@ struct AllocationTable {
     /// through `try_read_packed_string` when its pointer is tracked, and the
     /// key comparison the map/set/list helpers perform depends on that.
     borrowed_literals: HashMap<usize, usize>,
+    /// Global frame registry: one `Frame` per frame id (base frame `0` first),
+    /// addressable by ANY thread so a cross-thread `spectra_rt_manual_free` can
+    /// still untrack a pointer from its owning frame (`remove_from_frame`).
+    /// Which frames a given thread may *pop* is tracked separately, per thread,
+    /// in [`THREAD_FRAMES`].
     frames: Vec<Frame>,
+    /// Monotonic frame-id source. Incremented under the table lock by
+    /// [`Self::push_frame`], which is what makes id allocation atomic for all
+    /// threads (every push/pop/clear holds the single table mutex).
     next_frame: usize,
+    /// Bumped by every [`Self::clear_all`]. Thread-local frame stacks record
+    /// the generation they were built under; a mismatch means the stacks
+    /// reference frames that no longer exist, so they are cleared lazily on
+    /// next use instead of being walked eagerly on every thread (threads may
+    /// be gone by the time the clear happens, so a per-thread reset from the
+    /// clearing thread is impossible).
+    generation: u64,
     /// Freed-but-recently-live addresses (FIFO, bounded by
     /// [`QUARANTINE_CAPACITY`]). See [`QuarantineEntry`].
     quarantine: VecDeque<QuarantineEntry>,
     next_freed_epoch: u64,
+}
+
+// Per-thread stack of frame ids **owned by the current thread** (base frame
+// `0` is never pushed: it is implicit and shared by every thread).
+//
+// All access happens while the global allocation-table lock is held, so the
+// generation check and the stack mutation are atomic with respect to
+// `AllocationTable::clear_all`.
+thread_local! {
+    static THREAD_FRAMES: RefCell<ThreadFrameStack> =
+        RefCell::new(ThreadFrameStack { generation: 0, frames: Vec::new() });
+}
+
+struct ThreadFrameStack {
+    generation: u64,
+    frames: Vec<usize>,
+}
+
+/// Runs `action` on the calling thread's frame-id stack, first reconciling it
+/// with `table.generation` (a stale stack is emptied — see
+/// [`AllocationTable::generation`]).
+///
+/// # Locking
+///
+/// Must be called while holding the global allocation-table lock; the
+/// generation token is read from the same `table` the caller guards, which is
+/// what makes the reconciliation race-free.
+fn with_thread_frames<R>(table: &AllocationTable, action: impl FnOnce(&mut Vec<usize>) -> R) -> R {
+    THREAD_FRAMES.with(|cell| {
+        let mut stack = cell.borrow_mut();
+        if stack.generation != table.generation {
+            stack.frames.clear();
+            stack.generation = table.generation;
+        }
+        action(&mut stack.frames)
+    })
+}
+
+/// The frame id allocations on the calling thread attach to: the top of the
+/// thread's own stack, or the process-wide base frame `0` when the thread has
+/// no open frame. Base frame 0 is shared by every thread and is never popped.
+///
+/// Must be called while holding the global allocation-table lock. Returns
+/// `None` when the thread's top id is stale (not present in `frames`), which
+/// callers treat as frame `0`.
+fn current_thread_frame_id(table: &AllocationTable) -> Option<usize> {
+    let top = with_thread_frames(table, |frames| frames.last().copied())?;
+    table
+        .frames
+        .iter()
+        .any(|frame| frame.id == top)
+        .then_some(top)
 }
 
 
@@ -128,11 +206,16 @@ impl AllocationTable {
             borrowed_literals: HashMap::new(),
             frames: vec![Frame::new(0)],
             next_frame: 1,
+            generation: 0,
             quarantine: VecDeque::new(),
             next_freed_epoch: 0,
         }
     }
 
+    /// Allocates the next frame id and registers the frame in the global
+    /// registry. The id is allocated under the single table mutex, which is
+    /// what makes it atomic across threads; the caller additionally pushes the
+    /// id onto the *calling thread's* stack via [`with_thread_frames`].
     fn push_frame(&mut self) -> usize {
         let id = self.next_frame;
         self.next_frame = self.next_frame.wrapping_add(1).max(1);
@@ -140,32 +223,23 @@ impl AllocationTable {
         id
     }
 
-    fn pop_frame(&mut self, frame_id: usize) -> Vec<usize> {
-        // Pop frames from the top until we find the target frame, collecting
-        // all allocations from every frame that we remove (including those
-        // above the target).  This prevents leaks when frames are closed out
-        // of order — which should not happen in well-formed code, but we
-        // handle it defensively.
-        let mut collected: Vec<usize> = Vec::new();
-        while let Some(frame) = self.frames.last() {
-            // Never remove the implicit base frame (id == 0).
-            if frame.id == 0 {
-                break;
-            }
-            let frame = self.frames.pop().unwrap();
-            let found = frame.id == frame_id;
-            collected.extend(frame.allocations);
-            if found {
-                return collected;
-            }
+    /// Removes `frame_id` from the global registry (if present) and returns
+    /// its tracked pointers for quarantine-freeing.
+    ///
+    /// # Ownership
+    ///
+    /// Callers must only invoke this for frame ids popped from the *calling
+    /// thread's* stack (see `spectra_rt_manual_frame_exit`): a frame id that
+    /// belongs to another thread must never be drained from here. The base
+    /// frame (`0`) is never removed.
+    fn take_frame(&mut self, frame_id: usize) -> Vec<usize> {
+        if frame_id == 0 {
+            return Vec::new();
         }
-        // frame_id was not found — return whatever we collected so far
-        // (callers will still free those allocations).
-        collected
-    }
-
-    fn current_frame_mut(&mut self) -> Option<&mut Frame> {
-        self.frames.last_mut()
+        match self.frames.iter().position(|frame| frame.id == frame_id) {
+            Some(position) => self.frames.remove(position).allocations,
+            None => Vec::new(),
+        }
     }
 
     fn remove_from_frame(&mut self, frame_id: usize, ptr: usize) {
@@ -187,6 +261,11 @@ impl AllocationTable {
         self.frames.clear();
         self.frames.push(Frame::new(0));
         self.next_frame = 1;
+        // Invalidate every thread-local frame stack (see the `generation`
+        // field docs): threads reconcile lazily against this token on their
+        // next frame operation instead of the clearing thread reaching into
+        // stacks that may belong to already-exited threads.
+        self.generation = self.generation.wrapping_add(1);
         // A full clear also drops every tombstone: after
         // `spectra_rt_manual_clear` there is no live state left to protect,
         // and retaining pinned blocks across a reset would leak them for
@@ -327,6 +406,22 @@ pub(crate) fn record_manual_free_status(status: i32) {
 
 pub(crate) fn last_manual_free_status() -> i32 {
     LAST_MANUAL_FREE_STATUS.load(Ordering::Acquire)
+}
+
+/// Status recorded by the most recent `spectra_rt_manual_frame_exit` call.
+///
+/// Mirrors [`LAST_MANUAL_FREE_STATUS`]: the JIT import keeps its historical
+/// `void` signature, so detection of an exit that freed nothing — an id that
+/// is unknown to the process or owned by a *different* thread — is reported
+/// out-of-band through `spectra_rt_manual_frame_exit_last_status`.
+static LAST_MANUAL_FRAME_EXIT_STATUS: AtomicI32 = AtomicI32::new(HOST_STATUS_SUCCESS);
+
+pub(crate) fn record_manual_frame_exit_status(status: i32) {
+    LAST_MANUAL_FRAME_EXIT_STATUS.store(status, Ordering::Release);
+}
+
+pub(crate) fn last_manual_frame_exit_status() -> i32 {
+    LAST_MANUAL_FRAME_EXIT_STATUS.load(Ordering::Acquire)
 }
 
 fn allocation_table() -> &'static Mutex<AllocationTable> {

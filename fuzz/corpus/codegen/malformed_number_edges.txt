@@ -1,0 +1,11 @@
+module m
+let a = 0x
+let b = 1_
+let c = 1e
+let d = .5
+let e = 000123
+let f = 99999999999999999999999999
+let g = 1.2.3
+let h = 0b1010_1010
+let i = 3.14e+10
+let j = 1__2

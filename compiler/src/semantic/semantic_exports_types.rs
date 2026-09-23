@@ -101,6 +101,20 @@ impl SemanticAnalyzer {
                         .iter()
                         .map(|f| (f.name.clone(), f.ty.clone()))
                         .collect();
+                    // Preserve the real per-field visibility so importers can
+                    // enforce `private`/`internal` field access.
+                    let struct_field_visibility: HashMap<String, ExportVisibility> = s
+                        .fields
+                        .iter()
+                        .map(|f| {
+                            let vis = match f.visibility {
+                                Visibility::Public => ExportVisibility::Public,
+                                Visibility::Internal => ExportVisibility::Internal,
+                                Visibility::Private => ExportVisibility::Private,
+                            };
+                            (f.name.clone(), vis)
+                        })
+                        .collect();
                     exports.types.insert(
                         s.name.clone(),
                         ExportedType {
@@ -108,6 +122,7 @@ impl SemanticAnalyzer {
                             visibility: vis,
                             is_enum: false,
                             struct_fields: Some(struct_fields),
+                            struct_field_visibility: Some(struct_field_visibility),
                             enum_variants: None,
                             enum_struct_variants: None,
                         },
@@ -189,6 +204,7 @@ impl SemanticAnalyzer {
                             visibility: vis,
                             is_enum: true,
                             struct_fields: None,
+                            struct_field_visibility: None,
                             enum_variants: Some(enum_variants),
                             enum_struct_variants: enum_struct_variants_opt,
                         },

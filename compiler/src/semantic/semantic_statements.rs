@@ -1,7 +1,16 @@
+use super::semantic_expression_fields::FieldLookup;
 use super::*;
 
 impl SemanticAnalyzer {
     pub(crate) fn analyze_statement(&mut self, statement: &Statement) {
+        if self.enter_analysis_depth(statement.span).is_err() {
+            return;
+        }
+        self.analyze_statement_inner(statement);
+        self.exit_analysis_depth();
+    }
+
+    fn analyze_statement_inner(&mut self, statement: &Statement) {
         match &statement.kind {
             StatementKind::Let(let_stmt) => {
                 let declared_type = let_stmt
@@ -32,7 +41,8 @@ impl SemanticAnalyzer {
                 };
                 let binding_type = if let Some(declared_type) = declared_type {
                     if let Some(ref value) = let_stmt.value {
-                        if !self.inferred_binding_types_match(&inferred_type, &declared_type)
+                        if !matches!(inferred_type, Type::Unknown)
+                            && !self.inferred_binding_types_match(&inferred_type, &declared_type)
                             && !self.tensor_literal_matches(value, &declared_type)
                         {
                             if let Some((code, message, hint)) =
@@ -153,8 +163,20 @@ impl SemanticAnalyzer {
                             );
                         }
                     }
-                    crate::ast::LValue::FieldAccess { object, .. } => {
+                    crate::ast::LValue::FieldAccess { object, field } => {
                         self.analyze_expression(object);
+                        // The lvalue itself names a field: run the same
+                        // existence + visibility checks as the read path so a
+                        // missing/inaccessible field does not degrade into a
+                        // misleading E003 with an unknown target type.
+                        let object_type = self.infer_expression_type(object);
+                        if matches!(
+                            object_type,
+                            Type::Struct { .. } | Type::Applied { .. }
+                        ) {
+                            let _ =
+                                self.check_field_access(&object_type, field, assign_stmt.target_span);
+                        }
                     }
                 }
 
@@ -175,20 +197,15 @@ impl SemanticAnalyzer {
                     }
                     crate::ast::LValue::FieldAccess { object, field } => {
                         let obj_type = self.infer_expression_type(object);
-                        self.specialized_struct_context_for_type(&obj_type)
-                            .and_then(|(_, info, substitutions)| {
-                                info.fields.get(field.as_str()).map(|field_info| {
-                                    if substitutions.is_empty() {
-                                        self.type_annotation_to_type(&Some(field_info.ty.clone()))
-                                    } else {
-                                        self.type_annotation_to_type_with_substitutions(
-                                            &field_info.ty,
-                                            &substitutions,
-                                        )
-                                    }
-                                })
-                            })
-                            .unwrap_or(Type::Unknown)
+                        // Quiet re-resolution (existence and visibility were
+                        // already validated above), so the assignment target
+                        // type comes from the declared field type instead of
+                        // silently degrading to `unknown` — without reporting
+                        // the same diagnostics twice.
+                        match self.resolve_struct_field(&obj_type, field) {
+                            FieldLookup::Found { ty, .. } => ty,
+                            FieldLookup::NoField | FieldLookup::NoStruct => Type::Unknown,
+                        }
                     }
                 };
 
@@ -202,7 +219,15 @@ impl SemanticAnalyzer {
                     );
                 }
 
-                if !self.inferred_binding_types_match(&value_type, &target_type) {
+                // When the TARGET is unresolved and a target-specific
+                // diagnostic already fired at its span (missing field, unknown
+                // variable, ...), the unknown-vs-value mismatch adds nothing:
+                // the old unconditional E003 with `expected: unknown` was
+                // actively misleading.
+                let target_explained = matches!(target_type, Type::Unknown)
+                    && self.has_error_at_span(assign_stmt.target_span);
+
+                if !target_explained && !self.inferred_binding_types_match(&value_type, &target_type) {
                     let hint = self.conversion_hint(&value_type, &target_type);
                     // Prefer the concrete conversion hint when one exists;
                     // otherwise point at the Option/Result handling forms.

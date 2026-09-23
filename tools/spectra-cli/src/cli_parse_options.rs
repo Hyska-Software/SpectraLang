@@ -61,10 +61,16 @@ where
             }
             "--verbose" | "-v" => verbose = true,
             "--run" | "-r" => {
-                if command == BuildCommand::Check {
-                    return Err(usage_error(
-                        "'--run' cannot be used with the 'check' command.",
-                    ));
+                // `--run` is meaningful only where execution is possible: the
+                // `run` command (redundant) and `compile --run`. `check`,
+                // `lint`, and `bench` never execute, so accepting the flag
+                // and silently force-disabling it later was a trap — reject
+                // it uniformly instead.
+                if !matches!(command, BuildCommand::Run | BuildCommand::Compile) {
+                    return Err(usage_error(&format!(
+                        "'--run' is only supported with the 'run' and 'compile' commands (not '{}').",
+                        command.name()
+                    )));
                 }
                 options.run_jit = true;
             }
@@ -176,6 +182,46 @@ where
         return Err(usage_error("No source files or directories were provided."));
     }
 
+    // Emit-flag validation, up front so no combination silently drops work
+    // (previously `--emit-object` shadowed `--emit-exe`, emit flags bypassed
+    // `check`/`lint`/`run` semantics, and `--json` swallowed both). The
+    // enforced matrix:
+    //
+    //   --emit-object <path>   compile only
+    //   --emit-exe <path>      compile only (use `run` to execute via JIT;
+    //                          `run --emit-exe` used to emit silently
+    //                          WITHOUT running — now an explicit error)
+    //   --emit-object/--emit-exe are mutually exclusive
+    //   neither combines with --json/--sarif (structured diagnostics would
+    //   replace artifact emission without a word)
+    if emit_object.is_some() && emit_exe.is_some() {
+        return Err(usage_error(
+            "'--emit-object' and '--emit-exe' cannot be used together.",
+        ));
+    }
+    let emit_flag = if emit_object.is_some() {
+        Some("--emit-object")
+    } else if emit_exe.is_some() {
+        Some("--emit-exe")
+    } else {
+        None
+    };
+    if let Some(flag) = emit_flag {
+        if command != BuildCommand::Compile {
+            return Err(usage_error(&format!(
+                "'{}' is only supported with the 'compile' command.",
+                flag
+            )));
+        }
+    }
+    if emit_flag.is_some() && (json_output || sarif_output) {
+        return Err(usage_error(
+            "'--json'/'--sarif' cannot be combined with '--emit-object' or '--emit-exe'.",
+        ));
+    }
+
+    // `--run` was already rejected for every command except `run` and
+    // `compile` above; force each command's execution default here.
     match command {
         BuildCommand::Run => options.run_jit = true,
         BuildCommand::Check | BuildCommand::Lint | BuildCommand::Bench => options.run_jit = false,

@@ -67,9 +67,33 @@ impl CodeGenerator {
         let _tensor_ir = validate_tensor_ir(ir_module)?;
         self.pre_intern_host_names(ir_module);
         self.define_globals(ir_module)?;
+
+        // Tail-call ineligibility, computed once per module (see
+        // `uses_tail_call_convention` for why ineligibility — not convention
+        // propagation — is the fix):
+        //
+        // (a) A function whose address appears in any `FuncAddr` must keep the
+        //     platform default: `CallIndirect` rebuilds its signature with
+        //     `module.make_signature()` (default convention), so a
+        //     `CallConv::Tail` callee would be entered with the wrong
+        //     argument-register placement (e.g. dyn-vtable dispatch to a
+        //     self-tail-recursive method, or `let g = fib` shapes).
+        // (b) Only the entry module (the one defining `main`) may use Tail.
+        //     The JIT compiles modules in dependency order into one shared
+        //     `JITModule`, so *direct* cross-module calls already resolve
+        //     through the definer's real signature, but a *later* module can
+        //     take the address of an already-finalized function
+        //     (cross-module vtable/function-value), which is not visible when
+        //     the definer is declared. Restricting Tail to the entry module —
+        //     compiled last and, under the acyclic import graph, referenced
+        //     by no other module — closes that window. Library modules
+        //     simply fall back to plain calls; correctness is unaffected.
+        let tail_ineligible = Self::collect_tail_ineligible_functions(ir_module.functions.iter());
+        let tail_allowed = ir_module.functions.iter().any(|func| func.name == "main");
+
         // First pass: declare all functions
         for func in &ir_module.functions {
-            self.declare_function_in_module(&ir_module.name, func)?;
+            self.declare_function_in_module(&ir_module.name, func, tail_allowed, &tail_ineligible)?;
         }
 
         // Calls inside this module use local IR spellings, while imported
@@ -302,8 +326,36 @@ impl CodeGenerator {
     /// and functions that need the manual allocation frame keep the platform
     /// default — a tail jump would skip the `frame_exit` cleanup those
     /// functions rely on, and external callers expect the native ABI.
-    pub(crate) fn uses_tail_call_convention(ir_func: &IRFunction) -> bool {
-        ir_func.name != "main"
+    ///
+    /// Eligibility is decided by *ineligibility* rather than propagating the
+    /// convention to every caller, because two callers cannot observe it: a
+    /// `CallIndirect` rebuilds a fresh default-convention signature, and an
+    /// AOT import in another object declares the symbol with the default
+    /// signature while the defining object would export Tail. A function is
+    /// therefore tail-eligible only when
+    ///
+    /// - `tail_allowed` (the translation unit may use Tail at all: the entry
+    ///   module for JIT, the executable entry object for AOT — see
+    ///   `generate_module` and `AotCodeGenerator::declare_function`), and
+    /// - its address is never taken anywhere in the module
+    ///   (`tail_ineligible`, collected by
+    ///   [`Self::collect_tail_ineligible_functions`]), and
+    /// - the historical per-function exclusions below hold.
+    ///
+    /// `tail_ineligible` matches on the unqualified IR name (matching
+    /// `Call.function`) as well as any qualified spelling a `FuncAddr` may
+    /// carry.
+    pub(crate) fn uses_tail_call_convention(
+        ir_func: &IRFunction,
+        tail_allowed: bool,
+        tail_ineligible: &HashSet<String>,
+    ) -> bool {
+        tail_allowed
+            && ir_func.name != "main"
+            && !tail_ineligible.contains(&ir_func.name)
+            && !tail_ineligible
+                .iter()
+                .any(|name| name.rsplit("::").next() == Some(ir_func.name.as_str()))
             && ir_func.blocks.iter().any(|block| {
                 block.instructions.iter().any(|instruction| {
                     matches!(
@@ -320,6 +372,99 @@ impl CodeGenerator {
                 ir_func,
                 &Self::collect_stack_allocas(ir_func),
             )
+    }
+
+    /// Names of functions whose address is taken by any `FuncAddr`
+    /// instruction in the scanned functions. These must never be declared
+    /// `CallConv::Tail`: the address flows into `CallIndirect`, whose
+    /// signature is rebuilt with the platform default convention.
+    pub(crate) fn collect_tail_ineligible_functions<'a>(
+        functions: impl Iterator<Item = &'a IRFunction>,
+    ) -> HashSet<String> {
+        let mut ineligible = HashSet::new();
+        for ir_func in functions {
+            for block in &ir_func.blocks {
+                for instruction in &block.instructions {
+                    if let InstructionKind::FuncAddr { function, .. } = &instruction.kind {
+                        ineligible.insert(function.clone());
+                    }
+                }
+            }
+        }
+        ineligible
+    }
+
+    /// The IR blocks of `ir_func` ordered for code generation: a depth-first
+    /// *reverse postorder* from the entry block, followed by blocks not
+    /// reachable from the entry in their original order.
+    ///
+    /// Emitting blocks in this order guarantees that every reachable block's
+    /// non-back-edge predecessors are generated first, so at least one jump
+    /// into a block carrying PHIs is emitted — and its Cranelift block
+    /// parameters created with the incoming value types by `get_phi_args` —
+    /// *before* the `Phi` instruction itself is lowered. Without this,
+    /// a merge block listed before a predecessor padded its parameters with
+    /// I64 placeholders (`generate_value_instruction`), and a later jump
+    /// passing a bool/f32/char incoming value failed the Cranelift verifier
+    /// ("arg has type i8, expected i64"). The I64 placeholder remains only
+    /// for blocks no jump ever targets (unreachable merges).
+    pub(crate) fn block_emission_order(ir_func: &IRFunction) -> Vec<usize> {
+        fn successors(terminator: Option<&Terminator>) -> Vec<usize> {
+            match terminator {
+                Some(Terminator::Branch { target }) => vec![*target],
+                Some(Terminator::CondBranch {
+                    true_block,
+                    false_block,
+                    ..
+                }) => vec![*true_block, *false_block],
+                Some(Terminator::Switch {
+                    cases,
+                    default,
+                    ..
+                }) => {
+                    let mut targets: Vec<usize> = cases.iter().map(|(_, t)| *t).collect();
+                    targets.push(*default);
+                    targets
+                }
+                _ => Vec::new(),
+            }
+        }
+
+        let Some(entry_id) = ir_func.blocks.first().map(|block| block.id) else {
+            return Vec::new();
+        };
+        let mut visited: HashSet<usize> = HashSet::new();
+        let mut postorder: Vec<usize> = Vec::new();
+        // Explicit stack of (block, expanded) so deep CFGs cannot overflow
+        // the Rust stack.
+        let mut stack: Vec<(usize, bool)> = vec![(entry_id, false)];
+        while let Some((block_id, expanded)) = stack.pop() {
+            if expanded {
+                postorder.push(block_id);
+                continue;
+            }
+            if !visited.insert(block_id) {
+                continue;
+            }
+            stack.push((block_id, true));
+            if let Some(block) = ir_func.get_block(block_id) {
+                for successor in successors(block.terminator.as_ref()) {
+                    if !visited.contains(&successor) {
+                        stack.push((successor, false));
+                    }
+                }
+            }
+        }
+        postorder.reverse();
+
+        // Unreachable blocks keep their original relative order after the
+        // reachable prefix.
+        for block in &ir_func.blocks {
+            if !visited.contains(&block.id) {
+                postorder.push(block.id);
+            }
+        }
+        postorder
     }
 
     pub(crate) fn async_callback_kind(ir_func: &IRFunction) -> Option<bool> {
@@ -339,8 +484,13 @@ impl CodeGenerator {
     /// Declare a function signature
     #[allow(dead_code)]
     fn declare_function(&mut self, ir_func: &IRFunction) -> BackendResult<FuncId> {
+        // Legacy single-function entry point used by focused backend tests:
+        // there is no module context, so the entry-module restriction of
+        // `generate_module` does not apply, while address-taking inside the
+        // function itself is still visible.
+        let tail_ineligible = Self::collect_tail_ineligible_functions(std::iter::once(ir_func));
         let mut sig = self.module.make_signature();
-        if Self::uses_tail_call_convention(ir_func) {
+        if Self::uses_tail_call_convention(ir_func, true, &tail_ineligible) {
             sig.call_conv = isa::CallConv::Tail;
         }
 
@@ -393,9 +543,11 @@ impl CodeGenerator {
         &mut self,
         module_name: &str,
         ir_func: &IRFunction,
+        tail_allowed: bool,
+        tail_ineligible: &HashSet<String>,
     ) -> BackendResult<FuncId> {
         let mut sig = self.module.make_signature();
-        if Self::uses_tail_call_convention(ir_func) {
+        if Self::uses_tail_call_convention(ir_func, tail_allowed, tail_ineligible) {
             sig.call_conv = isa::CallConv::Tail;
         }
 
@@ -515,7 +667,13 @@ impl CodeGenerator {
         let mut value_map = DenseValueMap::with_capacity(ir_func.next_value_id);
         let mut block_map: HashMap<usize, Block> = HashMap::new();
         let mut allocation_vars: Vec<Variable> = Vec::new();
-        let mut stack_array_lengths: HashMap<usize, i64> = HashMap::new();
+        // Logical lengths keyed by the defining IR value: `array_lengths`
+        // holds element counts for char/int array allocas (stack *and*
+        // manual-heap), `string_literal_lengths` holds byte lengths of
+        // string literals excluding the trailing NUL. The two kinds are
+        // strictly separated so `StringLen`/`char_at` consumers never mix
+        // NUL-terminated string storage with plain arrays.
+        let mut array_lengths: HashMap<usize, i64> = HashMap::new();
         let mut string_literal_lengths: HashMap<usize, i64> = HashMap::new();
         let stack_allocas = Self::collect_stack_allocas(ir_func);
         let scalar_alloca_types =
@@ -601,14 +759,26 @@ impl CodeGenerator {
             }
         }
 
-        // Block parameters for PHI nodes are declared lazily by
-        // `get_phi_args`, typed from the first jump's argument values
-        // (see codegen.rs). Pre-declaring them here is unnecessary: every
-        // block carrying phis is targeted by at least one jump, which fixes
-        // the parameter types before use.
+        // Block parameters for PHI nodes are created by `get_phi_args` at the
+        // first jump into the block, typed from that jump's argument values.
+        // Blocks are generated in reverse-postorder
+        // (`block_emission_order`), which guarantees that first jump exists
+        // before the block's own `Phi` instructions are lowered; the I64
+        // padding left in `generate_value_instruction` only covers blocks no
+        // jump ever targets (unreachable merges).
 
         // Generate code for each block
-        let blocks = ir_func.blocks.clone();
+        let emission_order = Self::block_emission_order(ir_func);
+        let mut blocks_by_id: HashMap<usize, IRBasicBlock> = ir_func
+            .blocks
+            .clone()
+            .into_iter()
+            .map(|block| (block.id, block))
+            .collect();
+        let blocks: Vec<IRBasicBlock> = emission_order
+            .iter()
+            .filter_map(|id| blocks_by_id.remove(id))
+            .collect();
         let mut emitted_tail_call = false;
         let mut hostcall = HostCallLoweringContext {
             bindings: &self.runtime_bindings,
@@ -629,7 +799,7 @@ impl CodeGenerator {
                 &mut value_map,
                 &block_map,
                 &mut allocation_vars,
-                &mut stack_array_lengths,
+                &mut array_lengths,
                 &mut string_literal_lengths,
                 &stack_allocas,
                 &scalar_alloca_vars,

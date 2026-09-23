@@ -1,0 +1,54 @@
+// Teste 614: mixed-width exact-integer operands.
+//
+// Regression: `u8 < u16` (and any mixed-width/signedness exact-int
+// arithmetic or comparison) reached the backend as mismatched Cranelift
+// operand types and crashed the verifier with no source span. Lowering now
+// unifies both operands to the language's rule (semantic
+// `numeric_result_type`: signed 64-bit), extending each side according to
+// its own signedness. The program returns the numbered code of the first
+// wrong result and 0 only when every mixed-width operation is right
+// (asserted for both JIT and AOT execution).
+module mixed_width_compare
+
+public func main() returns int {
+    let small: u8 = 200
+    let wide: u16 = 300
+
+    if not (small < wide) {
+        return 1
+    }
+    if small >= wide {
+        return 2
+    }
+    if not (wide > small) {
+        return 3
+    }
+
+    let sum = small + wide
+    if (sum as int) != 500 {
+        return 4
+    }
+
+    // Signed/unsigned mixed operands unify to signed 64-bit: -5 stays -5
+    // (sign-extended) and 4000000000 zero-extends, so the order holds.
+    let neg: i8 = -5
+    let big: u32 = 4000000000
+    if not (neg < big) {
+        return 5
+    }
+    if neg >= big {
+        return 6
+    }
+
+    // Exact width mixed with the default `int`.
+    let plain = 20
+    let tiny: u8 = 9
+    if not (tiny < plain) {
+        return 7
+    }
+    if plain <= tiny {
+        return 8
+    }
+
+    return 0
+}

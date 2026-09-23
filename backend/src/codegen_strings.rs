@@ -68,6 +68,11 @@ impl CodeGenerator {
         builder.use_var(result_var)
     }
 
+    /// Bounds-checked `char_at` over a value with a compile-time *logical*
+    /// length: the byte length of a string literal (excluding the NUL) or the
+    /// element count of an array alloca. Returns the byte/element at `index`,
+    /// or `-1` when `index < 0` or `index >= allocation_len` (the last valid
+    /// index is `allocation_len - 1`), or when a NUL is met first.
     fn emit_stack_string_char_at_inline(
         builder: &mut FunctionBuilder,
         ptr: Value,
@@ -91,13 +96,12 @@ impl CodeGenerator {
             .brif(negative, done_block, &[], bounds_block, &[]);
 
         builder.switch_to_block(bounds_block);
-        let max_valid_index = builder
+        // `allocation_len` is the logical length: indices
+        // `0..allocation_len - 1` are valid, so `index >= allocation_len`
+        // is out of bounds.
+        let out_of_bounds = builder
             .ins()
-            .iconst(types::I64, allocation_len.saturating_sub(1));
-        let out_of_bounds =
-            builder
-                .ins()
-                .icmp(IntCC::SignedGreaterThanOrEqual, index, max_valid_index);
+            .icmp_imm(IntCC::SignedGreaterThanOrEqual, index, allocation_len);
         builder
             .ins()
             .brif(out_of_bounds, done_block, &[], load_block, &[]);

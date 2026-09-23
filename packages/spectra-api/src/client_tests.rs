@@ -45,6 +45,9 @@ mod tests {
                     Err(error) => panic!("collector request: {error}"),
                 };
                 stream
+                    .set_nonblocking(false)
+                    .expect("collector blocking mode");
+                stream
                     .set_read_timeout(Some(Duration::from_secs(5)))
                     .expect("collector read timeout");
                 let mut request = Vec::new();

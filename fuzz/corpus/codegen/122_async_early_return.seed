@@ -1,0 +1,19 @@
+module async_early_return
+
+async func choose(flag: bool) returns int {
+    if flag {
+        return 7
+    }
+
+    return 9
+}
+
+async func choose_and_add(flag: bool) returns int {
+    let value = await choose(flag)
+    return value + 1
+}
+
+func main() returns int {
+    let task = choose_and_add( true)
+    return 0
+}

@@ -383,7 +383,9 @@ impl ASTLowering {
                 // Carregar o valor do elemento
                 self.builder.build_load_typed(ir_func, elem_ptr, elem_type)
             }
-            _ => unreachable!("lowering expression category mismatch"),
+            _ => self.invalid_value(
+                "lower_expression_aggregates called with an out-of-category expression",
+            ),
         }
     }
 }

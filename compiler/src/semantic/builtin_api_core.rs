@@ -61,6 +61,7 @@ pub(crate) fn public_type(members: &[&str]) -> ExportedType {
         members: members.iter().map(|member| (*member).to_string()).collect(),
         visibility: ExportVisibility::Public,
         is_enum: false,
+        struct_field_visibility: None,
         struct_fields: None,
         enum_variants: None,
         enum_struct_variants: None,

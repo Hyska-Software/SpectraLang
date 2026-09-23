@@ -1,15 +1,24 @@
 use super::*;
 
 impl SemanticAnalyzer {
+    /// Pre-declares a trait implementation before its validation runs so
+    /// forward references (function bodies analyzed before the impl item)
+    /// resolve identically regardless of textual item order. The entry starts
+    /// as `false` — an unvalidated claim — and `validate_trait_impl` flips it
+    /// to `true` only when validation succeeds, so failed implementations are
+    /// never recorded as implemented.
     pub(crate) fn predeclare_trait_impl(&mut self, trait_name: &str, type_name: &str) {
         if self.traits.contains_key(trait_name) {
             self.trait_impls
-                .insert((trait_name.to_string(), type_name.to_string()), true);
+                .insert((trait_name.to_string(), type_name.to_string()), false);
         }
     }
 
-    pub(crate) fn analyze_trait_impl(&mut self, trait_impl: &crate::ast::TraitImpl) {
-        let derived_impl = crate::ast::ImplBlock {
+    /// The `ImplBlock` view of a parsed `TraitImpl`, shared by analysis and
+    /// the declaration pre-pass so both register identical declarations
+    /// (same spans → idempotent re-registration).
+    pub(crate) fn impl_block_from_trait_impl(trait_impl: &crate::ast::TraitImpl) -> crate::ast::ImplBlock {
+        crate::ast::ImplBlock {
             type_name: trait_impl.type_name.clone(),
             module_path: None,
             trait_name: Some(trait_impl.trait_name.clone()),
@@ -17,7 +26,147 @@ impl SemanticAnalyzer {
             span: trait_impl.span,
             type_args: trait_impl.type_args.clone(),
             type_params: trait_impl.type_params.clone(),
+        }
+    }
+
+    /// Registers every method signature of `impl_block` for its target type:
+    /// parameter types, self kind, async-wrapped return type, visibility and
+    /// definition span.
+    ///
+    /// Called from TWO places so method resolution is independent of textual
+    /// item order (the same contract `predeclare_trait_impl` provides for
+    /// trait pairs):
+    ///
+    /// 1. the declaration pre-pass in `analyze_module`, before function-body
+    ///    analysis, so `self.media()` inside an impl declared *before*
+    ///    `impl Avaliavel for Aluno` resolves;
+    /// 2. `analyze_impl_block`, as before.
+    ///
+    /// Re-registering the SAME declaration (matched by declaration span) is
+    /// idempotent and silent; a different declaration with the same name is
+    /// the genuine E013 duplicate. The helper pushes its own balanced
+    /// generic-parameter scope, which nests safely inside the scope
+    /// `analyze_impl_block` already established.
+    pub(crate) fn register_impl_method_signatures(&mut self, impl_block: &crate::ast::ImplBlock) {
+        let type_param_info = self
+            .generic_structs
+            .get(&impl_block.type_name)
+            .map(|(params, _)| params.clone())
+            .or_else(|| {
+                self.generic_enums
+                    .get(&impl_block.type_name)
+                    .map(|(params, _)| params.clone())
+            });
+        let pushed_generics = if let Some(ref params) = type_param_info {
+            self.push_generic_params(params)
+        } else {
+            false
         };
+        let pushed_impl_generics = if !impl_block.type_params.is_empty() {
+            self.push_generic_params(&impl_block.type_params)
+        } else {
+            false
+        };
+
+        for method in &impl_block.methods {
+            // Extract parameter types.
+            let mut param_types = Vec::new();
+            let mut self_kind = None;
+            let mut seen_regular_param = false;
+            for param in &method.params {
+                if param.is_self {
+                    if seen_regular_param {
+                        self.error_coded(
+                            "E024",
+                            format!(
+                                "Method '{}' declares 'self' after other parameters; 'self' must be the first parameter",
+                                method.name
+                            ),
+                            param.span,
+                        );
+                    }
+                    if self_kind.is_some() {
+                        self.error_coded(
+                            "E014",
+                            format!(
+                                "Method '{}' declares more than one self parameter",
+                                method.name
+                            ),
+                            param.span,
+                        );
+                    }
+
+                    self_kind = Some(if param.is_reference {
+                        SelfParamKind::Reference {
+                            mutable: param.is_mutable,
+                        }
+                    } else {
+                        SelfParamKind::Value
+                    });
+                    param_types.push(Type::Struct {
+                        name: impl_block.type_name.clone(),
+                    });
+                } else {
+                    seen_regular_param = true;
+                    let param_type = self.type_annotation_to_type(&param.type_annotation);
+                    param_types.push(param_type);
+                }
+            }
+
+            let return_type = Self::async_task_type(
+                method.is_async,
+                self.type_annotation_to_type(&method.return_type),
+            );
+
+            let signature = FunctionSignature {
+                params: param_types,
+                return_type,
+                self_kind,
+                is_async: method.is_async,
+            };
+
+            let previous_span = self
+                .method_definitions
+                .get(&impl_block.type_name)
+                .and_then(|methods| methods.get(&method.name))
+                .copied();
+            if let Some(previous_span) = previous_span {
+                if previous_span != method.span {
+                    self.error_coded(
+                        "E013",
+                        format!(
+                            "Method '{}' is already defined for type '{}'",
+                            method.name, impl_block.type_name
+                        ),
+                        method.span,
+                    );
+                }
+            }
+
+            self.method_definitions
+                .entry(impl_block.type_name.clone())
+                .or_default()
+                .insert(method.name.clone(), method.span);
+            self.method_visibility
+                .entry(impl_block.type_name.clone())
+                .or_default()
+                .insert(method.name.clone(), method.visibility);
+            self.methods
+                .entry(impl_block.type_name.clone())
+                .or_default()
+                .insert(method.name.clone(), signature);
+        }
+
+        if pushed_impl_generics {
+            self.pop_generic_params();
+        }
+        if pushed_generics {
+            self.pop_generic_params();
+        }
+    }
+
+    pub(crate) fn analyze_trait_impl(&mut self, trait_impl: &crate::ast::TraitImpl) {
+        let derived_impl = Self::impl_block_from_trait_impl(trait_impl);
 
         self.analyze_impl_block(&derived_impl);
     }
@@ -126,11 +275,13 @@ impl SemanticAnalyzer {
                                 _ => false,
                             };
                             if !is_type_param {
+                                let arg_type =
+                                    self.type_annotation_to_type(&Some(arg.clone()));
                                 self.error_coded(
                                     "E025",
                                     format!(
-                                        "Impl type argument '{:?}' for '{}' must be one of the type parameters: {}",
-                                        arg.kind,
+                                        "Impl type argument '{}' for '{}' must be one of the type parameters: {}",
+                                        type_name(&arg_type),
                                         impl_block.type_name,
                                         params
                                             .iter()
@@ -188,94 +339,9 @@ impl SemanticAnalyzer {
             self.copy_default_trait_methods(trait_name, &impl_block.type_name, impl_block);
         }
 
-        // Fase 1: Coletar todas as assinaturas dos métodos
-        for method in &impl_block.methods {
-            // Extrair tipos dos parâmetros
-            let mut param_types = Vec::new();
-            let mut self_kind = None;
-            let mut seen_regular_param = false;
-            for param in &method.params {
-                if param.is_self {
-                    // self parameter - tipo � o do impl block
-                    if seen_regular_param {
-                        self.error_coded(
-                            "E024",
-                            format!(
-                                "Method '{}' declares 'self' after other parameters; 'self' must be the first parameter",
-                                method.name
-                            ),
-                            param.span,
-                        );
-                    }
-                    if self_kind.is_some() {
-                        self.error_coded(
-                            "E014",
-                            format!(
-                                "Method '{}' declares more than one self parameter",
-                                method.name
-                            ),
-                            param.span,
-                        );
-                    }
-
-                    self_kind = Some(if param.is_reference {
-                        SelfParamKind::Reference {
-                            mutable: param.is_mutable,
-                        }
-                    } else {
-                        SelfParamKind::Value
-                    });
-                    param_types.push(Type::Struct {
-                        name: impl_block.type_name.clone(),
-                    });
-                } else {
-                    seen_regular_param = true;
-                    let param_type = self.type_annotation_to_type(&param.type_annotation);
-                    param_types.push(param_type);
-                }
-            }
-
-            let return_type = Self::async_task_type(
-                method.is_async,
-                self.type_annotation_to_type(&method.return_type),
-            );
-
-            // Registrar método
-            let signature = FunctionSignature {
-                params: param_types,
-                return_type,
-                self_kind,
-                is_async: method.is_async,
-            };
-
-            let type_methods = self
-                .methods
-                .entry(impl_block.type_name.clone())
-                .or_default();
-            self.method_definitions
-                .entry(impl_block.type_name.clone())
-                .or_default()
-                .insert(method.name.clone(), method.span);
-            // Track per-method visibility
-            self.method_visibility
-                .entry(impl_block.type_name.clone())
-                .or_default()
-                .insert(method.name.clone(), method.visibility);
-
-            if type_methods
-                .insert(method.name.clone(), signature)
-                .is_some()
-            {
-                self.error_coded(
-                    "E013",
-                    format!(
-                        "Method '{}' is already defined for type '{}'",
-                        method.name, impl_block.type_name
-                    ),
-                    method.span,
-                );
-            }
-        }
+        // Fase 1: Coletar todas as assinaturas dos métodos (idempotent with
+        // the declaration pre-pass; same declaration → silent refresh).
+        self.register_impl_method_signatures(impl_block);
 
         // Fase 2: Analisar corpos dos métodos
         for method in &impl_block.methods {
@@ -481,6 +547,10 @@ impl SemanticAnalyzer {
 
     /// Valida que um impl Trait for Type implementa todos os métodos do trait
     fn validate_trait_impl(&mut self, impl_block: &crate::ast::ImplBlock, trait_name: &str) {
+        // Track whether this validation emits any diagnostic: the registry
+        // entry flips to `true` only on a clean run, so failures revoke (or
+        // keep revoked) the pre-declared claim instead of leaving it valid.
+        let errors_before = self.errors.len();
         // Verificar se o trait existe e clonar para evitar borrow conflicts
         const BUILTIN_OP_TRAITS: &[&str] =
             &["Add", "Sub", "Mul", "Div", "Rem", "Eq", "Ord", "Drop"];
@@ -488,9 +558,15 @@ impl SemanticAnalyzer {
             Some(methods) => methods,
             None => {
                 if BUILTIN_OP_TRAITS.contains(&trait_name) {
-                    // Builtin operator/lifecycle trait — not user-declared, register impl
-                    self.trait_impls
-                        .insert((trait_name.to_string(), impl_block.type_name.clone()), true);
+                    // Builtin operator/lifecycle trait — not user-declared.
+                    // Validate that the impl actually declares the mapped
+                    // method(s) with a compatible signature before recording
+                    // the implementation as valid.
+                    let valid = self.validate_builtin_operator_impl(impl_block, trait_name);
+                    self.trait_impls.insert(
+                        (trait_name.to_string(), impl_block.type_name.clone()),
+                        valid,
+                    );
                     return;
                 }
                 self.error_coded(
@@ -615,7 +691,8 @@ impl SemanticAnalyzer {
                     let impl_has_self = impl_signature.self_kind.is_some();
 
                     if trait_method_info.signature.self_kind != impl_signature.self_kind {
-                        self.error(
+                        self.error_coded(
+                            "E046",
                             format!(
                                 "Method '{}' has incompatible self receiver between trait and implementation",
                                 trait_method_name
@@ -625,7 +702,8 @@ impl SemanticAnalyzer {
                     }
 
                     if trait_method_info.signature.is_async != impl_signature.is_async {
-                        self.error(
+                        self.error_coded(
+                            "E047",
                             format!(
                                 "Method '{}' has incompatible async marker between trait and implementation",
                                 trait_method_name
@@ -694,11 +772,11 @@ impl SemanticAnalyzer {
                     {
                         if !self.generic_argument_types_match(impl_param, trait_param) {
                             let mut message = format!(
-                                "Method '{}' parameter {} has wrong type. Expected {:?}, found {:?}",
+                                "Method '{}' parameter {} has wrong type. Expected {}, found {}",
                                 trait_method_name,
                                 i + 1,
-                                trait_param,
-                                impl_param
+                                type_name(trait_param),
+                                type_name(impl_param)
                             );
 
                             if let Some(signature_repr) = &expected_signature_repr {
@@ -715,8 +793,10 @@ impl SemanticAnalyzer {
                         &substituted_trait_return,
                     ) {
                         let mut message = format!(
-                            "Method '{}' has wrong return type. Expected {:?}, found {:?}",
-                            trait_method_name, substituted_trait_return, impl_signature.return_type
+                            "Method '{}' has wrong return type. Expected {}, found {}",
+                            trait_method_name,
+                            type_name(&substituted_trait_return),
+                            type_name(&impl_signature.return_type)
                         );
 
                         if let Some(signature_repr) = &expected_signature_repr {
@@ -755,13 +835,202 @@ impl SemanticAnalyzer {
             }
         }
 
-        // Registrar que este tipo implementa este trait
+        // Registrar que este tipo implementa este trait — only when this
+        // validation run emitted no diagnostics; otherwise the entry stays
+        // revoked (`false` from predeclaration, or absent for builtins).
+        let valid = self.errors.len() == errors_before;
         self.trait_impl_type_args.insert(
             (trait_name.to_string(), impl_block.type_name.clone()),
             trait_concrete_args,
         );
         self.trait_impls
-            .insert((trait_name.to_string(), impl_block.type_name.clone()), true);
+            .insert((trait_name.to_string(), impl_block.type_name.clone()), valid);
+    }
+
+    /// Validates an `impl` of a builtin operator/lifecycle trait (`Add`,
+    /// `Sub`, `Mul`, `Div`, `Rem`, `Eq`, `Ord`, `Drop`), which has no
+    /// user-declared trait declaration to validate against.
+    ///
+    /// Requirements per trait:
+    /// - `Add`/`Sub`/`Mul`/`Div`/`Rem`: the mapped method (`add`, `sub`,
+    ///   `mul`, `div`, `rem`) taking `(self, other: Self)` and returning
+    ///   `Self`.
+    /// - `Eq`: `eq(self, other: Self) returns bool`.
+    /// - `Ord`: `lt`, `le`, `gt`, `ge`, each `(self, other: Self) returns bool`.
+    /// - `Drop`: `drop(&mut self)`.
+    ///
+    /// Missing methods report `E016`; signature mismatches report `E023`.
+    /// Returns `true` only when every requirement holds.
+    fn validate_builtin_operator_impl(
+        &mut self,
+        impl_block: &crate::ast::ImplBlock,
+        trait_name: &str,
+    ) -> bool {
+        enum ExpectedReturn {
+            SelfType,
+            Bool,
+            Unit,
+        }
+
+        let requirements: &[(&'static str, ExpectedReturn)] = match trait_name {
+            "Add" => &[("add", ExpectedReturn::SelfType)],
+            "Sub" => &[("sub", ExpectedReturn::SelfType)],
+            "Mul" => &[("mul", ExpectedReturn::SelfType)],
+            "Div" => &[("div", ExpectedReturn::SelfType)],
+            "Rem" => &[("rem", ExpectedReturn::SelfType)],
+            "Eq" => &[("eq", ExpectedReturn::Bool)],
+            "Ord" => &[
+                ("lt", ExpectedReturn::Bool),
+                ("le", ExpectedReturn::Bool),
+                ("gt", ExpectedReturn::Bool),
+                ("ge", ExpectedReturn::Bool),
+            ],
+            "Drop" => &[("drop", ExpectedReturn::Unit)],
+            _ => return false,
+        };
+
+        let mut valid = true;
+        let type_name_str = &impl_block.type_name;
+
+        for (method_name, expected_return) in requirements {
+            let Some(method) = impl_block.methods.iter().find(|m| m.name == *method_name) else {
+                if trait_name == "Drop" {
+                    // `analyze_impl_block` already reports the missing
+                    // `drop(&mut self)` receiver form before validation runs;
+                    // only report a fully missing method here.
+                    let any_drop = impl_block.methods.iter().any(|m| m.name == "drop");
+                    if any_drop {
+                        valid = false;
+                        continue;
+                    }
+                }
+                self.error_coded(
+                    "E016",
+                    format!(
+                        "Type '{}' does not implement required builtin trait '{}' method `func {}(...)`",
+                        type_name_str, trait_name, method_name
+                    ),
+                    impl_block.span,
+                );
+                valid = false;
+                continue;
+            };
+
+            // Receiver requirements.
+            let has_self = method.params.first().map(|p| p.is_self).unwrap_or(false);
+            if trait_name == "Drop" {
+                let has_mut_self = method
+                    .params
+                    .first()
+                    .map(|p| p.is_self && p.is_reference && p.is_mutable)
+                    .unwrap_or(false);
+                if !has_mut_self {
+                    // Already reported by the Drop pre-check when the receiver
+                    // form is wrong; record the failure without duplicating.
+                    valid = false;
+                    continue;
+                }
+            } else if !has_self {
+                self.error_coded(
+                    "E023",
+                    format!(
+                        "Builtin trait '{}' method '{}' of '{}' must take `self` as its first parameter",
+                        trait_name, method_name, type_name_str
+                    ),
+                    method.span,
+                );
+                valid = false;
+                continue;
+            }
+
+            if matches!(expected_return, ExpectedReturn::Unit) {
+                // `drop` only requires the receiver form; its body/return
+                // shape is not part of the operator contract.
+                continue;
+            }
+
+            // Exactly two parameters: (self, other).
+            if method.params.len() != 2 {
+                self.error_coded(
+                    "E023",
+                    format!(
+                        "Builtin trait '{}' method '{}' of '{}' must take exactly 2 parameters (self, other), found {}",
+                        trait_name,
+                        method_name,
+                        type_name_str,
+                        method.params.len()
+                    ),
+                    method.span,
+                );
+                valid = false;
+                continue;
+            }
+
+            // The second parameter must accept the implementing type.
+            let other_type = self.type_annotation_to_type(&method.params[1].type_annotation);
+            if !Self::builtin_operator_operand_matches(&other_type, type_name_str) {
+                self.error_coded(
+                    "E023",
+                    format!(
+                        "Builtin trait '{}' method '{}' of '{}' must take `other` as {} (or `Self`), found {}",
+                        trait_name,
+                        method_name,
+                        type_name_str,
+                        type_name_str,
+                        type_name(&other_type)
+                    ),
+                    method.span,
+                );
+                valid = false;
+            }
+
+            // Return type requirements.
+            let return_type = self.type_annotation_to_type(&method.return_type);
+            let return_ok = match expected_return {
+                ExpectedReturn::SelfType => {
+                    matches!(return_type, Type::Unknown)
+                        || Self::builtin_operator_operand_matches(&return_type, type_name_str)
+                }
+                ExpectedReturn::Bool => {
+                    matches!(return_type, Type::Bool | Type::Unknown)
+                }
+                ExpectedReturn::Unit => true,
+            };
+            if !return_ok {
+                let expected_text = match expected_return {
+                    ExpectedReturn::SelfType => type_name_str.to_string(),
+                    ExpectedReturn::Bool => "bool".to_string(),
+                    ExpectedReturn::Unit => "unit".to_string(),
+                };
+                self.error_coded(
+                    "E023",
+                    format!(
+                        "Builtin trait '{}' method '{}' of '{}' must return {}, found {}",
+                        trait_name,
+                        method_name,
+                        type_name_str,
+                        expected_text,
+                        type_name(&return_type)
+                    ),
+                    method.span,
+                );
+                valid = false;
+            }
+        }
+
+        valid
+    }
+
+    /// Whether a builtin operator method's operand/return type accepts the
+    /// implementing type (`Self`-compatible: exact name, generic application
+    /// base name, `Self`, a type parameter, or `unknown`).
+    fn builtin_operator_operand_matches(ty: &Type, type_name_str: &str) -> bool {
+        match ty {
+            Type::Unknown | Type::SelfType | Type::TypeParameter { .. } => true,
+            Type::Struct { name } | Type::Enum { name } => name == type_name_str,
+            Type::Applied { name, .. } => name == type_name_str,
+            _ => false,
+        }
     }
 
     /// Copia métodos padrão do trait para o tipo que o implementa
@@ -810,5 +1079,86 @@ impl SemanticAnalyzer {
                 type_methods.insert(method_name, concrete_signature);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod trait_receiver_async_code_tests {
+    use crate::{CompilationOptions, CompilationPipeline, CompilerError, SemanticError};
+
+    fn semantic_errors(source: &str) -> Vec<SemanticError> {
+        let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
+        let errors = pipeline
+            .compile(source, "trait_receiver.spectra")
+            .expect_err("the source must be rejected");
+        errors
+            .into_iter()
+            .filter_map(|error| match error {
+                CompilerError::Semantic(semantic) => Some(semantic),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn has_code(errors: &[SemanticError], code: &str) -> bool {
+        errors.iter().any(|error| error.code.as_deref() == Some(code))
+    }
+
+    #[test]
+    fn trait_receiver_mismatch_reports_e046() {
+        let source = r#"
+            module receiver_mismatch
+
+            record Greeter {
+                public name: int,
+            }
+
+            trait Greet {
+                func hi(&self)
+            }
+
+            impl Greet for Greeter {
+                func hi(self) {
+                }
+            }
+
+            public func main() returns int {
+                return 0
+            }
+        "#;
+        let errors = semantic_errors(source);
+        assert!(
+            has_code(&errors, "E046"),
+            "receiver mismatch between trait and impl must report E046: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn trait_async_marker_mismatch_reports_e047() {
+        let source = r#"
+            module async_mismatch
+
+            record Worker {
+                public id: int,
+            }
+
+            trait Job {
+                async func run(&self)
+            }
+
+            impl Job for Worker {
+                func run(&self) {
+                }
+            }
+
+            public func main() returns int {
+                return 0
+            }
+        "#;
+        let errors = semantic_errors(source);
+        assert!(
+            has_code(&errors, "E047"),
+            "async marker mismatch between trait and impl must report E047: {errors:?}"
+        );
     }
 }

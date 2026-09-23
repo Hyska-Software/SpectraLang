@@ -90,6 +90,7 @@ impl SemanticAnalyzer {
             trait_signatures: HashMap::new(),
             current_return_type: None,
             current_expected_type: None,
+            current_negative_integer_literal: false,
             async_context_depth: 0,
             generic_params: Vec::new(),
             generic_param_bounds: Vec::new(),
@@ -102,6 +103,9 @@ impl SemanticAnalyzer {
             qualified_fn_signatures: Vec::new(),
             ambiguous_imported_functions: HashSet::new(),
             const_values: HashMap::new(),
+            analysis_depth: 0,
+            depth_limit_reported: false,
+            stack_probe: crate::parser::Parser::capture_stack_probe(),
             uaf_frame: None,
             uaf_suspend_use_checks: 0,
         };
@@ -109,6 +113,41 @@ impl SemanticAnalyzer {
         analyzer.register_builtin_async_traits();
         analyzer.seed_builtin_module_namespaces();
         analyzer
+    }
+
+    /// Enters one level of semantic recursion. Returns `Err(())` — after
+    /// emitting a single `P013` diagnostic at `span` — when the walk exceeds
+    /// the shared frontend depth cap or stack budget. Callers skip the subtree
+    /// (and exit again) so deep ASTs fail with a coded diagnostic instead of
+    /// overflowing the stack, mirroring `Parser::enter_parse_depth`.
+    pub(crate) fn enter_analysis_depth(&mut self, span: Span) -> Result<(), ()> {
+        self.analysis_depth += 1;
+        let over_depth = self.analysis_depth > crate::parser::MAX_PARSE_DEPTH;
+        let over_stack = crate::parser::Parser::stack_used_bytes(self.stack_probe)
+            > crate::parser::MAX_STACK_USE_BYTES;
+        if over_depth || over_stack {
+            if !self.depth_limit_reported {
+                self.depth_limit_reported = true;
+                self.push_semantic_error_coded(
+                    "P013",
+                    "nesting too deep",
+                    span,
+                    Some("semantic analysis recursion exceeded its nesting/stack guard".to_string()),
+                    Some(format!(
+                        "Reduce nesting of expressions, statements, blocks, or patterns to at most {} levels.",
+                        crate::parser::MAX_PARSE_DEPTH
+                    )),
+                );
+            }
+            // Exit immediately so sibling subtrees keep being analyzed.
+            self.analysis_depth = self.analysis_depth.saturating_sub(1);
+            return Err(());
+        }
+        Ok(())
+    }
+
+    pub(crate) fn exit_analysis_depth(&mut self) {
+        self.analysis_depth = self.analysis_depth.saturating_sub(1);
     }
 
     pub(crate) fn register_builtin_async_traits(&mut self) {
@@ -375,6 +414,8 @@ impl SemanticAnalyzer {
                     visibility: Visibility::Public,
                     type_params: Vec::new(),
                     fields,
+                    defining_module: None,
+                    defining_package: None,
                 },
             );
         }
@@ -393,6 +434,8 @@ impl SemanticAnalyzer {
                     visibility: Visibility::Public,
                     type_params: vec!["T".to_string()],
                     fields: HashMap::new(),
+                    defining_module: None,
+                    defining_package: None,
                 },
             );
 
@@ -405,6 +448,8 @@ impl SemanticAnalyzer {
                     visibility: Visibility::Public,
                     type_params: vec!["K".to_string(), "V".to_string()],
                     fields: HashMap::new(),
+                    defining_module: None,
+                    defining_package: None,
                 },
             );
 
@@ -418,6 +463,8 @@ impl SemanticAnalyzer {
                         visibility: Visibility::Public,
                         type_params: vec!["T".to_string()],
                         fields: HashMap::new(),
+                        defining_module: None,
+                        defining_package: None,
                     },
                 );
             }

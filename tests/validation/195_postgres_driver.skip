@@ -1,0 +1,1 @@
+requires a live PostgreSQL server (environment-dependent driver fixture)

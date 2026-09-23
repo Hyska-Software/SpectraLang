@@ -1,0 +1,62 @@
+module onnx_rag_tensor_static_stress
+
+import std.collections as collections
+import std.ml as ml
+import std.string as str
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled( false)
+
+    let trans_scale   = tensor.full_f(8, 1.0)
+    let trans_bias    = tensor.full_f(8, 0.0)
+    let trans_weights = collections.list_new()
+    collections.list_push(trans_weights, trans_scale)
+    collections.list_push(trans_weights, trans_bias)
+    let model = ml.onnx_export_weights(
+        "target/r1801/stress-transformer.onnx",
+        "transformer",
+        trans_weights,
+    )
+    if ml.onnx_validate(model) != 1 {
+        return 1
+    }
+    let summary = ml.onnx_import_summary(model)
+    if str.contains(summary, "Softmax") {
+        let ok_softmax = 1
+        if ok_softmax != 1 {
+            return 2
+        }
+    } else {
+        return 2
+    }
+
+    let vocab     = "[UNK]:0\nstress:1\nrag:2\ntensor:3\nshape:4\nonnx:5"
+    let tokenizer = ml.tokenizer_wordpiece(vocab)
+    let encoded   = ml.tokenizer_encode(tokenizer, "stress rag tensor shape")
+    let decoded   = ml.tokenizer_decode(tokenizer, encoded)
+    if str.contains(decoded, "stress rag tensor shape") {
+        let ok_decode = 1
+        if ok_decode != 1 {
+            return 3
+        }
+    } else {
+        return 3
+    }
+
+    let query: Tensor<float, rank2, dim2, dim2, row_major, cpu> = [[1.0, 0.0], [0.0, 1.0]]
+    let key: Tensor<float, rank2, dim2, dim2, row_major, cpu>   = [[1.0, 0.0], [0.0, 1.0]]
+    let value: Tensor<float, rank2, dim2, dim2, row_major, cpu> = [[2.0, 2.0], [3.0, 3.0]]
+    let attended                                                = ml.attention(query, key, value)
+    if tensor.rows(attended) != 2 {
+        return 4
+    }
+    if tensor.cols(attended) != 2 {
+        return 5
+    }
+
+    tensor.free_all()
+    tensor.set_grad_enabled( true)
+    return 0
+}

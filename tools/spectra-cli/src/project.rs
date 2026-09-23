@@ -1,3 +1,4 @@
+use spectra_compiler::{ast::Item, Lexer, Parser};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::fs;
@@ -325,26 +326,210 @@ fn normalize_path(path: &Path) -> Result<PathBuf, io::Error> {
     fs::canonicalize(path)
 }
 
-fn extract_module_name(source: &str) -> Option<String> {
-    for line in source.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with("//") {
+/// Advance `index` past whitespace and both comment forms (`//` line and
+/// `/* */` block), i.e. past everything the lexer would discard before the
+/// next token.
+fn skip_trivia(bytes: &[u8], index: &mut usize) {
+    let len = bytes.len();
+    loop {
+        while *index < len && bytes[*index].is_ascii_whitespace() {
+            *index += 1;
+        }
+        if *index + 1 < len && bytes[*index] == b'/' && bytes[*index + 1] == b'/' {
+            *index += 2;
+            while *index < len && bytes[*index] != b'\n' {
+                *index += 1;
+            }
             continue;
         }
-
-        if let Some(rest) = trimmed.strip_prefix("module ") {
-            let rest = rest.split("//").next().unwrap_or(rest).trim();
-            let rest = rest.trim_end_matches(';').trim();
-            if rest.is_empty() {
-                return None;
+        if *index + 1 < len && bytes[*index] == b'/' && bytes[*index + 1] == b'*' {
+            *index += 2;
+            while *index + 1 < len && !(bytes[*index] == b'*' && bytes[*index + 1] == b'/') {
+                *index += 1;
             }
-            return Some(rest.to_string());
+            // Consume the closing delimiter when present; a dangling `/*`
+            // runs to EOF and the lexer reports the real error later.
+            *index = (*index + 2).min(len);
+            continue;
         }
-
-        // Stop scanning once we reach non-comment, non-module tokens.
-        break;
+        return;
     }
-    None
+}
+
+fn ident_start(byte: u8) -> bool {
+    byte.is_ascii_alphabetic() || byte == b'_'
+}
+
+fn ident_char(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+/// Extract the declared module name from a leading `module <name>`
+/// declaration, mirroring how the parser reads it: the `module` keyword
+/// followed by any whitespace (including newlines and tabs), with `//` line
+/// comments and `/* */` block comments skipped everywhere trivia appears,
+/// and a name of identifier segments joined by `.`.
+///
+/// This is the single source of truth for module-header detection: string
+/// literals and comments are never scanned, `modulex` is not the keyword,
+/// and an incomplete declaration reports `None` so the build paths fall
+/// back to the file-stem name and let compilation report the real error.
+fn extract_module_name(source: &str) -> Option<String> {
+    let bytes = source.as_bytes();
+    let len = bytes.len();
+    let mut index = 0;
+    skip_trivia(bytes, &mut index);
+
+    if index >= len || !source[index..].starts_with("module") {
+        return None;
+    }
+    let mut cursor = index + "module".len();
+    if cursor < len && ident_char(bytes[cursor]) {
+        // `modulex` / `module_...` are ordinary identifiers, not the keyword.
+        return None;
+    }
+
+    skip_trivia(bytes, &mut cursor);
+    if cursor >= len || !ident_start(bytes[cursor]) {
+        // The keyword must be followed by a module name.
+        return None;
+    }
+    let name_start = cursor;
+    while cursor < len && ident_char(bytes[cursor]) {
+        cursor += 1;
+    }
+    let mut name = source[name_start..cursor].to_string();
+
+    // Dotted segments: `module app.main`.
+    loop {
+        let mut probe = cursor;
+        skip_trivia(bytes, &mut probe);
+        if probe >= len || bytes[probe] != b'.' {
+            break;
+        }
+        probe += 1;
+        skip_trivia(bytes, &mut probe);
+        if probe >= len || !ident_start(bytes[probe]) {
+            break;
+        }
+        let segment_start = probe;
+        while probe < len && ident_char(bytes[probe]) {
+            probe += 1;
+        }
+        name.push('.');
+        name.push_str(&source[segment_start..probe]);
+        cursor = probe;
+    }
+    Some(name)
+}
+
+/// Returns `true` when the source already opens with a real `module <name>`
+/// declaration; used to decide whether the build paths must prepend a
+/// synthetic header. Shared by the JIT plan, the AOT project build, and the
+/// async package-test discovery so all three agree on what a header is.
+pub fn source_has_module_decl(source: &str) -> bool {
+    extract_module_name(source).is_some()
+}
+
+/// `Some(defines_main)` when the source lexes and parses cleanly, `None`
+/// when it does not. Callers enforcing an entry-point rule must treat
+/// `None` as inconclusive and let compilation report the real errors
+/// instead of claiming the file has no `main`.
+pub fn scan_source_main(source: &str) -> Option<bool> {
+    let tokens = Lexer::new(source).tokenize().ok()?;
+    let module = Parser::new(tokens).parse().ok()?;
+    Some(module.items.iter().any(|item| {
+        matches!(item, Item::Function(function) if function.name == "main")
+    }))
+}
+
+/// Returns `true` when the source parses and declares a top-level `main`.
+/// Lex/parse failures report `false`; use [`scan_source_main`] when the
+/// distinction matters.
+pub fn source_defines_main(source: &str) -> bool {
+    scan_source_main(source).unwrap_or(false)
+}
+
+/// Shared diagnostic for a project without an entry point.
+pub fn missing_main_message() -> &'static str {
+    "no entry point 'main' found; define a 'public func main() returns int' function"
+}
+
+fn multiple_mains_message(count: usize, mains: &[PathBuf]) -> String {
+    let files = mains
+        .iter()
+        .map(|path| format!("'{}'", path.display()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "a project must contain exactly one `main` function; found {} in: {}\n\
+         help: keep the entry point in a single module so JIT execution and AOT executables agree",
+        count, files
+    )
+}
+
+/// Result of scanning a compilation plan for `main` entry points before any
+/// code is generated. Shared by the JIT execution paths (`run`,
+/// `compile --run`) and the AOT executable path (`compile --emit-exe`) so
+/// both enforce the same single-entry rule.
+#[derive(Debug, Default)]
+pub struct EntryPointScan {
+    /// Modules whose effective source parses and defines a top-level `main`.
+    mains: Vec<PathBuf>,
+    /// Modules whose source could not be read or did not parse. A zero
+    /// `main` count is inconclusive while this is non-empty.
+    unreliable: Vec<PathBuf>,
+}
+
+impl EntryPointScan {
+    /// The exactly-one-`main` rule shared by every path that executes a
+    /// program or emits an executable:
+    ///
+    /// - `Err(message)` — the plan definitively violates the rule (more than
+    ///   one `main`, or none at all while every module scanned cleanly);
+    /// - `Ok(Some(path))` — exactly one module defines `main`;
+    /// - `Ok(None)` — a zero count is inconclusive because some module could
+    ///   not be read or did not parse; compilation reports those errors and
+    ///   the caller proceeds without an entry-point rejection.
+    pub fn single_main(&self) -> Result<Option<PathBuf>, String> {
+        match self.mains.len() {
+            0 if self.unreliable.is_empty() => Err(missing_main_message().to_string()),
+            0 => Ok(None),
+            1 => Ok(Some(self.mains[0].clone())),
+            count => Err(multiple_mains_message(count, &self.mains)),
+        }
+    }
+}
+
+/// Scan every module of `plan` for `main`, reading the same effective source
+/// the build paths compile: the on-disk text when it declares a module
+/// header, the synthetic `module <name>` header otherwise.
+pub fn scan_entry_points(plan: &ProjectPlan) -> EntryPointScan {
+    let mut scan = EntryPointScan::default();
+    for module in &plan.modules {
+        let source = match fs::read_to_string(&module.path) {
+            Ok(source) => source,
+            Err(_) => {
+                // Unreadable right now: inconclusive. The compile loop
+                // reports the I/O error with its own diagnostic.
+                scan.unreliable.push(module.path.clone());
+                continue;
+            }
+        };
+        let owned;
+        let effective = if source_has_module_decl(&source) {
+            source.as_str()
+        } else {
+            owned = format!("module {}\n{}", module.name, source);
+            owned.as_str()
+        };
+        match scan_source_main(effective) {
+            Some(true) => scan.mains.push(module.path.clone()),
+            Some(false) => {}
+            None => scan.unreliable.push(module.path.clone()),
+        }
+    }
+    scan
 }
 
 fn extract_imports(source: &str) -> Vec<String> {
@@ -642,5 +827,162 @@ mod tests {
         assert!(text.contains("lib.missing"));
         assert!(text.contains("package 'lib' source:"));
         assert!(text.contains("package 'app'"));
+    }
+
+    // --- Module header detection (shared source_has_module_decl) ---
+
+    #[test]
+    fn module_header_accepts_any_whitespace_separator() {
+        // The lexer accepts any whitespace between the keyword and the name,
+        // so the header detector must too (a literal space is not enough).
+        assert_eq!(extract_module_name("module\nname"), Some("name".to_string()));
+        assert_eq!(extract_module_name("module\tname"), Some("name".to_string()));
+        assert_eq!(extract_module_name("module  name\n"), Some("name".to_string()));
+        assert_eq!(
+            extract_module_name("module app.main\n"),
+            Some("app.main".to_string())
+        );
+        assert!(source_has_module_decl("module\nname"));
+        assert!(source_has_module_decl("module\tname"));
+    }
+
+    #[test]
+    fn module_header_after_block_comment_is_detected() {
+        assert_eq!(
+            extract_module_name("/* header */ module after_block\n"),
+            Some("after_block".to_string())
+        );
+        assert_eq!(
+            extract_module_name("/*\n multi-line\n*/\nmodule after_block\n"),
+            Some("after_block".to_string())
+        );
+        assert_eq!(
+            extract_module_name("// line comment\nmodule after_line\n"),
+            Some("after_line".to_string())
+        );
+    }
+
+    #[test]
+    fn module_text_inside_string_literal_is_not_a_declaration() {
+        assert_eq!(extract_module_name("module sneaky\n"), Some("sneaky".to_string()));
+        // A string literal is a token, not trivia: nothing inside it counts.
+        assert_eq!(extract_module_name("\"module sneaky\"\n"), None);
+        assert_eq!(extract_module_name("let text = \"module sneaky\"\n"), None);
+        assert!(!source_has_module_decl("let text = \"module sneaky\"\n"));
+    }
+
+    #[test]
+    fn module_text_only_in_comment_is_not_a_declaration() {
+        assert_eq!(extract_module_name("// module commented\n"), None);
+        assert_eq!(extract_module_name("// module commented\nlet x = 1\n"), None);
+        assert_eq!(extract_module_name("/* module commented */\n"), None);
+        // Keyword boundary: `modulex` is an identifier, and a bare keyword
+        // without a name is an incomplete declaration.
+        assert_eq!(extract_module_name("modulex\n"), None);
+        assert_eq!(extract_module_name("module"), None);
+        assert_eq!(extract_module_name("module \n"), None);
+    }
+
+    // --- Entry-point counting (shared scan_entry_points) ---
+
+    #[test]
+    fn entry_scan_accepts_exactly_one_main() {
+        let temp = TempProject::new("entry-one-main");
+        let lib = temp.source("lib", "core.spectra", "module lib.core\n");
+        let app = temp.source(
+            "app",
+            "main.spectra",
+            "module app.main\npublic func main() returns int {\n    return 0\n}\n",
+        );
+
+        let plan = ProjectPlan::build_with_sources(vec![app, lib]).expect("build plan");
+        let main = scan_entry_points(&plan)
+            .single_main()
+            .expect("exactly one main must be accepted")
+            .expect("the main module path must be reported");
+        assert!(main.ends_with("main.spectra"));
+    }
+
+    #[test]
+    fn entry_scan_counts_main_in_headerless_sources() {
+        let temp = TempProject::new("entry-headerless-main");
+        // No module header: the scan must apply the same synthetic header
+        // the build paths compile, or a valid headerless script would look
+        // entry-point-free.
+        let app = temp.source(
+            "app",
+            "main.spectra",
+            "public func main() returns int {\n    return 0\n}\n",
+        );
+
+        let plan = ProjectPlan::build_with_sources(vec![app]).expect("build plan");
+        let main = scan_entry_points(&plan)
+            .single_main()
+            .expect("headerless main must be detected")
+            .expect("the main module path must be reported");
+        assert!(main.ends_with("main.spectra"));
+    }
+
+    #[test]
+    fn entry_scan_rejects_zero_and_multiple_mains() {
+        let temp = TempProject::new("entry-count");
+
+        let lib = temp.source("lib", "core.spectra", "module lib.core\n");
+        let plan = ProjectPlan::build_with_sources(vec![lib]).expect("build plan");
+        let error = scan_entry_points(&plan)
+            .single_main()
+            .expect_err("zero mains must be rejected");
+        assert!(error.contains("no entry point 'main' found"), "got: {error}");
+
+        let first = temp.source(
+            "one",
+            "main.spectra",
+            "module one.main\npublic func main() returns int {\n    return 0\n}\n",
+        );
+        let second = temp.source(
+            "two",
+            "main.spectra",
+            "module two.main\npublic func main() returns int {\n    return 1\n}\n",
+        );
+        let plan = ProjectPlan::build_with_sources(vec![first, second]).expect("build plan");
+        let error = scan_entry_points(&plan)
+            .single_main()
+            .expect_err("two mains must be rejected");
+        assert!(error.contains("exactly one `main`"), "got: {error}");
+        assert!(error.contains("main.spectra"), "got: {error}");
+    }
+
+    #[test]
+    fn entry_scan_defers_when_a_source_cannot_be_scanned() {
+        let temp = TempProject::new("entry-unreliable");
+        // Parses cleanly but has no main ... plus a source that cannot parse:
+        // a zero count must be inconclusive so compilation reports the real
+        // parse error instead of a bogus "no entry point" rejection.
+        let lib = temp.source("lib", "core.spectra", "module lib.core\n");
+        let broken = temp.source("broken", "broken.spectra", "module broken\nfunc ( {\n");
+
+        let plan = ProjectPlan::build_with_sources(vec![lib, broken.clone()]).expect("build plan");
+        let result = scan_entry_points(&plan)
+            .single_main()
+            .expect("inconclusive scan must not reject");
+        assert!(result.is_none());
+
+        // But multiple detected mains are authoritative even alongside an
+        // unscannable module.
+        let one = temp.source(
+            "one",
+            "main.spectra",
+            "module one.main\npublic func main() returns int {\n    return 0\n}\n",
+        );
+        let two = temp.source(
+            "two",
+            "main.spectra",
+            "module two.main\npublic func main() returns int {\n    return 1\n}\n",
+        );
+        let plan = ProjectPlan::build_with_sources(vec![one, two, broken]).expect("build plan");
+        let error = scan_entry_points(&plan)
+            .single_main()
+            .expect_err("two mains must still be rejected");
+        assert!(error.contains("exactly one `main`"), "got: {error}");
     }
 }

@@ -1,0 +1,62 @@
+// Teste 613: a self-tail-recursive function invoked as a closure and
+// through a dyn vtable.
+//
+// Regression: a tail-eligible function was declared `CallConv::Tail`, while
+// `CallIndirect` rebuilt its signature with the platform default
+// convention. Calling the function through a function value or a dyn
+// method then entered Tail code with the wrong argument-register placement
+// (visible on Windows). Eligibility now excludes any function whose address
+// is taken, so every call path below uses one convention end to end. Exit
+// code 0 only if the closure result and the vtable result are both correct.
+module tail_call_as_closure
+
+func loop_sum(n: int, acc: int) returns int {
+    if n <= 0 {
+        return acc
+    }
+    return loop_sum(n - 1, acc + n)
+}
+
+record Counter {
+    base: int,
+}
+
+trait Step {
+    func advance(&self, n: int, acc: int) returns int
+}
+
+impl Step for Counter {
+    // Self-tail-recursive method: its address is taken by the `dyn` vtable
+    // (`FuncAddr`), which is exactly the shape that must stay on the
+    // default calling convention.
+    func advance(&self, n: int, acc: int) returns int {
+        if n <= 0 {
+            return acc + self.base
+        }
+        return self.advance(n - 1, acc + n)
+    }
+}
+
+public func main() returns int {
+    let g: func(int, int) returns int = loop_sum
+    let via_closure = g(100, 0)
+    if via_closure != 5050 {
+        return 1
+    }
+
+    // NOTE: passing a function value *as a call argument* is intentionally
+    // not exercised here: the tightened IR verifier's call-argument type
+    // check currently rejects the closure object against the declared
+    // `Function` parameter type for every such shape (including the
+    // pre-existing fixtures 511/65) — an in-flight issue owned by the
+    // IR-verification work.
+
+    let counter = Counter { base: 7 }
+    let step = counter as dyn Step
+    let via_vtable = step.advance(5, 0)
+    if via_vtable != 22 {
+        return 3
+    }
+
+    return 0
+}

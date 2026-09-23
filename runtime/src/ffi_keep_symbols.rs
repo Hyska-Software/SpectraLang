@@ -51,4 +51,9 @@ pub fn keep_fast_symbols() {
     // read them as strings; the zero-length call is a no-op that keeps the
     // symbol in the image.
     spectra_rt_register_literal(0, 0);
+
+    // Code-range registry for `spectra_rt_invoke_closure`: the invalid
+    // zero-length registration keeps the symbol linked into the image so the
+    // JIT/host can resolve it.
+    let _ = spectra_rt_register_code_range(0, 0);
 }

@@ -896,7 +896,10 @@ pub(crate) extern "C" fn std_async_task_with_timeout(ctx: *mut SpectraHostCallCo
     let Some(inner) = registry.tasks.get(args[0]).copied() else {
         return HOST_STATUS_NOT_FOUND;
     };
-    let deadline = registry.now_ms.saturating_add(args[1]);
+    // Deadline on the combined virtual + wall-clock scheduler clock: the
+    // timeout expires when real time passes even if nobody ever calls
+    // `advance_time` (which production never does).
+    let deadline = registry.now_ms().saturating_add(args[1]);
     let wrapper = registry.allocate_task(
         inner.value,
         inner.parent_scope,
@@ -974,9 +977,14 @@ pub(crate) extern "C" fn std_async_scheduler_advance_time(ctx: *mut SpectraHostC
         Ok(registry) => registry,
         Err(status) => return status,
     };
-    registry.now_ms = registry.now_ms.saturating_add(args[0]);
+    // Fast-forward only the *virtual* component of the scheduler clock and
+    // re-evaluate deadlines. The observable clock is virtual + elapsed
+    // (`AsyncTaskRegistry::now_ms`); the return value reports the cumulative
+    // virtual advance, which is what callers of this test-facing host call
+    // compare against.
+    registry.virtual_offset_ms = registry.virtual_offset_ms.saturating_add(args[0]);
     registry.process_due_timeouts();
-    results[0] = registry.now_ms;
+    results[0] = registry.virtual_offset_ms;
     HOST_STATUS_SUCCESS
 }
 

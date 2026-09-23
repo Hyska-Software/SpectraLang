@@ -879,6 +879,12 @@ impl ASTLowering {
         // order. FrameLoad results are already frame contents and need no
         // write-back. Terminal await-machine blocks (pending/failed/cancelled)
         // only hold block-local temps and are skipped.
+        let resumed_frame_slots = collect_resumed_frame_slots(&body, &states);
+        let mut frame_store_type_hints = collect_value_types(&body);
+        for (slot, ty) in &local_slot_types {
+            frame_store_type_hints.insert(*slot, ty.clone());
+        }
+        frame_store_type_hints.extend(self.call_result_type_hints(&body));
         for block in body.blocks.iter_mut() {
             if block.label.contains(".pending")
                 || block.label.contains(".failed")
@@ -900,6 +906,8 @@ impl ASTLowering {
                             frame,
                             slot: value.id,
                             value,
+                            escape_value: resumed_frame_slots.contains(&value.id)
+                                && frame_store_needs_escape(frame_store_type_hints.get(&value.id)),
                         },
                         source_span: None,
                     });
@@ -1110,6 +1118,7 @@ impl ASTLowering {
                         frame,
                         slot: index + 3,
                         value: Value { id: param.id },
+                        escape_value: frame_store_needs_escape(Some(&param.ty)),
                     },
                     source_span: None,
                 });
@@ -1464,6 +1473,59 @@ enum ReloadSource {
     State,
 }
 
+fn frame_store_needs_escape(ty: Option<&IRType>) -> bool {
+    matches!(
+        ty,
+        Some(IRType::String | IRType::Pointer(_) | IRType::DynTrait { .. })
+    )
+}
+
+/// Finds frame slots read by a coroutine after resuming from an `await`.
+/// Values in these slots must outlive the poll activation that produced them.
+fn collect_resumed_frame_slots(
+    body: &IRFunction,
+    states: &[AsyncState],
+) -> std::collections::HashSet<usize> {
+    use std::collections::HashSet;
+
+    let mut pending: Vec<usize> = states
+        .iter()
+        .filter(|state| state.await_slot.is_some())
+        .map(|state| state.resume_block)
+        .collect();
+    let mut visited = HashSet::new();
+    let mut slots = HashSet::new();
+
+    while let Some(block_id) = pending.pop() {
+        if !visited.insert(block_id) {
+            continue;
+        }
+        let Some(block) = body.get_block(block_id) else {
+            continue;
+        };
+        for instruction in &block.instructions {
+            if let InstructionKind::FrameLoad { slot, .. } = instruction.kind {
+                slots.insert(slot);
+            }
+        }
+        match block.terminator.as_ref() {
+            Some(Terminator::Branch { target }) => pending.push(*target),
+            Some(Terminator::CondBranch {
+                true_block,
+                false_block,
+                ..
+            }) => pending.extend([*true_block, *false_block]),
+            Some(Terminator::Switch { cases, default, .. }) => {
+                pending.push(*default);
+                pending.extend(cases.iter().map(|(_, target)| *target));
+            }
+            Some(Terminator::Return { .. }) | Some(Terminator::Unreachable) | None => {}
+        }
+    }
+
+    slots
+}
+
 /// Replace scalar promoted-local allocas with durable coroutine frame slots.
 ///
 /// A promoted local is lowered as an `alloca` addressed by load/store. Across a
@@ -1556,6 +1618,7 @@ fn promote_scalar_locals_to_frame_slots(
                         frame,
                         slot: ptr.id,
                         value,
+                        escape_value: false,
                     }
                 }
                 other => other,
@@ -1577,14 +1640,14 @@ fn shift_body_values(function: &mut IRFunction, amount: usize) {
                 InstructionKind::Add { result, lhs, rhs }
                 | InstructionKind::Sub { result, lhs, rhs }
                 | InstructionKind::Mul { result, lhs, rhs }
-                | InstructionKind::Div { result, lhs, rhs }
-                | InstructionKind::Rem { result, lhs, rhs }
+                | InstructionKind::Div { result, lhs, rhs, .. }
+                | InstructionKind::Rem { result, lhs, rhs, .. }
                 | InstructionKind::Eq { result, lhs, rhs }
                 | InstructionKind::Ne { result, lhs, rhs }
-                | InstructionKind::Lt { result, lhs, rhs }
-                | InstructionKind::Le { result, lhs, rhs }
-                | InstructionKind::Gt { result, lhs, rhs }
-                | InstructionKind::Ge { result, lhs, rhs }
+                | InstructionKind::Lt { result, lhs, rhs, .. }
+                | InstructionKind::Le { result, lhs, rhs, .. }
+                | InstructionKind::Gt { result, lhs, rhs, .. }
+                | InstructionKind::Ge { result, lhs, rhs, .. }
                 | InstructionKind::And { result, lhs, rhs }
                 | InstructionKind::Or { result, lhs, rhs } => {
                     shift(result, amount);
@@ -1849,8 +1912,8 @@ fn collect_value_types(function: &IRFunction) -> std::collections::HashMap<usize
                 InstructionKind::Add { result, lhs, rhs }
                 | InstructionKind::Sub { result, lhs, rhs }
                 | InstructionKind::Mul { result, lhs, rhs }
-                | InstructionKind::Div { result, lhs, rhs }
-                | InstructionKind::Rem { result, lhs, rhs } => (result, lhs, rhs),
+                | InstructionKind::Div { result, lhs, rhs, .. }
+                | InstructionKind::Rem { result, lhs, rhs, .. } => (result, lhs, rhs),
                 _ => continue,
             };
             let ty = if matches!(types.get(&lhs.id), Some(IRType::Float))

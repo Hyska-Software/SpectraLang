@@ -303,5 +303,6 @@ fn render_visibility(visibility: &crate::semantic::module_registry::ExportVisibi
     match visibility {
         crate::semantic::module_registry::ExportVisibility::Public => "public".to_string(),
         crate::semantic::module_registry::ExportVisibility::Internal => "internal".to_string(),
+        crate::semantic::module_registry::ExportVisibility::Private => "private".to_string(),
     }
 }

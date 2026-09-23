@@ -182,9 +182,15 @@ fn attach_native_codeview(
         find_native_debug_metadata(debug_metadata, &function.name).is_some()
     });
     if ranged_functions.is_empty() {
-        return Err(CliError::compilation(
-            "--debug-info=native found no user function symbols in the COFF object",
-        ));
+        // The artifact was already written when this runs; hard-failing here
+        // left a stray object next to a non-zero exit. Keep the build and
+        // warn instead: the object simply carries no attached native debug
+        // information.
+        eprintln!(
+            "warning: --debug-info=native found no user function symbols in '{}'; native debug info was not attached",
+            object_path.display()
+        );
+        return Ok(());
     }
     for function in &mut ranged_functions {
         if let Some(metadata) = find_native_debug_metadata(debug_metadata, &function.name) {
@@ -230,9 +236,14 @@ fn attach_native_dwarf(object_path: &Path, source_path: &Path, debug_metadata: &
         find_native_debug_metadata(debug_metadata, &function.name).is_some()
     });
     if functions.is_empty() {
-        return Err(CliError::compilation(
-            "--debug-info=native found no user function symbols in the Unix object",
-        ));
+        // Same policy as the COFF path: the artifact exists already, so a
+        // missing-symbol match warns and keeps the build instead of failing
+        // after the write and leaving a stray object behind.
+        eprintln!(
+            "warning: --debug-info=native found no user function symbols in '{}'; native debug info was not attached",
+            object_path.display()
+        );
+        return Ok(());
     }
     for function in &mut functions {
         if let Some(metadata) = find_native_debug_metadata(debug_metadata, &function.name) {

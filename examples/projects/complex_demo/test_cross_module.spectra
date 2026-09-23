@@ -3,7 +3,7 @@ module test_cross_module
 import test_utils
 import std.io
 
-public func main() returns int {
+public func test_cross_module_entry() returns int {
     // Cross-module function call
     let p = test_utils::make_point(3, 4)
 

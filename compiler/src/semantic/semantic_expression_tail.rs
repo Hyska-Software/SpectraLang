@@ -85,12 +85,17 @@ impl SemanticAnalyzer {
             }
             ExpressionKind::Await(inner) => {
                 if self.async_context_depth == 0 {
-                    self.error("`await` is only valid inside an async context", expr.span);
+                    self.error_coded(
+                        "E2106",
+                        "`await` is only valid inside an async context",
+                        expr.span,
+                    );
                 }
                 self.analyze_expression(inner);
                 let task_type = self.infer_expression_type(inner);
                 if !matches!(task_type, Type::Task { .. } | Type::Unknown) {
-                    self.error(
+                    self.error_coded(
+                        "E2105",
                         format!("`await` expects Task<T>, found {}", type_name(&task_type)),
                         expr.span,
                     );
@@ -114,8 +119,12 @@ impl SemanticAnalyzer {
                     );
                 }
 
-                // Validate cast legality
+                // Validate cast legality. `specific_reported` tracks whether a
+                // specific coded cast diagnostic (E2903/E026/E022/E2104) was
+                // already emitted, so the generic uncoded overlay below never
+                // duplicates a specific one.
                 let mut valid = is_cast_valid(&from_ty, &to_ty);
+                let mut specific_reported = false;
 
                 if *mode == CastMode::Wrapping
                     && (matches!(from_ty, Type::Float | Type::ExactFloat { .. })
@@ -127,6 +136,7 @@ impl SemanticAnalyzer {
                         expr.span,
                     );
                     valid = false;
+                    specific_reported = true;
                 }
 
                 // For dyn Trait casts, verify that the concrete type actually implements the trait.
@@ -153,6 +163,7 @@ impl SemanticAnalyzer {
                         .unwrap_or(false)
                     {
                         valid = false;
+                        specific_reported = true;
                         self.error_coded(
                             "E026",
                             format!(
@@ -166,6 +177,7 @@ impl SemanticAnalyzer {
                         .contains_key(&(trait_name.clone(), lookup_name.clone()))
                     {
                         valid = false;
+                        specific_reported = true;
                         self.error_coded(
                             "E022",
                             format!(
@@ -178,6 +190,7 @@ impl SemanticAnalyzer {
                     for bound in auto_traits {
                         if !self.type_satisfies_trait_bound(&from_ty, bound) {
                             valid = false;
+                            specific_reported = true;
                             self.error_coded_with_hint(
                                 "E2104",
                                 format!(
@@ -194,7 +207,9 @@ impl SemanticAnalyzer {
                     }
                 }
 
-                if !valid {
+                if !valid && !specific_reported {
+                    // Only reached when no specific cast code fired (e.g. an
+                    // invalid numeric/char cast): keep the generic guidance.
                     self.error(
                         format!(
                             "Cannot cast from `{}` to `{}`; valid casts: numeric↔numeric, int↔char, and `T as dyn Trait` where T implements Trait",

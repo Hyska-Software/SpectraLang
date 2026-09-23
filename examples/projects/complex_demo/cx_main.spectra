@@ -5,7 +5,7 @@ import cx_ledger
 import cx_pipeline
 import std.io
 
-public func main() returns int {
+public func run_cx_demo() returns int {
     // --- cx_geometry: Vec2 struct + field access ---
     let v      = cx_geometry::make_vec2(3, 4)
     let len_sq = cx_geometry::vec2_len_sq(v)
@@ -89,12 +89,12 @@ public func main() returns int {
     // Rect(4,4) area = 16
 
     // Expected sum: 25+75+42+0+30+26+300+500+100+30+550+1+2+0+4+1+1+16 = 1703
-    let result = len_sq + a_circ + a_rect + a_dot
-    + p_circ + p_rect + matched_area
-    + bal + amt_c + amt_d + new_bal
-    + sc_active + sc_frozen + sc_closed
-    + cv1 + cv2 + cv3
-    + sq_area
+    let result = len_sq + a_circ + a_rect + a_dot +
+        p_circ + p_rect + matched_area +
+        bal + amt_c + amt_d + new_bal +
+        sc_active + sc_frozen + sc_closed +
+        cv1 + cv2 + cv3 +
+        sq_area
     println(result)
     return result
 }

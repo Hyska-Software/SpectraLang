@@ -1,0 +1,32 @@
+module tensor_grad_enabled_then_enum_call
+
+import std.tensor as tensor
+
+enum PipelineState {
+    Ready { batch: int },
+    Failed(int),
+}
+
+func state_weight(state: PipelineState) returns int {
+    return match state {
+        when PipelineState::Ready { batch } then batch,
+        when PipelineState::Failed(code) then code
+    }
+}
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled( true)
+
+    let state = PipelineState::Ready { batch: 4 }
+    if state_weight(state) != 4 {
+        return 1
+    }
+
+    let failed = PipelineState::Failed(7)
+    if state_weight(failed) != 7 {
+        return 2
+    }
+
+    return 0
+}

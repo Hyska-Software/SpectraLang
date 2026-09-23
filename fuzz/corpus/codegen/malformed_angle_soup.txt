@@ -1,0 +1,4 @@
+module m
+func f<T: Compare<T> + Clone<Vec<Vec<T>>>>() returns Map<String, Array<Option<T>>> {
+    return g::<>>>()
+}

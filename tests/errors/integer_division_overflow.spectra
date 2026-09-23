@@ -1,0 +1,13 @@
+module integer_division_overflow
+
+// Expected behavior: JIT/AOT execution prints
+//   runtime error: integer division overflow
+// to stderr and terminates the process with exit code 101
+// (spectra_rt_panic), instead of dying on a native #DE/SIGFPE raised by
+// `sdiv(i64::MIN, -1)`.
+public func main() returns int {
+    // i64::MIN, built without a literal the parser cannot represent.
+    let minimum = (0 - 9223372036854775807) - 1
+    let quotient = minimum / (0 - 1)
+    return quotient
+}

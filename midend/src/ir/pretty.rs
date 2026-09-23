@@ -95,7 +95,7 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                     fmt_value(*rhs)
                 )
             }
-            InstructionKind::Div { result, lhs, rhs } => {
+            InstructionKind::Div { result, lhs, rhs, .. } => {
                 format!(
                     "{} = div {}, {}",
                     fmt_value(*result),
@@ -103,7 +103,7 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                     fmt_value(*rhs)
                 )
             }
-            InstructionKind::Rem { result, lhs, rhs } => {
+            InstructionKind::Rem { result, lhs, rhs, .. } => {
                 format!(
                     "{} = rem {}, {}",
                     fmt_value(*result),
@@ -127,7 +127,7 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                     fmt_value(*rhs)
                 )
             }
-            InstructionKind::Lt { result, lhs, rhs } => {
+            InstructionKind::Lt { result, lhs, rhs, .. } => {
                 format!(
                     "{} = lt {}, {}",
                     fmt_value(*result),
@@ -135,7 +135,7 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                     fmt_value(*rhs)
                 )
             }
-            InstructionKind::Le { result, lhs, rhs } => {
+            InstructionKind::Le { result, lhs, rhs, .. } => {
                 format!(
                     "{} = le {}, {}",
                     fmt_value(*result),
@@ -143,7 +143,7 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                     fmt_value(*rhs)
                 )
             }
-            InstructionKind::Gt { result, lhs, rhs } => {
+            InstructionKind::Gt { result, lhs, rhs, .. } => {
                 format!(
                     "{} = gt {}, {}",
                     fmt_value(*result),
@@ -151,7 +151,7 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                     fmt_value(*rhs)
                 )
             }
-            InstructionKind::Ge { result, lhs, rhs } => {
+            InstructionKind::Ge { result, lhs, rhs, .. } => {
                 format!(
                     "{} = ge {}, {}",
                     fmt_value(*result),
@@ -455,11 +455,17 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                 layout,
                 slot_count
             ),
-            InstructionKind::FrameStore { frame, slot, value } => format!(
-                "frame.store {}[{}] <- {}",
+            InstructionKind::FrameStore {
+                frame,
+                slot,
+                value,
+                escape_value,
+            } => format!(
+                "frame.store {}[{}] <- {}{}",
                 fmt_value(*frame),
                 slot,
-                fmt_value(*value)
+                fmt_value(*value),
+                if *escape_value { " escape" } else { "" }
             ),
             InstructionKind::FrameLoad {
                 result,

@@ -1,0 +1,21 @@
+// Teste 3: Comparações
+module comparisons
+
+func test_comparisons() returns bool {
+    let x = 10
+    let y = 20
+
+    let lt  = x < y
+    let gt  = x > y
+    let lte = x <= y
+    let gte = x >= y
+    let eq  = x == x
+    let neq = x != y
+
+    return lt and neq
+}
+
+func main() returns int {
+    let result = test_comparisons()
+    return 0
+}

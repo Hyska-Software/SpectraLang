@@ -1,0 +1,6 @@
+@[derive]
+#[inline(never)]
+@@@
+module m
+@[cfg(target)]
+func f() {}

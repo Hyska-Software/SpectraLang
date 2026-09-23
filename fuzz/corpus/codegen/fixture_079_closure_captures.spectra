@@ -1,0 +1,42 @@
+// Teste 79: closures capturantes com armazenamento, passagem, retorno e stdlib HOF.
+module closure_captures
+
+import std.collections
+
+func apply(value: int, f: func(int) returns int) returns int {
+    return f(value)
+}
+
+func make_adder(delta: int) returns func(int) returns int {
+    return | x: int | x + delta
+}
+
+func make_nested(base: int) returns func(int) returns int {
+    let local = base + 2
+    return | x: int | {
+        let inner = | y: int | y + local
+        inner(x)
+    }
+}
+
+public func main() returns int {
+    let base                            = 5
+    let add_base: func(int) returns int = | x: int | x + base
+    let local_result                    = add_base(7)
+    if local_result != 12 {
+        return local_result
+    }
+
+    let offset        = 3
+    let passed_result = apply(10, | x: int | x + offset)
+    if passed_result != 13 {
+        return passed_result
+    }
+
+    let add_ten         = make_adder(10)
+    let returned_result = add_ten(8)
+    if returned_result != 18 {
+        return returned_result
+    }
+
+    let nested        = make_nested(4)

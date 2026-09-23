@@ -102,11 +102,18 @@ impl ASTLowering {
                 });
         }
         self.const_values.clear();
+        self.const_types.clear();
         self.static_globals.clear();
         for item in &ast_module.items {
             if let Item::Const(decl) = item {
                 if let Some(value) = self.eval_const_expression(&decl.value) {
                     self.const_values.insert(decl.name.clone(), value);
+                    let ty = decl
+                        .ty
+                        .as_ref()
+                        .map(|annotation| self.lower_type_annotation(annotation))
+                        .unwrap_or_else(|| self.infer_expr_ir_type(&decl.value));
+                    self.const_types.insert(decl.name.clone(), ty);
                 }
             }
         }

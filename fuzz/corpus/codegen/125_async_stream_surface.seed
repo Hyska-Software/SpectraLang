@@ -1,0 +1,17 @@
+module async_stream_surface
+
+async func next_value(value: int) returns int {
+    return value
+}
+
+async func consume_three() returns int {
+    let first  = await next_value(1)
+    let second = await next_value(2)
+    let third  = await next_value(3)
+    return first + second + third
+}
+
+func main() returns int {
+    let task = consume_three()
+    return 0
+}

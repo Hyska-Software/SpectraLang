@@ -22,9 +22,26 @@ impl SemanticAnalyzer {
                 // Analisar objeto
                 self.analyze_expression(object);
 
-                // Analisar argumentos
-                for arg in arguments {
+                // Resolve argument expectations before analyzing literals so
+                // an enclosing result annotation cannot leak into parameters.
+                let expected_params = self.method_call_signature_for_arguments(
+                    object,
+                    method_name,
+                    arguments,
+                );
+                for (index, arg) in arguments.iter().enumerate() {
+                    let saved_expected = self.current_expected_type.clone();
+                    self.current_expected_type = if Self::is_contextual_integer_literal_expression(arg)
+                    {
+                        expected_params
+                            .as_ref()
+                            .and_then(|(params, offset)| params.get(index + offset))
+                            .cloned()
+                    } else {
+                        None
+                    };
                     self.analyze_expression(arg);
+                    self.current_expected_type = saved_expected;
                 }
 
                 // Resource-release classification (E034): tensor.free(x) /
@@ -89,7 +106,15 @@ impl SemanticAnalyzer {
                             for (i, (arg, expected_type)) in
                                 arguments.iter().zip(signature.params.iter()).enumerate()
                             {
+                                let saved_expected = self.current_expected_type.clone();
+                                self.current_expected_type =
+                                    if Self::is_contextual_integer_literal_expression(arg) {
+                                        Some(expected_type.clone())
+                                    } else {
+                                        None
+                                    };
                                 let arg_type = self.infer_expression_type(arg);
+                                self.current_expected_type = saved_expected;
                                 if matches!(arg_type, Type::Unknown) {
                                     self.error_with_hint(
                                         format!(
@@ -315,5 +340,108 @@ impl SemanticAnalyzer {
             }
             _ => unreachable!("expression category mismatch"),
         }
+    }
+
+    fn method_call_signature_for_arguments(
+        &mut self,
+        object: &Expression,
+        method_name: &str,
+        arguments: &[Expression],
+    ) -> Option<(Vec<Type>, usize)> {
+        let local_namespace_shadow = matches!(
+            &object.kind,
+            ExpressionKind::Identifier(name) if self.lookup_symbol(name).is_some()
+        );
+        let namespace = if local_namespace_shadow {
+            None
+        } else {
+            namespace_path(object)
+        };
+        if let Some(path) = namespace {
+            let qualified_name = format!("{}.{}", path, method_name);
+            let signature = self.functions.get(&qualified_name).cloned().or_else(|| {
+                self.registry
+                    .read()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .get_module(&path)
+                    .and_then(|exports| exports.functions.get(method_name))
+                    .map(|function| FunctionSignature {
+                        params: function.params.clone(),
+                        return_type: function.return_type.clone(),
+                        self_kind: None,
+                        is_async: function.is_async,
+                    })
+            })?;
+            let signature = self.specialize_std_call_signature(
+                &qualified_name,
+                &signature,
+                arguments,
+            );
+            return Some((signature.params, 0));
+        }
+
+        let receiver_type = self.infer_expression_type(object);
+        let mut signature = if let Type::TypeParameter { name } = &receiver_type {
+            self.trait_method_signature_for_type_param(name, method_name)
+                .map(|(signature, _)| signature)
+        } else if let Type::DynTrait { trait_name, .. } = &receiver_type {
+            self.traits
+                .get(trait_name)
+                .and_then(|methods| methods.get(method_name))
+                .map(|method| method.signature.clone())
+        } else {
+            let receiver_name = match &receiver_type {
+                Type::Struct { name }
+                | Type::Enum { name, .. }
+                | Type::Applied { name, .. } => self
+                    .nominal_lookup_name(&receiver_type)
+                    .or_else(|| Some(name.clone())),
+                _ => None,
+            }?;
+            self.methods
+                .get(&receiver_name)
+                .and_then(|methods| methods.get(method_name).cloned())
+                .or_else(|| self.instantiated_method_signature(&receiver_name, method_name))
+        };
+        if signature.is_none() {
+            let receiver_name = match &receiver_type {
+                Type::Struct { name }
+                | Type::Enum { name, .. }
+                | Type::Applied { name, .. } => self
+                    .nominal_lookup_name(&receiver_type)
+                    .or_else(|| Some(name.clone())),
+                _ => None,
+            };
+            if let Some(receiver_name) = receiver_name {
+                for (trait_name, impl_type) in self.trait_impls.keys() {
+                    if impl_type != &receiver_name {
+                        continue;
+                    }
+                    let Some(method) = self
+                        .traits
+                        .get(trait_name)
+                        .and_then(|methods| methods.get(method_name))
+                    else {
+                        continue;
+                    };
+                    if !method.has_default {
+                        continue;
+                    }
+                    let mut default_signature = method.signature.clone();
+                    if default_signature.self_kind.is_some()
+                        && !default_signature.params.is_empty()
+                    {
+                        default_signature.params[0] = Type::Struct {
+                            name: receiver_name.clone(),
+                        };
+                    }
+                    signature = Some(default_signature);
+                    break;
+                }
+            }
+        }
+        let signature = signature?;
+        let offset = if signature.self_kind.is_some() { 1 } else { 0 };
+        Some((signature.params, offset))
     }
 }

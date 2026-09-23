@@ -1,0 +1,7 @@
+// Regression (E2903): contextual u64 integer literals must fit their target.
+module fe_unsigned_literal_overflow
+
+public func main() returns int {
+    let too_big: u64 = 18446744073709551616
+    return 0
+}

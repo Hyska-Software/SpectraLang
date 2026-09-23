@@ -16,11 +16,25 @@ fn execute_repl(options: ReplOptions) -> CliResult<()> {
 
     if !preload.is_empty() {
         if let Err(error) = session.compile_entries(preload, session.default_command(), true) {
-            log_error(&error.message);
+            report_repl_failure(&error);
         }
     }
 
     session.run()
+}
+
+/// Report a failed in-process compile/run without ending the REPL session.
+///
+/// A propagated program exit status becomes a status line — the runtime
+/// diagnostic itself was already printed by the execution path — so `:run`
+/// of a program returning non-zero keeps the session alive. Every other
+/// failure is logged exactly like the top-level CLI would.
+fn report_repl_failure(error: &CliError) {
+    if let Some(CliFailureOutcome::ProgramExit(status)) = error.outcome {
+        println!("  program exited with status {}", status);
+    } else {
+        log_error(&error.message);
+    }
 }
 
 /// Interactive session shell over [`ReplBuffer`]. See repl_session.rs for the
@@ -214,7 +228,7 @@ impl ReplSession {
         if let Err(error) =
             self.compile_entries(vec![self.scratch_path.clone()], BuildCommand::Run, false)
         {
-            log_error(&error.message);
+            report_repl_failure(&error);
         }
     }
 
@@ -299,7 +313,7 @@ impl ReplSession {
                     _ => BuildCommand::Compile,
                 };
                 if let Err(error) = self.compile_entries(entries, command, true) {
-                    log_error(&error.message);
+                    report_repl_failure(&error);
                 }
             }
             unknown => {

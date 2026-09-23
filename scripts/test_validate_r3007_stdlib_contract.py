@@ -54,6 +54,12 @@ class R3007ContractTests(unittest.TestCase):
         self.assertEqual(contract["roadmap"], "R-3001")
 
     def test_cross_source_gaps_are_blocking(self) -> None:
+        # The checked-in manifest carries broad follow_up prefixes (e.g.
+        # "std.math") that would absorb every fabricated symbol below, so the
+        # test clears them: the contract under test is that a cross-source
+        # gap with NO recorded follow-up must block.
+        manifest = copy.deepcopy(self.manifest)
+        manifest["follow_up"] = []
         inventory = audit.SourceInventory(
             symbols={
                 "std.math.abs": audit.SymbolEvidence(sources={"semantic", "runtime"}, semantic_declared=True, runtime_registered=True, lowering_modes={"explicit_lowering"}),
@@ -66,9 +72,9 @@ class R3007ContractTests(unittest.TestCase):
         )
         report = audit.build_report(
             audit.ROOT,
-            self.manifest,
+            manifest,
             inventory,
-            [{"id": "std-core", "path": self.manifest["probe"][0]["path"], "status": "passed", "exit_code": 0, "command": []}],
+            [{"id": "std-core", "path": manifest["probe"][0]["path"], "status": "passed", "exit_code": 0, "command": []}],
         )
         kinds = {blocker["kind"] for blocker in report["blockers"]}
         self.assertIn("divergence_without_follow_up", kinds)

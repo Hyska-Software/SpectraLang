@@ -1,0 +1,15 @@
+// Regression: assigning to a field the struct does not declare must report
+// the field-existence error (E005) on the assignment path. It used to analyze
+// only the lvalue's object, producing a misleading E003 with an unknown target
+// type instead of ever looking the field up.
+module fe_field_assign_missing
+
+record Point {
+    public x: int,
+}
+
+public func main() returns int {
+    let p = Point { x: 1 }
+    p.y = 2
+    return p.x
+}

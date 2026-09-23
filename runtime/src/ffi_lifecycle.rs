@@ -125,12 +125,16 @@ fn frame0_budget_abort(message: &str) -> ! {
     unreachable!("spectra_rt_panic terminates the process")
 }
 
- /// Moves a manual allocation from the current function's frame to its parent frame,
- /// so that it survives the current function's `frame_exit` call.
- ///
- /// Only moves the allocation if it currently belongs to `current_frame_id` — this
- /// prevents accidentally re-parenting allocations that were passed in from the caller.
- /// If `ptr` is not a tracked allocation (e.g. a scalar value), this is a no-op.
+/// Moves a manual allocation from its current frame to the process-wide base
+/// frame (id `0`), so that it survives every `frame_exit`.
+///
+/// Only moves the allocation if it currently belongs to `current_frame_id` — this
+/// prevents accidentally re-parenting allocations that were passed in from the caller.
+/// If `ptr` is not a tracked allocation (e.g. a scalar value), this is a no-op.
+/// The destination is always the **base frame (0)**, never the lexical parent:
+/// `frame_exit` pops whole per-thread frame stacks down to the requested id,
+/// and frame 0 is the one frame no exit can ever free, so an escaped value
+/// outlives its caller's frames as well.
 ///
 /// # Frame-0 budget
 ///
@@ -145,12 +149,6 @@ fn frame0_budget_abort(message: &str) -> ! {
 /// aborts through `spectra_rt_panic` with
 /// `runtime error: frame-0 budget exceeded (...)` and exit code 101,
 /// replacing an eventual silent OS OOM kill with an actionable diagnostic.
-/// Moves a manual allocation from the current function's frame to its parent frame,
-/// so that it survives the current function's `frame_exit` call.
-///
-/// Only moves the allocation if it currently belongs to `current_frame_id` — this
-/// prevents accidentally re-parenting allocations that were passed in from the caller.
-/// If `ptr` is not a tracked allocation (e.g. a scalar value), this is a no-op.
 fn escape_allocation_locked(
     table: &mut AllocationTable,
     ptr_value: usize,
@@ -186,6 +184,31 @@ fn escape_allocation_locked(
         .unwrap_or(0)
 }
 
+/// Re-parents a tracked allocation to frame 0 regardless of which active
+/// stack frame created it. This is reserved for values handed to durable
+/// runtime-owned storage (coroutine frames and containers).
+fn escape_stored_allocation_locked(table: &mut AllocationTable, ptr_value: usize) -> usize {
+    let Some(owner_frame_id) = table.allocations.get(&ptr_value).map(|entry| entry.frame_id) else {
+        return 0;
+    };
+    if owner_frame_id == 0 {
+        return 0;
+    }
+
+    table.remove_from_frame(owner_frame_id, ptr_value);
+    if let Some(entry) = table.allocations.get_mut(&ptr_value) {
+        entry.frame_id = 0;
+    }
+    if let Some(base) = table.frames.iter_mut().find(|frame| frame.id == 0) {
+        base.track(ptr_value);
+    }
+    table
+        .allocations
+        .get(&ptr_value)
+        .map(ManualAllocation::byte_len)
+        .unwrap_or(0)
+}
+
 fn account_frame0_escape(escaped_bytes: usize) {
     if escaped_bytes == 0 {
         return;
@@ -212,33 +235,89 @@ pub extern "C" fn spectra_rt_manual_escape(ptr: *mut u8, current_frame_id: usize
     account_frame0_escape(escaped_bytes);
 }
 
+/// Moves a pointer placed in runtime-owned storage to frame 0 so it survives
+/// the producer frame's exit. Unknown pointers and scalar words are no-ops.
+#[no_mangle]
+pub extern "C" fn spectra_rt_manual_escape_stored(value: i64) {
+    if value == 0 {
+        return;
+    }
+    let table = allocation_table();
+    let mut guard = table.lock().unwrap_or_else(|e| e.into_inner());
+    let escaped_bytes = escape_stored_allocation_locked(&mut guard, value as usize);
+    drop(guard);
+    account_frame0_escape(escaped_bytes);
+}
+
 /// Re-parents a value that a runtime-owned container is about to store.
 ///
-/// A list or a map outlives the frame that pushed the value into it, so a value
-/// allocated by the pushing frame has to escape before it is stored: the
-/// alternative is a container holding a pointer the frame exit already freed.
-/// Values that are not tracked allocations (scalars, strings from literals,
-/// allocations owned by another frame) are left alone by the escape.
+/// A runtime-owned container or coroutine frame can outlive the frame that
+/// supplied a value, including when the allocation belongs to an outer frame.
+/// Re-parent tracked allocations before storing them so a later frame exit
+/// cannot leave the durable runtime object with a dangling pointer. Values
+/// that are not tracked allocations (scalars and borrowed string literals)
+/// remain unchanged.
 pub(crate) fn escape_stored_value(value: SpectraHostValue) {
     if value == 0 {
         return;
     }
     let table = allocation_table();
     let mut guard = table.lock().unwrap_or_else(|error| error.into_inner());
-    let Some(frame_id) = guard.current_frame_mut().map(|frame| frame.id) else {
-        return;
-    };
-    let escaped_bytes = escape_allocation_locked(&mut guard, value as usize, frame_id);
+    let escaped_bytes = escape_stored_allocation_locked(&mut guard, value as usize);
     drop(guard);
     account_frame0_escape(escaped_bytes);
 }
 
 /// Clears all outstanding manual allocations owned by the runtime.
+///
+/// # Why this also resets the container registries
+///
+/// `clear_all` frees every tracked manual buffer, but the runtime's container
+/// registries (lists, maps, sets, stacks, queues, iterators, string builders,
+/// tensors, concurrent tasks/counters) and the async task/coroutine tables can
+/// still hold raw pointers into that freed heap. The CLI calls this after
+/// every JIT run, and a REPL/package-test loop runs many programs per
+/// process, so leaving those registries populated would hand the next program
+/// handles whose backing storage points into freed memory. Resetting them here
+/// keeps that fix inside the runtime — no CLI change is required.
+///
+/// The async coroutine frames are drained through the **polling-safe** clear:
+/// a frame another thread is currently inside (`polling` / `drop_in_progress`)
+/// is retained instead of freed (see `AsyncFrameRegistry::clear`).
 #[no_mangle]
 pub extern "C" fn spectra_rt_manual_clear() {
-    let table = allocation_table();
-    let mut guard = table.lock().unwrap_or_else(|e| e.into_inner());
-    guard.clear_all();
+    {
+        let table = allocation_table();
+        let mut guard = table.lock().unwrap_or_else(|e| e.into_inner());
+        guard.clear_all();
+    }
+    reset_registries_after_manual_clear();
+}
+
+/// Drops every runtime registry that can hold raw pointers into the manual
+/// heap freed by [`spectra_rt_manual_clear`]. Extracted so tests (and any
+/// future internal caller of `AllocationTable::clear_all`) share one path.
+pub(crate) fn reset_registries_after_manual_clear() {
+    // Collections whose elements are raw `SpectraHostValue` pointers.
+    crate::stdlib::with_list_registry(|registry| registry.lists.clear());
+    // `clear_all` also bumps the map fast-cache epoch, invalidating the
+    // thread-local weak caches that would otherwise pin stale maps.
+    crate::stdlib::with_map_registry(|registry| {
+        registry.clear_all();
+    });
+    crate::stdlib::with_set_registry(|registry| registry.sets.clear());
+    crate::stdlib::with_stack_registry(|registry| registry.clear_all());
+    crate::stdlib::with_queue_registry(|registry| registry.clear_all());
+    // Iterators snapshot container elements, so they alias the same pointers.
+    crate::stdlib::with_iterator_registry(|registry| registry.iterators.clear());
+    crate::stdlib::lock_unpoisoned(crate::stdlib::string_builder_registry()).builders.clear();
+    // Tensors store scalar host values that may be raw pointers.
+    crate::stdlib::with_tensor_registry(|registry| registry.tensors.clear());
+    // Concurrent tasks/counters store scalar host values too.
+    crate::stdlib::lock_unpoisoned(crate::stdlib::concurrent_registry()).clear();
+    // Async tasks and coroutine frame slots: polling-safe (frames currently
+    // being polled are retained, not dropped).
+    let _ = crate::stdlib::reset_async_state();
 }
 
 /// Registers a host function that JITed code can invoke by name.
@@ -482,6 +561,301 @@ pub extern "C" fn spectra_rt_debug_invariants_check() -> bool {
     host_ok && allocation_ok
 }
 
+/// Returns the host status code recorded by the most recent
+/// [`spectra_rt_manual_frame_exit`] call: `HOST_STATUS_SUCCESS` when the
+/// exited frame (and the frames above it) belonged to the calling thread,
+/// `HOST_STATUS_INVALID_ARGUMENT` when the id was unknown, stale, owned by
+/// another thread, or the base frame `0` — in every one of those cases the
+/// exit freed **nothing**.
+///
+/// Process-wide, like the allocation table itself. Intended for debug
+/// tooling and validation harnesses; generated code does not branch on it.
+#[no_mangle]
+pub extern "C" fn spectra_rt_manual_frame_exit_last_status() -> i32 {
+    crate::ffi::last_manual_frame_exit_status()
+}
+
+// ── Closure-object and code-range validation ────────────────────────────────
+//
+// `spectra_rt_invoke_closure` used to transmute and call an arbitrary i64
+// after only a null check. Two runtime-only checks now gate the call:
+//
+//  (a) the closure object must be a tracked live manual allocation of at
+//      least the closure header size, or — when it is not tracked — memory
+//      the OS reports as committed and readable;
+//  (b) the code pointer must fall inside a registered executable code range
+//      (explicitly registered through `spectra_rt_register_code_range`, or
+//      discovered by the first-use executable-region scan on platforms that
+//      support it). Unregistered code pointers are rejected without being
+//      called.
+//
+// Known deviation from a strict "must be a tracked manual allocation" rule
+// for (a): the midend allocates closure objects with `build_alloca`
+// (`lowering_impl_methods.rs::build_closure_object`), i.e. on the generated
+// function's stack, not through `spectra_rt_manual_alloc`. Requiring manual
+// tracking would reject every production closure, so the OS readability
+// probe is the fallback for untracked objects. Making closure objects
+// heap-tracked needs a midend change (out of the runtime's scope).
+
+/// Minimum readable size of a closure object: slot 0 holds the code pointer.
+/// Capture slots beyond slot 0 are read by the callee itself.
+const CLOSURE_OBJECT_MIN_BYTES: usize = mem::size_of::<i64>();
+
+/// Best-effort OS view of a memory span.
+#[derive(Clone, Copy, Debug, Default)]
+struct MemoryProbe {
+    /// The span is committed and readable. `true` when the platform has no
+    /// probe (fail-open).
+    readable: bool,
+    /// A probe was actually performed on this platform.
+    probed: bool,
+}
+
+/// Whether range enforcement (probe + scan) is available on this platform.
+/// Windows uses `VirtualQuery`; Linux/Android parse `/proc/self/maps`.
+/// Elsewhere both checks fail open (documented in the report): the closure
+/// object degrades to a null check and code pointers are not range-gated.
+fn range_enforcement_available() -> bool {
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "android"))]
+    {
+        true
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "android")))]
+    {
+        false
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn probe_memory(addr: usize, len: usize) -> MemoryProbe {
+    #[repr(C)]
+    struct MemoryBasicInformation {
+        base_address: usize,
+        allocation_base: usize,
+        allocation_protect: u32,
+        // PartitionId (WORD) + padding on modern SDKs; plain padding on
+        // older ones — the offsets of the following fields are identical.
+        _partition_or_pad: u32,
+        region_size: usize,
+        state: u32,
+        protect: u32,
+        _type: u32,
+    }
+    extern "system" {
+        fn VirtualQuery(
+            lp_address: *const core::ffi::c_void,
+            lp_buffer: *mut MemoryBasicInformation,
+            dw_length: usize,
+        ) -> usize;
+    }
+    const MEM_COMMIT: u32 = 0x1000;
+    const PAGE_NOACCESS: u32 = 0x01;
+    const PAGE_GUARD: u32 = 0x100;
+
+    let mut info: MemoryBasicInformation = unsafe { mem::zeroed() };
+    let result = unsafe {
+        VirtualQuery(
+            addr as *const core::ffi::c_void,
+            &mut info,
+            mem::size_of::<MemoryBasicInformation>(),
+        )
+    };
+    if result == 0 {
+        return MemoryProbe::default();
+    }
+    let committed = info.state == MEM_COMMIT;
+    let guarded = info.protect & (PAGE_GUARD | PAGE_NOACCESS) != 0;
+    // The span must fit inside the region that contains its start; crossing
+    // into a differently-protected region is treated as not readable.
+    let covers_span =
+        addr.saturating_add(len) <= info.base_address.saturating_add(info.region_size);
+    MemoryProbe {
+        readable: committed && !guarded && covers_span,
+        probed: true,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn scan_executable_ranges() -> Vec<(usize, usize)> {
+    #[repr(C)]
+    struct MemoryBasicInformation {
+        base_address: usize,
+        allocation_base: usize,
+        allocation_protect: u32,
+        _partition_or_pad: u32,
+        region_size: usize,
+        state: u32,
+        protect: u32,
+        _type: u32,
+    }
+    extern "system" {
+        fn VirtualQuery(
+            lp_address: *const core::ffi::c_void,
+            lp_buffer: *mut MemoryBasicInformation,
+            dw_length: usize,
+        ) -> usize;
+    }
+    const MEM_COMMIT: u32 = 0x1000;
+    const PAGE_NOACCESS: u32 = 0x01;
+    const PAGE_GUARD: u32 = 0x100;
+    const EXECUTE_FLAGS: u32 = 0x10 | 0x20 | 0x40 | 0x80;
+
+    let mut ranges = Vec::new();
+    let mut addr: usize = 0;
+    loop {
+        let mut info: MemoryBasicInformation = unsafe { mem::zeroed() };
+        let result = unsafe {
+            VirtualQuery(
+                addr as *const core::ffi::c_void,
+                &mut info,
+                mem::size_of::<MemoryBasicInformation>(),
+            )
+        };
+        if result == 0 {
+            break;
+        }
+        if info.state == MEM_COMMIT
+            && info.protect & (PAGE_GUARD | PAGE_NOACCESS) == 0
+            && info.protect & EXECUTE_FLAGS != 0
+        {
+            ranges.push((info.base_address, info.region_size));
+        }
+        let next = info.base_address.saturating_add(info.region_size);
+        if next <= addr {
+            break;
+        }
+        addr = next;
+    }
+    ranges
+}
+
+#[cfg(all(not(target_os = "windows"), any(target_os = "linux", target_os = "android")))]
+fn probe_memory(addr: usize, len: usize) -> MemoryProbe {
+    match maps_region(addr) {
+        Some((_start, end, perms)) => MemoryProbe {
+            readable: perms.as_bytes().first() == Some(&b'r') && addr.saturating_add(len) <= end,
+            probed: true,
+        },
+        None => MemoryProbe::default(),
+    }
+}
+
+#[cfg(all(not(target_os = "windows"), any(target_os = "linux", target_os = "android")))]
+fn scan_executable_ranges() -> Vec<(usize, usize)> {
+    read_maps()
+        .filter(|(_, _, perms)| perms.as_bytes().get(2) == Some(&b'x'))
+        .map(|(start, end, _)| (start, end - start))
+        .collect()
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "android")))]
+fn probe_memory(_addr: usize, _len: usize) -> MemoryProbe {
+    MemoryProbe {
+        readable: true,
+        probed: false,
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "android")))]
+fn scan_executable_ranges() -> Vec<(usize, usize)> {
+    Vec::new()
+}
+
+#[cfg(all(not(target_os = "windows"), any(target_os = "linux", target_os = "android")))]
+fn read_maps() -> impl Iterator<Item = (usize, usize, String)> {
+    let text = std::fs::read_to_string("/proc/self/maps").unwrap_or_default();
+    text.lines().filter_map(|line| {
+        let mut parts = line.split_whitespace();
+        let range = parts.next()?;
+        let perms = parts.next()?.to_string();
+        let (start, end) = range.split_once('-')?;
+        let start = usize::from_str_radix(start, 16).ok()?;
+        let end = usize::from_str_radix(end, 16).ok()?;
+        Some((start, end, perms))
+    })
+}
+
+#[cfg(all(not(target_os = "windows"), any(target_os = "linux", target_os = "android")))]
+fn maps_region(addr: usize) -> Option<(usize, usize, String)> {
+    read_maps().find(|(start, end, _)| *start <= addr && addr < *end)
+}
+
+/// Registered executable code ranges. Windows' main image is covered by the
+/// first-use `VirtualQuery` scan (which subsumes `GetModuleHandleW` +
+/// `SizeOfImage`), Linux by the `/proc/self/maps` scan; JIT/AOT loaders and
+/// embedders can add ranges explicitly via
+/// [`spectra_rt_register_code_range`].
+static CODE_RANGES: OnceLock<Mutex<Vec<(usize, usize)>>> = OnceLock::new();
+
+fn code_ranges() -> &'static Mutex<Vec<(usize, usize)>> {
+    CODE_RANGES.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// Registers an executable code range that [`spectra_rt_invoke_closure`] may
+/// call into. `ptr`/`len` describe `[ptr, ptr + len)` in bytes; invalid
+/// arguments are rejected (`false`). JIT-compiled code lives in loader-owned
+/// memory: either call this after JITing, or rely on the platform's
+/// executable-region scan (available on Windows and Linux, absent on macOS).
+#[no_mangle]
+pub extern "C" fn spectra_rt_register_code_range(ptr: i64, len: i64) -> bool {
+    let (Ok(start), Ok(len)) = (usize::try_from(ptr), usize::try_from(len)) else {
+        return false;
+    };
+    if start == 0 || len == 0 {
+        return false;
+    }
+    let mut guard = code_ranges().lock().unwrap_or_else(|poison| poison.into_inner());
+    if guard.iter().any(|(known, size)| *known == start && *size == len) {
+        return true;
+    }
+    guard.push((start, len));
+    true
+}
+
+fn code_in_registered_range(addr: usize) -> bool {
+    code_ranges()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .iter()
+        .any(|(start, len)| addr.wrapping_sub(*start) < *len)
+}
+
+/// True when `addr` may be called: inside a registered range, or discoverable
+/// by (re)scanning executable regions — JIT images map new pages after the
+/// last scan, so a miss triggers one refresh before deciding.
+fn code_ptr_permitted(addr: usize) -> bool {
+    if code_in_registered_range(addr) {
+        return true;
+    }
+    if !range_enforcement_available() {
+        return true; // documented fail-open on unsupported platforms
+    }
+    for (start, len) in scan_executable_ranges() {
+        let mut guard = code_ranges().lock().unwrap_or_else(|poison| poison.into_inner());
+        if !guard.iter().any(|(known, size)| *known == start && *size == len) {
+            guard.push((start, len));
+        }
+    }
+    code_in_registered_range(addr)
+}
+
+/// Validates the closure *object* (item (a) above): a tracked live manual
+/// allocation of at least the closure header, or — untracked — OS-verified
+/// readable memory covering slot 0. Returns `false` for garbage pointers.
+fn closure_object_valid(fn_ptr: i64) -> bool {
+    if fn_ptr <= 0 {
+        return false;
+    }
+    if let Some(size) = crate::ffi::manual_allocation_size(fn_ptr) {
+        return size >= CLOSURE_OBJECT_MIN_BYTES;
+    }
+    if !range_enforcement_available() {
+        return true; // documented fail-open on unsupported platforms
+    }
+    let probe = probe_memory(fn_ptr as usize, CLOSURE_OBJECT_MIN_BYTES);
+    probe.probed && probe.readable
+}
+
 /// Invokes a JIT-compiled Spectra closure by its runtime closure handle.
 ///
 /// # Parameters
@@ -494,8 +868,11 @@ pub extern "C" fn spectra_rt_debug_invariants_check() -> bool {
 ///   unit-returning functions
 ///
 /// # Returns
-/// `HOST_STATUS_SUCCESS` on success, `HOST_STATUS_INVALID_ARGUMENT` if `fn_ptr == 0`,
-/// or `HOST_STATUS_INTERNAL_ERROR` if `n_args` is outside the supported range.
+/// `HOST_STATUS_SUCCESS` on success, `HOST_STATUS_INVALID_ARGUMENT` if
+/// `fn_ptr == 0`, the closure object does not validate (untracked and not
+/// readable memory), or the code pointer lies outside every registered
+/// executable code range (rejected *without* being called), or
+/// `HOST_STATUS_INTERNAL_ERROR` if `n_args` is outside the supported range.
 ///
 /// # Safety
 /// `fn_ptr` must be a valid closure handle whose code pointer calling convention
@@ -510,12 +887,21 @@ pub unsafe extern "C" fn spectra_rt_invoke_closure(
     if fn_ptr == 0 {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
+    // (a) Validate the closure object BEFORE dereferencing slot 0.
+    if !closure_object_valid(fn_ptr) {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
     let closure_slots = fn_ptr as *const i64;
     if closure_slots.is_null() {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
     let code_ptr = *closure_slots;
     if code_ptr == 0 {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    // (b) The code pointer must sit inside a registered executable range;
+    // otherwise reject WITHOUT transmuting or calling anything.
+    if !code_ptr_permitted(code_ptr as usize) {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
     let invoke_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -596,7 +982,7 @@ pub extern "C" fn spectra_rt_startup_with_args(argc: i32, argv: *const *const u8
                 .map(str::to_owned)
         })
         .collect();
-    let _ = PROGRAM_ARGV.set(args);
+    crate::ffi::set_program_args(args);
 }
 
 /// Called at the end of every AOT executable's native `main` shim.

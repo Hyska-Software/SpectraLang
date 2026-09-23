@@ -373,7 +373,7 @@ pub(crate) struct FunctionSignature {
 
 #[derive(Debug, Clone)]
 pub(crate) enum ConstValue {
-    Int(i64),
+    Int(i128),
     Float(f64),
     Bool(bool),
     String(String),
@@ -413,6 +413,15 @@ pub(crate) struct StructInfo {
     visibility: Visibility,
     type_params: Vec<String>,
     fields: HashMap<String, StructFieldInfo>,
+    /// Module that declared this struct (`None` for builtins). Field
+    /// visibility is enforced against the module currently being analyzed:
+    /// `private` fields are readable only in their declaring module.
+    defining_module: Option<String>,
+    /// Package that declared this struct (from `spectra.toml`, `None` for
+    /// builtins or single-file compiles). `internal` fields are accessible
+    /// when a package model exists and the packages match; otherwise the
+    /// same-module rule applies.
+    defining_package: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -574,6 +583,9 @@ pub struct SemanticAnalyzer {
     current_function: Option<String>,
     current_return_type: Option<Type>,
     current_expected_type: Option<Type>,
+    // Set while analyzing a direct `-<integer literal>` operand so its range
+    // is checked after negation (for example, `-128` fits in `i8`).
+    current_negative_integer_literal: bool,
     async_context_depth: usize,
     // Stack of in-scope generic type parameters
     generic_params: Vec<HashSet<String>>,
@@ -601,6 +613,16 @@ pub struct SemanticAnalyzer {
     // Qualified calls remain valid; a bare call receives an ambiguity error.
     ambiguous_imported_functions: HashSet<String>,
     const_values: HashMap<String, ConstValue>,
+    // Frontend recursion guard: shared `P013` behavior (same depth cap and
+    // stack budget as the parser) for the recursive semantic walks
+    // (analyze_expression / analyze_statement / infer_expression_type /
+    // guaranteed-return / pattern validation), so deep ASTs fail with a
+    // coded diagnostic instead of a stack overflow.
+    analysis_depth: usize,
+    // Ensures the semantic `P013` nesting diagnostic is emitted only once.
+    depth_limit_reported: bool,
+    // Stack address captured at analyzer creation for the budget check.
+    stack_probe: usize,
     // Flow-sensitive use-after-free tracking (E034), active only inside a
     // function body. See semantic_use_after_free.rs for the documented design.
     uaf_frame: Option<UafFrame>,

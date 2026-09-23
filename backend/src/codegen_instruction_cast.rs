@@ -141,7 +141,7 @@ impl CodeGenerator {
                             width: _from_width,
                         },
                         IRType::ExactInt {
-                            signed: to_signed,
+                            signed: _to_signed,
                             width: _to_width,
                         },
                     ) => {
@@ -156,12 +156,14 @@ impl CodeGenerator {
                             } else {
                                 builder.ins().uextend(target, operand_val)
                             }
-                        } else if *from_signed == *to_signed {
-                            operand_val
-                        } else if *to_signed {
-                            builder.ins().sextend(target, operand_val)
                         } else {
-                            builder.ins().uextend(target, operand_val)
+                            // Same width: the bit pattern is already the
+                            // target's representation (a signedness change is
+                            // a reinterpretation, and `sextend`/`uextend` are
+                            // illegal to the *same* width). Mixed-width exact
+                            // integer coercion (`u64` unified with a signed
+                            // type) reaches this arm.
+                            operand_val
                         }
                     }
                     _ => operand_val, // same-type or struct->dyn: pass through

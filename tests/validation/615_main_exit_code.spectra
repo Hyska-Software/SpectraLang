@@ -1,0 +1,12 @@
+// Teste 615: AOT executables must propagate `main`'s return value as the
+// process exit code.
+//
+// Regression: the synthesized native `main` shim always returned 0 even
+// when the Spectra `main` returned a distinctive non-zero value. The sidecar
+// file `615_main_exit_code.exit` declares the expected exit code for the
+// JIT/AOT parity runner: both execution paths must exit with 7.
+module main_exit_code
+
+public func main() returns int {
+    return 7
+}

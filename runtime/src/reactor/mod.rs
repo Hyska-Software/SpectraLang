@@ -83,7 +83,13 @@ impl Interest {
     pub const READ_WRITE: Self = Self(0b11);
 
     pub fn from_bits(bits: i64) -> Option<Self> {
-        let bits = (bits & 0b11) as u8;
+        // Reject anything outside {0b00, 0b01, 0b10, 0b11}: the previous
+        // mask-then-test accepted negative inputs (e.g. -1 masked to 0b11)
+        // and silently dropped high bits instead of failing.
+        if bits < 0 || bits & !0b11 != 0 {
+            return None;
+        }
+        let bits = bits as u8;
         (bits != 0).then_some(Self(bits))
     }
 
@@ -420,6 +426,20 @@ impl Reactor {
     /// Register a real mio source with the platform multiplexer. Production
     /// socket readiness must use this path so the selected epoll/IOCP/kqueue
     /// backend owns the event.
+    ///
+    /// # Race-freedom
+    ///
+    /// The reactor-state entry (`state.io`) is inserted **before** the OS
+    /// registration (rolled back on failure). Edge-triggered readiness for an
+    /// unknown token is dropped forever by `push_io_event`; with the old
+    /// register-then-insert order, a source that was ready immediately could
+    /// deliver its first readiness event in that window and be lost. Inserting
+    /// first means the token is always known before any event can arrive; the
+    /// only downside of the reversed window is that a *stale* event from a
+    /// previous registration of the same token may be observed once (a
+    /// spurious wakeup the drive loops already tolerate via `WouldBlock`).
+    /// The two locks are never held nested, so no lock-order stall with
+    /// `poll_os` is possible.
     pub fn register_source<S: mio::event::Source + ?Sized>(
         &self,
         source: &mut S,
@@ -435,23 +455,37 @@ impl Reactor {
         let Some(os) = &self.core.os else {
             return false;
         };
-        let Ok(poll) = os.poll.lock() else {
-            return false;
-        };
-        if poll
-            .registry()
-            .register(source, Token(token as usize), mio_interest)
-            .is_err()
-        {
-            return false;
-        }
-        drop(poll);
 
-        let Ok(mut state) = self.core.state.lock() else {
-            return false;
+        // 1. Publish the token first (rollback on registration failure).
+        {
+            let Ok(mut state) = self.core.state.lock() else {
+                return false;
+            };
+            state.io.insert(token, IoRegistration { interest });
+        }
+
+        // 2. Register with the platform multiplexer.
+        let registered = {
+            let Ok(poll) = os.poll.lock() else {
+                self.rollback_io_registration(token);
+                return false;
+            };
+            poll.registry()
+                .register(source, Token(token as usize), mio_interest)
+                .is_ok()
         };
-        state.io.insert(token, IoRegistration { interest });
-        true
+        if !registered {
+            self.rollback_io_registration(token);
+        }
+        registered
+    }
+
+    /// Removes a token published by [`Self::register_source`] when the OS
+    /// registration failed.
+    fn rollback_io_registration(&self, token: i64) {
+        if let Ok(mut state) = self.core.state.lock() {
+            state.io.remove(&token);
+        }
     }
 
     /// Remove a source from the platform multiplexer and from the reactor's
@@ -537,6 +571,12 @@ impl Reactor {
         if let Ok(mut heap) = self.core.timers.heap.lock() {
             heap.clear();
             self.core.timers.signal.notify_one();
+        }
+        // Wake a thread parked inside `poll_os(None)`/`poll_os(timeout)`:
+        // the OS multiplexer has no condvar, so without this explicit wake a
+        // reset is invisible to a parked poller until its next OS event.
+        if let Some(os) = &self.core.os {
+            let _ = os.waker.wake();
         }
     }
 }
@@ -706,6 +746,58 @@ mod tests {
     #[test]
     fn bsd_kqueue_backend_is_selected() {
         assert_eq!(Reactor::new().backend(), BackendKind::MacosKqueue);
+    }
+
+    #[test]
+    fn interest_from_bits_rejects_bits_outside_read_write() {
+        assert_eq!(Interest::from_bits(0), None);
+        assert_eq!(Interest::from_bits(1), Some(Interest::READABLE));
+        assert_eq!(Interest::from_bits(2), Some(Interest::WRITABLE));
+        assert_eq!(Interest::from_bits(3), Some(Interest::READ_WRITE));
+        assert_eq!(
+            Interest::from_bits(4),
+            None,
+            "bits above 0b11 must be rejected, not masked away"
+        );
+        assert_eq!(
+            Interest::from_bits(-1),
+            None,
+            "negative bits must be rejected (they previously masked to 0b11)"
+        );
+        assert_eq!(Interest::from_bits(i64::MAX), None);
+    }
+
+    /// `reset()` must wake a thread parked inside `poll_os(None)`: the OS
+    /// multiplexer has no condvar, so without the explicit waker a reset is
+    /// invisible to a parked poller until some unrelated OS event arrives.
+    #[test]
+    fn reset_wakes_a_parked_os_poll() {
+        let reactor = Reactor::new();
+        if reactor.core.os.is_none() {
+            // No OS multiplexer on this platform: nothing can park.
+            return;
+        }
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let core = Arc::clone(&reactor.core);
+        let poller = thread::spawn(move || {
+            core.poll_os(None); // parks until the waker fires
+            let _ = tx.send(());
+        });
+
+        // Let the poller actually reach the park before resetting.
+        thread::sleep(Duration::from_millis(300));
+        reactor.reset();
+
+        let woken = rx.recv_timeout(Duration::from_secs(5)).is_ok();
+        if !woken {
+            // Unblock the parked poller before failing so the test can join.
+            if let Some(os) = &reactor.core.os {
+                let _ = os.waker.wake();
+            }
+        }
+        poller.join().expect("poller thread panicked");
+        assert!(woken, "reset must wake a thread parked in poll_os(None)");
     }
 
     #[test]

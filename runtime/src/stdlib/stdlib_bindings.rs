@@ -625,7 +625,9 @@ pub fn concurrent_diagnostics_report_json() -> Option<String> {
         data.max_pending_tasks.load(Ordering::Relaxed),
         data.scheduler_ns.load(Ordering::Relaxed),
         data.execution_ns.load(Ordering::Relaxed),
-        concurrent_executor().workers,
+        concurrent_executor()
+            .map(|executor| executor.workers)
+            .unwrap_or(0),
     ))
 }
 

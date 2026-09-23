@@ -1,0 +1,42 @@
+// Teste 611: unsigned division and remainder.
+//
+// Regression: `Div`/`Rem` on exact-width unsigned operands used to emit
+// signed `sdiv`/`srem`, so 200u8/2 produced -28 instead of 100 and a u64
+// above 2^63 divided as a negative number. The program returns the numbered
+// code of the first wrong quotient/remainder and 0 only when every result
+// matches unsigned semantics (asserted for both JIT and AOT execution).
+module unsigned_division
+
+public func main() returns int {
+    let dividend: u8 = 200
+    let two: u8 = 2
+    let quotient = dividend / two
+    if (quotient as int) != 100 {
+        return 1
+    }
+
+    let parts: u8 = 200
+    let three: u8 = 3
+    let remainder = parts % three
+    if (remainder as int) != 2 {
+        return 2
+    }
+
+    // A u64 above 2^63: its bits are negative when read as signed, so
+    // `sdiv` would produce a completely different quotient and `srem`
+    // would return a negative remainder instead of 0.
+    let base: u64 = 9000000000000000000
+    let huge: u64 = base * (2 as u64)
+    let divisor: u64 = 2
+    let big_quotient = huge / divisor
+    if big_quotient != base {
+        return 3
+    }
+    let by_three: u64 = 3
+    let big_remainder = huge % by_three
+    if big_remainder != (0 as u64) {
+        return 4
+    }
+
+    return 0
+}

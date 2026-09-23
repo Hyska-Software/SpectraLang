@@ -1,0 +1,8 @@
+module m
+// comentário com acentuação çãõ
+// 日本語のコメント 🚀🔥✨
+public func main() {
+    let s = "emoji 🚀 cjk 中文 rtl مرحبا zwj \u{1F600}"
+    let t = f"{s} → café ☕"
+    println(t)
+}

@@ -1,0 +1,19 @@
+module float_const_cast_codegen
+
+const F64_VALUE: f64 = 7.75
+const F32_VALUE: f32 = -3.25
+
+public func main() returns int {
+    let from_f64: int = F64_VALUE as int
+    let from_f32: int = F32_VALUE as int
+
+    if from_f64 != 7 {
+        return from_f64
+    }
+
+    if from_f32 != -3 {
+        return from_f32
+    }
+
+    return 0
+}

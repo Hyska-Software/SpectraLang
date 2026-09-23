@@ -376,7 +376,13 @@ impl Parser {
         let body = self.parse_block()?;
 
         if !self.check_keyword(Keyword::While) {
-            self.error("Expected 'while' after do-block");
+            self.push_error_coded(
+                "P001",
+                "Expected 'while' after do-block",
+                self.current().span,
+                Some("Write `do { ... } while <condition>`.".to_string()),
+                None,
+            );
             return Err(());
         }
         self.advance(); // consume 'while'
@@ -415,7 +421,13 @@ impl Parser {
                 if self.check_symbol(':') {
                     self.advance();
                 } else {
-                    self.error("Expected ':' after case pattern");
+                    self.push_error_coded(
+                        "P002",
+                        "Expected ':' after case pattern",
+                        self.current().span,
+                        Some("Write `case <pattern>: { ... }`.".to_string()),
+                        None,
+                    );
                     return Err(());
                 }
 
@@ -438,7 +450,13 @@ impl Parser {
                 default = Some(self.parse_block()?);
                 break; // default deve ser o último
             } else {
-                self.error("Expected 'case' or 'default' in switch body");
+                self.push_error_coded(
+                    "P001",
+                    "Expected 'case' or 'default' in switch body",
+                    self.current().span,
+                    Some("Switch bodies contain `case <pattern>: { ... }` arms and an optional final `else: { ... }` default.".to_string()),
+                    None,
+                );
                 return Err(());
             }
         }

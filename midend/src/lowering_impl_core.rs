@@ -79,11 +79,13 @@ impl ASTLowering {
             current_async_output_type: None,
             lowering_async_poll: false,
             current_expected_annotation: None,
+            current_expected_ir_type: None,
             trait_method_order: HashMap::new(),
             trait_method_signatures: HashMap::new(),
             trait_declarations: HashMap::new(),
             errors: Vec::new(),
             const_values: HashMap::new(),
+            const_types: HashMap::new(),
             static_globals: HashMap::new(),
             drop_excluded_names: HashSet::new(),
             pending_type_declarations: HashMap::new(),
@@ -570,14 +572,28 @@ impl ASTLowering {
     pub(crate) fn eval_const_expression(&self, expr: &Expression) -> Option<LoweredConstValue> {
         match &expr.kind {
             ExpressionKind::NumberLiteral(raw) => {
-                match spectra_compiler::numeric::parse_number_literal(raw) {
-                    Some(spectra_compiler::numeric::ParsedNumber::Int(v)) => {
-                        Some(LoweredConstValue::Int(v))
+                if spectra_compiler::numeric::number_literal_is_float(raw) {
+                    match spectra_compiler::numeric::parse_number_literal(raw) {
+                        Some(spectra_compiler::numeric::ParsedNumber::Float(v)) => {
+                            Some(LoweredConstValue::Float(v))
+                        }
+                        Some(spectra_compiler::numeric::ParsedNumber::Int(v)) => {
+                            Some(LoweredConstValue::Int(v))
+                        }
+                        None => None,
                     }
-                    Some(spectra_compiler::numeric::ParsedNumber::Float(v)) => {
-                        Some(LoweredConstValue::Float(v))
-                    }
-                    None => None,
+                } else {
+                    spectra_compiler::numeric::parse_number_literal_as_i128(raw).and_then(
+                        |value| {
+                            if (i64::MIN as i128..=i64::MAX as i128).contains(&value) {
+                                Some(LoweredConstValue::Int(value as i64))
+                            } else if (0..=u64::MAX as i128).contains(&value) {
+                                Some(LoweredConstValue::Int(value as u64 as i64))
+                            } else {
+                                None
+                            }
+                        },
+                    )
                 }
             }
             ExpressionKind::StringLiteral(value) => Some(LoweredConstValue::String(value.clone())),
@@ -586,6 +602,16 @@ impl ASTLowering {
             ExpressionKind::Identifier(name) => self.const_values.get(name).cloned(),
             ExpressionKind::Grouping(inner) => self.eval_const_expression(inner),
             ExpressionKind::Unary { operator, operand } => {
+                if matches!(operator, UnaryOperator::Negate) {
+                    if let Some(raw) = Self::direct_integer_literal(operand) {
+                        let value = spectra_compiler::numeric::parse_number_literal_as_i128(raw)?;
+                        let value = value.checked_neg()?;
+                        if (i64::MIN as i128..=i64::MAX as i128).contains(&value) {
+                            return Some(LoweredConstValue::Int(value as i64));
+                        }
+                        return None;
+                    }
+                }
                 let value = self.eval_const_expression(operand)?;
                 match (operator, value) {
                     (UnaryOperator::Negate, LoweredConstValue::Int(v)) => {
@@ -788,7 +814,18 @@ impl ASTLowering {
         ir_func: &mut IRFunction,
     ) -> Value {
         match value {
-            LoweredConstValue::Int(v) => self.builder.build_const_int(ir_func, *v),
+            LoweredConstValue::Int(v) => {
+                let expected = self
+                    .current_expected_annotation
+                    .clone()
+                    .map(|annotation| self.lower_type_annotation(&annotation))
+                    .or_else(|| self.current_expected_ir_type.clone());
+                if let Some(ty @ IRType::ExactInt { .. }) = expected {
+                    self.builder.build_const_int_typed(ir_func, *v, ty)
+                } else {
+                    self.builder.build_const_int(ir_func, *v)
+                }
+            }
             LoweredConstValue::Float(v) => self.builder.build_const_float(ir_func, *v),
             LoweredConstValue::Bool(v) => self.builder.build_const_bool(ir_func, *v),
             LoweredConstValue::String(v) => self.lower_string_literal(v, ir_func),

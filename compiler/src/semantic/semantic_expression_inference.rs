@@ -2,12 +2,32 @@ use super::*;
 
 impl SemanticAnalyzer {
     pub(crate) fn infer_expression_type(&mut self, expr: &Expression) -> Type {
+        if self.enter_analysis_depth(expr.span).is_err() {
+            return Type::Unknown;
+        }
+        let inferred = self.infer_expression_type_inner(expr);
+        self.exit_analysis_depth();
+        inferred
+    }
+
+    fn infer_expression_type_inner(&mut self, expr: &Expression) -> Type {
         match &expr.kind {
             ExpressionKind::NumberLiteral(num) => {
                 if crate::numeric::number_literal_is_float(num) {
                     Type::Float
                 } else {
-                    Type::Int
+                    let value = crate::numeric::parse_number_literal_as_i128(num).and_then(
+                        |value| {
+                            if self.current_negative_integer_literal {
+                                value.checked_neg()
+                            } else {
+                                Some(value)
+                            }
+                        },
+                    );
+                    value
+                        .and_then(|value| self.contextual_integer_literal_type(value))
+                        .unwrap_or(Type::Unknown)
                 }
             }
             ExpressionKind::StringLiteral(_) => Type::String,
@@ -78,7 +98,17 @@ impl SemanticAnalyzer {
                     | BinaryOperator::Or => Type::Bool,
                 }
             }
-            ExpressionKind::Unary { operand, .. } => self.infer_expression_type(operand),
+            ExpressionKind::Unary { operator, operand } => {
+                if matches!(operator, crate::ast::UnaryOperator::Negate) {
+                    if let Some(raw) = Self::direct_integer_literal(operand) {
+                        return crate::numeric::parse_number_literal_as_i128(raw)
+                            .and_then(i128::checked_neg)
+                            .and_then(|value| self.contextual_integer_literal_type(value))
+                            .unwrap_or(Type::Unknown);
+                    }
+                }
+                self.infer_expression_type(operand)
+            }
             ExpressionKind::Call { callee, arguments } => {
                 if let ExpressionKind::Identifier(name) = &callee.kind {
                     if let Some(return_type) = self.std_generic_unwrap_return(name, arguments) {
@@ -629,7 +659,8 @@ impl SemanticAnalyzer {
                 Type::Task { output } => *output,
                 Type::Unknown => Type::Unknown,
                 other => {
-                    self.error(
+                    self.error_coded(
+                        "E2105",
                         format!("`await` expects Task<T>, found {}", type_name(&other)),
                         expr.span,
                     );

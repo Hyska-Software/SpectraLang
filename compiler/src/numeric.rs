@@ -58,6 +58,22 @@ pub fn number_literal_is_float(text: &str) -> bool {
     cleaned.contains('.') || lower.contains('e')
 }
 
+/// Reports whether an integer-form literal falls outside the `int` (i64) range.
+///
+/// [`parse_number_literal`] falls back to `f64` when the digits do not fit in
+/// `i64` (and returns `None` for radix forms that overflow), while
+/// [`number_literal_is_float`] still classifies digit-only text as an integer.
+/// That cross-layer disagreement is resolved at the semantic level: such
+/// literals are rejected with a coded diagnostic instead of silently typing as
+/// `int` while folding produces a float. Float forms (`2.5`, `1e5`) are never
+/// out of range by this definition.
+pub fn integer_literal_out_of_range(text: &str) -> bool {
+    if number_literal_is_float(text) {
+        return false;
+    }
+    !matches!(parse_number_literal(text), Some(ParsedNumber::Int(_)))
+}
+
 /// Parses an integer-only literal with wide precision for constant folding
 /// paths that must observe values beyond `i64` bounds before rejecting them.
 pub fn parse_number_literal_as_i128(text: &str) -> Option<i128> {
@@ -143,5 +159,28 @@ mod tests {
         assert!(number_literal_is_float("2.5"));
         assert!(number_literal_is_float("1e5"));
         assert!(number_literal_is_float("2.5E-3"));
+    }
+
+    #[test]
+    fn detects_integer_literals_out_of_i64_range() {
+        // In-range integer forms stay valid.
+        assert!(!integer_literal_out_of_range("42"));
+        assert!(!integer_literal_out_of_range("9223372036854775807"));
+        assert!(!integer_literal_out_of_range("1_000_000"));
+        assert!(!integer_literal_out_of_range("0x7FFFFFFFFFFFFFFF"));
+        assert!(!integer_literal_out_of_range("0b1011"));
+        // Float forms are never classified as out-of-range integers.
+        assert!(!integer_literal_out_of_range("2.5"));
+        assert!(!integer_literal_out_of_range("1e5"));
+        // One past i64::MAX types as an integer (no dot/exponent) but cannot
+        // be represented: this is the cross-layer disagreement the semantic
+        // pass now rejects with a coded diagnostic.
+        assert!(integer_literal_out_of_range("9223372036854775808"));
+        assert!(integer_literal_out_of_range(
+            "999999999999999999999999999999999999999999"
+        ));
+        // Radix literals that overflow i64 also count.
+        assert!(integer_literal_out_of_range("0xFFFFFFFFFFFFFFFF"));
+        assert!(integer_literal_out_of_range("0b1_0000000000000000000000000000000000000000000000000000000000000000"));
     }
 }

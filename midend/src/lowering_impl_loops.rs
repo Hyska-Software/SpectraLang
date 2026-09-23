@@ -142,17 +142,22 @@ impl ASTLowering {
         self.loop_stack.pop();
 
         if let Some(iterator_latch) = iterator_latch {
+            // The latch block exists only when `snapshot_length` was set, and
+            // that is exactly when the snapshot slot is allocated. If the
+            // invariant ever breaks, record a lowering error instead of
+            // panicking; `lower_module` rejects the module before
+            // verification or codegen.
+            let Some(snapshot_slot) = remaining_slot else {
+                self.error("iterator latch requires the snapshot length slot");
+                return;
+            };
             self.builder.set_current_block(iterator_latch);
             let remaining = self
                 .builder
-                .build_load_typed(ir_func, remaining_slot.expect("snapshot slot exists"), IRType::Int);
+                .build_load_typed(ir_func, snapshot_slot, IRType::Int);
             let one = self.builder.build_const_int(ir_func, 1);
             let next = self.builder.build_sub(ir_func, remaining, one);
-            self.builder.build_store(
-                ir_func,
-                remaining_slot.expect("snapshot slot exists"),
-                next,
-            );
+            self.builder.build_store(ir_func, snapshot_slot, next);
             self.builder.build_branch(ir_func, iterator_header);
         }
 

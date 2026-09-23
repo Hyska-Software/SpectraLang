@@ -1,0 +1,9 @@
+// Regression (E048): an integer literal beyond i64::MAX used to type as
+// `int` while constant folding produced a float — a cross-layer disagreement
+// with no diagnostic. It is now rejected at the literal span.
+module fe_int_literal_overflow
+
+public func main() returns int {
+    let big = 9223372036854775808
+    return 0
+}

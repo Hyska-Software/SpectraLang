@@ -142,6 +142,11 @@ impl HealthRegistry {
             stale_after: Mutex::new(Duration::from_secs(30)),
         });
         let thread_inner = Arc::downgrade(&inner);
+        // Health evaluation must never take the host down: a thread-spawn
+        // failure leaves `worker` as `None`, and the registry degrades to a
+        // status instead of panicking — `refresh()`/`shutdown()` then fail
+        // with `HealthError::ShuttingDown` because the command channel has no
+        // receiver (the spawned closure owns `rx` and is dropped on failure).
         let worker = thread::Builder::new()
             .name("spectra-health-evaluator".into())
             .spawn(move || {
@@ -161,8 +166,11 @@ impl HealthRegistry {
                     }
                 }
             })
-            .expect("health evaluator thread must start");
-        *inner.worker.lock().unwrap() = Some(worker);
+            .ok();
+        *inner
+            .worker
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = worker;
         Self { inner }
     }
 
@@ -187,7 +195,7 @@ impl HealthRegistry {
         if self.inner.shutdown.load(Ordering::SeqCst) {
             return Err(HealthError::ShuttingDown);
         }
-        let mut checks = self.inner.checks.lock().unwrap();
+        let mut checks = self.inner.checks.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if checks.contains_key(&name) {
             return Err(HealthError::DuplicateName);
         }
@@ -204,20 +212,20 @@ impl HealthRegistry {
     }
 
     pub fn remove_check(&self, name: &str) -> bool {
-        self.inner.checks.lock().unwrap().remove(name).is_some()
+        self.inner.checks.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(name).is_some()
     }
     pub fn set_stale_after(&self, duration: Duration) -> Result<(), HealthError> {
         if duration.is_zero() {
             return Err(HealthError::InvalidTimeout);
         }
-        *self.inner.stale_after.lock().unwrap() = duration;
+        *self.inner.stale_after.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = duration;
         Ok(())
     }
     pub fn set_startup_complete(&self) {
-        *self.inner.startup.lock().unwrap() = HealthState::Healthy;
+        *self.inner.startup.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = HealthState::Healthy;
     }
     pub fn set_startup_failed(&self, _reason: impl Into<String>) {
-        *self.inner.startup.lock().unwrap() = HealthState::Unavailable;
+        *self.inner.startup.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = HealthState::Unavailable;
     }
 
     pub fn refresh(&self) -> Result<(), HealthError> {
@@ -234,7 +242,7 @@ impl HealthRegistry {
     }
 
     pub fn snapshot(&self) -> HealthSnapshot {
-        self.inner.snapshot.read().unwrap().clone()
+        self.inner.snapshot.read().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
     pub fn liveness(&self) -> HealthState {
         HealthState::Healthy
@@ -243,7 +251,7 @@ impl HealthRegistry {
         self.snapshot().readiness
     }
     pub fn startup(&self) -> HealthState {
-        *self.inner.startup.lock().unwrap()
+        *self.inner.startup.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     pub fn shutdown(&self, timeout: Duration) -> bool {
@@ -254,7 +262,7 @@ impl HealthRegistry {
         let _ = self.inner.commands.send(Command::Shutdown(done_tx));
         let ok = done_rx.recv_timeout(timeout).is_ok();
         if ok {
-            if let Some(worker) = self.inner.worker.lock().unwrap().take() {
+            if let Some(worker) = self.inner.worker.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take() {
                 let _ = worker.join();
             }
         }
@@ -264,7 +272,7 @@ impl HealthRegistry {
     pub fn json(&self, endpoint: &str) -> String {
         let mut snapshot = self.snapshot();
         snapshot.startup = self.startup();
-        let stale_after = *self.inner.stale_after.lock().unwrap();
+        let stale_after = *self.inner.stale_after.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         snapshot_json(&snapshot, endpoint, stale_after)
     }
 }
@@ -291,7 +299,7 @@ fn evaluate(inner: &Arc<Inner>) {
     let specs = inner
         .checks
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
         .map(|(name, spec)| {
             (
@@ -357,8 +365,8 @@ fn evaluate(inner: &Arc<Inner>) {
     } else {
         HealthState::Healthy
     };
-    let startup = *inner.startup.lock().unwrap();
-    *inner.snapshot.write().unwrap() = HealthSnapshot {
+    let startup = *inner.startup.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    *inner.snapshot.write().unwrap_or_else(std::sync::PoisonError::into_inner) = HealthSnapshot {
         liveness: HealthState::Healthy,
         readiness,
         startup,

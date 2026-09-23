@@ -175,7 +175,7 @@ impl CodeGenerator {
         builder: &mut FunctionBuilder,
         kind: &InstructionKind,
         value_map: &mut DenseValueMap,
-        stack_array_lengths: &mut HashMap<usize, i64>,
+        array_lengths: &mut HashMap<usize, i64>,
         string_literal_lengths: &mut HashMap<usize, i64>,
     ) -> BackendResult<()> {
         match kind {
@@ -224,14 +224,20 @@ impl CodeGenerator {
                 {
                     let ptr = get_value(&args[0])?;
                     if let Some(result_value) = result {
-                        let value = if let Some(alloc_len) =
+                        let value = if let Some(logical_len) =
                             string_literal_lengths.get(&args[0].id).copied()
                         {
-                            // String literal: known length, return constant
-                            // (alloc_len includes the trailing null terminator, so the
-                            // actual byte count is alloc_len - 1).
-                            builder.ins().iconst(types::I64, alloc_len - 1)
+                            // String literal: the stored logical byte length
+                            // already excludes the trailing NUL, so it is
+                            // returned directly.
+                            builder.ins().iconst(types::I64, logical_len)
+                        } else if let Some(element_count) = array_lengths.get(&args[0].id).copied()
+                        {
+                            // Char/int array alloca (stack or manual heap):
+                            // logical element count.
+                            builder.ins().iconst(types::I64, element_count)
                         } else {
+                            // Untracked pointer: fall back to the NUL scan.
                             Self::emit_string_len_inline(builder, ptr)
                         };
                         value_map.insert(result_value.id, value);
@@ -247,16 +253,19 @@ impl CodeGenerator {
                     let ptr = get_value(&args[0])?;
                     let index = get_value(&args[1])?;
                     if let Some(result_value) = result {
-                        let value = if let Some(length) = stack_array_lengths.get(&args[0].id) {
+                        let value = if let Some(length) = array_lengths.get(&args[0].id) {
+                            // Array alloca with a known logical element count.
                             Self::emit_stack_string_char_at_inline(builder, ptr, index, *length)
                         } else if let Some(length) =
                             string_literal_lengths.get(&args[0].id).copied()
                         {
-                            // String literal with known length: emit direct O(1) load
-                            // (re-use the stack inline emitter — it only needs the
-                            // allocation length to do bounds checks, not stack residency).
+                            // String literal with a known logical byte length:
+                            // emit a direct O(1) load (re-use the stack inline
+                            // emitter — it only needs the allocation length to
+                            // do bounds checks, not stack residency).
                             Self::emit_stack_string_char_at_inline(builder, ptr, index, length)
                         } else {
+                            // Untracked pointer: NUL-scan fallback.
                             Self::emit_string_char_at_inline(builder, ptr, index)
                         };
                         value_map.insert(result_value.id, value);

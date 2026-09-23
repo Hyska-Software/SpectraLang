@@ -15,10 +15,14 @@ use std::collections::HashMap;
 use std::fmt;
 
 /// Hard cap on parser recursion depth across the main descent points
-/// (expression / statement / block / pattern). Legitimate programs nest far
-/// below this (the test suite peaks around 50 levels); anything deeper fails
-/// with `P013` instead of exhausting the stack.
-const MAX_PARSE_DEPTH: usize = 1000;
+/// (expression / statement / block / pattern / type annotation). Legitimate
+/// programs nest far below this (the test suite peaks around 50 levels);
+/// anything deeper fails with `P013` instead of exhausting the stack.
+///
+/// `pub(crate)`: the semantic analyzer and the lint runner reuse the same
+/// depth cap, stack budget, and `P013` behavior for their own recursive
+/// walks, so every frontend phase fails identically on pathological input.
+pub(crate) const MAX_PARSE_DEPTH: usize = 1000;
 
 /// Approximate stack bytes the parser may consume before bailing out with
 /// `P013`. Depth counting alone cannot know the thread's real stack size, so
@@ -27,7 +31,7 @@ const MAX_PARSE_DEPTH: usize = 1000;
 /// tasks) as well as on the main thread. Debug-build recursion frames are fat
 /// enough that ~512 KiB corresponds to several hundred nesting levels — far
 /// above any legitimate program.
-const MAX_STACK_USE_BYTES: usize = 512 * 1024;
+pub(crate) const MAX_STACK_USE_BYTES: usize = 512 * 1024;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -736,13 +740,13 @@ impl Parser {
     /// Captures an approximate "top of stack" marker at parser creation so
     /// [`Self::stack_used_bytes`] can estimate consumed stack later. Stacks
     /// grow downward on all supported platforms, so later frames live at
-    /// lower addresses.
-    fn capture_stack_probe() -> usize {
+    /// lower addresses. Shared with the semantic and lint recursion guards.
+    pub(crate) fn capture_stack_probe() -> usize {
         let marker = 0u8;
         &marker as *const u8 as usize
     }
 
-    fn stack_used_bytes(base: usize) -> usize {
+    pub(crate) fn stack_used_bytes(base: usize) -> usize {
         base.saturating_sub(Self::capture_stack_probe())
     }
 }
@@ -1355,6 +1359,243 @@ mod tests {
             .expect("spawn deep-parse thread")
             .join()
             .expect("deep parse must not panic");
+    }
+
+    #[test]
+    fn multiplication_rung_gates_line_broken_infix_with_p015() {
+        // Regression: `parse_multiplication` used to be the only infix rung
+        // without the `reject_line_broken_infix` gate, so
+        // `let x = a\n * b` silently parsed as `a * b`.
+        for operator in ["*", "/", "%"] {
+            let source = format!(
+                "module demo\n\nfunc main() returns int {{\n    let a = 6\n    let b = 7\n    let x = a\n {operator} b\n    return x\n}}\n"
+            );
+            let errors = parse_source(&source)
+                .expect_err(&format!("`{operator}` must fail with P015"));
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.code.as_deref() == Some("P015")),
+                "expected P015 for line-broken `{operator}`, got {errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn deeply_nested_type_annotations_fail_with_p013_instead_of_stack_overflow() {
+        // `parse_type_annotation` used to self-recurse without the shared
+        // depth/stack guard.
+        let depth = 4_000usize;
+        let mut source = String::from("module demo\n\nfunc main() {\n    let x: ");
+        for _ in 0..depth {
+            source.push('[');
+        }
+        source.push_str("int");
+        for _ in 0..depth {
+            source.push(']');
+        }
+        source.push_str("\n}\n");
+
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(move || {
+                let errors = parse_source(&source)
+                    .expect_err("deep type nesting must fail cleanly with P013");
+                assert!(
+                    errors
+                        .iter()
+                        .any(|error| error.code.as_deref() == Some("P013")),
+                    "expected a P013 nesting diagnostic, got {errors:?}"
+                );
+            })
+            .expect("spawn deep-type-parse thread")
+            .join()
+            .expect("deep type annotation parse must not panic");
+    }
+
+    #[test]
+    fn deep_unary_and_not_runs_fail_with_p013_instead_of_stack_overflow() {
+        // `parse_unary` and `parse_logical_not` used to self-recurse
+        // unguarded for runs like `----x` / `not not x`.
+        let mut minus_source = String::from("module demo\n\nfunc main() {\n    let v = ");
+        for _ in 0..4_000 {
+            minus_source.push('-');
+        }
+        minus_source.push_str("1\n}\n");
+
+        let mut not_source = String::from("module demo\n\nfunc main() {\n    let v = ");
+        for _ in 0..4_000 {
+            not_source.push_str("not ");
+        }
+        not_source.push_str("flag\n}\n");
+
+        for source in [minus_source, not_source] {
+            std::thread::Builder::new()
+                .stack_size(256 * 1024 * 1024)
+                .spawn(move || {
+                    let errors = parse_source(&source)
+                        .expect_err("deep unary/not run must fail cleanly with P013");
+                    assert!(
+                        errors
+                            .iter()
+                            .any(|error| error.code.as_deref() == Some("P013")),
+                        "expected a P013 nesting diagnostic, got {errors:?}"
+                    );
+                })
+                .expect("spawn deep-unary-parse thread")
+                .join()
+                .expect("deep unary parse must not panic");
+        }
+    }
+
+    #[test]
+    fn previously_p999_sites_carry_specific_codes() {
+        // "Expected expression" (expression primary fall-through).
+        let source = "module demo\n\nfunc main() {\n    let x = )\n}\n";
+        let errors = parse_source(source).expect_err("`)` is not an expression");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code.as_deref() == Some("P019")),
+            "expected P019 for the expression catch-all, got {errors:?}"
+        );
+
+        // Match arm missing `when`/`otherwise` and missing `then`.
+        let source = "module demo\n\nfunc main(v: int) {\n    match v { 1 then 2 }\n}\n";
+        let errors = parse_source(source).expect_err("match arms need `when`");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code.as_deref() == Some("P001")),
+            "expected P001 for the match-arm keyword, got {errors:?}"
+        );
+
+        let source = "module demo\n\nfunc main(v: int) {\n    match v { when 1 2 }\n}\n";
+        let errors = parse_source(source).expect_err("match arms need `then`");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code.as_deref() == Some("P001")),
+            "expected P001 for the missing `then`, got {errors:?}"
+        );
+
+        // do-block missing `while`.
+        let source = "module demo\n\nfunc main() {\n    do { let x = 1 } let y = 2\n}\n";
+        let errors = parse_source(source).expect_err("do-blocks need `while`");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code.as_deref() == Some("P001")),
+            "expected P001 for the missing `while`, got {errors:?}"
+        );
+
+        // switch case missing `:` and switch body junk.
+        let source = "module demo\n\nfunc main(v: int) {\n    switch v { case 1 { } }\n}\n";
+        let errors = parse_source(source).expect_err("case patterns need `:`");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code.as_deref() == Some("P002")),
+            "expected P002 for the missing `:`, got {errors:?}"
+        );
+
+        let source = "module demo\n\nfunc main(v: int) {\n    switch v { 5 }\n}\n";
+        let errors = parse_source(source).expect_err("switch bodies need case/else");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.code.as_deref() == Some("P001")),
+            "expected P001 for the switch-body keyword, got {errors:?}"
+        );
+    }
+
+    fn fstring_parts(source: &str) -> Vec<crate::ast::FStringPart> {
+        use crate::ast::{ExpressionKind, StatementKind};
+        let module = parse_source(source).expect("f-string source should parse");
+        let crate::ast::Item::Function(function) = &module.items[0] else {
+            panic!("expected function item");
+        };
+        let StatementKind::Let(let_stmt) = &function.body.statements[0].kind else {
+            panic!("expected let statement");
+        };
+        let Some(ExpressionKind::FString(parts)) =
+            let_stmt.value.as_ref().map(|expr| &expr.kind)
+        else {
+            panic!("expected f-string value");
+        };
+        parts.clone()
+    }
+
+    #[test]
+    fn f_string_escapes_double_braces_to_literal_braces() {
+        let parts = fstring_parts(
+            "module demo\n\nfunc main() {\n    let s = f\"a{{b}}c\"\n}\n",
+        );
+        let text: String = parts
+            .iter()
+            .map(|part| match part {
+                crate::ast::FStringPart::Literal(literal) => literal.clone(),
+                crate::ast::FStringPart::Interpolated(_) => {
+                    panic!("escapes must not produce interpolations")
+                }
+            })
+            .collect();
+        assert_eq!(text, "a{b}c");
+    }
+
+    #[test]
+    fn f_string_interpolation_scanner_skips_nested_string_literals() {
+        // The `\"` escapes are consumed by the LEXER, so the sub-parser sees
+        // raw `{call("{")}`. The brace-depth scanner must not count the `{`
+        // inside the nested string literal as an interpolation opener.
+        let parts = fstring_parts(
+            "module demo\n\nfunc main() {\n    let s = f\"{call(\\\"{\\\")}\" \n}\n",
+        );
+        let interpolated: Vec<_> = parts
+            .iter()
+            .filter_map(|part| match part {
+                crate::ast::FStringPart::Interpolated(expr) => Some(expr.as_ref()),
+                crate::ast::FStringPart::Literal(_) => None,
+            })
+            .collect();
+        assert_eq!(interpolated.len(), 1, "expected one interpolation: {parts:?}");
+        let crate::ast::ExpressionKind::Call { callee: _, arguments } = &interpolated[0].kind
+        else {
+            panic!("expected a call interpolation");
+        };
+        assert_eq!(arguments.len(), 1, "call should keep its single argument");
+        assert!(
+            matches!(
+                arguments[0].kind,
+                crate::ast::ExpressionKind::StringLiteral(ref value) if value == "{"
+            ),
+            "the nested string literal must survive slicing: {arguments:?}"
+        );
+    }
+
+    #[test]
+    fn f_string_inner_parse_errors_are_forwarded_with_absolute_spans() {
+        let source = "module demo\n\nfunc main() {\n    let s = f\"{1+}\"\n}\n";
+        let errors = parse_source(source).expect_err("inner `1+` must fail the parse");
+        let brace_index = source
+            .find("{1+}")
+            .expect("source contains the interpolation");
+        // `1+` spans three characters; the sub-parser's EOF token sits on the
+        // closing brace of the interpolation — an ABSOLUTE file offset, not a
+        // sub-parse-relative one.
+        let expected_offset = brace_index + 3;
+        assert!(
+            errors.iter().any(|error| {
+                error.code.as_deref() == Some("P019") && error.span.start == expected_offset
+            }),
+            "expected a forwarded P019 at absolute offset {expected_offset}, got {errors:?}"
+        );
+        assert!(
+            !errors
+                .iter()
+                .any(|error| error.message.contains("Invalid expression inside f-string")),
+            "the generic overlay must not replace the specific diagnostic: {errors:?}"
+        );
     }
 }
 

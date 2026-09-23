@@ -4907,6 +4907,53 @@ fn async_structured_concurrency_host_calls_cover_cascade_timeout_and_join_order(
     );
 }
 
+/// Production never calls `async.scheduler.advance_time`, so `with_timeout`
+/// must expire from **real elapsed time alone**: the scheduler clock is
+/// virtual offset + wall-clock elapsed since the epoch, and `process_due_timeouts`
+/// compares deadlines against it.
+#[test]
+fn with_timeout_fires_from_wall_clock_without_advance_time() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+
+    // Fresh clock epoch: virtual offset 0, epoch just started.
+    assert_eq!(call_host(ASYNC_TASK_RESET, &[]).0, HOST_STATUS_SUCCESS);
+
+    let (status, task) = call_host(ASYNC_TASK_READY, &[7]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (status, timed) = call_host(ASYNC_TASK_WITH_TIMEOUT, &[task, 100]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(
+        call_host(ASYNC_TASK_IS_CANCELLED, &[timed]),
+        (HOST_STATUS_SUCCESS, 0),
+        "a fresh timeout must start uncancelled"
+    );
+
+    // NOTE: no ASYNC_SCHEDULER_ADVANCE_TIME anywhere below — only the wall
+    // clock may cancel the wrapper. The bound is generous to absorb CI load.
+    let give_up_after = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let (_, cancelled) = call_host(ASYNC_TASK_IS_CANCELLED, &[timed]);
+        if cancelled == 1 {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < give_up_after,
+            "with_timeout never fired from real elapsed time"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+
+    // Cancelling the wrapper cascades to the wrapped task.
+    assert_eq!(
+        call_host(ASYNC_TASK_IS_CANCELLED, &[task]),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+
+    assert_eq!(call_host(ASYNC_TASK_RESET, &[]).0, HOST_STATUS_SUCCESS);
+}
+
 #[test]
 fn async_stream_host_calls_cover_adaptors_backpressure_done_and_cancellation() {
     let _lock = test_guard();

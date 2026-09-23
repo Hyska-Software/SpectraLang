@@ -1,0 +1,64 @@
+module serving_eval_monitoring_composition_stress
+
+import std.ml as ml
+import std.serve as serve
+import std.string as str
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    serve.reset()
+
+    let labels = tensor.arange(0, 3, 1)
+    let predictions = tensor.arange(0, 3, 1)
+    let classification = ml.metrics_classification(labels, predictions)
+    let regression = ml.metrics_regression(tensor.full_f(3, 1.0), tensor.full_f(3, 1.0))
+    let ranking = ml.metrics_ranking(labels, tensor.full_f(3, 1.0), 2)
+    let generation = ml.metrics_generation("monitored serving needs evidence", "serving evidence")
+    let serving_metrics = ml.serving_metrics(tensor.arange(5, 20, 5), 3, 0)
+    let report = ml.evaluation_report(
+        "target/r1901/composition-report.json",
+        "serving-eval-monitoring-composition",
+        classification,
+        regression,
+        ranking,
+        generation,
+        serving_metrics
+    )
+    if str.contains(report, "composition-report.json") {
+        let ok_report = 1
+        if ok_report != 1 {
+            return 1
+        }
+    } else {
+        return 1
+    }
+
+    let server = serve.server_new(2)
+    let scale_weight = tensor.reshape(tensor.full_f(1, 2.0), 1, 1)
+    let scale_bias = tensor.full_f(1, 0.0)
+    if serve.server_register_model_linear(server, scale_weight, scale_bias, 0) != 1 {
+        return 2
+    }
+    serve.server_set_model_version(server, "composition-v1")
+    serve.server_set_fallback(server, -1)
+    serve.server_set_input_policy(server, 0, 100)
+    serve.server_warmup(server)
+    let request = serve.server_enqueue(server, 20)
+    serve.server_process_batch(server, 1)
+    if serve.server_result(server, request) != 40 {
+        return 2
+    }
+    let snapshot = serve.server_monitoring_snapshot(server)
+    if str.contains(snapshot, "\"model_version\":\"composition-v1\"") {
+        let ok_snapshot = 1
+        if ok_snapshot != 1 {
+            return 3
+        }
+    } else {
+        return 3
+    }
+
+    tensor.free_all()
+    return 0
+}

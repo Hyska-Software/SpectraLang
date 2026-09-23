@@ -535,12 +535,15 @@ pub(crate) extern "C" fn std_async_channel_len(ctx: *mut SpectraHostCallContext)
     HOST_STATUS_SUCCESS
 }
 
-pub(crate) extern "C" fn std_async_task_reset(ctx: *mut SpectraHostCallContext) -> i32 {
-    let args = match host_call_void_args(ctx, 0) {
-        Ok(args) => args,
-        Err(status) => return status,
-    };
-    let _ = args;
+/// Shared body of `std.async.task.reset`: drains background-cancel hooks,
+/// clears the async task/coroutine/stream/IO registries, resets the reactor,
+/// and forgets the last reactor event. Extracted so
+/// `spectra_rt_manual_clear` can run the identical, polling-safe reset
+/// without going through the host-call ABI.
+///
+/// Returns [`HOST_STATUS_SUCCESS`] or [`HOST_STATUS_INTERNAL_ERROR`] when the
+/// last-event slot could not be cleared.
+pub(crate) fn reset_async_state() -> i32 {
     let cancellation_hooks = {
         let _lifecycle = lock_unpoisoned(background_task_lifecycle());
         let mut registry = match lock_async_task_registry() {
@@ -562,6 +565,15 @@ pub(crate) extern "C" fn std_async_task_reset(ctx: *mut SpectraHostCallContext) 
         return HOST_STATUS_INTERNAL_ERROR;
     }
     HOST_STATUS_SUCCESS
+}
+
+pub(crate) extern "C" fn std_async_task_reset(ctx: *mut SpectraHostCallContext) -> i32 {
+    let args = match host_call_void_args(ctx, 0) {
+        Ok(args) => args,
+        Err(status) => return status,
+    };
+    let _ = args;
+    reset_async_state()
 }
 
 pub(crate) extern "C" fn std_async_reactor_backend(ctx: *mut SpectraHostCallContext) -> i32 {

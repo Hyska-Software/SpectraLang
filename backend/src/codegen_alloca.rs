@@ -24,7 +24,17 @@ impl CodeGenerator {
             changed = false;
             for block in &ir_func.blocks {
                 for instruction in &block.instructions {
-                    if let InstructionKind::GetElementPtr { result, ptr, .. } = &instruction.kind {
+                    // Address-deriving instructions carry the root alloca
+                    // forward: without `FieldPtr`, a field address of a stack
+                    // aggregate was invisible to the escape checks below, so
+                    // returning or passing `s.field` left the slot on the
+                    // stack frame while the callee/returner kept the pointer.
+                    let derived = match &instruction.kind {
+                        InstructionKind::GetElementPtr { result, ptr, .. }
+                        | InstructionKind::FieldPtr { result, ptr, .. } => Some((result, ptr)),
+                        _ => None,
+                    };
+                    if let Some((result, ptr)) = derived {
                         if let Some(root) = derived_from_alloca.get(&ptr.id).copied() {
                             if derived_from_alloca.insert(result.id, root).is_none() {
                                 changed = true;

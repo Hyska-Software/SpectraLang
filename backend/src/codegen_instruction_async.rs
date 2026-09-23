@@ -15,15 +15,30 @@ impl CodeGenerator {
         builder.inst_results(call).first().copied()
     }
 
+    /// Convert a scalar payload to the `i64` word the coroutine frame and
+    /// task-result slots carry. Floats travel as their **F64 bit pattern**
+    /// (f32 is promoted first), matching every other `i64`-word hand-off in
+    /// the runtime (`scalar_word`, the generic host arguments, and
+    /// `spectra.async.task.ready`): a frame slot written here is read back by
+    /// `frame_load_value` or by `CoroutinePollResult` consumers that see the
+    /// same word. The previous `uextend(I64, f32)` was simply illegal on a
+    /// float value.
     fn frame_store_value(builder: &mut FunctionBuilder, value: Value) -> Value {
         match builder.func.dfg.value_type(value) {
             types::F64 => builder.ins().bitcast(types::I64, MemFlags::new(), value),
-            types::F32 => builder.ins().uextend(types::I64, value),
+            types::F32 => {
+                let promoted = builder.ins().fpromote(types::F64, value);
+                builder.ins().bitcast(types::I64, MemFlags::new(), promoted)
+            }
             ty if ty != types::I64 => builder.ins().uextend(types::I64, value),
             _ => value,
         }
     }
 
+    /// Rebuild a scalar payload from the `i64` word stored by
+    /// [`Self::frame_store_value`] (or handed back by a runtime import).
+    /// Floats arrive as F64 bit patterns, so an F32 target reinterprets the
+    /// word as F64 and demotes; narrow integers reduce to their width.
     fn frame_load_value(
         builder: &mut FunctionBuilder,
         raw: Value,
@@ -33,8 +48,8 @@ impl CodeGenerator {
         Ok(match target {
             types::F64 => builder.ins().bitcast(types::F64, MemFlags::new(), raw),
             types::F32 => {
-                let narrow = builder.ins().ireduce(types::I32, raw);
-                builder.ins().bitcast(types::F32, MemFlags::new(), narrow)
+                let wide = builder.ins().bitcast(types::F64, MemFlags::new(), raw);
+                builder.ins().fdemote(types::F32, wide)
             }
             types::I64 => raw,
             target => builder.ins().ireduce(target, raw),
@@ -82,9 +97,25 @@ impl CodeGenerator {
                     .ok_or_else(|| BackendCodegenError::cranelift("frame allocation import returned no value"))?;
                 value_map.insert(result.id, value);
             }
-            InstructionKind::FrameStore { frame, slot, value } => {
+            InstructionKind::FrameStore {
+                frame,
+                slot,
+                value,
+                escape_value,
+            } => {
                 let frame = get_value(frame)?;
-                let value = Self::frame_store_value(builder, get_value(value)?);
+                let value = get_value(value)?;
+                if *escape_value {
+                    let stored_value = Self::scalar_word(builder, value);
+                    Self::runtime_call(
+                        module,
+                        hostcall,
+                        builder,
+                        RuntimeImport::ManualEscapeStored,
+                        &[stored_value],
+                    );
+                }
+                let value = Self::frame_store_value(builder, value);
                 let slot = const_i64(builder, *slot as i64);
                 Self::runtime_call(module, hostcall, builder, RuntimeImport::CoroutineFrameStore, &[frame, slot, value]);
             }
@@ -175,10 +206,16 @@ impl CodeGenerator {
                 };
                 let converted = match output_type {
                     IRType::Float | IRType::ExactFloat { .. } => {
-                        if builder.func.dfg.value_type(raw) == types::F64 {
-                            raw
-                        } else {
-                            builder.ins().bitcast(types::F64, MemFlags::new(), raw)
+                        // Float task payloads travel as F64 words. An F32
+                        // payload must be *promoted* (fpromote), not bitcast:
+                        // `bitcast(F64, f32)` is a width mismatch the
+                        // Cranelift verifier rejects. The payload-less case
+                        // carries a zeroed i64 handle whose bits reinterpret
+                        // as F64.
+                        match builder.func.dfg.value_type(raw) {
+                            types::F64 => raw,
+                            types::F32 => builder.ins().fpromote(types::F64, raw),
+                            _ => builder.ins().bitcast(types::F64, MemFlags::new(), raw),
                         }
                     }
                     IRType::Bool | IRType::Char => {

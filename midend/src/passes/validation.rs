@@ -101,67 +101,70 @@ impl LoopStructureValidation {
         counts
     }
 
+    /// Tarjan's strongly connected components, implemented iteratively.
+    ///
+    /// The recursive formulation ties the compiler stack to the program's CFG
+    /// depth; an explicit work stack keeps arbitrarily deep CFGs from
+    /// overflowing the runtime stack. The work items hold `(node,
+    /// next_successor_index)` cursors, mirroring the recursive call frames.
     fn strongly_connected_components(successors: &[Vec<usize>]) -> Vec<Vec<usize>> {
-        #[allow(clippy::too_many_arguments)]
-        fn strongconnect(
-            v: usize,
-            index: &mut usize,
-            successors: &[Vec<usize>],
-            indices: &mut [Option<usize>],
-            lowlink: &mut [usize],
-            stack: &mut Vec<usize>,
-            on_stack: &mut [bool],
-            result: &mut Vec<Vec<usize>>,
-        ) {
-            indices[v] = Some(*index);
-            lowlink[v] = *index;
-            *index += 1;
-            stack.push(v);
-            on_stack[v] = true;
+        let node_count = successors.len();
+        let mut indices: Vec<Option<usize>> = vec![None; node_count];
+        let mut lowlink = vec![0usize; node_count];
+        let mut stack: Vec<usize> = Vec::new();
+        let mut on_stack = vec![false; node_count];
+        let mut result: Vec<Vec<usize>> = Vec::new();
+        let mut next_index = 0usize;
 
-            for &w in &successors[v] {
-                if indices[w].is_none() {
-                    strongconnect(
-                        w, index, successors, indices, lowlink, stack, on_stack, result,
-                    );
-                    lowlink[v] = lowlink[v].min(lowlink[w]);
-                } else if on_stack[w] {
-                    lowlink[v] = lowlink[v].min(indices[w].unwrap());
-                }
+        for root in 0..node_count {
+            if indices[root].is_some() {
+                continue;
             }
+            indices[root] = Some(next_index);
+            lowlink[root] = next_index;
+            next_index += 1;
+            stack.push(root);
+            on_stack[root] = true;
+            let mut work: Vec<(usize, usize)> = vec![(root, 0)];
 
-            if lowlink[v] == indices[v].unwrap() {
-                let mut component = Vec::new();
-                while let Some(w) = stack.pop() {
-                    on_stack[w] = false;
-                    component.push(w);
-                    if w == v {
-                        break;
+            while let Some((node, successor_index)) = work.last().copied() {
+                if successor_index < successors[node].len() {
+                    // Advance the cursor, then descend into or cross-link the
+                    // next successor.
+                    if let Some(frame) = work.last_mut() {
+                        frame.1 += 1;
+                    }
+                    let successor = successors[node][successor_index];
+                    if indices[successor].is_none() {
+                        indices[successor] = Some(next_index);
+                        lowlink[successor] = next_index;
+                        next_index += 1;
+                        stack.push(successor);
+                        on_stack[successor] = true;
+                        work.push((successor, 0));
+                    } else if on_stack[successor] {
+                        lowlink[node] = lowlink[node].min(indices[successor].unwrap());
+                    }
+                } else {
+                    // All successors visited: pop the frame and propagate the
+                    // lowlink to the parent, exactly like the return path of
+                    // the recursive variant.
+                    work.pop();
+                    if let Some((parent, _)) = work.last().copied() {
+                        lowlink[parent] = lowlink[parent].min(lowlink[node]);
+                    }
+                    if lowlink[node] == indices[node].unwrap() {
+                        let mut component = Vec::new();
+                        while let Some(top) = stack.pop() {
+                            on_stack[top] = false;
+                            component.push(top);
+                            if top == node {
+                                break;
+                            }
+                        }
+                        result.push(component);
                     }
                 }
-                result.push(component);
-            }
-        }
-
-        let mut index = 0;
-        let mut indices = vec![None; successors.len()];
-        let mut lowlink = vec![0; successors.len()];
-        let mut stack = Vec::new();
-        let mut on_stack = vec![false; successors.len()];
-        let mut result = Vec::new();
-
-        for v in 0..successors.len() {
-            if indices[v].is_none() {
-                strongconnect(
-                    v,
-                    &mut index,
-                    successors,
-                    &mut indices,
-                    &mut lowlink,
-                    &mut stack,
-                    &mut on_stack,
-                    &mut result,
-                );
             }
         }
 
@@ -196,6 +199,15 @@ impl LoopStructureValidation {
             .any(|&idx| matches!(blocks[idx].terminator, Some(Terminator::Return { .. })))
     }
 
+    /// Heuristic header choice for a loop component: prefer the block whose
+    /// label carries `.header`, falling back to the lowest block id.
+    ///
+    /// NOTE: this heuristic, and the `.exit`/`loop` label scan in `run`, are
+    /// coupled to the block-naming conventions emitted by lowering (e.g.
+    /// `while.header`, `do_while.header`, `loop.body`, `*.exit` in
+    /// `midend/src/lowering_impl_statements.rs`). The IR does not yet tag
+    /// loop blocks structurally, so if lowering renames its blocks these
+    /// checks must be updated together with it. Kept as-is deliberately.
     fn select_header(component: &[usize], blocks: &[BasicBlock]) -> usize {
         component
             .iter()
@@ -220,7 +232,6 @@ impl Pass for LoopStructureValidation {
 
     fn run(&mut self, module: &mut Module) -> bool {
         self.errors.clear();
-        let mut found_issue = false;
 
         for function in &module.functions {
             if function.blocks.is_empty() {
@@ -262,10 +273,12 @@ impl Pass for LoopStructureValidation {
                         header_label: header_label.clone(),
                         message: "loop does not have any edge that leaves the loop; ensure the condition leads to an exit block or introduce a `break`".into(),
                     });
-                    found_issue = true;
                 }
             }
 
+            // Unreachable-exit heuristic, coupled to lowering's block naming
+            // (see the note on `select_header`): only blocks labelled
+            // `*.exit` that are not loop exits are checked.
             for (idx, block) in function.blocks.iter().enumerate() {
                 if !block.label.contains(".exit") {
                     continue;
@@ -280,16 +293,14 @@ impl Pass for LoopStructureValidation {
                         header_label: block.label.clone(),
                         message: "exit block is unreachable; no branch targets this block".into(),
                     });
-                    found_issue = true;
                 }
             }
         }
 
-        if found_issue {
-            for err in &self.errors {
-                eprintln!("{}", err);
-            }
-        }
+        // Errors are reported through `self.errors`; the CLI re-emits them as
+        // compiler diagnostics (`compiler_integration_core.rs` converts every
+        // `LoopValidationError` into a `MidendError` and fails the build), so
+        // this pass must not print to stderr itself.
 
         false
     }

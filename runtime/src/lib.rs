@@ -28,7 +28,9 @@ pub use stdlib::register;
 
 /// Sets the program arguments visible to Spectra code via `std.env.env_args_count`
 /// and `std.env.env_arg`. Must be called before any Spectra code executes.
-/// Subsequent calls are silently ignored (can only be set once per process).
+/// Each call overwrites the previously stored arguments, so a REPL or test
+/// loop that runs several programs in one process always sees the current
+/// program's arguments.
 pub fn set_program_args(args: Vec<String>) {
     ffi::set_program_args(args);
 }

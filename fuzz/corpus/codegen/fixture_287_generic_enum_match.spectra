@@ -1,0 +1,28 @@
+module bug_hunt_v2_287_generic_enum_match
+
+enum Packet<T> {
+    Item(T),
+    Tagged { value: T },
+    Empty,
+}
+
+func score(packet: Packet<int>) returns int {
+    match packet {
+        when Packet::Item(value) then value * 2,
+        when Packet::Tagged { value } then value + 1,
+        when Packet::Empty then 0
+    }
+}
+
+public func main() returns int {
+    if score(Packet::Item(4)) != 8 {
+        return 1
+    }
+    if score(Packet::Tagged { value: 5 }) != 6 {
+        return 2
+    }
+    if score(Packet::Empty) != 0 {
+        return 3
+    }
+    return 0
+}

@@ -127,7 +127,11 @@ impl ConcurrentBatch {
 
     pub(crate) fn join_sum(&self) -> Result<SpectraHostValue, i32> {
         let mut spins = 0usize;
-        while self.remaining.load(Ordering::Acquire) != 0 {
+        loop {
+            let remaining = self.remaining.load(Ordering::Acquire);
+            if remaining == 0 {
+                break;
+            }
             if self.cancelled.load(Ordering::Acquire) {
                 return Err(HOST_STATUS_NOT_FOUND);
             }
@@ -137,9 +141,29 @@ impl ConcurrentBatch {
             if spins < 128 {
                 std::hint::spin_loop();
                 spins += 1;
-            } else {
-                thread::yield_now();
+                continue;
             }
+            // Park on the shared completion condvar (the pattern
+            // `ConcurrentTask::join` uses) instead of busy-waiting: every
+            // lane completion calls `notify_concurrent_completion`, which
+            // takes the epoch lock, so re-checking `remaining` under that
+            // lock cannot miss a wakeup. The generous timeout is only a
+            // last-resort fallback against a lost notification; on expiry
+            // the loop simply re-checks.
+            let (epoch, ready) = concurrent_completion_signal();
+            let guard = lock_unpoisoned(epoch);
+            if self.remaining.load(Ordering::Acquire) == 0 {
+                break;
+            }
+            if self.cancelled.load(Ordering::Acquire) {
+                return Err(HOST_STATUS_NOT_FOUND);
+            }
+            if self.failed.load(Ordering::Acquire) {
+                return Err(HOST_STATUS_INTERNAL_ERROR);
+            }
+            let _ = ready
+                .wait_timeout(guard, std::time::Duration::from_secs(30))
+                .unwrap_or_else(|poison| poison.into_inner());
         }
         if self.failed.load(Ordering::Acquire) {
             return Err(HOST_STATUS_INTERNAL_ERROR);
@@ -175,16 +199,31 @@ pub(crate) struct ConcurrentExecutor {
 }
 
 impl ConcurrentExecutor {
-    pub(crate) fn new() -> Self {
+    /// Builds the shared worker pool.
+    ///
+    /// Pool size follows real available parallelism (floor 2; the historical
+    /// `available_parallelism().clamp(2, 2)` discarded its own result and
+    /// always produced 2). Idle workers block on the channel receive, so the
+    /// extra threads cost stack reservations, not CPU.
+    ///
+    /// Worker-spawn failures are propagated as an error status instead of
+    /// panicking: this path is reachable from the fast JIT ABI
+    /// (`spectra_rt_concurrent_spawn_fn_fast`) without a `catch_unwind`
+    /// boundary, and a `.expect` there would abort the host process. If *some*
+    /// workers start the pool degrades to the smaller size; if *none* start,
+    /// construction fails and every submit path surfaces
+    /// `HOST_STATUS_INTERNAL_ERROR`.
+    pub(crate) fn try_new() -> Result<Self, i32> {
         let (sender, receiver) = mpsc::channel::<ConcurrentJob>();
         let receiver = Arc::new(Mutex::new(receiver));
         let workers = thread::available_parallelism()
             .map(|count| count.get())
             .unwrap_or(2)
-            .clamp(2, 2);
+            .max(2);
+        let mut started = 0usize;
         for worker_index in 0..workers {
             let receiver = Arc::clone(&receiver);
-            thread::Builder::new()
+            let spawned = thread::Builder::new()
                 .name(format!("spectra-concurrent-{worker_index}"))
                 .spawn(move || loop {
                     let job = {
@@ -285,9 +324,18 @@ impl ConcurrentExecutor {
                         }
                     }
                 })
-                .expect("failed to create Spectra concurrent worker");
+                .is_ok();
+            if spawned {
+                started += 1;
+            }
         }
-        Self { sender, workers }
+        if started == 0 {
+            return Err(HOST_STATUS_INTERNAL_ERROR);
+        }
+        Ok(Self {
+            sender,
+            workers: started,
+        })
     }
 
     pub(crate) fn submit_closure(
@@ -329,9 +377,16 @@ impl ConcurrentExecutor {
     }
 }
 
-pub(crate) fn concurrent_executor() -> &'static ConcurrentExecutor {
-    static EXECUTOR: OnceLock<ConcurrentExecutor> = OnceLock::new();
-    EXECUTOR.get_or_init(ConcurrentExecutor::new)
+/// Returns the shared concurrent executor, or the status describing why it
+/// could not be built (no worker thread could be spawned). The construction
+/// result — success or failure — is cached; callers propagate the status
+/// instead of panicking (this path is reachable from the fast JIT ABI).
+pub(crate) fn concurrent_executor() -> Result<&'static ConcurrentExecutor, i32> {
+    static EXECUTOR: OnceLock<Result<ConcurrentExecutor, i32>> = OnceLock::new();
+    EXECUTOR
+        .get_or_init(ConcurrentExecutor::try_new)
+        .as_ref()
+        .map_err(|status| *status)
 }
 
 pub(crate) struct ConcurrentHandleTable<T> {
@@ -577,6 +632,9 @@ pub(crate) fn spawn_concurrent_task_fn(
     fn_ptr: SpectraHostValue,
     arg: SpectraHostValue,
 ) -> Result<SpectraHostValue, i32> {
+    // Resolve the executor BEFORE registering the task so an executor
+    // construction failure cannot leak a freshly allocated handle.
+    let executor = concurrent_executor()?;
     let (task_id, task) = {
         let mut registry = lock_concurrent_registry()?;
         registry.allocate_task()
@@ -585,7 +643,7 @@ pub(crate) fn spawn_concurrent_task_fn(
     // Capture the run chain on the spawning thread; the worker reinstalls it
     // for the duration of the closure (R-3213 T2).
     let run_chain = crate::agent::run_context::current_chain();
-    if concurrent_executor()
+    if executor
         .submit_closure(Arc::clone(&task), fn_ptr, arg, run_chain)
         .is_err()
     {
@@ -594,6 +652,11 @@ pub(crate) fn spawn_concurrent_task_fn(
                 data.tasks_failed.fetch_add(1, Ordering::Relaxed);
                 data.pending_tasks.fetch_sub(1, Ordering::Relaxed);
             }
+        }
+        // Remove the registered task: a failed submit must not leak the
+        // handle (nobody can ever join it, since the job was never queued).
+        if let Ok(mut registry) = lock_concurrent_registry() {
+            let _ = registry.release(task_id, &task);
         }
         return Err(HOST_STATUS_INTERNAL_ERROR);
     }
@@ -630,6 +693,9 @@ pub(crate) fn spawn_concurrent_batch(
     if count == 0 || count > 4096 {
         return Err(HOST_STATUS_INVALID_ARGUMENT);
     }
+    // Resolve the executor first: an executor construction failure must not
+    // leave an allocated batch handle behind (same leak as task spawn).
+    let executor = concurrent_executor()?;
     let (batch_id, batch) = {
         let mut registry = lock_concurrent_registry()?;
         registry.allocate_batch(count)
@@ -637,9 +703,9 @@ pub(crate) fn spawn_concurrent_batch(
     for _ in 0..count {
         record_concurrent_task_created();
     }
-    let lanes = concurrent_executor().workers.min(count);
+    let lanes = executor.workers.min(count);
     for lane in 0..lanes {
-        if concurrent_executor()
+        if executor
             .submit_batch_lane(Arc::clone(&batch), first_value, count, lane, lanes)
             .is_err()
         {

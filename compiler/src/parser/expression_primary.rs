@@ -224,6 +224,12 @@ impl Parser {
     /// inner expression unique: relative spans restart at `0..N` for each
     /// interpolation, so span-keyed tables (semantic type facts consumed by
     /// lowering) would silently mix unrelated expressions together.
+    ///
+    /// `{{` / `}}` escape to literal braces, the interpolation scanner skips
+    /// quoted string/char literals so a brace inside a nested string does not
+    /// mis-slice the expression, and diagnostics produced by the sub-lexer or
+    /// sub-parser are forwarded with their (already absolute) spans instead of
+    /// being replaced by an uncoded error over the whole f-string.
     pub(crate) fn parse_fstring_parts(
         &mut self,
         raw: &str,
@@ -260,55 +266,202 @@ impl Parser {
 
         while i < chars.len() {
             if chars[i] == '{' {
-                // Find matching closing '}' tracking nested braces
+                // `{{` escapes to a literal brace.
+                if i + 1 < chars.len() && chars[i + 1] == '{' {
+                    let mut lit = String::new();
+                    while i < chars.len() {
+                        if chars[i] == '{' && i + 1 < chars.len() && chars[i + 1] == '{' {
+                            lit.push('{');
+                            i += 2;
+                        } else if chars[i] == '{' {
+                            break;
+                        } else {
+                            if chars[i] == '}' && i + 1 < chars.len() && chars[i + 1] == '}' {
+                                lit.push('}');
+                                i += 2;
+                            } else {
+                                lit.push(chars[i]);
+                                i += 1;
+                            }
+                        }
+                    }
+                    parts.push(FStringPart::Literal(lit));
+                    continue;
+                }
+
+                // Find the matching closing '}' tracking nested braces and
+                // SKIPPING quoted string/char literals so a brace inside a
+                // nested string literal (`f"{call(\"{\")}"`) does not change
+                // the interpolation depth.
                 let mut depth = 1;
                 let mut j = i + 1;
-                while j < chars.len() && depth > 0 {
-                    if chars[j] == '{' {
-                        depth += 1;
-                    } else if chars[j] == '}' {
-                        depth -= 1;
-                    }
-                    if depth > 0 {
+                let mut in_quote: Option<char> = None;
+                while j < chars.len() {
+                    let ch = chars[j];
+                    if let Some(quote) = in_quote {
+                        if ch == '\\' && j + 1 < chars.len() {
+                            j += 2;
+                            continue;
+                        }
+                        if ch == quote {
+                            in_quote = None;
+                        }
                         j += 1;
-                    } else {
-                        break;
+                        continue;
+                    }
+                    match ch {
+                        '"' | '\'' => {
+                            in_quote = Some(ch);
+                            j += 1;
+                        }
+                        '{' => {
+                            depth += 1;
+                            j += 1;
+                        }
+                        '}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                            j += 1;
+                        }
+                        _ => j += 1,
                     }
                 }
+
+                if j >= chars.len() {
+                    // Unterminated interpolation: report a coded error at the
+                    // opening brace instead of silently dropping the rest.
+                    let mut lit = String::new();
+                    while i < chars.len() {
+                        lit.push(chars[i]);
+                        i += 1;
+                    }
+                    parts.push(FStringPart::Literal(lit));
+                    self.push_error_coded(
+                        "P002",
+                        "Unterminated interpolation in f-string: missing `}`",
+                        span,
+                        Some("Close every `{` interpolation with a matching `}`.".to_string()),
+                        None,
+                    );
+                    break;
+                }
+
                 // chars[i+1..j] is the expression source
                 let expr_src: String = chars[i + 1..j].iter().collect();
                 advance_to!(i + 1);
                 let origin_offset = span.start + FSTRING_HEADER_BYTES + walked_bytes;
                 let origin_location = crate::span::Location::new(walk_line, walk_column);
+                // Absolute position just past the expression (used to rebase
+                // sub-parser diagnostics recorded at the EOF sentinel, which
+                // carries a dummy (0,0) span).
+                let expr_end_offset = origin_offset + expr_src.len();
+                let expr_end_line = origin_location.line + expr_src.matches('\n').count();
+                let expr_end_column = match expr_src.rfind('\n') {
+                    Some(position) => expr_src[position + 1..].chars().count() + 1,
+                    None => origin_location.column + expr_src.chars().count(),
+                };
+                let expr_end_location = crate::span::Location::new(expr_end_line, expr_end_column);
                 advance_to!(j + 1);
                 let sub_tokens_result =
                     Lexer::with_origin(&expr_src, origin_offset, origin_location).tokenize();
                 match sub_tokens_result {
                     Ok(sub_tokens) => {
+                        // Continue the parent parser's depth accounting and
+                        // stack budget so nested interpolation recursion is
+                        // guarded by `P013` instead of starting a fresh,
+                        // unguarded budget.
                         let mut sub_parser = Parser::new(sub_tokens);
-                        match sub_parser.parse_expression() {
+                        sub_parser.depth = self.depth;
+                        sub_parser.depth_limit_reported = self.depth_limit_reported;
+                        sub_parser.stack_probe = self.stack_probe;
+                        let sub_result = sub_parser.parse_expression();
+                        // Forward the sub-parser's diagnostics: their spans are
+                        // already absolute (rebased through `Lexer::with_origin`)
+                        // except errors recorded at the parser's EOF sentinel,
+                        // which are rebased onto the end of the interpolation.
+                        let forwarded = !sub_parser.errors.is_empty();
+                        for mut forwarded_error in sub_parser.errors.drain(..) {
+                            if forwarded_error.span.start == 0 && forwarded_error.span.end == 0 {
+                                forwarded_error.span = crate::span::Span::new(
+                                    expr_end_offset,
+                                    expr_end_offset,
+                                    expr_end_location,
+                                    expr_end_location,
+                                );
+                            }
+                            self.errors.push(forwarded_error);
+                        }
+                        match sub_result {
                             Ok(inner_expr) => {
                                 parts.push(FStringPart::Interpolated(Box::new(inner_expr)));
                             }
+                            Err(_) if forwarded => {
+                                // The sub-parser already recorded the specific
+                                // diagnostics; do not add a generic overlay.
+                            }
                             Err(_) => {
-                                self.error_at(
+                                // Guard-only failure without any recorded
+                                // diagnostic: keep a coded fallback so the
+                                // f-string never swallows the error silently.
+                                self.push_error_coded(
+                                    "P019",
                                     "Invalid expression inside f-string interpolation",
                                     span,
+                                    Some(
+                                        "Interpolations must contain a single valid expression."
+                                            .to_string(),
+                                    ),
+                                    None,
                                 );
                             }
                         }
                     }
-                    Err(_) => {
-                        self.error_at("Lexer error inside f-string interpolation", span);
+                    Err(lex_errors) => {
+                        // Forward the sub-lexer diagnostics with their rebased
+                        // spans instead of one uncoded error over the whole
+                        // f-string.
+                        let mut any_forwarded = false;
+                        for lex_error in lex_errors {
+                            any_forwarded = true;
+                            let mut parse_error =
+                                crate::error::ParseError::new(lex_error.message, lex_error.span);
+                            if let Some(code) = lex_error.code {
+                                parse_error = parse_error.with_code(code);
+                            }
+                            if let Some(context) = lex_error.context {
+                                parse_error = parse_error.with_context(context);
+                            }
+                            if let Some(hint) = lex_error.hint {
+                                parse_error = parse_error.with_hint(hint);
+                            }
+                            self.errors.push(parse_error);
+                        }
+                        if !any_forwarded {
+                            self.push_error_coded(
+                                "P019",
+                                "Lexer error inside f-string interpolation",
+                                span,
+                                Some("Fix the interpolation text; it must lex as a valid expression.".to_string()),
+                                None,
+                            );
+                        }
                     }
                 }
                 i = j + 1; // skip past '}'
             } else {
-                // Collect literal chars until next '{' or end
+                // Collect literal chars until next '{' or end. `}}` escapes to
+                // a single literal brace.
                 let mut lit = String::new();
                 while i < chars.len() && chars[i] != '{' {
-                    lit.push(chars[i]);
-                    i += 1;
+                    if chars[i] == '}' && i + 1 < chars.len() && chars[i + 1] == '}' {
+                        lit.push('}');
+                        i += 2;
+                    } else {
+                        lit.push(chars[i]);
+                        i += 1;
+                    }
                 }
                 if !lit.is_empty() {
                     parts.push(FStringPart::Literal(lit));
@@ -338,7 +491,16 @@ impl Parser {
             if is_otherwise || self.check_keyword(Keyword::When) {
                 self.advance();
             } else {
-                self.error("Expected 'when' or 'otherwise' in match arm");
+                self.push_error_coded(
+                    "P001",
+                    "Expected 'when' or 'otherwise' in match arm",
+                    self.current().span,
+                    Some(
+                        "Match arms use `when <pattern> then <body>` or `otherwise <body>`."
+                            .to_string(),
+                    ),
+                    None,
+                );
                 return Err(());
             }
 
@@ -360,7 +522,13 @@ impl Parser {
             if self.check_keyword(Keyword::Then) {
                 self.advance();
             } else if !is_otherwise {
-                self.error("Expected 'then' after pattern in match arm");
+                self.push_error_coded(
+                    "P001",
+                    "Expected 'then' after pattern in match arm",
+                    self.current().span,
+                    Some("Write `when <pattern> then <body>`.".to_string()),
+                    None,
+                );
                 return Err(());
             }
 

@@ -486,11 +486,14 @@ fn print_compilation_options(command: Option<BuildCommand>) {
     println!("    -O2                    Enable moderate optimizations (default)");
     println!("    -O3                    Enable aggressive optimizations");
     match command {
-        Some(BuildCommand::Check) | Some(BuildCommand::Lint) => {
-            println!("    --run, -r              Not available for the 'check' command");
-        }
         Some(BuildCommand::Run) => {
             println!("    --run, -r              Redundant; 'run' always executes after compiling");
+        }
+        Some(kind) if matches!(kind, BuildCommand::Check | BuildCommand::Lint | BuildCommand::Bench) => {
+            println!(
+                "    --run, -r              Not available for the '{}' command",
+                kind.name()
+            );
         }
         _ => {
             println!("    --run, -r              Execute the program with the JIT after compiling");

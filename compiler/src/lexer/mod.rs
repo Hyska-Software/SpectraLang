@@ -404,7 +404,7 @@ impl<'source> Lexer<'source> {
                                             Location::new(line, column),
                                         ),
                                     )
-                                    .with_code("L007")
+                                    .with_code("L009")
                                     .with_hint(
                                         "The `0x`, `0o`, and `0b` prefixes require at least one valid digit.",
                                     ),
@@ -507,7 +507,7 @@ impl<'source> Lexer<'source> {
                                                     Location::new(line, column),
                                                 ),
                                             )
-                                            .with_code("L007")
+                                            .with_code("L009")
                                             .with_hint(
                                                 "Scientific notation needs digits after `e`/`E`, e.g. `1e5` or `2.5E-3`.",
                                             ),
@@ -786,7 +786,7 @@ impl<'source> Lexer<'source> {
                                         Location::new(line, column + 1),
                                     ),
                                 )
-                                .with_code("L007")
+                                .with_code("L010")
                                 .with_hint(format!(
                                     "Use `{}` for {} instead of `{}`.",
                                     replacement, usage, ch
@@ -1019,17 +1019,54 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_exponent_digits_with_l007() {
+    fn rejects_missing_exponent_digits_with_l009() {
         let errors = Lexer::new("1e")
             .tokenize()
             .expect_err("`1e` without digits should fail");
         assert!(
             errors
                 .iter()
-                .any(|error| error.code.as_deref() == Some("L007")),
-            "expected L007, got {:?}",
+                .any(|error| error.code.as_deref() == Some("L009")),
+            "expected L009, got {:?}",
             errors
         );
+    }
+
+    #[test]
+    fn rejects_missing_radix_digits_with_l009() {
+        // Missing digits after a radix prefix share the numeric-digits code,
+        // distinct from the `_` separator code (L007) and the arrow-operator
+        // code (L010).
+        for source in ["let x = 0x\n", "let x = 0b2\n", "let x = 0o8\n"] {
+            let errors = Lexer::new(source)
+                .tokenize()
+                .expect_err("radix literal without digits should fail");
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.code.as_deref() == Some("L009")),
+                "expected L009 for `{}`, got {:?}",
+                source,
+                errors.iter().map(|e| &e.message).collect::<Vec<_>>(),
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_arrow_operators_with_l010() {
+        for source in ["fn f() -> int { }", "match x { 1 => 2 }"] {
+            let errors = Lexer::new(source)
+                .tokenize()
+                .expect_err("arrow operators should fail");
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.code.as_deref() == Some("L010")),
+                "expected L010 for `{}`, got {:?}",
+                source,
+                errors.iter().map(|e| &e.message).collect::<Vec<_>>(),
+            );
+        }
     }
 
     #[test]

@@ -26,7 +26,7 @@ use spectra_midend::ir::{
     ExternalFunction, Function as IRFunction, InstructionKind, Module as IRModule, Type as IRType,
     Value as IRValue,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::codegen::{
     validate_tensor_ir, CodeGenerator, DenseValueMap, HostCallBatchStats, PhiDescriptor,
@@ -272,6 +272,38 @@ impl AotCodeGenerator {
 
         self.define_globals(ir_module)?;
 
+        // Tail-call eligibility for this object (see
+        // `CodeGenerator::uses_tail_call_convention` for the ineligibility
+        // model). Options considered here:
+        //
+        // (i) a two-phase pre-scan across ALL modules linked into one
+        //     executable (any function named in *another* module's
+        //     `external_functions` list would be tail-ineligible) is not
+        //     possible inside this API: AOT compiles exactly one IR module
+        //     per `ObjectModule` (`compile_to_object*` consumes `self`, and
+        //     the CLI's project build loops per source file, one object per
+        //     module), so a definer never sees its importers' external
+        //     lists;
+        // (ii) definitions and externals do NOT resolve inside one shared
+        //     Cranelift module either — each module gets a fresh
+        //     `ObjectModule`, and `declare_external_function` below declares
+        //     imports with the platform default signature independently of
+        //     how the defining object compiled the body.
+        //
+        // Therefore the worst-case rule applies: only the executable entry
+        // object (`opts.emit_executable`, which is also the single object of
+        // a single-file `--emit-exe` build, and the `main` module of a
+        // project build) may use `CallConv::Tail`; every library/manual-link
+        // object declares default convention. All importers (including
+        // `declare_external_function` above) already declare the default, so
+        // every cross-object import pair now matches. Residual gap: an
+        // object importing a function defined in the *entry* object would
+        // still mismatch — that requires the entry module to be imported by
+        // a sibling module, i.e. a dependency cycle the project planner
+        // rejects; reported rather than silently accepted.
+        let tail_ineligible = CodeGenerator::collect_tail_ineligible_functions(ir_module.functions.iter());
+        let tail_allowed = opts.emit_executable;
+
         // AOT compiles one relocatable object per source module. Imported
         // user functions therefore need explicit declarations in the current
         // ObjectModule so Cranelift emits undefined relocations for the native
@@ -289,7 +321,13 @@ impl AotCodeGenerator {
 
         // First pass: declare all functions.
         for func in &ir_module.functions {
-            self.declare_function(&ir_module.name, func, rename_main)?;
+            self.declare_function(
+                &ir_module.name,
+                func,
+                rename_main,
+                tail_allowed,
+                &tail_ineligible,
+            )?;
         }
 
         // Function parameter types for call-site argument coercion.
@@ -396,13 +434,18 @@ impl AotCodeGenerator {
         module_name: &str,
         ir_func: &IRFunction,
         rename_main: bool,
+        tail_allowed: bool,
+        tail_ineligible: &HashSet<String>,
     ) -> BackendResult<FuncId> {
         let mut sig = self.module.make_signature();
-        if CodeGenerator::uses_tail_call_convention(ir_func) {
+        if CodeGenerator::uses_tail_call_convention(ir_func, tail_allowed, tail_ineligible) {
             // Self-tail-recursive functions need `CallConv::Tail` so the
-            // backend can emit Cranelift's native `return_call`. The exported
-            // symbol ABI differs from the platform default, which is safe
-            // because only Spectra-compiled code calls these functions.
+            // backend can emit Cranelift's native `return_call`. Only the
+            // executable entry object grants this (see the eligibility
+            // comment in `compile_to_object_with_locations_and_stats`):
+            // library objects export symbols that sibling objects import with
+            // the platform default signature, and the definer cannot see
+            // those importers.
             sig.call_conv = isa::CallConv::Tail;
         }
         let callback = CodeGenerator::async_callback_kind(ir_func);
@@ -501,7 +544,13 @@ impl AotCodeGenerator {
         let mut value_map = DenseValueMap::with_capacity(ir_func.next_value_id);
         let mut block_map: HashMap<usize, Block> = HashMap::new();
         let mut allocation_vars: Vec<Variable> = Vec::new();
-        let mut stack_array_lengths: HashMap<usize, i64> = HashMap::new();
+        // Logical lengths keyed by the defining IR value: `array_lengths`
+        // holds element counts for char/int array allocas (stack *and*
+        // manual-heap), `string_literal_lengths` holds byte lengths of
+        // string literals excluding the trailing NUL. The two kinds are
+        // strictly separated so `StringLen`/`char_at` consumers never mix
+        // NUL-terminated string storage with plain arrays.
+        let mut array_lengths: HashMap<usize, i64> = HashMap::new();
         let mut string_literal_lengths: HashMap<usize, i64> = HashMap::new();
         let stack_allocas = CodeGenerator::collect_stack_allocas(ir_func);
         let scalar_alloca_types =
@@ -592,13 +641,25 @@ impl AotCodeGenerator {
             }
         }
 
-        // Block parameters for PHI nodes are declared lazily by
-        // `get_phi_args`, typed from the first jump's argument values
-        // (see codegen.rs). Pre-declaring them here is unnecessary: every
-        // block carrying phis is targeted by at least one jump, which fixes
-        // the parameter types before use.
+        // Block parameters for PHI nodes are created by `get_phi_args` at the
+        // first jump into the block, typed from that jump's argument values.
+        // Blocks are generated in reverse-postorder
+        // (`CodeGenerator::block_emission_order`), which guarantees that
+        // first jump exists before the block's own `Phi` instructions are
+        // lowered; the I64 padding left in `generate_value_instruction` only
+        // covers blocks no jump ever targets (unreachable merges).
 
-        let blocks = ir_func.blocks.clone();
+        let emission_order = CodeGenerator::block_emission_order(ir_func);
+        let mut blocks_by_id: HashMap<usize, spectra_midend::ir::BasicBlock> = ir_func
+            .blocks
+            .clone()
+            .into_iter()
+            .map(|block| (block.id, block))
+            .collect();
+        let blocks: Vec<spectra_midend::ir::BasicBlock> = emission_order
+            .iter()
+            .filter_map(|id| blocks_by_id.remove(id))
+            .collect();
         let mut emitted_tail_call = false;
         let mut hostcall = HostCallLoweringContext {
             bindings: &self.runtime_bindings,
@@ -619,7 +680,7 @@ impl AotCodeGenerator {
                 &mut value_map,
                 &block_map,
                 &mut allocation_vars,
-                &mut stack_array_lengths,
+                &mut array_lengths,
                 &mut string_literal_lengths,
                 &stack_allocas,
                 &scalar_alloca_vars,
@@ -789,8 +850,11 @@ impl Default for AotCodeGenerator {
 impl AotCodeGenerator {
     /// Synthesises a native `main(int argc, char** argv)` entry point that:
     ///   1. calls `spectra_rt_startup_with_args(argc, argv)` to initialise the runtime;
-    ///   2. calls `spectra_user_main()` (the renamed Spectra `main` function);
-    ///   3. returns `0` to the OS.
+    ///   2. calls `spectra_user_main()` (the renamed Spectra `main` function)
+    ///      and captures its return value;
+    ///   3. calls `spectra_rt_maybe_pause()`;
+    ///   4. returns the captured value as the process exit code (0 when
+    ///      `main` is void), truncated to the low 32 bits.
     fn generate_exe_entry_point(&mut self, register_api: bool) -> BackendResult<()> {
         // ── declare spectra_rt_startup_with_args import ──────────────────────
         let mut startup_sig = self.module.make_signature();
@@ -913,11 +977,35 @@ impl AotCodeGenerator {
             }
         }
 
-        // Call spectra_user_main() — ignore any return value
+        // Call spectra_user_main() and capture its result *before* the pause
+        // call below: the shim must propagate the Spectra `main` return value
+        // as the process exit code instead of unconditionally returning 0.
+        // A void `main` declares no result and keeps exit code 0; a value
+        // result is truncated to the low 32 bits of the exit code.
         let user_main_ref = self
             .module
             .declare_func_in_func(user_main_func_id, builder.func);
-        builder.ins().call(user_main_ref, &[]);
+        let main_call = builder.ins().call(user_main_ref, &[]);
+        let exit_code = match builder.inst_results(main_call).first() {
+            Some(&value) => match builder.func.dfg.value_type(value) {
+                types::I32 => value,
+                types::F32 => {
+                    // A float `main` is not a supported source shape, but keep
+                    // the shim verifier-clean if one is declared: reinterpret
+                    // the bits instead of trapping on a same-width convert.
+                    builder
+                        .ins()
+                        .bitcast(types::I32, MemFlags::new(), value)
+                }
+                types::F64 => {
+                    let bits = builder.ins().bitcast(types::I64, MemFlags::new(), value);
+                    builder.ins().ireduce(types::I32, bits)
+                }
+                // I64 (`int`), I8/I16 (bool/narrow widths): truncate.
+                _ => builder.ins().ireduce(types::I32, value),
+            },
+            None => builder.ins().iconst(types::I32, 0),
+        };
 
         // Call spectra_rt_maybe_pause() — no-op unless SPECTRA_PAUSE_ON_EXIT=1.
         let pause_sig = self.module.make_signature();
@@ -935,9 +1023,8 @@ impl AotCodeGenerator {
             .declare_func_in_func(pause_func_id, builder.func);
         builder.ins().call(pause_ref, &[]);
 
-        // return 0
-        let zero = builder.ins().iconst(types::I32, 0);
-        builder.ins().return_(&[zero]);
+        // Return the captured exit code (0 for a void `main`).
+        builder.ins().return_(&[exit_code]);
         builder.finalize();
 
         self.module
@@ -1435,6 +1522,123 @@ mod tests {
         assert!(
             !line_rows.iter().any(|(name, _, _)| name == "main"),
             "no span means no real rows (uniform fallback applies), got {line_rows:?}"
+        );
+    }
+
+    /// `CallConv::Tail` eligibility for AOT objects (see the long comment in
+    /// `compile_to_object_with_locations_and_stats`): library objects always
+    /// declare the platform default (their importers declare the default
+    /// symbol signature), the executable entry object may use Tail, and a
+    /// function whose address is taken never does — not even in an entry
+    /// object, because `CallIndirect` rebuilds a default-convention
+    /// signature.
+    #[test]
+    fn aot_tail_convention_is_granted_only_to_entry_objects_and_never_when_address_taken() {
+        fn tail_recursive() -> IRFunction {
+            let mut function = IRFunction::new(
+                "loop_sum",
+                vec![
+                    Parameter {
+                        id: 0,
+                        name: "n".to_string(),
+                        ty: IRType::Int,
+                    },
+                    Parameter {
+                        id: 1,
+                        name: "acc".to_string(),
+                        ty: IRType::Int,
+                    },
+                ],
+                IRType::Int,
+            );
+            let entry = function.add_block("entry");
+            let block = function.get_block_mut(entry).unwrap();
+            block.add_instruction(InstructionKind::Call {
+                result: Some(IRValue { id: 2 }),
+                function: "loop_sum".to_string(),
+                args: vec![IRValue { id: 0 }, IRValue { id: 1 }],
+                is_tail: true,
+            });
+            block.set_terminator(Terminator::Return {
+                value: Some(IRValue { id: 2 }),
+            });
+            function.next_value_id = 3;
+            function
+        }
+
+        let func = tail_recursive();
+        let tail_ineligible =
+            CodeGenerator::collect_tail_ineligible_functions(std::iter::once(&func));
+        assert!(tail_ineligible.is_empty(), "no FuncAddr in the function");
+
+        // Library/manual-link object (default `AotOptions`): default conv.
+        let mut lib = AotCodeGenerator::new();
+        let default_conv = lib.module.make_signature().call_conv;
+        lib.declare_function("library_module", &func, false, false, &tail_ineligible)
+            .expect("declare library object function");
+        let lib_id = *lib.function_map.get("loop_sum").expect("declared");
+        assert_eq!(
+            lib.module
+                .declarations()
+                .get_function_decl(lib_id)
+                .signature
+                .call_conv,
+            default_conv,
+            "importable library functions keep the platform default so their \
+             cross-object imports match"
+        );
+
+        // Executable entry object (`emit_executable`): Tail is granted.
+        let mut exe = AotCodeGenerator::new();
+        exe.declare_function("entry_module", &func, false, true, &tail_ineligible)
+            .expect("declare entry object function");
+        let exe_id = *exe.function_map.get("loop_sum").expect("declared");
+        assert_eq!(
+            exe.module
+                .declarations()
+                .get_function_decl(exe_id)
+                .signature
+                .call_conv,
+            isa::CallConv::Tail,
+            "clean self-tail-recursion in the entry object keeps Tail"
+        );
+
+        // Address taken somewhere in the module: default, even in an entry
+        // object (CallIndirect would rebuild a default signature).
+        let mut user = IRFunction::new("main", vec![], IRType::Int);
+        let user_entry = user.add_block("entry");
+        user
+            .get_block_mut(user_entry)
+            .unwrap()
+            .add_instruction(InstructionKind::FuncAddr {
+                result: IRValue { id: 0 },
+                function: "loop_sum".to_string(),
+            });
+        user
+            .get_block_mut(user_entry)
+            .unwrap()
+            .set_terminator(Terminator::Return {
+                value: Some(IRValue { id: 0 }),
+            });
+        user.next_value_id = 1;
+        let taken =
+            CodeGenerator::collect_tail_ineligible_functions(std::iter::once(&user));
+        assert!(taken.contains("loop_sum"));
+
+        let mut exe_taken = AotCodeGenerator::new();
+        exe_taken
+            .declare_function("entry_module", &func, false, true, &taken)
+            .expect("declare address-taken function");
+        let taken_id = *exe_taken.function_map.get("loop_sum").expect("declared");
+        assert_eq!(
+            exe_taken
+                .module
+                .declarations()
+                .get_function_decl(taken_id)
+                .signature
+                .call_conv,
+            default_conv,
+            "an address-taken function never uses Tail"
         );
     }
 }

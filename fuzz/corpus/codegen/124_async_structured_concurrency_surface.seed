@@ -1,0 +1,16 @@
+module async_structured_concurrency_surface
+
+async func child(value: int) returns int {
+    return value
+}
+
+async func parent() returns int {
+    let left  = await child(17)
+    let right = await child(25)
+    return left + right
+}
+
+func main() returns int {
+    let task = parent()
+    return 0
+}

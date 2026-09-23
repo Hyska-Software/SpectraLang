@@ -8,6 +8,19 @@ impl SemanticAnalyzer {
         scrutinee_type: &Type,
         match_span: Span,
     ) {
+        if self.enter_analysis_depth(match_span).is_err() {
+            return;
+        }
+        self.validate_pattern_against_type_inner(pattern, scrutinee_type, match_span);
+        self.exit_analysis_depth();
+    }
+
+    fn validate_pattern_against_type_inner(
+        &mut self,
+        pattern: &Pattern,
+        scrutinee_type: &Type,
+        match_span: Span,
+    ) {
         use crate::ast::Pattern;
 
         match pattern {
@@ -25,8 +38,9 @@ impl SemanticAnalyzer {
                 if !self.generic_argument_types_match(&literal_type, scrutinee_type) {
                     self.error(
                         format!(
-                            "Pattern literal of type {:?} cannot match value of type {:?}",
-                            literal_type, scrutinee_type
+                            "Pattern literal of type {} cannot match value of type {}",
+                            type_name(&literal_type),
+                            type_name(scrutinee_type)
                         ),
                         expr.span,
                     );
@@ -55,7 +69,10 @@ impl SemanticAnalyzer {
                 Type::Unknown => {}
                 other => {
                     self.error(
-                        format!("Tuple pattern cannot match value of type {:?}", other),
+                        format!(
+                            "Tuple pattern cannot match value of type {}",
+                            type_name(other)
+                        ),
                         match_span,
                     );
                 }

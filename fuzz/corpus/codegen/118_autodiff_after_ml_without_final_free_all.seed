@@ -1,0 +1,37 @@
+module autodiff_after_ml_without_final_free_all
+
+import std.ml as ml
+import std.tensor as tensor
+
+func vector_total(values: Tensor<float, rank1, dim4, row_major, cpu>) returns int {
+    return tensor.sum_f(values) as int
+}
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled( true)
+
+    let x: Tensor<float, rank2, dim2, dim2, row_major, cpu> = [[1.0, 1.0], [1.0, 1.0]]
+    let w: Tensor<float, rank2, dim2, dim1, row_major, cpu> = [[2.0], [2.0]]
+    let b: Tensor<float, rank1, dim1, row_major, cpu>       = [0.0]
+    let y                                                   = ml.linear(x, w, b)
+    if tensor.rows(y) != 2 {
+        return 1
+    }
+
+    let v_base: Tensor<float, rank1, dim4, row_major, cpu> = [1.0, 2.0, 3.0, 4.0]
+    let v: Tensor<float, rank1, dim4, row_major, cpu>      = tensor.requires_grad(v_base, true)
+    if vector_total(v) != 10 {
+        return 2
+    }
+
+    let loss: Tensor<float, rank0> = diff {
+        tensor.sum_t(tensor.mul(v, v))
+    }
+    let grad = tensor.grad(v)
+    if tensor.len(grad) != 4 {
+        return 3
+    }
+
+    return 0
+}

@@ -226,16 +226,18 @@ where
                 .collect());
         }
 
-        // Register the exports of this module so subsequent modules can import it.
-        let exports = semantic.collect_module_exports(&ast, self.package_name.clone());
-        let mut reg = self
-            .registry
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        reg.register_module(ast.name.clone(), exports);
-        drop(reg);
-
-        let lint_diagnostics = lint_module(&ast, &self.options.lint);
+        // Register the exports of this module only after every gate (semantic
+        // analysis and lint) has passed, so a module that fails any gate never
+        // publishes a contract into the shared registry. The registry entry
+        // only serves *subsequent* `compile` calls, so placing it at the end of
+        // this function is behaviorally identical for multi-module builds.
+        let lint_diagnostics = match lint_module(&ast, &self.options.lint) {
+            Ok(diagnostics) => diagnostics,
+            Err(guard_error) => {
+                // The lint walk tripped the frontend recursion guard (`P013`).
+                return Err(vec![CompilerError::Semantic(guard_error)]);
+            }
+        };
         let mut lint_warnings: Vec<LintDiagnostic> = Vec::new();
         let mut lint_errors: Vec<CompilerError> = Vec::new();
 
@@ -269,6 +271,16 @@ where
         if !lint_errors.is_empty() {
             return Err(lint_errors);
         }
+
+        // All gates passed (semantic + lint): publish this module's contract
+        // into the shared registry so subsequent modules can import it.
+        let exports = semantic.collect_module_exports(&ast, self.package_name.clone());
+        let mut reg = self
+            .registry
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        reg.register_module(ast.name.clone(), exports);
+        drop(reg);
 
         let backend_start = collect_metrics.then(Instant::now);
         let backend_artifacts = self.backend.run(&ast, &self.options)?;
@@ -416,5 +428,81 @@ mod tests {
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert!(!errors.is_empty());
+    }
+
+    fn has_module(pipeline: &CompilationPipeline<NoopBackend>, name: &str) -> bool {
+        pipeline
+            .registry()
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get_module(name)
+            .is_some()
+    }
+
+    #[test]
+    fn failing_lint_gate_does_not_publish_module_exports() {
+        // Regression: exports used to be registered before the lint gate, so
+        // a module denied by lint still leaked its contract into the shared
+        // registry for downstream modules.
+        use crate::lint::LintRule;
+        let mut options = CompilationOptions::default();
+        options.lint.deny_rule(LintRule::UnreachableCode);
+        let source = r#"
+            module lint_gated
+
+            public func main() returns int {
+                return 0
+                let dead = 1
+            }
+        "#;
+
+        let mut pipeline = CompilationPipeline::new(options);
+        pipeline
+            .compile(source, "lint_gated.spectra")
+            .expect_err("denied lint rule must fail the gate");
+        assert!(
+            !has_module(&pipeline, "lint_gated"),
+            "a module failing the lint gate must not publish exports"
+        );
+    }
+
+    #[test]
+    fn passing_gates_publish_module_exports() {
+        let source = r#"
+            module gate_ok
+
+            public func helper() returns int {
+                return 41
+            }
+        "#;
+
+        let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
+        pipeline
+            .compile(source, "gate_ok.spectra")
+            .expect("clean module must compile");
+        assert!(
+            has_module(&pipeline, "gate_ok"),
+            "a module that passes every gate must publish exports"
+        );
+    }
+
+    #[test]
+    fn failing_semantic_gate_does_not_publish_module_exports() {
+        let source = r#"
+            module semantic_gated
+
+            public func main() returns int {
+                return missing_symbol
+            }
+        "#;
+
+        let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
+        pipeline
+            .compile(source, "semantic_gated.spectra")
+            .expect_err("semantic error must fail the gate");
+        assert!(
+            !has_module(&pipeline, "semantic_gated"),
+            "a module failing the semantic gate must not publish exports"
+        );
     }
 }

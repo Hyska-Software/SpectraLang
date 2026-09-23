@@ -20,14 +20,18 @@ impl TensorGraphFunction {
                     InstructionKind::Mul { result, lhs, rhs } => {
                         extractor.fold_const_int(*result, *lhs, *rhs, i64::saturating_mul);
                     }
-                    InstructionKind::Div { result, lhs, rhs } => {
+                    InstructionKind::Div { result, lhs, rhs, .. } => {
+                        // `checked_div` (not `/`) rejects division by zero
+                        // and `MIN / -1`, the two cases the backend turns
+                        // into runtime traps; plain `/` would panic the
+                        // compiler process on a valid program.
                         extractor.fold_const_int_checked(*result, *lhs, *rhs, |left, right| {
-                            (right != 0).then(|| left / right)
+                            left.checked_div(right)
                         });
                     }
-                    InstructionKind::Rem { result, lhs, rhs } => {
+                    InstructionKind::Rem { result, lhs, rhs, .. } => {
                         extractor.fold_const_int_checked(*result, *lhs, *rhs, |left, right| {
-                            (right != 0).then(|| left % right)
+                            left.checked_rem(right)
                         });
                     }
                     InstructionKind::HostCall {

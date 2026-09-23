@@ -44,8 +44,10 @@ fn execute_build_command(kind: BuildCommand, invocation: CliInvocation) -> CliRe
             .map_err(|e| CliError::io(format!("Cannot read '{}': {}", source_path.display(), e)))?;
         let filename = source_path.to_string_lossy().to_string();
         let native_debug = matches!(options.debug_info, DebugInfoMode::Native);
+        // `emit_output` stays enabled so object emission reports the same
+        // lint warnings as the normal compile path (see
+        // `emit_lint_warnings_shifted`); this path adds no other output.
         let mut compiler = SpectraCompiler::new(options);
-        compiler.set_emit_output(false);
         let (obj_bytes, debug_metadata) = compiler
             .compile_to_object_with_debug_metadata(&source, &filename)
             .map_err(CliError::compilation)?;
@@ -77,6 +79,16 @@ fn execute_build_command(kind: BuildCommand, invocation: CliInvocation) -> CliRe
             .map_err(|e| CliError::io(format!("Cannot read '{}': {}", source_path.display(), e)))?;
         let filename = source_path.to_string_lossy().to_string();
 
+        // Shared single-entry rule (same as the JIT run path and the project
+        // AOT build): a source without `main` cannot yield a usable
+        // executable. Reject before compiling or linking so no stray
+        // artifact is left behind — the old failure surfaced only after
+        // linking, from the debug-map writer. Unparsable sources (`None`)
+        // are inconclusive; the compile below reports their real errors.
+        if scan_source_main(&source) == Some(false) {
+            return Err(CliError::compilation(missing_main_message()));
+        }
+
         // Locate the runtime static library before spending time compiling.
         let runtime_lib = runtime_lib::find_runtime_lib().ok_or_else(|| {
             CliError::compilation(
@@ -100,8 +112,9 @@ fn execute_build_command(kind: BuildCommand, invocation: CliInvocation) -> CliRe
         let obj_path = exe_path.with_extension("spectra_tmp.obj");
 
         let native_debug = matches!(options.debug_info, DebugInfoMode::Native);
+        // `emit_output` stays enabled so executable emission reports the
+        // same lint warnings as the normal compile path.
         let mut compiler = SpectraCompiler::new(options);
-        compiler.set_emit_output(false);
         let (obj_bytes, debug_metadata) = compiler
             .compile_to_executable_object_with_debug_metadata(&source, &filename)
             .map_err(CliError::compilation)?;
@@ -239,6 +252,12 @@ fn execute_project_executable(
     _verbose: bool,
 ) -> CliResult<()> {
     let plan = ProjectPlan::build(entries).map_err(|error| CliError::io(error.to_string()))?;
+    // Same exactly-one-`main` rule as the JIT `run`/`compile --run` paths,
+    // enforced before any object is written so JIT and AOT agree on which
+    // projects can produce a program.
+    if let Err(message) = scan_entry_points(&plan).single_main() {
+        return Err(CliError::compilation(message));
+    }
     let runtime_lib = runtime_lib::find_runtime_lib().ok_or_else(|| {
         CliError::compilation(
             "Cannot find libspectra_runtime.a / spectra_runtime.lib.\n\
@@ -276,11 +295,9 @@ fn execute_project_executable(
     let result = (|| {
         let native_debug = matches!(options.debug_info, DebugInfoMode::Native);
         let mut compiler = SpectraCompiler::new(options);
-        compiler.set_emit_output(false);
         let mut object_paths = Vec::with_capacity(plan.modules().len());
         let mut main_source_path: Option<PathBuf> = None;
         let mut main_source = String::new();
-        let mut main_count = 0usize;
 
         for (index, module) in plan.modules().iter().enumerate() {
             compiler.set_current_package_name(module.package_name.clone());
@@ -303,12 +320,6 @@ fn execute_project_executable(
             };
             let defines_main = source_defines_main(effective_source);
             if defines_main {
-                main_count += 1;
-                if main_count > 1 {
-                    return Err(CliError::compilation(
-                        "A project AOT build must contain exactly one `main` function.",
-                    ));
-                }
                 main_source_path = Some(module.path.clone());
                 main_source = source.clone();
             }
@@ -348,9 +359,7 @@ fn execute_project_executable(
         }
 
         let main_source_path = main_source_path.ok_or_else(|| {
-            CliError::compilation(
-                "Project AOT compilation requires one function named `main`.",
-            )
+            CliError::compilation(missing_main_message())
         })?;
         linker::link_executable_many(
             &object_paths,
@@ -375,18 +384,6 @@ fn execute_project_executable(
 
     let _ = fs::remove_dir_all(&temp_dir);
     result
-}
-
-fn source_defines_main(source: &str) -> bool {
-    let Ok(tokens) = Lexer::new(source).tokenize() else {
-        return false;
-    };
-    let Ok(module) = Parser::new(tokens).parse() else {
-        return false;
-    };
-    module.items.iter().any(|item| {
-        matches!(item, Item::Function(function) if function.name == "main")
-    })
 }
 
 fn compile_plan(
@@ -478,48 +475,6 @@ fn compile_plan(
     }
 
     (has_failures, summaries)
-}
-
-/// Returns `true` when the source already contains an explicit `module <name>`
-/// declaration at the start of the file, ignoring blank lines and both `//`
-/// line comments and `/* */` block comments.
-fn source_has_module_decl(source: &str) -> bool {
-    let bytes = source.as_bytes();
-    let len = bytes.len();
-    let mut i = 0;
-
-    loop {
-        // Skip whitespace
-        while i < len && matches!(bytes[i], b' ' | b'\t' | b'\r' | b'\n') {
-            i += 1;
-        }
-
-        if i >= len {
-            return false;
-        }
-
-        if bytes[i] == b'/' {
-            if i + 1 < len && bytes[i + 1] == b'/' {
-                // Skip line comment
-                i += 2;
-                while i < len && bytes[i] != b'\n' {
-                    i += 1;
-                }
-                continue;
-            } else if i + 1 < len && bytes[i + 1] == b'*' {
-                // Skip block comment
-                i += 2;
-                while i + 1 < len && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
-                    i += 1;
-                }
-                i += 2; // consume '*/'
-                continue;
-            }
-        }
-
-        // Next non-whitespace, non-comment content: check for `module `
-        return bytes[i..].starts_with(b"module ");
-    }
 }
 
 fn print_pipeline_summary(summary: &ModulePipelineSummary) {

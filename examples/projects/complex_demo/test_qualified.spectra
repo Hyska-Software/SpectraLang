@@ -3,7 +3,7 @@ module test_qualified
 import math_utils
 import std.io
 
-public func main() returns int {
+public func test_qualified_entry() returns int {
     let d      = math_utils::distance(0, 0, 3, 4)
     let f      = math_utils::factorial(5)
     let g      = math_utils::gcd(48, 18)

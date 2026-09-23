@@ -185,6 +185,7 @@ mod narrowing_cast_tests {
 
     fn narrowing_diagnostics(source: &str) -> Vec<String> {
         lint_module(&parse(source), &LintOptions::default())
+            .expect("lint walk must not trip the recursion guard")
             .into_iter()
             .filter(|diagnostic| diagnostic.rule == LintRule::NarrowingCast)
             .map(|diagnostic| diagnostic.message)
@@ -317,7 +318,9 @@ mod narrowing_cast_tests {
         "#;
         let mut options = LintOptions::disabled();
         options.deny_rule(LintRule::Shadowing);
-        assert!(lint_module(&parse(source), &options).is_empty());
+        assert!(lint_module(&parse(source), &options)
+            .expect("lint walk must not trip the recursion guard")
+            .is_empty());
     }
 
     #[test]

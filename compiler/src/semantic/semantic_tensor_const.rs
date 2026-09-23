@@ -419,7 +419,14 @@ impl SemanticAnalyzer {
     }
 
     pub(crate) fn analyze_const_decl(&mut self, decl: &ConstDecl) {
+        let declared = decl
+            .ty
+            .as_ref()
+            .map(|_| self.type_annotation_to_type_checked(&decl.ty));
+        let saved_expected = self.current_expected_type.clone();
+        self.current_expected_type = declared.clone();
         self.analyze_expression(&decl.value);
+        self.current_expected_type = saved_expected;
         let Some(value) = self.eval_const_expression(&decl.value) else {
             self.error_with_hint(
                 format!(
@@ -433,11 +440,7 @@ impl SemanticAnalyzer {
         };
 
         let inferred = value.ty();
-        let declared = decl
-            .ty
-            .as_ref()
-            .map(|_| self.type_annotation_to_type_checked(&decl.ty))
-            .unwrap_or_else(|| inferred.clone());
+        let declared = declared.unwrap_or_else(|| inferred.clone());
 
         if let Err(message) = Self::const_value_fits_type(&value, &declared) {
             self.error_coded("E2903", message, decl.span);
@@ -470,17 +473,21 @@ impl SemanticAnalyzer {
 
     fn const_value_fits_type(value: &ConstValue, target: &Type) -> Result<(), String> {
         match (value, target) {
-            (ConstValue::Int(value), Type::ExactInt { signed, width }) => {
-                let bits = match width {
+            (ConstValue::Int(value), target @ (Type::Int | Type::ExactInt { .. })) => {
+                let (signed, bits) = match target {
+                    Type::Int => (true, 64),
+                    Type::ExactInt { signed, width } => (*signed, match width {
                     IntWidth::I8 => 8,
                     IntWidth::I16 => 16,
                     IntWidth::I32 => 32,
                     IntWidth::I64 | IntWidth::Isize | IntWidth::Usize => 64,
+                    }),
+                    _ => unreachable!(),
                 };
-                let fits = if *signed {
+                let fits = if signed {
                     let min = -(1_i128 << (bits - 1));
                     let max = (1_i128 << (bits - 1)) - 1;
-                    (*value as i128) >= min && (*value as i128) <= max
+                    *value >= min && *value <= max
                 } else {
                     *value >= 0 && (*value as u128) <= ((1_u128 << bits) - 1)
                 };
@@ -520,7 +527,14 @@ impl SemanticAnalyzer {
     }
 
     pub(crate) fn analyze_static_decl(&mut self, decl: &StaticDecl) {
+        let declared = decl
+            .ty
+            .as_ref()
+            .map(|_| self.type_annotation_to_type_checked(&decl.ty));
+        let saved_expected = self.current_expected_type.clone();
+        self.current_expected_type = declared.clone();
         self.analyze_expression(&decl.value);
+        self.current_expected_type = saved_expected;
         let Some(value) = self.eval_const_expression(&decl.value) else {
             self.error_coded_with_hint(
                 "E2902",
@@ -535,11 +549,7 @@ impl SemanticAnalyzer {
         };
 
         let inferred = value.ty();
-        let declared = decl
-            .ty
-            .as_ref()
-            .map(|_| self.type_annotation_to_type_checked(&decl.ty))
-            .unwrap_or_else(|| inferred.clone());
+        let declared = declared.unwrap_or_else(|| inferred.clone());
 
         if let Err(message) = Self::const_value_fits_type(&value, &declared) {
             self.error_coded("E2903", message, decl.span);
@@ -591,11 +601,20 @@ impl SemanticAnalyzer {
 
     pub(crate) fn eval_const_expression(&self, expr: &Expression) -> Option<ConstValue> {
         match &expr.kind {
-            ExpressionKind::NumberLiteral(raw) => match crate::numeric::parse_number_literal(raw) {
-                Some(crate::numeric::ParsedNumber::Int(v)) => Some(ConstValue::Int(v)),
-                Some(crate::numeric::ParsedNumber::Float(v)) => Some(ConstValue::Float(v)),
-                None => None,
-            },
+            ExpressionKind::NumberLiteral(raw) => {
+                if crate::numeric::number_literal_is_float(raw) {
+                    crate::numeric::parse_number_literal(raw).and_then(|value| match value {
+                        crate::numeric::ParsedNumber::Float(value) => {
+                            Some(ConstValue::Float(value))
+                        }
+                        crate::numeric::ParsedNumber::Int(value) => {
+                            Some(ConstValue::Int(value as i128))
+                        }
+                    })
+                } else {
+                    crate::numeric::parse_number_literal_as_i128(raw).map(ConstValue::Int)
+                }
+            }
             ExpressionKind::StringLiteral(value) => Some(ConstValue::String(value.clone())),
             ExpressionKind::BoolLiteral(value) => Some(ConstValue::Bool(*value)),
             ExpressionKind::CharLiteral(value) => Some(ConstValue::Char(*value)),
@@ -604,7 +623,9 @@ impl SemanticAnalyzer {
             ExpressionKind::Unary { operator, operand } => {
                 let value = self.eval_const_expression(operand)?;
                 match (operator, value) {
-                    (UnaryOperator::Negate, ConstValue::Int(v)) => Some(ConstValue::Int(-v)),
+                    (UnaryOperator::Negate, ConstValue::Int(v)) => {
+                        v.checked_neg().map(ConstValue::Int)
+                    }
                     (UnaryOperator::Negate, ConstValue::Float(v)) => Some(ConstValue::Float(-v)),
                     (UnaryOperator::Not, ConstValue::Bool(v)) => Some(ConstValue::Bool(!v)),
                     _ => None,
@@ -643,7 +664,7 @@ impl SemanticAnalyzer {
 
         match operator {
             BinaryOperator::Add => match (left, right) {
-                (Int(a), Int(b)) => Some(Int(a + b)),
+                (Int(a), Int(b)) => a.checked_add(b).map(Int),
                 (Float(a), Float(b)) => Some(Float(a + b)),
                 (Int(a), Float(b)) => Some(Float(a as f64 + b)),
                 (Float(a), Int(b)) => Some(Float(a + b as f64)),
@@ -651,14 +672,14 @@ impl SemanticAnalyzer {
                 _ => None,
             },
             BinaryOperator::Subtract => match (left, right) {
-                (Int(a), Int(b)) => Some(Int(a - b)),
+                (Int(a), Int(b)) => a.checked_sub(b).map(Int),
                 (Float(a), Float(b)) => Some(Float(a - b)),
                 (Int(a), Float(b)) => Some(Float(a as f64 - b)),
                 (Float(a), Int(b)) => Some(Float(a - b as f64)),
                 _ => None,
             },
             BinaryOperator::Multiply => match (left, right) {
-                (Int(a), Int(b)) => Some(Int(a * b)),
+                (Int(a), Int(b)) => a.checked_mul(b).map(Int),
                 (Float(a), Float(b)) => Some(Float(a * b)),
                 (Int(a), Float(b)) => Some(Float(a as f64 * b)),
                 (Float(a), Int(b)) => Some(Float(a * b as f64)),
@@ -666,7 +687,7 @@ impl SemanticAnalyzer {
             },
             BinaryOperator::Divide => match (left, right) {
                 (Int(_), Int(0)) | (Float(_), Float(0.0)) => None,
-                (Int(a), Int(b)) => Some(Int(a / b)),
+                (Int(a), Int(b)) => a.checked_div(b).map(Int),
                 (Float(a), Float(b)) => Some(Float(a / b)),
                 (Int(a), Float(b)) if b != 0.0 => Some(Float(a as f64 / b)),
                 (Float(a), Int(b)) if b != 0 => Some(Float(a / b as f64)),
@@ -674,7 +695,7 @@ impl SemanticAnalyzer {
             },
             BinaryOperator::Modulo => match (left, right) {
                 (Int(_), Int(0)) => None,
-                (Int(a), Int(b)) => Some(Int(a % b)),
+                (Int(a), Int(b)) => a.checked_rem(b).map(Int),
                 _ => None,
             },
             BinaryOperator::Equal => Some(Bool(self.const_values_equal(&left, &right))),
@@ -700,9 +721,26 @@ impl SemanticAnalyzer {
         right: ConstValue,
         cmp: impl FnOnce(f64, f64) -> bool,
     ) -> Option<ConstValue> {
-        let left = self.const_value_as_f64(&left)?;
-        let right = self.const_value_as_f64(&right)?;
-        Some(ConstValue::Bool(cmp(left, right)))
+        match (&left, &right) {
+            (ConstValue::Int(a), ConstValue::Int(b)) => {
+                // Preserve exact ordering for wide integer constants instead
+                // of rounding both values through f64.
+                let ordering = a.cmp(b);
+                Some(ConstValue::Bool(cmp(
+                    match ordering {
+                        std::cmp::Ordering::Less => -1.0,
+                        std::cmp::Ordering::Equal => 0.0,
+                        std::cmp::Ordering::Greater => 1.0,
+                    },
+                    0.0,
+                )))
+            }
+            _ => {
+                let left = self.const_value_as_f64(&left)?;
+                let right = self.const_value_as_f64(&right)?;
+                Some(ConstValue::Bool(cmp(left, right)))
+            }
+        }
     }
 
     fn const_value_as_f64(&self, value: &ConstValue) -> Option<f64> {
@@ -728,11 +766,21 @@ impl SemanticAnalyzer {
 
     fn cast_const_value(&self, value: ConstValue, target: &Type) -> Option<ConstValue> {
         match (value, target) {
-            (ConstValue::Int(v), Type::Int) => Some(ConstValue::Int(v)),
+            (ConstValue::Int(v), Type::Int)
+                if (i64::MIN as i128..=i64::MAX as i128).contains(&v) =>
+            {
+                Some(ConstValue::Int(v))
+            }
             (ConstValue::Int(v), Type::Float) => Some(ConstValue::Float(v as f64)),
-            (ConstValue::Int(v), Type::Char) => char::from_u32(v as u32).map(ConstValue::Char),
+            (ConstValue::Int(v), Type::Char) => u32::try_from(v)
+                .ok()
+                .and_then(char::from_u32)
+                .map(ConstValue::Char),
             (ConstValue::Float(v), Type::Float) => Some(ConstValue::Float(v)),
-            (ConstValue::Float(v), Type::Int) => Some(ConstValue::Int(v as i64)),
+            (ConstValue::Float(v), Type::Int) => {
+                (v.is_finite() && v >= i64::MIN as f64 && v <= i64::MAX as f64)
+                    .then_some(ConstValue::Int(v as i128))
+            }
             (ConstValue::Int(v), Type::ExactInt { signed, width }) => {
                 let bits = match width {
                     IntWidth::I8 => 8,
@@ -743,7 +791,7 @@ impl SemanticAnalyzer {
                 let fits = if *signed {
                     let min = -(1_i128 << (bits - 1));
                     let max = (1_i128 << (bits - 1)) - 1;
-                    (v as i128) >= min && (v as i128) <= max
+                    v >= min && v <= max
                 } else {
                     v >= 0 && (v as u128) <= ((1_u128 << bits) - 1)
                 };
@@ -766,7 +814,7 @@ impl SemanticAnalyzer {
                 } else {
                     int >= 0 && (int as u128) <= ((1_u128 << bits) - 1)
                 };
-                fits.then_some(ConstValue::Int(int as i64))
+                fits.then_some(ConstValue::Int(int))
             }
             (
                 ConstValue::Int(v),
@@ -795,7 +843,7 @@ impl SemanticAnalyzer {
                 },
             ) if v.is_finite() => Some(ConstValue::Float(v)),
             (ConstValue::Char(v), Type::Char) => Some(ConstValue::Char(v)),
-            (ConstValue::Char(v), Type::Int) => Some(ConstValue::Int(v as i64)),
+            (ConstValue::Char(v), Type::Int) => Some(ConstValue::Int(v as i128)),
             (ConstValue::Bool(v), Type::Bool) => Some(ConstValue::Bool(v)),
             (ConstValue::String(v), Type::String) => Some(ConstValue::String(v)),
             _ => None,

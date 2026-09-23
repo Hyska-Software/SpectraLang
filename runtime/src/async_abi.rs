@@ -344,6 +344,38 @@ mod tests {
         assert_eq!(spectra_rt_coroutine_frame_load(frame, 0), -1);
     }
 
+    /// Freed frame addresses stay pinned in a bounded quarantine, so a newly
+    /// created frame cannot reuse an address a stale raw frame pointer may
+    /// still reference (the ABI carries no nonce; pinning is the strongest
+    /// runtime-only ABA guard available).
+    #[test]
+    fn freed_frame_addresses_are_quarantined_against_immediate_reuse() {
+        let _guard = crate::runtime_test_guard();
+        let frame = spectra_rt_coroutine_frame_alloc(1);
+        assert_ne!(frame, 0);
+        assert_eq!(spectra_rt_coroutine_frame_store(frame, 0, 7), 0);
+        let task = spectra_rt_coroutine_create(
+            frame,
+            ready_poll as *const () as usize as i64,
+            ready_drop as *const () as usize as i64,
+        );
+        assert_ne!(task, 0);
+        assert!(crate::stdlib::drop_coroutine_task(task).expect("drop task"));
+
+        // The stale raw pointer no longer resolves to a live frame...
+        assert_eq!(spectra_rt_coroutine_frame_load(frame, 0), -1);
+        assert_eq!(spectra_rt_coroutine_state_load(frame), -1);
+
+        // ...and its address is reserved: `Box<AsyncFrame>` has a fixed size,
+        // so without the quarantine the allocator could hand the very same
+        // address back and the stale pointer would alias the new frame.
+        let replacement = spectra_rt_coroutine_frame_alloc(1);
+        assert_ne!(
+            replacement, frame,
+            "a freed frame address must be quarantined, not reused"
+        );
+    }
+
     #[test]
     fn child_poll_status_maps_every_outcome() {
         // The mapping is what the parent's `await` observes. `AlreadyPolling`

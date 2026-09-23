@@ -1,0 +1,26 @@
+module bug_hunt_v2_276_lexer_parser_precedence
+
+import std.string as text
+
+public func main() returns int {
+    let precedence = 2 + 3 * 4 - 8 / 2 % 3
+    let grouped = (2 + 3) * (4 - 1)
+    let escaped = "a\nb\t\"c\"\\"
+
+    if precedence != 13 {
+        return 1
+    }
+    if grouped != 15 {
+        return 2
+    }
+    if not (true and not false) {
+        return 3
+    }
+    if text.len(escaped) != 8 {
+        return 4
+    }
+    if not text.contains(escaped, "\"c\"") {
+        return 5
+    }
+    return 0
+}

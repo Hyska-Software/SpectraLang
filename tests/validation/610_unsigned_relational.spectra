@@ -1,0 +1,59 @@
+// Teste 610: unsigned exact-width relational semantics.
+//
+// Regression: `Lt`/`Le`/`Gt`/`Ge` on exact-width unsigned integers used to
+// emit *signed* machine conditions, so u8 200 (bit pattern -56) compared as
+// smaller than 10 and any u64 above 2^63 compared as negative. Every check
+// below must hold under unsigned semantics; the program returns the numbered
+// code of the first wrong result and 0 only when all of them are right
+// (asserted for both JIT and AOT execution).
+module unsigned_relational
+
+public func main() returns int {
+    let hi: u8 = 200
+    let lo: u8 = 10
+
+    if not (hi > lo) {
+        return 1
+    }
+    if not (hi >= lo) {
+        return 2
+    }
+    if not (lo < hi) {
+        return 3
+    }
+    if not (lo <= hi) {
+        return 4
+    }
+    if hi == lo {
+        return 5
+    }
+
+    // Above 2^31: the signed bit pattern of `wide` is negative.
+    let wide: u32 = 4000000000
+    let narrow: u32 = 1000000000
+    if not (wide > narrow) {
+        return 6
+    }
+    if wide < narrow {
+        return 7
+    }
+    if not (wide >= wide) {
+        return 8
+    }
+
+    // Above 2^63: `bigger` wraps into the negative i64 range when its bits
+    // are reinterpreted as signed, so a signed compare flips the order.
+    let huge: u64 = 9000000000000000000
+    let bigger: u64 = huge * (2 as u64)
+    if not (bigger > huge) {
+        return 9
+    }
+    if bigger <= huge {
+        return 10
+    }
+    if not (bigger > huge and huge < bigger) {
+        return 11
+    }
+
+    return 0
+}

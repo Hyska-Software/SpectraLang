@@ -59,7 +59,9 @@ impl ASTLowering {
                 // Retornar ponteiro para o struct
                 struct_ptr
             }
-            _ => unreachable!("lowering expression category mismatch"),
+            _ => self.invalid_value(
+                "lower_expression_struct called with a non-struct-literal expression",
+            ),
         }
     }
 }

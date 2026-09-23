@@ -47,7 +47,8 @@ impl SemanticAnalyzer {
                 });
 
                 if let Some((expected, found)) = self.branch_type_mismatch(&branch_types) {
-                    self.error(
+                    self.error_coded(
+                        "E041",
                         format!(
                             "Incompatible branch types in if expression: expected {}, found {}",
                             type_name(&expected),
@@ -88,7 +89,8 @@ impl SemanticAnalyzer {
                 });
 
                 if let Some((expected, found)) = self.branch_type_mismatch(&branch_types) {
-                    self.error(
+                    self.error_coded(
+                        "E041",
                         format!(
                             "Incompatible branch types in unless expression: expected {}, found {}",
                             type_name(&expected),
@@ -162,7 +164,8 @@ impl SemanticAnalyzer {
                         );
                     }
                 } else if !matches!(index_type, Type::Int) {
-                    self.error(
+                    self.error_coded(
+                        "E042",
                         format!(
                             "Array index must be an integer, found {}",
                             type_name(&index_type)
@@ -182,7 +185,8 @@ impl SemanticAnalyzer {
                         );
                     }
                 } else if !matches!(array_type, Type::Array { .. } | Type::String) {
-                    self.error(
+                    self.error_coded(
+                        "E043",
                         format!(
                             "Cannot index into non-array type {}",
                             type_name(&array_type)
@@ -205,7 +209,8 @@ impl SemanticAnalyzer {
                 match tuple_type {
                     Type::Tuple { elements } => {
                         if *index >= elements.len() {
-                            self.error(
+                            self.error_coded(
+                                "E044",
                                 format!(
                                     "Tuple index {} out of bounds (tuple has {} elements)",
                                     index,
@@ -217,18 +222,20 @@ impl SemanticAnalyzer {
                     }
                     Type::Unknown => {
                         if !self.has_error_at_span(tuple.span) {
-                            self.error_with_hint(
+                            self.error_coded_with_hint(
+                                "E044",
                                 "Cannot determine the type of the tuple expression",
                                 tuple.span,
                                 "Use a typed tuple; unresolved values cannot be accessed by position.",
                             );
                         }
                     }
-                    _ => {
-                        self.error(
+                    other => {
+                        self.error_coded(
+                            "E044",
                             format!(
-                                "Cannot access tuple element on non-tuple type {:?}",
-                                tuple_type
+                                "Cannot access tuple element on non-tuple type {}",
+                                type_name(&other)
                             ),
                             tuple.span,
                         );
@@ -237,5 +244,83 @@ impl SemanticAnalyzer {
             }
             _ => unreachable!("expression category mismatch"),
         }
+    }
+}
+
+#[cfg(test)]
+mod aggregate_coded_diagnostic_tests {
+    use crate::{CompilationOptions, CompilationPipeline, CompilerError, SemanticError};
+
+    fn semantic_errors(source: &str) -> Vec<SemanticError> {
+        let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
+        let errors = pipeline
+            .compile(source, "aggregate_codes.spectra")
+            .expect_err("the source must be rejected");
+        errors
+            .into_iter()
+            .filter_map(|error| match error {
+                CompilerError::Semantic(semantic) => Some(semantic),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn has_code(errors: &[SemanticError], code: &str) -> bool {
+        errors
+            .iter()
+            .any(|error| error.code.as_deref() == Some(code))
+    }
+
+    #[test]
+    fn incompatible_if_branch_types_report_e041() {
+        let source = r#"
+            module branch_codes
+
+            public func pick(flag: bool) returns int {
+                let value = if flag { 1 } else { "two" }
+                return 0
+            }
+        "#;
+        let errors = semantic_errors(source);
+        assert!(
+            has_code(&errors, "E041"),
+            "branch type mismatch must report E041: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn non_integer_array_index_reports_e042() {
+        let source = r#"
+            module index_codes
+
+            public func main() returns int {
+                let values = [1, 2, 3]
+                let bad = values["one"]
+                return 0
+            }
+        "#;
+        let errors = semantic_errors(source);
+        assert!(
+            has_code(&errors, "E042"),
+            "non-integer index must report E042: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn out_of_bounds_tuple_access_reports_e044() {
+        let source = r#"
+            module tuple_codes
+
+            public func main() returns int {
+                let pair = (1, 2)
+                let bad = pair.5
+                return 0
+            }
+        "#;
+        let errors = semantic_errors(source);
+        assert!(
+            has_code(&errors, "E044"),
+            "out-of-bounds tuple access must report E044: {errors:?}"
+        );
     }
 }

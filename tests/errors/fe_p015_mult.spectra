@@ -1,0 +1,12 @@
+// Regression (P015): a line break before `*`, `/`, or `%` must end the
+// expression, exactly like every other infix operator. The multiplication
+// rung used to skip the gate, so `a\n * b` silently parsed as `a * b`.
+module fe_p015_mult
+
+public func main() returns int {
+    let a = 6
+    let b = 7
+    let x = a
+ * b
+    return x
+}

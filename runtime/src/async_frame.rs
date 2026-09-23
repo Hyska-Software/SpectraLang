@@ -4,9 +4,9 @@
 //! keyed by the `SpectraHostValue` allocated by `AsyncHandleTable<AsyncTask>`.
 
 use crate::ffi::SpectraHostValue;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::c_void;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, LazyLock, Mutex};
 
 pub(crate) type AsyncPollFn = unsafe extern "C" fn(i64, i64, i64) -> i64;
 pub(crate) type AsyncDropFn = unsafe extern "C" fn(i64, i64, i64);
@@ -294,6 +294,15 @@ impl AsyncFrame {
     /// backing bytes on first use. Repeat calls for the same slot return the
     /// same buffer, so re-executing an alloca (for example inside a loop body)
     /// reuses the frame-owned storage instead of leaking a new block.
+    ///
+    /// # Contract
+    ///
+    /// A **larger** size for a slot that already handed out a pointer returns
+    /// `None` instead of silently reallocating: growing would move the buffer
+    /// and invalidate every pointer previously derived from it (generated
+    /// code keeps those addresses across suspensions). First allocation and
+    /// same-or-smaller requests stay allowed — the existing buffer is simply
+    /// reused.
     pub(crate) fn local_ptr(&mut self, slot: usize, size: usize) -> Option<i64> {
         if size == 0 || slot >= self.slots.len() {
             return None;
@@ -301,11 +310,19 @@ impl AsyncFrame {
         if self.locals.len() <= slot {
             self.locals.resize_with(slot + 1, || None);
         }
-        let entry = self.locals[slot].get_or_insert_with(|| vec![0u8; size].into_boxed_slice());
-        if entry.len() < size {
-            *entry = vec![0u8; size].into_boxed_slice();
+        match self.locals[slot].as_mut() {
+            // First use: allocate the requested size.
+            None => {
+                let mut entry = vec![0u8; size].into_boxed_slice();
+                let ptr = entry.as_mut_ptr() as i64;
+                self.locals[slot] = Some(entry);
+                Some(ptr)
+            }
+            // Already handed out: grow-only requests are refused so the
+            // previously returned pointer stays valid for its whole lifetime.
+            Some(entry) if entry.len() < size => None,
+            Some(entry) => Some(entry.as_mut_ptr() as i64),
         }
-        Some(entry.as_mut_ptr() as i64)
     }
 
     pub(crate) fn pointer(&mut self) -> *mut c_void {
@@ -757,6 +774,8 @@ impl AsyncFrameRegistry {
         let record = inner.frames.remove(&task).ok_or(false)?;
         let mut frame = record.frame;
         if frame.header.drop_invoked {
+            // Already finalized: drop only pins the address (ABA guard).
+            quarantine_frame(frame);
             return Ok(None);
         }
         Ok(Some(AsyncFrameDrop {
@@ -917,13 +936,40 @@ impl AsyncFrameRegistry {
         std::mem::take(&mut inner.wake_queue)
     }
 
+    /// Clears every frame record **except** those currently inside a poll
+    /// (`polling`) or an in-flight drop (`drop_in_progress`).
+    ///
+    /// `std.async.task.reset` (and `spectra_rt_manual_clear`) call this while
+    /// another thread may be inside `poll_coroutine_task`: that path releases
+    /// the task-registry lock before running generated code while holding a
+    /// raw `*mut AsyncFrame`. Dropping the `Box<AsyncFrame>` under such a
+    /// poller is a use-after-free, so those records are retained (their task
+    /// ids are already gone from the task table; `finish_poll`/`complete_drop`
+    /// will no-op the outcome and the record becomes collectable by a later
+    /// clear). Drained frames are address-quarantined (see `invoke_frame_drop`)
+    /// so a stale raw frame pointer cannot alias a freshly created frame.
     pub(crate) fn clear(&self) {
         let mut inner = self
             .inner
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        inner.frames.clear();
-        inner.wake_queue.clear();
+        let drained = std::mem::take(&mut inner.frames);
+        let mut retained = HashMap::new();
+        for (task, record) in drained {
+            if record.polling || record.drop_in_progress {
+                retained.insert(task, record);
+            } else {
+                // Move the frame allocation into the quarantine instead of
+                // freeing it, so its address cannot be reused by the next
+                // frame while stale pointers may still reference it.
+                quarantine_frame(record.frame);
+                // `result`/`error` payloads drop normally here (their drop
+                // glue runs exactly as it did before this clear existed).
+            }
+        }
+        let alive: HashSet<SpectraHostValue> = retained.keys().copied().collect();
+        inner.frames = retained;
+        inner.wake_queue.retain(|task| alive.contains(task));
     }
 
     /// Standalone helper retained for unit tests; integration uses begin/finish
@@ -958,8 +1004,39 @@ unsafe extern "C" fn dummy_poll(_: i64, _: i64, _: i64) -> i64 {
 }
 unsafe extern "C" fn dummy_drop(_: i64, _: i64, _: i64) {}
 
+/// Bounded FIFO quarantine of retired `Box<AsyncFrame>` allocations.
+///
+/// The coroutine ABI identifies frames by **raw Box address** and carries no
+/// nonce (adding one would require backend/codegen changes), so the strongest
+/// runtime-only guard against stale-pointer ABA aliasing is to keep every
+/// freed address pinned: within the window, a stale `frame_ptr` fails the
+/// live-registry lookup *and* the allocator cannot hand the same address to a
+/// newly created frame, so the stale pointer cannot silently operate on a
+/// different frame that reused the address. After FIFO eviction the address
+/// becomes reusable again — see the gap note in `AsyncFrameRegistry::clear`.
+const FRAME_QUARANTINE_CAPACITY: usize = 64;
+
+static FRAME_QUARANTINE: LazyLock<Mutex<VecDeque<Box<AsyncFrame>>>> =
+    LazyLock::new(|| Mutex::new(VecDeque::new()));
+
+/// Pins a retired frame allocation until the FIFO evicts it (or the process
+/// exits). The frame's slots/drop glue have already run; only the raw block
+/// is kept alive to reserve its address.
+fn quarantine_frame(frame: Box<AsyncFrame>) {
+    let mut quarantine = FRAME_QUARANTINE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    quarantine.push_back(frame);
+    while quarantine.len() > FRAME_QUARANTINE_CAPACITY {
+        quarantine.pop_front();
+    }
+}
+
 pub(crate) unsafe fn invoke_frame_drop(mut action: AsyncFrameDrop) {
     action.frame.invoke_drop(action.task, action.state);
+    // Keep the address reserved after the drop glue ran (ABA guard; see
+    // `FRAME_QUARANTINE_CAPACITY`).
+    quarantine_frame(action.frame);
 }
 
 fn notify_waiter(waiter: &Arc<(Mutex<WaiterState>, Condvar)>) {
@@ -1012,6 +1089,63 @@ mod tests {
         let value = AsyncResultStorage::aggregate(vec![1, 2]);
         assert!(
             matches!(value.as_value(), AsyncOwnedValue::Aggregate(values) if values == &vec![1, 2])
+        );
+    }
+
+    /// The promoted-local buffer must never move under a handed-out pointer:
+    /// first allocation may request any size, later requests may only reuse
+    /// the buffer; a larger request is refused instead of reallocating.
+    #[test]
+    fn local_ptr_refuses_growth_after_handout() {
+        let mut frame = AsyncFrame::allocated(2);
+
+        // First allocation stays allowed (any initial size).
+        let first = frame.local_ptr(0, 8).expect("first allocation must succeed");
+        // Same/smaller requests return the identical address.
+        assert_eq!(frame.local_ptr(0, 8), Some(first));
+        assert_eq!(frame.local_ptr(0, 4), Some(first));
+        // Growth of a live buffer is refused: reallocating would invalidate
+        // the pointer already handed to generated code.
+        assert_eq!(frame.local_ptr(0, 16), None, "growing a live local_ptr must fail");
+        // A different slot allocates independently.
+        let other = frame.local_ptr(1, 16).expect("second slot must allocate");
+        assert_eq!(frame.local_ptr(1, 16), Some(other));
+        // Degenerate sizes stay rejected.
+        assert_eq!(frame.local_ptr(0, 0), None);
+        assert_eq!(frame.local_ptr(99, 8), None);
+    }
+
+    /// `clear` is the reset path used while another thread may be inside
+    /// `poll_coroutine_task`: a record with an active poll must be retained
+    /// (dropping it would free the `AsyncFrame` under the poller), and only
+    /// idle records are drained (address-quarantined).
+    #[test]
+    fn clear_retains_frames_that_are_currently_polling() {
+        let store = AsyncFrameRegistry::new();
+        assert!(store.attach_frame(
+            6,
+            AsyncFrame::new(vec![AsyncFrameSlot::new(drop_slot)], ready, drop_frame),
+            AsyncAffinity::Any
+        ));
+
+        let invocation = store.begin_poll(6).expect("first poll must start");
+        assert!(!invocation.frame.is_null());
+
+        // Simulates std.async.task.reset racing an in-flight poll.
+        store.clear();
+        assert!(
+            store.contains(6),
+            "a frame inside an active poll must not be freed by clear()"
+        );
+
+        // The poller finishes without reaching a terminal state (Pending
+        // schedules no drop action), leaving an idle record.
+        let finished = store.finish_poll(6, AsyncPollStatus::Pending, AsyncPollContext::new());
+        assert!(matches!(finished, Ok((AsyncPollOutcome::Pending, None))));
+        store.clear();
+        assert!(
+            !store.contains(6),
+            "an idle frame must be drained by clear()"
         );
     }
 }

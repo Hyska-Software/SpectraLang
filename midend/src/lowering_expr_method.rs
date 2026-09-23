@@ -252,7 +252,9 @@ impl ASTLowering {
                     "method call did not produce its declared result",
                 )
             }
-            _ => unreachable!("lowering expression category mismatch"),
+            _ => self.invalid_value(
+                "lower_expression_method called with a non-method-call expression",
+            ),
         }
     }
 }

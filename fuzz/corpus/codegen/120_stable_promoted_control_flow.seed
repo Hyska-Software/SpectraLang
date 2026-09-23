@@ -1,0 +1,62 @@
+module stable_promoted_control_flow
+
+func classify(value: int) returns int {
+    if not value < 0 {
+        switch value {
+            case 0: {
+                return 10
+            }
+            case 1: {
+                return 20
+            }
+            else: {
+                return 30
+            }
+        }
+    } else {
+        return-10
+    }
+}
+
+func loop_sum(limit: int) returns int {
+    let total = 0
+    let i     = 0
+    loop {
+        i = i + 1
+        if i == 3 {
+            continue
+        }
+        if i > limit {
+            break
+        }
+        total = total + i
+    }
+    return total
+}
+
+func do_while_count(limit: int) returns int {
+    let count = 0
+    do {
+        count = count + 1
+    } while count < limit
+    return count
+}
+
+public func main() returns int {
+    if classify(-1) != -10 {
+        return 1
+    }
+    if classify(0) != 10 {
+        return 2
+    }
+    if classify(2) != 30 {
+        return 3
+    }
+    if loop_sum(5) != 12 {
+        return 4
+    }
+    if do_while_count(4) != 4 {
+        return 5
+    }
+    return 0
+}

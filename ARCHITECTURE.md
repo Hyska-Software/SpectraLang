@@ -285,14 +285,15 @@ O IR (`midend/src/ir.rs`) usa:
 
 **Arquivos:** `midend/src/passes/`
 
-O pipeline de otimização é condicional ao `opt_level`:
-- **Nível 0**: Nenhuma otimização.
-- **Nível 1+**: `ConstantFolding` — avalia expressões constantes em tempo de compilação.
-- **Nível 2+**: `DeadCodeElimination` — remove blocos e instruções não alcançáveis.
+The optimization pipeline is conditional on `opt_level`:
+- **Level 0**: No optimization.
+- **Level 1+**: `ConstantFolding` — evaluates constant expressions at compile time (runs before inlining).
+- **Level 2+**: `FunctionInlining`, then `ConstantFolding` again (constants that only meet after callee bodies are copied into callers) and `DeadCodeElimination` — removes instructions whose results are never read; it does **not** remove basic blocks, and instructions with side effects (bounded `GetElementPtr` bounds checks, integer `Div`/`Rem` traps, stores, calls, coroutine operations) are preserved.
+- **Level 3+**: the level-2 pass set iterated `{inline, fold, DCE}` to a bounded fixpoint (each pass reports whether it modified the module; a round that changes nothing ends the loop).
 
-Após as otimizações, executa:
-- **`LoopStructureValidation`**: Verifica que loops IR têm um único header block e back-edges bem formados.
-- **`verify_module` (pré e pós)**: Verificações estruturais do IR (ex: todos os blocos referenciados existem, terminators presentes, etc.).
+After the optimizations, it runs:
+- **`LoopStructureValidation`**: computes the strongly connected components of the CFG (iterative Tarjan) and reports loop components that have no edge leaving the loop (and no `return` inside), plus unreachable `*.exit` blocks. The `.header`/`.exit`/`loop` label heuristics are coupled to lowering's block naming; the pass does **not** verify a single header or a particular back-edge shape.
+- **`verify_module` (pre and post)**: structural IR checks (referenced blocks exist, terminators present, SSA availability/dominance, phi completeness, and return/operand/call/load-store type agreement).
 
 ### 2.8 Fase 7 — Geração de Código (Backend)
 

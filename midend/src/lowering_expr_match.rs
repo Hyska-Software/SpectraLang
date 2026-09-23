@@ -8,7 +8,7 @@ impl ASTLowering {
     ) -> Value {
         match &expr.kind {
             ExpressionKind::Match { scrutinee, arms } => {
-                // Lower do valor sendo matcheado
+                // Lower the value being matched.
                 let scrutinee_value = self.lower_expression(scrutinee, ir_func);
 
                 let scrutinee_type = self.infer_expr_ir_type(scrutinee);
@@ -20,34 +20,35 @@ impl ASTLowering {
                     _ => None,
                 };
 
-                // Criar blocos para cada arm e um bloco de saída
+                // Create one block per arm plus an exit block.
                 let exit_block = ir_func.add_block("match_exit");
 
-                // Um braço "garantido" é irrefutável e sem guard: casa sempre.
-                // Sem ele, todos os checks podem falhar em runtime e nenhum
-                // valor de resultado é produzido.
+                // A "guaranteed" arm is irrefutably matched and has no
+                // guard: it always matches. Without one, every check can fail
+                // at runtime and no result value is ever produced.
                 let has_guaranteed_arm = arms
                     .iter()
                     .any(|arm| arm.guard.is_none() && pattern_is_irrefutable(&arm.pattern));
                 let mut arm_check_blocks = Vec::new();
                 let mut arm_body_blocks = Vec::new();
 
-                // Criar blocos para cada arm: um para checar pattern, outro para executar body
+                // Create two blocks per arm: one to check the pattern, one to
+                // run the body.
                 for (idx, _) in arms.iter().enumerate() {
                     arm_check_blocks.push(ir_func.add_block(format!("match_check_{}", idx)));
                     arm_body_blocks.push(ir_func.add_block(format!("match_body_{}", idx)));
                 }
 
-                // Sem braço garantido, os braços que casam desviam para um bloco
-                // de continuação próprio; o bloco de saída fica selado com
-                // Unreachable (nenhum padrão casou => resultado nunca armazenado).
+                // Without a guaranteed arm, matching arms branch to their own
+                // continuation block; the exit block is sealed with
+                // Unreachable (no pattern matched => result never stored).
                 let match_end = if has_guaranteed_arm {
                     None
                 } else {
                     Some(ir_func.add_block("match_end"))
                 };
 
-                // Inferir tipo do resultado combinando os tipos de cada arm
+                // Infer the result type by combining the types of every arm.
                 let mut result_type = if let Some(first_arm) = arms.first() {
                     self.infer_match_arm_type(
                         &first_arm.pattern,
@@ -75,12 +76,12 @@ impl ASTLowering {
                     None
                 };
 
-                // Do bloco atual, fazer branch para o primeiro check
+                // Branch from the current block to the first check.
                 self.builder.build_branch(ir_func, arm_check_blocks[0]);
 
-                // Processar cada arm
+                // Process each arm.
                 for (idx, arm) in arms.iter().enumerate() {
-                    // Bloco de checagem do pattern
+                    // Pattern check block.
                     self.builder.set_current_block(arm_check_blocks[idx]);
 
                     let pattern_matches = self.lower_pattern_check(
@@ -91,14 +92,16 @@ impl ASTLowering {
                         ir_func,
                     );
 
-                    // Próximo bloco: ou próximo arm, ou exit se não houver mais arms
+                    // Next block: the next arm's check, or the exit block
+                    // when no arms remain.
                     let next_check = if idx + 1 < arms.len() {
                         arm_check_blocks[idx + 1]
                     } else {
                         exit_block
                     };
 
-                    // Se pattern match, ir para body; senão, próximo check
+                    // On pattern match, go to the body; otherwise, the next
+                    // check.
                     self.builder.build_cond_branch(
                         ir_func,
                         pattern_matches,
@@ -106,10 +109,10 @@ impl ASTLowering {
                         next_check,
                     );
 
-                    // Bloco de execução do body
+                    // Arm body block.
                     self.builder.set_current_block(arm_body_blocks[idx]);
 
-                    // Fazer bindings do pattern antes de executar body
+                    // Create the pattern bindings before running the body.
                     self.value_map.push_scope();
                     self.variable_types.push_scope();
                     self.array_map.push_scope();
@@ -124,8 +127,9 @@ impl ASTLowering {
                         ir_func,
                     );
 
-                    // Se o arm tem guard (p. ex. `Pattern if cond =>`), avaliar a condição
-                    // e saltar para o próximo check se ela for falsa.
+                    // If the arm has a guard (e.g. `Pattern if cond =>`),
+                    // evaluate the condition and fall through to the next
+                    // check when it is false.
                     if let Some(guard_expr) = &arm.guard {
                         let guard_val = self.lower_expression(guard_expr, ir_func);
                         let guard_body_block =
@@ -140,7 +144,8 @@ impl ASTLowering {
                     }
 
                     let body_value = self.lower_expression(&arm.body, ir_func);
-                    // Só emitir store+branch se o arm não terminou com return explícito
+                    // Emit store+branch only when the arm did not end with an
+                    // explicit return.
                     let arm_final_block = self
                         .builder
                         .get_current_block()
@@ -164,19 +169,27 @@ impl ASTLowering {
                     self.value_map.pop_scope();
                 }
 
-                // Bloco de saída
+                // Exit block.
                 self.builder.set_current_block(exit_block);
 
-                // Nenhum braço garante casamento: se todos os checks falharem
-                // em runtime, o fluxo chega aqui com a result_alloca nunca
-                // armazenada — lê-la seria ler memória não inicializada. Sela
-                // este bloco com Unreachable; o fluxo normal continua em
-                // match_end, alcançado apenas pelos braços que casaram.
+                // No arm guarantees a match: if every check fails at runtime,
+                // control reaches here with `result_alloca` never stored —
+                // reading it would read uninitialized memory. Seal this block
+                // with Unreachable; normal control flow continues through
+                // `match_end`, reached only by the arms that matched.
                 if !has_guaranteed_arm {
                     self.builder.build_unreachable(ir_func);
-                    self.builder.set_current_block(
-                        match_end.expect("match_end must exist without guaranteed arm"),
-                    );
+                    // `match_end` is created exactly when no arm is
+                    // irrefutably matched. If that invariant ever breaks,
+                    // record a lowering error and hand back a poison value
+                    // instead of panicking: `lower_module` rejects the module
+                    // before verification or the backend can see it.
+                    let Some(match_end) = match_end else {
+                        return self.invalid_value(
+                            "match lowering requires a match_end block when no arm is irrefutably matched",
+                        );
+                    };
+                    self.builder.set_current_block(match_end);
                 }
 
                 if let Some(result_alloca) = result_alloca {
@@ -186,12 +199,18 @@ impl ASTLowering {
                     self.builder.build_const_int(ir_func, 0)
                 }
             }
-            _ => unreachable!("lowering expression category mismatch"),
+            // `lower_expression` dispatches match expressions to this helper;
+            // any other category is a lowering bug. Report it as a normal
+            // midend error (with a poison value) instead of panicking.
+            other => self.invalid_value(format!(
+                "lower_expression_match reached with a non-match expression category: {:?}",
+                other
+            )),
         }
     }
 }
 
-/// Padrão que casa com qualquer valor do tipo (irrefutável), ignorando guards.
+/// Pattern that matches any value of the type (irrefutable), ignoring guards.
 pub(crate) fn pattern_is_irrefutable(pattern: &spectra_compiler::ast::Pattern) -> bool {
     use spectra_compiler::ast::Pattern;
 
@@ -200,8 +219,9 @@ pub(crate) fn pattern_is_irrefutable(pattern: &spectra_compiler::ast::Pattern) -
         Pattern::Tuple(elements) => elements.iter().all(pattern_is_irrefutable),
         Pattern::Struct { fields, .. } => fields.iter().all(|(_, p)| pattern_is_irrefutable(p)),
         Pattern::Or(patterns) => patterns.iter().any(pattern_is_irrefutable),
-        // Literais e variantes de enum são refutáveis; exaustividade de enum é
-        // responsabilidade da análise semântica, não do lowering.
+        // Literal and enum-variant patterns are refutable; enum
+        // exhaustiveness is the semantic analyzer's responsibility, not the
+        // lowering's.
         Pattern::Literal(_) | Pattern::EnumVariant { .. } => false,
     }
 }

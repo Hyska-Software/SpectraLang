@@ -209,7 +209,7 @@ pub fn config_new(endpoint: &str, service_name: &str) -> Result<u64, &'static st
     }
     let id = state()
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .configs
         .insert(TraceConfig {
             endpoint: endpoint.to_string(),
@@ -231,7 +231,7 @@ pub fn config_set_sample_rate(id: u64, rate: f64) -> Result<(), &'static str> {
     let handle = HandleId::from_raw(id as i64).map_err(|_| "E2701")?;
     state()
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .configs
         .get_mut(handle)
         .map(|c| c.sample_rate = rate)
@@ -244,7 +244,7 @@ pub fn config_set_batch_size(id: u64, size: usize) -> Result<(), &'static str> {
     let handle = HandleId::from_raw(id as i64).map_err(|_| "E2701")?;
     state()
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .configs
         .get_mut(handle)
         .map(|c| c.batch_size = size)
@@ -252,7 +252,7 @@ pub fn config_set_batch_size(id: u64, size: usize) -> Result<(), &'static str> {
 }
 pub fn config_start(id: u64) -> Result<(), &'static str> {
     let config = {
-        let mut s = state().lock().unwrap();
+        let mut s = state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if s.active_config.is_some() || s.exporter.is_some() {
             return Err("E2701");
         }
@@ -274,13 +274,13 @@ pub fn config_start(id: u64) -> Result<(), &'static str> {
     {
         Ok(join) => join,
         Err(_) => {
-            let mut s = state().lock().unwrap();
+            let mut s = state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             s.active_config = None;
             return Err("E2701");
         }
     };
     stats.worker_alive.store(true, Ordering::Release);
-    state().lock().unwrap().exporter = Some(ExporterHandle {
+    state().lock().unwrap_or_else(std::sync::PoisonError::into_inner).exporter = Some(ExporterHandle {
         sender,
         join: Some(join),
         stats,
@@ -291,10 +291,10 @@ pub fn config_start(id: u64) -> Result<(), &'static str> {
     Ok(())
 }
 pub fn config_shutdown(id: u64) -> Result<(), &'static str> {
-    if state().lock().unwrap().active_config != Some(id) {
+    if state().lock().unwrap_or_else(std::sync::PoisonError::into_inner).active_config != Some(id) {
         return Err("E2701");
     }
-    let mut exporter = state().lock().unwrap().exporter.take().ok_or("E2707")?;
+    let mut exporter = state().lock().unwrap_or_else(std::sync::PoisonError::into_inner).exporter.take().ok_or("E2707")?;
     let (ack_tx, ack_rx) = mpsc::sync_channel(1);
     let send_result = exporter
         .sender
@@ -307,7 +307,7 @@ pub fn config_shutdown(id: u64) -> Result<(), &'static str> {
         .take()
         .map(|join| join.join().map_err(|_| "E2707"))
         .unwrap_or(Ok(()));
-    let mut s = state().lock().unwrap();
+    let mut s = state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     s.active_config = None;
     if shutdown_result.is_err() || join_result.is_err() {
         s.last_error = Some(
@@ -334,7 +334,7 @@ pub fn span_start_with_parent(
     if name.is_empty() || name.len() > MAX_NAME {
         return Err("E2701");
     }
-    let mut s = state().lock().unwrap();
+    let mut s = state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if s.active_config.is_none() || s.exporter.is_none() {
         return Err("E2704");
     }
@@ -371,7 +371,7 @@ fn set_attribute(id: u64, key: &str, value: AttributeValue) -> Result<(), &'stat
     if !size_ok {
         return Err("E2701");
     }
-    let mut s = state().lock().unwrap();
+    let mut s = state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let handle = HandleId::from_raw(id as i64).map_err(|_| "E2703")?;
     let span = s.spans.get_mut(handle).map_err(|_| "E2703")?;
     if let Some(existing) = span.attributes.iter_mut().find(|(name, _)| name == key) {
@@ -394,7 +394,7 @@ pub fn span_set_attribute_bool(id: u64, key: &str, value: bool) -> Result<(), &'
     set_attribute(id, key, AttributeValue::Bool(value))
 }
 pub fn span_set_status(id: u64, status: SpanStatus) -> Result<(), &'static str> {
-    let mut s = state().lock().unwrap();
+    let mut s = state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let handle = HandleId::from_raw(id as i64).map_err(|_| "E2703")?;
     s.spans
         .get_mut(handle)
@@ -406,12 +406,12 @@ pub fn span_end(id: u64) -> Result<(), &'static str> {
         return Err("E2703");
     }
     let span = {
-        let mut s = state().lock().unwrap();
+        let mut s = state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let handle = HandleId::from_raw(id as i64).map_err(|_| "E2703")?;
         s.spans.remove(handle).map_err(|_| "E2703")?
     };
     let result = {
-        let s = state().lock().unwrap();
+        let s = state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let exporter = s.exporter.as_ref().ok_or("E2704")?;
         let mut reserved = false;
         loop {
@@ -450,7 +450,7 @@ pub fn span_end(id: u64) -> Result<(), &'static str> {
         }
     };
     if let Err(error) = result {
-        state().lock().unwrap().last_error = Some(error.into());
+        state().lock().unwrap_or_else(std::sync::PoisonError::into_inner).last_error = Some(error.into());
     }
     SPAN_STACK.with(|stack| {
         stack.borrow_mut().pop();
@@ -467,7 +467,7 @@ pub fn context(id: u64) -> Result<TraceContext, &'static str> {
     let handle = HandleId::from_raw(id as i64).map_err(|_| "E2703")?;
     state()
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .spans
         .get(handle)
         .map_err(|_| "E2703")
@@ -507,10 +507,10 @@ pub fn with_context<T>(parent: Option<TraceContext>, work: impl FnOnce() -> T) -
     }
 }
 pub fn last_error() -> Option<String> {
-    state().lock().unwrap().last_error.clone()
+    state().lock().unwrap_or_else(std::sync::PoisonError::into_inner).last_error.clone()
 }
 pub fn stats() -> Option<(u64, u64, u64, u64, u64, bool)> {
-    state().lock().unwrap().exporter.as_ref().map(|e| {
+    state().lock().unwrap_or_else(std::sync::PoisonError::into_inner).exporter.as_ref().map(|e| {
         (
             e.stats.created.load(Ordering::Relaxed),
             e.stats.enqueued.load(Ordering::Relaxed),
@@ -540,7 +540,7 @@ pub unsafe fn alloc_string(value: &str) -> i64 {
 
 pub fn flush() -> Result<usize, &'static str> {
     let (sender, timeout) = {
-        let s = state().lock().unwrap();
+        let s = state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let e = s.exporter.as_ref().ok_or("E2704")?;
         (e.sender.clone(), e.timeout)
     };
@@ -550,7 +550,7 @@ pub fn flush() -> Result<usize, &'static str> {
         .map_err(|_| "E2707")?;
     let result = ack_rx.recv_timeout(timeout).map_err(|_| "E2707")?;
     if result.is_err() {
-        state().lock().unwrap().last_error = Some("E2706".into());
+        state().lock().unwrap_or_else(std::sync::PoisonError::into_inner).last_error = Some("E2706".into());
     }
     result
 }

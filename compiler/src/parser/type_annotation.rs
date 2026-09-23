@@ -8,6 +8,16 @@ use super::Parser;
 
 impl Parser {
     pub(super) fn parse_type_annotation(&mut self) -> Result<TypeAnnotation, ()> {
+        // Guard the self-recursive type-annotation descent (nested arrays,
+        // tuples, generics, function types) with the shared `P013` depth and
+        // stack budget, like every other parser recursion entry point.
+        self.enter_parse_depth()?;
+        let result = self.parse_type_annotation_inner();
+        self.exit_parse_depth();
+        result
+    }
+
+    fn parse_type_annotation_inner(&mut self) -> Result<TypeAnnotation, ()> {
         let start_span = self.current().span;
 
         // Dynamic trait object: dyn TraitName

@@ -116,13 +116,18 @@ impl CodeGenerator {
         Ok(())
     }
 
-    /// Lowers an integer division or remainder with an explicit zero-divisor
-    /// check.
+    /// Lowers an integer division or remainder with explicit trap checks.
     ///
-    /// Emits `brif divisor == 0` into a panic block that reports through
-    /// [`Self::emit_runtime_panic`]; the normal path falls through to
-    /// `sdiv`/`srem`. Float remainder (`fmod`) intentionally has no zero
-    /// check because IEEE 754 defines `fmod(x, 0)` as NaN.
+    /// The zero-divisor case always branches into a panic block that reports
+    /// through [`Self::emit_runtime_panic`] with `panic_message`; the normal
+    /// path falls through to the division. On the signed path a second check
+    /// catches `MIN / -1` (`lhs == signed-MIN && rhs == -1`), which would
+    /// otherwise raise a native `#DE`/SIGFPE instead of the runtime's
+    /// deterministic exit-101 panic ("integer division overflow"). The
+    /// unsigned path has no overflow case and emits `udiv`/`urem` so values
+    /// above the signed maximum (e.g. `u64 > 2^63`) divide correctly. Float
+    /// remainder (`fmod`) intentionally has no zero check because IEEE 754
+    /// defines `fmod(x, 0)` as NaN.
     pub(crate) fn emit_checked_int_divrem<M: Module>(
         module: &mut M,
         hostcall: &mut HostCallLoweringContext<'_>,
@@ -131,13 +136,49 @@ impl CodeGenerator {
         rhs: Value,
         panic_message: &'static str,
         is_remainder: bool,
+        unsigned: bool,
     ) -> BackendResult<Value> {
         let panic_block = builder.create_block();
         let continue_block = builder.create_block();
+        let overflow_block = if unsigned {
+            None
+        } else {
+            Some(builder.create_block())
+        };
         let is_zero = builder.ins().icmp_imm(IntCC::Equal, rhs, 0);
+        let no_zero_target = overflow_block.unwrap_or(continue_block);
         builder
             .ins()
-            .brif(is_zero, panic_block, &[], continue_block, &[]);
+            .brif(is_zero, panic_block, &[], no_zero_target, &[]);
+
+        if let Some(overflow_block) = overflow_block {
+            // Signed path: also guard the only overflowing quotient,
+            // signed-MIN divided by -1, before it reaches `sdiv`/`srem`.
+            builder.switch_to_block(overflow_block);
+            let signed_min = match builder.func.dfg.value_type(lhs) {
+                types::I8 => i8::MIN as i64,
+                types::I16 => i16::MIN as i64,
+                types::I32 => i32::MIN as i64,
+                _ => i64::MIN,
+            };
+            let is_negative_one = builder.ins().icmp_imm(IntCC::Equal, rhs, -1);
+            let is_signed_min = builder.ins().icmp_imm(IntCC::Equal, lhs, signed_min);
+            let is_overflow = builder.ins().band(is_negative_one, is_signed_min);
+            let overflow_panic_block = builder.create_block();
+            builder.ins().brif(
+                is_overflow,
+                overflow_panic_block,
+                &[],
+                continue_block,
+                &[],
+            );
+            builder.seal_block(overflow_block);
+            builder.seal_block(overflow_panic_block);
+
+            builder.switch_to_block(overflow_panic_block);
+            Self::emit_runtime_panic(module, hostcall, builder, "integer division overflow")?;
+        }
+
         builder.seal_block(panic_block);
         builder.seal_block(continue_block);
 
@@ -145,10 +186,11 @@ impl CodeGenerator {
         Self::emit_runtime_panic(module, hostcall, builder, panic_message)?;
 
         builder.switch_to_block(continue_block);
-        Ok(if is_remainder {
-            builder.ins().srem(lhs, rhs)
-        } else {
-            builder.ins().sdiv(lhs, rhs)
+        Ok(match (is_remainder, unsigned) {
+            (true, true) => builder.ins().urem(lhs, rhs),
+            (true, false) => builder.ins().srem(lhs, rhs),
+            (false, true) => builder.ins().udiv(lhs, rhs),
+            (false, false) => builder.ins().sdiv(lhs, rhs),
         })
     }
 }

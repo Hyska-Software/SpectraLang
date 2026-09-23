@@ -1,0 +1,27 @@
+module numeric_cast_const_boundaries_stress
+
+const NEG: i64 = -12
+const POS: u64 = 12
+const FLOATY: f64 = 7.75
+const FLAG: bool = NEG<0 and POS == 12 and FLOATY> 7.0
+
+public func main() returns int {
+    let tiny: i8      = NEG as i8
+    let wide: i64     = tiny as i64
+    let unsigned: u16 = POS as u16
+    let floaty: f64   = FLOATY
+
+    if not FLAG {
+        return 1
+    }
+    if wide != -12 {
+        return wide as int
+    }
+    if unsigned as int != 12 {
+        return unsigned as int
+    }
+    if floaty < 7.0 {
+        return 4
+    }
+    return 0
+}

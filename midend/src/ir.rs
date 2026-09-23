@@ -159,11 +159,18 @@ pub enum InstructionKind {
         result: Value,
         lhs: Value,
         rhs: Value,
+        /// Selects the machine signedness of the division. `true` lowers to
+        /// `udiv`/`urem`; `false` keeps `sdiv`/`srem` plus the zero-divisor
+        /// and `MIN / -1` checks. Construction goes through
+        /// `builder::build_div*` so the flag stays consistent with lowering.
+        unsigned: bool,
     },
     Rem {
         result: Value,
         lhs: Value,
         rhs: Value,
+        /// See `Div::unsigned`.
+        unsigned: bool,
     },
 
     // Comparisons
@@ -181,21 +188,33 @@ pub enum InstructionKind {
         result: Value,
         lhs: Value,
         rhs: Value,
+        /// `true` compares the operands with the *unsigned* integer condition
+        /// (required for exact-width unsigned types such as `u8`/`u64`, whose
+        /// values above the signed maximum would otherwise be misordered).
+        /// Irrelevant for float operands. Construction goes through
+        /// `builder::build_lt*` and friends.
+        unsigned: bool,
     },
     Le {
         result: Value,
         lhs: Value,
         rhs: Value,
+        /// See `Lt::unsigned`.
+        unsigned: bool,
     },
     Gt {
         result: Value,
         lhs: Value,
         rhs: Value,
+        /// See `Lt::unsigned`.
+        unsigned: bool,
     },
     Ge {
         result: Value,
         lhs: Value,
         rhs: Value,
+        /// See `Lt::unsigned`.
+        unsigned: bool,
     },
 
     // Logical
@@ -329,6 +348,9 @@ pub enum InstructionKind {
         frame: Value,
         slot: usize,
         value: Value,
+        /// Re-parent a pointer-valued payload before storing it so a coroutine
+        /// frame can safely outlive the allocation's producing stack frame.
+        escape_value: bool,
     },
     FrameLoad {
         result: Value,

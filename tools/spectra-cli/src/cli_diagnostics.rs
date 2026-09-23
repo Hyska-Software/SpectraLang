@@ -142,7 +142,9 @@ fn emit_json_report(report: &JsonDiagnosticReport, has_errors: bool) -> CliResul
         .map_err(|error| CliError::io(format!("Failed to flush diagnostics: {}", error)))?;
 
     if has_errors {
-        process::exit(ExitCode::CompilationFailed.as_i32());
+        // The report is complete on stdout; return a structured failure so
+        // exit-code policy stays in `run()` and in-process callers survive.
+        return Err(CliError::diagnostics_reported());
     }
 
     Ok(())
@@ -275,7 +277,10 @@ fn emit_sarif_report(report: &JsonDiagnosticReport, has_errors: bool) -> CliResu
         .map_err(|error| CliError::io(format!("Failed to flush diagnostics: {}", error)))?;
 
     if has_errors {
-        process::exit(ExitCode::CompilationFailed.as_i32());
+        // The SARIF report is complete on stdout; return a structured
+        // failure so exit-code policy stays in `run()` and in-process
+        // callers survive.
+        return Err(CliError::diagnostics_reported());
     }
 
     Ok(())

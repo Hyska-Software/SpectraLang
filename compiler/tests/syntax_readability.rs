@@ -160,7 +160,7 @@ fn doubled_comma_in_array_literal_remains_a_parse_error() {
 
 #[test]
 fn legacy_surface_is_rejected_with_migration_diagnostics() {
-    // The `->` arrow is no longer a token: the lexer rejects it with L007 and
+    // The `->` arrow is no longer a token: the lexer rejects it with L010 and
     // points at the canonical `returns` keyword.
     let source = "module legacy;\nfn main() -> int { return 0; }\n";
     let lex_errors = Lexer::new(source)
@@ -168,7 +168,7 @@ fn legacy_surface_is_rejected_with_migration_diagnostics() {
         .expect_err("legacy arrow syntax must fail lexing");
 
     assert!(lex_errors.iter().any(|error| {
-        error.code.as_deref() == Some("L007")
+        error.code.as_deref() == Some("L010")
             && error
                 .hint
                 .as_deref()

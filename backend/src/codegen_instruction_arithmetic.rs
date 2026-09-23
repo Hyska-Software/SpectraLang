@@ -74,7 +74,12 @@ impl CodeGenerator {
                 value_map.insert(result.id, result_val);
             }
 
-            InstructionKind::Div { result, lhs, rhs } => {
+            InstructionKind::Div {
+                result,
+                lhs,
+                rhs,
+                unsigned,
+            } => {
                 let lhs_val = get_value(lhs)?;
                 let rhs_val = get_value(rhs)?;
                 let (lhs_val, rhs_val, is_float) =
@@ -90,12 +95,18 @@ impl CodeGenerator {
                         rhs_val,
                         "integer division by zero",
                         false,
+                        *unsigned,
                     )?
                 };
                 value_map.insert(result.id, result_val);
             }
 
-            InstructionKind::Rem { result, lhs, rhs } => {
+            InstructionKind::Rem {
+                result,
+                lhs,
+                rhs,
+                unsigned,
+            } => {
                 let lhs_val = get_value(lhs)?;
                 let rhs_val = get_value(rhs)?;
                 let (lhs_val, rhs_val, is_float) =
@@ -112,6 +123,7 @@ impl CodeGenerator {
                         rhs_val,
                         "integer remainder by zero",
                         true,
+                        *unsigned,
                     )?
                 };
                 value_map.insert(result.id, result_val);
@@ -144,20 +156,32 @@ impl CodeGenerator {
                 value_map.insert(result.id, result_val);
             }
 
-            InstructionKind::Lt { result, lhs, rhs } => {
+            InstructionKind::Lt {
+                result,
+                lhs,
+                rhs,
+                unsigned,
+            } => {
                 let lhs_val = get_value(lhs)?;
                 let rhs_val = get_value(rhs)?;
                 let (lhs_val, rhs_val, is_float) =
                     promote_float_operands(builder, lhs_val, rhs_val);
                 let result_val = if is_float {
                     builder.ins().fcmp(FloatCC::LessThan, lhs_val, rhs_val)
+                } else if *unsigned {
+                    builder.ins().icmp(IntCC::UnsignedLessThan, lhs_val, rhs_val)
                 } else {
                     builder.ins().icmp(IntCC::SignedLessThan, lhs_val, rhs_val)
                 };
                 value_map.insert(result.id, result_val);
             }
 
-            InstructionKind::Le { result, lhs, rhs } => {
+            InstructionKind::Le {
+                result,
+                lhs,
+                rhs,
+                unsigned,
+            } => {
                 let lhs_val = get_value(lhs)?;
                 let rhs_val = get_value(rhs)?;
                 let (lhs_val, rhs_val, is_float) =
@@ -166,6 +190,10 @@ impl CodeGenerator {
                     builder
                         .ins()
                         .fcmp(FloatCC::LessThanOrEqual, lhs_val, rhs_val)
+                } else if *unsigned {
+                    builder
+                        .ins()
+                        .icmp(IntCC::UnsignedLessThanOrEqual, lhs_val, rhs_val)
                 } else {
                     builder
                         .ins()
@@ -174,13 +202,22 @@ impl CodeGenerator {
                 value_map.insert(result.id, result_val);
             }
 
-            InstructionKind::Gt { result, lhs, rhs } => {
+            InstructionKind::Gt {
+                result,
+                lhs,
+                rhs,
+                unsigned,
+            } => {
                 let lhs_val = get_value(lhs)?;
                 let rhs_val = get_value(rhs)?;
                 let (lhs_val, rhs_val, is_float) =
                     promote_float_operands(builder, lhs_val, rhs_val);
                 let result_val = if is_float {
                     builder.ins().fcmp(FloatCC::GreaterThan, lhs_val, rhs_val)
+                } else if *unsigned {
+                    builder
+                        .ins()
+                        .icmp(IntCC::UnsignedGreaterThan, lhs_val, rhs_val)
                 } else {
                     builder
                         .ins()
@@ -189,7 +226,12 @@ impl CodeGenerator {
                 value_map.insert(result.id, result_val);
             }
 
-            InstructionKind::Ge { result, lhs, rhs } => {
+            InstructionKind::Ge {
+                result,
+                lhs,
+                rhs,
+                unsigned,
+            } => {
                 let lhs_val = get_value(lhs)?;
                 let rhs_val = get_value(rhs)?;
                 let (lhs_val, rhs_val, is_float) =
@@ -198,6 +240,10 @@ impl CodeGenerator {
                     builder
                         .ins()
                         .fcmp(FloatCC::GreaterThanOrEqual, lhs_val, rhs_val)
+                } else if *unsigned {
+                    builder
+                        .ins()
+                        .icmp(IntCC::UnsignedGreaterThanOrEqual, lhs_val, rhs_val)
                 } else {
                     builder
                         .ins()

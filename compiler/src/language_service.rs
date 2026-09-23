@@ -117,7 +117,14 @@ pub fn analyze_document(
 
     // Always run lints — even when there are semantic errors, lint rules that
     // don't depend on type-correctness still produce useful warnings.
-    analysis.warnings = lint_module(&module, &options.lint);
+    match lint_module(&module, &options.lint) {
+        Ok(warnings) => analysis.warnings = warnings,
+        Err(guard_error) => {
+            // The lint walk tripped the frontend recursion guard (`P013`);
+            // surface it as a coded diagnostic instead of crashing the host.
+            analysis.diagnostics.push(CompilerError::Semantic(guard_error));
+        }
+    }
     analysis.module = Some(module);
     analysis
 }

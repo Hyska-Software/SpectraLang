@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::ir::{Instruction, InstructionKind, Module, Terminator, Value};
+use crate::ir::{Instruction, InstructionKind, Module, Terminator, Type, Value};
 
 /// Performs structural verification of the IR and returns a list of problems if any were found.
 pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
@@ -121,6 +121,71 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
             entry_block,
         );
 
+        // Best-effort static types for SSA values, used by the structural
+        // type rules below. Values whose type cannot be derived are simply
+        // absent from the map, and every type rule is skipped when a type is
+        // unknown: the verifier only rejects a program when it can prove a
+        // mismatch, never on a wrong type guess.
+        let value_types = collect_value_types(&function, &function_signatures);
+
+        // Object types for the Load/Store agreement rules: only addresses
+        // whose pointee lowering positively records plus explicit
+        // `Pointer(T)` parameters participate.
+        //
+        // Unwrapping depends on how the address was recorded:
+        //  * `Alloca`/`GlobalAddr`/`GetElementPtr` carry the *object* type
+        //    directly (even when the object is itself a pointer), so they
+        //    are used as-is.
+        //  * `Load`/`FrameLoad` record the type of the *loaded value*; when
+        //    that loaded value is itself a `Pointer(T)` and is used as an
+        //    address, its pointee is `T`.
+        //  * A `Pointer(T)` parameter's value points at `T`.
+        //
+        // A *bare* (non-`Pointer`) parameter used as an address is an
+        // out-parameter whose declared type describes the address word, not
+        // the pointee — the synthesized agent-tool wrappers pass `Int`
+        // out-slots that receive `String`s and work because every address
+        // is one machine word — so bare parameters are deliberately
+        // excluded from these rules.
+        let mut address_types: HashMap<usize, Type> = HashMap::new();
+        for parameter in &function.params {
+            if let Type::Pointer(inner) = &parameter.ty {
+                if !type_contains_unknown(inner) && **inner != Type::Void {
+                    address_types.insert(parameter.id, inner.as_ref().clone());
+                }
+            }
+        }
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                let recorded = match &instruction.kind {
+                    InstructionKind::Alloca { result, ty, .. }
+                    | InstructionKind::GlobalAddr { result, ty, .. }
+                    | InstructionKind::GetElementPtr {
+                        result, element_type: ty, ..
+                    } => Some((result, ty.clone(), false)),
+                    InstructionKind::Load { result, ty, .. }
+                    | InstructionKind::FrameLoad { result, ty, .. } => {
+                        Some((result, ty.clone(), true))
+                    }
+                    _ => None,
+                };
+                if let Some((result, ty, loaded_value)) = recorded {
+                    if ty == Type::Void || type_contains_unknown(&ty) {
+                        continue;
+                    }
+                    let pointee = if loaded_value {
+                        match &ty {
+                            Type::Pointer(inner) => inner.as_ref().clone(),
+                            other => other.clone(),
+                        }
+                    } else {
+                        ty
+                    };
+                    address_types.insert(result.id, pointee);
+                }
+            }
+        }
+
         // Keep every definition location.  A global set is sufficient to
         // detect a missing value, but it incorrectly accepts a use that occurs
         // before its definition or on a sibling CFG branch.  The location map
@@ -222,6 +287,41 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                                 &dominators,
                             );
                         }
+                        // Structural return rule: value presence and type must
+                        // match the function's declared IR return type. An
+                        // `Unknown` return type is already reported by the
+                        // unresolved-type rules, so it is skipped here.
+                        if function.return_type != Type::Unknown {
+                            match (value, &function.return_type) {
+                                (None, Type::Void) => {}
+                                (None, return_type) => {
+                                    errors.push(format!(
+                                        "Function '{}' returns no value from block '{}' but its IR return type is {:?}",
+                                        function.name, block.label, return_type
+                                    ));
+                                }
+                                (Some(_), Type::Void) => {
+                                    errors.push(format!(
+                                        "Function '{}' returns a value from block '{}' but its IR return type is Void",
+                                        function.name, block.label
+                                    ));
+                                }
+                                (Some(value), return_type) => {
+                                    if let Some(value_type) = value_types.get(&value.id) {
+                                        if !value_types_compatible(value_type, return_type) {
+                                            errors.push(format!(
+                                                "Function '{}' returns value {} of type {:?} from block '{}' but its IR return type is {:?}",
+                                                function.name,
+                                                value.id,
+                                                value_type,
+                                                block.label,
+                                                return_type
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     Terminator::CondBranch {
                         condition,
@@ -241,6 +341,20 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                             &frame_load_ids,
                             &dominators,
                         );
+                        // The branch condition must be integer-backed on
+                        // the machine (Bool is I8, match lowering emits
+                        // Int conditions, brif accepts any integer
+                        // register). Skipped when the condition's type
+                        // cannot be derived; floats and other non-integer
+                        // classes are rejected.
+                        if let Some(condition_type) = value_types.get(&condition.id) {
+                            if !is_branch_condition_like(condition_type) {
+                                errors.push(format!(
+                                    "Function '{}', block '{}' has a branch condition of type {:?}, expected a boolean-like value",
+                                    function.name, block.label, condition_type
+                                ));
+                            }
+                        }
                         if !block_ids.contains(true_block) {
                             errors.push(format!(
                                 "Function '{}', block '{}' has conditional branch with unknown true target {}",
@@ -271,6 +385,17 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                             &frame_load_ids,
                             &dominators,
                         );
+                        // The switch scrutinee must have an integer-backed
+                        // type (`Int`, `ExactInt`, or `Char`, which is an
+                        // integer code point). Skipped when unknown.
+                        if let Some(scrutinee_type) = value_types.get(&value.id) {
+                            if !is_integer_like(scrutinee_type) {
+                                errors.push(format!(
+                                    "Function '{}', block '{}' switches on a value of type {:?}, expected an integer-backed type",
+                                    function.name, block.label, scrutinee_type
+                                ));
+                            }
+                        }
                         if !block_ids.contains(default) {
                             errors.push(format!(
                                 "Function '{}', block '{}' has switch with unknown default target {}",
@@ -344,6 +469,31 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                                 parameters.len()
                             ));
                         }
+                        // Argument types must agree with the callee signature
+                        // where both sides are known and meaningful. `Void`
+                        // and unresolved parameter types are skipped.
+                        for (index, (arg, parameter_type)) in
+                            args.iter().zip(parameters.iter()).enumerate()
+                        {
+                            if *parameter_type == Type::Void
+                                || type_contains_unknown(parameter_type)
+                            {
+                                continue;
+                            }
+                            if let Some(arg_type) = value_types.get(&arg.id) {
+                                if !value_types_compatible(arg_type, parameter_type) {
+                                    errors.push(format!(
+                                        "Function '{}', block '{}' passes a value of type {:?} as argument {} of '{}', expected {:?}",
+                                        function.name,
+                                        block.label,
+                                        arg_type,
+                                        index,
+                                        callee,
+                                        parameter_type
+                                    ));
+                                }
+                            }
+                        }
                         if *return_type == crate::ir::Type::Void && result.is_some() {
                             errors.push(format!(
                                 "Function '{}', block '{}' records a result for void function call '{}'",
@@ -368,6 +518,60 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                             signature_params.len()
                         ));
                     }
+                }
+
+                // Operand type agreement: the two operands of an arithmetic,
+                // comparison, or logical operation must share one machine
+                // class — with one exception: mixed-width floats, which the
+                // backend's arithmetic emitter promotes to F64
+                // (`promote_float_operands`). Lowering inserts `Cast` for
+                // legal conversions (int width, signedness, char), so any
+                // other difference here is an IR defect.
+                if let Some((lhs, rhs)) = binary_operand_pair(&instruction.kind) {
+                    if let (Some(lhs_type), Some(rhs_type)) =
+                        (value_types.get(&lhs.id), value_types.get(&rhs.id))
+                    {
+                        if !binary_operand_types_compatible(lhs_type, rhs_type) {
+                            errors.push(format!(
+                                "Function '{}', block '{}' has {} operands with mismatched IR types ({:?} vs {:?})",
+                                function.name,
+                                block.label,
+                                instruction_opcode(&instruction.kind),
+                                lhs_type,
+                                rhs_type
+                            ));
+                        }
+                    }
+                }
+
+                // Load/store address agreement. Per `address_types` above,
+                // only addresses whose pointee lowering positively records
+                // (or explicit `Pointer(..)` parameters) participate; other
+                // addresses — notably bare out-parameter words — are skipped.
+                match &instruction.kind {
+                    InstructionKind::Load { ptr, ty, .. } => {
+                        if let Some(pointee) = address_types.get(&ptr.id) {
+                            if !value_types_compatible(ty, pointee) {
+                                errors.push(format!(
+                                    "Function '{}', block '{}' loads type {:?} through an address of type {:?}",
+                                    function.name, block.label, ty, pointee
+                                ));
+                            }
+                        }
+                    }
+                    InstructionKind::Store { ptr, value } => {
+                        if let (Some(pointee), Some(value_type)) =
+                            (address_types.get(&ptr.id), value_types.get(&value.id))
+                        {
+                            if !value_types_compatible(value_type, pointee) {
+                                errors.push(format!(
+                                    "Function '{}', block '{}' stores a value of type {:?} into an address of type {:?}",
+                                    function.name, block.label, value_type, pointee
+                                ));
+                            }
+                        }
+                    }
+                    _ => {}
                 }
 
                 if let Some(unresolved) = instruction_unresolved_type(instruction) {
@@ -445,6 +649,23 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
                                 existing.id,
                                 value.id
                             ));
+                        }
+                    }
+
+                    // Phi completeness: every actual predecessor of this block
+                    // must contribute exactly one incoming entry. The loop
+                    // above rejects unknown and duplicate predecessors; this
+                    // closes the missing-entry direction.
+                    if !incoming.is_empty() {
+                        if let Some(block_predecessors) = predecessors.get(&block.id) {
+                            for pred in block_predecessors {
+                                if !incoming.iter().any(|(_, entry)| entry == pred) {
+                                    errors.push(format!(
+                                        "Function '{}', block '{}' has a phi without an incoming entry for predecessor block {}",
+                                        function.name, block.label, pred
+                                    ));
+                                }
+                            }
                         }
                     }
                 }
@@ -904,12 +1125,17 @@ fn instruction_operands(instruction: &Instruction) -> Vec<Value> {
         | InstructionKind::ConstBool { .. }
         | InstructionKind::ConstString { .. } => Vec::new(),
         InstructionKind::AutodiffStep {
+            output,
             upstream,
             inputs,
             targets,
             ..
         } => {
-            let mut operands = Vec::new();
+            let mut operands = Vec::with_capacity(inputs.len() + targets.len() + 2);
+            // `output` is the forward value whose saved creator the reverse
+            // kernel consumes, so it must be covered by the
+            // availability/dominance checks like every other operand.
+            operands.push(*output);
             if let Some(value) = upstream {
                 operands.push(*value);
             }
@@ -918,6 +1144,387 @@ fn instruction_operands(instruction: &Instruction) -> Vec<Value> {
             operands
         }
     }
+}
+
+/// True for integer-backed IR types (the `Switch` scrutinee contract: enum
+/// tags, code points and exact ints — not `Bool`, whose lowering goes
+/// through `CondBranch`).
+fn is_integer_like(ty: &Type) -> bool {
+    matches!(ty, Type::Int | Type::ExactInt { .. } | Type::Char)
+}
+
+/// Machine-level integer classes accepted as a `CondBranch` condition.
+/// The backend lowers `brif` against any integer register, and match
+/// lowering routinely emits `Int`-typed conditions, so "boolean-like"
+/// means integer-backed on the machine — only floating-point (or
+/// non-integer) conditions are rejected.
+fn is_branch_condition_like(ty: &Type) -> bool {
+    matches!(
+        machine_class(ty),
+        Some(
+            MachineClass::I8 | MachineClass::I16 | MachineClass::I32 | MachineClass::I64
+        )
+    )
+}
+
+/// Machine-level representation classes. This MUST mirror
+/// `backend/src/codegen_strings.rs::ir_type_to_cranelift` exactly: the
+/// verifier's type rules catch what Cranelift would reject (or silently
+/// miscompile), and Cranelift only ever sees these classes — nominal IR
+/// types beyond them are metadata.
+///
+/// * `Void`/`Bool` are `I8`.
+/// * Everything the backend represents as a pointer or discriminant word —
+///   `Int`, `String`, `Pointer`, `Array`, `Tuple`, `Struct`, `Enum`,
+///   `Function` (closure object), `Tensor` (handle), `Task`, `Range`,
+///   `DynTrait` (fat-pointer address) — is `I64`. This is what makes the
+///   real lowering shapes legal: closures passed where `Function` is
+///   declared, frame reloads typed `Int` for `DynTrait` parameters,
+///   `Pointer(T)` receivers vs by-value `T` parameters, boxed aggregates.
+/// * `ExactInt` maps by width; `Char` is `I32`; floats map by width.
+/// * `Generic` recursively maps through its `representation`.
+///
+/// Returns `None` only for `Unknown` (never compared) and malformed
+/// self-referential `Generic` types.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MachineClass {
+    I8,
+    I16,
+    I32,
+    I64,
+    F32,
+    F64,
+}
+
+fn machine_class(ty: &Type) -> Option<MachineClass> {
+    match ty {
+        Type::Unknown => None,
+        Type::Void | Type::Bool => Some(MachineClass::I8),
+        Type::Int
+        | Type::String
+        | Type::Pointer(_)
+        | Type::Array { .. }
+        | Type::Tuple { .. }
+        | Type::Struct { .. }
+        | Type::Enum { .. }
+        | Type::Function { .. }
+        | Type::Tensor { .. }
+        | Type::Task { .. }
+        | Type::Range
+        | Type::DynTrait { .. } => Some(MachineClass::I64),
+        Type::ExactInt { width, .. } => Some(match width {
+            crate::ir::IntWidth::I8 => MachineClass::I8,
+            crate::ir::IntWidth::I16 => MachineClass::I16,
+            crate::ir::IntWidth::I32 => MachineClass::I32,
+            crate::ir::IntWidth::I64
+            | crate::ir::IntWidth::Isize
+            | crate::ir::IntWidth::Usize => MachineClass::I64,
+        }),
+        Type::Char => Some(MachineClass::I32),
+        Type::Float => Some(MachineClass::F64),
+        Type::ExactFloat { width } => Some(match width {
+            crate::ir::FloatWidth::F32 => MachineClass::F32,
+            crate::ir::FloatWidth::F64 => MachineClass::F64,
+        }),
+        Type::Generic {
+            representation, ..
+        } => {
+            if **representation == *ty {
+                None
+            } else {
+                machine_class(representation)
+            }
+        }
+    }
+}
+
+/// Types the verifier accepts as interchangeable for a returned, stored, or
+/// passed value: identical nominal types, or the **same machine
+/// representation class** (see [`machine_class`], which mirrors
+/// `ir_type_to_cranelift`).
+///
+/// The IR is deliberately word-level: closures are heap arrays, structs,
+/// tuples, enums and ranges are boxed pointers, tensors are handles, and the
+/// async lowering reloads frame slots as `Int` words. Nominal type
+/// differences inside one machine class are therefore metadata, not errors —
+/// demanding nominal equality rejected dozens of valid lowering shapes
+/// (closure object as `Function`, `Pointer(T)` vs `T` receivers,
+/// tag-tuple enum payloads, `Tensor` refinements, `Int`-typed match branch
+/// conditions). Genuine machine mismatches still fail loudly: `I8` vs `I16`
+/// narrow-int arguments, `I64` vs `F64`, float-vs-integer calls and
+/// returns — exactly the mismatches that reach Cranelift's verifier as
+/// opaque `error[codegen]` failures without a source span.
+///
+/// `Unknown` types never reach this function (callers skip when the type
+/// cannot be derived).
+fn value_types_compatible(lhs: &Type, rhs: &Type) -> bool {
+    if lhs == rhs {
+        return true;
+    }
+    match (machine_class(lhs), machine_class(rhs)) {
+        (Some(lhs_class), Some(rhs_class)) => lhs_class == rhs_class,
+        _ => false,
+    }
+}
+
+/// True when both operands are floats of any widths. The backend's
+/// arithmetic emitter promotes `F32` to `F64` whenever the other operand
+/// is `F64` (`promote_float_operands`), so mixed-width float arithmetic,
+/// comparison and equality are supported shapes — an `f32` frame slot
+/// multiplied by a `Float` literal is real lowering output. Only the
+/// *binary* rules use this; calls, returns and memory stay width-strict.
+fn float_widths_mixable(lhs: &Type, rhs: &Type) -> bool {
+    let is_float_class = |ty: &Type| matches!(machine_class(ty), Some(MachineClass::F32 | MachineClass::F64));
+    is_float_class(lhs) && is_float_class(rhs)
+}
+
+/// Binary operand agreement: one IR type, or any mix of float widths
+/// (the backend promotes to `F64`, see [`float_widths_mixable`]).
+fn binary_operand_types_compatible(lhs: &Type, rhs: &Type) -> bool {
+    value_types_compatible(lhs, rhs) || float_widths_mixable(lhs, rhs)
+}
+
+/// `(lhs, rhs)` for the binary arithmetic/comparison/logical opcodes whose
+/// two operands must share one IR type.
+fn binary_operand_pair(kind: &InstructionKind) -> Option<(Value, Value)> {
+    match kind {
+        InstructionKind::Add { lhs, rhs, .. }
+        | InstructionKind::Sub { lhs, rhs, .. }
+        | InstructionKind::Mul { lhs, rhs, .. }
+        | InstructionKind::Div { lhs, rhs, .. }
+        | InstructionKind::Rem { lhs, rhs, .. }
+        | InstructionKind::Eq { lhs, rhs, .. }
+        | InstructionKind::Ne { lhs, rhs, .. }
+        | InstructionKind::Lt { lhs, rhs, .. }
+        | InstructionKind::Le { lhs, rhs, .. }
+        | InstructionKind::Gt { lhs, rhs, .. }
+        | InstructionKind::Ge { lhs, rhs, .. }
+        | InstructionKind::And { lhs, rhs, .. }
+        | InstructionKind::Or { lhs, rhs, .. } => Some((*lhs, *rhs)),
+        _ => None,
+    }
+}
+
+/// Short opcode name used in the operand-type diagnostics.
+fn instruction_opcode(kind: &InstructionKind) -> &'static str {
+    match kind {
+        InstructionKind::Add { .. } => "Add",
+        InstructionKind::Sub { .. } => "Sub",
+        InstructionKind::Mul { .. } => "Mul",
+        InstructionKind::Div { .. } => "Div",
+        InstructionKind::Rem { .. } => "Rem",
+        InstructionKind::Eq { .. } => "Eq",
+        InstructionKind::Ne { .. } => "Ne",
+        InstructionKind::Lt { .. } => "Lt",
+        InstructionKind::Le { .. } => "Le",
+        InstructionKind::Gt { .. } => "Gt",
+        InstructionKind::Ge { .. } => "Ge",
+        InstructionKind::And { .. } => "And",
+        InstructionKind::Or { .. } => "Or",
+        _ => "binary",
+    }
+}
+
+/// Prefer the more specific of two compatible types: an untyped `Int`
+/// combined with an exact-width integer takes the exact width.
+fn refine_numeric_type(lhs: &Type, rhs: &Type) -> Type {
+    if lhs == rhs {
+        lhs.clone()
+    } else if matches!(lhs, Type::Int) {
+        rhs.clone()
+    } else {
+        lhs.clone()
+    }
+}
+
+/// Object type of an address-producing instruction whose pointee lowering
+/// positively records: allocas, globals, loads, frame slots, and element
+/// GEPs all carry the type of the object they designate. Explicit
+/// `Pointer(..)` parameters are handled separately by the caller.
+fn address_object_type(kind: &InstructionKind) -> Option<(Value, Type)> {
+    match kind {
+        InstructionKind::Alloca { result, ty, .. }
+        | InstructionKind::GlobalAddr { result, ty, .. }
+        | InstructionKind::Load { result, ty, .. }
+        | InstructionKind::FrameLoad { result, ty, .. }
+        | InstructionKind::GetElementPtr {
+            result, element_type: ty, ..
+        } => Some((*result, ty.clone())),
+        _ => None,
+    }
+}
+
+/// Types that follow from the instruction itself without consulting other
+/// values. Returns `None` for kinds whose result type depends on operands
+/// (`Copy`, `Phi`, arithmetic) or that stay opaque to this verifier
+/// (function/heap handles, coroutine frames, fat pointers, autodiff nodes).
+fn definite_value_type(kind: &InstructionKind) -> Option<(Value, Type)> {
+    // Address-valued instructions carry the type of the object they
+    // designate rather than an explicit `Pointer(..)`: this IR passes
+    // aggregate addresses as the values themselves ("structs are
+    // pointers") and `Load` re-declares the loaded type, so the object
+    // type is what keeps the Load/Store rules aligned with lowering.
+    if let Some(object) = address_object_type(kind) {
+        return Some(object);
+    }
+    match kind {
+        InstructionKind::ConstInt { result, .. } => Some((*result, Type::Int)),
+        InstructionKind::ConstIntTyped { result, ty, .. } => Some((*result, ty.clone())),
+        InstructionKind::ConstFloat { result, .. } => Some((*result, Type::Float)),
+        InstructionKind::ConstFloatTyped { result, ty, .. } => Some((*result, ty.clone())),
+        InstructionKind::ConstBool { result, .. } => Some((*result, Type::Bool)),
+        InstructionKind::ConstString { result, .. } => Some((*result, Type::String)),
+        InstructionKind::Cast { result, to_ty, .. } => Some((*result, to_ty.clone())),
+        InstructionKind::Eq { result, .. }
+        | InstructionKind::Ne { result, .. }
+        | InstructionKind::Lt { result, .. }
+        | InstructionKind::Le { result, .. }
+        | InstructionKind::Gt { result, .. }
+        | InstructionKind::Ge { result, .. } => Some((*result, Type::Bool)),
+        InstructionKind::HostCall {
+            result: Some(result),
+            result_type: Some(ty),
+            ..
+        } => Some((*result, ty.clone())),
+        _ => None,
+    }
+}
+
+/// Best-effort map from SSA value id to IR type, used by the structural type
+/// rules. Phase one records types fixed by the definition itself; phase two
+/// propagates operand-dependent result types (copy, phi, arithmetic, logical
+/// not) to a fixed point. The map only grows, so the loop terminates.
+fn collect_value_types(
+    function: &crate::ir::Function,
+    function_signatures: &HashMap<String, (Vec<Type>, Type)>,
+) -> HashMap<usize, Type> {
+    let mut types: HashMap<usize, Type> = HashMap::new();
+    let usable = |ty: &Type| *ty != Type::Void && !type_contains_unknown(ty);
+
+    for parameter in &function.params {
+        if usable(&parameter.ty) {
+            types.insert(parameter.id, parameter.ty.clone());
+        }
+    }
+
+    for block in &function.blocks {
+        for instruction in &block.instructions {
+            if let Some((result, ty)) = definite_value_type(&instruction.kind) {
+                if usable(&ty) {
+                    types.insert(result.id, ty);
+                }
+                continue;
+            }
+            match &instruction.kind {
+                InstructionKind::Call {
+                    result: Some(result),
+                    function: callee,
+                    ..
+                } => {
+                    if let Some((_, return_type)) = function_signatures.get(callee) {
+                        if usable(return_type) {
+                            types.insert(result.id, return_type.clone());
+                        }
+                    }
+                }
+                InstructionKind::CallIndirect {
+                    result: Some(result),
+                    signature_return,
+                    ..
+                } => {
+                    if usable(signature_return) {
+                        types.insert(result.id, signature_return.as_ref().clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    loop {
+        let mut learned = 0usize;
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                let (result, ty) = match &instruction.kind {
+                    InstructionKind::Copy { result, source } => {
+                        let Some(source_type) = types.get(&source.id) else {
+                            continue;
+                        };
+                        (*result, source_type.clone())
+                    }
+                    InstructionKind::Phi { result, incoming } => {
+                        let mut picked: Option<Type> = None;
+                        let mut consistent = true;
+                        for (value, _) in incoming {
+                            let Some(value_type) = types.get(&value.id) else {
+                                consistent = false;
+                                break;
+                            };
+                            match &picked {
+                                None => picked = Some(value_type.clone()),
+                                Some(chosen) if value_types_compatible(chosen, value_type) => {
+                                    picked = Some(refine_numeric_type(chosen, value_type));
+                                }
+                                Some(_) => {
+                                    consistent = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if !consistent {
+                            continue;
+                        }
+                        let Some(picked) = picked else {
+                            continue;
+                        };
+                        (*result, picked)
+                    }
+                    InstructionKind::Add { result, lhs, rhs, .. }
+                    | InstructionKind::Sub { result, lhs, rhs, .. }
+                    | InstructionKind::Mul { result, lhs, rhs, .. }
+                    | InstructionKind::Div { result, lhs, rhs, .. }
+                    | InstructionKind::Rem { result, lhs, rhs, .. }
+                    | InstructionKind::And { result, lhs, rhs }
+                    | InstructionKind::Or { result, lhs, rhs } => {
+                        let (Some(lhs_type), Some(rhs_type)) =
+                            (types.get(&lhs.id), types.get(&rhs.id))
+                        else {
+                            continue;
+                        };
+                        if !binary_operand_types_compatible(lhs_type, rhs_type) {
+                            continue;
+                        }
+                        // Mixed float widths evaluate at the promoted
+                        // width: the backend promotes F32 to F64.
+                        let refined = if float_widths_mixable(lhs_type, rhs_type)
+                            && machine_class(lhs_type) != machine_class(rhs_type)
+                        {
+                            Type::Float
+                        } else {
+                            refine_numeric_type(lhs_type, rhs_type)
+                        };
+                        (*result, refined)
+                    }
+                    InstructionKind::Not { result, operand } => {
+                        let Some(operand_type) = types.get(&operand.id) else {
+                            continue;
+                        };
+                        (*result, operand_type.clone())
+                    }
+                    _ => continue,
+                };
+                if usable(&ty) && !types.contains_key(&result.id) {
+                    types.insert(result.id, ty);
+                    learned += 1;
+                }
+            }
+        }
+        if learned == 0 {
+            break;
+        }
+    }
+
+    types
 }
 
 #[cfg(test)]
@@ -1214,6 +1821,338 @@ mod tests {
         assert!(errors.iter().any(|error| {
             error.contains("calls 'callee' with 0 arguments, expected 2")
         }));
+    }
+
+    #[test]
+    fn rejects_return_value_type_mismatch() {
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("returns_int", Vec::new(), Type::Int);
+        let entry = function.add_block("entry");
+        let mut builder = IRBuilder::new();
+        builder.set_current_block(entry);
+        let truth = builder.build_const_bool(&mut function, true);
+        builder.build_return(&mut function, Some(truth));
+        module.add_function(function);
+
+        let errors = verify_module(&module)
+            .expect_err("bool value returned from an int function must fail");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("but its IR return type is Int")));
+    }
+
+    #[test]
+    fn rejects_missing_return_value_in_non_void_function() {
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("needs_int", Vec::new(), Type::Int);
+        let entry = function.add_block("entry");
+        let mut builder = IRBuilder::new();
+        builder.set_current_block(entry);
+        builder.build_return(&mut function, None);
+        module.add_function(function);
+
+        let errors = verify_module(&module)
+            .expect_err("a non-void function must return a value");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("returns no value from block")));
+    }
+
+    #[test]
+    fn rejects_value_returned_from_void_function() {
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("returns_nothing", Vec::new(), Type::Void);
+        let entry = function.add_block("entry");
+        let mut builder = IRBuilder::new();
+        builder.set_current_block(entry);
+        let value = builder.build_const_int(&mut function, 1);
+        builder.build_return(&mut function, Some(value));
+        module.add_function(function);
+
+        let errors = verify_module(&module)
+            .expect_err("a void function must not return a value");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("but its IR return type is Void")));
+    }
+
+    #[test]
+    fn rejects_phi_missing_predecessor_entry() {
+        let mut module = IRModule::new("test");
+        let mut function = Function::new(
+            "merge",
+            vec![
+                Parameter {
+                    id: 0,
+                    name: "condition".into(),
+                    ty: Type::Bool,
+                },
+                Parameter {
+                    id: 1,
+                    name: "left_value".into(),
+                    ty: Type::Int,
+                },
+                Parameter {
+                    id: 2,
+                    name: "right_value".into(),
+                    ty: Type::Int,
+                },
+            ],
+            Type::Void,
+        );
+        let entry = function.add_block("entry");
+        let left = function.add_block("left");
+        let right = function.add_block("right");
+        let join = function.add_block("join");
+
+        let mut builder = IRBuilder::new();
+        builder.set_current_block(entry);
+        builder.build_cond_branch(&mut function, Value { id: 0 }, left, right);
+        builder.set_current_block(left);
+        builder.build_branch(&mut function, join);
+        builder.set_current_block(right);
+        builder.build_branch(&mut function, join);
+        builder.set_current_block(join);
+        // The phi only carries an entry for `left`, but `right` also branches
+        // into `join`: the phi is incomplete.
+        builder.build_phi(&mut function, vec![(Value { id: 1 }, left)]);
+        builder.build_return(&mut function, None);
+        module.add_function(function);
+
+        let errors = verify_module(&module)
+            .expect_err("phi must cover every predecessor of its block");
+        assert!(errors.iter().any(|error| {
+            error.contains("phi without an incoming entry for predecessor block")
+        }));
+    }
+
+    #[test]
+    fn rejects_mismatched_binary_operand_types() {
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("mismatch", Vec::new(), Type::Void);
+        let entry = function.add_block("entry");
+        if let Some(block) = function.get_block_mut(entry) {
+            block.instructions.push(crate::ir::Instruction {
+                id: 0,
+                kind: InstructionKind::ConstInt {
+                    result: Value { id: 0 },
+                    value: 1,
+                },
+                source_span: None,
+            });
+            block.instructions.push(crate::ir::Instruction {
+                id: 1,
+                kind: InstructionKind::ConstBool {
+                    result: Value { id: 1 },
+                    value: true,
+                },
+                source_span: None,
+            });
+            block.instructions.push(crate::ir::Instruction {
+                id: 2,
+                kind: InstructionKind::Add {
+                    result: Value { id: 2 },
+                    lhs: Value { id: 0 },
+                    rhs: Value { id: 1 },
+                },
+                source_span: None,
+            });
+            block.set_terminator(Terminator::Return { value: None });
+        }
+        module.add_function(function);
+
+        let errors = verify_module(&module)
+            .expect_err("Int + Bool operands must fail verification");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("Add operands with mismatched IR types")));
+    }
+
+    #[test]
+    fn rejects_non_boolean_branch_condition() {
+        // Integer-backed conditions are legal (match lowering emits Int
+        // conditions and brif accepts any integer register); a float
+        // condition would reach Cranelift's verifier as an opaque failure.
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("float_condition", Vec::new(), Type::Void);
+        let entry = function.add_block("entry");
+        let other = function.add_block("other");
+
+        let mut builder = IRBuilder::new();
+        builder.set_current_block(entry);
+        let condition = builder.build_const_float(&mut function, 1.0);
+        builder.build_cond_branch(&mut function, condition, other, other);
+        builder.set_current_block(other);
+        builder.build_return(&mut function, None);
+        module.add_function(function);
+
+        let errors = verify_module(&module)
+            .expect_err("a floating-point branch condition must fail verification");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("expected a boolean-like value")));
+    }
+
+    #[test]
+    fn integer_branch_conditions_are_legal() {
+        // Match lowering emits Int-typed conditions; they are I64 on the
+        // machine and brif accepts them, so the verifier must not reject
+        // the house lowering style.
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("int_condition", Vec::new(), Type::Void);
+        let entry = function.add_block("entry");
+        let other = function.add_block("other");
+
+        let mut builder = IRBuilder::new();
+        builder.set_current_block(entry);
+        let condition = builder.build_const_int(&mut function, 1);
+        builder.build_cond_branch(&mut function, condition, other, other);
+        builder.set_current_block(other);
+        builder.build_return(&mut function, None);
+        module.add_function(function);
+
+        assert!(
+            verify_module(&module).is_ok(),
+            "an Int branch condition is legal IR: {:?}",
+            verify_module(&module)
+        );
+    }
+
+    #[test]
+    fn mixed_width_float_operands_are_legal() {
+        // The backend's arithmetic emitter promotes F32 to F64 when the
+        // other operand is F64, so `f32 slot * Float literal` (real async
+        // f32 lowering output) must not be rejected.
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("mixed_floats", Vec::new(), Type::Void);
+        let entry = function.add_block("entry");
+        let mut builder = IRBuilder::new();
+        builder.set_current_block(entry);
+        let narrow = builder.build_const_float_typed(
+            &mut function,
+            1.5,
+            Type::ExactFloat {
+                width: crate::ir::FloatWidth::F32,
+            },
+        );
+        let wide = builder.build_const_float(&mut function, 2.0);
+        builder.build_mul(&mut function, narrow, wide);
+        builder.build_return(&mut function, None);
+        module.add_function(function);
+
+        assert!(
+            verify_module(&module).is_ok(),
+            "F32 x F64 multiplication is promoted by the backend: {:?}",
+            verify_module(&module)
+        );
+    }
+
+    #[test]
+    fn rejects_switch_on_non_integer_scrutinee() {
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("bool_switch", Vec::new(), Type::Void);
+        let entry = function.add_block("entry");
+        let other = function.add_block("other");
+
+        let mut builder = IRBuilder::new();
+        builder.set_current_block(entry);
+        let scrutinee = builder.build_const_bool(&mut function, true);
+        if let Some(block) = function.get_block_mut(entry) {
+            block.set_terminator(Terminator::Switch {
+                value: scrutinee,
+                cases: vec![(1, other)],
+                default: other,
+            });
+        }
+        builder.set_current_block(other);
+        builder.build_return(&mut function, None);
+        module.add_function(function);
+
+        let errors = verify_module(&module)
+            .expect_err("switching on a bool must fail verification");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("expected an integer-backed type")));
+    }
+
+    #[test]
+    fn rejects_call_argument_type_mismatch() {
+        let mut module = IRModule::new("test");
+        module.external_functions.push(crate::ir::ExternalFunction {
+            name: "sink".into(),
+            params: vec![Type::Float],
+            return_type: Type::Void,
+        });
+
+        let mut function = Function::new("caller", Vec::new(), Type::Void);
+        let entry = function.add_block("entry");
+        let mut builder = IRBuilder::new();
+        builder.set_current_block(entry);
+        let argument = builder.build_const_int(&mut function, 1);
+        builder.build_call(&mut function, "sink".into(), vec![argument], false);
+        builder.build_return(&mut function, None);
+        module.add_function(function);
+
+        let errors = verify_module(&module)
+            .expect_err("int argument to a float parameter must fail");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("as argument 0 of 'sink', expected Float")));
+    }
+
+    #[test]
+    fn rejects_load_and_store_type_mismatch() {
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("memory_types", Vec::new(), Type::Void);
+        let entry = function.add_block("entry");
+        let mut builder = IRBuilder::new();
+        builder.set_current_block(entry);
+        let slot = builder.build_alloca(&mut function, Type::Int);
+        let truth = builder.build_const_bool(&mut function, true);
+        builder.build_store(&mut function, slot, truth);
+        builder.build_load_typed(&mut function, slot, Type::Float);
+        builder.build_return(&mut function, None);
+        module.add_function(function);
+
+        let errors = verify_module(&module)
+            .expect_err("mismatched load/store types must fail verification");
+        assert!(errors.iter().any(|error| {
+            error.contains("stores a value of type Bool into an address of type Int")
+        }));
+        assert!(errors.iter().any(|error| {
+            error.contains("loads type Float through an address of type Int")
+        }));
+    }
+
+    #[test]
+    fn rejects_autodiff_step_with_undefined_output() {
+        // `AutodiffStep.output` is an operand: it must be covered by the
+        // availability check, not only `upstream`/`inputs`/`targets`.
+        let mut module = IRModule::new("test");
+        let mut function = Function::new("autodiff_operand", Vec::new(), Type::Void);
+        let entry = function.add_block("entry");
+        if let Some(block) = function.get_block_mut(entry) {
+            block.instructions.push(crate::ir::Instruction {
+                id: 0,
+                kind: InstructionKind::AutodiffStep {
+                    result: None,
+                    operation: "add".to_string(),
+                    output: Value { id: 42 },
+                    upstream: None,
+                    inputs: Vec::new(),
+                    targets: Vec::new(),
+                },
+                source_span: None,
+            });
+            block.set_terminator(Terminator::Return { value: None });
+        }
+        module.add_function(function);
+
+        let errors = verify_module(&module)
+            .expect_err("undefined AutodiffStep output must fail verification");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("uses undefined value 42")));
     }
 
     #[test]

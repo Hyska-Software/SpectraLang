@@ -1,0 +1,10 @@
+// Teste 1: Sintaxe básica
+module basic_syntax
+
+func main() returns int {
+    let x          = 42
+    let y          = 3.14
+    let name       = "SpectraLang"
+    let is_working = true
+    return 0
+}

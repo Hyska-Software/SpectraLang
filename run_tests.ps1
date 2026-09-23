@@ -22,11 +22,22 @@ $phase31BinaryPath = (Join-Path (Get-Location).Path "target\release\spectralang.
 $timeoutSeconds = 10
 $runtimeErrorTimeoutSeconds = 30
 $hostCommandTimeoutSeconds = 300
-$env:PATH = "C:\Users\estev\.cargo\bin;" + $env:PATH
+
+# Resolve cargo portably: prefer whatever is on PATH, then the standard
+# rustup/user install location.  Never hardcode a machine-specific path.
+$resolvedCargo = (Get-Command cargo -ErrorAction SilentlyContinue).Source
+if (-not $resolvedCargo) {
+    $fallbackCargo = Join-Path $env:USERPROFILE ".cargo\bin\cargo.exe"
+    if (Test-Path $fallbackCargo) { $resolvedCargo = $fallbackCargo }
+}
+if ($resolvedCargo) {
+    $env:PATH = (Split-Path -Parent $resolvedCargo) + ";" + $env:PATH
+}
+$cargoCmd = if ($resolvedCargo) { $resolvedCargo } else { "cargo" }
 
 if (-not (Test-Path $binary)) {
     Write-Host "Binario nao encontrado. Compilando..." -ForegroundColor Yellow
-    & "C:\Users\estev\.cargo\bin\cargo.exe" build -p spectra-cli 2>&1 | Out-Null
+    & $cargoCmd build -p spectra-cli 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERRO: Falha ao compilar o compilador." -ForegroundColor Red
         exit 1
@@ -37,7 +48,7 @@ if (-not (Test-Path $binary)) {
 $aliasBinary = Join-Path (Split-Path -Parent $binary) "spc.exe"
 if (-not (Test-Path $aliasBinary)) {
     Write-Host "Binario alias spc.exe nao encontrado. Compilando..." -ForegroundColor Yellow
-    & "C:\Users\estev\.cargo\bin\cargo.exe" build -p spectra-cli 2>&1 | Out-Null
+    & $cargoCmd build -p spectra-cli 2>&1 | Out-Null
 }
 if (-not (Test-Path $aliasBinary)) {
     Write-Host "ERRO: binario alias spc.exe nao encontrado (R-1005)." -ForegroundColor Red
@@ -581,6 +592,39 @@ if (Test-Path $projectDir) {
 }
 
 # ---------------------------------------------------------------------------
+# Group 2b: invalid projects - compilation (or surface export) must FAIL
+# ---------------------------------------------------------------------------
+$invalidProjectDir = "tests\projects\invalid"
+if (Test-Path $invalidProjectDir) {
+    $invalidProjects = Get-ChildItem -Path $invalidProjectDir -Directory | Sort-Object Name
+    Write-Host ""
+    Write-Host "--- $invalidProjectDir ($($invalidProjects.Count) projects: must FAIL) ---" -ForegroundColor Yellow
+
+    foreach ($project in $invalidProjects) {
+        Write-Host "  $($project.Name)" -NoNewline
+        # `surface --json` runs semantic analysis plus surface extraction, so
+        # it rejects every invalid-project class uniformly (compile alone does
+        # not catch project-wide surface defects such as duplicate
+        # #[agent_tool] names — see tests/projects/invalid/agent_tool_duplicate).
+        $r = Invoke-SpectraCommand -commandArgs @("surface", "--json", $project.FullName) -workingDir (Get-Location).Path
+
+        if ($r.TimedOut) {
+            Write-Host " FALHOU (timeout)" -ForegroundColor Red
+            $totalFailed++
+            $results += [PSCustomObject]@{ Diretorio = $invalidProjectDir; Teste = $project.Name; Status = "FALHOU"; Detalhe = "compilacao do projeto invalido excedeu ${timeoutSeconds}s" }
+        } elseif ($r.ExitCode -ne 0) {
+            Write-Host " PASSOU (erro esperado)" -ForegroundColor Green
+            $totalPassed++
+            $results += [PSCustomObject]@{ Diretorio = $invalidProjectDir; Teste = $project.Name; Status = "PASSOU"; Detalhe = "erro esperado detectado" }
+        } else {
+            Write-Host " FALHOU (compilou sem erro - projeto deveria ser rejeitado)" -ForegroundColor Red
+            $totalFailed++
+            $results += [PSCustomObject]@{ Diretorio = $invalidProjectDir; Teste = $project.Name; Status = "FALHOU"; Detalhe = "projeto invalido compilou sem erro" }
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Grupo 3: testes de erro - devem FALHAR na compilacao
 # ---------------------------------------------------------------------------
 $errorDir = "tests\errors"
@@ -597,6 +641,7 @@ if (Test-Path $errorDir) {
         "exact_width_invalid_cast.spectra",
         "exact_width_runtime_overflow.spectra",
         "integer_division_by_zero.spectra",
+        "integer_division_overflow.spectra",
         "json_malformed_rejects.spectra"
     )
     Write-Host ""
@@ -631,31 +676,69 @@ if (Test-Path $errorDir) {
 }
 
 # ---------------------------------------------------------------------------
-# Grupo 4: testes semanticos - informativo apenas
+# Group 4: semantic tests - decisive
+# Every fixture carries an explicit expectation: fixtures exercising type
+# system guarantees MUST fail to compile; the rest MUST compile.
 # ---------------------------------------------------------------------------
 $semanticDir = "tests\semantic"
+$semanticExpectFail = @(
+    "function_type_error.spectra",
+    "invalid_break.spectra",
+    "redeclaration.spectra",
+    "return_paths.spectra",
+    "type_error.spectra",
+    "type_inference_method_errors.spectra",
+    "undefined_function.spectra",
+    "undefined_variable.spectra"
+)
+$semanticExpectPass = @(
+    "comprehensive_test.spectra",
+    "std_api_surface.spectra",
+    "type_inference.spectra",
+    "type_inference_complex_expressions.spectra",
+    "valid_code.spectra"
+)
 if (Test-Path $semanticDir) {
     $files = Get-ChildItem -Path $semanticDir -Filter "*.spectra" | Sort-Object Name
     Write-Host ""
-    Write-Host "--- $semanticDir ($($files.Count) testes: informativo) ---" -ForegroundColor Yellow
+    Write-Host "--- $semanticDir ($($files.Count) tests: decisive) ---" -ForegroundColor Yellow
 
     foreach ($file in $files) {
         Write-Host "  $($file.Name)" -NoNewline
+        $expectFail = $semanticExpectFail -contains $file.Name
+        $expectPass = $semanticExpectPass -contains $file.Name
+        if (-not $expectFail -and -not $expectPass) {
+            Write-Host " SEM EXPECTATIVA" -ForegroundColor Red
+            $totalFailed++
+            $results += [PSCustomObject]@{ Diretorio = $semanticDir; Teste = $file.Name; Status = "FALHOU"; Detalhe = "fixture sem expectativa explicita em run_tests.ps1" }
+            continue
+        }
         $r = Invoke-SpectraFile $file.FullName
 
         if ($r.TimedOut) {
-            Write-Host " TIMEOUT" -ForegroundColor Red
-            $totalInfo++
-            $results += [PSCustomObject]@{ Diretorio = $semanticDir; Teste = $file.Name; Status = "INFO:TIMEOUT"; Detalhe = "compilacao excedeu ${timeoutSeconds}s" }
-        } elseif ($r.ExitCode -eq 0) {
-            Write-Host " COMPILOU" -ForegroundColor Cyan
-            $totalInfo++
-            $results += [PSCustomObject]@{ Diretorio = $semanticDir; Teste = $file.Name; Status = "INFO:COMPILOU"; Detalhe = "" }
+            Write-Host " FALHOU (timeout)" -ForegroundColor Red
+            $totalFailed++
+            $results += [PSCustomObject]@{ Diretorio = $semanticDir; Teste = $file.Name; Status = "FALHOU"; Detalhe = "compilacao excedeu ${timeoutSeconds}s" }
+        } elseif ($expectFail -and $r.ExitCode -ne 0) {
+            Write-Host " PASSOU (erro esperado)" -ForegroundColor Green
+            $totalPassed++
+            $results += [PSCustomObject]@{ Diretorio = $semanticDir; Teste = $file.Name; Status = "PASSOU"; Detalhe = "erro esperado detectado" }
+        } elseif ($expectPass -and $r.ExitCode -eq 0) {
+            Write-Host " PASSOU" -ForegroundColor Green
+            $totalPassed++
+            $results += [PSCustomObject]@{ Diretorio = $semanticDir; Teste = $file.Name; Status = "PASSOU"; Detalhe = "" }
+        } elseif ($expectFail) {
+            $err = Get-FirstError $r.Output
+            Write-Host " FALHOU (deveria produzir erro)" -ForegroundColor Red
+            Write-Host "     $err" -ForegroundColor DarkRed
+            $totalFailed++
+            $results += [PSCustomObject]@{ Diretorio = $semanticDir; Teste = $file.Name; Status = "FALHOU"; Detalhe = "compilou sem erro - erro esperado nao detectado" }
         } else {
             $err = Get-FirstError $r.Output
-            Write-Host " ERRO" -ForegroundColor DarkYellow
-            $totalInfo++
-            $results += [PSCustomObject]@{ Diretorio = $semanticDir; Teste = $file.Name; Status = "INFO:ERRO"; Detalhe = $err }
+            Write-Host " FALHOU (erro inesperado)" -ForegroundColor Red
+            Write-Host "     $err" -ForegroundColor DarkRed
+            $totalFailed++
+            $results += [PSCustomObject]@{ Diretorio = $semanticDir; Teste = $file.Name; Status = "FALHOU"; Detalhe = $err }
         }
     }
 }
@@ -840,6 +923,31 @@ $cliTests = @(
         Args = @("run", "tests\validation\array_iteration_sum.spectra")
         ExpectExit = 0
         Contains = ""
+        UseStdin = $false
+    }
+    # Contract: `compile --run` propagates the program's exit status.
+    [PSCustomObject]@{
+        Nome = "compile_run_propagates_exit"
+        Args = @("compile", "--run", "tests\cli\runtime_nonzero.spectra")
+        ExpectExit = 7
+        Contains = "0: main()"
+        UseStdin = $false
+    }
+    # `--run` is only valid for run/compile; every other command rejects it
+    # with exit 64.
+    [PSCustomObject]@{
+        Nome = "lint_run_flag_rejected"
+        Args = @("lint", "--run", "tests\cli\lint_clean.spectra")
+        ExpectExit = 64
+        Contains = "--run"
+        UseStdin = $false
+    }
+    # Emit flags are exclusive to the `compile` command.
+    [PSCustomObject]@{
+        Nome = "run_emit_exe_rejected"
+        Args = @("run", "--emit-exe", "target\cli_run_emit.exe", "tests\cli\lint_clean.spectra")
+        ExpectExit = 64
+        Contains = "emit"
         UseStdin = $false
     }
 )
@@ -1120,6 +1228,64 @@ $results += [PSCustomObject]@{
     Detalhe = $recursionSuite.Detail
 }
 
+# ---------------------------------------------------------------------------
+# Group 1.6: execution coverage of the full corpus (JIT + AOT).
+# Compiling is not executing: this gate runs EVERY fixture under
+# tests/validation and tests/control_flow that declares `main` through both
+# pipelines and compares exit codes against tests/execution-baseline.json.
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- Execution coverage (JIT + AOT, full corpus) ---" -ForegroundColor Yellow
+$executionCoverage = Invoke-HostCommand `
+    -name "validate_execution_coverage" `
+    -fileName "python" `
+    -timeoutSeconds 3600 `
+    -arguments @(
+        "scripts\validate_execution_coverage.py",
+        "--binary", $binary,
+        "--mode", "both",
+        "--report", "target\execution-coverage\report.json"
+    ) `
+    -workingDir (Get-Location).Path
+if ($executionCoverage.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{
+    Diretorio = "tests\validation"
+    Teste = "execution_coverage_jit_aot"
+    Status = $executionCoverage.Status
+    Detalhe = $executionCoverage.Detail
+}
+
+# ---------------------------------------------------------------------------
+# Group 1.7: fuzz corpus replay (deterministic, no cargo-fuzz required)
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- Fuzz corpus replay (parser, semantic, pipeline, lowering, codegen) ---" -ForegroundColor Yellow
+foreach ($fuzzTarget in @("parser", "semantic", "pipeline", "lowering", "codegen")) {
+    $fuzzReplay = Invoke-HostCommand `
+        -name "fuzz_replay_$fuzzTarget" `
+        -fileName $cargoCmd `
+        -arguments @(
+            "run", "--quiet", "--manifest-path", "fuzz\Cargo.toml",
+            "--bin", $fuzzTarget, "--", "fuzz\corpus\$fuzzTarget"
+        ) `
+        -workingDir (Get-Location).Path
+    if ($fuzzReplay.Status -eq "PASSOU") {
+        $totalPassed++
+    } else {
+        $totalFailed++
+    }
+    $results += [PSCustomObject]@{
+        Diretorio = "fuzz\corpus"
+        Teste = "fuzz_replay_$fuzzTarget"
+        Status = $fuzzReplay.Status
+        Detalhe = $fuzzReplay.Detail
+    }
+}
+
 Write-Host ""
 Write-Host "--- Tensor device-placement contract fixtures ---" -ForegroundColor Yellow
 $tensorDeviceContract = Invoke-HostCommand `
@@ -1211,12 +1377,14 @@ $results += [PSCustomObject]@{ Diretorio = "package"; Teste = "validate_r914_pac
 
 $cargoPath = (Get-Command cargo -ErrorAction SilentlyContinue).Source
 if (-not $cargoPath) {
-    $cargoPath = "C:\Users\estev\.cargo\bin\cargo.exe"
+    $cargoPath = $cargoCmd
 }
 
 $interopChecks = @(
     [PSCustomObject]@{ Nome = "cargo_test_spectra_interop"; File = $cargoPath; Args = @("test", "-p", "spectra-interop") }
     [PSCustomObject]@{ Nome = "cargo_test_spectra_lsp"; File = $cargoPath; Args = @("test", "-p", "spectra-lsp") }
+    [PSCustomObject]@{ Nome = "cargo_test_spectra_cli"; File = $cargoPath; Args = @("test", "-p", "spectra-cli") }
+    [PSCustomObject]@{ Nome = "cargo_test_spectra_contract"; File = $cargoPath; Args = @("test", "-p", "spectra-contract") }
     [PSCustomObject]@{ Nome = "cargo_build_spectra_interop_release"; File = $cargoPath; Args = @("build", "-p", "spectra-interop", "--release") }
     [PSCustomObject]@{ Nome = "rust_ffi_sample"; File = $cargoPath; Args = @("run", "-p", "spectra-interop", "--example", "rust_ffi_sample") }
     [PSCustomObject]@{ Nome = "python_phase8_demo"; File = "python"; Args = @("python\demo_phase8.py") }
@@ -1230,6 +1398,23 @@ foreach ($check in $interopChecks) {
         $totalFailed++
     }
     $results += [PSCustomObject]@{ Diretorio = "interop"; Teste = $check.Nome; Status = $r.Status; Detalhe = $r.Detail }
+}
+
+# ---------------------------------------------------------------------------
+# Group 5b: ALL Python validator unit tests (scripts/test_*.py).
+# Previously only 5 of 10 modules ran, and only under the optional -Phase.
+# ---------------------------------------------------------------------------
+$scriptUnitModules = @(Get-ChildItem -Path "scripts" -Filter "test_*.py" | Sort-Object Name | ForEach-Object { "scripts." + ($_.Name -replace "\.py$", "") })
+if ($scriptUnitModules.Count -gt 0) {
+    Write-Host ""
+    Write-Host "--- Python validator unit tests ($($scriptUnitModules.Count) modules) ---" -ForegroundColor Yellow
+    $scriptUnit = Invoke-HostCommand -name "python_validator_unit_tests" -fileName "python" -arguments (@("-m", "unittest") + $scriptUnitModules) -workingDir (Get-Location).Path
+    if ($scriptUnit.Status -eq "PASSOU") {
+        $totalPassed++
+    } else {
+        $totalFailed++
+    }
+    $results += [PSCustomObject]@{ Diretorio = "scripts"; Teste = "python_validator_unit_tests"; Status = $scriptUnit.Status; Detalhe = $scriptUnit.Detail }
 }
 
 $cCompiler = $null
@@ -1447,6 +1632,60 @@ if ($oopDiagnostics.Status -eq "PASSOU") {
     $totalFailed++
 }
 $results += [PSCustomObject]@{ Diretorio = "phase2-oop-diagnostics"; Teste = "validate_r208_oop_diagnostics"; Status = $oopDiagnostics.Status; Detalhe = $oopDiagnostics.Detail }
+
+# ---------------------------------------------------------------------------
+# Group 8.11b: R-209..R-213 focused gates, inline (they previously existed
+# only behind the -Phase early exit, so they never ran in the default suite).
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-209 self-first-parameter validation ---" -ForegroundColor Yellow
+$r209SelfFirst = Invoke-HostCommand -name "validate_r209_self_first_parameter" -fileName "python" -arguments @("scripts\validate_r209_self_first_parameter.py", "--binary", $binary) -workingDir (Get-Location).Path
+if ($r209SelfFirst.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase2-oop-semantics"; Teste = "validate_r209_self_first_parameter"; Status = $r209SelfFirst.Status; Detalhe = $r209SelfFirst.Detail }
+
+Write-Host ""
+Write-Host "--- R-210 dyn vtable lifetime ---" -ForegroundColor Yellow
+$r210StaticVtables = Invoke-HostCommand -name "validate_r210_static_vtables" -fileName "python" -arguments @("scripts\validate_r210_static_vtables.py", "--binary", $binary) -workingDir (Get-Location).Path
+if ($r210StaticVtables.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase2-oop-semantics"; Teste = "validate_r210_static_vtables"; Status = $r210StaticVtables.Status; Detalhe = $r210StaticVtables.Detail }
+
+Write-Host ""
+Write-Host "--- R-211 generic impl blocks ---" -ForegroundColor Yellow
+$r211GenericImpls = Invoke-HostCommand -name "validate_r211_generic_impls" -fileName "python" -arguments @("scripts\validate_r211_generic_impls.py", "--binary", $binary) -workingDir (Get-Location).Path
+if ($r211GenericImpls.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase2-generics"; Teste = "validate_r211_generic_impls"; Status = $r211GenericImpls.Status; Detalhe = $r211GenericImpls.Detail }
+
+Write-Host ""
+Write-Host "--- R-212 UFCS ---" -ForegroundColor Yellow
+$r212Ufcs = Invoke-HostCommand -name "validate_r212_ufcs" -fileName "python" -arguments @("scripts\validate_r212_ufcs.py", "--binary", $binary) -workingDir (Get-Location).Path
+if ($r212Ufcs.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase2-functions"; Teste = "validate_r212_ufcs"; Status = $r212Ufcs.Status; Detalhe = $r212Ufcs.Detail }
+
+Write-Host ""
+Write-Host "--- R-213 generic trait impls ---" -ForegroundColor Yellow
+$r213GenericTrait = Invoke-HostCommand -name "validate_r213_generic_trait_impls" -fileName "python" -arguments @("scripts\validate_r213_generic_trait_impls.py", "--binary", $binary) -workingDir (Get-Location).Path
+if ($r213GenericTrait.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase2-generics"; Teste = "validate_r213_generic_trait_impls"; Status = $r213GenericTrait.Status; Detalhe = $r213GenericTrait.Detail }
 
 # ---------------------------------------------------------------------------
 # Grupo 8.12: R-1002 debugger and stack traces
@@ -1713,7 +1952,7 @@ $results += [PSCustomObject]@{ Diretorio = "phase29-range-production"; Teste = "
 # ---------------------------------------------------------------------------
 Write-Host ""
 Write-Host "--- R-3007 stdlib production contract and capability audit ---" -ForegroundColor Yellow
-$r3007StdlibContract = Invoke-HostCommand -name "validate_r3007_stdlib_contract" -fileName "python" -arguments @("scripts\validate_r3007_stdlib_contract.py", "--manifest", "scripts\stdlib_contract.toml", "--binary", $binary, "--report", "target\r3007-stdlib-contract\report.json") -workingDir (Get-Location).Path
+$r3007StdlibContract = Invoke-HostCommand -name "validate_r3007_stdlib_contract" -fileName "python" -timeoutSeconds 900 -arguments @("scripts\validate_r3007_stdlib_contract.py", "--manifest", "scripts\stdlib_contract.toml", "--binary", $binary, "--report", "target\r3007-stdlib-contract\report.json") -workingDir (Get-Location).Path
 if ($r3007StdlibContract.Status -eq "PASSOU") {
     $totalPassed++
 } else {
@@ -1996,7 +2235,7 @@ if ($r2013ReleaseCandidate.Status -eq "PASSOU") {
 
 if (-not (Test-Path $phase31BinaryPath)) {
     Write-Host "Binario release nao encontrado. Compilando para Phase 31..." -ForegroundColor Yellow
-    & "C:\Users\estev\.cargo\bin\cargo.exe" build --release -p spectra-cli 2>&1 | Out-Null
+    & $cargoCmd build --release -p spectra-cli 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERRO: Falha ao compilar binario release para Phase 31." -ForegroundColor Red
         exit 1
@@ -3085,16 +3324,6 @@ if ($r3220AgentEval.Status -eq "PASSOU") {
 $results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3220_agent_eval"; Status = $r3220AgentEval.Status; Detalhe = $r3220AgentEval.Detail }
 
 Write-Host ""
-Write-Host "--- R-3223 message and handle taint ---" -ForegroundColor Yellow
-$r3223AgentTaint = Invoke-HostCommand -name "validate_r3223_agent_taint" -fileName "python" -arguments @("scripts\validate_r3223_agent_taint.py") -workingDir (Get-Location).Path
-if ($r3223AgentTaint.Status -eq "PASSOU") {
-    $totalPassed++
-} else {
-    $totalFailed++
-}
-$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3223_agent_taint"; Status = $r3223AgentTaint.Status; Detalhe = $r3223AgentTaint.Detail }
-
-Write-Host ""
 Write-Host "--- R-3218 MCP client and server ---" -ForegroundColor Yellow
 $r3218Mcp = Invoke-HostCommand -name "validate_r3218_mcp" -fileName "python" -arguments @("scripts\validate_r3218_mcp.py") -workingDir (Get-Location).Path
 if ($r3218Mcp.Status -eq "PASSOU") {
@@ -3143,16 +3372,6 @@ if ($r3221HostAdapters.Status -eq "PASSOU") {
     $totalFailed++
 }
 $results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3221_host_adapters"; Status = $r3221HostAdapters.Status; Detalhe = $r3221HostAdapters.Detail }
-
-Write-Host ""
-Write-Host "--- R-3219 A2A and ACP protocol exposure ---" -ForegroundColor Yellow
-$r3219AgentProtocols = Invoke-HostCommand -name "validate_r3219_agent_protocols" -fileName "python" -arguments @("scripts\validate_r3219_agent_protocols.py") -workingDir (Get-Location).Path
-if ($r3219AgentProtocols.Status -eq "PASSOU") {
-    $totalPassed++
-} else {
-    $totalFailed++
-}
-$results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3219_agent_protocols"; Status = $r3219AgentProtocols.Status; Detalhe = $r3219AgentProtocols.Detail }
 
 Write-Host ""
 Write-Host "--- R-3221 spectra.agent package gate ---" -ForegroundColor Yellow

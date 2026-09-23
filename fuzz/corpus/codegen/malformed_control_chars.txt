@@ -1,0 +1,3 @@
+module m
+let s = "nul\u{0000}here	tabbell"
+println(s)

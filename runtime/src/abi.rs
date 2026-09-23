@@ -191,10 +191,12 @@ pub enum RuntimeImport {
     MapContainsScalar,
     MapGetScalar,
     MapRemoveScalar,
+    /// Re-parent a pointer stored into a runtime-owned asynchronous frame.
+    ManualEscapeStored,
 }
 
 impl RuntimeImport {
-    pub const COUNT: usize = 114;
+    pub const COUNT: usize = 115;
 
     pub const ALL: &'static [Self] = &[
         Self::ManualAlloc,
@@ -311,6 +313,7 @@ impl RuntimeImport {
         Self::MapContainsScalar,
         Self::MapGetScalar,
         Self::MapRemoveScalar,
+        Self::ManualEscapeStored,
     ];
     pub const fn index(self) -> usize {
         self as usize
@@ -432,6 +435,7 @@ impl RuntimeImport {
             Self::MapContainsScalar => "spectra_rt_map_contains_scalar_fast",
             Self::MapGetScalar => "spectra_rt_map_get_scalar_fast",
             Self::MapRemoveScalar => "spectra_rt_map_remove_scalar_fast",
+            Self::ManualEscapeStored => "spectra_rt_manual_escape_stored",
         }
     }
 
@@ -535,6 +539,7 @@ impl RuntimeImport {
             Self::MapContainsScalar => (I64_I64, I64),
             Self::MapGetScalar => (I64_I64, I64),
             Self::MapRemoveScalar => (I64_I64, I64),
+            Self::ManualEscapeStored => (I64, EMPTY),
             Self::CoroutineFrameAlloc => (I64, I64),
             Self::CoroutineFrameStore => (I64_I64_I64, I64),
             Self::CoroutineFrameLoad => (I64_I64, I64),
@@ -671,6 +676,7 @@ impl RuntimeImport {
             Self::MapRemoveScalar => {
                 crate::ffi::spectra_rt_map_remove_scalar_fast as *const u8
             }
+            Self::ManualEscapeStored => crate::ffi::spectra_rt_manual_escape_stored as *const u8,
             Self::CoroutineFrameAlloc => {
                 crate::async_abi::spectra_rt_coroutine_frame_alloc as *const u8
             }

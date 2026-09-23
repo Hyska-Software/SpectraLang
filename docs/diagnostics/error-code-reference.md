@@ -32,6 +32,9 @@ The following set is the current stable Phase 1 table for high-frequency diagnos
 | `L004` | lexer | empty character literal | provide exactly one character |
 | `L005` | lexer | unterminated f-string literal | close the f-string with `"` |
 | `L006` | lexer | unterminated block comment | close the comment with `*/` |
+| `L007` | lexer | invalid `_` separator placement in a numeric literal | `_` separates digit groups and cannot lead, trail, or repeat |
+| `L009` | lexer | missing digits in a numeric literal (radix prefix with no digits, or an exponent with no digits) | add at least one digit after `0x`/`0o`/`0b` and after `e`/`E` |
+| `L010` | lexer | arrow operator `->` / `=>` is not Spectra syntax | use `returns` for function return types and `then` for match arms |
 | `P001` | parser | expected keyword | insert the missing keyword or fix item order |
 | `P002` | parser | expected or synthesized symbol | insert the required delimiter such as `)`, `}`, or `:` |
 | `P003` | parser | expected identifier | provide a valid identifier in the current grammar slot |
@@ -39,9 +42,10 @@ The following set is the current stable Phase 1 table for high-frequency diagnos
 | `P006` | parser | `await` outside async context | move the expression into `async func`, `async { ... }`, or an async closure |
 | `P011` | parser | statement not terminated by a line break | end the statement with a line break or close the surrounding block |
 | `P012` | parser | semicolon used as statement terminator | remove the `;` and end the statement with a line break |
-| `P013` | parser | nesting too deep | reduce nesting of expressions, statements, blocks, or patterns (parser recursion guard) |
+| `P013` | parser | nesting too deep (frontend recursion guard: the parser, semantic analyzer, and lint runner share this code and budget) | reduce nesting of expressions, statements, blocks, or patterns (parser recursion guard) |
 | `P014` | parser | chained comparison (`a < b < c`) | combine conditions explicitly with `and`, e.g. `a < b and b < c` |
 | `P015` | parser | line break before an infix operator ends the expression | move the operator to the end of the previous line, or wrap the operands in parentheses |
+| `P019` | parser | expected expression (expression position held a delimiter, keyword, or other non-expression) | provide a literal, identifier, call, or parenthesized expression |
 | `P999` | parser | generic syntax failure | inspect nearby syntax; parser context and hint should narrow the issue |
 | `E001` | semantic | undefined variable or function | declare/import the symbol or fix the name |
 | `E002` | semantic | argument count mismatch | pass the expected number of arguments |
@@ -93,6 +97,24 @@ The following codes cover module resolution, duplicate declarations,
 | `E031` | semantic | `match` expression is not exhaustive (missing enum variants or missing wildcard bindings for payload variants) | add patterns for the listed `Enum::Variant` arms or a wildcard arm with payload bindings |
 | `E032` | semantic | method receiver mismatch (receiver type differs from the declared `self` type, or a `self`-less method called on a value) | convert or borrow the receiver to match the signature, or call it as `Type::method(...)` |
 | `E033` | semantic | unknown standard library module in an import | use one of the registered stdlib modules; the diagnostic includes a did-you-mean suggestion when close |
+
+## Operand, Branch, Field, Trait-Impl, and Literal Diagnostics (E036-E048)
+
+| Code | Phase | Meaning | Expected hint/action |
+|---|---|---|---|
+| `E036` | semantic | operand of an arithmetic operation (binary `+ - * / %` or unary `-`) is not numeric | use numeric operands, convert the value, or overload the operator for your type |
+| `E037` | semantic | string concatenation operand is not a string | convert the operand to `string` before concatenating |
+| `E038` | semantic | operand type mismatch in a binary operation (arithmetic/equality, including the right operand of an overloaded operator) | align both operand types, or match the operator method's `other` parameter |
+| `E039` | semantic | operand of a comparison is not numeric | compare numeric values, or convert the operand first |
+| `E040` | semantic | operand of a logical operation (`and`/`or`) or unary `!` is not boolean | use a boolean condition (comparisons produce `bool`) |
+| `E041` | semantic | incompatible `if`/`unless` branch types | make every branch produce the same type, or assign unit branches separately |
+| `E042` | semantic | array index is not an integer | index arrays with `int` values |
+| `E043` | semantic | value indexed with `[]` is not an array or string | index only arrays and strings |
+| `E044` | semantic | invalid tuple access (index out of bounds, non-tuple target, or unresolved tuple type) | use an existing tuple position on a typed tuple |
+| `E045` | semantic | field visibility violation: `private` field read outside its declaring module, or `internal` field read outside its package | access the field from its declaring scope, or change its visibility to `public` |
+| `E046` | semantic | trait impl method declares a different `self` receiver than the trait | match the trait's receiver (`&self`, `&mut self`, or `self`) exactly |
+| `E047` | semantic | trait impl method declares a different `async` marker than the trait | mirror the trait's `async` marker on the implementation |
+| `E048` | semantic | integer literal is out of range for `int` (i64) | use a value within `i64` range, or write a float literal (fraction/exponent) |
 
 ## Resource Lifecycle Diagnostics (E034)
 

@@ -155,6 +155,9 @@ impl SemanticAnalyzer {
                             .map(|tp| tp.name.clone())
                             .collect(),
                         fields: fields_map,
+                        // Declared in the module currently being analyzed.
+                        defining_module: self.current_module_name.clone(),
+                        defining_package: self.current_package.clone(),
                     };
 
                     if self
@@ -345,15 +348,23 @@ impl SemanticAnalyzer {
         // Trait implementations must be visible before function body analysis so
         // generic bound checks do not depend on textual item order. Full impl
         // validation and method-body analysis still run in the normal item pass.
+        // Method SIGNATURES are pre-declared for the same reason: a method
+        // body in an impl declared before `impl Trait for Type` calls
+        // trait-impl methods (`self.media()`) and must resolve them
+        // order-independently; `register_impl_method_signatures` is
+        // idempotent, so the normal item pass re-registers silently.
         for item in &module.items {
             match item {
                 Item::TraitImpl(trait_impl) => {
                     self.predeclare_trait_impl(&trait_impl.trait_name, &trait_impl.type_name);
+                    let derived = SemanticAnalyzer::impl_block_from_trait_impl(trait_impl);
+                    self.register_impl_method_signatures(&derived);
                 }
                 Item::Impl(impl_block) => {
                     if let Some(trait_name) = &impl_block.trait_name {
                         self.predeclare_trait_impl(trait_name, &impl_block.type_name);
                     }
+                    self.register_impl_method_signatures(impl_block);
                 }
                 _ => {}
             }

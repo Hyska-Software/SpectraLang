@@ -271,7 +271,9 @@ impl ASTLowering {
                     "async block ramp did not produce a task",
                 )
             }
-            _ => unreachable!("lowering expression category mismatch"),
+            _ => self.invalid_value(
+                "lower_expression_tail called with an out-of-category expression",
+            ),
         }
     }
 }

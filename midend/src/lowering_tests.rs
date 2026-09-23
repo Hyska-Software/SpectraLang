@@ -683,4 +683,348 @@ mod tests {
         assert!(string_pretty.contains("spectra.std.collections.map_set"));
         assert!(!string_pretty.contains("spectra.compiler.collections.map_set_scalar"));
     }
+
+    /// Exact-width unsigned operands must select the unsigned machine
+    /// signedness on all six signedness-sensitive ops (`Lt`/`Le`/`Gt`/`Ge`/
+    /// `Div`/`Rem`), while signed exact ints and plain `int` keep the signed
+    /// form. Equality is bit-wise and carries no flag.
+    #[test]
+    fn unsigned_exact_int_operands_set_the_unsigned_flag() {
+        let ir = lower_source(
+            r#"
+            module unsigned_flag_shapes
+
+            public func main() returns int {
+                let hi: u8 = 200
+                let lo: u8 = 10
+                let dividend: u8 = 200
+                let divisor: u8 = 2
+                if not (hi > lo) { return 1 }
+                if not (hi >= lo) { return 2 }
+                if lo < hi { return 3 }
+                if lo <= hi { return 4 }
+                if (dividend / divisor) as int != 100 { return 5 }
+                if (dividend % divisor) as int != 0 { return 6 }
+                return 0
+            }
+            "#,
+        );
+
+        let mut relational_ops = 0;
+        for function in &ir.functions {
+            for block in &function.blocks {
+                for instruction in &block.instructions {
+                    match &instruction.kind {
+                        crate::ir::InstructionKind::Lt { unsigned, .. }
+                        | crate::ir::InstructionKind::Le { unsigned, .. }
+                        | crate::ir::InstructionKind::Gt { unsigned, .. }
+                        | crate::ir::InstructionKind::Ge { unsigned, .. }
+                        | crate::ir::InstructionKind::Div { unsigned, .. }
+                        | crate::ir::InstructionKind::Rem { unsigned, .. } => {
+                            relational_ops += 1;
+                            assert!(
+                                *unsigned,
+                                "unsigned exact-int operand in {} must lower with unsigned=true",
+                                function.name
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        assert!(
+            relational_ops >= 6,
+            "expected at least six signedness-sensitive ops, got {relational_ops}"
+        );
+    }
+
+    /// Signed exact ints and plain `int` must keep the signed flag so the
+    /// backend emits `sdiv`/`srem` and signed `icmp` conditions for them.
+    #[test]
+    fn signed_operands_keep_the_signed_flag() {
+        let ir = lower_source(
+            r#"
+            module signed_flag_shapes
+
+            public func main() returns int {
+                let wide: i8 = -5
+                let other: i8 = 3
+                let plain_a = 10
+                let plain_b = 3
+                if not (wide < other) { return 1 }
+                if (wide / other) as int != -1 { return 2 }
+                if plain_a / plain_b != 3 { return 3 }
+                if plain_a % plain_b != 1 { return 4 }
+                return 0
+            }
+            "#,
+        );
+
+        let mut signedness_ops = 0;
+        for function in &ir.functions {
+            for block in &function.blocks {
+                for instruction in &block.instructions {
+                    match &instruction.kind {
+                        crate::ir::InstructionKind::Lt { unsigned, .. }
+                        | crate::ir::InstructionKind::Div { unsigned, .. }
+                        | crate::ir::InstructionKind::Rem { unsigned, .. } => {
+                            signedness_ops += 1;
+                            assert!(
+                                !*unsigned,
+                                "signed operand in {} must lower with unsigned=false",
+                                function.name
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        assert!(signedness_ops >= 4, "got {signedness_ops} ops");
+    }
+
+    /// Mixed-width exact ints (`u8 < u16`, `u8 + u16`) used to reach the
+    /// backend as mismatched Cranelift types and crashed the verifier.
+    /// Lowering must coerce both operands to the unification type (signed
+    /// 64-bit, mirroring semantic `numeric_result_type`) with a `Cast` per
+    /// operand, and the relational flag still comes from the original
+    /// unsigned operand types.
+    #[test]
+    fn mixed_width_exact_int_operands_are_coerced_to_a_common_type() {
+        let ir = lower_source(
+            r#"
+            module mixed_width_coercion
+
+            public func main() returns int {
+                let small: u8 = 200
+                let wide: u16 = 300
+                if not (small < wide) { return 1 }
+                let sum = small + wide
+                if sum as int != 500 { return 2 }
+                return 0
+            }
+            "#,
+        );
+
+        let main = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main must be lowered");
+
+        let unify_ty = crate::ir::Type::ExactInt {
+            signed: true,
+            width: crate::ir::IntWidth::I64,
+        };
+
+        let mut casts_to_unify = 0;
+        let mut mixed_lt: Option<(crate::ir::Value, crate::ir::Value)> = None;
+        for block in &main.blocks {
+            for instruction in &block.instructions {
+                match &instruction.kind {
+                    crate::ir::InstructionKind::Cast { to_ty, .. } if *to_ty == unify_ty => {
+                        casts_to_unify += 1;
+                    }
+                    crate::ir::InstructionKind::Lt {
+                        lhs, rhs, unsigned, ..
+                    } => {
+                        assert!(*unsigned, "u8 vs u16 must stay unsigned after coercion");
+                        mixed_lt = Some((*lhs, *rhs));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        assert!(
+            casts_to_unify >= 3,
+            "both comparison operands and the add operands must be cast to the common type, \
+             got {casts_to_unify} casts"
+        );
+
+        let (lt_lhs, lt_rhs) = mixed_lt.expect("the mixed comparison must be lowered");
+        let is_cast_result = |value: crate::ir::Value| {
+            main.blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|instruction| {
+                    matches!(
+                        &instruction.kind,
+                        crate::ir::InstructionKind::Cast { result, .. } if result.id == value.id
+                    )
+                })
+        };
+        assert!(
+            is_cast_result(lt_lhs),
+            "the lhs of the mixed comparison must be a cast"
+        );
+        assert!(
+            is_cast_result(lt_rhs),
+            "the rhs of the mixed comparison must be a cast"
+        );
+    }
+
+    /// The zero operand of a unary negation must be typed exactly like the
+    /// operand's *lowered* form: number literals take their type from
+    /// `current_expected_annotation` (not the semantic span fact).
+    /// `let x: i8 = -5` therefore needs an i8 zero, while `(-120) as i8`
+    /// (cast outside the annotation's reach) lowers the literal untyped and
+    /// needs the historical i64 zero. Both used to mismatch the other way
+    /// and crash the Cranelift verifier.
+    #[test]
+    fn unary_negate_zero_matches_the_literals_lowered_type() {
+        // Shape 1: annotation active over the literal -> typed i8 pair.
+        let ir = lower_source(
+            r#"
+            module negate_typed_literal
+            public func main() returns int {
+                let x: i8 = -5
+                return x as int
+            }
+            "#,
+        );
+        let mut saw_typed_sub = false;
+        for function in &ir.functions {
+            for block in &function.blocks {
+                let instructions = &block.instructions;
+                for (index, instruction) in instructions.iter().enumerate() {
+                    if !matches!(
+                        &instruction.kind,
+                        crate::ir::InstructionKind::Sub { .. }
+                    ) {
+                        continue;
+                    }
+                    // Find the preceding constants feeding this Sub.
+                    let (lhs_id, rhs_id) = match &instruction.kind {
+                        crate::ir::InstructionKind::Sub { lhs, rhs, .. } => (lhs.id, rhs.id),
+                        _ => unreachable!(),
+                    };
+                    let producer = |id: usize| {
+                        instructions[..index].iter().rev().find_map(|instr| match &instr.kind {
+                            crate::ir::InstructionKind::ConstIntTyped { result, ty, .. }
+                                if result.id == id =>
+                            {
+                                Some(Some(ty.clone()))
+                            }
+                            crate::ir::InstructionKind::ConstInt { result, .. }
+                                if result.id == id =>
+                            {
+                                Some(None)
+                            }
+                            _ => None,
+                        })
+                    };
+                    if let (Some(Some(lhs_ty)), Some(Some(rhs_ty))) =
+                        (producer(lhs_id), producer(rhs_id))
+                    {
+                        assert_eq!(lhs_ty, rhs_ty, "both negate operands must be typed alike");
+                        assert!(
+                            matches!(lhs_ty, IRType::ExactInt { .. }),
+                            "annotated literal negation must use a typed zero, got {lhs_ty:?}"
+                        );
+                        saw_typed_sub = true;
+                    }
+                }
+            }
+        }
+        assert!(
+            saw_typed_sub,
+            "the annotated `-5` must lower as a typed-constant Sub"
+        );
+
+        // Shape 2: no annotation reaches the literal when it sits behind a
+        // cast feeding a call argument (`sink((-120) as i8)`), so both
+        // negate operands are the historical untyped i64 constants. (A
+        // fully-constant `let` chain would be const-evaluated instead, which
+        // is why this shape goes through an opaque call.)
+        let ir = lower_source(
+            r#"
+            module negate_cast_literal
+            func sink(value: i8) returns int {
+                return value as int
+            }
+            public func main() returns int {
+                return sink(-120 as i8)
+            }
+            "#,
+        );
+        let mut saw_untyped_sub = false;
+        for function in &ir.functions {
+            for block in &function.blocks {
+                let instructions = &block.instructions;
+                for (index, instruction) in instructions.iter().enumerate() {
+                    let crate::ir::InstructionKind::Sub { lhs, rhs, .. } = &instruction.kind
+                    else {
+                        continue;
+                    };
+                    let producer = |id: usize| {
+                        instructions[..index].iter().rev().any(|instr| {
+                            matches!(
+                                &instr.kind,
+                                crate::ir::InstructionKind::ConstInt { result, .. } if result.id == id
+                            )
+                        })
+                    };
+                    if producer(lhs.id) && producer(rhs.id) {
+                        saw_untyped_sub = true;
+                    }
+                }
+            }
+        }
+        assert!(
+            saw_untyped_sub,
+            "an unannotated literal negation must lower as an untyped i64 Sub, got:\n{}",
+            crate::ir::pretty::format_module(&ir)
+        );
+    }
+
+    /// The per-category lowering helpers used to `unreachable!`-panic on an
+    /// out-of-category AST node. They must record a `MidendError` (through
+    /// `ASTLowering::error`/`invalid_value`) and hand back the internal
+    /// poison value instead, so a compiler ICE is impossible from this path.
+    #[test]
+    fn out_of_category_expression_records_an_error_instead_of_panicking() {
+        use spectra_compiler::ast::{BinaryOperator, Expression, ExpressionKind};
+
+        let identifier = |name: &str| Expression {
+            span: spectra_compiler::Span::new(
+                0,
+                1,
+                spectra_compiler::Location::new(1, 1),
+                spectra_compiler::Location::new(1, 2),
+            ),
+            kind: ExpressionKind::Identifier(name.to_string()),
+        };
+        let binary = Expression {
+            span: spectra_compiler::Span::new(
+                0,
+                3,
+                spectra_compiler::Location::new(1, 1),
+                spectra_compiler::Location::new(1, 4),
+            ),
+            kind: ExpressionKind::Binary {
+                left: Box::new(identifier("a")),
+                operator: BinaryOperator::Add,
+                right: Box::new(identifier("b")),
+            },
+        };
+
+        let mut lowering = ASTLowering::new();
+        let mut function = IRFunction::new("probe", Vec::new(), IRType::Int);
+        let value = lowering.lower_expression_literals(&binary, &mut function);
+
+        assert_eq!(
+            value.id,
+            crate::ir::Value::INVALID_ID,
+            "an out-of-category node must produce the internal poison value"
+        );
+        assert!(
+            lowering
+                .errors
+                .iter()
+                .any(|error| error.message.contains("non-literal expression")),
+            "a MidendError must be recorded instead of panicking: {:?}",
+            lowering.errors
+        );
+    }
 }

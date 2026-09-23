@@ -1,6 +1,19 @@
 use super::*;
 
 impl ASTLowering {
+    fn is_contextual_integer_literal_expression(expr: &Expression) -> bool {
+        if Self::direct_integer_literal(expr).is_some() {
+            return true;
+        }
+        matches!(
+            &expr.kind,
+            ExpressionKind::Unary {
+                operator: spectra_compiler::ast::UnaryOperator::Negate,
+                operand,
+            } if Self::direct_integer_literal(operand).is_some()
+        )
+    }
+
     pub(crate) fn lower_expression_call(
         &mut self,
         expr: &Expression,
@@ -8,10 +21,35 @@ impl ASTLowering {
     ) -> Value {
         match &expr.kind {
             ExpressionKind::Call { callee, arguments } => {
-                let arg_values: Vec<Value> = arguments
-                    .iter()
-                    .map(|arg| self.lower_expression(arg, ir_func))
-                    .collect();
+                let expected_parameters = match &callee.kind {
+                    ExpressionKind::Identifier(name) => self
+                        .function_parameter_types
+                        .get(name)
+                        .cloned()
+                        .or_else(|| match self.variable_types.get(name) {
+                            Some(IRType::Function { params, .. }) => Some(params.clone()),
+                            _ => None,
+                        }),
+                    _ => match self.infer_expr_ir_type(callee) {
+                        IRType::Function { params, .. } => Some(params),
+                        _ => None,
+                    },
+                };
+                let mut arg_values = Vec::with_capacity(arguments.len());
+                for (index, arg) in arguments.iter().enumerate() {
+                    let saved_expected = self.current_expected_ir_type.clone();
+                    self.current_expected_ir_type =
+                        if Self::is_contextual_integer_literal_expression(arg) {
+                            expected_parameters
+                                .as_ref()
+                                .and_then(|params| params.get(index))
+                                .cloned()
+                        } else {
+                            None
+                        };
+                    arg_values.push(self.lower_expression(arg, ir_func));
+                    self.current_expected_ir_type = saved_expected;
+                }
 
                 if let ExpressionKind::Identifier(name) = &callee.kind {
                     if name == "block_on" {
@@ -236,7 +274,9 @@ impl ASTLowering {
                     )
                 }
             }
-            _ => unreachable!("lowering expression category mismatch"),
+            _ => self.invalid_value(
+                "lower_expression_call called with a non-call expression",
+            ),
         }
     }
 }

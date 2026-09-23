@@ -40,6 +40,8 @@ impl ASTLowering {
             ExpressionKind::Identifier(name) => {
                 if let Some((_, ty)) = self.static_globals.get(name) {
                     ty.clone()
+                } else if let Some(ty) = self.const_types.get(name) {
+                    ty.clone()
                 } else if let Some(constant) = self.const_values.get(name) {
                     match constant {
                         LoweredConstValue::Int(_) => IRType::Int,

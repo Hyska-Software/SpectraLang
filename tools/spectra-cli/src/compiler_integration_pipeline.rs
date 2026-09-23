@@ -56,6 +56,31 @@ impl SpectraCompiler {
         self.compile_impl(source, filename, render_source, line_shift)
     }
 
+    /// Emit lint warnings for a compiled source, shifting spans back onto
+    /// the on-disk text when a synthetic header was prepended (D6), gated on
+    /// `emit_output` like every other pipeline echo. The AOT object paths
+    /// call this so `compile --emit-object` / `compile --emit-exe` report the
+    /// same lint findings the normal compile path does.
+    fn emit_lint_warnings_shifted(
+        &self,
+        warnings: &[LintDiagnostic],
+        filename: &str,
+        compiled_source: &str,
+        render_source: &str,
+        line_shift: usize,
+    ) {
+        if !self.emit_output || warnings.is_empty() {
+            return;
+        }
+        if line_shift == 0 {
+            self.emit_lint_warnings(warnings, filename, compiled_source);
+        } else {
+            let mut shifted = warnings.to_vec();
+            shift_lint_lines(&mut shifted, line_shift);
+            self.emit_lint_warnings(&shifted, filename, render_source);
+        }
+    }
+
     /// Render compilation/execution errors, shifting spans back onto the
     /// on-disk source when a synthetic header was prepended.
     fn render_shifted_errors(
@@ -191,6 +216,7 @@ impl SpectraCompiler {
         let report = self.compile_to_report(source, filename).map_err(|errors| {
             Self::render_shifted_errors(errors, source, filename, render_source, line_shift, "compilation")
         })?;
+        self.emit_lint_warnings_shifted(&report.warnings, filename, source, render_source, line_shift);
         let metadata = native_debug_metadata(&report.artifacts.ir_module, false);
 
         let aot = AotCodeGenerator::new();
@@ -305,6 +331,7 @@ impl SpectraCompiler {
         let report = self.compile_to_report(source, filename).map_err(|errors| {
             Self::render_shifted_errors(errors, source, filename, render_source, line_shift, "compilation")
         })?;
+        self.emit_lint_warnings_shifted(&report.warnings, filename, source, render_source, line_shift);
         let metadata = native_debug_metadata(&report.artifacts.ir_module, true);
 
         let aot = AotCodeGenerator::new();

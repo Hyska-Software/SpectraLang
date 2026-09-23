@@ -1,0 +1,1 @@
+reads program input from stdin (read_line); not deterministic without a stdin script

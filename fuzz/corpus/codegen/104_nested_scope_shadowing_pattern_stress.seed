@@ -1,0 +1,39 @@
+module nested_scope_shadowing_pattern_stress
+
+record Boxed {
+    public value: int,
+}
+
+enum Item {
+    One(int),
+    Boxed { value: int },
+    Empty,
+}
+
+func inspect(item: Item, adjust: func(int) returns int) returns int {
+    return match item {
+        when Item::One(value) then adjust(value),
+        when Item::Boxed { value } then {
+            let value = value + 1
+            adjust(value)
+        },
+        when Item::Empty then 0
+    }
+}
+
+public func main() returns int {
+    let value                         = 10
+    let boxed                         = Boxed { value }
+    let adjust: func(int) returns int = | input: int | input + value
+
+    let first  = inspect(Item::One(3), adjust)
+    let second = inspect(Item::Boxed { value: boxed.value }, adjust)
+
+    if first != 13 {
+        return first
+    }
+    if second != 21 {
+        return second
+    }
+    return 0
+}

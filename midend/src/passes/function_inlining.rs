@@ -414,15 +414,28 @@ fn remap_instruction(
             lhs: map_value(*lhs, values),
             rhs: map_value(*rhs, values),
         },
-        InstructionKind::Div { result, lhs, rhs } => InstructionKind::Div {
+        InstructionKind::Div {
+            result,
+            lhs,
+            rhs,
+            unsigned,
+        } => InstructionKind::Div {
             result: map_value(*result, values),
             lhs: map_value(*lhs, values),
             rhs: map_value(*rhs, values),
+            // Signedness describes the operands, not their identities: keep it.
+            unsigned: *unsigned,
         },
-        InstructionKind::Rem { result, lhs, rhs } => InstructionKind::Rem {
+        InstructionKind::Rem {
+            result,
+            lhs,
+            rhs,
+            unsigned,
+        } => InstructionKind::Rem {
             result: map_value(*result, values),
             lhs: map_value(*lhs, values),
             rhs: map_value(*rhs, values),
+            unsigned: *unsigned,
         },
         InstructionKind::Eq { result, lhs, rhs } => InstructionKind::Eq {
             result: map_value(*result, values),
@@ -434,25 +447,49 @@ fn remap_instruction(
             lhs: map_value(*lhs, values),
             rhs: map_value(*rhs, values),
         },
-        InstructionKind::Lt { result, lhs, rhs } => InstructionKind::Lt {
+        InstructionKind::Lt {
+            result,
+            lhs,
+            rhs,
+            unsigned,
+        } => InstructionKind::Lt {
             result: map_value(*result, values),
             lhs: map_value(*lhs, values),
             rhs: map_value(*rhs, values),
+            unsigned: *unsigned,
         },
-        InstructionKind::Le { result, lhs, rhs } => InstructionKind::Le {
+        InstructionKind::Le {
+            result,
+            lhs,
+            rhs,
+            unsigned,
+        } => InstructionKind::Le {
             result: map_value(*result, values),
             lhs: map_value(*lhs, values),
             rhs: map_value(*rhs, values),
+            unsigned: *unsigned,
         },
-        InstructionKind::Gt { result, lhs, rhs } => InstructionKind::Gt {
+        InstructionKind::Gt {
+            result,
+            lhs,
+            rhs,
+            unsigned,
+        } => InstructionKind::Gt {
             result: map_value(*result, values),
             lhs: map_value(*lhs, values),
             rhs: map_value(*rhs, values),
+            unsigned: *unsigned,
         },
-        InstructionKind::Ge { result, lhs, rhs } => InstructionKind::Ge {
+        InstructionKind::Ge {
+            result,
+            lhs,
+            rhs,
+            unsigned,
+        } => InstructionKind::Ge {
             result: map_value(*result, values),
             lhs: map_value(*lhs, values),
             rhs: map_value(*rhs, values),
+            unsigned: *unsigned,
         },
         InstructionKind::And { result, lhs, rhs } => InstructionKind::And {
             result: map_value(*result, values),

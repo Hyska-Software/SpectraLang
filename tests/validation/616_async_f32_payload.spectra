@@ -1,0 +1,40 @@
+// Teste 616: f32 payloads through the async coroutine machinery.
+//
+// Regression: storing an f32 into a coroutine frame emitted
+// `uextend(I64, f32)` (illegal on floats) and `AsyncReady` emitted
+// `bitcast(F64, f32)` (a width mismatch), so any async function holding an
+// f32 local failed Cranelift verification. The f32 value must now survive
+// frame store/load, an `await`, and the ready-payload conversion. Returns
+// the numbered code of the first wrong value and 0 only when every f32
+// round trip is exact (asserted for both JIT and AOT execution).
+module async_f32_payload
+
+import std.math as math
+
+async func hold_scale() returns f32 {
+    let local: f32 = 1.5
+    let doubled = local * (2.0 as f32)
+    return doubled
+}
+
+async func scale_across_await() returns int {
+    let value = await hold_scale()
+    if math.abs_f(value as f64 - 3.0) > 0.000001 {
+        return 1
+    }
+    return 0
+}
+
+public func main() returns int {
+    let across = block_on(scale_across_await())
+    if across != 0 {
+        return 10 + across
+    }
+
+    let direct = block_on(hold_scale())
+    if math.abs_f(direct as f64 - 3.0) > 0.000001 {
+        return 20
+    }
+
+    return 0
+}

@@ -523,11 +523,26 @@ impl SemanticAnalyzer {
                             variants: variant_map,
                         });
                 } else {
-                    // Struct registration: populate fields from the exported type.
+                    // Struct registration: populate fields from the exported
+                    // type, keeping the REAL per-field visibility so
+                    // `private`/`internal` access can be enforced here.
+                    // `None` (builtins/legacy exports) treats fields as public.
                     let vis = if type_export.visibility == ExportVisibility::Public {
                         Visibility::Public
                     } else {
                         Visibility::Internal
+                    };
+                    let field_vis = |fname: &str| -> Visibility {
+                        type_export
+                            .struct_field_visibility
+                            .as_ref()
+                            .and_then(|map| map.get(fname))
+                            .map(|vis| match vis {
+                                ExportVisibility::Public => Visibility::Public,
+                                ExportVisibility::Internal => Visibility::Internal,
+                                ExportVisibility::Private => Visibility::Private,
+                            })
+                            .unwrap_or(Visibility::Public)
                     };
                     let field_map: HashMap<String, StructFieldInfo> = type_export
                         .struct_fields
@@ -540,7 +555,7 @@ impl SemanticAnalyzer {
                                         StructFieldInfo {
                                             ty: fty.clone(),
                                             span: import.span,
-                                            visibility: Visibility::Public,
+                                            visibility: field_vis(fname),
                                         },
                                     )
                                 })
@@ -553,6 +568,10 @@ impl SemanticAnalyzer {
                             visibility: vis,
                             type_params: Vec::new(),
                             fields: field_map,
+                            // Imported: record the exporting module/package so
+                            // field visibility is enforced against it.
+                            defining_module: Some(module_path.clone()),
+                            defining_package: exports.package_name.clone(),
                         });
                 }
 

@@ -1,0 +1,49 @@
+module trait_generic_associated_method_stress
+
+trait Score {
+    func score( & self) returns int
+}
+
+trait Scale {
+    func scale( & self, factor: int) returns int
+}
+
+record Sample {
+    public value: int,
+    public weight: int,
+}
+
+impl Score for Sample {
+    func score( & self) returns int {
+        return self.value + self.weight
+    }
+}
+
+impl Scale for Sample {
+    func scale( & self, factor: int) returns int {
+        return(self.value + self.weight) * factor
+    }
+}
+
+func evaluate<T: Score>(item: T) returns int {
+    return item.score()
+}
+
+func amplify<T: Scale>(item: T, factor: int) returns int {
+    return item.scale(factor)
+}
+
+public func main() returns int {
+    let sample = Sample { value: 6, weight: 4 }
+    let score  = evaluate(sample)
+    let again  = Sample { value: 6, weight: 4 }
+    let scaled = amplify(again, 3)
+
+    if score != 10 {
+        return score
+    }
+    if scaled != 30 {
+        return scaled
+    }
+    return 0
+}

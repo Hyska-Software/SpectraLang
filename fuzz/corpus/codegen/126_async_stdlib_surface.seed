@@ -1,0 +1,20 @@
+module async_stdlib_surface
+
+async func read_like(value: int) returns int {
+    return value
+}
+
+async func write_like(value: int) returns int {
+    return value + 1
+}
+
+async func io_roundtrip() returns int {
+    let read_value  = await read_like(40)
+    let write_value = await write_like(1)
+    return read_value + write_value
+}
+
+func main() returns int {
+    let task = io_roundtrip()
+    return 0
+}

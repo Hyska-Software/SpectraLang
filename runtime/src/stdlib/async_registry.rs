@@ -3,7 +3,14 @@ use crate::async_frame::{AsyncAffinity, AsyncFrame, AsyncFrameRegistry, AsyncPol
 #[cfg(test)]
 use crate::async_frame::{AsyncResultStorage, AsyncTaskState};
 pub(crate) struct AsyncTaskRegistry {
-    pub(crate) now_ms: SpectraHostValue,
+    /// Manual (virtual) offset of the scheduler clock, advanced only by
+    /// `spectra.async.scheduler.advance_time`. Tests use it to fast-forward.
+    pub(crate) virtual_offset_ms: SpectraHostValue,
+    /// When the current clock epoch started. The observable clock is
+    /// `virtual_offset_ms + epoch.elapsed()`, so **real timers fire in
+    /// production without any `advance_time` call** (which only a runtime
+    /// test ever made). Reset by [`Self::clear`].
+    epoch: std::time::Instant,
     pub(crate) next_join_order: SpectraHostValue,
     pub(crate) tasks: AsyncHandleTable<AsyncTask>,
     pub(crate) scopes: AsyncHandleTable<AsyncScope>,
@@ -21,7 +28,8 @@ pub(crate) struct AsyncTaskRegistry {
 impl AsyncTaskRegistry {
     pub(crate) fn new() -> Self {
         Self {
-            now_ms: 0,
+            virtual_offset_ms: 0,
+            epoch: std::time::Instant::now(),
             next_join_order: 1,
             tasks: AsyncHandleTable::new(HandleKind::Async),
             scopes: AsyncHandleTable::new(HandleKind::AsyncScope),
@@ -36,9 +44,21 @@ impl AsyncTaskRegistry {
         }
     }
 
+    /// The scheduler clock in milliseconds: virtual offset plus real elapsed
+    /// time since the epoch started. Deadlines are computed and compared
+    /// against this value, so a plain wall-clock delay expires a timeout.
+    pub(crate) fn now_ms(&self) -> SpectraHostValue {
+        self.virtual_offset_ms
+            .saturating_add(self.epoch.elapsed().as_millis() as SpectraHostValue)
+    }
+
     pub(crate) fn clear(&mut self) {
         self.deregister_io_sources();
-        self.now_ms = 0;
+        // Reset the clock epoch together with the tables: a stale deadline
+        // must never compare against a clock that jumped forward during the
+        // previous epoch.
+        self.virtual_offset_ms = 0;
+        self.epoch = std::time::Instant::now();
         self.next_join_order = 1;
         self.tasks.clear();
         self.coroutine_frames.clear();
@@ -414,12 +434,13 @@ impl AsyncTaskRegistry {
     }
 
     pub(crate) fn process_due_timeouts(&mut self) {
+        let now_ms = self.now_ms();
         let due_tasks: Vec<_> = self
             .tasks
             .iter()
             .filter_map(|(task_id, task)| {
                 let deadline = task.deadline_ms?;
-                (deadline <= self.now_ms && !task.cancelled).then_some(task_id)
+                (deadline <= now_ms && !task.cancelled).then_some(task_id)
             })
             .collect();
         for task_id in due_tasks {

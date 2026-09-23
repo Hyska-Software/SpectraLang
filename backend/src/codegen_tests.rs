@@ -375,6 +375,63 @@ mod tests {
     }
 
     #[test]
+    fn returning_a_field_pointer_escapes_the_stack_alloca() {
+        // The address of a field of a stack aggregate is as escape-worthy as
+        // the aggregate itself: without `FieldPtr` propagation the root alloca
+        // stayed in `stack_allocas` while the returned pointer outlived the
+        // frame (dangling).
+        let function = IRFunction {
+            name: "escaping_field".to_string(),
+            params: vec![],
+            return_type: IRType::Array {
+                element_type: Box::new(IRType::Int),
+                size: 4,
+            },
+            source_span: None,
+            locals: vec![],
+            async_layout: None,
+            suspension_barrier: false,
+            next_value_id: 2,
+            next_block_id: 1,
+            blocks: vec![IRBasicBlock {
+                id: 0,
+                label: "entry".to_string(),
+                instructions: vec![
+                    Instruction {
+                        id: 0,
+                        kind: InstructionKind::Alloca {
+                            result: IRValue { id: 0 },
+                            ty: IRType::Array {
+                                element_type: Box::new(IRType::Int),
+                                size: 4,
+                            },
+                        },
+                        source_span: None,
+                    },
+                    Instruction {
+                        id: 1,
+                        kind: InstructionKind::FieldPtr {
+                            result: IRValue { id: 1 },
+                            ptr: IRValue { id: 0 },
+                            offset: 0,
+                        },
+                        source_span: None,
+                    },
+                ],
+                terminator: Some(Terminator::Return {
+                    value: Some(IRValue { id: 1 }),
+                }),
+            }],
+        };
+
+        let stack_allocas = CodeGenerator::collect_stack_allocas(&function);
+        assert!(
+            !stack_allocas.contains(&0),
+            "returning a field address must demote the root alloca off the stack frame"
+        );
+    }
+
+    #[test]
     fn struct_contained_stack_alloca_does_not_escape() {
         let array_type = IRType::Array {
             element_type: Box::new(IRType::Int),
@@ -894,6 +951,7 @@ mod tests {
             result: result_value,
             lhs: Value { id: 0 },
             rhs: Value { id: 1 },
+            unsigned: false,
         });
 
         // Return
@@ -1155,6 +1213,7 @@ mod tests {
             result: gt_value,
             lhs: Value { id: 0 },
             rhs: Value { id: 1 },
+            unsigned: false,
         });
 
         // ge = a >= b
@@ -1163,6 +1222,7 @@ mod tests {
             result: ge_value,
             lhs: Value { id: 0 },
             rhs: Value { id: 1 },
+            unsigned: false,
         });
 
         // rem = a % b (F32 must lower to frem, not srem)
@@ -1171,6 +1231,7 @@ mod tests {
             result: rem_value,
             lhs: Value { id: 0 },
             rhs: Value { id: 1 },
+            unsigned: false,
         });
 
         entry_block.set_terminator(Terminator::Return {
@@ -1206,12 +1267,14 @@ mod tests {
                 result: quotient,
                 lhs: one,
                 rhs: zero,
+                unsigned: false,
             });
         } else {
             entry_block.add_instruction(InstructionKind::Div {
                 result: quotient,
                 lhs: one,
                 rhs: zero,
+                unsigned: false,
             });
         }
         entry_block.set_terminator(Terminator::Return {
@@ -1563,6 +1626,7 @@ mod tests {
                 result: IRValue { id: 3 },
                 lhs: n,
                 rhs: IRValue { id: 2 },
+                unsigned: false,
             });
         }
 
@@ -1688,6 +1752,7 @@ mod tests {
                 result: IRValue { id: 3 },
                 lhs: n,
                 rhs: IRValue { id: 2 },
+                unsigned: false,
             });
         }
 
@@ -2017,5 +2082,956 @@ mod tests {
         assert!(contents.contains("\"ranges\":["), "{contents}");
         std::fs::remove_file(&written).ok();
         std::env::remove_var(JIT_DEBUG_ENV);
+    }
+
+    // -----------------------------------------------------------------------
+    // Signedness-sensitive arithmetic (exact-width unsigned integers)
+    // -----------------------------------------------------------------------
+
+    fn finalized_icc_conditions(func: &cranelift_codegen::ir::Function) -> Vec<IntCC> {
+        let mut conditions = Vec::new();
+        for block in func.layout.blocks() {
+            for inst in func.layout.block_insts(block) {
+                if let Some(cond) = func.dfg.insts[inst].cond_code() {
+                    conditions.push(cond);
+                }
+            }
+        }
+        conditions
+    }
+
+    fn finalized_opcodes(func: &cranelift_codegen::ir::Function) -> Vec<cranelift_codegen::ir::Opcode>
+    {
+        let mut opcodes = Vec::new();
+        for block in func.layout.blocks() {
+            for inst in func.layout.block_insts(block) {
+                opcodes.push(func.dfg.insts[inst].opcode());
+            }
+        }
+        opcodes
+    }
+
+    /// Whether the function compares a value against `expected` with an
+    /// integer `icmp` — matching both the immediate form (`icmp_imm`) and
+    /// the canonicalized register form (`iconst` + `icmp`), since Cranelift's
+    /// preopt rewrites one into the other.
+    fn has_icmp_imm(func: &cranelift_codegen::ir::Function, expected: i64) -> bool {
+        use cranelift_codegen::ir::{InstructionData, Opcode};
+        let mut iconsts: HashMap<cranelift_codegen::ir::Value, i64> = HashMap::new();
+        for block in func.layout.blocks() {
+            for inst in func.layout.block_insts(block) {
+                if let InstructionData::UnaryImm { opcode, imm } = &func.dfg.insts[inst] {
+                    if *opcode == Opcode::Iconst {
+                        if let Some(&result) = func.dfg.inst_results(inst).first() {
+                            iconsts.insert(result, imm.bits());
+                        }
+                    }
+                }
+            }
+        }
+        for block in func.layout.blocks() {
+            for inst in func.layout.block_insts(block) {
+                match &func.dfg.insts[inst] {
+                    InstructionData::IntCompareImm { imm, .. } if imm.bits() == expected => {
+                        return true;
+                    }
+                    InstructionData::IntCompare { args, .. } => {
+                        for &arg in args.iter() {
+                            if iconsts.get(&arg) == Some(&expected) {
+                                return true;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        false
+    }
+
+    /// `Lt { unsigned: true }` on exact-width unsigned operands must lower to
+    /// an unsigned `icmp` condition; `unsigned: false` must keep the signed
+    /// one. Before this, both emitted `SignedLessThan` unconditionally and
+    /// misordered values above the signed maximum.
+    #[test]
+    fn unsigned_exact_int_comparison_selects_the_icc_signedness() {
+        use spectra_midend::ir::IntWidth;
+
+        let build = |name: &str, unsigned: bool| {
+            let mut func = IRFunction::new(
+                name,
+                vec![
+                    Parameter {
+                        id: 0,
+                        name: "a".to_string(),
+                        ty: IRType::ExactInt {
+                            signed: false,
+                            width: IntWidth::I8,
+                        },
+                    },
+                    Parameter {
+                        id: 1,
+                        name: "b".to_string(),
+                        ty: IRType::ExactInt {
+                            signed: false,
+                            width: IntWidth::I8,
+                        },
+                    },
+                ],
+                IRType::Bool,
+            );
+            let entry = func.add_block("entry");
+            func.get_block_mut(entry)
+                .unwrap()
+                .add_instruction(InstructionKind::Lt {
+                    result: IRValue { id: 2 },
+                    lhs: IRValue { id: 0 },
+                    rhs: IRValue { id: 1 },
+                    unsigned,
+                });
+            func.get_block_mut(entry)
+                .unwrap()
+                .set_terminator(Terminator::Return {
+                    value: Some(IRValue { id: 2 }),
+                });
+            func
+        };
+
+        let mut codegen = CodeGenerator::new();
+        let func = build("cmp_unsigned", true);
+        codegen.declare_function(&func).expect("declare unsigned");
+        codegen
+            .define_function(&func, &HashMap::new())
+            .expect("define unsigned");
+        let finalized = codegen
+            .last_finalized_func
+            .as_ref()
+            .expect("finalized IR snapshot");
+        let conditions = finalized_icc_conditions(finalized);
+        assert!(
+            conditions.contains(&IntCC::UnsignedLessThan),
+            "unsigned Lt must emit UnsignedLessThan, got {conditions:?}"
+        );
+        assert!(
+            !conditions.contains(&IntCC::SignedLessThan),
+            "unsigned Lt must not emit SignedLessThan, got {conditions:?}"
+        );
+
+        let mut codegen = CodeGenerator::new();
+        let func = build("cmp_signed", false);
+        codegen.declare_function(&func).expect("declare signed");
+        codegen
+            .define_function(&func, &HashMap::new())
+            .expect("define signed");
+        let finalized = codegen
+            .last_finalized_func
+            .as_ref()
+            .expect("finalized IR snapshot");
+        let conditions = finalized_icc_conditions(finalized);
+        assert!(
+            conditions.contains(&IntCC::SignedLessThan),
+            "signed Lt must emit SignedLessThan, got {conditions:?}"
+        );
+    }
+
+    /// Unsigned `Div`/`Rem` must lower to `udiv`/`urem` (and keep the
+    /// zero-divisor panic), while signed division must emit the `MIN / -1`
+    /// overflow guard alongside the zero check: `sdiv(MIN, -1)` raises a
+    /// native `#DE`/SIGFPE instead of the runtime's exit-101 panic without
+    /// it.
+    #[test]
+    fn unsigned_division_emits_udiv_and_signed_division_guards_min_overflow() {
+        use spectra_midend::ir::IntWidth;
+
+        let build = |name: &str, width: IntWidth, signed: bool, unsigned_flag: bool| {
+            let mut func = IRFunction::new(
+                name,
+                vec![
+                    Parameter {
+                        id: 0,
+                        name: "a".to_string(),
+                        ty: IRType::ExactInt { signed, width },
+                    },
+                    Parameter {
+                        id: 1,
+                        name: "b".to_string(),
+                        ty: IRType::ExactInt { signed, width },
+                    },
+                ],
+                IRType::ExactInt { signed, width },
+            );
+            let entry = func.add_block("entry");
+            func.get_block_mut(entry)
+                .unwrap()
+                .add_instruction(InstructionKind::Div {
+                    result: IRValue { id: 2 },
+                    lhs: IRValue { id: 0 },
+                    rhs: IRValue { id: 1 },
+                    unsigned: unsigned_flag,
+                });
+            func.get_block_mut(entry)
+                .unwrap()
+                .set_terminator(Terminator::Return {
+                    value: Some(IRValue { id: 2 }),
+                });
+            func
+        };
+
+        // Unsigned 64-bit division -> udiv, no signed-overflow guard.
+        let mut codegen = CodeGenerator::new();
+        let func = build(
+            "div_u64",
+            IntWidth::I64,
+            false,
+            true,
+        );
+        codegen.declare_function(&func).expect("declare u64");
+        codegen
+            .define_function(&func, &HashMap::new())
+            .expect("define u64");
+        codegen
+            .module
+            .finalize_definitions()
+            .expect("udiv must legalize");
+        let finalized = codegen.last_finalized_func.as_ref().unwrap();
+        let opcodes = finalized_opcodes(finalized);
+        assert!(
+            opcodes.contains(&cranelift_codegen::ir::Opcode::Udiv),
+            "unsigned Div must emit udiv, got {opcodes:?}"
+        );
+        assert!(
+            !opcodes.contains(&cranelift_codegen::ir::Opcode::Sdiv),
+            "unsigned Div must not emit sdiv, got {opcodes:?}"
+        );
+
+        // Narrow (u8) unsigned division: same contract at I8 width.
+        let mut codegen = CodeGenerator::new();
+        let func = build("div_u8", IntWidth::I8, false, true);
+        codegen.declare_function(&func).expect("declare u8");
+        codegen
+            .define_function(&func, &HashMap::new())
+            .expect("define u8");
+        codegen
+            .module
+            .finalize_definitions()
+            .expect("narrow udiv must legalize");
+        let finalized = codegen.last_finalized_func.as_ref().unwrap();
+        assert!(finalized_opcodes(finalized).contains(
+            &cranelift_codegen::ir::Opcode::Udiv
+        ));
+
+        // Signed division keeps sdiv and gains the MIN / -1 guard
+        // (icmp rhs == -1, icmp lhs == i64::MIN) plus the zero check.
+        let mut codegen = CodeGenerator::new();
+        let func = build("div_i64", IntWidth::I64, true, false);
+        codegen.declare_function(&func).expect("declare i64");
+        codegen
+            .define_function(&func, &HashMap::new())
+            .expect("define i64");
+        let finalized = codegen.last_finalized_func.as_ref().unwrap();
+        let opcodes = finalized_opcodes(finalized);
+        assert!(
+            opcodes.contains(&cranelift_codegen::ir::Opcode::Sdiv),
+            "signed Div must emit sdiv, got {opcodes:?}"
+        );
+        assert!(
+            has_icmp_imm(finalized, -1),
+            "signed Div must guard rhs == -1 (the MIN / -1 overflow divisor)"
+        );
+        assert!(
+            has_icmp_imm(finalized, i64::MIN),
+            "signed Div must guard lhs == signed MIN"
+        );
+    }
+
+    /// The signed overflow case must reach the *runtime* panic, so the AOT
+    /// object embeds the "integer division overflow" literal next to the
+    /// zero-divisor ones.
+    #[test]
+    fn aot_signed_division_embeds_the_overflow_panic_literal() {
+        let mut module = IRModule::new("aot_div_overflow_literal");
+        let mut func = IRFunction::new("divide", vec![], IRType::Int);
+        let entry = func.add_block("entry");
+        func.get_block_mut(entry)
+            .unwrap()
+            .add_instruction(InstructionKind::Div {
+                result: IRValue { id: 2 },
+                lhs: IRValue { id: 0 },
+                rhs: IRValue { id: 1 },
+                unsigned: false,
+            });
+        // Feed the operands from parameters so nothing constant-folds.
+        func.params = vec![
+            Parameter {
+                id: 0,
+                name: "a".to_string(),
+                ty: IRType::Int,
+            },
+            Parameter {
+                id: 1,
+                name: "b".to_string(),
+                ty: IRType::Int,
+            },
+        ];
+        func.next_value_id = 3;
+        func.get_block_mut(entry)
+            .unwrap()
+            .set_terminator(Terminator::Return {
+                value: Some(IRValue { id: 2 }),
+            });
+        module.add_function(func);
+
+        let bytes = crate::AotCodeGenerator::new()
+            .compile_to_object(&module, &crate::AotOptions::default())
+            .expect("AOT compile of signed division module");
+        for expected in [
+            "integer division overflow",
+            "integer division by zero",
+        ] {
+            let needle: Vec<u8> = expected.bytes().chain(std::iter::once(0)).collect();
+            assert!(
+                bytes.windows(needle.len()).any(|w| w == needle),
+                "AOT object does not embed the {expected:?} panic literal"
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Tail-call convention eligibility (CallConv::Tail ABI safety)
+    // -----------------------------------------------------------------------
+
+    fn trivial_main() -> IRFunction {
+        let mut func = IRFunction::new("main", vec![], IRType::Int);
+        let entry = func.add_block("entry");
+        func.get_block_mut(entry)
+            .unwrap()
+            .add_instruction(InstructionKind::ConstInt {
+                result: IRValue { id: 0 },
+                value: 0,
+            });
+        func.get_block_mut(entry)
+            .unwrap()
+            .set_terminator(Terminator::Return {
+                value: Some(IRValue { id: 0 }),
+            });
+        func
+    }
+
+    /// The entry module keeps `CallConv::Tail` for a clean self-tail-recursive
+    /// function: deep recursion must still compile to a native `return_call`.
+    #[test]
+    fn entry_module_keeps_tail_convention_for_self_tail_recursion() {
+        let mut codegen = CodeGenerator::new();
+        let mut module = IRModule::new("entry_tail");
+        module.add_function(tail_recursion_loop_sum());
+        module.add_function(trivial_main());
+        codegen
+            .generate_module(&module)
+            .expect("entry module must generate");
+
+        let func_id = *codegen
+            .function_map
+            .get("entry_tail::loop_sum")
+            .expect("loop_sum declared");
+        let signature = &codegen
+            .module
+            .declarations()
+            .get_function_decl(func_id)
+            .signature;
+        assert_eq!(
+            signature.call_conv,
+            isa::CallConv::Tail,
+            "clean self-tail-recursion in the entry module keeps Tail"
+        );
+    }
+
+    /// A function whose address is taken anywhere in the module must keep the
+    /// platform default: `CallIndirect` rebuilds its signature with
+    /// `module.make_signature()`, so a Tail callee would be entered with the
+    /// wrong argument-register placement (the `let g = fib; g(10)` /
+    /// vtable shapes).
+    #[test]
+    fn address_taken_function_is_not_tail_eligible() {
+        let mut codegen = CodeGenerator::new();
+        let default_conv = codegen.module.make_signature().call_conv;
+
+        let mut module = IRModule::new("closure_tail");
+        module.add_function(tail_recursion_loop_sum());
+
+        // main: `let g = loop_sum; return g(5, 0)` as FuncAddr + CallIndirect.
+        let mut main = IRFunction::new("main", vec![], IRType::Int);
+        let entry = main.add_block("entry");
+        {
+            let block = main.get_block_mut(entry).unwrap();
+            block.add_instruction(InstructionKind::ConstInt {
+                result: IRValue { id: 0 },
+                value: 5,
+            });
+            block.add_instruction(InstructionKind::ConstInt {
+                result: IRValue { id: 1 },
+                value: 0,
+            });
+            block.add_instruction(InstructionKind::FuncAddr {
+                result: IRValue { id: 2 },
+                function: "loop_sum".to_string(),
+            });
+            block.add_instruction(InstructionKind::CallIndirect {
+                result: Some(IRValue { id: 3 }),
+                fn_ptr: IRValue { id: 2 },
+                args: vec![IRValue { id: 0 }, IRValue { id: 1 }],
+                signature_params: vec![IRType::Int, IRType::Int],
+                signature_return: Box::new(IRType::Int),
+            });
+            block.set_terminator(Terminator::Return {
+                value: Some(IRValue { id: 3 }),
+            });
+        }
+        main.next_value_id = 4;
+        module.add_function(main);
+
+        codegen
+            .generate_module(&module)
+            .expect("address-taken module must generate");
+
+        let func_id = *codegen
+            .function_map
+            .get("closure_tail::loop_sum")
+            .expect("loop_sum declared");
+        let signature = &codegen
+            .module
+            .declarations()
+            .get_function_decl(func_id)
+            .signature;
+        assert_eq!(
+            signature.call_conv, default_conv,
+            "an address-taken function must keep the default convention so \
+             CallIndirect's default signature matches"
+        );
+    }
+
+    /// Library modules (no `main`) are referenced by later modules through
+    /// names this module cannot see (external lists, cross-module vtables), so
+    /// they never use Tail in the JIT either.
+    #[test]
+    fn library_module_without_main_disables_tail_convention() {
+        let mut codegen = CodeGenerator::new();
+        let default_conv = codegen.module.make_signature().call_conv;
+
+        let mut module = IRModule::new("library_tail");
+        module.add_function(tail_recursion_loop_sum());
+        codegen
+            .generate_module(&module)
+            .expect("library module must generate");
+
+        let func_id = *codegen
+            .function_map
+            .get("library_tail::loop_sum")
+            .expect("loop_sum declared");
+        let signature = &codegen
+            .module
+            .declarations()
+            .get_function_decl(func_id)
+            .signature;
+        assert_eq!(
+            signature.call_conv, default_conv,
+            "library modules fall back to plain calls instead of Tail"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Async f32 code generation (frame store/load + AsyncReady)
+    // -----------------------------------------------------------------------
+
+    /// `FrameStore` used to emit `uextend(I64, f32)` (illegal on floats) and
+    /// `AsyncReady` used to emit `bitcast(F64, f32)` (width mismatch). The
+    /// round trip must lower, verify, execute, and preserve the f32 value.
+    #[test]
+    fn f32_frame_roundtrip_and_async_ready_execute() {
+        use spectra_midend::ir::FloatWidth;
+
+        let f32_ty = IRType::ExactFloat {
+            width: FloatWidth::F32,
+        };
+        let mut func = IRFunction::new("async_f32_roundtrip", vec![], f32_ty.clone());
+        let entry = func.add_block("entry");
+        {
+            let block = func.get_block_mut(entry).unwrap();
+            block.add_instruction(InstructionKind::FrameAlloc {
+                result: IRValue { id: 0 },
+                layout: "test_f32_frame".to_string(),
+                slot_count: 1,
+            });
+            block.add_instruction(InstructionKind::ConstFloatTyped {
+                result: IRValue { id: 1 },
+                value: 1.5,
+                ty: f32_ty.clone(),
+            });
+            block.add_instruction(InstructionKind::FrameStore {
+                frame: IRValue { id: 0 },
+                slot: 0,
+                value: IRValue { id: 1 },
+                escape_value: false,
+            });
+            block.add_instruction(InstructionKind::FrameLoad {
+                result: IRValue { id: 2 },
+                frame: IRValue { id: 0 },
+                slot: 0,
+                ty: f32_ty.clone(),
+            });
+            // Exercise the AsyncReady float conversion (fpromote F32 -> F64).
+            block.add_instruction(InstructionKind::AsyncReady {
+                result: IRValue { id: 3 },
+                value: Some(IRValue { id: 2 }),
+                output_type: f32_ty.clone(),
+            });
+            block.set_terminator(Terminator::Return {
+                value: Some(IRValue { id: 2 }),
+            });
+        }
+        func.next_value_id = 4;
+
+        let mut codegen = CodeGenerator::new();
+        codegen.pre_intern_host_names_for_test(&func);
+        codegen.declare_function(&func).expect("declare");
+        codegen
+            .define_function(&func, &HashMap::new())
+            .expect("f32 frame codegen must verify");
+        codegen
+            .module
+            .finalize_definitions()
+            .expect("f32 frame codegen must compile");
+        let func_id = *codegen.function_map.get("async_f32_roundtrip").unwrap();
+        let ptr = codegen.module.get_finalized_function(func_id) as usize;
+        let run: extern "C" fn() -> f32 = unsafe { std::mem::transmute(ptr) };
+        assert_eq!(run(), 1.5, "the f32 payload must survive the frame round trip");
+    }
+
+    // -----------------------------------------------------------------------
+    // String/array logical length maps (StringLen / char_at)
+    // -----------------------------------------------------------------------
+
+    fn run_i64_function(codegen: &mut CodeGenerator, name: &str) -> i64 {
+        codegen
+            .module
+            .finalize_definitions()
+            .unwrap_or_else(|e| panic!("{name}: finalize failed: {e}"));
+        let func_id = *codegen
+            .function_map
+            .get(name)
+            .unwrap_or_else(|| panic!("{name} declared"));
+        let ptr = codegen.module.get_finalized_function(func_id) as usize;
+        let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(ptr) };
+        run()
+    }
+
+    fn push_char_stores(
+        func: &mut IRFunction,
+        base_id: usize,
+        chars: &[u8],
+        first_value_id: &mut usize,
+    ) {
+        use spectra_midend::ir::IntWidth;
+        let packed_byte = IRType::ExactInt {
+            signed: false,
+            width: IntWidth::I8,
+        };
+        let entry = func.blocks[0].id;
+        for (slot, byte) in chars.iter().enumerate() {
+            let index_id = *first_value_id;
+            *first_value_id += 1;
+            let gep_id = *first_value_id;
+            *first_value_id += 1;
+            let const_id = *first_value_id;
+            *first_value_id += 1;
+            let block = func.get_block_mut(entry).unwrap();
+            block.add_instruction(InstructionKind::ConstInt {
+                result: IRValue { id: index_id },
+                value: slot as i64,
+            });
+            block.add_instruction(InstructionKind::GetElementPtr {
+                result: IRValue { id: gep_id },
+                ptr: IRValue { id: base_id },
+                index: IRValue { id: index_id },
+                // `char_at` addresses buffers as packed bytes (stride 1), so
+                // the test array uses the language's packed byte layout
+                // (`array<u8>`), whose elements record into `array_lengths`
+                // like `Char` arrays do.
+                element_type: packed_byte.clone(),
+                bound: None,
+            });
+            block.add_instruction(InstructionKind::ConstIntTyped {
+                result: IRValue { id: const_id },
+                value: *byte as i64,
+                ty: packed_byte.clone(),
+            });
+            block.add_instruction(InstructionKind::Store {
+                ptr: IRValue { id: gep_id },
+                value: IRValue { id: const_id },
+            });
+        }
+    }
+
+    /// Emit `result = len * 1_000_000 + first * 10_000 + last * 100 +
+    /// (out_of_bounds + 1)` so one i64 return carries every assertion:
+    /// `out_of_bounds` must be -1 (its `+1` term then vanishes).
+    fn emit_packed_len_char_at_assertions(
+        func: &mut IRFunction,
+        ptr_id: usize,
+        len_id: usize,
+        first_id: usize,
+        last_id: usize,
+        oob_id: usize,
+        next_value_id: &mut usize,
+    ) -> usize {
+        let entry = func.blocks[0].id;
+        let emit_const = |func: &mut IRFunction, value: i64, next: &mut usize| {
+            let id = *next;
+            *next += 1;
+            func.get_block_mut(entry)
+                .unwrap()
+                .add_instruction(InstructionKind::ConstInt {
+                    result: IRValue { id },
+                    value,
+                });
+            id
+        };
+        let binop = |func: &mut IRFunction,
+                     make: fn(IRValue, IRValue, IRValue) -> InstructionKind,
+                     lhs: usize,
+                     rhs: usize,
+                     next: &mut usize| {
+            let id = *next;
+            *next += 1;
+            func.get_block_mut(entry).unwrap().add_instruction(make(
+                IRValue { id },
+                IRValue { id: lhs },
+                IRValue { id: rhs },
+            ));
+            id
+        };
+
+        let million = emit_const(func, 1_000_000, next_value_id);
+        let len_scaled = binop(
+            func,
+            |result, lhs, rhs| InstructionKind::Mul { result, lhs, rhs },
+            len_id,
+            million,
+            next_value_id,
+        );
+        let ten_thousand = emit_const(func, 10_000, next_value_id);
+        let first_scaled = binop(
+            func,
+            |result, lhs, rhs| InstructionKind::Mul { result, lhs, rhs },
+            first_id,
+            ten_thousand,
+            next_value_id,
+        );
+        let partial = binop(
+            func,
+            |result, lhs, rhs| InstructionKind::Add { result, lhs, rhs },
+            len_scaled,
+            first_scaled,
+            next_value_id,
+        );
+        let hundred = emit_const(func, 100, next_value_id);
+        let last_scaled = binop(
+            func,
+            |result, lhs, rhs| InstructionKind::Mul { result, lhs, rhs },
+            last_id,
+            hundred,
+            next_value_id,
+        );
+        let with_last = binop(
+            func,
+            |result, lhs, rhs| InstructionKind::Add { result, lhs, rhs },
+            partial,
+            last_scaled,
+            next_value_id,
+        );
+        let one = emit_const(func, 1, next_value_id);
+        let oob_adjusted = binop(
+            func,
+            |result, lhs, rhs| InstructionKind::Add { result, lhs, rhs },
+            oob_id,
+            one,
+            next_value_id,
+        );
+        let packed = binop(
+            func,
+            |result, lhs, rhs| InstructionKind::Add { result, lhs, rhs },
+            with_last,
+            oob_adjusted,
+            next_value_id,
+        );
+        let _ = ptr_id;
+        packed
+    }
+
+    fn char_array_len_char_at_function(name: &str, chars: &[u8], escape_via_container: bool) -> IRFunction {
+        let mut func = IRFunction::new(name, vec![], IRType::Int);
+        let base_id = 0usize;
+        let mut next = 1usize;
+        {
+            let entry_id = func.add_block("entry");
+            let block = func.get_block_mut(entry_id).unwrap();
+            block.add_instruction(InstructionKind::Alloca {
+                result: IRValue { id: base_id },
+                ty: IRType::Array {
+                    element_type: Box::new(IRType::ExactInt {
+                        signed: false,
+                        width: spectra_midend::ir::IntWidth::I8,
+                    }),
+                    size: chars.len(),
+                },
+            });
+            next += 1;
+            if escape_via_container {
+                // Store the array pointer into a manual-heap container so the
+                // array itself must use the manual-heap alloca path even
+                // before the host-call arguments below escape it.
+                let container_id = next;
+                next += 1;
+                block.add_instruction(InstructionKind::ManualAlloc {
+                    result: IRValue { id: container_id },
+                    size: 8,
+                });
+                block.add_instruction(InstructionKind::Store {
+                    ptr: IRValue { id: container_id },
+                    value: IRValue { id: base_id },
+                });
+            }
+        }
+        push_char_stores(&mut func, base_id, chars, &mut next);
+
+        let entry = func.blocks[0].id;
+        let len_id = next;
+        next += 1;
+        func.get_block_mut(entry)
+            .unwrap()
+            .add_instruction(InstructionKind::HostCall {
+                result: Some(IRValue { id: len_id }),
+                host: "spectra.std.string.len".to_string(),
+                args: vec![IRValue { id: base_id }],
+                result_type: Some(IRType::Int),
+            });
+
+        let char_at = |func: &mut IRFunction, index: i64, next: &mut usize| -> (usize, usize) {
+            let index_id = *next;
+            *next += 1;
+            let result_id = *next;
+            *next += 1;
+            let entry = func.blocks[0].id;
+            func.get_block_mut(entry).unwrap().add_instruction(
+                InstructionKind::ConstInt {
+                    result: IRValue { id: index_id },
+                    value: index,
+                },
+            );
+            func.get_block_mut(entry).unwrap().add_instruction(
+                InstructionKind::HostCall {
+                    result: Some(IRValue { id: result_id }),
+                    host: "spectra.std.string.char_at".to_string(),
+                    args: vec![IRValue { id: base_id }, IRValue { id: index_id }],
+                    result_type: Some(IRType::Int),
+                },
+            );
+            (index_id, result_id)
+        };
+        let (_, first_id) = char_at(&mut func, 0, &mut next);
+        let last_index = chars.len() as i64 - 1;
+        let (_, last_id) = char_at(&mut func, last_index, &mut next);
+        let (_, oob_id) = char_at(&mut func, chars.len() as i64, &mut next);
+
+        let packed = emit_packed_len_char_at_assertions(
+            &mut func,
+            base_id,
+            len_id,
+            first_id,
+            last_id,
+            oob_id,
+            &mut next,
+        );
+        func.get_block_mut(entry)
+            .unwrap()
+            .set_terminator(Terminator::Return {
+                value: Some(IRValue { id: packed }),
+            });
+        func.next_value_id = next + 1;
+        func
+    }
+
+    /// Char array length + `char_at` including the LAST valid index
+    /// (`N - 1`) and one-past-the-end returning -1. Both the stack-style and
+    /// the explicitly-escaping shapes must report the logical element count
+    /// (no off-by-one): before this, `StringLen` returned `N - 1` and
+    /// `char_at(N - 1)` returned -1.
+    #[test]
+    fn char_array_len_and_char_at_use_the_logical_element_count() {
+        let chars = [b'a', b'b', b'c', b'd'];
+
+        for (name, escape) in [
+            ("stack_initialized_char_array", false),
+            ("heap_escaping_char_array", true),
+        ] {
+            let func = char_array_len_char_at_function(name, &chars, escape);
+            let mut codegen = CodeGenerator::new();
+            codegen.pre_intern_host_names_for_test(&func);
+            codegen.declare_function(&func).expect("declare");
+            codegen
+                .define_function(&func, &HashMap::new())
+                .expect("define");
+            let packed = run_i64_function(&mut codegen, name);
+            // len=4, 'a'=97, 'd'=100, oob=-1 -> 4*1e6 + 97*1e4 + 100*100 + 0
+            let expected = 4 * 1_000_000 + 97 * 10_000 + 100 * 100;
+            assert_eq!(
+                packed, expected,
+                "{name}: wrong len/char_at result (last index must be valid, \
+                 one-past must be -1)"
+            );
+        }
+    }
+
+    /// String literals store the logical byte length (excluding the NUL);
+    /// `StringLen` returns it directly and `char_at` accepts the last byte
+    /// index (`len - 1`) while rejecting `len`.
+    #[test]
+    fn string_literal_len_and_char_at_use_the_logical_byte_length() {
+        let mut func = IRFunction::new("string_literal_measures", vec![], IRType::Int);
+        let entry = func.add_block("entry");
+        let mut next = 1usize;
+        {
+            let block = func.get_block_mut(entry).unwrap();
+            block.add_instruction(InstructionKind::ConstString {
+                result: IRValue { id: 0 },
+                value: "hello".to_string(),
+            });
+            let len_id = next;
+            next += 1;
+            block.add_instruction(InstructionKind::HostCall {
+                result: Some(IRValue { id: len_id }),
+                host: "spectra.std.string.len".to_string(),
+                args: vec![IRValue { id: 0 }],
+                result_type: Some(IRType::Int),
+            });
+        }
+
+        let char_at = |func: &mut IRFunction, index: i64, next: &mut usize| -> usize {
+            let index_id = *next;
+            *next += 1;
+            let result_id = *next;
+            *next += 1;
+            let block = func.get_block_mut(entry).unwrap();
+            block.add_instruction(InstructionKind::ConstInt {
+                result: IRValue { id: index_id },
+                value: index,
+            });
+            block.add_instruction(InstructionKind::HostCall {
+                result: Some(IRValue { id: result_id }),
+                host: "spectra.std.string.char_at".to_string(),
+                args: vec![IRValue { id: 0 }, IRValue { id: index_id }],
+                result_type: Some(IRType::Int),
+            });
+            result_id
+        };
+        let len_id = 1usize;
+        let first_id = char_at(&mut func, 0, &mut next);
+        let last_id = char_at(&mut func, 4, &mut next);
+        let oob_id = char_at(&mut func, 5, &mut next);
+
+        let packed = emit_packed_len_char_at_assertions(
+            &mut func,
+            0,
+            len_id,
+            first_id,
+            last_id,
+            oob_id,
+            &mut next,
+        );
+        func.get_block_mut(entry)
+            .unwrap()
+            .set_terminator(Terminator::Return {
+                value: Some(IRValue { id: packed }),
+            });
+        func.next_value_id = next + 1;
+
+        let mut codegen = CodeGenerator::new();
+        codegen.pre_intern_host_names_for_test(&func);
+        codegen.declare_function(&func).expect("declare");
+        codegen
+            .define_function(&func, &HashMap::new())
+            .expect("define");
+        let packed = run_i64_function(&mut codegen, "string_literal_measures");
+        // len=5, 'h'=104, 'o'=111, oob=-1 -> 5*1e6 + 104*1e4 + 111*100 + 0
+        let expected = 5 * 1_000_000 + 104 * 10_000 + 111 * 100;
+        assert_eq!(
+            packed, expected,
+            "string literal len/char_at must use the logical byte length"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // PHI block parameters generated in reverse-postorder (item 10)
+    // -----------------------------------------------------------------------
+
+    /// The IR lists the merge block *before* the block that jumps into it.
+    /// With reverse-postorder emission the jump is generated first and its
+    /// bool argument types the phi parameter; previously the merge padded an
+    /// I64 placeholder and the later `jump i8 -> i64` failed the Cranelift
+    /// verifier.
+    #[test]
+    fn phi_merge_listed_before_its_predecessor_types_params_from_the_jump() {
+        let mut func = IRFunction::new("merge_before_pred", vec![], IRType::Bool);
+        func.next_value_id = 3;
+        func.next_block_id = 3;
+
+        let entry = IRBasicBlock {
+            id: 0,
+            label: "entry".to_string(),
+            instructions: vec![],
+            terminator: Some(Terminator::Branch { target: 2 }),
+        };
+        let merge = IRBasicBlock {
+            id: 1,
+            label: "merge".to_string(),
+            instructions: vec![Instruction {
+                id: 0,
+                kind: InstructionKind::Phi {
+                    result: IRValue { id: 1 },
+                    incoming: vec![(IRValue { id: 0 }, 2)],
+                },
+                source_span: None,
+            }],
+            terminator: Some(Terminator::Return {
+                value: Some(IRValue { id: 1 }),
+            }),
+        };
+        let pred = IRBasicBlock {
+            id: 2,
+            label: "pred".to_string(),
+            instructions: vec![Instruction {
+                id: 0,
+                kind: InstructionKind::ConstBool {
+                    result: IRValue { id: 0 },
+                    value: true,
+                },
+                source_span: None,
+            }],
+            terminator: Some(Terminator::Branch { target: 1 }),
+        };
+        func.blocks = vec![entry, merge, pred];
+
+        let mut codegen = CodeGenerator::new();
+        codegen.declare_function(&func).expect("declare");
+        codegen
+            .define_function(&func, &HashMap::new())
+            .expect("define: the bool phi must be typed from the first jump");
+        codegen
+            .module
+            .finalize_definitions()
+            .expect("compile");
+        let func_id = *codegen.function_map.get("merge_before_pred").unwrap();
+        let ptr = codegen.module.get_finalized_function(func_id) as usize;
+        let run: extern "C" fn() -> i8 = unsafe { std::mem::transmute(ptr) };
+        assert_ne!(run(), 0, "the phi must carry the incoming bool value");
     }
 }

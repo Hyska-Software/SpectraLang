@@ -16,25 +16,64 @@ pub extern "C" fn spectra_rt_std_register() {
 }
 
 /// Begins a manual allocation frame and returns its identifier.
+///
+/// The id is allocated in the global frame registry (under the table lock)
+/// *and* pushed onto the **calling thread's** frame stack: a frame id is owned
+/// by the thread that entered it, and only that thread may exit it. See
+/// [`spectra_rt_manual_frame_exit`].
 #[no_mangle]
 pub extern "C" fn spectra_rt_manual_frame_enter() -> usize {
     let table = allocation_table();
     let mut guard = table.lock().unwrap_or_else(|e| e.into_inner());
-    guard.push_frame()
+    let id = guard.push_frame();
+    with_thread_frames(&guard, |frames| frames.push(id));
+    id
 }
 
 /// Ends a manual allocation frame, freeing all allocations created since it began.
+///
+/// # Frame ownership
+///
+/// Only frames on the **calling thread's** stack are popped: `frame_id` plus
+/// every frame this thread opened above it. A `frame_id` that this thread does
+/// not own (unknown, stale after `spectra_rt_manual_clear`, or owned by
+/// another thread) frees **nothing** and is reported through
+/// `spectra_rt_manual_frame_exit_last_status` as
+/// [`HOST_STATUS_INVALID_ARGUMENT`] — mirroring the `spectra_rt_manual_free`
+/// convention. This is what keeps thread B's `frame_exit` from draining and
+/// quarantining thread A's live frames (a use-after-free once the quarantine
+/// evicts the tombstones).
 #[no_mangle]
 pub extern "C" fn spectra_rt_manual_frame_exit(frame_id: usize) {
     let table = allocation_table();
     let mut guard = table.lock().unwrap_or_else(|e| e.into_inner());
-    let allocations = guard.pop_frame(frame_id);
 
-    for ptr in allocations {
-        // Quarantine-aware free: leaves a tombstone so a stale pointer to
-        // frame-local memory cannot silently free an unrelated object
-        // after address reuse.
-        guard.free_tracked(ptr);
+    // Split the calling thread's own stack at `frame_id`: everything from that
+    // position upward (inclusive) belongs to this exit. Not found → not ours.
+    let own_frames = with_thread_frames(&guard, |frames| {
+        frames
+            .iter()
+            .rposition(|&id| id == frame_id)
+            .map(|position| frames.split_off(position))
+            .unwrap_or_default()
+    });
+    if own_frames.is_empty() {
+        // Base frame (0), an unknown id, a stale id, or another thread's
+        // frame: free nothing.
+        crate::ffi::record_manual_frame_exit_status(crate::ffi::HOST_STATUS_INVALID_ARGUMENT);
+        return;
+    }
+    crate::ffi::record_manual_frame_exit_status(crate::ffi::HOST_STATUS_SUCCESS);
+
+    // Drain exactly these frames from the global registry and free their
+    // pointers through the quarantine-aware path.
+    for id in own_frames {
+        for ptr in guard.take_frame(id) {
+            // Quarantine-aware free: leaves a tombstone so a stale pointer to
+            // frame-local memory cannot silently free an unrelated object
+            // after address reuse.
+            guard.free_tracked(ptr);
+        }
     }
 }
 
@@ -59,7 +98,11 @@ pub extern "C" fn spectra_rt_manual_alloc(size: usize) -> *mut u8 {
     let table = allocation_table();
     let mut guard = table.lock().unwrap_or_else(|e| e.into_inner());
 
-    let frame_id = guard.current_frame_mut().map(|frame| frame.id).unwrap_or(0);
+    // Attach to the top of the *calling thread's* frame stack (base frame 0
+    // when the thread has no open frame) — never to the globally newest frame,
+    // which may belong to a different thread. Re-validated against the global
+    // registry so a stale stack entry cannot orphan the allocation.
+    let frame_id = current_thread_frame_id(&guard).unwrap_or(0);
 
     guard.allocations.insert(
         ptr_value,
@@ -69,7 +112,7 @@ pub extern "C" fn spectra_rt_manual_alloc(size: usize) -> *mut u8 {
         },
     );
 
-    if let Some(frame) = guard.current_frame_mut() {
+    if let Some(frame) = guard.frames.iter_mut().find(|frame| frame.id == frame_id) {
         frame.track(ptr_value);
     }
 
@@ -106,6 +149,16 @@ pub extern "C" fn spectra_rt_register_literal(ptr: i64, len: i64) {
 /// Returns the scan ceiling in BYTES for a string pointer: the exact size
 /// of the tracked allocation when known, otherwise the conservative global
 /// scan limit.
+///
+/// The untracked fallback (`SPECTRA_STRING_SCAN_LIMIT`, 16 MiB) is a **policy
+/// limit, not a validity guarantee**: it only bounds how far a scan may run,
+/// it does not prove the memory is mapped or that the object really is that
+/// large. For an untracked pointer the scan may still read past the true
+/// object (residual risk documented in `spectra_rt_string_len`); callers must
+/// only ever pass Spectra strings (NUL-terminated inside their allocation).
+/// JIT string literals are allocated through `spectra_rt_manual_alloc` and
+/// AOT images register theirs via `spectra_rt_register_literal`, so in
+/// practice every runtime-produced string is tracked and scanned exactly.
 pub(crate) fn string_scan_limit_bytes(ptr_val: SpectraHostValue) -> usize {
     match manual_allocation_size(ptr_val) {
         Some(bytes) => bytes,
@@ -119,9 +172,24 @@ pub(crate) fn string_scan_limit_bytes(ptr_val: SpectraHostValue) -> usize {
 /// byte. This keeps the hot path out of the generic host-call dispatcher
 /// while preserving the same null handling as the stdlib host function.
 ///
-/// The scan is bounded: when the pointer is tracked by the AllocationTable,
-/// only bytes inside that allocation are read; otherwise the scan is capped
-/// at [`SPECTRA_STRING_SCAN_LIMIT`] bytes, so reads never run past 16 MiB.
+/// Returns:
+/// - `0` for a null pointer (the empty string), matching the stdlib contract;
+/// - the byte length when a NUL terminator is found inside the scan bound;
+/// - `-1` when **no terminator exists within the scan bound** — the pointer
+///   does not describe a valid Spectra string. This follows the fast-ABI
+///   convention of negative sentinels for error statuses (like
+///   `spectra_rt_string_char_at`'s `-1`); the historical `0` conflated
+///   "empty" with "unterminated".
+///
+/// # Bound semantics (residual risk)
+///
+/// When the pointer is tracked by the AllocationTable, only bytes inside that
+/// allocation are read. Otherwise the scan is capped at
+/// [`SPECTRA_STRING_SCAN_LIMIT`] bytes — a **policy limit, not a validity
+/// guarantee**: the bound stops runaway scans but cannot prove the untracked
+/// memory is mapped for its whole extent, so a garbage pointer can still fault
+/// inside the window (residual risk; production strings are tracked — see
+/// [`string_scan_limit_bytes`]).
 #[no_mangle]
 pub extern "C" fn spectra_rt_string_len(ptr_val: SpectraHostValue) -> SpectraHostValue {
     if ptr_val == 0 {
@@ -131,23 +199,28 @@ pub extern "C" fn spectra_rt_string_len(ptr_val: SpectraHostValue) -> SpectraHos
     let raw = ptr_val as *const u8;
     let limit = string_scan_limit_bytes(ptr_val);
     for offset in 0..limit {
-        // SAFETY: offset stays within the tracked allocation (when known) or
-        // within the documented scan limit (otherwise).
+        // SAFETY: `offset` stays within the tracked allocation when the
+        // pointer is tracked. For an untracked pointer `limit` is a policy
+        // cap, not proof of validity — see the residual-risk note above.
         let byte = unsafe { *raw.add(offset) };
         if byte == 0 {
             return offset as SpectraHostValue;
         }
     }
 
-    0
+    // No terminator inside the scan bound: report the unterminated pointer
+    // as an error instead of the historical `0` (which said "empty").
+    -1
 }
 
 /// Returns -1 for null strings, negative indexes, and indexes at or after the
 /// null terminator, matching the public stdlib contract.
 ///
 /// The string length is derived with a bounded scan (see
-/// [`spectra_rt_string_len`]) BEFORE the indexed byte is dereferenced, so an
-/// out-of-range index never touches memory beyond the terminator.
+/// [`spectra_rt_string_len`], including its residual-risk note: the
+/// untracked-pointer cap is a policy limit, not a validity guarantee)
+/// BEFORE the indexed byte is dereferenced, so an out-of-range index never
+/// touches memory beyond the terminator.
 #[no_mangle]
 pub extern "C" fn spectra_rt_string_char_at(
     ptr_val: SpectraHostValue,
@@ -164,8 +237,9 @@ pub extern "C" fn spectra_rt_string_char_at(
     // Derive the length first without ever reading past the scan limit.
     let mut len = 0usize;
     while len < limit {
-        // SAFETY: len < limit stays within the tracked allocation (when
-        // known) or within the documented scan limit (otherwise).
+        // SAFETY: tracked pointers stay inside their allocation; untracked
+        // pointers are bounded by a policy limit only — see the residual-risk
+        // note on `spectra_rt_string_len`.
         let byte = unsafe { *raw.add(len) };
         if byte == 0 {
             break;
@@ -176,7 +250,7 @@ pub extern "C" fn spectra_rt_string_char_at(
     if target >= len {
         return -1;
     }
-    // SAFETY: target < len <= limit, inside the readable region.
+    // SAFETY: target < len <= limit, inside the region the scan already read.
     let byte = unsafe { *raw.add(target) };
     byte as SpectraHostValue
 }

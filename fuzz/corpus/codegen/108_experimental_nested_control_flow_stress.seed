@@ -1,0 +1,46 @@
+module experimental_nested_control_flow_stress
+
+func classify(value: int) returns int {
+    let result = 0
+    if not value < 0 {
+        switch value {
+            case 0: {
+                result = 1
+            }
+            case 1: {
+                result = 2
+            }
+            case 2: {
+                result = 3
+            }
+        }
+    } else {
+        result = -1
+    }
+    return result
+}
+
+func sum_until(limit: int) returns int {
+    let total = 0
+    let i     = 0
+    do {
+        i = i + 1
+        if i > limit {
+            break
+        }
+        total = total + i
+    } while i < 10
+    return total
+}
+
+public func main() returns int {
+    let a = classify(2)
+    let b = sum_until(4)
+    if a != 3 {
+        return a
+    }
+    if b != 10 {
+        return b
+    }
+    return 0
+}

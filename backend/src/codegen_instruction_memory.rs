@@ -29,8 +29,7 @@ impl CodeGenerator {
         kind: &InstructionKind,
         value_map: &mut DenseValueMap,
         allocation_vars: &mut Vec<Variable>,
-        stack_array_lengths: &mut HashMap<usize, i64>,
-        string_literal_lengths: &mut HashMap<usize, i64>,
+        array_lengths: &mut HashMap<usize, i64>,
         stack_allocas: &HashSet<usize>,
         scalar_alloca_vars: &HashMap<usize, Variable>,
         global_data: &HashMap<String, DataId>,
@@ -126,8 +125,9 @@ impl CodeGenerator {
                             **element_type,
                             IRType::Int | IRType::Char | IRType::ExactInt { .. }
                         ) {
-                            stack_array_lengths.insert(result.id, *size as i64);
-                            string_literal_lengths.insert(result.id, *size as i64);
+                            // Logical element count (arrays never carry a NUL
+                            // terminator); the string map stays strings-only.
+                            array_lengths.insert(result.id, *size as i64);
                         }
                     }
                     return Ok(());
@@ -155,7 +155,11 @@ impl CodeGenerator {
                             **element_type,
                             IRType::Int | IRType::Char | IRType::ExactInt { .. }
                         ) {
-                            string_literal_lengths.insert(result.id, *size as i64);
+                            // Populate the array map identically to the stack
+                            // path above: heap (manual) array allocas expose
+                            // the same logical element count to `StringLen`
+                            // and `char_at`.
+                            array_lengths.insert(result.id, *size as i64);
                         }
                     }
                 } else {

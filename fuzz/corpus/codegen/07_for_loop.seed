@@ -1,0 +1,18 @@
+// Teste 7: For loop
+module for_loop
+
+func test_for() returns int {
+    let sum = 0
+    let i   = 0
+
+    while i < 5 {
+        sum = sum + i
+        i = i + 1
+    }
+
+    return sum
+}
+
+func main() returns int {
+    return test_for()
+}

@@ -1,0 +1,20 @@
+// Regression: a trailing `loop` only diverges (and satisfies a `returns`
+// contract) when its body has no reachable `break`. `loop { ... break }` can
+// complete normally, so this function still owes an `int` — the old analysis
+// treated ANY trailing loop as diverging and suppressed the missing-return
+// error.
+module fe_missing_return_loop_break
+
+func drain(flag: bool) returns int {
+    let done = flag
+    loop {
+        if done {
+            break
+        }
+        done = true
+    }
+}
+
+public func main() returns int {
+    return 0
+}

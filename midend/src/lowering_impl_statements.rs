@@ -101,7 +101,15 @@ impl ASTLowering {
                         return;
                     }
 
-                    let name = binding_name.expect("identifier pattern should be present");
+                    // The identifier-less pattern path returned above, so an
+                    // identifier must be present here. Report a lowering
+                    // error instead of panicking if that invariant breaks.
+                    let Some(name) = binding_name else {
+                        self.error(
+                            "let binding reached value binding without an identifier pattern",
+                        );
+                        return;
+                    };
 
                     // Keep user bindings in the debug model even when the
                     // value is represented directly in SSA.  The backend can
@@ -588,8 +596,15 @@ impl ASTLowering {
                 // Build switch terminator
                 let default = if switch.default.is_some() {
                     ir_func.add_block("switch.default")
+                } else if let Some(exit) = exit_block {
+                    // A switch without a default arm always allocates its
+                    // exit block above. If that invariant ever breaks, record
+                    // a lowering error instead of panicking; `lower_module`
+                    // rejects the module before verification or codegen.
+                    exit
                 } else {
-                    exit_block.expect("switch without default must have an exit block")
+                    self.error("switch without a default arm requires an exit block");
+                    return;
                 };
 
                 if let Some(current_block) = self.builder.get_current_block() {

@@ -1,0 +1,40 @@
+module syntax_human_surface
+
+from std.io import println
+
+public record Box {
+    value: int
+}
+
+public enum Status {
+    Pending,
+    Paid
+}
+
+impl Box {
+    public func read(self) returns int {
+        return self.value
+    }
+}
+
+public func main() returns int {
+    let total = 0
+    for item in [1, 2, 3] {
+        total = total + item
+    }
+    if not total == 0 {
+        println("syntax surface")
+    } else if total == 0 {
+        println("syntax empty")
+    } else {
+        println("syntax other")
+    }
+    let status     = Status::Pending
+    let classified = match status {
+        when Pending then 60
+        when Paid then 0
+    }
+    let box        = Box { value: 3 }
+    let read_value = box.read()
+    return classified - 60 + read_value - 3
+}

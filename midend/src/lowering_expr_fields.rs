@@ -98,7 +98,9 @@ impl ASTLowering {
 
                 self.invalid_value(format!("unresolved field '{}' during lowering", field))
             }
-            _ => unreachable!("lowering expression category mismatch"),
+            _ => self.invalid_value(
+                "lower_expression_field called with a non-field-access expression",
+            ),
         }
     }
 }

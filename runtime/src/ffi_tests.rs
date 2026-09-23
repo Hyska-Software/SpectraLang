@@ -1099,6 +1099,26 @@ mod tests {
     }
 
     #[test]
+    fn stored_values_escape_an_outer_frame_when_written_from_a_nested_frame() {
+        let _lock = test_guard();
+        spectra_rt_manual_clear();
+
+        let outer = spectra_rt_manual_frame_enter();
+        let stored = spectra_rt_manual_alloc(32);
+        assert!(!stored.is_null());
+        let inner = spectra_rt_manual_frame_enter();
+
+        crate::ffi::escape_stored_value(stored as i64);
+
+        spectra_rt_manual_frame_exit(inner);
+        spectra_rt_manual_frame_exit(outer);
+        assert_eq!(manual_allocation_size(stored as i64), Some(32));
+        spectra_rt_manual_free(stored);
+        assert_eq!(spectra_rt_manual_free_last_status(), HOST_STATUS_SUCCESS);
+        spectra_rt_manual_clear();
+    }
+
+    #[test]
     fn alloc_free_pressure_maintains_invariants_and_stats() {
         let _lock = test_guard();
         spectra_rt_manual_clear();
@@ -1258,5 +1278,340 @@ mod frame0_budget_tests {
         // 65 × 16 KiB crosses the 1 MiB ceiling; ceil-rounding reports 2 MB.
         assert!(stderr.contains("escaped 2 MB > 1 MB"), "stderr: {stderr}");
         assert!(stderr.contains("SPECTRA_FRAME0_BUDGET_MB"), "stderr: {stderr}");
+    }
+}
+
+// ============================================================================
+// Thread-safe manual frames, container-registry resets, string-literal
+// statuses, and closure-invocation hardening tests. Appended at the end of
+// this shared file (mirroring the Frame0Budget convention: earlier sections
+// are not modified).
+// ============================================================================
+
+#[cfg(test)]
+mod thread_safe_frame_tests {
+    use super::*;
+
+    /// Thread B's `frame_exit` must never drain frames owned by thread A:
+    /// doing so quarantines A's *live* allocations, which becomes a
+    /// use-after-free as soon as the quarantine evicts the tombstones.
+    #[test]
+    fn frame_exit_only_frees_frames_owned_by_the_calling_thread() {
+        let _lock = crate::runtime_test_guard();
+        spectra_rt_manual_clear();
+
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+
+        let thread_a = std::thread::spawn(move || {
+            let frame = spectra_rt_manual_frame_enter();
+            let ptr = spectra_rt_manual_alloc(32);
+            assert!(!ptr.is_null());
+            unsafe { std::ptr::write_bytes(ptr, 0xAB, 32) };
+            ready_tx
+                .send((frame, ptr as usize))
+                .expect("hand frame state to main thread");
+            // Keep the frame open until the main thread (playing "thread B")
+            // has run its own enter/exit sequence plus a bogus exit with A's id.
+            release_rx.recv().expect("wait for release");
+
+            // B's bogus exit must not have freed this buffer.
+            let bytes = unsafe { std::slice::from_raw_parts(ptr, 32) };
+            assert!(
+                bytes.iter().all(|byte| *byte == 0xAB),
+                "thread B's frame_exit freed thread A's live buffer"
+            );
+
+            // Exiting its OWN frame frees it normally.
+            spectra_rt_manual_frame_exit(frame);
+            assert_eq!(
+                spectra_rt_manual_frame_exit_last_status(),
+                HOST_STATUS_SUCCESS
+            );
+        });
+
+        let (a_frame, a_ptr) = ready_rx.recv().expect("thread A state");
+
+        // This thread opens its own frame and allocates inside it.
+        let b_frame = spectra_rt_manual_frame_enter();
+        let b_ptr = spectra_rt_manual_alloc(32);
+        assert!(!b_ptr.is_null());
+
+        // Exits with A's frame id: not on THIS thread's stack → no-op.
+        spectra_rt_manual_frame_exit(a_frame);
+        assert_eq!(
+            spectra_rt_manual_frame_exit_last_status(),
+            HOST_STATUS_INVALID_ARGUMENT,
+            "a frame owned by another thread must be reported, not drained"
+        );
+        // A's buffer is still live and readable from this thread as well.
+        let bytes = unsafe { std::slice::from_raw_parts(a_ptr as *const u8, 32) };
+        assert!(
+            bytes.iter().all(|byte| *byte == 0xAB),
+            "bogus cross-thread frame_exit corrupted A's buffer"
+        );
+
+        // This thread's own frame exits normally and frees its allocation.
+        spectra_rt_manual_frame_exit(b_frame);
+        assert_eq!(
+            spectra_rt_manual_frame_exit_last_status(),
+            HOST_STATUS_SUCCESS
+        );
+        spectra_rt_manual_free(b_ptr);
+        assert_eq!(
+            spectra_rt_manual_free_last_status(),
+            HOST_STATUS_INVALID_ARGUMENT,
+            "b_ptr must already be quarantined by its own frame exit"
+        );
+
+        release_tx.send(()).expect("release thread A");
+        thread_a.join().expect("thread A panicked");
+
+        // A's buffer was freed by A's own exit → quarantined → stale free
+        // is detected instead of silently succeeding.
+        spectra_rt_manual_free(a_ptr as *mut u8);
+        assert_eq!(
+            spectra_rt_manual_free_last_status(),
+            HOST_STATUS_INVALID_ARGUMENT,
+            "thread A's buffer must have been freed by A's own frame_exit"
+        );
+
+        spectra_rt_manual_clear();
+    }
+
+    /// Unknown, stale, cross-thread, and base-frame ids must free NOTHING
+    /// (the pre-fix `pop_frame` drained every non-base frame when the id was
+    /// not found — killing unrelated live frames).
+    #[test]
+    fn frame_exit_with_unknown_or_stale_id_frees_nothing() {
+        let _lock = crate::runtime_test_guard();
+        spectra_rt_manual_clear();
+
+        let outer = spectra_rt_manual_frame_enter();
+        let survivor = spectra_rt_manual_alloc(32);
+        assert!(!survivor.is_null());
+        let inner = spectra_rt_manual_frame_enter();
+        let inner_ptr = spectra_rt_manual_alloc(32);
+        assert!(!inner_ptr.is_null());
+
+        // Normal exit of this thread's own inner frame.
+        spectra_rt_manual_frame_exit(inner);
+        assert_eq!(
+            spectra_rt_manual_frame_exit_last_status(),
+            HOST_STATUS_SUCCESS
+        );
+
+        // Unknown id (never existed) → frees nothing.
+        spectra_rt_manual_frame_exit(inner + 100_000);
+        assert_eq!(
+            spectra_rt_manual_frame_exit_last_status(),
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        // Stale id (already popped) → frees nothing.
+        spectra_rt_manual_frame_exit(inner);
+        assert_eq!(
+            spectra_rt_manual_frame_exit_last_status(),
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        // The base frame is never exitable.
+        spectra_rt_manual_frame_exit(0);
+        assert_eq!(
+            spectra_rt_manual_frame_exit_last_status(),
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+
+        // The outer frame's allocation survived every bogus exit above.
+        spectra_rt_manual_free(survivor);
+        assert_eq!(
+            spectra_rt_manual_free_last_status(),
+            HOST_STATUS_SUCCESS,
+            "a bogus frame_exit must not drain other live frames"
+        );
+
+        spectra_rt_manual_frame_exit(outer);
+        assert_eq!(
+            spectra_rt_manual_frame_exit_last_status(),
+            HOST_STATUS_SUCCESS
+        );
+        spectra_rt_manual_clear();
+    }
+}
+
+#[cfg(test)]
+mod manual_clear_registry_tests {
+    use super::*;
+
+    /// `spectra_rt_manual_clear` (called by the CLI after every JIT run)
+    /// frees the manual heap; the container registries whose entries are raw
+    /// pointers into that heap must be reset with it, otherwise a REPL or
+    /// package-test loop hands the next program dangling handles.
+    #[test]
+    fn manual_clear_resets_container_registries_holding_heap_pointers() {
+        let _lock = crate::runtime_test_guard();
+        spectra_rt_manual_clear();
+
+        // A list and a map storing a pointer into the manual heap...
+        let list = spectra_rt_list_new_fast();
+        assert!(list > 0, "list handle must be allocated");
+        let payload = spectra_rt_manual_alloc(32);
+        assert!(!payload.is_null());
+        assert_eq!(
+            spectra_rt_list_push_fast(list, payload as SpectraHostValue),
+            HOST_STATUS_SUCCESS
+        );
+
+        let map = spectra_rt_map_new_fast();
+        assert!(map > 0, "map handle must be allocated");
+        assert_eq!(
+            spectra_rt_map_set_fast(map, payload as SpectraHostValue, 1),
+            HOST_STATUS_SUCCESS
+        );
+
+        // …a stack, a string builder, and an iterator snapshotting the same
+        // pointers.
+        let stack = spectra_rt_stack_new_fast();
+        assert!(stack > 0);
+        assert_eq!(
+            spectra_rt_stack_push_fast(stack, payload as SpectraHostValue),
+            HOST_STATUS_SUCCESS
+        );
+        let builder = spectra_rt_builder_new(64);
+        assert!(builder > 0);
+
+        spectra_rt_manual_clear();
+
+        // Every handle must be gone: its storage pointed at freed heap.
+        assert_ne!(
+            crate::stdlib::with_list_registry(|registry| registry.snapshot(list as usize).is_ok()),
+            true,
+            "list handle must not survive manual_clear"
+        );
+        // The map fast-path reports NOT_FOUND for a vanished handle — which
+        // also proves no new entry can be written into freed backing store.
+        assert_eq!(
+            spectra_rt_map_set_fast(map, 1, 1),
+            HOST_STATUS_NOT_FOUND,
+            "map handle must not survive manual_clear"
+        );
+        assert_eq!(
+            spectra_rt_stack_len_fast(stack),
+            0,
+            "stack handle must not survive manual_clear"
+        );
+        assert_eq!(
+            spectra_rt_builder_len(builder),
+            0,
+            "string builder handle must not survive manual_clear"
+        );
+
+        spectra_rt_manual_clear();
+    }
+}
+
+#[cfg(test)]
+mod string_len_status_tests {
+    use super::*;
+
+    /// An unterminated buffer must surface as an error status (`-1`), not as
+    /// the length `0` which conflated "empty" with "not a Spectra string".
+    #[test]
+    fn string_len_reports_unterminated_pointers_as_an_error() {
+        let _lock = crate::runtime_test_guard();
+        spectra_rt_manual_clear();
+
+        // Tracked allocation with no NUL anywhere inside → error status.
+        let raw = spectra_rt_manual_alloc(4);
+        assert!(!raw.is_null());
+        unsafe { std::ptr::write_bytes(raw, b'A', 4) };
+        assert_eq!(
+            spectra_rt_string_len(raw as SpectraHostValue),
+            -1,
+            "an unterminated buffer must report an error, not 0/empty"
+        );
+
+        // The same buffer once terminated reports its length again, and the
+        // null-pointer contract (empty string → 0) is unchanged.
+        unsafe { *raw.add(3) = 0 };
+        assert_eq!(spectra_rt_string_len(raw as SpectraHostValue), 3);
+        assert_eq!(spectra_rt_string_len(0), 0);
+        assert_eq!(spectra_rt_string_char_at(raw as SpectraHostValue, 3), -1);
+
+        spectra_rt_manual_clear();
+    }
+}
+
+#[cfg(test)]
+mod invoke_closure_hardening_tests {
+    use super::*;
+
+    extern "C" fn invoke_test_code(_env: i64, arg: i64) -> i64 {
+        arg + 1
+    }
+
+    /// `spectra_rt_invoke_closure` must validate the closure object and the
+    /// code pointer before transmuting anything: garbage objects and code
+    /// outside every registered executable range are rejected WITHOUT being
+    /// called.
+    #[test]
+    fn invoke_closure_validates_closure_object_and_code_pointer() {
+        let _lock = crate::runtime_test_guard();
+        let mut out = 0i64;
+        let no_args: [i64; 0] = [];
+
+        // Null is invalid (unchanged).
+        assert_eq!(
+            unsafe { spectra_rt_invoke_closure(0, no_args.as_ptr(), 0, &mut out) },
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        // Garbage closure object (address 0x8 is never committed readable).
+        assert_eq!(
+            unsafe { spectra_rt_invoke_closure(0x8, no_args.as_ptr(), 0, &mut out) },
+            HOST_STATUS_INVALID_ARGUMENT,
+            "an unmapped closure object must be rejected before dereference"
+        );
+
+        // Tracked closure object whose slot 0 holds a non-executable address:
+        // rejected WITHOUT calling (the out slot must stay untouched).
+        let bogus = spectra_rt_manual_alloc(16);
+        assert!(!bogus.is_null());
+        unsafe { (bogus as *mut i64).write_unaligned(0x10) };
+        out = 0x7777;
+        assert_eq!(
+            unsafe { spectra_rt_invoke_closure(bogus as i64, no_args.as_ptr(), 0, &mut out) },
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(out, 0x7777, "a rejected closure must never run");
+
+        // Tracked object smaller than the code slot → rejected before read.
+        let tiny = spectra_rt_manual_alloc(4);
+        assert!(!tiny.is_null());
+        assert_eq!(
+            unsafe { spectra_rt_invoke_closure(tiny as i64, no_args.as_ptr(), 0, &mut out) },
+            HOST_STATUS_INVALID_ARGUMENT,
+            "a closure object smaller than slot 0 must be rejected"
+        );
+
+        // Code-range registry API rejects degenerate ranges.
+        assert!(!spectra_rt_register_code_range(0, 0));
+        assert!(!spectra_rt_register_code_range(1, 0));
+        let range_base = invoke_test_code as *const () as usize as i64;
+        assert!(spectra_rt_register_code_range(range_base, 4096));
+
+        // Valid closure: tracked object, code inside an executable range
+        // (the test binary image, discovered by the first-use region scan).
+        let good = spectra_rt_manual_alloc(16);
+        assert!(!good.is_null());
+        unsafe {
+            (good as *mut i64).write_unaligned(invoke_test_code as *const () as usize as i64)
+        };
+        let args = [41i64];
+        assert_eq!(
+            unsafe { spectra_rt_invoke_closure(good as i64, args.as_ptr(), 1, &mut out) },
+            HOST_STATUS_SUCCESS,
+            "a well-formed closure must still invoke"
+        );
+        assert_eq!(out, 42);
+
+        spectra_rt_manual_clear();
     }
 }

@@ -1,0 +1,6 @@
+module m
+let a = ''
+let b = 'ab'
+let c = '\q'
+let d = '\n'
+let e = '🚀'

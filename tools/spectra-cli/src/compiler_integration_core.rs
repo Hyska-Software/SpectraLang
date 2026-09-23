@@ -414,6 +414,19 @@ impl BackendDriver for FullPipelineBackend {
         }
 
         if options.optimize {
+            // Pass pipeline, cumulative in `opt_level`:
+            //   O1: fold constants (before inlining).
+            //   O2: inline, then re-fold — constants that only meet after
+            //       callee bodies are copied into callers are invisible to
+            //       the pre-inline fold — and run DCE.
+            //   O3: the O2 pass set iterated {inline, fold, DCE} to a bounded
+            //       fixpoint, verified by each pass's `modified` flag. This
+            //       is strictly stronger than O2: DCE can shrink a callee
+            //       below the inliner's size thresholds, and each inline round
+            //       introduces constants for the following fold/DCE pair.
+            //       Rounds stop as soon as a full round changes nothing; the
+            //       cap keeps compile time bounded.
+            const MAX_O3_ROUNDS: usize = 3;
 
             if options.opt_level >= 1 {
                 let mut cf = ConstantFolding::new();
@@ -438,6 +451,21 @@ impl BackendDriver for FullPipelineBackend {
             }
 
             if options.opt_level >= 2 {
+                // Post-inlining fold: inlining copies callee bodies into the
+                // caller, and constants that only meet there (call-site
+                // arguments bound to callee parameters) were never visible to
+                // the pre-inline fold above.
+                let mut cf = ConstantFolding::new();
+                let pass_start = Instant::now();
+                let modified = cf.run(&mut ir_module);
+                pass_reports.push(PassReport {
+                    name: "Constant Folding (post-inline)",
+                    duration: pass_start.elapsed(),
+                    modified,
+                });
+            }
+
+            if options.opt_level >= 2 {
                 let mut dce = DeadCodeElimination::new();
                 let pass_start = Instant::now();
                 let modified = dce.run(&mut ir_module);
@@ -446,6 +474,50 @@ impl BackendDriver for FullPipelineBackend {
                     duration: pass_start.elapsed(),
                     modified,
                 });
+            }
+
+            if options.opt_level >= 3 {
+                // -O3 fixpoint on top of the O2 set (see the pipeline comment
+                // above). Each round keeps the O2 relative order
+                // (inline -> fold -> DCE); a round that changes nothing ends
+                // the loop.
+                for _ in 1..=MAX_O3_ROUNDS {
+                    let mut round_modified = false;
+
+                    let mut inline = FunctionInlining::new();
+                    let pass_start = Instant::now();
+                    let modified = inline.run(&mut ir_module);
+                    round_modified |= modified;
+                    pass_reports.push(PassReport {
+                        name: "Function Inlining (O3 fixpoint)",
+                        duration: pass_start.elapsed(),
+                        modified,
+                    });
+
+                    let mut cf = ConstantFolding::new();
+                    let pass_start = Instant::now();
+                    let modified = cf.run(&mut ir_module);
+                    round_modified |= modified;
+                    pass_reports.push(PassReport {
+                        name: "Constant Folding (O3 fixpoint)",
+                        duration: pass_start.elapsed(),
+                        modified,
+                    });
+
+                    let mut dce = DeadCodeElimination::new();
+                    let pass_start = Instant::now();
+                    let modified = dce.run(&mut ir_module);
+                    round_modified |= modified;
+                    pass_reports.push(PassReport {
+                        name: "Dead Code Elimination (O3 fixpoint)",
+                        duration: pass_start.elapsed(),
+                        modified,
+                    });
+
+                    if !round_modified {
+                        break;
+                    }
+                }
             }
         }
 

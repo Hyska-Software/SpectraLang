@@ -1,7 +1,19 @@
 use super::*;
 
 impl SemanticAnalyzer {
-    pub(crate) fn block_guaranteed_return(&self, block: &Block) -> bool {
+    pub(crate) fn block_guaranteed_return(&mut self, block: &Block) -> bool {
+        if self.enter_analysis_depth(block.span).is_err() {
+            // Guard tripped: treat the subtree as "may fall through". The
+            // module already carries the `P013` error, and callers only use
+            // this to decide between `unknown` and block-type inference.
+            return false;
+        }
+        let guaranteed = self.block_guaranteed_return_inner(block);
+        self.exit_analysis_depth();
+        guaranteed
+    }
+
+    fn block_guaranteed_return_inner(&mut self, block: &Block) -> bool {
         if block.statements.is_empty() {
             return false;
         }
@@ -16,13 +28,20 @@ impl SemanticAnalyzer {
         false
     }
 
-    fn statement_guaranteed_return(&self, statement: &Statement, is_last: bool) -> bool {
+    fn statement_guaranteed_return(&mut self, statement: &Statement, is_last: bool) -> bool {
         use crate::ast::StatementKind;
 
         match &statement.kind {
             StatementKind::Return(_) => true,
             StatementKind::Expression(expr) if is_last => self.expression_guaranteed_return(expr),
-            StatementKind::Loop(_) if is_last => true,
+            // A trailing `loop` only diverges (and therefore counts as a
+            // guaranteed return) when its body contains no reachable `break`.
+            // `loop { break }` can complete normally, so the function still
+            // owes a return value. The break-reachability scan is the same one
+            // the lint uses, so both passes agree on what each loop may do.
+            StatementKind::Loop(loop_stmt) if is_last => {
+                !crate::lint::block_has_break(&loop_stmt.body)
+            }
             StatementKind::Switch(switch_stmt) if is_last => {
                 switch_stmt.default.is_some()
                     && switch_stmt
@@ -47,7 +66,7 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn expression_guaranteed_return(&self, expression: &Expression) -> bool {
+    fn expression_guaranteed_return(&mut self, expression: &Expression) -> bool {
         use crate::ast::ExpressionKind;
 
         match &expression.kind {
@@ -107,8 +126,8 @@ impl SemanticAnalyzer {
                 if !matches!(block_type, Type::Unit | Type::Unknown) {
                     self.error(
                         format!(
-                            "Function declared with no return type but final expression has type {:?}",
-                            block_type
+                            "Function declared with no return type but final expression has type {}",
+                            type_name(&block_type)
                         ),
                         body.span,
                     );
@@ -203,5 +222,65 @@ mod final_expression_repair_field_tests {
             error.fix.as_deref(),
             Some("Align the returned value with the declared return type.")
         );
+    }
+}
+
+#[cfg(test)]
+mod trailing_loop_return_path_tests {
+    use crate::{CompilationOptions, CompilationPipeline};
+
+    fn compile(source: &str) -> Result<(), Vec<crate::error::CompilerError>> {
+        let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
+        pipeline.compile(source, "trailing_loop.spectra").map(|_| ())
+    }
+
+    #[test]
+    fn trailing_loop_with_reachable_break_reports_missing_return() {
+        // Regression: a trailing `loop { ... break }` can complete normally,
+        // so a `returns int` function that ends with one still owes a value.
+        let source = r#"
+            module fe_missing_return_loop_break
+
+            func drain(flag: bool) returns int {
+                let done = flag
+                loop {
+                    if done {
+                        break
+                    }
+                    done = true
+                }
+            }
+
+            public func main() returns int {
+                return 0
+            }
+        "#;
+        let errors = compile(source).expect_err("missing return must be rejected");
+        assert!(
+            errors.iter().any(|error| error
+                .to_string()
+                .contains("Function must return value of type int")),
+            "expected the missing-return diagnostic, got {errors:?}"
+        );
+    }
+
+    #[test]
+    fn trailing_loop_without_break_still_satisfies_the_return_contract() {
+        // A diverging `loop` (no reachable `break`) never falls through, so it
+        // still satisfies a non-void return contract.
+        let source = r#"
+            module diverging_loop
+
+            func spin() returns int {
+                loop {
+                    return 1
+                }
+            }
+
+            public func main() returns int {
+                return 0
+            }
+        "#;
+        compile(source).expect("a diverging trailing loop must keep compiling");
     }
 }

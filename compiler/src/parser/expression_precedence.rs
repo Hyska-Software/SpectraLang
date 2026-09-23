@@ -222,7 +222,17 @@ impl Parser {
     // Python-like surfaces: comparisons bind more tightly than `not`, while
     // `not` binds more tightly than `and`/`or`.  The symbolic `!` remains a
     // traditional high-precedence unary operator for low-level expressions.
+    //
+    // The entry is depth-guarded because this function recurses directly for
+    // runs such as `not not x` (`P013` instead of a stack overflow).
     fn parse_logical_not(&mut self) -> Result<Expression, ()> {
+        self.enter_parse_depth()?;
+        let result = self.parse_logical_not_inner();
+        self.exit_parse_depth();
+        result
+    }
+
+    fn parse_logical_not_inner(&mut self) -> Result<Expression, ()> {
         if self.check_keyword(Keyword::NotWord) {
             let start_span = self.current().span;
             self.advance();
@@ -362,6 +372,10 @@ impl Parser {
                 _ => break,
             };
 
+            // Same newline gate as every other infix rung: a `*`, `/`, or `%`
+            // that starts a new source line must not silently join the
+            // previous line (`P015`).
+            self.reject_line_broken_infix()?;
             self.advance();
             let right = self.parse_unary()?;
             let span = crate::span::span_union(left.span, right.span);
@@ -379,7 +393,17 @@ impl Parser {
     }
 
     // Unary expressions (-, !)
+    //
+    // The entry is depth-guarded because this function recurses directly for
+    // runs such as `---x` or `!!!x` (`P013` instead of a stack overflow).
     fn parse_unary(&mut self) -> Result<Expression, ()> {
+        self.enter_parse_depth()?;
+        let result = self.parse_unary_inner();
+        self.exit_parse_depth();
+        result
+    }
+
+    fn parse_unary_inner(&mut self) -> Result<Expression, ()> {
         if matches!(&self.current().kind, TokenKind::Keyword(Keyword::Await)) {
             let start_span = self.current().span;
             self.advance();
@@ -966,7 +990,18 @@ impl Parser {
                 })
             }
             _ => {
-                self.error("Expected expression");
+                // Stable code for the expression-position catch-all so tooling
+                // can distinguish "no expression here" from the generic `P999`.
+                self.push_error_coded(
+                    "P019",
+                    "Expected expression",
+                    span,
+                    Some(
+                        "Provide a literal, identifier, call, or parenthesized expression."
+                            .to_string(),
+                    ),
+                    None,
+                );
                 Err(())
             }
         }

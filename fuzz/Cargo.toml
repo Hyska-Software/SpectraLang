@@ -17,10 +17,17 @@ members = ["."]
 libfuzzer-sys = "0.4"
 spectra-compiler = { path = "../compiler" }
 spectra-midend = { path = "../midend" }
+spectra-backend = { path = "../backend" }
 
 [[bin]]
 name = "parser"
 path = "fuzz_targets/parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "codegen"
+path = "fuzz_targets/codegen.rs"
 test = false
 doc = false
 

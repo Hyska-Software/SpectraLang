@@ -257,8 +257,14 @@ class Phase31GateTests(unittest.TestCase):
             "[int]$timeoutSeconds = $hostCommandTimeoutSeconds",
             source,
         )
+        # The host runner polls in 1s slices so long validators can print
+        # heartbeats; the deadline itself must still honor $timeoutSeconds.
         self.assertIn(
-            "$proc.WaitForExit($timeoutSeconds * 1000)",
+            "while (-not $proc.WaitForExit(1000))",
+            source,
+        )
+        self.assertIn(
+            "$watch.Elapsed.TotalSeconds -ge $timeoutSeconds",
             source,
         )
         self.assertIn("$proc.StandardOutput.ReadToEndAsync()", source)

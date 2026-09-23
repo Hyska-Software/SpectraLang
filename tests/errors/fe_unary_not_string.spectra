@@ -1,0 +1,15 @@
+// Regression: unary operand type checks. `!` requires a boolean operand
+// (E040) and `-` a numeric one (E036); both used to be accepted silently
+// because the Unary arm only analyzed the operand.
+module fe_unary_not_string
+
+public func main() returns int {
+    let not_string = !"hello"
+    let not_int = !5
+    let neg_bool = -true
+    let neg_text = -"text"
+    if not_string {
+        return 1
+    }
+    return 0
+}

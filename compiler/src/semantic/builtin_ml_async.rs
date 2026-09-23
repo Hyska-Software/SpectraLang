@@ -556,6 +556,7 @@ pub(crate) fn make_std_ml() -> ModuleExports {
             members: vec!["parameters".to_string(), "training".to_string()],
             visibility: ExportVisibility::Public,
             is_enum: false,
+            struct_field_visibility: None,
             struct_fields: None,
             enum_variants: None,
             enum_struct_variants: None,

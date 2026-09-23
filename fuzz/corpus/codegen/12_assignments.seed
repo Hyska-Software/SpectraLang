@@ -1,0 +1,15 @@
+// Teste 12: Atribuições
+module assignments
+
+func test_assignments() returns int {
+    let x = 10
+    x = 20
+    x = x + 5
+    x = x * 2
+    x = x - 10
+    return x
+}
+
+func main() returns int {
+    return test_assignments()
+}

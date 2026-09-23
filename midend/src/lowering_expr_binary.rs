@@ -73,50 +73,47 @@ impl ASTLowering {
                     .widen_mixed_int_float_operands(lhs, rhs, left_ir_type, right_ir_type, ir_func);
                 lhs = new_lhs;
                 rhs = new_rhs;
-                let left_ir_type = new_left_ty;
-                let right_ir_type = new_right_ty;
+                let mut left_ir_type = new_left_ty;
+                let mut right_ir_type = new_right_ty;
+
+                // Machine signedness of relational/division operators. It is
+                // decided from the operand types *before* mixed-width
+                // coercion: both sides being an unsigned exact-width integer
+                // (`u8`..`u64`, `usize`) requires `udiv`/`urem` and unsigned
+                // `icmp` conditions — a signed compare would misorder values
+                // above the signed maximum (e.g. `u64` above 2^63).
+                let operands_unsigned = matches!(&left_ir_type, IRType::ExactInt { signed: false, .. })
+                    && matches!(&right_ir_type, IRType::ExactInt { signed: false, .. });
+
+                // Mixed-width/signedness exact integers: coerce both operands
+                // to the language's unification type (mirrors semantic
+                // `numeric_result_type`, which unifies unequal exact ints to
+                // signed 64-bit) so the backend never receives mismatched
+                // operand types (`icmp.i8` vs `icmp.i16` used to crash the
+                // Cranelift verifier without a span). Each operand extends
+                // according to its own signedness; equality keeps its own
+                // coercion path inside `lower_value_equality`.
+                if let Some(common_ty) =
+                    Self::mixed_exact_int_common_type(&left_ir_type, &right_ir_type)
+                {
+                    lhs = self.coerce_value_to_type(lhs, &left_ir_type, &common_ty, ir_func);
+                    rhs = self.coerce_value_to_type(rhs, &right_ir_type, &common_ty, ir_func);
+                    left_ir_type = common_ty.clone();
+                    right_ir_type = common_ty;
+                }
 
                 if let IRType::ExactInt { signed, width } = &left_ir_type {
                     if left_ir_type == right_ir_type {
-                        let op_name = match operator {
-                            BinaryOperator::Add => Some("add"),
-                            BinaryOperator::Subtract => Some("sub"),
-                            BinaryOperator::Multiply => Some("mul"),
-                            _ => None,
-                        };
-                        if let Some(op_name) = op_name {
-                            let bits = match width {
-                                IRIntWidth::I8 => 8,
-                                IRIntWidth::I16 => 16,
-                                IRIntWidth::I32 => 32,
-                                IRIntWidth::I64 | IRIntWidth::Isize | IRIntWidth::Usize => 64,
-                            };
-                            let lhs_slot = self.builder.build_cast(
-                                ir_func,
-                                lhs,
-                                left_ir_type.clone(),
-                                IRType::Int,
-                            );
-                            let rhs_slot = self.builder.build_cast(
-                                ir_func,
-                                rhs,
-                                right_ir_type.clone(),
-                                IRType::Int,
-                            );
-                            let host = format!(
-                                "spectra.std.numeric.checked_{op_name}_{}{}",
-                                if *signed { "i" } else { "u" },
-                                bits
-                            );
-                            if let Some(value) = self.builder.build_typed_host_call(
-                                ir_func,
-                                host,
-                                vec![lhs_slot, rhs_slot],
-                                left_ir_type.clone(),
-                                true,
-                            ) {
-                                return value;
-                            }
+                        if let Some(value) = self.lower_exact_int_checked_arithmetic(
+                            operator,
+                            lhs,
+                            rhs,
+                            &left_ir_type,
+                            *signed,
+                            width,
+                            ir_func,
+                        ) {
+                            return value;
                         }
                     }
                 }
@@ -125,8 +122,14 @@ impl ASTLowering {
                     BinaryOperator::Add => self.builder.build_add(ir_func, lhs, rhs),
                     BinaryOperator::Subtract => self.builder.build_sub(ir_func, lhs, rhs),
                     BinaryOperator::Multiply => self.builder.build_mul(ir_func, lhs, rhs),
-                    BinaryOperator::Divide => self.builder.build_div(ir_func, lhs, rhs),
-                    BinaryOperator::Modulo => self.builder.build_rem(ir_func, lhs, rhs),
+                    BinaryOperator::Divide => {
+                        self.builder
+                            .build_div_signedness(ir_func, lhs, rhs, operands_unsigned)
+                    }
+                    BinaryOperator::Modulo => {
+                        self.builder
+                            .build_rem_signedness(ir_func, lhs, rhs, operands_unsigned)
+                    }
                     BinaryOperator::Equal => self.lower_value_equality(
                         lhs,
                         rhs,
@@ -143,15 +146,62 @@ impl ASTLowering {
                         true,
                         ir_func,
                     ),
-                    BinaryOperator::Less => self.builder.build_lt(ir_func, lhs, rhs),
-                    BinaryOperator::LessEqual => self.builder.build_le(ir_func, lhs, rhs),
-                    BinaryOperator::Greater => self.builder.build_gt(ir_func, lhs, rhs),
-                    BinaryOperator::GreaterEqual => self.builder.build_ge(ir_func, lhs, rhs),
+                    BinaryOperator::Less => {
+                        self.builder
+                            .build_lt_signedness(ir_func, lhs, rhs, operands_unsigned)
+                    }
+                    BinaryOperator::LessEqual => {
+                        self.builder
+                            .build_le_signedness(ir_func, lhs, rhs, operands_unsigned)
+                    }
+                    BinaryOperator::Greater => {
+                        self.builder
+                            .build_gt_signedness(ir_func, lhs, rhs, operands_unsigned)
+                    }
+                    BinaryOperator::GreaterEqual => {
+                        self.builder
+                            .build_ge_signedness(ir_func, lhs, rhs, operands_unsigned)
+                    }
                     BinaryOperator::And => self.builder.build_and(ir_func, lhs, rhs),
                     BinaryOperator::Or => self.builder.build_or(ir_func, lhs, rhs),
                 }
             }
             ExpressionKind::Unary { operator, operand } => {                use spectra_compiler::ast::UnaryOperator;
+
+                // Lower a directly negated integer literal as one constant.
+                // This represents signed minima such as i64::MIN without
+                // first trying to encode their positive magnitude in i64.
+                if matches!(operator, UnaryOperator::Negate) {
+                    if let Some(raw) = Self::direct_integer_literal(operand) {
+                        if let Some(value) =
+                            spectra_compiler::numeric::parse_number_literal_as_i128(raw)
+                                .and_then(i128::checked_neg)
+                        {
+                            let expected_type = self
+                                .current_expected_annotation
+                                .clone()
+                                .map(|annotation| self.lower_type_annotation(&annotation))
+                                .or_else(|| self.current_expected_ir_type.clone());
+                            if (i64::MIN as i128..=i64::MAX as i128).contains(&value)
+                                && Self::negative_literal_needs_direct_lowering(
+                                    value,
+                                    expected_type.as_ref(),
+                                )
+                            {
+                                if let Some(ty) = expected_type {
+                                    if matches!(&ty, IRType::ExactInt { .. }) {
+                                        return self.builder.build_const_int_typed(
+                                            ir_func,
+                                            value as i64,
+                                            ty,
+                                        );
+                                    }
+                                }
+                                return self.builder.build_const_int(ir_func, value as i64);
+                            }
+                        }
+                    }
+                }
 
                 // Operator overloading: if operand is a struct, dispatch `StructName_neg`.
                 if matches!(operator, UnaryOperator::Negate) {
@@ -170,8 +220,45 @@ impl ASTLowering {
 
                 match operator {
                     UnaryOperator::Negate => {
-                        // Negate: 0 - operand, preserving numeric kind.
-                        let zero = match self.infer_expr_ir_type(operand) {
+                        // Negate: 0 - operand, preserving numeric kind. The
+                        // zero must be typed exactly like the operand's
+                        // *lowered* representation:
+                        //
+                        // - Number literals type themselves from
+                        //   `current_expected_annotation`
+                        //   (`lower_expression_literals`), NOT from the
+                        //   semantic span fact, so mirror that predicate:
+                        //   `let x: i8 = -5` lowers the literal as an i8
+                        //   constant (an i64 zero crashed the Cranelift
+                        //   verifier), while `(-120) as i8` lowers the
+                        //   literal untyped (an i8 zero would crash it).
+                        // - Any other operand keeps the historical behavior.
+                        let expected_operand_ir_type = self
+                            .current_expected_annotation
+                            .clone()
+                            .map(|annotation| self.lower_type_annotation(&annotation))
+                            .or_else(|| self.current_expected_ir_type.clone());
+                        let lowered_constant_cast_type = if expected_operand_ir_type.is_none()
+                            && matches!(&operand.kind, ExpressionKind::Cast { .. })
+                        {
+                            match self.eval_const_expression(operand) {
+                                Some(LoweredConstValue::Int(_)) => Some(IRType::Int),
+                                Some(LoweredConstValue::Float(_)) => Some(IRType::Float),
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        };
+                        let operand_ir_type = expected_operand_ir_type
+                            .or(lowered_constant_cast_type)
+                            .unwrap_or_else(|| self.infer_expr_ir_type(operand));
+                        let zero = match operand_ir_type {
+                            ty @ IRType::ExactInt { .. } => {
+                                self.builder.build_const_int_typed(ir_func, 0, ty)
+                            }
+                            ty @ IRType::ExactFloat { .. } => {
+                                self.builder.build_const_float_typed(ir_func, 0.0, ty)
+                            }
                             IRType::Float => self.builder.build_const_float(ir_func, 0.0),
                             _ => self.builder.build_const_int(ir_func, 0),
                         };
@@ -180,8 +267,101 @@ impl ASTLowering {
                     UnaryOperator::Not => self.builder.build_not(ir_func, operand_value),
                 }
             }
-            _ => unreachable!("lowering expression category mismatch"),
+            _ => self.invalid_value(
+                "lower_expression_binary called with a non-binary/non-unary expression",
+            ),
         }
+    }
+
+    pub(crate) fn direct_integer_literal(expr: &Expression) -> Option<&str> {
+        match &expr.kind {
+            ExpressionKind::NumberLiteral(raw)
+                if !spectra_compiler::numeric::number_literal_is_float(raw) =>
+            {
+                Some(raw)
+            }
+            ExpressionKind::Grouping(inner) => Self::direct_integer_literal(inner),
+            _ => None,
+        }
+    }
+
+    fn negative_literal_needs_direct_lowering(value: i128, expected_type: Option<&IRType>) -> bool {
+        let bits = match expected_type {
+            None | Some(IRType::Int) => 64,
+            Some(IRType::ExactInt {
+                signed: true,
+                width,
+            }) => match width {
+                IRIntWidth::I8 => 8,
+                IRIntWidth::I16 => 16,
+                IRIntWidth::I32 => 32,
+                IRIntWidth::I64 | IRIntWidth::Isize | IRIntWidth::Usize => 64,
+            },
+            Some(_) => return false,
+        };
+        let positive_max = (1_i128 << (bits - 1)) - 1;
+        value.checked_neg().is_some_and(|magnitude| magnitude > positive_max)
+    }
+
+    /// The unification type for two *different* integer-family operand types,
+    /// mirroring semantic `numeric_result_type`: unequal exact ints (and
+    /// `int` mixed with an exact int) unify to signed 64-bit. Returns `None`
+    /// when the operand types already match or are not both integers.
+    pub(crate) fn mixed_exact_int_common_type(left: &IRType, right: &IRType) -> Option<IRType> {
+        let is_int = |ty: &IRType| matches!(ty, IRType::Int | IRType::ExactInt { .. });
+        if is_int(left) && is_int(right) && left != right {
+            Some(IRType::ExactInt {
+                signed: true,
+                width: IRIntWidth::I64,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Route `Add`/`Subtract`/`Multiply` on equal exact-width integer
+    /// operands through the checked runtime host (`checked_{op}_{i,u}{bits}`),
+    /// returning `None` for operators that lower as ordinary IR instructions.
+    pub(crate) fn lower_exact_int_checked_arithmetic(
+        &mut self,
+        operator: &BinaryOperator,
+        lhs: Value,
+        rhs: Value,
+        operand_ty: &IRType,
+        signed: bool,
+        width: &IRIntWidth,
+        ir_func: &mut IRFunction,
+    ) -> Option<Value> {
+        let op_name = match operator {
+            BinaryOperator::Add => "add",
+            BinaryOperator::Subtract => "sub",
+            BinaryOperator::Multiply => "mul",
+            _ => return None,
+        };
+        let bits = match width {
+            IRIntWidth::I8 => 8,
+            IRIntWidth::I16 => 16,
+            IRIntWidth::I32 => 32,
+            IRIntWidth::I64 | IRIntWidth::Isize | IRIntWidth::Usize => 64,
+        };
+        let lhs_slot = self
+            .builder
+            .build_cast(ir_func, lhs, operand_ty.clone(), IRType::Int);
+        let rhs_slot = self
+            .builder
+            .build_cast(ir_func, rhs, operand_ty.clone(), IRType::Int);
+        let host = format!(
+            "spectra.std.numeric.checked_{op_name}_{}{}",
+            if signed { "i" } else { "u" },
+            bits
+        );
+        self.builder.build_typed_host_call(
+            ir_func,
+            host,
+            vec![lhs_slot, rhs_slot],
+            operand_ty.clone(),
+            true,
+        )
     }
 
     /// Implicit int→float widening for mixed arithmetic and comparisons

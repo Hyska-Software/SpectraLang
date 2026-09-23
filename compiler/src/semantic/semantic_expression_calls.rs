@@ -206,8 +206,16 @@ impl SemanticAnalyzer {
                 if suspend_use_checks {
                     self.uaf_suspend_use_checks += 1;
                 }
-                for arg in arguments {
+                for (index, arg) in arguments.iter().enumerate() {
+                    let saved_expected = self.current_expected_type.clone();
+                    self.current_expected_type =
+                        if Self::is_contextual_integer_literal_expression(arg) {
+                            self.expected_call_argument_type(callee, index)
+                        } else {
+                            None
+                        };
                     self.analyze_expression(arg);
+                    self.current_expected_type = saved_expected;
                 }
                 if suspend_use_checks {
                     self.uaf_suspend_use_checks -= 1;
@@ -233,6 +241,37 @@ impl SemanticAnalyzer {
                 self.validate_static_tensor_call(callee, arguments, expr.span);
             }
             _ => unreachable!("expression category mismatch"),
+        }
+    }
+
+    fn expected_call_argument_type(
+        &mut self,
+        callee: &Expression,
+        argument_index: usize,
+    ) -> Option<Type> {
+        if let ExpressionKind::Identifier(name) = &callee.kind {
+            if let Some(signature) = self.functions.get(name) {
+                return signature.params.get(argument_index).cloned();
+            }
+        }
+        // Namespace calls are represented as field-access expressions. Use
+        // the imported callable signature rather than inferring the field's
+        // function value, whose synthesized type can differ from the public
+        // module contract (for example, checked_i8 takes `int` and returns
+        // `i8`).
+        if let Some(qualified_name) = namespace_path(callee) {
+            if let Some(signature) = self.functions.get(&qualified_name) {
+                return signature.params.get(argument_index).cloned();
+            }
+            if let Some((namespace, _)) = qualified_name.rsplit_once('.') {
+                if self.module_namespaces.contains(namespace) {
+                    return None;
+                }
+            }
+        }
+        match self.infer_expression_type(callee) {
+            Type::Fn { params, .. } => params.get(argument_index).cloned(),
+            _ => None,
         }
     }
 }

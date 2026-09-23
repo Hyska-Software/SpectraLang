@@ -133,9 +133,12 @@ impl LintOptions {
     }
 }
 
-pub fn lint_module(module: &Module, options: &LintOptions) -> Vec<LintDiagnostic> {
+pub fn lint_module(
+    module: &Module,
+    options: &LintOptions,
+) -> Result<Vec<LintDiagnostic>, crate::error::SemanticError> {
     if options.enabled.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     LintRunner::new(options).run(module)
@@ -145,6 +148,18 @@ struct LintRunner<'a> {
     options: &'a LintOptions,
     diagnostics: Vec<LintDiagnostic>,
     scope_stack: Vec<Scope>,
+    /// Current recursion depth of the lint walk, capped by the shared
+    /// frontend budget (`P013`) so pathological ASTs fail with a coded
+    /// diagnostic instead of overflowing the stack.
+    depth: usize,
+    /// Ensures the lint `P013` diagnostic is reported only once.
+    depth_limit_reported: bool,
+    /// Stack address captured when the runner was created; used to estimate
+    /// how much stack the recursive walk has consumed.
+    stack_probe: usize,
+    /// Set when the recursion guard trips; `lint_module` surfaces it as a
+    /// hard coded error instead of partial (possibly misleading) warnings.
+    guard_error: Option<crate::error::SemanticError>,
 }
 
 impl<'a> LintRunner<'a> {
@@ -153,15 +168,56 @@ impl<'a> LintRunner<'a> {
             options,
             diagnostics: Vec::new(),
             scope_stack: Vec::new(),
+            depth: 0,
+            depth_limit_reported: false,
+            stack_probe: crate::parser::Parser::capture_stack_probe(),
+            guard_error: None,
         }
     }
 
-    fn run(mut self, module: &Module) -> Vec<LintDiagnostic> {
+    fn run(mut self, module: &Module) -> Result<Vec<LintDiagnostic>, crate::error::SemanticError> {
         for item in &module.items {
             self.visit_item(item);
         }
 
-        self.diagnostics
+        match self.guard_error {
+            Some(error) => Err(error),
+            None => Ok(self.diagnostics),
+        }
+    }
+
+    /// Enters one level of lint recursion. Returns `Err(())` — after recording
+    /// a single `P013` guard diagnostic at `span` — when the walk exceeds the
+    /// shared frontend depth cap or stack budget, so deeply nested input fails
+    /// cleanly instead of exhausting the stack. The failed level always exits
+    /// again so sibling subtrees keep getting analyzed.
+    fn enter_visit_depth(&mut self, span: Span) -> Result<(), ()> {
+        self.depth += 1;
+        let over_depth = self.depth > crate::parser::MAX_PARSE_DEPTH;
+        let over_stack =
+            crate::parser::Parser::stack_used_bytes(self.stack_probe)
+                > crate::parser::MAX_STACK_USE_BYTES;
+        if over_depth || over_stack {
+            if !self.depth_limit_reported {
+                self.depth_limit_reported = true;
+                self.guard_error = Some(
+                    crate::error::SemanticError::new("nesting too deep", span)
+                        .with_code("P013")
+                        .with_context("lint walk recursion exceeded its nesting/stack guard")
+                        .with_hint(format!(
+                            "Reduce nesting of expressions, statements, blocks, or patterns to at most {} levels.",
+                            crate::parser::MAX_PARSE_DEPTH
+                        )),
+                );
+            }
+            self.depth = self.depth.saturating_sub(1);
+            return Err(());
+        }
+        Ok(())
+    }
+
+    fn exit_visit_depth(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
     }
 
     fn visit_item(&mut self, item: &Item) {
@@ -272,6 +328,17 @@ impl<'a> LintRunner<'a> {
     }
 
     fn visit_statement(&mut self, statement: &Statement) -> bool {
+        if self.enter_visit_depth(statement.span).is_err() {
+            // Guard already reported once; treat the skipped subtree as
+            // conservatively fall-through so no false unreachable warnings.
+            return true;
+        }
+        let fallthrough = self.visit_statement_inner(statement);
+        self.exit_visit_depth();
+        fallthrough
+    }
+
+    fn visit_statement_inner(&mut self, statement: &Statement) -> bool {
         match &statement.kind {
             StatementKind::Let(let_stmt) => {
                 if let Some(value) = &let_stmt.value {
@@ -323,8 +390,11 @@ impl<'a> LintRunner<'a> {
             }
             StatementKind::Loop(loop_stmt) => {
                 self.visit_block(&loop_stmt.body, true);
-                // A `loop {}` without any `break` is an infinite loop — code after
-                // it is unreachable.  We check via a simple structural scan.
+                // A `loop {}` without any reachable `break` is an infinite
+                // loop — code after it is unreachable. `block_has_break`
+                // descends through expression-position if/match/block
+                // statements, so `loop { if c { break } }` correctly marks
+                // the code after the loop as reachable.
                 block_has_break(&loop_stmt.body)
             }
             StatementKind::Switch(switch_stmt) => {
@@ -419,6 +489,14 @@ impl<'a> LintRunner<'a> {
     }
 
     fn visit_expression(&mut self, expression: &Expression) {
+        if self.enter_visit_depth(expression.span).is_err() {
+            return;
+        }
+        self.visit_expression_inner(expression);
+        self.exit_visit_depth();
+    }
+
+    fn visit_expression_inner(&mut self, expression: &Expression) {
         match &expression.kind {
             ExpressionKind::Identifier(name) => {
                 self.mark_binding_use(name);
@@ -721,11 +799,15 @@ impl BindingKind {
 /// Returns `true` if `block` contains a `break` statement at any depth,
 /// **except** inside nested `loop`, `while`, `do-while`, or `for` bodies
 /// (those `break`s would exit the *inner* loop, not the one being analysed).
-fn block_has_break(block: &Block) -> bool {
+///
+/// `pub(crate)`: the semantic return-path analysis reuses this exact
+/// break-reachability logic so lint reachability and guaranteed-return can
+/// never disagree about what a `loop { ... }` body may do.
+pub(crate) fn block_has_break(block: &Block) -> bool {
     block.statements.iter().any(stmt_has_break)
 }
 
-fn stmt_has_break(stmt: &Statement) -> bool {
+pub(crate) fn stmt_has_break(stmt: &Statement) -> bool {
     match &stmt.kind {
         StatementKind::Break => true,
         // Descend into switch cases — a `break` inside exits *this* loop.
@@ -733,12 +815,52 @@ fn stmt_has_break(stmt: &Statement) -> bool {
             sw.cases.iter().any(|c| block_has_break(&c.body))
                 || sw.default.as_ref().is_some_and(block_has_break)
         }
+        // `if`/`unless`/`match`/block statements parse as expression
+        // statements; a `break` inside them still targets *this* loop.
+        StatementKind::Expression(expr) => expr_has_break(expr),
+        // `if let` is a dedicated statement kind; its arms are not loops.
+        StatementKind::IfLet(stmt) => {
+            block_has_break(&stmt.then_block)
+                || stmt.else_block.as_ref().is_some_and(block_has_break)
+        }
         // Do NOT descend into nested loops — their `break` belongs to them.
         StatementKind::Loop(_)
         | StatementKind::While(_)
         | StatementKind::DoWhile(_)
         | StatementKind::For(_) => false,
         // Other statements cannot directly contain a `break`.
+        _ => false,
+    }
+}
+
+/// Descends into expression-position control flow to find `break` statements
+/// that target the enclosing loop.
+fn expr_has_break(expr: &Expression) -> bool {
+    match &expr.kind {
+        ExpressionKind::If {
+            then_block,
+            elif_blocks,
+            else_block,
+            ..
+        } => {
+            block_has_break(then_block)
+                || elif_blocks.iter().any(|(_, block)| block_has_break(block))
+                || else_block.as_ref().is_some_and(block_has_break)
+        }
+        ExpressionKind::Unless {
+            then_block,
+            else_block,
+            ..
+        } => {
+            block_has_break(then_block) || else_block.as_ref().is_some_and(block_has_break)
+        }
+        ExpressionKind::Match { arms, .. } => {
+            arms.iter().any(|arm| expr_has_break(&arm.body))
+        }
+        ExpressionKind::Block(block)
+        | ExpressionKind::AsyncBlock(block)
+        | ExpressionKind::DifferentiableBlock(block) => block_has_break(block),
+        ExpressionKind::Grouping(inner) => expr_has_break(inner),
         _ => false,
     }
 }
@@ -751,3 +873,158 @@ mod semantic_cast_lint;
 
 use crate::ast::TypeAnnotation;
 use semantic_cast_lint::ExactNum;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::{Expression, ExpressionKind, Statement, StatementKind};
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
+    use crate::span::{Location, Span};
+
+    fn parse(source: &str) -> Module {
+        let tokens = Lexer::new(source)
+            .tokenize()
+            .expect("lexer should succeed in lint tests");
+        Parser::new(tokens)
+            .parse()
+            .expect("parser should succeed in lint tests")
+    }
+
+    fn lint_codes(source: &str) -> Result<Vec<LintRule>, crate::error::SemanticError> {
+        lint_module(&parse(source), &LintOptions::all()).map(|diagnostics| {
+            diagnostics
+                .into_iter()
+                .map(|diagnostic| diagnostic.rule)
+                .collect()
+        })
+    }
+
+    #[test]
+    fn loop_with_conditional_break_marks_following_code_reachable() {
+        // Regression: `if` statements parse as expression statements, and the
+        // break-reachability scan used to miss them, so every `loop` looked
+        // infinite and everything after it was flagged as unreachable.
+        let rules = lint_codes(
+            r#"
+            module demo
+
+            func classify(flag: bool) returns int {
+                let counter = 0
+                loop {
+                    if flag {
+                        break
+                    }
+                    counter = counter + 1
+                }
+                let after = counter
+                return after
+            }
+        "#,
+        )
+        .expect("lint walk must not trip the recursion guard");
+
+        assert!(
+            !rules.contains(&LintRule::UnreachableCode),
+            "code after a loop with a conditional break is reachable, got {rules:?}"
+        );
+    }
+
+    #[test]
+    fn loop_with_match_break_marks_following_code_reachable() {
+        let rules = lint_codes(
+            r#"
+            module demo
+
+            func pick(value: int) returns int {
+                loop {
+                    match value {
+                        when 0 then {
+                            break
+                        },
+                        otherwise then {
+                            break
+                        },
+                    }
+                }
+                return 0
+            }
+        "#,
+        )
+        .expect("lint walk must not trip the recursion guard");
+
+        assert!(
+            !rules.contains(&LintRule::UnreachableCode),
+            "code after a loop broken from a match arm is reachable, got {rules:?}"
+        );
+    }
+
+    #[test]
+    fn infinite_loop_still_marks_following_code_unreachable() {
+        // Control: the fix must not weaken the genuine detection.
+        let rules = lint_codes(
+            r#"
+            module demo
+
+            func forever() returns int {
+                loop {
+                    let tick = 1
+                }
+                return 0
+            }
+        "#,
+        )
+        .expect("lint walk must not trip the recursion guard");
+
+        assert!(
+            rules.contains(&LintRule::UnreachableCode),
+            "code after an infinite loop must still be flagged, got {rules:?}"
+        );
+    }
+
+    fn deep_grouping_expression(depth: usize) -> Expression {
+        let mut expression = Expression {
+            span: Span::new(0, 1, Location::new(1, 1), Location::new(1, 2)),
+            kind: ExpressionKind::NumberLiteral("1".to_string()),
+        };
+        for _ in 0..depth {
+            expression = Expression {
+                span: expression.span,
+                kind: ExpressionKind::Grouping(Box::new(expression)),
+            };
+        }
+        expression
+    }
+
+    #[test]
+    fn deeply_nested_ast_fails_with_coded_guard_instead_of_overflow() {
+        let mut module = parse(
+            "
+            module demo
+
+            func main() {
+                let x = 1
+            }
+        ",
+        );
+        let Item::Function(function) = &mut module.items[0] else {
+            panic!("expected function item");
+        };
+        function.body.statements = vec![Statement {
+            span: Span::new(0, 1, Location::new(1, 1), Location::new(1, 2)),
+            kind: StatementKind::Expression(deep_grouping_expression(50_000)),
+        }];
+
+        let error = lint_module(&module, &LintOptions::all())
+            .expect_err("deep AST must fail the lint walk with a coded diagnostic");
+        assert_eq!(
+            error.code.as_deref(),
+            Some("P013"),
+            "expected the shared P013 nesting guard: {error:?}"
+        );
+        // The 50k-deep Box chain would recurse just as deeply in its `Drop`,
+        // which is unrelated to the walk being tested; leaking it keeps the
+        // test focused on the guard.
+        std::mem::forget(module);
+    }
+}

@@ -229,6 +229,7 @@ fn execute_plan_with_sources(
 
     // Captured before `options` moves into the compiler.
     let collect_metrics = options.collect_metrics;
+    let run_jit = options.run_jit;
     let mut compiler = SpectraCompiler::new(options);
     if let Some(name) = package_name {
         compiler.set_package_name(name);
@@ -243,6 +244,19 @@ fn execute_plan_with_sources(
     if kind == BuildCommand::Run && !verbose {
         compiler.set_emit_output(false);
         compiler.set_quiet_execution(true);
+    }
+
+    // Execution paths enforce the same single-entry rule as AOT
+    // (`compile --emit-exe`) before any module compiles, so JIT and AOT agree
+    // on which projects can produce a program: exactly one `main`.
+    // `check`/`lint`/plain `compile`/`bench` never execute and skip the rule.
+    if run_jit || kind == BuildCommand::Run {
+        // Drop any status left by an earlier in-process execution so this
+        // call can only observe its own program's exit code.
+        let _ = take_last_exec_exit();
+        if let Err(message) = scan_entry_points(&plan).single_main() {
+            return Err(CliError::compilation(message));
+        }
     }
 
     let (has_failures, summaries) =
@@ -286,8 +300,12 @@ fn execute_plan_with_sources(
         println!("SPECTRA_CONCURRENT_DIAGNOSTICS={report}");
     }
 
-    // Propagate the Spectra program's exit code when running via JIT.
-    if kind == BuildCommand::Run {
+    // Propagate the Spectra program's exit code whenever JIT execution
+    // actually ran, regardless of command kind (`run` and `compile --run`
+    // alike). The status leaves as a structured error; only the top-level
+    // `run()` converts it into a process exit, so in-process callers (the
+    // REPL) can report the status and keep their session alive.
+    if run_jit || kind == BuildCommand::Run {
         match take_last_exec_exit() {
             Some(code) => {
                 if code != 0 {
@@ -311,14 +329,14 @@ fn execute_plan_with_sources(
                             code
                         );
                     }
-                    std::process::exit(code);
+                    return Err(CliError::program_exit(code));
                 }
             }
             None => {
-                // No module defined `main` — nothing was executed.
-                return Err(CliError::compilation(
-                    "no entry point 'main' found; define a 'public func main() returns int' function",
-                ));
+                // No module defined `main` — nothing was executed. The
+                // pre-scan normally catches this before compiling; kept as a
+                // safety net for sources that change between scan and run.
+                return Err(CliError::compilation(missing_main_message()));
             }
         }
     }

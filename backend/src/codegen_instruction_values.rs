@@ -16,11 +16,13 @@ impl CodeGenerator {
 
         match kind {
             // PHI nodes are lowered to Cranelift block parameters.
-            // The parameters were declared (with the incoming values' types)
-            // by `get_phi_args` when the first jump to this block was
-            // emitted. If no jump ever targeted this block (unreachable
-            // merge), declare I64 placeholders so the shape stays identical
-            // to the old eager pre-declaration behavior.
+            // Blocks are generated in reverse-postorder (see
+            // `block_emission_order`), so for every reachable block the
+            // parameters were already declared — with the incoming values'
+            // types — by `get_phi_args` when the first jump to this block
+            // was emitted. Padding with I64 below is therefore only reached
+            // for a block no jump ever targets (an unreachable merge); its
+            // placeholder parameters are never observed at runtime.
             InstructionKind::Phi { result, .. } => {
                 let block = *block_map
                     .get(&current_block_id)
@@ -89,7 +91,11 @@ impl CodeGenerator {
                     builder.ins().iconst(types::I64, record.ptr as i64)
                 };
                 value_map.insert(result.id, ptr_val);
-                string_literal_lengths.insert(result.id, record.len_with_null);
+                // Logical string length: byte length *excluding* the trailing
+                // NUL. Every consumer (`StringLen`, `char_at`) works with
+                // logical lengths; arrays are recorded separately in
+                // `array_lengths` as plain element counts.
+                string_literal_lengths.insert(result.id, record.len_with_null - 1);
             }
             _ => unreachable!("value instruction category mismatch"),
         }

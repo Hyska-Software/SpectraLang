@@ -177,11 +177,16 @@ impl SemanticAnalyzer {
                 self.error_coded_with_details(
                     "E032",
                     format!(
-                        "Method '{}' expects receiver of type {:?}, but found {:?}",
-                        method_name, expected_self_type, receiver_type
+                        "Method '{}' expects receiver of type {}, but found {}",
+                        method_name,
+                        type_name(expected_self_type),
+                        type_name(receiver_type)
                     ),
                     call_span,
-                    format!("receiver expression resolved to {:?}", receiver_type),
+                    format!(
+                        "receiver expression resolved to {}",
+                        type_name(receiver_type)
+                    ),
                     "Convert or borrow the receiver to match the method signature.",
                 );
             }
@@ -206,21 +211,32 @@ impl SemanticAnalyzer {
         }
 
         for (i, arg) in arguments.iter().enumerate() {
-            let arg_type = self.infer_expression_type(arg);
             let expected_index = i + arg_offset;
+            let saved_expected = self.current_expected_type.clone();
+            self.current_expected_type = if Self::is_contextual_integer_literal_expression(arg) {
+                signature.params.get(expected_index).cloned()
+            } else {
+                None
+            };
+            let arg_type = self.infer_expression_type(arg);
+            self.current_expected_type = saved_expected;
             if let Some(expected_type) = signature.params.get(expected_index) {
                 if !self.generic_argument_types_match(&arg_type, expected_type) {
                     let hint = self.conversion_hint(&arg_type, expected_type);
                     self.push_semantic_error(
                         format!(
-                            "Method '{}' argument {} has type {:?}, but {:?} was expected",
+                            "Method '{}' argument {} has type {}, but {} was expected",
                             method_name,
                             i + 1,
-                            arg_type,
-                            expected_type
+                            type_name(&arg_type),
+                            type_name(expected_type)
                         ),
                         arg.span,
-                        Some(format!("argument {} resolved to {:?}", i + 1, arg_type)),
+                        Some(format!(
+                            "argument {} resolved to {}",
+                            i + 1,
+                            type_name(&arg_type)
+                        )),
                         hint,
                     );
                 }
