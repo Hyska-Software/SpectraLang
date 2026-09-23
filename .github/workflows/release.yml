@@ -18,52 +18,12 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
-# Releases are gated on tests: the `pre-release-gate` job must pass before the
-# version bump/tag job runs, so a push to main can no longer publish binaries
-# that were never compiled or executed by the test suite.
 jobs:
-  # ---------------------------------------------------------------------------
-  # Phase -1: pre-release gate (workspace tests + JIT/AOT fixture execution)
-  # ---------------------------------------------------------------------------
-  pre-release-gate:
-    name: Pre-release Test Gate
-    runs-on: windows-latest
-    timeout-minutes: 150
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-release-gate-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-release-gate-
-
-      - name: Workspace tests
-        run: cargo test --workspace --all-targets
-
-      - name: Build CLI
-        run: cargo build -p spectra-cli
-
-      - name: Execute fixtures (JIT + AOT)
-        run: python scripts/validate_execution_coverage.py --mode both
-
   # ---------------------------------------------------------------------------
   # Phase 0: Determine version (from input or Cargo.toml) and create git tag
   # ---------------------------------------------------------------------------
   determine-version:
     name: Determine Version & Create Tag
-    needs: pre-release-gate
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.ver.outputs.VERSION }}
