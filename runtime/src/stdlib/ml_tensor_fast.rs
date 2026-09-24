@@ -197,6 +197,9 @@ pub fn tensor_autodiff_apply_fast(
         25 => AutogradOp::Stack,
         26 => AutogradOp::Slice,
         27 => AutogradOp::Permute,
+        28 => AutogradOp::MlLayerNorm,
+        29 => AutogradOp::MlGelu,
+        30 => AutogradOp::MlAttention,
         _ => return HOST_STATUS_INVALID_ARGUMENT,
     };
     let targets = [target0, target1, target2]

@@ -1,0 +1,59 @@
+module app
+
+import std.io as io
+import std.tensor as tensor
+from planner.dijkstra import PlannedRoute
+import network.topology as topology
+import planner.dijkstra as planner
+import report.format as report
+
+public func run() returns int {
+    tensor.free_all()
+    let graph        = topology.build()
+    let invalid      = planner.shortest_path(graph, -1, topology.airport_id())
+    let invalid_text = report.describe(invalid)
+    if invalid.found or invalid_text != "sem rota entre Desconhecida e Aeroporto" {
+        io.eprintln("erro: origem fora da rede deveria ser rejeitada sem acessar o tensor")
+        tensor.free_all()
+        return 5
+    }
+    let baseline      = planner.shortest_path(graph, topology.central_id(), topology.airport_id())
+    let baseline_text = report.describe(baseline)
+    if baseline.found == false or baseline.minutes != 16 or baseline_text != "Central -> Museu -> Universidade -> Aeroporto (16 min)" {
+        io.eprintln("erro: rota inicial não corresponde ao caminho mínimo esperado")
+        io.eprintln(baseline_text)
+        tensor.free_all()
+        return 1
+    }
+
+    if topology.close_pair(graph, topology.museum_id(), topology.university_id()) != 2 {
+        io.eprintln("erro: fechamento da conexão deveria desativar as duas direções")
+        tensor.free_all()
+        return 2
+    }
+    let rerouted      = planner.shortest_path(graph, topology.central_id(), topology.airport_id())
+    let rerouted_text = report.describe(rerouted)
+    if rerouted.found == false or rerouted.minutes != 18 or rerouted_text != "Central -> Estádio -> Universidade -> Aeroporto (18 min)" {
+        io.eprintln("erro: planejador não recalculou a rota após o fechamento")
+        io.eprintln(rerouted_text)
+        tensor.free_all()
+        return 3
+    }
+
+    topology.close_pair(graph, topology.university_id(), topology.airport_id())
+    topology.close_pair(graph, 5, topology.airport_id())
+    let blocked = planner.shortest_path(graph, topology.central_id(), topology.airport_id())
+    if blocked.found or report.describe(blocked) != "sem rota entre Central e Aeroporto" {
+        io.eprintln("erro: destino isolado deveria ser reportado sem rota")
+        tensor.free_all()
+        return 4
+    }
+
+    io.println("SPECTRAROUTE ok algorithm=dijkstra stations=8 connections=10")
+    io.println("baseline: " + baseline_text)
+    io.println("reroute: " + rerouted_text)
+    io.println("closed: " + report.describe(blocked))
+    io.println("invalid: " + invalid_text)
+    tensor.free_all()
+    return 0
+}

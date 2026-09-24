@@ -1,0 +1,96 @@
+module planner.dijkstra
+
+import std.tensor as tensor
+from network.topology import Network
+
+const INFINITY = 1000000000
+const EDGE_WIDTH = 4
+
+public record PlannedRoute {
+    public found: bool,
+    public minutes: int,
+    public path: int,
+    public count: int,
+    public origin: int,
+    public destination: int,
+}
+
+public func shortest_path(graph: Network, origin: int, destination: int) returns PlannedRoute {
+    if origin < 0 or origin >= graph.station_count or destination < 0 or destination >= graph.station_count {
+        return PlannedRoute {
+            found: false,
+            minutes: INFINITY,
+            path: tensor.full(graph.station_count, -1),
+            count: 0,
+            origin: origin,
+            destination: destination,
+        }
+    }
+
+    let distances = tensor.full(graph.station_count, INFINITY)
+    let visited   = tensor.full(graph.station_count, 0)
+    let previous  = tensor.full(graph.station_count, -1)
+    tensor.set(distances, origin, 0)
+
+    let iteration = 0
+    while iteration < graph.station_count {
+        let candidate = -1
+        let best      = INFINITY
+        let vertex    = 0
+        while vertex < graph.station_count {
+            let distance = tensor.get(distances, vertex)
+            if tensor.get(visited, vertex) == 0 and distance < best {
+                candidate = vertex
+                best = distance
+            }
+            vertex = vertex + 1
+        }
+
+        if candidate < 0 {
+            iteration = graph.station_count
+        } else {
+            tensor.set(visited, candidate, 1)
+            let edge = 0
+            while edge < graph.edge_count {
+                let offset = edge * EDGE_WIDTH
+                if tensor.get(graph.edges, offset) == candidate and tensor.get(graph.edges, offset + 3) == 1 {
+                    let neighbor  = tensor.get(graph.edges, offset + 1)
+                    let alternate = best + tensor.get(graph.edges, offset + 2)
+                    if tensor.get(visited, neighbor) == 0 and alternate < tensor.get(distances, neighbor) {
+                        tensor.set(distances, neighbor, alternate)
+                        tensor.set(previous, neighbor, candidate)
+                    }
+                }
+                edge = edge + 1
+            }
+        }
+        iteration = iteration + 1
+    }
+
+    let path    = tensor.full(graph.station_count, -1)
+    let count   = 0
+    let vertex  = destination
+    let tracing = tensor.get(distances, destination) < INFINITY
+    while tracing and count < graph.station_count {
+        tensor.set(path, count, vertex)
+        count = count + 1
+        if vertex == origin {
+            tracing = false
+        } else {
+            vertex = tensor.get(previous, vertex)
+            if vertex < 0 {
+                tracing = false
+            }
+        }
+    }
+    let found   = count > 0 and tensor.get(path, count - 1) == origin
+    let minutes = if found { tensor.get(distances, destination) } else { INFINITY}
+    return PlannedRoute {
+        found: found,
+        minutes: minutes,
+        path: path,
+        count: count,
+        origin: origin,
+        destination: destination,
+    }
+}

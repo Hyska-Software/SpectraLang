@@ -60,13 +60,16 @@ pub(crate) extern "C" fn std_ml_layer_norm(ctx: *mut SpectraHostCallContext) -> 
         let Ok((ctx_ref, args)) = ml_args(ctx, 4) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let Some((input_shape, input, _)) = ml_tensor_float_data(args[0] as usize) else {
+        let input_handle = args[0] as usize;
+        let scale_handle = args[1] as usize;
+        let bias_handle = args[2] as usize;
+        let Some((input_shape, input, _)) = ml_tensor_float_data(input_handle) else {
             return HOST_STATUS_NOT_FOUND;
         };
-        let Some((scale_shape, scale, _)) = ml_tensor_float_data(args[1] as usize) else {
+        let Some((scale_shape, scale, _)) = ml_tensor_float_data(scale_handle) else {
             return HOST_STATUS_NOT_FOUND;
         };
-        let Some((bias_shape, bias, _)) = ml_tensor_float_data(args[2] as usize) else {
+        let Some((bias_shape, bias, _)) = ml_tensor_float_data(bias_handle) else {
             return HOST_STATUS_NOT_FOUND;
         };
         let eps = f64::from_bits(args[3] as u64);
@@ -85,6 +88,8 @@ pub(crate) extern "C" fn std_ml_layer_norm(ctx: *mut SpectraHostCallContext) -> 
             return HOST_STATUS_INVALID_ARGUMENT;
         }
         let mut out = Vec::with_capacity(input.len());
+        let mut normalized = Vec::with_capacity(input.len());
+        let mut inverse_std = Vec::with_capacity(input.len() / dim);
         for row in input.chunks(dim) {
             let mean = row.iter().sum::<f64>() / dim as f64;
             let var = row
@@ -96,11 +101,37 @@ pub(crate) extern "C" fn std_ml_layer_norm(ctx: *mut SpectraHostCallContext) -> 
                 .sum::<f64>()
                 / dim as f64;
             let denom = (var + eps).sqrt();
+            inverse_std.push(1.0 / denom);
             for idx in 0..dim {
-                out.push(((row[idx] - mean) / denom) * scale[idx] + bias[idx]);
+                let normalized_value = (row[idx] - mean) / denom;
+                normalized.push(normalized_value);
+                out.push(normalized_value * scale[idx] + bias[idx]);
             }
         }
-        match ml_alloc_float_tensor(input_shape, out) {
+        let requires_grad = with_tensor_registry(|registry| {
+            tensor_requires_autograd(registry, &[input_handle, scale_handle, bias_handle])
+        });
+        let creator = requires_grad.then(|| AutogradNode {
+            op: AutogradOp::MlLayerNorm,
+            parents: vec![input_handle, scale_handle, bias_handle],
+            input_shape: input_shape.clone(),
+            left_shape: scale_shape,
+            right_shape: bias_shape,
+            input,
+            output: normalized,
+            left: scale,
+            right: inverse_std,
+            aux: vec![dim],
+            #[cfg(feature = "gpu")]
+            device_aux: None,
+        });
+        match tensor_alloc_autograd(
+            TensorDType::Float,
+            input_shape,
+            f64_values_to_host(&out),
+            requires_grad,
+            creator,
+        ) {
             Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
             Err(code) => code,
         }
@@ -112,7 +143,8 @@ pub(crate) extern "C" fn std_ml_gelu(ctx: *mut SpectraHostCallContext) -> i32 {
         let Ok((ctx_ref, args)) = ml_args(ctx, 1) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let Some((shape, input, _)) = ml_tensor_float_data(args[0] as usize) else {
+        let input_handle = args[0] as usize;
+        let Some((shape, input, _)) = ml_tensor_float_data(input_handle) else {
             return HOST_STATUS_NOT_FOUND;
         };
         let out = input
@@ -123,7 +155,29 @@ pub(crate) extern "C" fn std_ml_gelu(ctx: *mut SpectraHostCallContext) -> i32 {
                         + ((2.0 / std::f64::consts::PI).sqrt() * (x + 0.044715 * x.powi(3))).tanh())
             })
             .collect::<Vec<_>>();
-        match ml_alloc_float_tensor(shape, out) {
+        let requires_grad =
+            with_tensor_registry(|registry| tensor_requires_autograd(registry, &[input_handle]));
+        let creator = requires_grad.then(|| AutogradNode {
+            op: AutogradOp::MlGelu,
+            parents: vec![input_handle],
+            input_shape: shape.clone(),
+            left_shape: Vec::new(),
+            right_shape: Vec::new(),
+            input,
+            output: out.clone(),
+            left: Vec::new(),
+            right: Vec::new(),
+            aux: Vec::new(),
+            #[cfg(feature = "gpu")]
+            device_aux: None,
+        });
+        match tensor_alloc_autograd(
+            TensorDType::Float,
+            shape,
+            f64_values_to_host(&out),
+            requires_grad,
+            creator,
+        ) {
             Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
             Err(code) => code,
         }
@@ -161,13 +215,16 @@ pub(crate) extern "C" fn std_ml_attention(ctx: *mut SpectraHostCallContext) -> i
         let Ok((ctx_ref, args)) = ml_args(ctx, 3) else {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
-        let Some((q_shape, q, _)) = ml_tensor_float_data(args[0] as usize) else {
+        let q_handle = args[0] as usize;
+        let k_handle = args[1] as usize;
+        let v_handle = args[2] as usize;
+        let Some((q_shape, q, _)) = ml_tensor_float_data(q_handle) else {
             return HOST_STATUS_NOT_FOUND;
         };
-        let Some((k_shape, k, _)) = ml_tensor_float_data(args[1] as usize) else {
+        let Some((k_shape, k, _)) = ml_tensor_float_data(k_handle) else {
             return HOST_STATUS_NOT_FOUND;
         };
-        let Some((v_shape, v, _)) = ml_tensor_float_data(args[2] as usize) else {
+        let Some((v_shape, v, _)) = ml_tensor_float_data(v_handle) else {
             return HOST_STATUS_NOT_FOUND;
         };
         if q_shape.len() != 2 || k_shape.len() != 2 || v_shape.len() != 2 {
@@ -201,7 +258,31 @@ pub(crate) extern "C" fn std_ml_attention(ctx: *mut SpectraHostCallContext) -> i
                 out[qi * v_dim + vi] = value;
             }
         }
-        match ml_alloc_float_tensor(vec![q_len, v_dim], out) {
+        let output_shape = vec![q_len, v_dim];
+        let requires_grad = with_tensor_registry(|registry| {
+            tensor_requires_autograd(registry, &[q_handle, k_handle, v_handle])
+        });
+        let creator = requires_grad.then(|| AutogradNode {
+            op: AutogradOp::MlAttention,
+            parents: vec![q_handle, k_handle, v_handle],
+            input_shape: q_shape,
+            left_shape: k_shape,
+            right_shape: v_shape,
+            input: q,
+            output: out.clone(),
+            left: k,
+            right: v,
+            aux: Vec::new(),
+            #[cfg(feature = "gpu")]
+            device_aux: None,
+        });
+        match tensor_alloc_autograd(
+            TensorDType::Float,
+            output_shape,
+            f64_values_to_host(&out),
+            requires_grad,
+            creator,
+        ) {
             Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
             Err(code) => code,
         }

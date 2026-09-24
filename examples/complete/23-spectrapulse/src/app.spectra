@@ -1,0 +1,64 @@
+module app
+
+import std.convert as convert
+import std.io as io
+import std.ml as ml
+import std.tensor as tensor
+from evaluation.evaluate import Evaluation
+from model.forecaster import Forecaster
+from training.fit import TrainingResult
+import data.synthetic as synthetic
+import evaluation.evaluate as evaluate
+import model.forecaster as forecaster
+import training.fit as fit
+
+public func run() returns int {
+    tensor.free_all()
+    tensor.seed(23023)
+    tensor.set_grad_enabled( false)
+
+    let raw_dataset = synthetic.build()
+    if raw_dataset == 0 or ml.dataset_len(raw_dataset) != 24 {
+        io.eprintln("erro: dataset sintético deveria conter 24 janelas")
+        return 1
+    }
+    let training_set = ml.dataset_train_split(raw_dataset, 18)
+    let test_set     = ml.dataset_test_split(raw_dataset, 18)
+    if training_set == 0 or test_set == 0 {
+        io.eprintln("erro: divisão treino/teste inválida")
+        return 1
+    }
+
+    tensor.set_grad_enabled( true)
+    let model = forecaster.create()
+    if ml.module_parameter_count(model.module_handle) != 14 {
+        io.eprintln("erro: atenção e forecaster residual deveriam registrar 14 parâmetros")
+        return 1
+    }
+    let trained = fit.train(model, training_set, 100, 6)
+    tensor.set_grad_enabled( false)
+    let training_score = evaluate.run(trained.model, training_set)
+    let test_score     = evaluate.run(trained.model, test_set)
+    io.println(
+        "training: epochs=" + convert.int_to_string(trained.epochs) +
+            " steps=" + convert.int_to_string(trained.steps) +
+            " loss=" + convert.float_to_string(trained.final_loss) +
+            " metrics=" + training_score.metrics
+    )
+    if trained.steps == 0 or test_score.mse > 0.01 {
+        io.eprintln("erro: previsão no conjunto sintético excedeu o limite de MSE")
+        io.eprintln(test_score.metrics)
+        tensor.free_all()
+        tensor.set_grad_enabled( false)
+        return 1
+    }
+
+    io.println("SPECTRAPULSE ok architecture=two-head-temporal-attention-residual-mlp sensors=4 horizon=1")
+    io.println(
+        "test: examples=" + convert.int_to_string(test_score.examples) +
+            " metrics=" + test_score.metrics
+    )
+    tensor.free_all()
+    tensor.set_grad_enabled( false)
+    return 0
+}

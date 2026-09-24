@@ -1,10 +1,10 @@
 # Spectra complete example projects
 
-22 complete `.spectra` projects. Projects 01–17 are self-validating and print an
+24 complete `.spectra` projects. Projects 01–17 are self-validating and print an
 `ok` line; `18-spectragit` is a local version-control CLI, `19-spectraboard` is
 a local task-board CLI, `20-spectraledger` is a local personal-finance CLI,
 `21-spectrahabit` is a local habit tracker, and `22-spectravision` is an
-end-to-end convolutional image classifier. Projects 18–22 have their own
+end-to-end convolutional image classifier; `23-spectrapulse` adds differentiable temporal attention for sensor forecasting; `24-spectraroute` adds tensor-backed route planning. Projects 18–24 have their own
 integration harnesses.
 
 Run any project (from the repo root):
@@ -65,6 +65,8 @@ spectralang run examples/complete/22-spectravision
 | 20 | `20-spectraledger` | Personal-finance CLI with nested modules, income and expense tracking, exact cent arithmetic, monthly category budgets, reports, UTF-8 persistence, backup recovery and AOT integration |
 | 21 | `21-spectrahabit` | Habit-tracking CLI with nested modules, UTC calendar validation, dated check-ins, daily streaks, weekly goals and reports, UTF-8 persistence, backup recovery and JIT/AOT integration |
 | 22 | `22-spectravision` | CNN for 6×6 grayscale images: CSV datasets, splits, minibatches, conv2d, ReLU, max-pool, dropout, autodiff, AdamW, classification metrics, checkpoint reload and JIT/AOT integration |
+| 23 | `23-spectrapulse` | Previsão multivariada de sensores: duas cabeças de atenção temporal, LayerNorm/GELU, MLP residual treinado com autodiff e AdamW, métricas de regressão e integração JIT/AOT |
+| 24 | `24-spectraroute` | Planejador de transporte em múltiplos módulos: grafo de tensores, Dijkstra, fechamento de conexões, reroteamento e JIT/AOT |
 
 ## Performance comparisons (Spectra vs Go vs Rust)
 

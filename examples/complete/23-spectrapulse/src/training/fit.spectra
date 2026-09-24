@@ -1,0 +1,74 @@
+module training.fit
+
+import std.ml as ml
+import std.tensor as tensor
+from model.forecaster import Forecaster
+from model.optimizer import AdamState
+import model.forecaster as forecaster
+import model.optimizer as optimizer
+
+const WINDOW_WIDTH = 16
+const OUTPUT_WIDTH = 4
+
+public record TrainingResult {
+    public model: Forecaster,
+    public epochs: int,
+    public steps: int,
+    public final_loss: float,
+}
+
+func train_batch(
+    model: Forecaster,
+    state: AdamState,
+    raw_features: int,
+    raw_targets: int,
+    batch: int,
+    step: int
+) returns float {
+    optimizer.zero_grad(model)
+    let targets = tensor.reshape(raw_targets, batch, OUTPUT_WIDTH)
+    let loss    = ml.mse_loss(forecaster.forward(model, raw_features, batch, true), targets)
+    tensor.backward(loss)
+    let rate = ml.exp_lr(0.01, 0.998, step)
+    optimizer.update(model, state, rate, step)
+    return tensor.get_f(loss, 0)
+}
+
+public func train(
+    model: Forecaster,
+    dataset: int,
+    epochs: int,
+    batch_size: int
+) returns TrainingResult {
+    let loader     = ml.dataloader_new(dataset, batch_size, 23023)
+    let batches    = ml.dataloader_batch_count(loader)
+    let state      = optimizer.create(model)
+    let epoch      = 0
+    let step       = 0
+    let final_loss = 0.0
+    while epoch < epochs {
+        let batch_index = 0
+        while batch_index < batches {
+            let raw_features = ml.dataloader_batch_features(loader, batch_index)
+            let raw_targets  = ml.dataloader_batch_labels(loader, batch_index)
+            let batch        = tensor.len(raw_features) / WINDOW_WIDTH
+            final_loss = train_batch(
+                model,
+                state,
+                raw_features,
+                raw_targets,
+                batch,
+                step + 1,
+            )
+            step = step + 1
+            batch_index = batch_index + 1
+        }
+        epoch = epoch + 1
+    }
+    return TrainingResult {
+        model: model,
+        epochs: epoch,
+        steps: step,
+        final_loss: final_loss,
+    }
+}

@@ -2866,6 +2866,127 @@ fn ml_logits_sample_seeded_is_reproducible_and_diverges() {
 }
 
 #[test]
+fn ml_attention_layer_norm_gelu_autodiff_matches_finite_difference() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    crate::ffi::spectra_rt_manual_clear();
+    let _ = call_host(TENSOR_FREE_ALL, &[]);
+    assert_eq!(
+        call_host(TENSOR_SET_GRAD_ENABLED, &[1]).0,
+        HOST_STATUS_SUCCESS
+    );
+
+    let query_values = vec![0.2, -0.4, 0.7, 0.1];
+    let key_values = vec![0.3, 0.5, -0.2, 0.6, 0.8, -0.3];
+    let value_values = vec![0.4, -0.7, 1.2, 0.3, -0.5, 0.9];
+    let scale_values = vec![1.1, 0.8];
+    let bias_values = vec![0.07, -0.11];
+    let allocate = |shape: Vec<usize>, values: &[f64]| {
+        tensor_alloc(TensorDType::Float, shape, f64_values_to_host(values))
+            .expect("allocate ML autodiff tensor") as SpectraHostValue
+    };
+    let query = allocate(vec![2, 2], &query_values);
+    let key = allocate(vec![3, 2], &key_values);
+    let value = allocate(vec![3, 2], &value_values);
+    let scale = allocate(vec![2], &scale_values);
+    let bias = allocate(vec![2], &bias_values);
+    for handle in [query, key, value, scale, bias] {
+        assert_eq!(
+            call_host(TENSOR_REQUIRES_GRAD, &[handle, 1]).0,
+            HOST_STATUS_SUCCESS
+        );
+    }
+    let (status, attended) = call_host(ML_ATTENTION, &[query, key, value]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (status, normalized) = call_host(
+        ML_LAYER_NORM,
+        &[attended, scale, bias, 1e-5f64.to_bits() as SpectraHostValue],
+    );
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (status, activated) = call_host(ML_GELU, &[normalized]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (status, loss) = call_host(TENSOR_SUM_T, &[activated]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(call_host(TENSOR_BACKWARD, &[loss]).0, HOST_STATUS_SUCCESS);
+
+    let mut gradients = Vec::new();
+    for handle in [query, key, value, scale, bias] {
+        let (status, gradient) = call_host(TENSOR_GRAD, &[handle]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        gradients.push(
+            ml_tensor_float_data(gradient as usize)
+                .expect("gradient tensor data")
+                .1,
+        );
+    }
+
+    let objective = |q: &[f64], k: &[f64], v: &[f64], gamma: &[f64], beta: &[f64]| {
+        let mut output = 0.0;
+        for qi in 0..2 {
+            let mut scores = Vec::new();
+            for ki in 0..3 {
+                scores
+                    .push((q[qi * 2] * k[ki * 2] + q[qi * 2 + 1] * k[ki * 2 + 1]) / 2.0f64.sqrt());
+            }
+            let maximum = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let exp_scores = scores
+                .iter()
+                .map(|score| (score - maximum).exp())
+                .collect::<Vec<_>>();
+            let denominator = exp_scores.iter().sum::<f64>();
+            let probabilities = exp_scores
+                .iter()
+                .map(|score| score / denominator)
+                .collect::<Vec<_>>();
+            let mut context = [0.0; 2];
+            for ki in 0..3 {
+                for col in 0..2 {
+                    context[col] += probabilities[ki] * v[ki * 2 + col];
+                }
+            }
+            let mean = (context[0] + context[1]) / 2.0;
+            let variance = ((context[0] - mean).powi(2) + (context[1] - mean).powi(2)) / 2.0;
+            for col in 0..2 {
+                let normalized = (context[col] - mean) / (variance + 1e-5).sqrt();
+                let x = normalized * gamma[col] + beta[col];
+                let inner = (2.0 / std::f64::consts::PI).sqrt() * (x + 0.044715 * x.powi(3));
+                output += 0.5 * x * (1.0 + inner.tanh());
+            }
+        }
+        output
+    };
+
+    let base = [
+        query_values.clone(),
+        key_values.clone(),
+        value_values.clone(),
+        scale_values.clone(),
+        bias_values.clone(),
+    ];
+    let epsilon = 1e-5;
+    for group in 0..base.len() {
+        for index in 0..base[group].len() {
+            let mut plus = base.clone();
+            let mut minus = base.clone();
+            plus[group][index] += epsilon;
+            minus[group][index] -= epsilon;
+            let plus_loss = objective(&plus[0], &plus[1], &plus[2], &plus[3], &plus[4]);
+            let minus_loss = objective(&minus[0], &minus[1], &minus[2], &minus[3], &minus[4]);
+            let finite_difference = (plus_loss - minus_loss) / (2.0 * epsilon);
+            assert!(
+                (gradients[group][index] - finite_difference).abs() < 3e-4,
+                "group {group} index {index}: autodiff={} finite_difference={finite_difference}",
+                gradients[group][index]
+            );
+        }
+    }
+
+    let _ = call_host(TENSOR_FREE_ALL, &[]);
+    let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[0]);
+}
+
+#[test]
 fn ml_phase18_rag_tokenizer_vector_index_and_prompt_eval() {
     let _lock = test_guard();
     clear_host_functions();

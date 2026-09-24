@@ -1,0 +1,22 @@
+module report.format
+
+import std.convert as convert
+import std.tensor as tensor
+from planner.dijkstra import PlannedRoute
+import network.topology as topology
+
+public func describe(route: PlannedRoute) returns string {
+    if route.found == false {
+        return "sem rota entre " +
+            topology.station_name(route.origin) +
+            " e " +
+            topology.station_name(route.destination)
+    }
+    let description = topology.station_name(tensor.get(route.path, route.count - 1))
+    let index       = route.count - 2
+    while index >= 0 {
+        description = description + " -> " + topology.station_name(tensor.get(route.path, index))
+        index = index - 1
+    }
+    return description + " (" + convert.int_to_string(route.minutes) + " min)"
+}

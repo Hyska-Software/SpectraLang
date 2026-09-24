@@ -1,0 +1,118 @@
+module encoder.temporal_attention
+
+import std.ml as ml
+import std.tensor as tensor
+
+const WINDOW_STEPS = 4
+const SENSOR_COUNT = 4
+const HEAD_WIDTH = 2
+const HEAD_INPUT_WIDTH = WINDOW_STEPS * HEAD_WIDTH
+const SUMMARY_WIDTH = 8
+
+func project_head(
+    sequence: int,
+    query_weights: int,
+    query_bias: int,
+    key_weights: int,
+    key_bias: int,
+    value_weights: int,
+    value_bias: int
+) returns int {
+    let query_sequence = ml.linear(sequence, query_weights, query_bias)
+    let key_sequence   = ml.linear(sequence, key_weights, key_bias)
+    let value_sequence = ml.linear(sequence, value_weights, value_bias)
+    let query_flat     = tensor.flatten(query_sequence)
+    let query          = tensor.reshape(tensor.slice(query_flat, 6, 8), 1, HEAD_WIDTH)
+    return ml.attention(query, key_sequence, value_sequence)
+}
+
+public func summarize(
+    window: int,
+    query_weights: int,
+    query_bias: int,
+    key_weights: int,
+    key_bias: int,
+    value_weights: int,
+    value_bias: int,
+    scale: int,
+    bias: int
+) returns int {
+    let first_head  = tensor.full_f(HEAD_INPUT_WIDTH, 0.0)
+    let second_head = tensor.full_f(HEAD_INPUT_WIDTH, 0.0)
+    let step        = 0
+    while step<WINDOW_STEPS {
+        tensor.set_f(
+            first_head,
+            step * HEAD_WIDTH,
+            tensor.get_f(window, step * SENSOR_COUNT),
+        )
+        tensor.set_f(
+            first_head,
+            step * HEAD_WIDTH + 1,
+            tensor.get_f(window, step * SENSOR_COUNT + 1),
+        )
+        tensor.set_f(
+            second_head,
+            step * HEAD_WIDTH,
+            tensor.get_f(window, step * SENSOR_COUNT + 2),
+        )
+        tensor.set_f(
+            second_head,
+            step * HEAD_WIDTH + 1,
+            tensor.get_f(window, step * SENSOR_COUNT + 3),
+        )
+        step = step + 1
+    }
+
+    let first_sequence  = tensor.reshape(first_head, WINDOW_STEPS, HEAD_WIDTH)
+    let second_sequence = tensor.reshape(second_head, WINDOW_STEPS, HEAD_WIDTH)
+    let first_context = project_head(
+        first_sequence,
+        query_weights,
+        query_bias,
+        key_weights,
+        key_bias,
+        value_weights,
+        value_bias,
+    )
+    let second_context = project_head(
+        second_sequence,
+        query_weights,
+        query_bias,
+        key_weights,
+        key_bias,
+        value_weights,
+        value_bias,
+    )
+    let first_query_sequence  = ml.linear(first_sequence, query_weights, query_bias)
+    let second_query_sequence = ml.linear(second_sequence, query_weights, query_bias)
+    let first_query = tensor.reshape(
+        tensor.slice(tensor.flatten(first_query_sequence), 6, 8),
+        1,
+        HEAD_WIDTH,
+    )
+    let second_query = tensor.reshape(
+        tensor.slice(tensor.flatten(second_query_sequence), 6, 8),
+        1,
+        HEAD_WIDTH,
+    )
+    let first_normalized  = ml.layer_norm(first_context, scale, bias, 0.00001)
+    let second_normalized = ml.layer_norm(second_context, scale, bias, 0.00001)
+    let first_activated   = ml.gelu(first_normalized)
+    let second_activated  = ml.gelu(second_normalized)
+    let first_residual    = tensor.add(first_query, first_activated)
+    let second_residual   = tensor.add(second_query, second_activated)
+    let first_summary = tensor.concat(
+        tensor.flatten(first_query),
+        tensor.flatten(first_residual),
+    )
+    let second_summary = tensor.concat(
+        tensor.flatten(second_query),
+        tensor.flatten(second_residual),
+    )
+    let summary = tensor.concat(first_summary, second_summary)
+    if tensor.len(summary) != SUMMARY_WIDTH or tensor.len(first_head) != HEAD_INPUT_WIDTH {
+        return 0
+    }
+    return summary
+}

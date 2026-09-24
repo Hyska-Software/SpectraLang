@@ -1,0 +1,30 @@
+module evaluation.evaluate
+
+import std.ml as ml
+import std.tensor as tensor
+from model.forecaster import Forecaster
+import model.forecaster as forecaster
+
+const WINDOW_WIDTH = 16
+const OUTPUT_WIDTH = 4
+
+public record Evaluation {
+    public mse: float,
+    public metrics: string,
+    public examples: int,
+}
+
+public func run(model: Forecaster, dataset: int) returns Evaluation {
+    let examples     = ml.dataset_len(dataset)
+    let loader       = ml.dataloader_new(dataset, examples, 0)
+    let raw_features = ml.dataloader_batch_features(loader, 0)
+    let raw_targets  = ml.dataloader_batch_labels(loader, 0)
+    let targets      = tensor.reshape(raw_targets, examples, OUTPUT_WIDTH)
+    let prediction   = forecaster.forward(model, raw_features, examples, false)
+    let mse          = ml.mse_loss(prediction, targets)
+    return Evaluation {
+        mse: tensor.get_f(mse, 0),
+        metrics: ml.metrics_regression(targets, prediction),
+        examples: examples,
+    }
+}

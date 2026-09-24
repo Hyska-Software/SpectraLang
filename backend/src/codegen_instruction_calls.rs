@@ -130,6 +130,9 @@ impl CodeGenerator {
                     "stack" => 25,
                     "slice" => 26,
                     "permute" => 27,
+                    "layer_norm" => 28,
+                    "gelu" => 29,
+                    "attention" => 30,
                     other => {
                         return Err(BackendCodegenError::invalid_ir(format!(
                             "E3004: no reverse kernel for {other}"

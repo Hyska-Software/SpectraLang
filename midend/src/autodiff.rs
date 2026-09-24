@@ -699,7 +699,7 @@ fn autodiff_operation(host: &str) -> Option<&str> {
         "add" | "sub" | "mul" | "div" | "neg" | "relu" | "sum_t" | "mean_t" | "dot_t"
         | "matmul" | "matmul_batched" | "transpose" | "reshape" | "linear" | "mse_loss"
         | "bce_loss" | "conv2d" | "max_pool2d" | "dropout" | "concat" | "stack" | "slice"
-        | "permute" => Some(name),
+        | "permute" | "layer_norm" | "gelu" | "attention" => Some(name),
         "exp_f" => Some("exp"),
         "log_f" => Some("log"),
         "sqrt_f" => Some("sqrt"),
@@ -720,6 +720,8 @@ fn tensor_arguments(host: &str, args: &[Value]) -> Vec<Value> {
         "add" | "sub" | "mul" | "div" | "matmul" | "matmul_batched" | "dot_t" | "mse_loss"
         | "bce_loss" => &[0, 1],
         "linear" | "conv2d" => &[0, 1, 2],
+        "layer_norm" | "attention" => &[0, 1, 2],
+        "gelu" => &[0],
         "max_pool2d" | "dropout" => &[0],
         "concat" | "stack" => &[0, 1],
         "slice" | "permute" => &[0],

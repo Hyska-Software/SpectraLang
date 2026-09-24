@@ -174,6 +174,133 @@ pub(crate) fn autograd_parent_grads_cpu(
                 (node.parents[2], host_grad(grad_bias)),
             ])
         }
+        AutogradOp::MlLayerNorm => {
+            let dim = *node.aux.first()?;
+            if dim == 0 || node.input.len() % dim != 0 || grad.len() != node.input.len() {
+                return None;
+            }
+            let rows = node.input.len() / dim;
+            if node.output.len() != node.input.len()
+                || node.left.len() != dim
+                || node.right.len() != rows
+                || node.parents.len() != 3
+            {
+                return None;
+            }
+            let mut grad_input = vec![0.0; node.input.len()];
+            let mut grad_scale = vec![0.0; dim];
+            let mut grad_bias = vec![0.0; dim];
+            for row in 0..rows {
+                let offset = row * dim;
+                let mut sum_grad = 0.0;
+                let mut sum_grad_normalized = 0.0;
+                for col in 0..dim {
+                    let upstream = grad[offset + col] * node.left[col];
+                    let normalized = node.output[offset + col];
+                    sum_grad += upstream;
+                    sum_grad_normalized += upstream * normalized;
+                    grad_scale[col] += grad[offset + col] * normalized;
+                    grad_bias[col] += grad[offset + col];
+                }
+                let inverse_std = node.right[row];
+                for col in 0..dim {
+                    let normalized = node.output[offset + col];
+                    grad_input[offset + col] = inverse_std
+                        * (dim as f64 * grad[offset + col] * node.left[col]
+                            - sum_grad
+                            - normalized * sum_grad_normalized)
+                        / dim as f64;
+                }
+            }
+            Some(vec![
+                (node.parents[0], host_grad(grad_input)),
+                (node.parents[1], host_grad(grad_scale)),
+                (node.parents[2], host_grad(grad_bias)),
+            ])
+        }
+        AutogradOp::MlGelu => {
+            let factor = (2.0 / std::f64::consts::PI).sqrt();
+            Some(single(
+                grad.iter()
+                    .zip(node.input.iter())
+                    .map(|(upstream, value)| {
+                        let inner = factor * (value + 0.044715 * value.powi(3));
+                        let tanh_inner = inner.tanh();
+                        let derivative = 0.5 * (1.0 + tanh_inner)
+                            + 0.5
+                                * value
+                                * (1.0 - tanh_inner * tanh_inner)
+                                * factor
+                                * (1.0 + 3.0 * 0.044715 * value * value);
+                        upstream * derivative
+                    })
+                    .collect(),
+            ))
+        }
+        AutogradOp::MlAttention => {
+            if node.parents.len() != 3
+                || node.input_shape.len() != 2
+                || node.left_shape.len() != 2
+                || node.right_shape.len() != 2
+            {
+                return None;
+            }
+            let (query_len, dim) = (node.input_shape[0], node.input_shape[1]);
+            let (key_len, key_dim) = (node.left_shape[0], node.left_shape[1]);
+            let value_dim = node.right_shape[1];
+            if dim == 0
+                || dim != key_dim
+                || node.right_shape[0] != key_len
+                || grad.len() != query_len * value_dim
+                || node.input.len() != query_len * dim
+                || node.left.len() != key_len * dim
+                || node.right.len() != key_len * value_dim
+            {
+                return None;
+            }
+            let inverse_scale = 1.0 / (dim as f64).sqrt();
+            let mut grad_query = vec![0.0; query_len * dim];
+            let mut grad_key = vec![0.0; key_len * dim];
+            let mut grad_value = vec![0.0; key_len * value_dim];
+            for qi in 0..query_len {
+                let mut scores = Vec::with_capacity(key_len);
+                for ki in 0..key_len {
+                    let mut score = 0.0;
+                    for col in 0..dim {
+                        score += node.input[qi * dim + col] * node.left[ki * dim + col];
+                    }
+                    scores.push(score * inverse_scale);
+                }
+                let probabilities = ml_softmax_row(&scores)?;
+                let mut grad_probabilities = vec![0.0; key_len];
+                for ki in 0..key_len {
+                    for col in 0..value_dim {
+                        let upstream = grad[qi * value_dim + col];
+                        grad_value[ki * value_dim + col] += probabilities[ki] * upstream;
+                        grad_probabilities[ki] += upstream * node.right[ki * value_dim + col];
+                    }
+                }
+                let projection = probabilities
+                    .iter()
+                    .zip(grad_probabilities.iter())
+                    .map(|(probability, grad_probability)| probability * grad_probability)
+                    .sum::<f64>();
+                for ki in 0..key_len {
+                    let grad_score = probabilities[ki] * (grad_probabilities[ki] - projection);
+                    for col in 0..dim {
+                        grad_query[qi * dim + col] +=
+                            grad_score * node.left[ki * dim + col] * inverse_scale;
+                        grad_key[ki * dim + col] +=
+                            grad_score * node.input[qi * dim + col] * inverse_scale;
+                    }
+                }
+            }
+            Some(vec![
+                (node.parents[0], host_grad(grad_query)),
+                (node.parents[1], host_grad(grad_key)),
+                (node.parents[2], host_grad(grad_value)),
+            ])
+        }
         AutogradOp::MlMse => {
             let n = node.left.len() as f64;
             Some(single(

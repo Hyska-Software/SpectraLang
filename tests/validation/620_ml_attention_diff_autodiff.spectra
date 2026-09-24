@@ -1,0 +1,52 @@
+module ml_attention_diff_autodiff
+
+import std.ml as ml
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.set_grad_enabled( true)
+    let query_base = tensor.full2_f(1, 2, 0.0)
+    tensor.set2_f(query_base, 0, 0, 0.2)
+    tensor.set2_f(query_base, 0, 1, 0.8)
+    let key_base = tensor.full2_f(2, 2, 0.0)
+    tensor.set2_f(key_base, 0, 0, 0.1)
+    tensor.set2_f(key_base, 0, 1, 0.3)
+    tensor.set2_f(key_base, 1, 0, 0.5)
+    tensor.set2_f(key_base, 1, 1, 0.7)
+    let value_base = tensor.full2_f(2, 2, 0.0)
+    tensor.set2_f(value_base, 0, 0, 0.2)
+    tensor.set2_f(value_base, 0, 1, 0.9)
+    tensor.set2_f(value_base, 1, 0, 0.8)
+    tensor.set2_f(value_base, 1, 1, 0.3)
+    let query                      = tensor.requires_grad(query_base, true)
+    let key                        = tensor.requires_grad(key_base, true)
+    let value                      = tensor.requires_grad(value_base, true)
+    let scale                      = tensor.requires_grad(tensor.full_f(2, 1.0), true)
+    let bias                       = tensor.requires_grad(tensor.full_f(2, 0.0), true)
+    let loss: Tensor<float, rank0> = diff {
+        tensor.sum_t(ml.gelu(ml.layer_norm(ml.attention(query, key, value), scale, bias, 0.00001)))
+    }
+    tensor.backward(loss)
+    if tensor.len(tensor.grad(query)) != 2 {
+        return 1
+    }
+    if tensor.len(tensor.grad(key)) != 4 {
+        return 2
+    }
+    if tensor.len(tensor.grad(value)) != 4 {
+        return 3
+    }
+    if tensor.len(tensor.grad(scale)) != 2 {
+        return 4
+    }
+    if tensor.len(tensor.grad(bias)) != 2 {
+        return 5
+    }
+    if tensor.len(loss) != 1 {
+        return 6
+    }
+    tensor.free_all()
+    tensor.set_grad_enabled( false)
+    return 0
+}

@@ -294,6 +294,9 @@ impl SemanticAnalyzer {
                     | "conv2d"
                     | "max_pool2d"
                     | "dropout"
+                    | "layer_norm"
+                    | "gelu"
+                    | "attention"
             ]
         );
         let is_std = matches!(parts.first(), Some(&"tensor" | &"ml" | &"io" | &"math"));

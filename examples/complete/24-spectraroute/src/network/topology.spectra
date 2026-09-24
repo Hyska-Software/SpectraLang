@@ -1,0 +1,93 @@
+module network.topology
+
+import std.tensor as tensor
+
+const STATION_COUNT = 8
+const CONNECTION_COUNT = 10
+const EDGE_WIDTH = 4
+
+public record Network {
+    public edges: int,
+    public edge_count: int,
+    public station_count: int,
+}
+
+func write_edge(edges: int, edge: int, source: int, destination: int, minutes: int) returns int {
+    let offset = edge * EDGE_WIDTH
+    tensor.set(edges, offset, source)
+    tensor.set(edges, offset + 1, destination)
+    tensor.set(edges, offset + 2, minutes)
+    tensor.set(edges, offset + 3, 1)
+    return 0
+}
+
+func connect(edges: int, connection: int, first: int, second: int, minutes: int) returns int {
+    write_edge(edges, connection * 2, first, second, minutes)
+    write_edge(edges, connection * 2 + 1, second, first, minutes)
+    return 0
+}
+
+public func build() returns Network {
+    let edges = tensor.full(CONNECTION_COUNT * 2 * EDGE_WIDTH, 0)
+    connect(edges, 0, 0, 1, 4)
+    connect(edges, 1, 1, 4, 5)
+    connect(edges, 2, 4, 6, 7)
+    connect(edges, 3, 0, 7, 6)
+    connect(edges, 4, 7, 4, 5)
+    connect(edges, 5, 0, 2, 8)
+    connect(edges, 6, 2, 3, 3)
+    connect(edges, 7, 3, 5, 4)
+    connect(edges, 8, 5, 6, 5)
+    connect(edges, 9, 2, 4, 8)
+    return Network {
+        edges: edges,
+        edge_count: CONNECTION_COUNT * 2,
+        station_count: STATION_COUNT,
+    }
+}
+
+public func close_pair(graph: Network, first: int, second: int) returns int {
+    let changed = 0
+    let edge    = 0
+    while edge < graph.edge_count {
+        let offset      = edge * EDGE_WIDTH
+        let source      = tensor.get(graph.edges, offset)
+        let destination = tensor.get(graph.edges, offset + 1)
+        if (source == first and destination == second) or(source == second and destination == first) {
+            if tensor.get(graph.edges, offset + 3) == 1 {
+                tensor.set(graph.edges, offset + 3, 0)
+                changed = changed + 1
+            }
+        }
+        edge = edge + 1
+    }
+    return changed
+}
+
+public func central_id() returns int {
+    return 0
+}
+
+public func museum_id() returns int {
+    return 1
+}
+
+public func university_id() returns int {
+    return 4
+}
+
+public func airport_id() returns int {
+    return 6
+}
+
+public func station_name(id: int) returns string {
+    if id == 0 { return "Central"}
+    if id == 1 { return "Museu"}
+    if id == 2 { return "Porto"}
+    if id == 3 { return "Mercado"}
+    if id == 4 { return "Universidade"}
+    if id == 5 { return "Parque"}
+    if id == 6 { return "Aeroporto"}
+    if id == 7 { return "Estádio"}
+    return "Desconhecida"
+}

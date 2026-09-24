@@ -1,0 +1,46 @@
+module data.synthetic
+
+import std.ml as ml
+import std.tensor as tensor
+
+const SAMPLE_COUNT = 24
+const WINDOW_STEPS = 4
+const SENSOR_COUNT = 4
+const FEATURE_WIDTH = WINDOW_STEPS * SENSOR_COUNT
+
+public func build() returns int {
+    let features = tensor.full_f(SAMPLE_COUNT * FEATURE_WIDTH, 0.0)
+    let targets  = tensor.full_f(SAMPLE_COUNT * SENSOR_COUNT, 0.0)
+    let sample   = 0
+    while sample<SAMPLE_COUNT {
+        let phase = ((sample * 5) % 12) as float * 0.03
+        let step  = 0
+        while step<WINDOW_STEPS {
+            let temperature = 0.1 + phase + (step as float) * 0.04
+            let vibration   = 0.2 + phase * 0.55 + (step as float) * 0.025
+            let pressure    = 0.15 + temperature * 0.45 + vibration * 0.7
+            let flow        = 0.3 + phase * 0.35 + (step as float) * 0.03
+            let offset      = sample * FEATURE_WIDTH + step * SENSOR_COUNT
+            tensor.set_f(features, offset, temperature)
+            tensor.set_f(features, offset + 1, vibration)
+            tensor.set_f(features, offset + 2, pressure)
+            tensor.set_f(features, offset + 3, flow)
+            step = step + 1
+        }
+
+        let next_temperature = 0.1 + phase + 4.0 * 0.04
+        let next_vibration   = 0.2 + phase * 0.55 + 4.0 * 0.025
+        let next_pressure    = 0.15 + next_temperature * 0.45 + next_vibration * 0.7
+        let next_flow        = 0.3 + phase * 0.35 + 4.0 * 0.03
+        let target_offset    = sample * SENSOR_COUNT
+        tensor.set_f(targets, target_offset, next_temperature)
+        tensor.set_f(targets, target_offset + 1, next_vibration)
+        tensor.set_f(targets, target_offset + 2, next_pressure)
+        tensor.set_f(targets, target_offset + 3, next_flow)
+        sample = sample + 1
+    }
+
+    let feature_matrix = tensor.reshape(features, SAMPLE_COUNT, FEATURE_WIDTH)
+    let target_matrix  = tensor.reshape(targets, SAMPLE_COUNT, SENSOR_COUNT)
+    return ml.dataset_from_tensors(feature_matrix, target_matrix, SAMPLE_COUNT)
+}

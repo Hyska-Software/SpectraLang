@@ -1,0 +1,217 @@
+module model.optimizer
+
+import std.ml as ml
+import std.tensor as tensor
+from model.forecaster import Forecaster
+
+public record AdamState {
+    public query_weights_first: int,
+    public query_weights_second: int,
+    public query_bias_first: int,
+    public query_bias_second: int,
+    public key_weights_first: int,
+    public key_weights_second: int,
+    public key_bias_first: int,
+    public key_bias_second: int,
+    public value_weights_first: int,
+    public value_weights_second: int,
+    public value_bias_first: int,
+    public value_bias_second: int,
+    public norm_scale_first: int,
+    public norm_scale_second: int,
+    public norm_bias_first: int,
+    public norm_bias_second: int,
+    public input_weights_first: int,
+    public input_weights_second: int,
+    public input_bias_first: int,
+    public input_bias_second: int,
+    public skip_weights_first: int,
+    public skip_weights_second: int,
+    public skip_bias_first: int,
+    public skip_bias_second: int,
+    public output_weights_first: int,
+    public output_weights_second: int,
+    public output_bias_first: int,
+    public output_bias_second: int,
+}
+
+func moments(parameter: int) returns int {
+    return tensor.full_f(tensor.len(parameter), 0.0)
+}
+
+func clear_parameter(parameter: int) returns int {
+    tensor.zero_grad(parameter)
+    return 0
+}
+
+func update_parameter(
+    parameter: int,
+    first: int,
+    second: int,
+    rate: float,
+    step: int,
+    decay: float
+) returns int {
+    ml.adamw_step(parameter, first, second, rate, 0.9, 0.999, 0.00000001, step, decay)
+    return 0
+}
+
+public func create(model: Forecaster) returns AdamState {
+    return AdamState {
+        query_weights_first: moments(model.query_weights),
+        query_weights_second: moments(model.query_weights),
+        query_bias_first: moments(model.query_bias),
+        query_bias_second: moments(model.query_bias),
+        key_weights_first: moments(model.key_weights),
+        key_weights_second: moments(model.key_weights),
+        key_bias_first: moments(model.key_bias),
+        key_bias_second: moments(model.key_bias),
+        value_weights_first: moments(model.value_weights),
+        value_weights_second: moments(model.value_weights),
+        value_bias_first: moments(model.value_bias),
+        value_bias_second: moments(model.value_bias),
+        norm_scale_first: moments(model.norm_scale),
+        norm_scale_second: moments(model.norm_scale),
+        norm_bias_first: moments(model.norm_bias),
+        norm_bias_second: moments(model.norm_bias),
+        input_weights_first: moments(model.input_weights),
+        input_weights_second: moments(model.input_weights),
+        input_bias_first: moments(model.input_bias),
+        input_bias_second: moments(model.input_bias),
+        skip_weights_first: moments(model.skip_weights),
+        skip_weights_second: moments(model.skip_weights),
+        skip_bias_first: moments(model.skip_bias),
+        skip_bias_second: moments(model.skip_bias),
+        output_weights_first: moments(model.output_weights),
+        output_weights_second: moments(model.output_weights),
+        output_bias_first: moments(model.output_bias),
+        output_bias_second: moments(model.output_bias),
+    }
+}
+
+public func zero_grad(model: Forecaster) returns int {
+    clear_parameter(model.query_weights)
+    clear_parameter(model.query_bias)
+    clear_parameter(model.key_weights)
+    clear_parameter(model.key_bias)
+    clear_parameter(model.value_weights)
+    clear_parameter(model.value_bias)
+    clear_parameter(model.norm_scale)
+    clear_parameter(model.norm_bias)
+    clear_parameter(model.input_weights)
+    clear_parameter(model.input_bias)
+    clear_parameter(model.skip_weights)
+    clear_parameter(model.skip_bias)
+    clear_parameter(model.output_weights)
+    clear_parameter(model.output_bias)
+    return 0
+}
+
+public func update(model: Forecaster, state: AdamState, rate: float, step: int) returns int {
+    update_parameter(
+        model.query_weights,
+        state.query_weights_first,
+        state.query_weights_second,
+        rate,
+        step,
+        0.0001,
+    )
+    update_parameter(
+        model.query_bias,
+        state.query_bias_first,
+        state.query_bias_second,
+        rate,
+        step,
+        0.0,
+    )
+    update_parameter(
+        model.key_weights,
+        state.key_weights_first,
+        state.key_weights_second,
+        rate,
+        step,
+        0.0001,
+    )
+    update_parameter(model.key_bias, state.key_bias_first, state.key_bias_second, rate, step, 0.0)
+    update_parameter(
+        model.value_weights,
+        state.value_weights_first,
+        state.value_weights_second,
+        rate,
+        step,
+        0.0001,
+    )
+    update_parameter(
+        model.value_bias,
+        state.value_bias_first,
+        state.value_bias_second,
+        rate,
+        step,
+        0.0,
+    )
+    update_parameter(
+        model.norm_scale,
+        state.norm_scale_first,
+        state.norm_scale_second,
+        rate,
+        step,
+        0.0,
+    )
+    update_parameter(
+        model.norm_bias,
+        state.norm_bias_first,
+        state.norm_bias_second,
+        rate,
+        step,
+        0.0,
+    )
+    update_parameter(
+        model.input_weights,
+        state.input_weights_first,
+        state.input_weights_second,
+        rate,
+        step,
+        0.0001,
+    )
+    update_parameter(
+        model.input_bias,
+        state.input_bias_first,
+        state.input_bias_second,
+        rate,
+        step,
+        0.0,
+    )
+    update_parameter(
+        model.skip_weights,
+        state.skip_weights_first,
+        state.skip_weights_second,
+        rate,
+        step,
+        0.0001,
+    )
+    update_parameter(
+        model.skip_bias,
+        state.skip_bias_first,
+        state.skip_bias_second,
+        rate,
+        step,
+        0.0,
+    )
+    update_parameter(
+        model.output_weights,
+        state.output_weights_first,
+        state.output_weights_second,
+        rate,
+        step,
+        0.0001,
+    )
+    update_parameter(
+        model.output_bias,
+        state.output_bias_first,
+        state.output_bias_second,
+        rate,
+        step,
+        0.0,
+    )
+    return 0
+}

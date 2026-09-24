@@ -1,0 +1,134 @@
+module model.forecaster
+
+import std.ml as ml
+import std.tensor as tensor
+import encoder.temporal_attention as temporal_attention
+
+const WINDOW_WIDTH = 16
+const INPUT_WIDTH = 8
+const HIDDEN_WIDTH = 12
+const OUTPUT_WIDTH = 4
+const PROJECTION_WIDTH = 2
+
+public record Forecaster {
+    public module_handle: int,
+    public query_weights: int,
+    public query_bias: int,
+    public key_weights: int,
+    public key_bias: int,
+    public value_weights: int,
+    public value_bias: int,
+    public norm_scale: int,
+    public norm_bias: int,
+    public input_weights: int,
+    public input_bias: int,
+    public skip_weights: int,
+    public skip_bias: int,
+    public output_weights: int,
+    public output_bias: int,
+}
+
+func parameter(values: int) returns int {
+    return tensor.requires_grad(values, true)
+}
+
+public func create() returns Forecaster {
+    let registry = ml.module_new()
+    let query_weights = parameter(
+        tensor.reshape(tensor.normal_f(4, 0.0, 0.2), PROJECTION_WIDTH, PROJECTION_WIDTH),
+    )
+    let query_bias = parameter(tensor.full_f(PROJECTION_WIDTH, 0.0))
+    let key_weights = parameter(
+        tensor.reshape(tensor.normal_f(4, 0.0, 0.2), PROJECTION_WIDTH, PROJECTION_WIDTH),
+    )
+    let key_bias = parameter(tensor.full_f(PROJECTION_WIDTH, 0.0))
+    let value_weights = parameter(
+        tensor.reshape(tensor.normal_f(4, 0.0, 0.2), PROJECTION_WIDTH, PROJECTION_WIDTH),
+    )
+    let value_bias = parameter(tensor.full_f(PROJECTION_WIDTH, 0.0))
+    let norm_scale = parameter(tensor.full_f(PROJECTION_WIDTH, 1.0))
+    let norm_bias  = parameter(tensor.full_f(PROJECTION_WIDTH, 0.0))
+    let input_weights = parameter(
+        tensor.reshape(tensor.normal_f(INPUT_WIDTH * HIDDEN_WIDTH, 0.0, 0.18), INPUT_WIDTH, HIDDEN_WIDTH),
+    )
+    let input_bias = parameter(tensor.full_f(HIDDEN_WIDTH, 0.0))
+    let skip_weights = parameter(
+        tensor.reshape(tensor.normal_f(INPUT_WIDTH * HIDDEN_WIDTH, 0.0, 0.08), INPUT_WIDTH, HIDDEN_WIDTH),
+    )
+    let skip_bias = parameter(tensor.full_f(HIDDEN_WIDTH, 0.0))
+    let output_weights = parameter(
+        tensor.reshape(tensor.normal_f(HIDDEN_WIDTH * OUTPUT_WIDTH, 0.0, 0.12), HIDDEN_WIDTH, OUTPUT_WIDTH),
+    )
+    let output_bias = parameter(tensor.full_f(OUTPUT_WIDTH, 0.0))
+    ml.module_add_parameter(registry, query_weights)
+    ml.module_add_parameter(registry, query_bias)
+    ml.module_add_parameter(registry, key_weights)
+    ml.module_add_parameter(registry, key_bias)
+    ml.module_add_parameter(registry, value_weights)
+    ml.module_add_parameter(registry, value_bias)
+    ml.module_add_parameter(registry, norm_scale)
+    ml.module_add_parameter(registry, norm_bias)
+    ml.module_add_parameter(registry, input_weights)
+    ml.module_add_parameter(registry, input_bias)
+    ml.module_add_parameter(registry, skip_weights)
+    ml.module_add_parameter(registry, skip_bias)
+    ml.module_add_parameter(registry, output_weights)
+    ml.module_add_parameter(registry, output_bias)
+    return Forecaster {
+        module_handle: registry,
+        query_weights: query_weights,
+        query_bias: query_bias,
+        key_weights: key_weights,
+        key_bias: key_bias,
+        value_weights: value_weights,
+        value_bias: value_bias,
+        norm_scale: norm_scale,
+        norm_bias: norm_bias,
+        input_weights: input_weights,
+        input_bias: input_bias,
+        skip_weights: skip_weights,
+        skip_bias: skip_bias,
+        output_weights: output_weights,
+        output_bias: output_bias,
+    }
+}
+
+func forward_window(model: Forecaster, window: int) returns int {
+    let summary = temporal_attention.summarize(
+        window,
+        model.query_weights,
+        model.query_bias,
+        model.key_weights,
+        model.key_bias,
+        model.value_weights,
+        model.value_bias,
+        model.norm_scale,
+        model.norm_bias,
+    )
+    let features  = tensor.reshape(summary, 1, INPUT_WIDTH)
+    let projected = ml.linear(features, model.input_weights, model.input_bias)
+    let hidden    = tensor.tanh_f(projected)
+    let skip      = ml.linear(features, model.skip_weights, model.skip_bias)
+    let residual  = tensor.add(hidden, skip)
+    return ml.linear(residual, model.output_weights, model.output_bias)
+}
+
+public func forward(model: Forecaster, features: int, batch: int, training: bool) returns int {
+    ml.module_set_training(model.module_handle, training)
+    if batch <= 0 or tensor.len(features) != batch * WINDOW_WIDTH {
+        return 0
+    }
+    let predictions = 0
+    let row         = 0
+    while row < batch {
+        let window     = tensor.slice(features, row * WINDOW_WIDTH, (row + 1) * WINDOW_WIDTH)
+        let prediction = forward_window(model, window)
+        if row == 0 {
+            predictions = prediction
+        } else {
+            predictions = tensor.concat(predictions, prediction)
+        }
+        row = row + 1
+    }
+    return predictions
+}
