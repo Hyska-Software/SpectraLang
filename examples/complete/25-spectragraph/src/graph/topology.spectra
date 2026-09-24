@@ -1,0 +1,62 @@
+module graph.topology
+
+import std.tensor as tensor
+
+const NODE_COUNT = 8
+
+func connect(adjacency: int, first: int, second: int) returns int {
+    tensor.set2_f(adjacency, first, second, 1.0)
+    tensor.set2_f(adjacency, second, first, 1.0)
+    return 0
+}
+
+public func normalized_adjacency() returns int {
+    let adjacency = tensor.full2_f(NODE_COUNT, NODE_COUNT, 0.0)
+    let node      = 0
+    while node<NODE_COUNT {
+        tensor.set2_f(adjacency, node, node, 1.0)
+        node = node + 1
+    }
+
+    connect(adjacency, 0, 1)
+    connect(adjacency, 1, 2)
+    connect(adjacency, 2, 3)
+    connect(adjacency, 3, 0)
+    connect(adjacency, 0, 2)
+    connect(adjacency, 4, 5)
+    connect(adjacency, 5, 6)
+    connect(adjacency, 6, 7)
+    connect(adjacency, 7, 4)
+    connect(adjacency, 4, 6)
+    connect(adjacency, 3, 4)
+
+    let degrees = tensor.full_f(NODE_COUNT, 0.0)
+    let row     = 0
+    while row<NODE_COUNT {
+        let column = 0
+        let degree = 0.0
+        while column<NODE_COUNT {
+            degree = degree + tensor.get2_f(adjacency, row, column)
+            column = column + 1
+        }
+        tensor.set_f(degrees, row, degree)
+        row = row + 1
+    }
+
+    let normalized = tensor.full2_f(NODE_COUNT, NODE_COUNT, 0.0)
+    row = 0
+    while row<NODE_COUNT {
+        let column = 0
+        while column<NODE_COUNT {
+            tensor.set2_f(
+                normalized,
+                row,
+                column,
+                tensor.get2_f(adjacency, row, column) / tensor.get_f(degrees, row),
+            )
+            column = column + 1
+        }
+        row = row + 1
+    }
+    return normalized
+}

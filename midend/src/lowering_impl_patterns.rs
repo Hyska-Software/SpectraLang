@@ -201,9 +201,6 @@ impl ASTLowering {
                 if segments.is_empty() {
                     return IRType::Unknown;
                 }
-                if is_std_api_handle_type_segments(segments) {
-                    return IRType::Int;
-                }
 
                 // Check if this is a type parameter that needs substitution
                 let type_name = segments[0].as_str();
@@ -309,6 +306,10 @@ impl ASTLowering {
                             // Forward/self reference to an aggregate whose
                             // definition is still being registered.
                             nominal
+                        } else if is_std_api_handle_type_segments(segments) {
+                            // A project aggregate takes precedence over an
+                            // opaque API handle with the same short name.
+                            IRType::Int
                         } else {
                             IRType::Unknown
                         }

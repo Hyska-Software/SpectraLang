@@ -1,0 +1,62 @@
+module model.gcn
+
+import std.ml as ml
+import std.tensor as tensor
+from data.graph_sample import GraphSample
+
+const FEATURE_COUNT = 4
+const HIDDEN_WIDTH = 8
+const CLASS_COUNT = 2
+
+public record GraphClassifier {
+    public module_handle: int,
+    public message_weights: int,
+    public message_bias: int,
+    public norm_scale: int,
+    public norm_bias: int,
+    public classifier_weights: int,
+    public classifier_bias: int,
+}
+
+func parameter(values: int) returns int {
+    return tensor.requires_grad(values, true)
+}
+
+public func create() returns GraphClassifier {
+    let registry = ml.module_new()
+    let message_weights = parameter(
+        tensor.reshape(tensor.normal_f(FEATURE_COUNT * HIDDEN_WIDTH, 0.0, 0.18), FEATURE_COUNT, HIDDEN_WIDTH),
+    )
+    let message_bias = parameter(tensor.full_f(HIDDEN_WIDTH, 0.0))
+    let norm_scale   = parameter(tensor.full_f(HIDDEN_WIDTH, 1.0))
+    let norm_bias    = parameter(tensor.full_f(HIDDEN_WIDTH, 0.0))
+    let classifier_weights = parameter(
+        tensor.reshape(tensor.normal_f(HIDDEN_WIDTH * CLASS_COUNT, 0.0, 0.14), HIDDEN_WIDTH, CLASS_COUNT),
+    )
+    let classifier_bias = parameter(tensor.full_f(CLASS_COUNT, 0.0))
+    ml.module_add_parameter(registry, message_weights)
+    ml.module_add_parameter(registry, message_bias)
+    ml.module_add_parameter(registry, norm_scale)
+    ml.module_add_parameter(registry, norm_bias)
+    ml.module_add_parameter(registry, classifier_weights)
+    ml.module_add_parameter(registry, classifier_bias)
+    return GraphClassifier {
+        module_handle: registry,
+        message_weights: message_weights,
+        message_bias: message_bias,
+        norm_scale: norm_scale,
+        norm_bias: norm_bias,
+        classifier_weights: classifier_weights,
+        classifier_bias: classifier_bias,
+    }
+}
+
+public func forward(model: GraphClassifier, graph: GraphSample, training: bool) returns int {
+    ml.module_set_training(model.module_handle, training)
+    let projected        = ml.linear(graph.features, model.message_weights, model.message_bias)
+    let aggregated       = tensor.matmul(graph.adjacency, projected)
+    let normalized       = ml.layer_norm(aggregated, model.norm_scale, model.norm_bias, 0.00001)
+    let hidden           = ml.gelu(normalized)
+    let class_projection = ml.linear(hidden, model.classifier_weights, model.classifier_bias)
+    return tensor.matmul(graph.adjacency, class_projection)
+}

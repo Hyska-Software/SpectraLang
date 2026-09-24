@@ -1,0 +1,5 @@
+[project]
+name = "25-spectragraph"
+version = "1.0.0"
+entry = "src/main.spectra"
+src_dirs = ["src"]

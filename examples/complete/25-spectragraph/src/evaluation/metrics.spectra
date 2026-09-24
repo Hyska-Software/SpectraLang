@@ -1,0 +1,38 @@
+module evaluation.metrics
+
+import std.ml as ml
+import std.tensor as tensor
+from data.graph_sample import GraphSample
+from model.gcn import GraphClassifier
+import model.gcn as gcn
+
+public record NodeReport {
+    public correct: int,
+    public count: int,
+    public metrics: string,
+}
+
+public func evaluate(model: GraphClassifier, graph: GraphSample) returns NodeReport {
+    let logits    = gcn.forward(model, graph, false)
+    let expected  = tensor.full(graph.node_count, 0)
+    let predicted = tensor.full(graph.node_count, 0)
+    let correct   = 0
+    let node      = 0
+    while node < graph.node_count {
+        let actual     = tensor.get_f(graph.labels, node) as int
+        let class_zero = tensor.get2_f(logits, node, 0)
+        let class_one  = tensor.get2_f(logits, node, 1)
+        let guess      = if class_zero > class_one { 0} else { 1}
+        tensor.set(expected, node, actual)
+        tensor.set(predicted, node, guess)
+        if actual == guess {
+            correct = correct + 1
+        }
+        node = node + 1
+    }
+    return NodeReport {
+        correct: correct,
+        count: graph.node_count,
+        metrics: ml.metrics_classification(expected, predicted),
+    }
+}

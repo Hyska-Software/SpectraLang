@@ -6,7 +6,7 @@ from network.topology import Network
 const INFINITY = 1000000000
 const EDGE_WIDTH = 4
 
-public record PlannedRoute {
+public record Route {
     public found: bool,
     public minutes: int,
     public path: int,
@@ -15,9 +15,9 @@ public record PlannedRoute {
     public destination: int,
 }
 
-public func shortest_path(graph: Network, origin: int, destination: int) returns PlannedRoute {
+public func shortest_path(graph: Network, origin: int, destination: int) returns Route {
     if origin < 0 or origin >= graph.station_count or destination < 0 or destination >= graph.station_count {
-        return PlannedRoute {
+        return Route {
             found: false,
             minutes: INFINITY,
             path: tensor.full(graph.station_count, -1),
@@ -85,7 +85,7 @@ public func shortest_path(graph: Network, origin: int, destination: int) returns
     }
     let found   = count > 0 and tensor.get(path, count - 1) == origin
     let minutes = if found { tensor.get(distances, destination) } else { INFINITY}
-    return PlannedRoute {
+    return Route {
         found: found,
         minutes: minutes,
         path: path,

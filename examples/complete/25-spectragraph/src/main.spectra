@@ -1,0 +1,7 @@
+module main
+
+import app as app
+
+public func main() returns int {
+    return app.run()
+}

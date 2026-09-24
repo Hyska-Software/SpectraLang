@@ -2,7 +2,7 @@ module app
 
 import std.io as io
 import std.tensor as tensor
-from planner.dijkstra import PlannedRoute
+from planner.dijkstra import Route
 import network.topology as topology
 import planner.dijkstra as planner
 import report.format as report

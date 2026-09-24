@@ -158,9 +158,7 @@ impl ASTLowering {
                 }
             }
             ASTType::Struct { name } => {
-                if is_std_api_handle_type_name(name) {
-                    IRType::Int
-                } else if let Some(fields) = self.struct_definitions.get(name) {
+                if let Some(fields) = self.struct_definitions.get(name) {
                     IRType::Struct {
                         name: name.clone(),
                         fields: fields.clone(),
@@ -176,6 +174,10 @@ impl ASTLowering {
                     self.lower_type_annotation(&specialized)
                 } else if let Some(nominal) = self.nominal_type_reference(name) {
                     nominal
+                } else if is_std_api_handle_type_name(name) {
+                    // A project aggregate takes precedence over an opaque API
+                    // handle with the same short name.
+                    IRType::Int
                 } else {
                     IRType::Unknown
                 }

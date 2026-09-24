@@ -1,0 +1,51 @@
+module training.fit
+
+import std.ml as ml
+import std.tensor as tensor
+from data.graph_sample import GraphSample
+from model.gcn import GraphClassifier
+from training.adamw import GraphAdamState
+import model.gcn as gcn
+import training.adamw as adamw
+
+public record FitResult {
+    public model: GraphClassifier,
+    public epochs: int,
+    public steps: int,
+    public initial_loss: float,
+    public final_loss: float,
+}
+
+func train_step(model: GraphClassifier, graph: GraphSample) returns float {
+    adamw.zero_grad(model)
+    let logits = gcn.forward(model, graph, true)
+    let loss   = ml.cross_entropy_loss(logits, graph.labels)
+    tensor.backward(loss)
+    return tensor.get_f(loss, 0)
+}
+
+public func fit(model: GraphClassifier, graph: GraphSample, epochs: int) returns FitResult {
+    let state        = adamw.create(model)
+    let epoch        = 0
+    let step         = 0
+    let initial_loss = 0.0
+    let final_loss   = 0.0
+    while epoch < epochs {
+        step = step + 1
+        let loss = train_step(model, graph)
+        if epoch == 0 {
+            initial_loss = loss
+        }
+        final_loss = loss
+        let rate = ml.exp_lr(0.04, 0.997, step)
+        adamw.update(model, state, rate, step)
+        epoch = epoch + 1
+    }
+    return FitResult {
+        model: model,
+        epochs: epoch,
+        steps: step,
+        initial_loss: initial_loss,
+        final_loss: final_loss,
+    }
+}

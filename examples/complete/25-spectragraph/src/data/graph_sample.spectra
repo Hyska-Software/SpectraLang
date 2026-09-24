@@ -1,0 +1,56 @@
+module data.graph_sample
+
+import std.tensor as tensor
+import graph.topology as topology
+
+const NODE_COUNT = 8
+const FEATURE_COUNT = 4
+const CLASS_COUNT = 2
+
+public record GraphSample {
+    public adjacency: int,
+    public features: int,
+    public labels: int,
+    public node_count: int,
+    public feature_count: int,
+    public class_count: int,
+}
+
+func build(variant: int) returns GraphSample {
+    let adjacency = topology.normalized_adjacency()
+    let features  = tensor.full2_f(NODE_COUNT, FEATURE_COUNT, 0.0)
+    let labels    = tensor.full_f(NODE_COUNT, 0.0)
+    let node      = 0
+    while node<NODE_COUNT {
+        let community     = if node<NODE_COUNT / 2 { 0} else { 1}
+        let local         = node % (NODE_COUNT / 2)
+        let noise_index   = if variant == 0 { local} else {(local + 1) % 4}
+        let noise         = (noise_index as float) * 0.012
+        let first_signal  = if community == 0 { 0.94 - noise} else { 0.08 + noise}
+        let second_signal = if community == 0 { 0.08 + noise} else { 0.94 - noise}
+        let local_shape   = 0.15 + (local as float) * 0.2
+        let parity_signal = if local % 2 == 0 { 0.82} else { 0.18}
+        tensor.set2_f(features, node, 0, first_signal)
+        tensor.set2_f(features, node, 1, second_signal)
+        tensor.set2_f(features, node, 2, local_shape)
+        tensor.set2_f(features, node, 3, parity_signal)
+        tensor.set_f(labels, node, community as float)
+        node = node + 1
+    }
+    return GraphSample {
+        adjacency: adjacency,
+        features: features,
+        labels: labels,
+        node_count: NODE_COUNT,
+        feature_count: FEATURE_COUNT,
+        class_count: CLASS_COUNT,
+    }
+}
+
+public func training_graph() returns GraphSample {
+    return build(0)
+}
+
+public func holdout_graph() returns GraphSample {
+    return build(1)
+}

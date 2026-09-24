@@ -1,0 +1,113 @@
+module training.adamw
+
+import std.ml as ml
+import std.tensor as tensor
+from model.gcn import GraphClassifier
+
+public record GraphAdamState {
+    public message_weights_first: int,
+    public message_weights_second: int,
+    public message_bias_first: int,
+    public message_bias_second: int,
+    public norm_scale_first: int,
+    public norm_scale_second: int,
+    public norm_bias_first: int,
+    public norm_bias_second: int,
+    public classifier_weights_first: int,
+    public classifier_weights_second: int,
+    public classifier_bias_first: int,
+    public classifier_bias_second: int,
+}
+
+func moments(parameter: int) returns int {
+    return tensor.full_f(tensor.len(parameter), 0.0)
+}
+
+func clear(parameter: int) returns int {
+    tensor.zero_grad(parameter)
+    return 0
+}
+
+func update_parameter(parameter: int, first: int, second: int, rate: float, step: int, decay: float) returns int {
+    ml.adamw_step(parameter, first, second, rate, 0.9, 0.999, 0.00000001, step, decay)
+    return 0
+}
+
+public func create(model: GraphClassifier) returns GraphAdamState {
+    return GraphAdamState {
+        message_weights_first: moments(model.message_weights),
+        message_weights_second: moments(model.message_weights),
+        message_bias_first: moments(model.message_bias),
+        message_bias_second: moments(model.message_bias),
+        norm_scale_first: moments(model.norm_scale),
+        norm_scale_second: moments(model.norm_scale),
+        norm_bias_first: moments(model.norm_bias),
+        norm_bias_second: moments(model.norm_bias),
+        classifier_weights_first: moments(model.classifier_weights),
+        classifier_weights_second: moments(model.classifier_weights),
+        classifier_bias_first: moments(model.classifier_bias),
+        classifier_bias_second: moments(model.classifier_bias),
+    }
+}
+
+public func zero_grad(model: GraphClassifier) returns int {
+    clear(model.message_weights)
+    clear(model.message_bias)
+    clear(model.norm_scale)
+    clear(model.norm_bias)
+    clear(model.classifier_weights)
+    clear(model.classifier_bias)
+    return 0
+}
+
+public func update(model: GraphClassifier, state: GraphAdamState, rate: float, step: int) returns int {
+    update_parameter(
+        model.message_weights,
+        state.message_weights_first,
+        state.message_weights_second,
+        rate,
+        step,
+        0.0001,
+    )
+    update_parameter(
+        model.message_bias,
+        state.message_bias_first,
+        state.message_bias_second,
+        rate,
+        step,
+        0.0,
+    )
+    update_parameter(
+        model.norm_scale,
+        state.norm_scale_first,
+        state.norm_scale_second,
+        rate,
+        step,
+        0.0,
+    )
+    update_parameter(
+        model.norm_bias,
+        state.norm_bias_first,
+        state.norm_bias_second,
+        rate,
+        step,
+        0.0,
+    )
+    update_parameter(
+        model.classifier_weights,
+        state.classifier_weights_first,
+        state.classifier_weights_second,
+        rate,
+        step,
+        0.0001,
+    )
+    update_parameter(
+        model.classifier_bias,
+        state.classifier_bias_first,
+        state.classifier_bias_second,
+        rate,
+        step,
+        0.0,
+    )
+    return 0
+}

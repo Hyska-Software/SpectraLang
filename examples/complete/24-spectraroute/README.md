@@ -13,13 +13,12 @@ bidirecional (18 min) e a resposta para um aeroporto isolado. É um fixture loca
 para exercitar o planejador e não representa dados ou horários reais de
 transporte.
 
-## Nota de compatibilidade
+## Regressão de tipo importado
 
-Na primeira verificação, o registro público chamado `Route` produziu campos não
-resolvidos durante o lowering dos módulos importadores. O exemplo agora usa o
-nome específico `PlannedRoute`; com essa correção, `check`, JIT e AOT resolvem e
-executam o mesmo contrato. O caso ficou registrado aqui para que a forma de
-nomear o tipo seja explícita neste projeto.
+O registro do projeto chama-se `Route`, o mesmo nome curto de um handle opaco de
+`std.api.routing`. O lowering preserva o layout concreto do registro do projeto
+ao importar o tipo e seu retorno entre módulos. O script de integração exercita
+o caso em `check`, JIT e AOT.
 
 ## Executar
 

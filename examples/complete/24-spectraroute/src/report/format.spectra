@@ -2,10 +2,10 @@ module report.format
 
 import std.convert as convert
 import std.tensor as tensor
-from planner.dijkstra import PlannedRoute
+from planner.dijkstra import Route
 import network.topology as topology
 
-public func describe(route: PlannedRoute) returns string {
+public func describe(route: Route) returns string {
     if route.found == false {
         return "sem rota entre " +
             topology.station_name(route.origin) +
