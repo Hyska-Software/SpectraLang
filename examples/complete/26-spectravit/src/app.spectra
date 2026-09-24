@@ -1,0 +1,80 @@
+module app
+
+import std.convert as convert
+import std.io as io
+import std.ml as ml
+import std.tensor as tensor
+from data.glyphs import ImageBatch
+from evaluation.report import ClassificationReport
+from model.vit import VisionTransformer
+from training.fit import FitResult
+import data.glyphs as glyphs
+import evaluation.report as evaluation
+import model.vit as vit
+import training.fit as training
+
+public func run() returns int {
+    tensor.free_all()
+    tensor.seed(26026)
+    tensor.set_grad_enabled( false)
+    let training_batch = glyphs.training_batch()
+    let holdout_batch  = glyphs.holdout_batch()
+    if training_batch.count != 30 or holdout_batch.count != 15 {
+        io.eprintln("erro: fixture deveria conter 30 imagens de treino e 15 de holdout")
+        tensor.free_all()
+        return 1
+    }
+
+    let model = vit.create()
+    if ml.module_parameter_count(model.module_handle) != 17 {
+        io.eprintln("erro: Vision Transformer deveria registrar 17 parâmetros treináveis")
+        tensor.free_all()
+        return 2
+    }
+
+    tensor.set_grad_enabled( true)
+    let fit_result = training.fit(model, training_batch, 60)
+    tensor.set_grad_enabled( false)
+    let report = evaluation.evaluate(fit_result.model, holdout_batch)
+    if fit_result.steps != 600 or fit_result.final_loss >= fit_result.initial_loss {
+        io.eprintln("erro: treino deveria reduzir a cross-entropy")
+        io.eprintln(
+            "initial=" + convert.float_to_string(fit_result.initial_loss) +
+                " final=" + convert.float_to_string(fit_result.final_loss),
+        )
+        tensor.free_all()
+        return 3
+    }
+    if report.correct != report.count or report.macro_f1 < 0.99 {
+        io.eprintln("erro: classificação do holdout abaixo do resultado esperado")
+        io.eprintln(
+            "correct=" + convert.int_to_string(report.correct) +
+                " count=" + convert.int_to_string(report.count) +
+                " macro_f1=" + convert.float_to_string(report.macro_f1),
+        )
+        tensor.free_all()
+        return 4
+    }
+
+    io.println("SPECTRAVIT ok architecture=patch-transformer-2head-residual-mlp classes=3")
+    io.println(
+        "training: epochs=" + convert.int_to_string(fit_result.epochs) +
+            " steps=" + convert.int_to_string(fit_result.steps) +
+            " initial_loss=" + convert.float_to_string(fit_result.initial_loss) +
+            " final_loss=" + convert.float_to_string(fit_result.final_loss),
+    )
+    io.println(
+        "holdout: count=" + convert.int_to_string(report.count) +
+            " correct=" + convert.int_to_string(report.correct) +
+            " accuracy=" + convert.float_to_string(report.accuracy) +
+            " macro_f1=" + convert.float_to_string(report.macro_f1) +
+            " classes=" + convert.int_to_string(report.class0_correct) + "/" +
+            convert.int_to_string(report.class0_count) + "," +
+            convert.int_to_string(report.class1_correct) + "/" +
+            convert.int_to_string(report.class1_count) + "," +
+            convert.int_to_string(report.class2_correct) + "/" +
+            convert.int_to_string(report.class2_count),
+    )
+    tensor.free_all()
+    return 0
+}

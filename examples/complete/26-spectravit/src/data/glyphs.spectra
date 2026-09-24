@@ -1,0 +1,61 @@
+module data.glyphs
+
+import std.tensor as tensor
+
+const IMAGE_SIDE = 8
+const IMAGE_SIZE = 64
+const CLASS_COUNT = 3
+
+public record ImageBatch {
+    public pixels: int,
+    public labels: int,
+    public count: int,
+}
+
+func build_batch(count: int, variation_offset: int) returns ImageBatch {
+    let pixels = tensor.full_f(count * IMAGE_SIZE, 0.0)
+    let labels = tensor.full_f(count, 0.0)
+    let image  = 0
+    while image < count {
+        let class_id = image % CLASS_COUNT
+        let variant  = image / CLASS_COUNT + variation_offset
+        let shift    = 1 + variant % 6
+        let row      = 0
+        while row<IMAGE_SIDE {
+            let column = 0
+            while column<IMAGE_SIDE {
+                let active = false
+                if class_id == 0 and(column == shift or column == shift + 1) {
+                    active = true
+                }
+                if class_id == 1 and(row == shift or row == shift + 1) {
+                    active = true
+                }
+                let diagonal = (row + variant % 4) % IMAGE_SIDE
+                if class_id == 2 and(column == diagonal or column == (diagonal + 1) % IMAGE_SIDE) {
+                    active = true
+                }
+                let background = (((row * 7 + column * 3 + variant * 5) % 17) as float) * 0.001
+                let value      = if active { 1.0 + background} else { background}
+                tensor.set_f(pixels, image * IMAGE_SIZE + row * IMAGE_SIDE + column, value)
+                column = column + 1
+            }
+            row = row + 1
+        }
+        tensor.set_f(labels, image, class_id as float)
+        image = image + 1
+    }
+    return ImageBatch {
+        pixels: pixels,
+        labels: labels,
+        count: count,
+    }
+}
+
+public func training_batch() returns ImageBatch {
+    return build_batch(30, 0)
+}
+
+public func holdout_batch() returns ImageBatch {
+    return build_batch(15, 10)
+}

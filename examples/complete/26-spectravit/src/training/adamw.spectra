@@ -1,0 +1,302 @@
+module training.adamw
+
+import std.ml as ml
+import std.tensor as tensor
+from model.vit import VisionTransformer
+
+public record AdamState {
+    public patch_weights_first: int,
+    public patch_weights_second: int,
+    public class_token_first: int,
+    public class_token_second: int,
+    public position_embeddings_first: int,
+    public position_embeddings_second: int,
+    public query_first_weights_first: int,
+    public query_first_weights_second: int,
+    public key_first_weights_first: int,
+    public key_first_weights_second: int,
+    public value_first_weights_first: int,
+    public value_first_weights_second: int,
+    public query_second_weights_first: int,
+    public query_second_weights_second: int,
+    public key_second_weights_first: int,
+    public key_second_weights_second: int,
+    public value_second_weights_first: int,
+    public value_second_weights_second: int,
+    public attention_output_weights_first: int,
+    public attention_output_weights_second: int,
+    public attention_norm_scale_first: int,
+    public attention_norm_scale_second: int,
+    public attention_norm_bias_first: int,
+    public attention_norm_bias_second: int,
+    public feed_forward_in_weights_first: int,
+    public feed_forward_in_weights_second: int,
+    public feed_forward_out_weights_first: int,
+    public feed_forward_out_weights_second: int,
+    public output_norm_scale_first: int,
+    public output_norm_scale_second: int,
+    public output_norm_bias_first: int,
+    public output_norm_bias_second: int,
+    public classifier_weights_first: int,
+    public classifier_weights_second: int,
+}
+
+func moments(parameter: int) returns int {
+    return tensor.full_f(tensor.len(parameter), 0.0)
+}
+
+func clear(parameter: int) returns int {
+    tensor.zero_grad(parameter)
+    return 0
+}
+
+public func create(model: VisionTransformer) returns AdamState {
+    return AdamState {
+        patch_weights_first: moments(model.patch_weights),
+        patch_weights_second: moments(model.patch_weights),
+        class_token_first: moments(model.class_token),
+        class_token_second: moments(model.class_token),
+        position_embeddings_first: moments(model.position_embeddings),
+        position_embeddings_second: moments(model.position_embeddings),
+        query_first_weights_first: moments(model.query_first_weights),
+        query_first_weights_second: moments(model.query_first_weights),
+        key_first_weights_first: moments(model.key_first_weights),
+        key_first_weights_second: moments(model.key_first_weights),
+        value_first_weights_first: moments(model.value_first_weights),
+        value_first_weights_second: moments(model.value_first_weights),
+        query_second_weights_first: moments(model.query_second_weights),
+        query_second_weights_second: moments(model.query_second_weights),
+        key_second_weights_first: moments(model.key_second_weights),
+        key_second_weights_second: moments(model.key_second_weights),
+        value_second_weights_first: moments(model.value_second_weights),
+        value_second_weights_second: moments(model.value_second_weights),
+        attention_output_weights_first: moments(model.attention_output_weights),
+        attention_output_weights_second: moments(model.attention_output_weights),
+        attention_norm_scale_first: moments(model.attention_norm_scale),
+        attention_norm_scale_second: moments(model.attention_norm_scale),
+        attention_norm_bias_first: moments(model.attention_norm_bias),
+        attention_norm_bias_second: moments(model.attention_norm_bias),
+        feed_forward_in_weights_first: moments(model.feed_forward_in_weights),
+        feed_forward_in_weights_second: moments(model.feed_forward_in_weights),
+        feed_forward_out_weights_first: moments(model.feed_forward_out_weights),
+        feed_forward_out_weights_second: moments(model.feed_forward_out_weights),
+        output_norm_scale_first: moments(model.output_norm_scale),
+        output_norm_scale_second: moments(model.output_norm_scale),
+        output_norm_bias_first: moments(model.output_norm_bias),
+        output_norm_bias_second: moments(model.output_norm_bias),
+        classifier_weights_first: moments(model.classifier_weights),
+        classifier_weights_second: moments(model.classifier_weights),
+    }
+}
+
+public func zero_grad(model: VisionTransformer) returns int {
+    clear(model.patch_weights)
+    clear(model.class_token)
+    clear(model.position_embeddings)
+    clear(model.query_first_weights)
+    clear(model.key_first_weights)
+    clear(model.value_first_weights)
+    clear(model.query_second_weights)
+    clear(model.key_second_weights)
+    clear(model.value_second_weights)
+    clear(model.attention_output_weights)
+    clear(model.attention_norm_scale)
+    clear(model.attention_norm_bias)
+    clear(model.feed_forward_in_weights)
+    clear(model.feed_forward_out_weights)
+    clear(model.output_norm_scale)
+    clear(model.output_norm_bias)
+    clear(model.classifier_weights)
+    return 0
+}
+
+public func update(model: VisionTransformer, state: AdamState, rate: float, step: int) returns int {
+    ml.adamw_step(
+        model.patch_weights,
+        state.patch_weights_first,
+        state.patch_weights_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.class_token,
+        state.class_token_first,
+        state.class_token_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0000,
+    )
+    ml.adamw_step(
+        model.position_embeddings,
+        state.position_embeddings_first,
+        state.position_embeddings_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.query_first_weights,
+        state.query_first_weights_first,
+        state.query_first_weights_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.key_first_weights,
+        state.key_first_weights_first,
+        state.key_first_weights_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.value_first_weights,
+        state.value_first_weights_first,
+        state.value_first_weights_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.query_second_weights,
+        state.query_second_weights_first,
+        state.query_second_weights_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.key_second_weights,
+        state.key_second_weights_first,
+        state.key_second_weights_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.value_second_weights,
+        state.value_second_weights_first,
+        state.value_second_weights_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.attention_output_weights,
+        state.attention_output_weights_first,
+        state.attention_output_weights_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.attention_norm_scale,
+        state.attention_norm_scale_first,
+        state.attention_norm_scale_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0000,
+    )
+    ml.adamw_step(
+        model.attention_norm_bias,
+        state.attention_norm_bias_first,
+        state.attention_norm_bias_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0000,
+    )
+    ml.adamw_step(
+        model.feed_forward_in_weights,
+        state.feed_forward_in_weights_first,
+        state.feed_forward_in_weights_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.feed_forward_out_weights,
+        state.feed_forward_out_weights_first,
+        state.feed_forward_out_weights_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    ml.adamw_step(
+        model.output_norm_scale,
+        state.output_norm_scale_first,
+        state.output_norm_scale_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0000,
+    )
+    ml.adamw_step(
+        model.output_norm_bias,
+        state.output_norm_bias_first,
+        state.output_norm_bias_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0000,
+    )
+    ml.adamw_step(
+        model.classifier_weights,
+        state.classifier_weights_first,
+        state.classifier_weights_second,
+        rate,
+        0.9,
+        0.999,
+        0.00000001,
+        step,
+        0.0001,
+    )
+    return 0
+}

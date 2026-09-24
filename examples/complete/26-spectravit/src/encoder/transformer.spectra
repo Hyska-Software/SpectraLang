@@ -1,0 +1,37 @@
+module encoder.transformer
+
+import std.ml as ml
+import std.tensor as tensor
+
+const TOKEN_COUNT = 17
+const MODEL_WIDTH = 8
+
+public func attention_projection(
+    tokens: int,
+    query_first_weights: int,
+    key_first_weights: int,
+    value_first_weights: int,
+    query_second_weights: int,
+    key_second_weights: int,
+    value_second_weights: int,
+    output_weights: int,
+    head_bias: int,
+    output_bias: int
+) returns int {
+    let query_first   = ml.linear(tokens, query_first_weights, head_bias)
+    let key_first     = ml.linear(tokens, key_first_weights, head_bias)
+    let value_first   = ml.linear(tokens, value_first_weights, head_bias)
+    let first_context = ml.attention(query_first, key_first, value_first)
+
+    let query_second   = ml.linear(tokens, query_second_weights, head_bias)
+    let key_second     = ml.linear(tokens, key_second_weights, head_bias)
+    let value_second   = ml.linear(tokens, value_second_weights, head_bias)
+    let second_context = ml.attention(query_second, key_second, value_second)
+
+    let joined = tensor.reshape(
+        tensor.concat(tensor.flatten(first_context), tensor.flatten(second_context)),
+        TOKEN_COUNT,
+        MODEL_WIDTH,
+    )
+    return ml.linear(joined, output_weights, output_bias)
+}

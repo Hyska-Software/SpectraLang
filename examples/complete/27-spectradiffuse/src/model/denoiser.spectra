@@ -1,0 +1,113 @@
+module model.denoiser
+
+import std.math as math
+import std.ml as ml
+import std.tensor as tensor
+import diffusion.schedule as schedule
+
+const INPUT_WIDTH = 6
+const HIDDEN_WIDTH = 16
+const PI = 3.141592653589793
+
+public record Denoiser {
+    public module_handle: int,
+    public input_weights: int,
+    public input_bias: int,
+    public residual_weights: int,
+    public residual_bias: int,
+    public norm_scale: int,
+    public norm_bias: int,
+    public output_weights: int,
+    public output_bias: int,
+}
+
+func parameter(values: int) returns int {
+    return tensor.requires_grad(values, true)
+}
+
+func timestep_feature(index: int, component: int) returns float {
+    let phase = ((index + 1) as float) /(schedule.timestep_count() as float) * (2.0 * PI)
+    if component == 0 {
+        return math.sin_f(phase)
+    }
+    if component == 1 {
+        return math.cos_f(phase)
+    }
+    if component == 2 {
+        return math.sin_f(phase * 2.0)
+    }
+    return(index as float) /((schedule.timestep_count() - 1) as float)
+}
+
+public func create() returns Denoiser {
+    let registry = ml.module_new()
+    let input_weights = parameter(
+        tensor.reshape(tensor.normal_f(INPUT_WIDTH * HIDDEN_WIDTH, 0.0, 0.16), INPUT_WIDTH, HIDDEN_WIDTH),
+    )
+    let input_bias = parameter(tensor.full_f(HIDDEN_WIDTH, 0.0))
+    let residual_weights = parameter(
+        tensor.reshape(tensor.normal_f(HIDDEN_WIDTH * HIDDEN_WIDTH, 0.0, 0.12), HIDDEN_WIDTH, HIDDEN_WIDTH),
+    )
+    let residual_bias = parameter(tensor.full_f(HIDDEN_WIDTH, 0.0))
+    let norm_scale    = parameter(tensor.full_f(HIDDEN_WIDTH, 1.0))
+    let norm_bias     = parameter(tensor.full_f(HIDDEN_WIDTH, 0.0))
+    let output_weights = parameter(
+        tensor.reshape(tensor.normal_f(HIDDEN_WIDTH * 2, 0.0, 0.1), HIDDEN_WIDTH, 2),
+    )
+    let output_bias = parameter(tensor.full_f(2, 0.0))
+
+    ml.module_add_parameter(registry, input_weights)
+    ml.module_add_parameter(registry, input_bias)
+    ml.module_add_parameter(registry, residual_weights)
+    ml.module_add_parameter(registry, residual_bias)
+    ml.module_add_parameter(registry, norm_scale)
+    ml.module_add_parameter(registry, norm_bias)
+    ml.module_add_parameter(registry, output_weights)
+    ml.module_add_parameter(registry, output_bias)
+
+    return Denoiser {
+        module_handle: registry,
+        input_weights: input_weights,
+        input_bias: input_bias,
+        residual_weights: residual_weights,
+        residual_bias: residual_bias,
+        norm_scale: norm_scale,
+        norm_bias: norm_bias,
+        output_weights: output_weights,
+        output_bias: output_bias,
+    }
+}
+
+public func forward(model: Denoiser, points: int, count: int, timestep: int, training: bool) returns int {
+    ml.module_set_training(model.module_handle, training)
+    if count <= 0 or tensor.len(points) != count * 2 {
+        return 0
+    }
+    let features = tensor.full_f(count * INPUT_WIDTH, 0.0)
+    let sample   = 0
+    while sample < count {
+        let source_offset = sample * 2
+        let target_offset = sample * INPUT_WIDTH
+        tensor.set_f(features, target_offset, tensor.get_f(points, source_offset))
+        tensor.set_f(features, target_offset + 1, tensor.get_f(points, source_offset + 1))
+        let component = 0
+        while component < 4 {
+            tensor.set_f(
+                features,
+                target_offset + 2 + component,
+                timestep_feature(timestep, component),
+            )
+            component = component + 1
+        }
+        sample = sample + 1
+    }
+
+    let input     = tensor.reshape(features, count, INPUT_WIDTH)
+    let projected = ml.gelu(ml.linear(input, model.input_weights, model.input_bias))
+    let residual_branch = ml.gelu(
+        ml.linear(projected, model.residual_weights, model.residual_bias),
+    )
+    let residual   = tensor.add(projected, residual_branch)
+    let normalized = ml.layer_norm(residual, model.norm_scale, model.norm_bias, 0.00001)
+    return tensor.flatten(ml.linear(normalized, model.output_weights, model.output_bias))
+}

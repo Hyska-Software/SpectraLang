@@ -1,0 +1,30 @@
+module vision.patchify
+
+import std.tensor as tensor
+
+const IMAGE_SIDE = 8
+const PATCH_SIDE = 2
+const PATCHES_PER_SIDE = 4
+const PATCH_COUNT = 16
+const PATCH_VALUES = 4
+
+public func patchify(image: int) returns int {
+    let patches = tensor.full_f(PATCH_COUNT * PATCH_VALUES, 0.0)
+    let patch   = 0
+    while patch<PATCH_COUNT {
+        let patch_row    = patch / PATCHES_PER_SIDE
+        let patch_column = patch % PATCHES_PER_SIDE
+        let local        = 0
+        while local<PATCH_VALUES {
+            let local_row    = local / PATCH_SIDE
+            let local_column = local % PATCH_SIDE
+            let row          = patch_row * PATCH_SIDE + local_row
+            let column       = patch_column * PATCH_SIDE + local_column
+            let pixel        = tensor.get_f(image, row * IMAGE_SIDE + column)
+            tensor.set_f(patches, patch * PATCH_VALUES + local, pixel)
+            local = local + 1
+        }
+        patch = patch + 1
+    }
+    return tensor.reshape(patches, PATCH_COUNT, PATCH_VALUES)
+}

@@ -1,0 +1,59 @@
+module training.fit
+
+import std.ml as ml
+import std.tensor as tensor
+from model.denoiser import Denoiser
+from training.adamw import AdamWState
+import diffusion.schedule as schedule
+import model.denoiser as denoiser
+import training.adamw as adamw
+
+const BATCH_SIZE = 8
+const EVALUATION_TIMESTEP = 6
+
+public record FitResult {
+    public model: Denoiser,
+    public steps: int,
+    public initial_loss: float,
+    public final_loss: float,
+}
+
+func fixed_loss(model: Denoiser, points: int) returns float {
+    let clean = tensor.slice(points, 0, BATCH_SIZE * 2)
+    tensor.seed(27331)
+    let noise      = tensor.normal_f(BATCH_SIZE * 2, 0.0, 1.0)
+    let noisy      = schedule.q_sample(clean, noise, EVALUATION_TIMESTEP)
+    let prediction = denoiser.forward(model, noisy, BATCH_SIZE, EVALUATION_TIMESTEP, false)
+    return tensor.get_f(ml.mse_loss(prediction, noise), 0)
+}
+
+public func fit(model: Denoiser, points: int, count: int, steps: int) returns FitResult {
+    tensor.set_grad_enabled( false)
+    let initial_loss = fixed_loss(model, points)
+    let state        = adamw.create(model)
+    tensor.set_grad_enabled( true)
+    let step = 0
+    while step < steps {
+        let offset   = (step * BATCH_SIZE) % count
+        let clean    = tensor.slice(points, offset * 2, (offset + BATCH_SIZE) * 2)
+        let timestep = (step * 7 + 3) % schedule.timestep_count()
+        let noise    = tensor.normal_f(BATCH_SIZE * 2, 0.0, 1.0)
+        let noisy    = schedule.q_sample(clean, noise, timestep)
+        adamw.zero_grad(model)
+        let prediction = denoiser.forward(model, noisy, BATCH_SIZE, timestep, true)
+        let loss       = ml.mse_loss(prediction, noise)
+        tensor.backward(loss)
+        let rate = ml.exp_lr(0.012, 0.998, step + 1)
+        adamw.update(model, state, rate, step + 1)
+        step = step + 1
+    }
+    tensor.set_grad_enabled( false)
+    let final_loss = fixed_loss(model, points)
+    tensor.set_grad_enabled( true)
+    return FitResult {
+        model: model,
+        steps: step,
+        initial_loss: initial_loss,
+        final_loss: final_loss,
+    }
+}

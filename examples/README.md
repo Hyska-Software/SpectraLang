@@ -16,7 +16,7 @@ Demonstrações gerais da linguagem e fixtures de regressão históricas:
 
 ## examples/complete — projetos integrados
 
-O índice dos 22 projetos integrados está em [complete/README.md](complete/README.md).
+O índice dos 27 projetos integrados está em [complete/README.md](complete/README.md).
 O exemplo `18-spectragit` é um CLI local de controle de versão escrito em
 SpectraLang; os comandos e limites estão em seu
 [README](complete/18-spectragit/README.md).
@@ -32,6 +32,9 @@ metas semanais, check-ins datados, sequências e relatórios; veja o
 O exemplo `22-spectravision` treina uma CNN para classificar imagens 6×6 com
 convolução, pooling, dropout, autodiff, AdamW, métricas e checkpoint; veja o
 [README](complete/22-spectravision/README.md).
+O projeto `27-spectradiffuse` treina um denoiser DDPM tensorial para uma
+mistura de quatro modos 2D; treino, holdout, amostragem reversa e comparação
+JIT/AOT estão no [README](complete/27-spectradiffuse/README.md).
 
 ## examples/stdlib — biblioteca padrão
 

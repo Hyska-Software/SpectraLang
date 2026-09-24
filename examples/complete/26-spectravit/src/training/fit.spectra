@@ -1,0 +1,74 @@
+module training.fit
+
+import std.ml as ml
+import std.tensor as tensor
+from data.glyphs import ImageBatch
+from model.vit import VisionTransformer
+from training.adamw import AdamState
+import model.vit as vit
+import training.adamw as adamw
+
+public record FitResult {
+    public model: VisionTransformer,
+    public epochs: int,
+    public steps: int,
+    public initial_loss: float,
+    public final_loss: float,
+}
+
+func train_step(model: VisionTransformer, batch: ImageBatch) returns float {
+    adamw.zero_grad(model)
+    let logits = vit.forward(model, batch, true)
+    let loss   = ml.cross_entropy_loss(logits, batch.labels)
+    tensor.backward(loss)
+    return tensor.get_f(loss, 0)
+}
+
+func loss_for(model: VisionTransformer, batch: ImageBatch) returns float {
+    let logits = vit.forward(model, batch, false)
+    let loss   = ml.cross_entropy_loss(logits, batch.labels)
+    return tensor.get_f(loss, 0)
+}
+
+func batch_slice(batch: ImageBatch, batch_index: int) returns ImageBatch {
+    let first = batch_index * 3
+    return ImageBatch {
+        pixels: tensor.slice(batch.pixels, first * 64, (first + 3) * 64),
+        labels: tensor.slice(batch.labels, first, first + 3),
+        count: 3,
+    }
+}
+
+public func fit(model: VisionTransformer, batch: ImageBatch, epochs: int) returns FitResult {
+    let batch_count = batch.count / 3
+    let first_batch = batch_slice(batch, 0)
+    tensor.set_grad_enabled( false)
+    let initial_loss = loss_for(model, first_batch)
+    tensor.set_grad_enabled( true)
+    let state      = adamw.create(model)
+    let epoch      = 0
+    let step       = 0
+    let final_loss = 0.0
+    while epoch < epochs {
+        let batch_index = 0
+        while batch_index < batch_count {
+            step = step + 1
+            let current_batch = batch_slice(batch, batch_index)
+            train_step(model, current_batch)
+            let rate = ml.exp_lr(0.004, 0.995, step)
+            adamw.update(model, state, rate, step)
+            batch_index = batch_index + 1
+        }
+        epoch = epoch + 1
+    }
+    tensor.set_grad_enabled( false)
+    final_loss = loss_for(model, first_batch)
+    tensor.set_grad_enabled( true)
+    return FitResult {
+        model: model,
+        epochs: epoch,
+        steps: step,
+        initial_loss: initial_loss,
+        final_loss: final_loss,
+    }
+}

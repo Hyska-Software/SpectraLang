@@ -1,0 +1,212 @@
+module model.vit
+
+import std.ml as ml
+import std.tensor as tensor
+from data.glyphs import ImageBatch
+import encoder.transformer as transformer
+import vision.patchify as patchify
+
+const PATCH_COUNT = 16
+const PATCH_VALUES = 4
+const TOKEN_COUNT = 17
+const MODEL_WIDTH = 8
+const HEAD_WIDTH = 4
+const FEED_FORWARD_WIDTH = 16
+const CLASS_COUNT = 3
+
+public record VisionTransformer {
+    public module_handle: int,
+    public patch_weights: int,
+    public patch_bias: int,
+    public class_token: int,
+    public position_embeddings: int,
+    public query_first_weights: int,
+    public key_first_weights: int,
+    public value_first_weights: int,
+    public query_second_weights: int,
+    public key_second_weights: int,
+    public value_second_weights: int,
+    public head_bias: int,
+    public attention_output_weights: int,
+    public attention_output_bias: int,
+    public attention_norm_scale: int,
+    public attention_norm_bias: int,
+    public feed_forward_in_weights: int,
+    public feed_forward_in_bias: int,
+    public feed_forward_out_weights: int,
+    public feed_forward_out_bias: int,
+    public output_norm_scale: int,
+    public output_norm_bias: int,
+    public classifier_weights: int,
+    public classifier_bias: int,
+}
+
+func parameter(values: int) returns int {
+    return tensor.requires_grad(values, true)
+}
+
+public func create() returns VisionTransformer {
+    let registry = ml.module_new()
+    let patch_weights = parameter(
+        tensor.reshape(tensor.normal_f(PATCH_VALUES * MODEL_WIDTH, 0.0, 0.22), PATCH_VALUES, MODEL_WIDTH),
+    )
+    let class_token = parameter(tensor.normal_f(MODEL_WIDTH, 0.0, 0.03))
+    let position_embeddings = parameter(
+        tensor.reshape(tensor.normal_f(TOKEN_COUNT * MODEL_WIDTH, 0.0, 0.03), TOKEN_COUNT, MODEL_WIDTH),
+    )
+    let query_first_weights = parameter(
+        tensor.reshape(tensor.normal_f(MODEL_WIDTH * HEAD_WIDTH, 0.0, 0.22), MODEL_WIDTH, HEAD_WIDTH),
+    )
+    let key_first_weights = parameter(
+        tensor.reshape(tensor.normal_f(MODEL_WIDTH * HEAD_WIDTH, 0.0, 0.22), MODEL_WIDTH, HEAD_WIDTH),
+    )
+    let value_first_weights = parameter(
+        tensor.reshape(tensor.normal_f(MODEL_WIDTH * HEAD_WIDTH, 0.0, 0.22), MODEL_WIDTH, HEAD_WIDTH),
+    )
+    let query_second_weights = parameter(
+        tensor.reshape(tensor.normal_f(MODEL_WIDTH * HEAD_WIDTH, 0.0, 0.22), MODEL_WIDTH, HEAD_WIDTH),
+    )
+    let key_second_weights = parameter(
+        tensor.reshape(tensor.normal_f(MODEL_WIDTH * HEAD_WIDTH, 0.0, 0.22), MODEL_WIDTH, HEAD_WIDTH),
+    )
+    let value_second_weights = parameter(
+        tensor.reshape(tensor.normal_f(MODEL_WIDTH * HEAD_WIDTH, 0.0, 0.22), MODEL_WIDTH, HEAD_WIDTH),
+    )
+    let attention_output_weights = parameter(
+        tensor.reshape(tensor.normal_f(MODEL_WIDTH * MODEL_WIDTH, 0.0, 0.16), MODEL_WIDTH, MODEL_WIDTH),
+    )
+    let attention_norm_scale = parameter(tensor.full_f(MODEL_WIDTH, 1.0))
+    let attention_norm_bias  = parameter(tensor.full_f(MODEL_WIDTH, 0.0))
+    let feed_forward_in_weights = parameter(
+        tensor.reshape(tensor.normal_f(MODEL_WIDTH * FEED_FORWARD_WIDTH, 0.0, 0.16), MODEL_WIDTH, FEED_FORWARD_WIDTH),
+    )
+    let feed_forward_out_weights = parameter(
+        tensor.reshape(tensor.normal_f(FEED_FORWARD_WIDTH * MODEL_WIDTH, 0.0, 0.16), FEED_FORWARD_WIDTH, MODEL_WIDTH),
+    )
+    let output_norm_scale = parameter(tensor.full_f(MODEL_WIDTH, 1.0))
+    let output_norm_bias  = parameter(tensor.full_f(MODEL_WIDTH, 0.0))
+    let classifier_weights = parameter(
+        tensor.reshape(tensor.normal_f(MODEL_WIDTH * CLASS_COUNT, 0.0, 0.20), MODEL_WIDTH, CLASS_COUNT),
+    )
+
+    let patch_bias            = tensor.full_f(MODEL_WIDTH, 0.0)
+    let head_bias             = tensor.full_f(HEAD_WIDTH, 0.0)
+    let attention_output_bias = tensor.full_f(MODEL_WIDTH, 0.0)
+    let feed_forward_in_bias  = tensor.full_f(FEED_FORWARD_WIDTH, 0.0)
+    let feed_forward_out_bias = tensor.full_f(MODEL_WIDTH, 0.0)
+    let classifier_bias       = tensor.full_f(CLASS_COUNT, 0.0)
+
+    ml.module_add_parameter(registry, patch_weights)
+    ml.module_add_parameter(registry, class_token)
+    ml.module_add_parameter(registry, position_embeddings)
+    ml.module_add_parameter(registry, query_first_weights)
+    ml.module_add_parameter(registry, key_first_weights)
+    ml.module_add_parameter(registry, value_first_weights)
+    ml.module_add_parameter(registry, query_second_weights)
+    ml.module_add_parameter(registry, key_second_weights)
+    ml.module_add_parameter(registry, value_second_weights)
+    ml.module_add_parameter(registry, attention_output_weights)
+    ml.module_add_parameter(registry, attention_norm_scale)
+    ml.module_add_parameter(registry, attention_norm_bias)
+    ml.module_add_parameter(registry, feed_forward_in_weights)
+    ml.module_add_parameter(registry, feed_forward_out_weights)
+    ml.module_add_parameter(registry, output_norm_scale)
+    ml.module_add_parameter(registry, output_norm_bias)
+    ml.module_add_parameter(registry, classifier_weights)
+
+    return VisionTransformer {
+        module_handle: registry,
+        patch_weights: patch_weights,
+        patch_bias: patch_bias,
+        class_token: class_token,
+        position_embeddings: position_embeddings,
+        query_first_weights: query_first_weights,
+        key_first_weights: key_first_weights,
+        value_first_weights: value_first_weights,
+        query_second_weights: query_second_weights,
+        key_second_weights: key_second_weights,
+        value_second_weights: value_second_weights,
+        head_bias: head_bias,
+        attention_output_weights: attention_output_weights,
+        attention_output_bias: attention_output_bias,
+        attention_norm_scale: attention_norm_scale,
+        attention_norm_bias: attention_norm_bias,
+        feed_forward_in_weights: feed_forward_in_weights,
+        feed_forward_in_bias: feed_forward_in_bias,
+        feed_forward_out_weights: feed_forward_out_weights,
+        feed_forward_out_bias: feed_forward_out_bias,
+        output_norm_scale: output_norm_scale,
+        output_norm_bias: output_norm_bias,
+        classifier_weights: classifier_weights,
+        classifier_bias: classifier_bias,
+    }
+}
+
+func classify_image(model: VisionTransformer, image: int) returns int {
+    let patch_values = patchify.patchify(image)
+    let patch_tokens = ml.linear(patch_values, model.patch_weights, model.patch_bias)
+    let token_values = tensor.concat(model.class_token, tensor.flatten(patch_tokens))
+    let tokens = tensor.add(
+        tensor.reshape(token_values, TOKEN_COUNT, MODEL_WIDTH),
+        model.position_embeddings,
+    )
+    let attention = transformer.attention_projection(
+        tokens,
+        model.query_first_weights,
+        model.key_first_weights,
+        model.value_first_weights,
+        model.query_second_weights,
+        model.key_second_weights,
+        model.value_second_weights,
+        model.attention_output_weights,
+        model.head_bias,
+        model.attention_output_bias,
+    )
+    let attention_residual = tensor.add(tokens, attention)
+    let normalized = ml.layer_norm(
+        attention_residual,
+        model.attention_norm_scale,
+        model.attention_norm_bias,
+        0.00001,
+    )
+    let hidden = ml.gelu(
+        ml.linear(normalized, model.feed_forward_in_weights, model.feed_forward_in_bias),
+    )
+    let feed_forward = ml.linear(
+        hidden,
+        model.feed_forward_out_weights,
+        model.feed_forward_out_bias,
+    )
+    let encoded = ml.layer_norm(
+        tensor.add(normalized, feed_forward),
+        model.output_norm_scale,
+        model.output_norm_bias,
+        0.00001,
+    )
+    let class_features = tensor.reshape(
+        tensor.slice(tensor.flatten(encoded), 0, MODEL_WIDTH),
+        1,
+        MODEL_WIDTH,
+    )
+    return ml.linear(class_features, model.classifier_weights, model.classifier_bias)
+}
+
+public func forward(model: VisionTransformer, batch: ImageBatch, training: bool) returns int {
+    ml.module_set_training(model.module_handle, training)
+    if batch.count <= 0 or tensor.len(batch.pixels) != batch.count * 64 {
+        return 0
+    }
+    let logits = 0
+    let image  = 0
+    while image < batch.count {
+        let pixels     = tensor.slice(batch.pixels, image * 64, (image + 1) * 64)
+        let row_logits = tensor.flatten(classify_image(model, pixels))
+        if image == 0 {
+            logits = row_logits
+        } else {
+            logits = tensor.concat(logits, row_logits)
+        }
+        image = image + 1
+    }
+    return tensor.reshape(logits, batch.count, CLASS_COUNT)
+}

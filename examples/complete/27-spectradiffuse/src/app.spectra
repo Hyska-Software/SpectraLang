@@ -1,0 +1,92 @@
+module app
+
+import std.convert as convert
+import std.io as io
+import std.ml as ml
+import std.tensor as tensor
+from data.mixture import PointSet
+from evaluation.report import DiffusionReport
+from model.denoiser import Denoiser
+from training.fit import FitResult
+import data.mixture as dataset
+import evaluation.report as evaluation
+import model.denoiser as denoiser
+import sampling.ddpm as ddpm
+import training.fit as training
+
+public func run() returns int {
+    tensor.free_all()
+    tensor.seed(27027)
+    tensor.set_grad_enabled( false)
+    let train_set   = dataset.training_set()
+    let holdout_set = dataset.holdout_set()
+    let model       = denoiser.create()
+    if train_set.count != 64 or holdout_set.count != 24 {
+        io.eprintln("erro: os lotes sinteticos tem dimensoes inesperadas")
+        tensor.free_all()
+        return 1
+    }
+    if ml.module_parameter_count(model.module_handle) != 8 {
+        io.eprintln("erro: o denoiser deveria registrar oito tensores treinaveis")
+        tensor.free_all()
+        return 2
+    }
+
+    tensor.set_grad_enabled( true)
+    let fit_result = training.fit(model, train_set.points, train_set.count, 360)
+    tensor.set_grad_enabled( false)
+    let report       = evaluation.evaluate(fit_result.model, holdout_set)
+    let samples      = ddpm.generate(fit_result.model, 8, 27999)
+    let repeated     = ddpm.generate(fit_result.model, 8, 27999)
+    let sample_index = 0
+    let repeatable   = true
+    while sample_index < 16 {
+        if tensor.get_f(samples, sample_index) != tensor.get_f(repeated, sample_index) {
+            repeatable = false
+        }
+        sample_index = sample_index + 1
+    }
+
+    if fit_result.steps != 360 or fit_result.final_loss >= fit_result.initial_loss {
+        io.eprintln("erro: o treino nao reduziu a perda fixa de denoising")
+        io.eprintln(
+            "initial=" + convert.float_to_string(fit_result.initial_loss) +
+                " final=" + convert.float_to_string(fit_result.final_loss),
+        )
+        tensor.free_all()
+        return 3
+    }
+    if report.denoising_mse >= report.zero_baseline_mse {
+        io.eprintln("erro: o denoiser nao superou a previsao zero no holdout")
+        tensor.free_all()
+        return 4
+    }
+    if not repeatable or tensor.len(samples) != 16 {
+        io.eprintln("erro: a amostragem reversa nao foi reprodutivel")
+        tensor.free_all()
+        return 5
+    }
+
+    io.println(
+        "SPECTRADIFFUSE ok architecture=sinusoidal-time-conditioned-residual-mlp parameters=" +
+            convert.int_to_string(ml.module_parameter_count(fit_result.model.module_handle)),
+    )
+    io.println(
+        "training: steps=" + convert.int_to_string(fit_result.steps) +
+            " initial_mse=" + convert.float_to_string(fit_result.initial_loss) +
+            " final_mse=" + convert.float_to_string(fit_result.final_loss),
+    )
+    io.println(
+        "holdout: points=" + convert.int_to_string(holdout_set.count) +
+            " denoising_mse=" + convert.float_to_string(report.denoising_mse) +
+            " zero_baseline_mse=" + convert.float_to_string(report.zero_baseline_mse),
+    )
+    io.println(
+        "sampling: count=" + convert.int_to_string(report.sample_count) +
+            " in_support=" + convert.int_to_string(report.samples_in_support) +
+            " mode_coverage=" + convert.int_to_string(report.mode_coverage) +
+            "/4 repeatable=true",
+    )
+    tensor.free_all()
+    return 0
+}

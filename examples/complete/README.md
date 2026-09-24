@@ -1,10 +1,10 @@
 # Spectra complete example projects
 
-25 complete `.spectra` projects. Projects 01–17 are self-validating and print an
+27 complete `.spectra` projects. Projects 01–17 are self-validating and print an
 `ok` line; `18-spectragit` is a local version-control CLI, `19-spectraboard` is
 a local task-board CLI, `20-spectraledger` is a local personal-finance CLI,
 `21-spectrahabit` is a local habit tracker, and `22-spectravision` is an
-end-to-end convolutional image classifier; `23-spectrapulse` adds differentiable temporal attention for sensor forecasting; `24-spectraroute` adds tensor-backed route planning; `25-spectragraph` adds graph neural network training. Projects 18–25 have their own
+end-to-end convolutional image classifier; `23-spectrapulse` adds differentiable temporal attention for sensor forecasting; `24-spectraroute` adds tensor-backed route planning; `25-spectragraph` adds graph neural network training; `26-spectravit` adds a patch-based Vision Transformer; `27-spectradiffuse` trains a denoising diffusion model for a synthetic 2D mixture. Projects 18–27 have their own
 integration harnesses.
 
 Run any project (from the repo root):
@@ -68,6 +68,8 @@ spectralang run examples/complete/22-spectravision
 | 23 | `23-spectrapulse` | Previsão multivariada de sensores: duas cabeças de atenção temporal, LayerNorm/GELU, MLP residual treinado com autodiff e AdamW, métricas de regressão e integração JIT/AOT |
 | 24 | `24-spectraroute` | Planejador de transporte em múltiplos módulos: grafo de tensores, Dijkstra, fechamento de conexões, reroteamento e JIT/AOT |
 | 25 | `25-spectragraph` | Classificação de nós com GCN, adjacência tensorial, LayerNorm/GELU, autodiff, AdamW e holdout JIT/AOT |
+| 26 | `26-spectravit` | Classificação de glifos com patch embeddings, token de classe, posição aprendida, atenção multi-head, MLP residual, autodiff e AdamW |
+| 27 | `27-spectradiffuse` | Geração de pontos com DDPM, agenda beta linear, embedding temporal senoidal, MLP residual, autodiff, AdamW e amostragem reversa JIT/AOT |
 
 ## Performance comparisons (Spectra vs Go vs Rust)
 

@@ -1,0 +1,107 @@
+module evaluation.report
+
+import std.math as math
+import std.ml as ml
+import std.tensor as tensor
+from data.mixture import PointSet
+from model.denoiser import Denoiser
+import diffusion.schedule as schedule
+import model.denoiser as denoiser
+import sampling.ddpm as ddpm
+
+const EVALUATION_TIMESTEP = 6
+const SUPPORT_RADIUS = 1.0
+
+public record DiffusionReport {
+    public denoising_mse: float,
+    public zero_baseline_mse: float,
+    public sample_count: int,
+    public samples_in_support: int,
+    public mode_coverage: int,
+}
+
+func nearest_mode(x: float, y: float) returns int {
+    let best_mode     = 0
+    let best_distance = 100.0
+    let mode          = 0
+    while mode < 4 {
+        let center_x = -0.9
+        let center_y = -0.9
+        if mode == 1 {
+            center_x = 0.9
+            center_y = -0.9
+        }
+        if mode == 2 {
+            center_x = -0.9
+            center_y = 0.9
+        }
+        if mode == 3 {
+            center_x = 0.9
+            center_y = 0.9
+        }
+        let distance = math.sqrt_f((x - center_x) * (x - center_x) + (y - center_y) * (y - center_y))
+        if distance < best_distance {
+            best_distance = distance
+            best_mode = mode
+        }
+        mode = mode + 1
+    }
+    return best_mode
+}
+
+func nearest_distance(x: float, y: float) returns float {
+    let center_x = 0.0
+    let center_y = 0.0
+    let mode     = nearest_mode(x, y)
+    if mode == 0 {
+        center_x = -0.9
+        center_y = -0.9
+    }
+    if mode == 1 {
+        center_x = 0.9
+        center_y = -0.9
+    }
+    if mode == 2 {
+        center_x = -0.9
+        center_y = 0.9
+    }
+    if mode == 3 {
+        center_x = 0.9
+        center_y = 0.9
+    }
+    return math.sqrt_f((x - center_x) * (x - center_x) + (y - center_y) * (y - center_y))
+}
+
+public func evaluate(model: Denoiser, holdout: PointSet) returns DiffusionReport {
+    tensor.seed(27555)
+    let noise = tensor.normal_f(holdout.count * 2, 0.0, 1.0)
+    let noisy = schedule.q_sample(holdout.points, noise, EVALUATION_TIMESTEP)
+    let prediction = denoiser.forward(model, noisy, holdout.count, EVALUATION_TIMESTEP, false)
+    let denoising_mse = tensor.get_f(ml.mse_loss(prediction, noise), 0)
+    let zero_baseline = tensor.full_f(tensor.len(noise), 0.0)
+    let zero_baseline_mse = tensor.get_f(ml.mse_loss(zero_baseline, noise), 0)
+
+    let sample_count       = 16
+    let samples            = ddpm.generate(model, sample_count, 27600)
+    let seen               = tensor.full(4, 0)
+    let samples_in_support = 0
+    let index              = 0
+    while index < sample_count {
+        let x = tensor.get_f(samples, index * 2)
+        let y = tensor.get_f(samples, index * 2 + 1)
+        if nearest_distance(x, y) <= SUPPORT_RADIUS {
+            samples_in_support = samples_in_support + 1
+            let mode = nearest_mode(x, y)
+            tensor.set(seen, mode, 1)
+        }
+        index = index + 1
+    }
+    let mode_coverage = tensor.sum(seen)
+    return DiffusionReport {
+        denoising_mse: denoising_mse,
+        zero_baseline_mse: zero_baseline_mse,
+        sample_count: sample_count,
+        samples_in_support: samples_in_support,
+        mode_coverage: mode_coverage,
+    }
+}

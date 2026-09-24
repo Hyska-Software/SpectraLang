@@ -1,0 +1,5 @@
+[project]
+name = "27-spectradiffuse"
+version = "1.0.0"
+entry = "src/main.spectra"
+src_dirs = ["src"]

@@ -1,0 +1,99 @@
+module evaluation.report
+
+import std.tensor as tensor
+from data.glyphs import ImageBatch
+from model.vit import VisionTransformer
+import model.vit as vit
+
+public record ClassificationReport {
+    public count: int,
+    public correct: int,
+    public accuracy: float,
+    public macro_f1: float,
+    public class0_count: int,
+    public class0_correct: int,
+    public class1_count: int,
+    public class1_correct: int,
+    public class2_count: int,
+    public class2_correct: int,
+}
+
+func class_f1(true_positive: int, predicted: int, support: int) returns float {
+    let precision = if predicted > 0 { true_positive as float / predicted as float} else { 0.0}
+    let recall    = if support > 0 { true_positive as float / support as float} else { 0.0}
+    if precision + recall == 0.0 {
+        return 0.0
+    }
+    return 2.0 * precision * recall /(precision + recall)
+}
+
+public func evaluate(model: VisionTransformer, batch: ImageBatch) returns ClassificationReport {
+    let logits           = vit.forward(model, batch, false)
+    let correct          = 0
+    let class0_count     = 0
+    let class0_correct   = 0
+    let class0_predicted = 0
+    let class1_count     = 0
+    let class1_correct   = 0
+    let class1_predicted = 0
+    let class2_count     = 0
+    let class2_correct   = 0
+    let class2_predicted = 0
+    let image            = 0
+    while image < batch.count {
+        let expected  = tensor.get_f(batch.labels, image) as int
+        let score0    = tensor.get2_f(logits, image, 0)
+        let score1    = tensor.get2_f(logits, image, 1)
+        let score2    = tensor.get2_f(logits, image, 2)
+        let predicted = if score0 >= score1 and score0 >= score2 {
+            0
+        } else if score1 >= score2 {
+            1
+        } else {
+            2
+        }
+        if expected == 0 {
+            class0_count = class0_count + 1
+        } else if expected == 1 {
+            class1_count = class1_count + 1
+        } else {
+            class2_count = class2_count + 1
+        }
+        if predicted == 0 {
+            class0_predicted = class0_predicted + 1
+        } else if predicted == 1 {
+            class1_predicted = class1_predicted + 1
+        } else {
+            class2_predicted = class2_predicted + 1
+        }
+        if expected == predicted {
+            correct = correct + 1
+            if expected == 0 {
+                class0_correct = class0_correct + 1
+            } else if expected == 1 {
+                class1_correct = class1_correct + 1
+            } else {
+                class2_correct = class2_correct + 1
+            }
+        }
+        image = image + 1
+    }
+    let accuracy = if batch.count > 0 { correct as float / batch.count as float} else { 0.0}
+    let macro_f1 = (
+        class_f1(class0_correct, class0_predicted, class0_count) +
+            class_f1(class1_correct, class1_predicted, class1_count) +
+            class_f1(class2_correct, class2_predicted, class2_count)
+    ) / 3.0
+    return ClassificationReport {
+        count: batch.count,
+        correct: correct,
+        accuracy: accuracy,
+        macro_f1: macro_f1,
+        class0_count: class0_count,
+        class0_correct: class0_correct,
+        class1_count: class1_count,
+        class1_correct: class1_correct,
+        class2_count: class2_count,
+        class2_correct: class2_correct,
+    }
+}

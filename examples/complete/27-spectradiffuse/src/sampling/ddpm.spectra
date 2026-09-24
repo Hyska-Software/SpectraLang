@@ -1,0 +1,49 @@
+module sampling.ddpm
+
+import std.math as math
+import std.tensor as tensor
+from model.denoiser import Denoiser
+import diffusion.schedule as schedule
+import model.denoiser as denoiser
+
+func reverse_step(model: Denoiser, current: int, timestep: int) returns int {
+    let beta            = schedule.beta_at(timestep)
+    let alpha           = 1.0 - beta
+    let alpha_bar       = schedule.alpha_bar(timestep)
+    let predicted_noise = denoiser.forward(model, current, 1, timestep, false)
+    let correction      = schedule.scale(predicted_noise, beta / math.sqrt_f(1.0 - alpha_bar))
+    let mean = schedule.scale(
+        tensor.sub(current, correction),
+        1.0 / math.sqrt_f(alpha),
+    )
+    if timestep == 0 {
+        return mean
+    }
+    let previous_alpha_bar = schedule.alpha_bar(timestep - 1)
+    let variance           = beta * (1.0 - previous_alpha_bar) /(1.0 - alpha_bar)
+    let random_noise       = tensor.normal_f(tensor.len(current), 0.0, 1.0)
+    return tensor.add(mean, schedule.scale(random_noise, math.sqrt_f(variance)))
+}
+
+func sample_one(model: Denoiser) returns int {
+    let current  = tensor.normal_f(2, 0.0, 1.0)
+    let timestep = schedule.timestep_count() - 1
+    while timestep >= 0 {
+        current = reverse_step(model, current, timestep)
+        timestep = timestep - 1
+    }
+    return current
+}
+
+public func generate(model: Denoiser, count: int, seed: int) returns int {
+    let samples = tensor.full_f(count * 2, 0.0)
+    let index   = 0
+    while index < count {
+        tensor.seed(seed + index)
+        let point = sample_one(model)
+        tensor.set_f(samples, index * 2, tensor.get_f(point, 0))
+        tensor.set_f(samples, index * 2 + 1, tensor.get_f(point, 1))
+        index = index + 1
+    }
+    return samples
+}

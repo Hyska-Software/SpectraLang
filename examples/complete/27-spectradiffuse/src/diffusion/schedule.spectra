@@ -1,0 +1,55 @@
+module diffusion.schedule
+
+import std.math as math
+import std.tensor as tensor
+
+const TIMESTEP_COUNT = 12
+const BETA_START = 0.02
+const BETA_END = 0.14
+
+public func timestep_count() returns int {
+    return TIMESTEP_COUNT
+}
+
+public func beta_at(index: int) returns float {
+    let step = index
+    if step < 0 {
+        step = 0
+    }
+    if step >= TIMESTEP_COUNT {
+        step = TIMESTEP_COUNT - 1
+    }
+    return BETA_START +
+        (BETA_END - BETA_START) * (step as float) /((TIMESTEP_COUNT - 1) as float)
+}
+
+public func alpha_bar(index: int) returns float {
+    if index < 0 {
+        return 1.0
+    }
+    let last = index
+    if last >= TIMESTEP_COUNT {
+        last = TIMESTEP_COUNT - 1
+    }
+    let product = 1.0
+    let step    = 0
+    while step <= last {
+        product = product * (1.0 - beta_at(step))
+        step = step + 1
+    }
+    return product
+}
+
+public func scale(values: int, factor: float) returns int {
+    return tensor.mul(values, tensor.full_f(tensor.len(values), factor))
+}
+
+public func add_scaled(left: int, right: int, left_scale: float, right_scale: float) returns int {
+    return tensor.add(scale(left, left_scale), scale(right, right_scale))
+}
+
+public func q_sample(clean: int, noise: int, index: int) returns int {
+    let retained = math.sqrt_f(alpha_bar(index))
+    let injected = math.sqrt_f(1.0 - alpha_bar(index))
+    return add_scaled(clean, noise, retained, injected)
+}
