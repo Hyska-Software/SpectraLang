@@ -1,0 +1,18 @@
+module domain.payload
+
+public record Envelope<T> {
+    public payload: T,
+    public sequence: int,
+}
+
+public enum Decision<T> {
+    Rejected(string),
+    Accepted(T),
+}
+
+public func advance<T>(message: Envelope<T>) returns Envelope<T> {
+    return Envelope<T> {
+        payload: message.payload,
+        sequence: message.sequence + 1,
+    }
+}

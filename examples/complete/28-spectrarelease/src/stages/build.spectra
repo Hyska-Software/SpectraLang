@@ -1,0 +1,35 @@
+module stages.build
+
+from contracts.stage import ReleaseStage
+from domain.release import advance
+from domain.release import Artifact
+from domain.release import Envelope
+
+public record BuildStage {
+    public salt: int,
+}
+
+impl ReleaseStage for BuildStage {
+    func label( & self) returns string {
+        return "build"
+    }
+
+    async func apply( & self, message: Envelope<Artifact>) returns Result<Envelope<Artifact>, string> {
+        if message.payload.version <= 0 {
+            return Result::Err("invalid-version")
+        }
+        let built = Artifact {
+            version: message.payload.version,
+            checksum: message.payload.version * self.salt + message.payload.risk * 17,
+            risk: message.payload.risk,
+            published: false,
+            validation_mse: message.payload.validation_mse,
+            drift_score: message.payload.drift_score,
+        }
+        return Result::Ok(advance(Envelope<Artifact> {
+                    trace_id: message.trace_id,
+                    sequence: message.sequence,
+                    payload: built,
+        }))
+    }
+}

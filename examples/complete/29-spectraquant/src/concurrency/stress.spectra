@@ -1,0 +1,32 @@
+module concurrency.stress
+
+import std.concurrent as concurrent
+
+func shock_loss(exposure_cents: int, shock_basis_points: int) returns int {
+    return exposure_cents * shock_basis_points / 10000
+}
+
+public func run(exposure_cents: int) returns int {
+    concurrent.reset()
+    let down = concurrent.task_spawn_fn(
+        | exposure: int | shock_loss(exposure, 1800),
+        exposure_cents,
+    )
+    let gap = concurrent.task_spawn_fn(
+        | exposure: int | shock_loss(exposure, 3200),
+        exposure_cents,
+    )
+    let down_loss = concurrent.task_join(down)
+    let gap_loss = concurrent.task_join(gap)
+    let task_count = concurrent.stats_tasks_spawned()
+    let channel = concurrent.channel_new()
+    let sent = concurrent.channel_send(channel, down_loss) and concurrent.channel_send(channel, gap_loss)
+    let combined = concurrent.channel_recv(channel) + concurrent.channel_recv(channel)
+    let channel_count = concurrent.channel_len(channel)
+    concurrent.channel_close(channel)
+    concurrent.reset()
+    if task_count != 2 or not sent or channel_count != 0 {
+        return-1
+    }
+    return combined
+}

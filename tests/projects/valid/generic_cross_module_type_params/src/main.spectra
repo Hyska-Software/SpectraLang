@@ -1,0 +1,44 @@
+module main
+
+from domain.payload import advance
+from domain.payload import Decision
+from domain.payload import Envelope
+import codec.message as codec
+
+async func async_advance(message: Envelope<int>) returns Result<Envelope<int>, string> {
+    if message.payload < 0 {
+        return Result::Err("negative-payload")
+    }
+    let next = advance(message)
+    if next.sequence != message.sequence + 1 {
+        return Result::Err("sequence-not-advanced")
+    }
+    return Result::Ok(next)
+}
+
+public func main() returns int {
+    let message: Envelope<int> = codec.wrap(40, 2)
+    if message.payload != 40 or codec.sequence(message) != 2 {
+        return 1
+    }
+
+    let async_result = block_on(async_advance(message))
+    if let Result::Ok(advanced) = async_result {
+        if advanced.payload != 40 or advanced.sequence != 3 {
+            return 2
+        }
+    } else {
+        return 2
+    }
+
+    let accepted: Decision<int> = Decision::Accepted(42)
+    if codec.decision_code(accepted) != 1 {
+        return 3
+    }
+
+    let rejected: Decision<int> = Decision::Rejected("policy")
+    if codec.decision_code(rejected) != -1 {
+        return 4
+    }
+    return 0
+}

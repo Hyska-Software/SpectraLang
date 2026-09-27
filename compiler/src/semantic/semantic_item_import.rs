@@ -519,9 +519,18 @@ impl SemanticAnalyzer {
                         .entry(local_name.clone())
                         .or_insert(EnumInfo {
                             visibility: vis,
-                            type_params: Vec::new(),
+                            type_params: type_export
+                                .type_params
+                                .iter()
+                                .map(|param| param.name.clone())
+                                .collect(),
                             variants: variant_map,
                         });
+                    if !type_export.type_params.is_empty() {
+                        self.generic_enums
+                            .entry(local_name.clone())
+                            .or_insert_with(|| (type_export.type_params.clone(), members.clone()));
+                    }
                 } else {
                     // Struct registration: populate fields from the exported
                     // type, keeping the REAL per-field visibility so
@@ -566,13 +575,34 @@ impl SemanticAnalyzer {
                         .entry(local_name.clone())
                         .or_insert(StructInfo {
                             visibility: vis,
-                            type_params: Vec::new(),
+                            type_params: type_export
+                                .type_params
+                                .iter()
+                                .map(|param| param.name.clone())
+                                .collect(),
                             fields: field_map,
                             // Imported: record the exporting module/package so
                             // field visibility is enforced against it.
                             defining_module: Some(module_path.clone()),
                             defining_package: exports.package_name.clone(),
                         });
+                    if !type_export.type_params.is_empty() {
+                        let generic_fields = type_export
+                            .struct_fields
+                            .as_ref()
+                            .map(|fields| {
+                                fields
+                                    .iter()
+                                    .map(|(field_name, field_type)| {
+                                        (field_name.clone(), field_type.clone())
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        self.generic_structs
+                            .entry(local_name.clone())
+                            .or_insert_with(|| (type_export.type_params.clone(), generic_fields));
+                    }
                 }
 
                 if let Some(exported_methods) = exports.methods.get(name.as_str()) {
@@ -780,24 +810,42 @@ impl SemanticAnalyzer {
                     import_local_name(alias.as_deref(), named_alias.as_deref(), exported_name);
                 let mut imported = template.clone();
                 imported.name = local_name;
+                for type_param in &mut imported.type_params {
+                    for bound in &mut type_param.bounds {
+                        if exports.traits.contains_key(bound.as_str()) {
+                            let trait_alias = names_to_import
+                                .iter()
+                                .find(|(name, _)| name == bound)
+                                .and_then(|(_, alias)| alias.as_deref());
+                            *bound = import_local_name(alias.as_deref(), trait_alias, bound);
+                        }
+                    }
+                }
                 user_generic_functions.push(imported);
             }
         }
 
         // Trait implementations are coherence metadata and are not represented
-        // by a callable export.  Import them alongside the trait/type symbols
-        // so casts, UFCS, and generic bounds work across module boundaries.
+        // by a callable export. Import them when this module exports the trait
+        // or when the importing module has already imported that trait through
+        // its declaring module, so separate type and trait imports still carry
+        // the implementation across the module boundary.
         for exported_impl in &exports.trait_impls {
-            let Some((_, trait_alias)) = names_to_import.iter().find(|(name, _)| {
-                name == &exported_impl.trait_name && exports.traits.contains_key(name)
-            }) else {
+            let imported_trait_alias = names_to_import
+                .iter()
+                .find(|(name, _)| {
+                    name == &exported_impl.trait_name && exports.traits.contains_key(name)
+                })
+                .map(|(_, alias)| alias.as_deref());
+            let trait_is_in_scope = self.traits.contains_key(&exported_impl.trait_name);
+            if imported_trait_alias.is_none() && !trait_is_in_scope {
                 continue;
+            }
+            let local_trait = if let Some(trait_alias) = imported_trait_alias {
+                import_local_name(alias.as_deref(), trait_alias, &exported_impl.trait_name)
+            } else {
+                exported_impl.trait_name.clone()
             };
-            let local_trait = import_local_name(
-                alias.as_deref(),
-                trait_alias.as_deref(),
-                &exported_impl.trait_name,
-            );
             let local_type = names_to_import
                 .iter()
                 .find(|(name, _)| {
@@ -891,7 +939,7 @@ impl SemanticAnalyzer {
                             visibility: vis,
                             attributes: derive_attributes,
                             variants,
-                            type_params: Vec::new(),
+                            type_params: type_export.type_params.clone(),
                         });
                     } else {
                         // Reconstruct ast::Struct from struct_fields.
@@ -933,7 +981,7 @@ impl SemanticAnalyzer {
                             visibility: vis,
                             attributes: derive_attributes,
                             fields,
-                            type_params: Vec::new(),
+                            type_params: type_export.type_params.clone(),
                         });
                     }
                 }

@@ -1,0 +1,47 @@
+module forecast.training
+
+import std.ml as ml
+import std.tensor as tensor
+from forecast.data import ForecastSet
+from forecast.model import LoadForecaster
+from forecast.optimizer import AdamWState
+import forecast.model as network
+import forecast.optimizer as optimizer
+
+public record FitResult {
+    public model: LoadForecaster,
+    public steps: int,
+    public initial_mse: float,
+    public final_mse: float,
+}
+
+func loss(model: LoadForecaster, data: ForecastSet) returns float {
+    let prediction = network.forward(model, data.features, data.count, false)
+    return tensor.get_f(ml.mse_loss(prediction, data.targets), 0)
+}
+
+public func fit(model: LoadForecaster, data: ForecastSet, steps: int) returns FitResult {
+    tensor.set_grad_enabled( false)
+    let initial_mse       = loss(model, data)
+    let state: AdamWState = optimizer.create(model)
+    tensor.seed(302803)
+    tensor.set_grad_enabled( true)
+    let step = 0
+    while step < steps {
+        optimizer.zero_grad(model)
+        let prediction   = network.forward(model, data.features, data.count, true)
+        let current_loss = ml.mse_loss(prediction, data.targets)
+        tensor.backward(current_loss)
+        optimizer.update(model, state, ml.exp_lr(0.012, 0.996, step + 1), step + 1)
+        step = step + 1
+    }
+    tensor.set_grad_enabled( false)
+    let final_mse = loss(model, data)
+    tensor.set_grad_enabled( true)
+    return FitResult {
+        model: model,
+        steps: step,
+        initial_mse: initial_mse,
+        final_mse: final_mse,
+    }
+}

@@ -1,0 +1,28 @@
+module domain.quality
+
+from domain.release import Artifact
+from domain.release import Envelope
+
+public trait QualityScore {
+    func score( & self) returns int
+}
+
+impl QualityScore for Artifact {
+    func score( & self) returns int {
+        let model_penalty = (self.validation_mse * 100.0) as int
+        let drift_penalty = (self.drift_score * 100.0) as int
+        return self.version * 10 + self.checksum % 97 - self.risk - model_penalty - drift_penalty
+    }
+}
+
+public func score<T: QualityScore>(item: T) returns int {
+    return item.score()
+}
+
+public func eligible<T: QualityScore>(item: T, minimum: int) returns bool {
+    return item.score() >= minimum
+}
+
+public func score_envelope(message: Envelope<Artifact>) returns int {
+    return score(message.payload) + message.sequence
+}

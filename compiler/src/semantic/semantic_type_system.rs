@@ -287,6 +287,26 @@ impl SemanticAnalyzer {
                         }
                     }
                 }
+                TypeAnnotationKind::Simple { segments } if segments.len() > 1 => {
+                    // Module aliases are registered as local qualified names
+                    // (for example `model.Profile`). Resolve that same key
+                    // here so fields of an alias-qualified record keep their
+                    // declared types during downstream semantic analysis.
+                    let qualified_name = segments.join(".");
+                    if self.struct_infos.contains_key(&qualified_name) {
+                        Type::Struct {
+                            name: qualified_name,
+                        }
+                    } else if self.enum_infos.contains_key(&qualified_name) {
+                        Type::Enum {
+                            name: qualified_name,
+                        }
+                    } else if let Some(alias) = self.type_aliases.get(&qualified_name) {
+                        self.type_annotation_to_type(&Some(alias.clone()))
+                    } else {
+                        Type::Unknown
+                    }
+                }
                 TypeAnnotationKind::Tuple { elements } => {
                     let element_types: Vec<Type> = elements
                         .iter()

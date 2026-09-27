@@ -1,0 +1,5 @@
+[project]
+name = "generic_cross_module_type_params"
+version = "0.1.0"
+entry = "src/main.spectra"
+src_dirs = ["src"]

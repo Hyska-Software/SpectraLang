@@ -1,0 +1,25 @@
+module pipeline.rollback
+
+import std.option as option
+from domain.release import Artifact
+
+public func compensate(artifact: Artifact) returns Option<Artifact> {
+    if not artifact.published {
+        return Option::None
+    }
+    return Option::Some(Artifact {
+            version: artifact.version,
+            checksum: artifact.checksum,
+            risk: artifact.risk,
+            published: false,
+            validation_mse: artifact.validation_mse,
+            drift_score: artifact.drift_score,
+    })
+}
+
+public func is_compensated(result: Option<Artifact>) returns bool {
+    if option.is_none(result) {
+        return false
+    }
+    return not option.option_unwrap(result) .published
+}

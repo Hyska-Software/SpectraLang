@@ -1,0 +1,52 @@
+module ml.evaluation
+
+import std.ml as ml
+import std.tensor as tensor
+from ml.calibrator import Calibrator
+from ml.telemetry import TelemetrySet
+import ml.calibrator as calibrator
+
+public record EvaluationReport {
+    public validation_mse: float,
+    public zero_baseline_mse: float,
+    public drift_score: float,
+}
+
+func absolute(value: float) returns float {
+    if value < 0.0 {
+        return-value
+    }
+    return value
+}
+
+func feature_drift(reference: TelemetrySet, current: TelemetrySet) returns float {
+    let total   = 0.0
+    let feature = 0
+    while feature < 3 {
+        let reference_sum = 0.0
+        let current_sum   = 0.0
+        let row           = 0
+        while row < reference.count {
+            reference_sum = reference_sum + tensor.get_f(reference.features, row * 3 + feature)
+            current_sum = current_sum + tensor.get_f(current.features, row * 3 + feature)
+            row = row + 1
+        }
+        let reference_mean = reference_sum /(reference.count as float)
+        let current_mean   = current_sum /(current.count as float)
+        total = total + absolute(reference_mean - current_mean)
+        feature = feature + 1
+    }
+    return total / 3.0
+}
+
+public func evaluate(model: Calibrator, reference: TelemetrySet, holdout: TelemetrySet, current: TelemetrySet) returns EvaluationReport {
+    let prediction        = calibrator.forward(model, holdout.features, holdout.count, false)
+    let validation_mse    = tensor.get_f(ml.mse_loss(prediction, holdout.targets), 0)
+    let zero              = tensor.full_f(tensor.len(holdout.targets), 0.0)
+    let zero_baseline_mse = tensor.get_f(ml.mse_loss(zero, holdout.targets), 0)
+    return EvaluationReport {
+        validation_mse: validation_mse,
+        zero_baseline_mse: zero_baseline_mse,
+        drift_score: feature_drift(reference, current),
+    }
+}

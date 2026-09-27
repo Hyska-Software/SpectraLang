@@ -1,0 +1,48 @@
+module ml.telemetry
+
+import std.tensor as tensor
+
+public record TelemetrySet {
+    public features: int,
+    public targets: int,
+    public count: int,
+}
+
+func make_set(count: int, shift: float, seed: int) returns TelemetrySet {
+    tensor.seed(seed)
+    let features = tensor.full_f(count * 3, 0.0)
+    let targets  = tensor.full_f(count, 0.0)
+    let noise    = tensor.normal_f(count, 0.0, 0.002)
+    let row      = 0
+    while row < count {
+        let first  = ((row * 5) % 19) as float / 18.0 + shift
+        let second = ((row * 7) % 23) as float / 22.0 + shift * 0.4
+        let third  = ((row * 11) % 29) as float / 28.0 + shift * 0.2
+        tensor.set_f(features, row * 3, first)
+        tensor.set_f(features, row * 3 + 1, second)
+        tensor.set_f(features, row * 3 + 2, third)
+        tensor.set_f(
+            targets,
+            row,
+            first * 0.52 + second * 0.31 + third * 0.17 + tensor.get_f(noise, row),
+        )
+        row = row + 1
+    }
+    return TelemetrySet { features: features, targets: targets, count: count }
+}
+
+public func training_set() returns TelemetrySet {
+    return make_set(48, 0.0, 282801)
+}
+
+public func holdout_set() returns TelemetrySet {
+    return make_set(16, 0.0, 282802)
+}
+
+public func live_set() returns TelemetrySet {
+    return make_set(48, 0.02, 282803)
+}
+
+public func shifted_set() returns TelemetrySet {
+    return make_set(48, 0.50, 282804)
+}

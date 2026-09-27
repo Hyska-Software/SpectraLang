@@ -17,6 +17,9 @@ impl ASTLowering {
         if self.function_return_types.contains_key(&qualified_name) {
             return Some(qualified_name);
         }
+        if self.generic_functions.contains_key(&qualified_name) {
+            return Some(qualified_name);
+        }
         if self.imported_function_symbols.contains_key(&qualified_name) {
             return Some(qualified_name);
         }

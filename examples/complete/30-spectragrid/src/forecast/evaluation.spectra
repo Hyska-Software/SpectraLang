@@ -1,0 +1,25 @@
+module forecast.evaluation
+
+import std.ml as ml
+import std.tensor as tensor
+from forecast.data import ForecastSet
+from forecast.model import LoadForecaster
+import forecast.model as network
+
+public record EvaluationReport {
+    public holdout_mse: float,
+    public zero_baseline_mse: float,
+}
+
+public func evaluate(model: LoadForecaster, holdout: ForecastSet) returns EvaluationReport {
+    tensor.set_grad_enabled( false)
+    let prediction        = network.forward(model, holdout.features, holdout.count, false)
+    let holdout_mse       = tensor.get_f(ml.mse_loss(prediction, holdout.targets), 0)
+    let zero              = tensor.full_f(holdout.count, 0.0)
+    let zero_baseline_mse = tensor.get_f(ml.mse_loss(zero, holdout.targets), 0)
+    tensor.set_grad_enabled( true)
+    return EvaluationReport {
+        holdout_mse: holdout_mse,
+        zero_baseline_mse: zero_baseline_mse,
+    }
+}

@@ -1,0 +1,22 @@
+module codec.message
+
+from domain.payload import Decision
+from domain.payload import Envelope
+
+public func wrap<T>(payload: T, sequence: int) returns Envelope<T> {
+    return Envelope<T> {
+        payload: payload,
+        sequence: sequence,
+    }
+}
+
+public func sequence<T>(message: Envelope<T>) returns int {
+    return message.sequence
+}
+
+public func decision_code<T>(decision: Decision<T>) returns int {
+    return match decision {
+        when Decision::Rejected(_) then -1,
+        when Decision::Accepted(_) then 1,
+    }
+}

@@ -125,6 +125,9 @@ pub struct ExportedType {
     pub visibility: ExportVisibility,
     /// True if it's an enum, false if struct.
     pub is_enum: bool,
+    /// Generic parameters declared by the type. Importers use these to retain
+    /// generic arity and substitute field and variant payload types.
+    pub type_params: Vec<crate::ast::TypeParameter>,
     /// For structs: field name -> type annotation.
     pub struct_fields: Option<HashMap<String, TypeAnnotation>>,
     /// For structs: field name -> declared visibility. Importers keep the

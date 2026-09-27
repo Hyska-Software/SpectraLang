@@ -1,0 +1,48 @@
+module domain.release
+
+public record Artifact {
+    public version: int,
+    public checksum: int,
+    public risk: int,
+    public published: bool,
+    public validation_mse: float,
+    public drift_score: float,
+}
+
+public record Envelope<T> {
+    public trace_id: string,
+    public sequence: int,
+    public payload: T,
+}
+
+public enum Phase {
+    Queued,
+    Released,
+    Rejected(string),
+}
+
+public record PipelineSummary {
+    public phase: Phase,
+    public artifact: Artifact,
+    public completed_stages: int,
+    public event_count: int,
+    public audit_checksum: int,
+    public last_event_code: int,
+    public error: string,
+}
+
+public func advance<T>(message: Envelope<T>) returns Envelope<T> {
+    return Envelope<T> {
+        trace_id: message.trace_id,
+        sequence: message.sequence + 1,
+        payload: message.payload,
+    }
+}
+
+public func phase_code(phase: Phase) returns int {
+    return match phase {
+        when Phase::Queued then 0,
+        when Phase::Released then 1,
+        when Phase::Rejected(_) then -1
+    }
+}

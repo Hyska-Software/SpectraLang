@@ -1,0 +1,75 @@
+module policies.strategies
+
+from policies.contracts import DispatchPolicy
+
+public record EconomicPolicy {
+    public carbon_weight: int,
+    public reserve_percent: int,
+    public emergency_threshold: int,
+}
+
+public record ResilientPolicy {
+    public carbon_weight: int,
+    public reserve_percent: int,
+    public emergency_threshold: int,
+}
+
+public record CleanPolicy {
+    public carbon_weight: int,
+    public reserve_percent: int,
+    public emergency_threshold: int,
+}
+
+impl DispatchPolicy for EconomicPolicy {
+    func name( & self) returns string {
+        return "economic"
+    }
+
+    func order_score( & self, marginal_cost_cents: int, emission_g_per_kwh: int) returns int {
+        return marginal_cost_cents + emission_g_per_kwh * self.carbon_weight / 1000
+    }
+
+    func reserve_kwh( & self, battery_capacity_kwh: int) returns int {
+        return battery_capacity_kwh * self.reserve_percent / 100
+    }
+
+    func emergency_threshold_kw( & self) returns int {
+        return self.emergency_threshold
+    }
+}
+
+impl DispatchPolicy for ResilientPolicy {
+    func name( & self) returns string {
+        return "resilient"
+    }
+
+    func order_score( & self, marginal_cost_cents: int, emission_g_per_kwh: int) returns int {
+        return marginal_cost_cents + emission_g_per_kwh * self.carbon_weight / 1000
+    }
+
+    func reserve_kwh( & self, battery_capacity_kwh: int) returns int {
+        return battery_capacity_kwh * self.reserve_percent / 100
+    }
+
+    func emergency_threshold_kw( & self) returns int {
+        return self.emergency_threshold
+    }
+}
+
+impl DispatchPolicy for CleanPolicy {
+    func name( & self) returns string {
+        return "clean"
+    }
+
+    func order_score( & self, marginal_cost_cents: int, emission_g_per_kwh: int) returns int {
+        return marginal_cost_cents + emission_g_per_kwh * self.carbon_weight / 1000
+    }
+
+    func reserve_kwh( & self, battery_capacity_kwh: int) returns int {
+        return battery_capacity_kwh * self.reserve_percent / 100
+    }
+
+    func emergency_threshold_kw( & self) returns int {
+        return self.emergency_threshold
+    }
+}

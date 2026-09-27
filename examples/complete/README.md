@@ -1,10 +1,10 @@
 # Spectra complete example projects
 
-27 complete `.spectra` projects. Projects 01–17 are self-validating and print an
+30 complete `.spectra` projects. Projects 01–17 are self-validating and print an
 `ok` line; `18-spectragit` is a local version-control CLI, `19-spectraboard` is
 a local task-board CLI, `20-spectraledger` is a local personal-finance CLI,
 `21-spectrahabit` is a local habit tracker, and `22-spectravision` is an
-end-to-end convolutional image classifier; `23-spectrapulse` adds differentiable temporal attention for sensor forecasting; `24-spectraroute` adds tensor-backed route planning; `25-spectragraph` adds graph neural network training; `26-spectravit` adds a patch-based Vision Transformer; `27-spectradiffuse` trains a denoising diffusion model for a synthetic 2D mixture. Projects 18–27 have their own
+end-to-end convolutional image classifier; `23-spectrapulse` adds differentiable temporal attention for sensor forecasting; `24-spectraroute` adds tensor-backed route planning; `25-spectragraph` adds graph neural network training; `26-spectravit` adds a patch-based Vision Transformer; `27-spectradiffuse` trains a denoising diffusion model for a synthetic 2D mixture; `28-spectrarelease` combines a trained tensor model, drift gates, rollback and an async trait-based release pipeline; `29-spectraquant` prices options with tensor Monte Carlo and pathwise autodiff while measuring portfolio tail risk; `30-spectragrid` trains a residual MLP forecaster and dispatches a battery-backed microgrid under economic, resilient and low-carbon policies. Projects 18–30 have their own
 integration harnesses.
 
 Run any project (from the repo root):
@@ -70,6 +70,9 @@ spectralang run examples/complete/22-spectravision
 | 25 | `25-spectragraph` | Classificação de nós com GCN, adjacência tensorial, LayerNorm/GELU, autodiff, AdamW e holdout JIT/AOT |
 | 26 | `26-spectravit` | Classificação de glifos com patch embeddings, token de classe, posição aprendida, atenção multi-head, MLP residual, autodiff e AdamW |
 | 27 | `27-spectradiffuse` | Geração de pontos com DDPM, agenda beta linear, embedding temporal senoidal, MLP residual, autodiff, AdamW e amostragem reversa JIT/AOT |
+| 28 | `28-spectrarelease` | Pipeline assíncrona de release com traits dinâmicos, MLP residual, LayerNorm/GELU/dropout, autodiff/AdamW, holdout, detecção de drift, rollback e integração JIT/AOT |
+| 29 | `29-spectraquant` | Risco quantitativo em módulos: Monte Carlo GBM, preços de call/put, Greeks por autodiff, VaR/CVaR, política de exposição via trait dinâmico, concorrência e integração JIT/AOT |
+| 30 | `30-spectragrid` | Previsão de carga em dataset sintético com MLP residual, LayerNorm, GELU, dropout, autodiff e AdamW; despacho de bateria e geradores por mérito, políticas de custo/carbono/reserva, verificador independente, cenários concorrentes e integração JIT/AOT (perfil de 6 períodos, até 3 geradores) |
 
 ## Performance comparisons (Spectra vs Go vs Rust)
 

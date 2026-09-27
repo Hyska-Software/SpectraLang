@@ -1,0 +1,114 @@
+module quant.monte_carlo
+
+import std.math as math
+import std.tensor as tensor
+from contracts.valuator import OptionValuator
+from domain.model import Envelope
+from domain.model import OptionContract
+from domain.model import OptionKind
+from domain.model import Quote
+
+public record MonteCarloValuator {
+    public sample_count: int,
+}
+
+record PriceTape {
+    terminal: int,
+    spot: int,
+    volatility: int,
+}
+
+func simulate(contract: OptionContract, sample_count: int, seed_offset: int, tracked: bool) returns PriceTape {
+    tensor.free_all()
+    tensor.seed(contract.seed + seed_offset)
+    tensor.set_grad_enabled(tracked)
+    let shocks     = tensor.normal_f(sample_count, 0.0, 1.0)
+    let spot       = tensor.full_f(sample_count, contract.spot)
+    let volatility = tensor.full_f(sample_count, contract.volatility)
+    if tracked {
+        spot = tensor.requires_grad(spot, true)
+        volatility = tensor.requires_grad(volatility, true)
+    }
+    let variance = tensor.mul(volatility, volatility)
+    let drift = tensor.sub(
+        tensor.full_f(sample_count, contract.rate * contract.maturity),
+        tensor.mul(variance, tensor.full_f(sample_count, 0.5 * contract.maturity)),
+    )
+    let diffusion = tensor.mul(
+        tensor.mul(volatility, tensor.full_f(sample_count, math.sqrt_f(contract.maturity))),
+        shocks,
+    )
+    return PriceTape {
+        terminal: tensor.mul(spot, tensor.exp_f(tensor.add(drift, diffusion))),
+        spot: spot,
+        volatility: volatility,
+    }
+}
+
+func intrinsic_values(contract: OptionContract, terminal: int, sample_count: int) returns int {
+    let strike = tensor.full_f(sample_count, contract.strike)
+    return match contract.kind {
+        when OptionKind::Call then tensor.relu(tensor.sub(terminal, strike)),
+        when OptionKind::Put then tensor.relu(tensor.sub(strike, terminal))
+    }
+}
+
+public func scenario_pnl(contract: OptionContract, fair_value: float, sample_count: int) returns int {
+    let tape       = simulate(contract, sample_count, 1701, false)
+    let payoff     = intrinsic_values(contract, tape.terminal, sample_count)
+    let stock_move = tensor.sub(tape.terminal, tensor.full_f(sample_count, contract.spot))
+    let stock_pnl  = tensor.mul(stock_move, tensor.full_f(sample_count, contract.units as float))
+    let option_pnl = tensor.mul(
+        tensor.sub(payoff, tensor.full_f(sample_count, fair_value)),
+        tensor.full_f(sample_count, contract.units as float),
+    )
+    let portfolio_pnl = tensor.add(stock_pnl, option_pnl)
+    tensor.set_grad_enabled( false)
+    return portfolio_pnl
+}
+
+func quote(contract: OptionContract, sample_count: int) returns Quote {
+    let tape               = simulate(contract, sample_count, 0, true)
+    let payoff             = intrinsic_values(contract, tape.terminal, sample_count)
+    let discount           = math.pow_f(math.e_const(), 0.0 - contract.rate * contract.maturity)
+    let discounted_samples = tensor.mul(payoff, tensor.full_f(sample_count, discount))
+    let average_samples = tensor.mul(
+        discounted_samples,
+        tensor.full_f(sample_count, 1.0 /(sample_count as float)),
+    )
+    let price_tensor = tensor.sum_t(average_samples)
+    tensor.backward(price_tensor)
+    let fair_value = tensor.get_f(price_tensor, 0)
+    let spot_gradient = tensor.grad(tape.spot)
+    let delta = tensor.sum_f(spot_gradient)
+    let volatility_gradient = tensor.grad(tape.volatility)
+    let vega = tensor.sum_f(volatility_gradient)
+    let centered = tensor.sub(discounted_samples, tensor.full_f(sample_count, fair_value))
+    let squared = tensor.mul(centered, centered)
+    let variance = tensor.sum_f(squared) /(sample_count - 1) as float
+    let standard_error = math.sqrt_f(variance / sample_count as float)
+    tensor.set_grad_enabled( false)
+    tensor.free_all()
+    return Quote {
+        fair_value: fair_value,
+        delta: delta,
+        vega: vega,
+        standard_error: standard_error,
+        samples: sample_count,
+    }
+}
+
+impl OptionValuator for MonteCarloValuator {
+    async func price( & self, request: Envelope<OptionContract>) returns Result<Envelope<Quote>, string> {
+        let contract = request.payload
+        if self.sample_count < 32 or contract.spot <= 0.0 or contract.strike <= 0.0 or contract.volatility <= 0.0 or contract.maturity <= 0.0 or contract.units <= 0 {
+            return Result::Err("invalid-contract-or-sample-count")
+        }
+        let result = quote(contract, self.sample_count)
+        return Result::Ok(Envelope<Quote> {
+                trace_id: request.trace_id,
+                sequence: request.sequence + 1,
+                payload: result,
+        })
+    }
+}

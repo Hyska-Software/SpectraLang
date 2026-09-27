@@ -1,0 +1,40 @@
+module stages.publish
+
+from contracts.stage import ReleaseStage
+from domain.release import advance
+from domain.release import Artifact
+from domain.release import Envelope
+
+public record PublishStage {
+    public registry_id: int,
+}
+
+async func reserve_registry_slot(checksum: int, registry_id: int) returns int {
+    return checksum + registry_id * 1000
+}
+
+impl ReleaseStage for PublishStage {
+    func label( & self) returns string {
+        return "publish"
+    }
+
+    async func apply( & self, message: Envelope<Artifact>) returns Result<Envelope<Artifact>, string> {
+        let receipt = await reserve_registry_slot(message.payload.checksum, self.registry_id)
+        if receipt <= 0 {
+            return Result::Err("registry-rejected")
+        }
+        let published = Artifact {
+            version: message.payload.version,
+            checksum: receipt,
+            risk: message.payload.risk,
+            published: true,
+            validation_mse: message.payload.validation_mse,
+            drift_score: message.payload.drift_score,
+        }
+        return Result::Ok(advance(Envelope<Artifact> {
+                    trace_id: message.trace_id,
+                    sequence: message.sequence,
+                    payload: published,
+        }))
+    }
+}

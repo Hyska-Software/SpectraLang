@@ -1,0 +1,53 @@
+module ml.training
+
+import std.ml as ml
+import std.tensor as tensor
+from ml.adamw import AdamWState
+from ml.calibrator import Calibrator
+from ml.telemetry import TelemetrySet
+import ml.adamw as adamw
+import ml.calibrator as calibrator
+
+const BATCH_SIZE = 8
+
+public record FitResult {
+    public model: Calibrator,
+    public steps: int,
+    public initial_loss: float,
+    public final_loss: float,
+}
+
+func fixed_loss(model: Calibrator, data: TelemetrySet) returns float {
+    let prediction = calibrator.forward(model, data.features, data.count, false)
+    return tensor.get_f(ml.mse_loss(prediction, data.targets), 0)
+}
+
+public func fit(model: Calibrator, data: TelemetrySet, steps: int) returns FitResult {
+    tensor.set_grad_enabled( false)
+    let initial_loss      = fixed_loss(model, data)
+    let state: AdamWState = adamw.create(model)
+    tensor.seed(282805)
+    tensor.set_grad_enabled( true)
+    let step = 0
+    while step < steps {
+        let offset   = (step * BATCH_SIZE) % (data.count - BATCH_SIZE + 1)
+        let features = tensor.slice(data.features, offset * 3, (offset + BATCH_SIZE) * 3)
+        let targets  = tensor.slice(data.targets, offset, offset + BATCH_SIZE)
+        adamw.zero_grad(model)
+        let prediction = calibrator.forward(model, features, BATCH_SIZE, true)
+        let loss       = ml.mse_loss(prediction, targets)
+        tensor.backward(loss)
+        let rate = ml.exp_lr(0.012, 0.998, step + 1)
+        adamw.update(model, state, rate, step + 1)
+        step = step + 1
+    }
+    tensor.set_grad_enabled( false)
+    let final_loss = fixed_loss(model, data)
+    tensor.set_grad_enabled( true)
+    return FitResult {
+        model: model,
+        steps: step,
+        initial_loss: initial_loss,
+        final_loss: final_loss,
+    }
+}

@@ -60,6 +60,34 @@ impl ASTLowering {
                         .iter()
                         .map(|argument| self.lower_expression(argument, ir_func))
                         .collect();
+                    if self.generic_functions.contains_key(&function_name) {
+                        let concrete_types =
+                            self.infer_generic_concrete_types(&function_name, arguments);
+                        let request = MonomorphizationRequest {
+                            generic_name: function_name.clone(),
+                            concrete_types,
+                        };
+                        let mangled = request.mangled_name();
+                        if !self.generated_specializations.contains_key(&mangled) {
+                            self.pending_specializations.push(request);
+                        }
+                        self.append_hidden_size_args(
+                            &[mangled.as_str(), function_name.as_str()],
+                            arguments,
+                            &mut call_args,
+                            ir_func,
+                        );
+                        let is_unit_return = self.user_function_returns_unit(&mangled)
+                            || self.user_function_returns_unit(&function_name);
+                        if is_unit_return {
+                            self.builder.build_call(ir_func, mangled, call_args, false);
+                            return self.builder.build_const_int(ir_func, 0);
+                        }
+                        return self.require_value(
+                            self.builder.build_call(ir_func, mangled, call_args, true),
+                            "qualified generic user-module function call did not produce its declared result",
+                        );
+                    }
                     let resolved = self.resolve_user_function_symbol(&function_name);
                     self.append_hidden_size_args(
                         &[resolved.as_str(), function_name.as_str()],

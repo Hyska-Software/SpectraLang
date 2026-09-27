@@ -254,7 +254,20 @@ impl ASTLowering {
                 let mut final_args: Vec<TypeAnnotation> = if let Some(args) = inferred_args {
                     args
                 } else {
-                    type_args.clone()
+                    [
+                        self.current_expected_annotation.as_ref(),
+                        self.current_function_return_annotation.as_ref(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .find_map(|annotation| match &annotation.kind {
+                        TypeAnnotationKind::Generic {
+                            name: context_name,
+                            type_args: context_args,
+                        } if context_name == enum_name => Some(context_args.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| type_args.clone())
                 };
 
                 self.fill_type_args_from_context(enum_name, &mut final_args);

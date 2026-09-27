@@ -1,0 +1,13 @@
+module main
+
+from contracts.stage import ReleaseStage
+from stages.build import BuildStage
+
+public func main() returns int {
+    let stage                     = BuildStage { value: 7 }
+    let dynamic: dyn ReleaseStage = stage as dyn ReleaseStage
+    if dynamic.label() != "build" {
+        return 1
+    }
+    return 0
+}

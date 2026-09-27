@@ -1,0 +1,9 @@
+module contracts.stage
+
+from domain.release import Artifact
+from domain.release import Envelope
+
+public trait ReleaseStage {
+    func label( & self) returns string
+    async func apply( & self, message: Envelope<Artifact>) returns Result<Envelope<Artifact>, string>
+}

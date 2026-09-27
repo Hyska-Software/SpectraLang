@@ -1,0 +1,5 @@
+module contracts.stage
+
+public trait ReleaseStage {
+    func label( & self) returns string
+}

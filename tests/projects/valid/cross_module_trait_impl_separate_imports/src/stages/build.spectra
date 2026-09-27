@@ -1,0 +1,13 @@
+module stages.build
+
+from contracts.stage import ReleaseStage
+
+public record BuildStage {
+    public value: int,
+}
+
+impl ReleaseStage for BuildStage {
+    func label( & self) returns string {
+        return "build"
+    }
+}

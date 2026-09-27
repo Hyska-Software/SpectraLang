@@ -1,0 +1,120 @@
+module pipeline.runner
+
+from std.collections import List
+import std.collections as collections
+from contracts.stage import ReleaseStage
+from domain.release import Artifact
+from domain.release import Envelope
+from domain.release import Phase
+from domain.release import PipelineSummary
+from stages.build import BuildStage
+from stages.publish import PublishStage
+from stages.security import SecurityStage
+
+func stage_code(label: string) returns int {
+    if label == "build" {
+        return 10
+    }
+    if label == "security" {
+        return 20
+    }
+    return 30
+}
+
+func record_event(events: List<int>, code: int, sequence: int) returns int {
+    collections.list_push(events, code * (sequence + 1))
+    return 0
+}
+
+func summarize(
+    phase: Phase,
+    artifact: Artifact,
+    completed_stages: int,
+    error_message: string,
+    events: List<int>
+) returns PipelineSummary {
+    let weighted_codes = collections.list_map(events, | code: int | code)
+    let successful_codes = collections.list_filter(
+        weighted_codes,
+        | code: int | code > 0,
+    )
+    let audit_checksum = collections.list_reduce(
+        successful_codes,
+        0,
+        | total: int, code: int | total + code,
+    )
+    let event_count     = collections.list_len(events)
+    let maybe_last      = collections.list_get_option(weighted_codes, event_count - 1)
+    let last_event_code = 0
+    if let Option::Some(value) = maybe_last {
+        last_event_code = value
+    }
+    collections.list_sort_by(weighted_codes, | left: int, right: int | left - right)
+    collections.list_free(successful_codes)
+    collections.list_free(weighted_codes)
+    collections.list_free(events)
+    return PipelineSummary {
+        phase: phase,
+        artifact: artifact,
+        completed_stages: completed_stages,
+        event_count: event_count,
+        audit_checksum: audit_checksum,
+        last_event_code: last_event_code,
+        error: error_message,
+    }
+}
+
+public async func execute(artifact: Artifact, max_risk: int, minimum_score: int) returns PipelineSummary {
+    let events: List<int> = collections.list_new()
+    record_event(events, 1, 0)
+
+    let message: Envelope<Artifact> = Envelope<Artifact> {
+        trace_id: "release-2026-28",
+        sequence: 0,
+        payload: artifact,
+    }
+    let builder  = BuildStage { salt: 31 }
+    let security = SecurityStage {
+        max_risk: max_risk,
+        minimum_score: minimum_score,
+        maximum_validation_mse: 0.04,
+        maximum_drift_score: 0.05,
+    }
+    let publisher                          = PublishStage { registry_id: 7 }
+    let build_handler: dyn ReleaseStage    = builder as dyn ReleaseStage
+    let security_handler: dyn ReleaseStage = security as dyn ReleaseStage
+    let publish_handler: dyn ReleaseStage  = publisher as dyn ReleaseStage
+
+    let build_result = await build_handler.apply(message)
+    if let Result::Err(problem) = build_result {
+        record_event(events, -stage_code(build_handler.label()), 1)
+        return summarize(Phase::Rejected(problem), artifact, 0, problem, events)
+    }
+    if let Result::Ok(built) = build_result {
+        record_event(events, stage_code(build_handler.label()), built.sequence)
+        let security_result = await security_handler.apply(built)
+        if let Result::Err(problem) = security_result {
+            record_event(events, -stage_code(security_handler.label()), built.sequence + 1)
+            return summarize(Phase::Rejected(problem), built.payload, 1, problem, events)
+        }
+        if let Result::Ok(verified) = security_result {
+            record_event(events, stage_code(security_handler.label()), verified.sequence)
+            let publish_result = await publish_handler.apply(verified)
+            if let Result::Err(problem) = publish_result {
+                record_event(events, -stage_code(publish_handler.label()), verified.sequence + 1)
+                return summarize(Phase::Rejected(problem), verified.payload, 2, problem, events)
+            }
+            if let Result::Ok(published) = publish_result {
+                record_event(events, stage_code(publish_handler.label()), published.sequence)
+                return summarize(Phase::Released, published.payload, 3, "", events)
+            }
+        }
+    }
+    return summarize(
+        Phase::Rejected("unreachable-stage-result"),
+        artifact,
+        0,
+        "unreachable-stage-result",
+        events,
+    )
+}

@@ -1,0 +1,9 @@
+module contracts.valuator
+
+from domain.model import Envelope
+from domain.model import OptionContract
+from domain.model import Quote
+
+public trait OptionValuator {
+    async func price( & self, request: Envelope<OptionContract>) returns Result<Envelope<Quote>, string>
+}

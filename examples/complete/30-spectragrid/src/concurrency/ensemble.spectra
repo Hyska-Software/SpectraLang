@@ -1,0 +1,111 @@
+module concurrency.ensemble
+
+import std.concurrent as concurrent
+import std.convert as convert
+from domain.model import DispatchBuffers
+from domain.model import DispatchReport
+from domain.model import GridCase
+from policies.contracts import DispatchPolicy
+from policies.strategies import EconomicPolicy
+import engine.solver as solver
+import policies.strategies as strategies
+
+public record EnsembleSummary {
+    public low_demand_cost_cents: int,
+    public high_demand_cost_cents: int,
+    public demand_cost_delta_cents: int,
+    public task_count: int,
+    public channel_drained: bool,
+}
+
+func cost_at_factor(factor_percent: int) returns int {
+    let demand    = [100, 130, 120, 80, 120, 90]
+    let solar     = [0, 10, 35, 70, 55, 0]
+    let wind      = [35, 30, 25, 20, 25, 40]
+    let capacity  = [100, 120, 0]
+    let ramp      = [60, 120, 0]
+    let cost      = [30, 90, 0]
+    let emissions = [900, 250, 0]
+    let startups  = [1000, 1500, 0]
+
+    let period = 0
+    while period < 6 {
+        demand[period] = demand[period] * factor_percent / 100
+        period = period + 1
+    }
+    let grid = GridCase {
+        name: "ensemble-" + convert.int_to_string(factor_percent),
+        period_count: 6,
+        demand_kw: demand,
+        solar_kw: solar,
+        wind_kw: wind,
+        generator_count: 2,
+        generator_capacity_kw: capacity,
+        generator_ramp_kw: ramp,
+        marginal_cost_cents: cost,
+        emission_g_per_kwh: emissions,
+        startup_cost_cents: startups,
+        battery_capacity_kwh: 200,
+        battery_power_kw: 50,
+        initial_soc_kwh: 140,
+        charge_efficiency_percent: 90,
+        discharge_efficiency_percent: 90,
+    }
+    let buffers = DispatchBuffers {
+        renewable_to_load_kw: [0, 0, 0, 0, 0, 0],
+        battery_discharge_kw: [0, 0, 0, 0, 0, 0],
+        battery_charge_input_kw: [0, 0, 0, 0, 0, 0],
+        generator_output_kw: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        generator_order: [0, 0, 0],
+        unserved_kw: [0, 0, 0, 0, 0, 0],
+        curtailed_kw: [0, 0, 0, 0, 0, 0],
+        soc_after_kwh: [0, 0, 0, 0, 0, 0],
+    }
+    let policy = EconomicPolicy {
+        carbon_weight: 0,
+        reserve_percent: 15,
+        emergency_threshold: 1000,
+    }
+    let dynamic: dyn DispatchPolicy = policy as dyn DispatchPolicy
+    return match solver.solve(grid, buffers, dynamic) {
+        when Result::Ok(report) then report.fuel_cost_cents,
+        when Result::Err(_) then -1
+    }
+}
+
+public func demand_sensitivity() returns EnsembleSummary {
+    concurrent.reset()
+    let low_task = concurrent.task_spawn_fn(
+        | factor: int | cost_at_factor(factor),
+        95,
+    )
+    let high_task = concurrent.task_spawn_fn(
+        | factor: int | cost_at_factor(factor),
+        110,
+    )
+    let low_cost = concurrent.task_join(low_task)
+    let high_cost = concurrent.task_join(high_task)
+    let task_count = concurrent.stats_tasks_spawned()
+    let channel = concurrent.channel_new()
+    let sent = concurrent.channel_send(channel, low_cost) and concurrent.channel_send(channel, high_cost)
+    let collected_cost = concurrent.channel_recv(channel) + concurrent.channel_recv(channel)
+    let channel_empty = concurrent.channel_len(channel) == 0
+    concurrent.channel_close(channel)
+    concurrent.reset()
+    if not sent or not channel_empty or task_count != 2 or low_cost < 0 or high_cost < 0 or high_cost <= low_cost or collected_cost != low_cost + high_cost {
+        return EnsembleSummary {
+            low_demand_cost_cents: low_cost,
+            high_demand_cost_cents: high_cost,
+            demand_cost_delta_cents: -1,
+            task_count: task_count,
+            channel_drained: channel_empty,
+        }
+    }
+    return EnsembleSummary {
+        low_demand_cost_cents: low_cost,
+        high_demand_cost_cents: high_cost,
+        demand_cost_delta_cents: high_cost - low_cost,
+        task_count: task_count,
+        channel_drained: channel_empty,
+    }
+}

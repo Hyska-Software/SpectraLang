@@ -1,0 +1,60 @@
+module forecast.data
+
+import std.tensor as tensor
+
+public record ForecastSet {
+    public features: int,
+    public targets: int,
+    public count: int,
+}
+
+func make_set(count: int, offset: int, seed_value: int) returns ForecastSet {
+    tensor.seed(seed_value)
+    let features = tensor.full_f(count * 3, 0.0)
+    let targets  = tensor.full_f(count, 0.0)
+    let noise    = tensor.normal_f(count, 0.0, 0.002)
+    let row      = 0
+    while row < count {
+        let sample = row + offset
+        let hour   = (sample % 24) as float / 23.0
+        let solar  = ((sample * 17 + 13) % 100) as float / 100.0
+        let wind   = ((sample * 29 + 7) % 100) as float / 100.0
+        let demand = 0.42 +
+            hour *
+            0.12 +
+            (1.0 - solar) *
+            0.28 +
+            wind *
+            0.12 +
+            tensor.get_f(noise, row)
+        tensor.set_f(features, row * 3, hour)
+        tensor.set_f(features, row * 3 + 1, solar)
+        tensor.set_f(features, row * 3 + 2, wind)
+        tensor.set_f(targets, row, demand)
+        row = row + 1
+    }
+    return ForecastSet { features: features, targets: targets, count: count }
+}
+
+public func training_set() returns ForecastSet {
+    return make_set(96, 0, 302801)
+}
+
+public func holdout_set() returns ForecastSet {
+    return make_set(24, 197, 302802)
+}
+
+public func live_features(solar_kw: [int], wind_kw: [int]) returns int {
+    let features = tensor.full_f(18, 0.0)
+    let period   = 0
+    while period < 6 {
+        let hour  = period as float / 5.0
+        let solar = solar_kw[period] as float / 100.0
+        let wind  = wind_kw[period] as float / 60.0
+        tensor.set_f(features, period * 3, hour)
+        tensor.set_f(features, period * 3 + 1, solar)
+        tensor.set_f(features, period * 3 + 2, wind)
+        period = period + 1
+    }
+    return features
+}

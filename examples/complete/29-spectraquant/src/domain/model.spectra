@@ -1,0 +1,44 @@
+module domain.model
+
+public enum OptionKind {
+    Call,
+    Put,
+}
+
+public record Envelope<T> {
+    public trace_id: string,
+    public sequence: int,
+    public payload: T,
+}
+
+public record OptionContract {
+    public symbol: string,
+    public kind: OptionKind,
+    public spot: float,
+    public strike: float,
+    public volatility: float,
+    public rate: float,
+    public maturity: float,
+    public units: int,
+    public seed: int,
+}
+
+public record Quote {
+    public fair_value: float,
+    public delta: float,
+    public vega: float,
+    public standard_error: float,
+    public samples: int,
+}
+
+public record RiskMetrics {
+    public value_at_risk_cents: int,
+    public expected_shortfall_cents: int,
+    public worst_loss_cents: int,
+    public scenario_count: int,
+}
+
+public enum RiskDecision {
+    Approved,
+    Rejected(string),
+}

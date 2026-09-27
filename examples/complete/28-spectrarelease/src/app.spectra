@@ -1,0 +1,171 @@
+module app
+
+import std.convert as convert
+import std.io as io
+import std.ml as ml
+import std.option as option
+import std.tensor as tensor
+from domain.release import Artifact
+from domain.release import Envelope
+from domain.release import Phase
+from domain.release import PipelineSummary
+from ml.calibrator import Calibrator
+from ml.evaluation import EvaluationReport
+from ml.telemetry import TelemetrySet
+from ml.training import FitResult
+import domain.quality as quality
+import domain.release as release
+import ml.calibrator as calibrator
+import ml.evaluation as evaluation
+import ml.telemetry as telemetry
+import ml.training as training
+import pipeline.rollback as rollback
+import pipeline.runner as runner
+
+func expect_phase(summary: PipelineSummary, expected: int) returns bool {
+    return release.phase_code(summary.phase) == expected
+}
+
+public func run() returns int {
+    tensor.free_all()
+    tensor.seed(282800)
+    tensor.set_grad_enabled( true)
+
+    let train_set   = telemetry.training_set()
+    let holdout_set = telemetry.holdout_set()
+    let live_set    = telemetry.live_set()
+    let shifted_set = telemetry.shifted_set()
+    let model       = calibrator.create()
+    if train_set.count != 48 or holdout_set.count != 16 or ml.module_parameter_count(model.module_handle) != 8 {
+        io.eprintln("erro: o conjunto sintetico ou o calibrador tem forma inesperada")
+        tensor.free_all()
+        return 1
+    }
+
+    let fit_result = training.fit(model, train_set, 240)
+    tensor.set_grad_enabled( false)
+    let report         = evaluation.evaluate(fit_result.model, train_set, holdout_set, live_set)
+    let shifted_report = evaluation.evaluate(fit_result.model, train_set, holdout_set, shifted_set)
+    tensor.set_grad_enabled( true)
+    if fit_result.steps != 240 or fit_result.final_loss >= fit_result.initial_loss {
+        io.eprintln("erro: AdamW nao reduziu a perda de validacao")
+        tensor.free_all()
+        return 2
+    }
+    if report.validation_mse >= report.zero_baseline_mse or report.drift_score > 0.05 {
+        io.eprintln("erro: holdout ou monitoramento da telemetria nao passou")
+        tensor.free_all()
+        return 3
+    }
+    if shifted_report.drift_score <= 0.05 {
+        io.eprintln("erro: o detector nao identificou a mudanca acentuada de distribuicao")
+        tensor.free_all()
+        return 4
+    }
+
+    let candidate = Artifact {
+        version: 7,
+        checksum: 0,
+        risk: 2,
+        published: false,
+        validation_mse: report.validation_mse,
+        drift_score: report.drift_score,
+    }
+    let envelope: Envelope<Artifact> = Envelope<Artifact> {
+        trace_id: "release-2026-28",
+        sequence: 0,
+        payload: candidate,
+    }
+    if quality.score_envelope(envelope) != quality.score(candidate) {
+        io.eprintln("erro: a politica generica nao preservou o envelope importado")
+        tensor.free_all()
+        return 5
+    }
+    if not quality.eligible(candidate, 50) {
+        io.eprintln("erro: a avaliacao generica rejeitou um candidato valido")
+        tensor.free_all()
+        return 6
+    }
+
+    let released = block_on(runner.execute(candidate, 20, 50))
+    if not expect_phase(released, 1) or released.completed_stages != 3 or not released.artifact.published {
+        io.eprintln("erro: release validado nao completou as tres etapas")
+        tensor.free_all()
+        return 7
+    }
+    if released.event_count != 4 or released.audit_checksum <= 0 or released.last_event_code <= 0 {
+        io.eprintln("erro: o relatorio de auditoria perdeu eventos ou reducoes")
+        tensor.free_all()
+        return 8
+    }
+
+    let rejected_candidate = Artifact {
+        version: 8,
+        checksum: 0,
+        risk: 80,
+        published: false,
+        validation_mse: report.validation_mse,
+        drift_score: report.drift_score,
+    }
+    let rejected = block_on(runner.execute(rejected_candidate, 20, 50))
+    if not expect_phase(rejected, -1) or rejected.completed_stages != 1 or rejected.error != "risk-limit" {
+        io.eprintln("erro: a politica de risco nao interrompeu o pipeline")
+        tensor.free_all()
+        return 9
+    }
+    if rejected.artifact.published or rejected.event_count != 3 {
+        io.eprintln("erro: um release rejeitado alterou o artefato ou perdeu o evento de falha")
+        tensor.free_all()
+        return 10
+    }
+
+    let drift_candidate = Artifact {
+        version: 9,
+        checksum: 0,
+        risk: 2,
+        published: false,
+        validation_mse: report.validation_mse,
+        drift_score: shifted_report.drift_score,
+    }
+    let drift_rejected = block_on(runner.execute(drift_candidate, 20, 50))
+    if not expect_phase(drift_rejected, -1) or drift_rejected.error != "feature-drift-limit" {
+        io.eprintln("erro: o guardrail de drift permitiu publicar uma distribuicao deslocada")
+        tensor.free_all()
+        return 11
+    }
+
+    let compensated = rollback.compensate(released.artifact)
+    if option.is_none(compensated) or not rollback.is_compensated(compensated) {
+        io.eprintln("erro: a compensacao nao reverteu o estado publicado")
+        tensor.free_all()
+        return 12
+    }
+    let undone = option.option_unwrap(compensated)
+
+    io.println("SPECTRARELEASE ok stages=3 model=mlp-residual-layernorm-dropout autodiff=adamw")
+    io.println(
+        "training: parameters=" + convert.int_to_string(ml.module_parameter_count(model.module_handle)) +
+            " steps=" + convert.int_to_string(fit_result.steps) +
+            " initial_mse=" + convert.float_to_string(fit_result.initial_loss) +
+            " final_mse=" + convert.float_to_string(fit_result.final_loss),
+    )
+    io.println(
+        "evaluation: holdout_mse=" + convert.float_to_string(report.validation_mse) +
+            " zero_baseline_mse=" + convert.float_to_string(report.zero_baseline_mse) +
+            " live_drift=" + convert.float_to_string(report.drift_score) +
+            " shifted_drift=" + convert.float_to_string(shifted_report.drift_score),
+    )
+    io.println(
+        "release: version=" + convert.int_to_string(released.artifact.version) +
+            " checksum=" + convert.int_to_string(released.artifact.checksum) +
+            " events=" + convert.int_to_string(released.event_count) +
+            " audit=" + convert.int_to_string(released.audit_checksum),
+    )
+    io.println(
+        "rejection: risk=" + rejected.error +
+            " drift=" + drift_rejected.error +
+            " rollback=" + convert.bool_to_string( not undone.published),
+    )
+    tensor.free_all()
+    return 0
+}

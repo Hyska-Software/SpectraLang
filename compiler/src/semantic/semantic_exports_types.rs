@@ -27,22 +27,35 @@ impl SemanticAnalyzer {
                     } else {
                         ExportVisibility::Internal
                     };
-                    let params: Vec<Type> = func
-                        .params
-                        .iter()
-                        .map(|p| self.type_annotation_to_type(&p.ty))
-                        .collect();
+                    // The declaration pass resolves function signatures while
+                    // the function's generic parameters are in scope. Reuse
+                    // that signature instead of resolving its syntax again
+                    // here, after the generic scope has been popped; otherwise
+                    // `T` inside `Envelope<T>` degrades to `Unknown` in imports.
+                    let analyzed_signature = self.functions.get(&func.name);
+                    let params: Vec<Type> = analyzed_signature
+                        .map(|signature| signature.params.clone())
+                        .unwrap_or_else(|| {
+                            func.params
+                                .iter()
+                                .map(|param| self.type_annotation_to_type(&param.ty))
+                                .collect()
+                        });
                     // A missing `returns` annotation means unit, not unknown.
                     // Exporting `Unknown` makes importers declare an external
                     // with an unresolved IR type (midend verification error).
                     // Trait methods already normalize this way below.
-                    let return_type = Self::async_task_type(
-                        func.is_async,
-                        match &func.return_type {
-                            Some(_) => self.type_annotation_to_type(&func.return_type),
-                            None => Type::Unit,
-                        },
-                    );
+                    let return_type = analyzed_signature
+                        .map(|signature| signature.return_type.clone())
+                        .unwrap_or_else(|| {
+                            Self::async_task_type(
+                                func.is_async,
+                                match &func.return_type {
+                                    Some(_) => self.type_annotation_to_type(&func.return_type),
+                                    None => Type::Unit,
+                                },
+                            )
+                        });
                     exports.functions.insert(
                         func.name.clone(),
                         ExportedFunction {
@@ -121,6 +134,7 @@ impl SemanticAnalyzer {
                             members,
                             visibility: vis,
                             is_enum: false,
+                            type_params: s.type_params.clone(),
                             struct_fields: Some(struct_fields),
                             struct_field_visibility: Some(struct_field_visibility),
                             enum_variants: None,
@@ -203,6 +217,7 @@ impl SemanticAnalyzer {
                             members,
                             visibility: vis,
                             is_enum: true,
+                            type_params: e.type_params.clone(),
                             struct_fields: None,
                             struct_field_visibility: None,
                             enum_variants: Some(enum_variants),

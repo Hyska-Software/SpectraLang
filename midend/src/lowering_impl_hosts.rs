@@ -553,12 +553,14 @@ impl ASTLowering {
             "spectra.std.collections.map_contains" if is_scalar(arguments.get(1)) => {
                 MAP_CONTAINS_SCALAR
             }
-            "spectra.std.collections.map_get"
-            | "spectra.std.collections.map_get_option" if is_scalar(arguments.get(1)) => {
+            "spectra.std.collections.map_get" | "spectra.std.collections.map_get_option"
+                if is_scalar(arguments.get(1)) =>
+            {
                 MAP_GET_SCALAR
             }
-            "spectra.std.collections.map_remove"
-            | "spectra.std.collections.map_remove_option" if is_scalar(arguments.get(1)) => {
+            "spectra.std.collections.map_remove" | "spectra.std.collections.map_remove_option"
+                if is_scalar(arguments.get(1)) =>
+            {
                 MAP_REMOVE_SCALAR
             }
             _ => runtime_name,
@@ -719,6 +721,16 @@ impl ASTLowering {
             };
         }
 
+        if let Some(equal) =
+            self.lower_structural_value_equality(lhs, rhs, lhs_type, rhs_type, ir_func)
+        {
+            return if negate {
+                self.builder.build_not(ir_func, equal)
+            } else {
+                equal
+            };
+        }
+
         // Numeric literals are intentionally inferred as the language's
         // default `int`/`float` types.  Aggregate fields and exact-width
         // loads, however, retain their declared ABI type.  Normalize the
@@ -735,6 +747,182 @@ impl ASTLowering {
         } else {
             self.builder.build_eq(ir_func, lhs, rhs)
         }
+    }
+
+    /// Compare aggregate values by their contents. Aggregates are pointer
+    /// represented in the backend, so comparing their SSA handles only tests
+    /// allocation identity and is not value equality.
+    fn lower_structural_value_equality(
+        &mut self,
+        lhs: Value,
+        rhs: Value,
+        lhs_type: &IRType,
+        rhs_type: &IRType,
+        ir_func: &mut IRFunction,
+    ) -> Option<Value> {
+        let lhs_representation = Self::ir_type_representation_static(lhs_type);
+        let rhs_representation = Self::ir_type_representation_static(rhs_type);
+
+        match (lhs_representation, rhs_representation) {
+            (
+                IRType::Enum {
+                    name: lhs_name,
+                    variants: lhs_variants,
+                },
+                IRType::Enum {
+                    name: rhs_name,
+                    variants: rhs_variants,
+                },
+            ) if lhs_name == rhs_name && !lhs_variants.is_empty() && !rhs_variants.is_empty() => {
+                let variants = self.enum_variants_for_type(lhs_type)?;
+                if variants.is_empty() {
+                    return None;
+                }
+                Some(self.lower_enum_value_equality(lhs, rhs, &variants, ir_func))
+            }
+            (
+                IRType::Tuple {
+                    elements: lhs_fields,
+                },
+                IRType::Tuple {
+                    elements: rhs_fields,
+                },
+            ) if lhs_fields == rhs_fields => {
+                Some(self.lower_aggregate_field_equality(lhs, rhs, lhs_fields, 0, ir_func))
+            }
+            (
+                IRType::Struct {
+                    name: lhs_name,
+                    fields: lhs_fields,
+                },
+                IRType::Struct {
+                    name: rhs_name,
+                    fields: rhs_fields,
+                },
+            ) if lhs_name == rhs_name && lhs_fields == rhs_fields => {
+                if lhs_fields.is_empty() {
+                    // Empty nominal shapes are also used for recursive type
+                    // edges. Resolve only a registered empty record here;
+                    // leave unresolved or recursive shapes opaque instead
+                    // of treating them as equal or infinitely expanding them.
+                    return match self.struct_definitions.get(lhs_name) {
+                        Some(fields) if fields.is_empty() => {
+                            Some(self.builder.build_const_bool(ir_func, true))
+                        }
+                        _ => None,
+                    };
+                }
+                let field_types: Vec<IRType> = lhs_fields
+                    .iter()
+                    .map(|(_, field_type)| field_type.clone())
+                    .collect();
+                Some(self.lower_aggregate_field_equality(lhs, rhs, &field_types, 0, ir_func))
+            }
+            _ => None,
+        }
+    }
+
+    fn lower_aggregate_field_equality(
+        &mut self,
+        lhs: Value,
+        rhs: Value,
+        field_types: &[IRType],
+        base_offset: i64,
+        ir_func: &mut IRFunction,
+    ) -> Value {
+        let field_layout = layout::layout_of(field_types.iter());
+        let mut equal = self.builder.build_const_bool(ir_func, true);
+
+        for (index, field_type) in field_types.iter().enumerate() {
+            let byte_offset = base_offset + field_layout.offsets[index] as i64;
+            let lhs_field_ptr = self.builder.build_field_ptr(ir_func, lhs, byte_offset);
+            let rhs_field_ptr = self.builder.build_field_ptr(ir_func, rhs, byte_offset);
+            let lhs_field =
+                self.builder
+                    .build_load_typed(ir_func, lhs_field_ptr, field_type.clone());
+            let rhs_field =
+                self.builder
+                    .build_load_typed(ir_func, rhs_field_ptr, field_type.clone());
+            let field_equal = self
+                .lower_value_equality(lhs_field, rhs_field, field_type, field_type, false, ir_func);
+            equal = self.builder.build_and(ir_func, equal, field_equal);
+        }
+
+        equal
+    }
+
+    fn lower_enum_value_equality(
+        &mut self,
+        lhs: Value,
+        rhs: Value,
+        variants: &[(String, usize, Option<Vec<IRType>>)],
+        ir_func: &mut IRFunction,
+    ) -> Value {
+        let tag_offset = 0;
+        let lhs_tag_ptr = self.builder.build_field_ptr(ir_func, lhs, tag_offset);
+        let rhs_tag_ptr = self.builder.build_field_ptr(ir_func, rhs, tag_offset);
+        let lhs_tag = self
+            .builder
+            .build_load_typed(ir_func, lhs_tag_ptr, IRType::Int);
+        let rhs_tag = self
+            .builder
+            .build_load_typed(ir_func, rhs_tag_ptr, IRType::Int);
+        let tags_equal = self.builder.build_eq(ir_func, lhs_tag, rhs_tag);
+
+        let label = ir_func.blocks.len();
+        let dispatch = ir_func.add_block(format!("enum_eq_{label}_dispatch"));
+        let tags_differ = ir_func.add_block(format!("enum_eq_{label}_tags_differ"));
+        let default_case = ir_func.add_block(format!("enum_eq_{label}_default"));
+        let merge = ir_func.add_block(format!("enum_eq_{label}_merge"));
+        self.builder
+            .build_cond_branch(ir_func, tags_equal, dispatch, tags_differ);
+
+        self.builder.set_current_block(tags_differ);
+        let false_value = self.builder.build_const_bool(ir_func, false);
+        self.builder.build_branch(ir_func, merge);
+        let mut incoming = vec![(false_value, tags_differ)];
+
+        let mut check_block = dispatch;
+        for (index, (_, tag, payload_types)) in variants.iter().enumerate() {
+            let case_block = ir_func.add_block(format!("enum_eq_{label}_case_{index}"));
+            let next_check = if index + 1 < variants.len() {
+                ir_func.add_block(format!("enum_eq_{label}_check_{}", index + 1))
+            } else {
+                default_case
+            };
+
+            self.builder.set_current_block(check_block);
+            let expected_tag = self.builder.build_const_int(ir_func, *tag as i64);
+            let matches_variant = self.builder.build_eq(ir_func, lhs_tag, expected_tag);
+            self.builder
+                .build_cond_branch(ir_func, matches_variant, case_block, next_check);
+
+            self.builder.set_current_block(case_block);
+            let case_equal = if let Some(payload_types) = payload_types {
+                self.lower_aggregate_field_equality(lhs, rhs, payload_types, 8, ir_func)
+            } else {
+                self.builder.build_const_bool(ir_func, true)
+            };
+            let case_final = self.builder.get_current_block().unwrap_or(case_block);
+            let case_terminated = ir_func
+                .get_block(case_final)
+                .map(|block| block.terminator.is_some())
+                .unwrap_or(false);
+            if !case_terminated {
+                self.builder.build_branch(ir_func, merge);
+                incoming.push((case_equal, case_final));
+            }
+
+            check_block = next_check;
+        }
+
+        self.builder.set_current_block(default_case);
+        let invalid_tag = self.builder.build_const_bool(ir_func, false);
+        self.builder.build_branch(ir_func, merge);
+        incoming.push((invalid_tag, default_case));
+
+        self.builder.set_current_block(merge);
+        self.builder.build_phi(ir_func, incoming)
     }
 
     /// Convert a lowered value to the declared type of an aggregate field,

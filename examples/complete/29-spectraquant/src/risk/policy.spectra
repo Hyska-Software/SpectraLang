@@ -1,0 +1,25 @@
+module risk.policy
+
+from domain.model import RiskDecision
+from domain.model import RiskMetrics
+
+public trait RiskPolicy {
+    func decide( & self, metrics: RiskMetrics) returns RiskDecision
+}
+
+public record ExposureLimits {
+    public max_var_cents: int,
+    public max_expected_shortfall_cents: int,
+}
+
+impl RiskPolicy for ExposureLimits {
+    func decide( & self, metrics: RiskMetrics) returns RiskDecision {
+        if metrics.value_at_risk_cents > self.max_var_cents {
+            return RiskDecision::Rejected("var-limit")
+        }
+        if metrics.expected_shortfall_cents > self.max_expected_shortfall_cents {
+            return RiskDecision::Rejected("expected-shortfall-limit")
+        }
+        return RiskDecision::Approved
+    }
+}

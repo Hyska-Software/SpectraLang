@@ -16,7 +16,7 @@ Demonstrações gerais da linguagem e fixtures de regressão históricas:
 
 ## examples/complete — projetos integrados
 
-O índice dos 27 projetos integrados está em [complete/README.md](complete/README.md).
+O índice dos 30 projetos integrados está em [complete/README.md](complete/README.md).
 O exemplo `18-spectragit` é um CLI local de controle de versão escrito em
 SpectraLang; os comandos e limites estão em seu
 [README](complete/18-spectragit/README.md).
@@ -35,6 +35,16 @@ convolução, pooling, dropout, autodiff, AdamW, métricas e checkpoint; veja o
 O projeto `27-spectradiffuse` treina um denoiser DDPM tensorial para uma
 mistura de quatro modos 2D; treino, holdout, amostragem reversa e comparação
 JIT/AOT estão no [README](complete/27-spectradiffuse/README.md).
+O projeto `28-spectrarelease` combina treino tensorial com autodiff/AdamW,
+detecção de drift, rollback e uma pipeline assíncrona modular; veja o
+[README](complete/28-spectrarelease/README.md).
+O projeto `29-spectraquant` calcula preços de opções e Greeks com Monte Carlo
+tensorial e autodiff, agrega VaR/CVaR e aplica políticas de risco por trait
+dinâmico; o harness compara JIT e AOT.
+O projeto `30-spectragrid` treina em dados sintéticos um MLP tensorial para
+previsão de carga e usa a previsão em despacho de microrrede com bateria,
+políticas dinâmicas e validação de balanço; o exemplo cobre seis períodos e
+até três geradores, e o harness compara JIT e AOT.
 
 ## examples/stdlib — biblioteca padrão
 

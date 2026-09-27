@@ -1,0 +1,132 @@
+module forecast.optimizer
+
+import std.ml as ml
+import std.tensor as tensor
+from forecast.model import LoadForecaster
+
+public record AdamWState {
+    public input_first: int,
+    public input_second: int,
+    public input_bias_first: int,
+    public input_bias_second: int,
+    public residual_first: int,
+    public residual_second: int,
+    public residual_bias_first: int,
+    public residual_bias_second: int,
+    public norm_scale_first: int,
+    public norm_scale_second: int,
+    public norm_bias_first: int,
+    public norm_bias_second: int,
+    public output_first: int,
+    public output_second: int,
+    public output_bias_first: int,
+    public output_bias_second: int,
+}
+
+func moments(parameter: int) returns int {
+    return tensor.full_f(tensor.len(parameter), 0.0)
+}
+
+func clear(parameter: int) returns int {
+    tensor.zero_grad(parameter)
+    return 0
+}
+
+func update_parameter(parameter: int, first: int, second: int, rate: float, step: int, decay: float) returns int {
+    ml.adamw_step(parameter, first, second, rate, 0.9, 0.999, 0.00000001, step, decay)
+    return 0
+}
+
+public func create(model: LoadForecaster) returns AdamWState {
+    return AdamWState {
+        input_first: moments(model.input_weights),
+        input_second: moments(model.input_weights),
+        input_bias_first: moments(model.input_bias),
+        input_bias_second: moments(model.input_bias),
+        residual_first: moments(model.residual_weights),
+        residual_second: moments(model.residual_weights),
+        residual_bias_first: moments(model.residual_bias),
+        residual_bias_second: moments(model.residual_bias),
+        norm_scale_first: moments(model.norm_scale),
+        norm_scale_second: moments(model.norm_scale),
+        norm_bias_first: moments(model.norm_bias),
+        norm_bias_second: moments(model.norm_bias),
+        output_first: moments(model.output_weights),
+        output_second: moments(model.output_weights),
+        output_bias_first: moments(model.output_bias),
+        output_bias_second: moments(model.output_bias),
+    }
+}
+
+public func zero_grad(model: LoadForecaster) returns int {
+    clear(model.input_weights)
+    clear(model.input_bias)
+    clear(model.residual_weights)
+    clear(model.residual_bias)
+    clear(model.norm_scale)
+    clear(model.norm_bias)
+    clear(model.output_weights)
+    clear(model.output_bias)
+    return 0
+}
+
+public func update(model: LoadForecaster, state: AdamWState, rate: float, step: int) returns int {
+    update_parameter(model.input_weights, state.input_first, state.input_second, rate, step, 0.0001)
+    update_parameter(
+        model.input_bias,
+        state.input_bias_first,
+        state.input_bias_second,
+        rate,
+        step,
+        0.0,
+    )
+    update_parameter(
+        model.residual_weights,
+        state.residual_first,
+        state.residual_second,
+        rate,
+        step,
+        0.0001,
+    )
+    update_parameter(
+        model.residual_bias,
+        state.residual_bias_first,
+        state.residual_bias_second,
+        rate,
+        step,
+        0.0,
+    )
+    update_parameter(
+        model.norm_scale,
+        state.norm_scale_first,
+        state.norm_scale_second,
+        rate,
+        step,
+        0.0,
+    )
+    update_parameter(
+        model.norm_bias,
+        state.norm_bias_first,
+        state.norm_bias_second,
+        rate,
+        step,
+        0.0,
+    )
+    update_parameter(
+        model.output_weights,
+        state.output_first,
+        state.output_second,
+        rate,
+        step,
+        0.0001,
+    )
+    update_parameter(
+        model.output_bias,
+        state.output_bias_first,
+        state.output_bias_second,
+        rate,
+        step,
+        0.0,
+    )
+    return 0
+}

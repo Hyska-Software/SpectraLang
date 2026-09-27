@@ -1,0 +1,45 @@
+module services.runner
+
+from domain.model import DispatchBuffers
+from domain.model import DispatchReport
+from domain.model import Envelope
+from domain.model import GridCase
+from policies.contracts import DispatchPolicy
+import engine.solver as solver
+
+public trait GridDispatchService {
+    async func dispatch(
+        & self,
+        request: Envelope<GridCase>,
+        buffers: DispatchBuffers,
+        policy: dyn DispatchPolicy
+    ) returns Result<Envelope<DispatchReport>, string>
+}
+
+public record GridEngine { }
+
+impl GridDispatchService for GridEngine {
+    async func dispatch(
+        & self,
+        request: Envelope<GridCase>,
+        buffers: DispatchBuffers,
+        policy: dyn DispatchPolicy
+    ) returns Result<Envelope<DispatchReport>, string> {
+        if request.sequence < 0 or request.trace_id == "" {
+            return Result::Err("invalid-dispatch-envelope")
+        }
+        let solved = solver.solve(request.payload, buffers, policy)
+        if let Result::Err(problem) = solved {
+            return Result::Err(problem)
+        }
+        if let Result::Ok(report) = solved {
+            let response = Envelope<DispatchReport> {
+                trace_id: request.trace_id,
+                sequence: request.sequence + 1,
+                payload: report,
+            }
+            return Result::Ok(response)
+        }
+        return Result::Err("invalid-solver-result")
+    }
+}

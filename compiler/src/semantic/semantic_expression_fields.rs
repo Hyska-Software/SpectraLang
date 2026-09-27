@@ -40,9 +40,7 @@ impl SemanticAnalyzer {
                                     .unwrap_or_else(|p| p.into_inner())
                                     .get_module(&path)
                                     .and_then(|exports| exports.functions.get(field))
-                                    .map(|func| {
-                                        (func.params.clone(), func.return_type.clone())
-                                    })
+                                    .map(|func| (func.params.clone(), func.return_type.clone()))
                             });
                         if let Some((params, return_type)) = signature {
                             self.symbol_resolutions.insert(
@@ -222,10 +220,8 @@ impl SemanticAnalyzer {
         {
             if let Some(field_info) = struct_info.fields.get(field) {
                 FieldLookup::Found {
-                    ty: self.type_annotation_to_type_with_substitutions(
-                        &field_info.ty,
-                        &substitutions,
-                    ),
+                    ty: self
+                        .type_annotation_to_type_with_substitutions(&field_info.ty, &substitutions),
                     def_span: field_info.span,
                     visibility: field_info.visibility,
                     defining_module: struct_info.defining_module.clone(),
@@ -427,11 +423,46 @@ mod field_access_diagnostic_tests {
             "expected coded E045 for the private field `secret`: {errors:?}"
         );
         assert!(
-            !errors
-                .iter()
-                .any(|error| error.code.as_deref() == Some("E045")
-                    && error.message.contains("'ok'")),
+            !errors.iter().any(
+                |error| error.code.as_deref() == Some("E045") && error.message.contains("'ok'")
+            ),
             "the public field `ok` must stay accessible: {errors:?}"
         );
+    }
+
+    #[test]
+    fn module_alias_qualified_record_fields_keep_array_and_generic_types() {
+        let exporter = r#"
+            module domain
+
+            public record Profile {
+                public values: [int],
+                public count: int,
+            }
+
+            public record Envelope<T> {
+                public payload: T,
+                public sequence: int,
+            }
+        "#;
+        let importer = r#"
+            module consumer
+
+            import domain as model
+
+            func first(profile: model.Profile) returns int {
+                return profile.values[0]
+            }
+
+            func second(message: model.Envelope<model.Profile>) returns int {
+                return message.payload.values[1]
+            }
+        "#;
+
+        let mut exporter_module = parse_module(exporter);
+        let mut importer_module = parse_module(importer);
+        let mut modules = vec![&mut exporter_module, &mut importer_module];
+        analyze_modules(modules.as_mut_slice())
+            .expect("alias-qualified record and generic fields must retain their types");
     }
 }

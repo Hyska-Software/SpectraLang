@@ -46,6 +46,9 @@
 | 314 | 6 | contrato CLI de formatter | `PASS` | `check`, `run` | promovido para `tests/validation/` |
 | 315 | 6 | JSON HTTP e router | `PASS` | `check`, `run` | promovido para `tests/validation/` |
 | 316 | 6 | agregado final e AOT | `PASS` | objeto, link e execução AOT | promovido para `tests/validation/` |
+| 317 | 7 | tipos genéricos exportados e especialização cross-module | `PASS` após BUG | `check`, `run`, pipeline SpectraRelease JIT/AOT | promovido para `tests/projects/valid/` e regressão de validação |
+| 318 | 7 | impl de trait importada com trait e tipo em módulos distintos | `PASS` após BUG | `check`, `run`, cast para `dyn ReleaseStage` | promovido para `tests/projects/valid/` |
+| 319 | 8 | igualdade estrutural de enums e agregados | `PASS` após BUG | regressão 622 JIT/AOT, `cargo test -p spectra-midend`, SpectraQuant JIT/AOT | promovido para `tests/validation/` |
 
 ## BUG-275 — aliases aceitos pelo parser não alcançavam semântica/IR
 
@@ -89,6 +92,76 @@
   `align_of::<i64>()`.
 - Regressão: os fixtures 311 e 316 exigem emissão, link e execução AOT.
 
+## BUG-317 — parâmetros genéricos se perdiam entre módulos
+
+- Reprodução: `tests/projects/valid/generic_cross_module_type_params`, com
+  `Envelope<T>`, enum `Decision<T>` e função genérica `advance<T>` declarados
+  em um módulo e usados por outro, inclusive dentro de `async`/`Result`.
+- Sintoma: a assinatura exportada e a especialização podiam perder a relação
+  entre `T` e os campos do agregado; a construção contextual de uma variante
+  genérica também podia chegar ao IR como `Envelope<Unknown>`.
+- Causa: exports não carregavam parâmetros genéricos dos tipos; assinaturas de
+  funções eram recalculadas fora do escopo genérico; chamadas qualificadas não
+  pediam especialização; e o inferidor IR de variantes não reutilizava o tipo
+  genérico esperado/retornado.
+- Correção: preservar parâmetros e assinaturas analisadas nos exports/imports,
+  reconstruir structs/enums genéricos, importar bounds com aliases locais,
+  especializar chamadas qualificadas e propagar contexto para variantes no IR.
+- Regressões: `tests/projects/valid/generic_cross_module_type_params` e
+  `tests/validation/621_generic_enum_context.spectra`.
+- Validação: `spectralang check` e `run` nos dois fixtures; o projeto completo
+  SpectraRelease também passa em JIT e AOT.
+
+## BUG-318 — implementação de trait não acompanhava import separado do tipo
+
+- Reprodução: `tests/projects/valid/cross_module_trait_impl_separate_imports`;
+  um módulo declara `ReleaseStage`, outro declara `BuildStage` e sua
+  implementação, e o consumidor importa trait e tipo separadamente.
+- Sintoma: o cast de `BuildStage` para `dyn ReleaseStage` era rejeitado porque
+  o import do tipo não trazia a metadata da implementação do trait.
+- Causa: a importação de implementações exigia que o mesmo módulo exportasse
+  o trait e que o importador nomeasse ambos naquela operação.
+- Correção: carregar a metadata quando o trait já está no escopo do consumidor,
+  mesmo se ele veio de um módulo diferente.
+- Regressão e validação: o fixture separado passa em `check` e `run`; o caso de
+  três estágios dinâmicos passa no projeto SpectraRelease em JIT e AOT.
+
+## BUG-319 — igualdade de enum comparava endereços de alocação
+
+- Reprodução: comparar duas construções independentes de
+  `Decision::Rejected("var-limit")` passava em `check`, mas avaliava como
+  diferentes em runtime. Registros sem um método `eq` também tentavam chamar
+  `Limits_eq`, que não existia.
+- Causa: o lowering emitia comparação direta dos handles de agregados, embora
+  enums, tuplas e registros sejam representados por ponteiros. O dispatch de
+  operadores de registros chamava `_eq` mesmo sem uma implementação, e `!=`
+  não invertia o resultado de um `eq` customizado.
+- Correção: enums comparam primeiro as tags e só leem o payload da variante
+  ativa; tuplas e registros comparam campos recursivamente. Tipos nominais
+  recursivos sem layout completo permanecem opacos. O lowering mantém o `eq`
+  customizado quando existe e inverte seu resultado para `!=`.
+- Regressão: `tests/validation/622_enum_structural_equality.spectra` cobre
+  variantes unitárias e com payload, payloads diferentes, tuplas, registros,
+  e igualdade customizada.
+- Validação: a regressão passa por `check`, JIT e AOT; o harness
+  `tests/spectraquant-integration.ps1` passa com saída JIT/AOT idêntica; `cargo
+  test -p spectra-midend` passa (58 testes unitários e 57 testes de integração).
+
+## BUG-320 — tipos de registro qualificados por alias perdiam os campos
+
+- Reprodução mínima: importar `domain` como `model` e declarar parâmetros
+  `model.Profile`/`model.Envelope<model.Profile>`, com `Profile.values: [int]`.
+- Sintoma: a anotação era aceita, mas a leitura `profile.values[0]` recebia
+  `unknown`; isso também contaminava campos dentro de registros genéricos.
+- Causa: a resolução semântica reconhecia tipos simples de um segmento e
+  imports diretos, mas descartava como `unknown` nomes simples qualificados.
+- Correção: resolver o caminho completo contra os registros de struct, enum e
+  alias que a etapa de importação já mantém no escopo local.
+- Regressão: teste semântico
+  `module_alias_qualified_record_fields_keep_array_and_generic_types`.
+- Validação: o teste semântico direcionado passa; o projeto SpectraGrid passa
+  por `check`, `run` JIT e o harness integrado JIT/AOT.
+
 ## Hipóteses removidas da matriz
 
 O spelling de UFCS genérico `Score::plus(item, 2)` foi minimizado no caso 283
@@ -112,6 +185,6 @@ midend/backend.
   suficiente;
 - `NONDETERMINISTIC`: resultado varia sem mudança de entrada ou ambiente.
 
-Todos os 42 casos desta rodada estão agora classificados e promovidos; o
+Todos os 45 casos desta rodada estão agora classificados e promovidos; o
 validador determinístico será a fonte da evidência consolidada dos comandos e
 dos códigos de saída.

@@ -451,13 +451,20 @@ impl ASTLowering {
                 }
 
                 if self.generic_structs.contains_key(name.as_str()) {
-                    if let Some(struct_type) = self.resolve_struct_type(name, type_args) {
+                    // Apply the caller's explicit substitution map before
+                    // specializing the nominal struct. This path is also
+                    // used while inferring a generic call's return type, where
+                    // the type parameters live in a local map and are not yet
+                    // installed as the lowering-wide substitution state.
+                    let concrete_type_args =
+                        self.substituted_type_args_with(type_args, substitutions);
+                    if let Some(struct_type) = self.resolve_struct_type(name, &concrete_type_args) {
                         if matches!(&struct_type, IRType::Generic { .. }) {
                             return struct_type;
                         }
                         return self.lower_generic_application(
                             name,
-                            type_args,
+                            &concrete_type_args,
                             struct_type,
                             substitutions,
                         );

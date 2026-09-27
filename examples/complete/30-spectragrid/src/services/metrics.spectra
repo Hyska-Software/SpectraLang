@@ -1,0 +1,247 @@
+module services.metrics
+
+import std.convert as convert
+import std.io as io
+from domain.model import DispatchBuffers
+from domain.model import DispatchReport
+from domain.model import DispatchStatus
+from domain.model import GridCase
+from policies.contracts import DispatchPolicy
+
+func min_int(left: int, right: int) returns int {
+    if left < right {
+        return left
+    }
+    return right
+}
+
+func max_int(left: int, right: int) returns int {
+    if left > right {
+        return left
+    }
+    return right
+}
+
+func reject(reason: string) returns bool {
+    io.eprintln("grid verification failed: " + reason)
+    return false
+}
+
+public func verify(grid: GridCase, buffers: DispatchBuffers, report: DispatchReport, policy: dyn DispatchPolicy) returns bool {
+    if grid.period_count < 1 or grid.period_count > 6 or grid.generator_count < 1 or grid.generator_count > 3 {
+        return reject("profile-or-generator-count")
+    }
+
+    let demand_total            = 0
+    let served_total            = 0
+    let unserved_total          = 0
+    let renewable_total         = 0
+    let battery_discharge_total = 0
+    let battery_charge_total    = 0
+    let curtailed_total         = 0
+    let fuel_cost_total         = 0
+    let emissions_total         = 0
+    let starts_total            = 0
+    let events_total            = 0
+    let minimum_soc             = grid.initial_soc_kwh
+    let expected_checksum       = 5381
+    let previous_soc            = grid.initial_soc_kwh
+    let period                  = 0
+
+    let order_position = 0
+    while order_position < grid.generator_count {
+        let generator_id = buffers.generator_order[order_position]
+        if generator_id < 0 or generator_id >= grid.generator_count {
+            return reject("generator-order-index")
+        }
+        let previous_position = 0
+        while previous_position < order_position {
+            if buffers.generator_order[previous_position] == generator_id {
+                return reject("duplicate-generator-order-index")
+            }
+            previous_position = previous_position + 1
+        }
+        order_position = order_position + 1
+    }
+
+    order_position = 1
+    while order_position < grid.generator_count {
+        let previous_id = buffers.generator_order[order_position - 1]
+        let current_id  = buffers.generator_order[order_position]
+        let previous_score = policy.order_score(
+            grid.marginal_cost_cents[previous_id],
+            grid.emission_g_per_kwh[previous_id],
+        )
+        let current_score = policy.order_score(
+            grid.marginal_cost_cents[current_id],
+            grid.emission_g_per_kwh[current_id],
+        )
+        if previous_score > current_score or(previous_score == current_score and previous_id > current_id) {
+            return reject("generator-merit-order")
+        }
+        order_position = order_position + 1
+    }
+
+    while period < grid.period_count {
+        let demand               = grid.demand_kw[period]
+        let renewable            = grid.solar_kw[period] + grid.wind_kw[period]
+        let direct_renewable     = buffers.renewable_to_load_kw[period]
+        let battery_discharge    = buffers.battery_discharge_kw[period]
+        let battery_charge_input = buffers.battery_charge_input_kw[period]
+        let unserved             = buffers.unserved_kw[period]
+        let curtailed            = buffers.curtailed_kw[period]
+        if demand < 0 or grid.solar_kw[period] < 0 or grid.wind_kw[period] < 0 or direct_renewable < 0 or direct_renewable > demand or direct_renewable > renewable or battery_discharge < 0 or battery_charge_input < 0 or unserved < 0 or curtailed < 0 {
+            return reject("negative-or-invalid-period-flow")
+        }
+        if direct_renewable != min_int(demand, renewable) {
+            return reject("renewable-priority")
+        }
+
+        let generator_position = 0
+        let generation_total   = 0
+        while generator_position < grid.generator_count {
+            let generator_id    = generator_position
+            let output_slot     = period * grid.generator_count + generator_id
+            let output          = buffers.generator_output_kw[output_slot]
+            let previous_output = if period == 0 {
+                0
+            } else {
+                buffers.generator_output_kw[(period - 1) * grid.generator_count + generator_id]
+            }
+            if output < 0 or output > grid.generator_capacity_kw[generator_id] or output > previous_output + grid.generator_ramp_kw[generator_id] {
+                return reject("generator-capacity-or-ramp")
+            }
+            if output > 0 {
+                fuel_cost_total = fuel_cost_total + output * grid.marginal_cost_cents[generator_id]
+                emissions_total = emissions_total + output * grid.emission_g_per_kwh[generator_id]
+                if previous_output == 0 {
+                    fuel_cost_total = fuel_cost_total + grid.startup_cost_cents[generator_id]
+                    starts_total = starts_total + 1
+                    events_total = events_total + 1
+                }
+            }
+            generation_total = generation_total + output
+            generator_position = generator_position + 1
+        }
+
+        let deficit_after_renewables = demand - direct_renewable
+        let emergency                = deficit_after_renewables > policy.emergency_threshold_kw()
+        let reserve                  = if emergency {
+            0
+        } else {
+            policy.reserve_kwh(grid.battery_capacity_kwh)
+        }
+        let usable_soc           = max_int(previous_soc - reserve, 0)
+        let battery_energy_limit = usable_soc * grid.discharge_efficiency_percent / 100
+        let expected_discharge = min_int(
+            deficit_after_renewables,
+            min_int(grid.battery_power_kw, battery_energy_limit),
+        )
+        if battery_discharge != expected_discharge {
+            return reject("battery-discharge-schedule")
+        }
+        let energy_removed = if battery_discharge > 0 {
+            (battery_discharge * 100 + grid.discharge_efficiency_percent - 1) / grid.discharge_efficiency_percent
+        } else {
+            0
+        }
+        let soc_before_charge    = previous_soc - energy_removed
+        let surplus              = renewable - direct_renewable
+        let battery_charge_limit = max_int(grid.battery_capacity_kwh - soc_before_charge, 0) *
+            100 /
+            grid.charge_efficiency_percent
+        let expected_charge = min_int(surplus, min_int(grid.battery_power_kw, battery_charge_limit))
+        if battery_charge_input != expected_charge {
+            return reject("battery-charge-schedule")
+        }
+
+        let remaining_generation = deficit_after_renewables - battery_discharge
+        let merit_position       = 0
+        while merit_position < grid.generator_count {
+            let generator_id    = buffers.generator_order[merit_position]
+            let previous_output = if period == 0 {
+                0
+            } else {
+                buffers.generator_output_kw[(period - 1) * grid.generator_count + generator_id]
+            }
+            let ramp_ceiling = min_int(
+                grid.generator_capacity_kw[generator_id],
+                previous_output + grid.generator_ramp_kw[generator_id],
+            )
+            let expected_output = min_int(remaining_generation, ramp_ceiling)
+            let output = buffers.generator_output_kw[period * grid.generator_count + generator_id]
+            if output != expected_output {
+                return reject("generator-merit-order-output")
+            }
+            remaining_generation = remaining_generation - expected_output
+            merit_position = merit_position + 1
+        }
+
+        if renewable + generation_total + battery_discharge + unserved != demand + battery_charge_input + curtailed {
+            io.eprintln("grid balance period=" + convert.int_to_string(period) + " supply=" + convert.int_to_string(renewable + generation_total + battery_discharge + unserved) + " use=" + convert.int_to_string(demand + battery_charge_input + curtailed))
+            return reject("power-balance")
+        }
+        if battery_discharge > grid.battery_power_kw or battery_charge_input > grid.battery_power_kw {
+            return reject("battery-power-limit")
+        }
+
+        if battery_discharge > 0 and deficit_after_renewables <= policy.emergency_threshold_kw() and previous_soc - ((battery_discharge * 100 + grid.discharge_efficiency_percent - 1) / grid.discharge_efficiency_percent) < reserve {
+            return reject("battery-reserve")
+        }
+        let expected_soc = previous_soc -
+            (battery_discharge * 100 + grid.discharge_efficiency_percent - 1) /
+            grid.discharge_efficiency_percent +
+            battery_charge_input *
+            grid.charge_efficiency_percent /
+            100
+        if expected_soc != buffers.soc_after_kwh[period] or expected_soc < 0 or expected_soc > grid.battery_capacity_kwh {
+            return reject("battery-state-of-charge")
+        }
+        previous_soc = expected_soc
+
+        demand_total = demand_total + demand
+        served_total = served_total + demand - unserved
+        unserved_total = unserved_total + unserved
+        renewable_total = renewable_total + direct_renewable
+        battery_discharge_total = battery_discharge_total + battery_discharge
+        battery_charge_total = battery_charge_total + battery_charge_input
+        curtailed_total = curtailed_total + curtailed
+        if battery_discharge > 0 or battery_charge_input > 0 or curtailed > 0 or unserved > 0 {
+            events_total = events_total + 1
+        }
+        if expected_soc < minimum_soc {
+            minimum_soc = expected_soc
+        }
+        expected_checksum = (expected_checksum * 31 + direct_renewable * 7 + battery_discharge * 11 + battery_charge_input * 13 + generation_total * 17 + unserved * 19 + expected_soc) %
+            2147483647
+        period = period + 1
+    }
+
+    let status_matches = match report.status {
+        when DispatchStatus::Balanced then unserved_total == 0,
+        when DispatchStatus::LoadShed(total) then total == unserved_total and total > 0
+    }
+    let totals_match = report.demand_kwh ==
+        demand_total and report.served_kwh ==
+        served_total and report.unserved_kwh ==
+        unserved_total and report.renewable_to_load_kwh ==
+        renewable_total and report.battery_discharge_kwh ==
+        battery_discharge_total and report.battery_charge_input_kwh ==
+        battery_charge_total and report.curtailed_kwh ==
+        curtailed_total and report.fuel_cost_cents ==
+        fuel_cost_total and report.emissions_grams ==
+        emissions_total and report.minimum_soc_kwh ==
+        minimum_soc and report.generator_starts ==
+        starts_total and report.event_count ==
+        events_total and report.case_name ==
+        grid.name and report.policy_name ==
+        policy.name() and report.checksum ==
+        expected_checksum
+    if not status_matches {
+        return reject("dispatch-status")
+    }
+    if not totals_match {
+        return reject("aggregate-report")
+    }
+    return true
+}

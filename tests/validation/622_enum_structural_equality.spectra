@@ -1,0 +1,82 @@
+module validation_enum_structural_equality
+
+enum Decision {
+    Approved,
+    Rejected(string),
+    Retry(int, string),
+}
+
+record Limits {
+    public value: int,
+    public label: string,
+}
+
+record Bucket {
+    public value: int,
+}
+
+impl Eq for Bucket {
+    func eq( & self, other: Bucket) returns bool {
+        self.value % 10 == other.value % 10
+    }
+}
+
+public func main() returns int {
+    let first_rejection = Decision::Rejected("var-limit")
+    let same_rejection  = Decision::Rejected("var-limit")
+    let other_rejection = Decision::Rejected("capital-limit")
+    let approval        = Decision::Approved
+    let retry           = Decision::Retry(3, "later")
+    let same_retry      = Decision::Retry(3, "later")
+    let different_retry = Decision::Retry(4, "later")
+
+    if (first_rejection == same_rejection) == false {
+        return 1
+    }
+    if (first_rejection != other_rejection) == false {
+        return 2
+    }
+    if (approval == Decision::Approved) == false {
+        return 3
+    }
+    if approval == first_rejection {
+        return 4
+    }
+    if (retry == same_retry) == false {
+        return 5
+    }
+    if retry == different_retry {
+        return 6
+    }
+
+    let first_limits = Limits { value: 95, label: "daily" }
+    let same_limits  = Limits { value: 95, label: "daily" }
+    let other_limits = Limits { value: 96, label: "daily" }
+    if (first_limits == same_limits) == false {
+        return 7
+    }
+    if first_limits == other_limits {
+        return 8
+    }
+
+    let first_pair = (95, "daily")
+    let same_pair  = (95, "daily")
+    let other_pair = (96, "daily")
+    if (first_pair == same_pair) == false {
+        return 9
+    }
+    if first_pair == other_pair {
+        return 10
+    }
+
+    let first_bucket = Bucket { value: 11 }
+    let same_bucket  = Bucket { value: 21 }
+    if (first_bucket == same_bucket) == false {
+        return 11
+    }
+    if first_bucket != same_bucket {
+        return 12
+    }
+
+    return 0
+}

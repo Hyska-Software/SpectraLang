@@ -2876,6 +2876,12 @@
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/622_enum_structural_equality.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/61_closure_surface.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,

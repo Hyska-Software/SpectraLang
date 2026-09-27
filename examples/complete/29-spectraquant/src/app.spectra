@@ -1,0 +1,158 @@
+module app
+
+import std.convert as convert
+import std.io as io
+import std.tensor as tensor
+from contracts.valuator import OptionValuator
+from domain.model import Envelope
+from domain.model import OptionContract
+from domain.model import OptionKind
+from domain.model import Quote
+from domain.model import RiskDecision
+from domain.model import RiskMetrics
+from quant.monte_carlo import MonteCarloValuator
+from risk.policy import ExposureLimits
+from risk.policy import RiskPolicy
+import concurrency.stress as stress
+import quant.monte_carlo as monte_carlo
+import risk.metrics as metrics
+import risk.policy as policy
+
+func quote_from_result(result: Result<Envelope<Quote>, string>) returns Quote {
+    if let Result::Ok(envelope) = result {
+        return envelope.payload
+    }
+    return Quote {
+        fair_value: 0.0,
+        delta: 0.0,
+        vega: 0.0,
+        standard_error: 0.0,
+        samples: 0,
+    }
+}
+
+func risk_from_result(result: Result<RiskMetrics, string>) returns RiskMetrics {
+    if let Result::Ok(report) = result {
+        return report
+    }
+    return RiskMetrics {
+        value_at_risk_cents: -1,
+        expected_shortfall_cents: -1,
+        worst_loss_cents: -1,
+        scenario_count: 0,
+    }
+}
+
+func run_valuator(contract: OptionContract, sample_count: int) returns Quote {
+    let service                           = MonteCarloValuator { sample_count: sample_count }
+    let dynamic: dyn OptionValuator       = service as dyn OptionValuator
+    let request: Envelope<OptionContract> = Envelope<OptionContract> {
+        trace_id: "quant-29-call",
+        sequence: 7,
+        payload: contract,
+    }
+    return quote_from_result(block_on(dynamic.price(request)))
+}
+
+func make_contract(kind: OptionKind, seed: int) returns OptionContract {
+    return OptionContract {
+        symbol: "QNT-100",
+        kind: kind,
+        spot: 100.0,
+        strike: 102.0,
+        volatility: 0.24,
+        rate: 0.035,
+        maturity: 0.75,
+        units: 24,
+        seed: seed,
+    }
+}
+
+public func run() returns int {
+    tensor.free_all()
+    let samples       = 512
+    let call_contract = make_contract(OptionKind::Call, 292901)
+    let call_quote    = run_valuator(call_contract, samples)
+    if call_quote.samples != samples or call_quote.fair_value <= 0.0 or call_quote.delta <= 0.0 or call_quote.delta >= 1.0 or call_quote.vega <= 0.0 or call_quote.standard_error <= 0.0 {
+        io.eprintln("erro: cotação de call ou Greeks fora dos limites esperados")
+        tensor.free_all()
+        return 1
+    }
+    let repeat_quote = run_valuator(call_contract, samples)
+    if repeat_quote.fair_value != call_quote.fair_value or repeat_quote.delta != call_quote.delta {
+        io.eprintln("erro: seed fixa não reproduziu a cotação")
+        tensor.free_all()
+        return 2
+    }
+
+    let put_contract = make_contract(OptionKind::Put, 292902)
+    let put_quote    = run_valuator(put_contract, samples)
+    if put_quote.fair_value <= 0.0 or put_quote.delta >= 0.0 or put_quote.delta <= -1.0 or put_quote.vega <= 0.0 {
+        io.eprintln("erro: cotação de put ou Greeks fora dos limites esperados")
+        tensor.free_all()
+        return 3
+    }
+
+    let pnl    = monte_carlo.scenario_pnl(call_contract, call_quote.fair_value, samples)
+    let report = risk_from_result(metrics.calculate(pnl, samples))
+    if report.scenario_count != samples or report.value_at_risk_cents <= 0 or report.expected_shortfall_cents < report.value_at_risk_cents or report.worst_loss_cents < report.expected_shortfall_cents {
+        io.eprintln("erro: ordenação VaR/CVaR ou perda extrema inválida")
+        tensor.free_all()
+        return 4
+    }
+
+    let standard_limits = ExposureLimits {
+        max_var_cents: report.value_at_risk_cents + 1,
+        max_expected_shortfall_cents: report.expected_shortfall_cents + 1,
+    }
+    let dynamic_policy: dyn RiskPolicy = standard_limits as dyn RiskPolicy
+    let accepted                       = dynamic_policy.decide(report)
+    let accepted_ok                    = match accepted {
+        when RiskDecision::Approved then true,
+        when RiskDecision::Rejected(_) then false
+    }
+    if not accepted_ok {
+        io.eprintln("erro: política deveria aprovar os limites calibrados no relatório")
+        tensor.free_all()
+        return 5
+    }
+    if (accepted == RiskDecision::Approved) == false {
+        io.eprintln("erro: igualdade por valor da variante Approved falhou")
+        tensor.free_all()
+        return 8
+    }
+    let strict_limits = ExposureLimits {
+        max_var_cents: report.value_at_risk_cents - 1,
+        max_expected_shortfall_cents: report.expected_shortfall_cents + 1,
+    }
+    let strict_policy: dyn RiskPolicy = strict_limits as dyn RiskPolicy
+    let rejected                      = strict_policy.decide(report)
+    let rejected_var                  = match rejected {
+        when RiskDecision::Approved then false,
+        when RiskDecision::Rejected(reason) then reason == "var-limit"
+    }
+    if not rejected_var {
+        io.eprintln("erro: política restrita não rejeitou o VaR excedente")
+        tensor.free_all()
+        return 6
+    }
+    if (rejected == RiskDecision::Rejected("var-limit")) == false {
+        io.eprintln("erro: igualdade por valor do payload Rejected falhou")
+        tensor.free_all()
+        return 9
+    }
+
+    let parallel_stress = stress.run(call_contract.spot as int * call_contract.units * 100)
+    if parallel_stress <= 0 {
+        io.eprintln("erro: cenários concorrentes de stress não concluíram")
+        tensor.free_all()
+        return 7
+    }
+    io.println("SPECTRAQUANT ok model=monte-carlo-gbm autodiff=pathwise-greeks samples=" + convert.int_to_string(samples))
+    io.println("call: fair_value=" + convert.float_to_string(call_quote.fair_value) + " delta=" + convert.float_to_string(call_quote.delta) + " vega=" + convert.float_to_string(call_quote.vega) + " stderr=" + convert.float_to_string(call_quote.standard_error))
+    io.println("put: fair_value=" + convert.float_to_string(put_quote.fair_value) + " delta=" + convert.float_to_string(put_quote.delta) + " vega=" + convert.float_to_string(put_quote.vega))
+    io.println("risk: var95_cents=" + convert.int_to_string(report.value_at_risk_cents) + " cvar95_cents=" + convert.int_to_string(report.expected_shortfall_cents) + " worst_loss_cents=" + convert.int_to_string(report.worst_loss_cents))
+    io.println("policy: accepted=true strict_rejection=var-limit parallel_stress_cents=" + convert.int_to_string(parallel_stress))
+    tensor.free_all()
+    return 0
+}

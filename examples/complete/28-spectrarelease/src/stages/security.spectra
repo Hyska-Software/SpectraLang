@@ -1,0 +1,36 @@
+module stages.security
+
+from contracts.stage import ReleaseStage
+from domain.release import Artifact
+from domain.release import Envelope
+import domain.quality as quality
+import domain.release as release
+
+public record SecurityStage {
+    public max_risk: int,
+    public minimum_score: int,
+    public maximum_validation_mse: float,
+    public maximum_drift_score: float,
+}
+
+impl ReleaseStage for SecurityStage {
+    func label( & self) returns string {
+        return "security"
+    }
+
+    async func apply( & self, message: Envelope<Artifact>) returns Result<Envelope<Artifact>, string> {
+        if message.payload.risk > self.max_risk {
+            return Result::Err("risk-limit")
+        }
+        if message.payload.validation_mse > self.maximum_validation_mse {
+            return Result::Err("validation-mse-limit")
+        }
+        if message.payload.drift_score > self.maximum_drift_score {
+            return Result::Err("feature-drift-limit")
+        }
+        if not quality.eligible(message.payload, self.minimum_score) {
+            return Result::Err("quality-floor")
+        }
+        return Result::Ok(release.advance(message))
+    }
+}

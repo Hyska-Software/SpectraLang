@@ -19,14 +19,24 @@ impl ASTLowering {
                 // correspondingly named method (e.g. `Point_add(lhs, rhs)`).
                 if let IRType::Struct { name: ref sn, .. } = left_ir_type {
                     if let Some(method_name) = operator_overload_method(operator) {
-                        let lhs = self.lower_expression(left, ir_func);
-                        let rhs = self.lower_expression(right, ir_func);
                         let fn_name = format!("{}_{}", sn, method_name);
-                        return self.require_value(
-                            self.builder
-                                .build_call(ir_func, fn_name, vec![lhs, rhs], true),
-                            "operator overload did not produce its declared result",
-                        );
+                        let has_overload = method_name != "eq"
+                            || self.function_return_types.contains_key(&fn_name)
+                            || self.generic_impl_methods.contains_key(&fn_name);
+                        if has_overload {
+                            let lhs = self.lower_expression(left, ir_func);
+                            let rhs = self.lower_expression(right, ir_func);
+                            let result = self.require_value(
+                                self.builder
+                                    .build_call(ir_func, fn_name, vec![lhs, rhs], true),
+                                "operator overload did not produce its declared result",
+                            );
+                            return if matches!(operator, BinaryOperator::NotEqual) {
+                                self.builder.build_not(ir_func, result)
+                            } else {
+                                result
+                            };
+                        }
                     }
                 }
 
@@ -82,8 +92,9 @@ impl ASTLowering {
                 // (`u8`..`u64`, `usize`) requires `udiv`/`urem` and unsigned
                 // `icmp` conditions — a signed compare would misorder values
                 // above the signed maximum (e.g. `u64` above 2^63).
-                let operands_unsigned = matches!(&left_ir_type, IRType::ExactInt { signed: false, .. })
-                    && matches!(&right_ir_type, IRType::ExactInt { signed: false, .. });
+                let operands_unsigned =
+                    matches!(&left_ir_type, IRType::ExactInt { signed: false, .. })
+                        && matches!(&right_ir_type, IRType::ExactInt { signed: false, .. });
 
                 // Mixed-width/signedness exact integers: coerce both operands
                 // to the language's unification type (mirrors semantic
@@ -166,7 +177,8 @@ impl ASTLowering {
                     BinaryOperator::Or => self.builder.build_or(ir_func, lhs, rhs),
                 }
             }
-            ExpressionKind::Unary { operator, operand } => {                use spectra_compiler::ast::UnaryOperator;
+            ExpressionKind::Unary { operator, operand } => {
+                use spectra_compiler::ast::UnaryOperator;
 
                 // Lower a directly negated integer literal as one constant.
                 // This represents signed minima such as i64::MIN without
@@ -300,7 +312,9 @@ impl ASTLowering {
             Some(_) => return false,
         };
         let positive_max = (1_i128 << (bits - 1)) - 1;
-        value.checked_neg().is_some_and(|magnitude| magnitude > positive_max)
+        value
+            .checked_neg()
+            .is_some_and(|magnitude| magnitude > positive_max)
     }
 
     /// The unification type for two *different* integer-family operand types,

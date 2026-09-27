@@ -1,0 +1,25 @@
+module validation_generic_type_instantiation
+
+record Envelope<T> {
+    public payload: T,
+    public sequence: int,
+}
+
+enum Decision<T> {
+    Rejected(string),
+    Accepted(T),
+}
+
+public func main() returns int {
+    let message: Envelope<int> = Envelope<int> {
+        payload: 40,
+        sequence: 2,
+    }
+    let accepted: Decision<int> = Decision::Accepted(message.payload + message.sequence)
+    if let Decision::Accepted(value) = accepted {
+        if value == 42 {
+            return 0
+        }
+    }
+    return 1
+}

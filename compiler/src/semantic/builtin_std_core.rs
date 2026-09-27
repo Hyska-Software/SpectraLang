@@ -196,6 +196,7 @@ fn agent_record(members: &[(&str, TypeAnnotation)]) -> ExportedType {
         members: members.iter().map(|(name, _)| (*name).to_string()).collect(),
         visibility: ExportVisibility::Public,
         is_enum: false,
+        type_params: Vec::new(),
         struct_fields: Some(
             members
                 .iter()
@@ -999,6 +1000,7 @@ pub(crate) fn make_std_collections() -> ModuleExports {
             members: vec!["new".to_string(), "push".to_string(), "len".to_string()],
             visibility: ExportVisibility::Public,
             is_enum: false,
+            type_params: Vec::new(),
             struct_field_visibility: None,
             struct_fields: None,
             enum_variants: None,
@@ -1011,6 +1013,7 @@ pub(crate) fn make_std_collections() -> ModuleExports {
             members: vec!["new".to_string(), "set".to_string(), "get".to_string()],
             visibility: ExportVisibility::Public,
             is_enum: false,
+            type_params: Vec::new(),
             struct_field_visibility: None,
             struct_fields: None,
             enum_variants: None,
@@ -1027,6 +1030,7 @@ pub(crate) fn make_std_collections() -> ModuleExports {
                 members: members.into_iter().map(|member| member.to_string()).collect(),
                 visibility: ExportVisibility::Public,
                 is_enum: false,
+                type_params: Vec::new(),
                 struct_field_visibility: None,
                 struct_fields: None,
                 enum_variants: None,
@@ -1041,6 +1045,7 @@ pub(crate) fn make_std_collections() -> ModuleExports {
                 members: vec!["new".to_string(), "len".to_string()],
                 visibility: ExportVisibility::Public,
                 is_enum: false,
+                type_params: Vec::new(),
                 struct_field_visibility: None,
                 struct_fields: None,
                 enum_variants: None,
@@ -1332,6 +1337,7 @@ pub(crate) fn make_std_tensor() -> ModuleExports {
             ],
             visibility: ExportVisibility::Public,
             is_enum: false,
+            type_params: Vec::new(),
             struct_field_visibility: None,
             struct_fields: None,
             enum_variants: None,

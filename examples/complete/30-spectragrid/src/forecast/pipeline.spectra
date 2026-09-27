@@ -1,0 +1,55 @@
+module forecast.pipeline
+
+import std.tensor as tensor
+from forecast.data import ForecastSet
+from forecast.evaluation import EvaluationReport
+from forecast.model import LoadForecaster
+from forecast.training import FitResult
+import forecast.data as data
+import forecast.evaluation as evaluation
+import forecast.model as model
+import forecast.training as training
+
+public record ForecastReport {
+    public demand_kw: [int],
+    public steps: int,
+    public initial_mse: float,
+    public final_mse: float,
+    public holdout_mse: float,
+    public zero_baseline_mse: float,
+}
+
+public func run(solar_kw: [int], wind_kw: [int]) returns ForecastReport {
+    tensor.seed(302800)
+    tensor.set_grad_enabled( true)
+    let training_data: ForecastSet          = data.training_set()
+    let holdout_data: ForecastSet           = data.holdout_set()
+    let forecast_model: LoadForecaster      = model.create()
+    let fit: FitResult                      = training.fit(forecast_model, training_data, 180)
+    let evaluation_report: EvaluationReport = evaluation.evaluate(fit.model, holdout_data)
+    let features                            = data.live_features(solar_kw, wind_kw)
+    tensor.set_grad_enabled( false)
+    let prediction = model.forward(fit.model, features, 6, false)
+    let demand     = [0, 0, 0, 0, 0, 0]
+    let period     = 0
+    while period < 6 {
+        let predicted_kw = (tensor.get_f(prediction, period) * 250.0) as int
+        demand[period] = if predicted_kw < 90 {
+            90
+        } else if predicted_kw > 240 {
+            240
+        } else {
+            predicted_kw
+        }
+        period = period + 1
+    }
+    tensor.set_grad_enabled( true)
+    return ForecastReport {
+        demand_kw: demand,
+        steps: fit.steps,
+        initial_mse: fit.initial_mse,
+        final_mse: fit.final_mse,
+        holdout_mse: evaluation_report.holdout_mse,
+        zero_baseline_mse: evaluation_report.zero_baseline_mse,
+    }
+}

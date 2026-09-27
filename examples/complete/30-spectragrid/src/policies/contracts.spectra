@@ -1,0 +1,8 @@
+module policies.contracts
+
+public trait DispatchPolicy {
+    func name( & self) returns string
+    func order_score( & self, marginal_cost_cents: int, emission_g_per_kwh: int) returns int
+    func reserve_kwh( & self, battery_capacity_kwh: int) returns int
+    func emergency_threshold_kw( & self) returns int
+}

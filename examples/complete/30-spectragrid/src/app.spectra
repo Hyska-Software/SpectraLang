@@ -1,0 +1,212 @@
+module app
+
+import std.convert as convert
+import std.io as io
+import std.tensor as tensor
+from concurrency.ensemble import EnsembleSummary
+from domain.model import DispatchBuffers
+from domain.model import DispatchReport
+from domain.model import DispatchStatus
+from domain.model import Envelope
+from domain.model import GridCase
+from forecast.pipeline import ForecastReport
+from policies.contracts import DispatchPolicy
+from policies.strategies import CleanPolicy
+from policies.strategies import EconomicPolicy
+from policies.strategies import ResilientPolicy
+from services.runner import GridDispatchService
+from services.runner import GridEngine
+import concurrency.ensemble as ensemble
+import forecast.pipeline as forecast
+import services.metrics as metrics
+
+func execute(
+    grid: GridCase,
+    policy: dyn DispatchPolicy,
+    trace_id: string
+) returns Result<DispatchReport, string> {
+    let buffers = DispatchBuffers {
+        renewable_to_load_kw: [0, 0, 0, 0, 0, 0],
+        battery_discharge_kw: [0, 0, 0, 0, 0, 0],
+        battery_charge_input_kw: [0, 0, 0, 0, 0, 0],
+        generator_output_kw: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        generator_order: [0, 0, 0],
+        unserved_kw: [0, 0, 0, 0, 0, 0],
+        curtailed_kw: [0, 0, 0, 0, 0, 0],
+        soc_after_kwh: [0, 0, 0, 0, 0, 0],
+    }
+    let request = Envelope<GridCase> {
+        trace_id: trace_id,
+        sequence: 1,
+        payload: grid,
+    }
+    let engine = GridEngine { }
+    let dynamic_engine: dyn GridDispatchService = engine as dyn GridDispatchService
+    let result = block_on(dynamic_engine.dispatch(request, buffers, policy))
+    if let Result::Err(problem) = result {
+        return Result::Err(problem)
+    }
+    if let Result::Ok(response) = result {
+        let report = response.payload
+        if response.sequence != 2 or response.trace_id != trace_id or not metrics.verify(grid, buffers, report, policy) {
+            return Result::Err("dispatch-response-or-invariant-check-failed")
+        }
+        return Result::Ok(report)
+    }
+    return Result::Err("unexpected-dispatch-result")
+}
+
+func invalid_report(label: string) returns DispatchReport {
+    return DispatchReport {
+        case_name: "invalid",
+        policy_name: label,
+        demand_kwh: 0,
+        served_kwh: 0,
+        unserved_kwh: 0,
+        renewable_to_load_kwh: 0,
+        battery_discharge_kwh: 0,
+        battery_charge_input_kwh: 0,
+        curtailed_kwh: 0,
+        fuel_cost_cents: -1,
+        emissions_grams: -1,
+        minimum_soc_kwh: 0,
+        generator_starts: 0,
+        event_count: 0,
+        checksum: 0,
+        status: DispatchStatus::LoadShed(0),
+    }
+}
+
+func report_or_fail(result: Result<DispatchReport, string>, label: string) returns DispatchReport {
+    if let Result::Err(problem) = result {
+        io.eprintln("erro: " + label + " falhou: " + problem)
+    }
+    return match result {
+        when Result::Ok(report) then report,
+        when Result::Err(_) then invalid_report(label)
+    }
+}
+
+func build_case(name: string, demand: [int], solar: [int], wind: [int]) returns GridCase {
+    let capacity  = [100, 120, 0]
+    let ramp      = [60, 120, 0]
+    let cost      = [30, 90, 0]
+    let emissions = [900, 250, 0]
+    let startups  = [1000, 1500, 0]
+    return GridCase {
+        name: name,
+        period_count: 6,
+        demand_kw: demand,
+        solar_kw: solar,
+        wind_kw: wind,
+        generator_count: 2,
+        generator_capacity_kw: capacity,
+        generator_ramp_kw: ramp,
+        marginal_cost_cents: cost,
+        emission_g_per_kwh: emissions,
+        startup_cost_cents: startups,
+        battery_capacity_kwh: 200,
+        battery_power_kw: 50,
+        initial_soc_kwh: 140,
+        charge_efficiency_percent: 90,
+        discharge_efficiency_percent: 90,
+    }
+}
+
+public func run() returns int {
+    tensor.free_all()
+    let solar                           = [0, 10, 35, 70, 55, 0]
+    let wind                            = [35, 30, 25, 20, 25, 40]
+    let forecast_report: ForecastReport = forecast.run(solar, wind)
+    if forecast_report.steps != 180 or forecast_report.final_mse >= forecast_report.initial_mse or forecast_report.holdout_mse >= forecast_report.zero_baseline_mse {
+        io.eprintln("erro: treino, holdout ou baseline da previsão falhou")
+        tensor.free_all()
+        return 1
+    }
+    let demand = forecast_report.demand_kw
+    let grid   = build_case("clear-day", demand, solar, wind)
+
+    let economic_policy = EconomicPolicy {
+        carbon_weight: 0,
+        reserve_percent: 15,
+        emergency_threshold: 1000,
+    }
+    let economic_dynamic: dyn DispatchPolicy = economic_policy as dyn DispatchPolicy
+    let economic_result                      = execute(grid, economic_dynamic, "grid-30-economic")
+    let economic                             = report_or_fail(economic_result, "economic")
+    if economic.fuel_cost_cents < 0 or economic.unserved_kwh != 0 or economic.served_kwh != economic.demand_kwh {
+        io.eprintln("erro: despacho econômico deveria atender toda a demanda")
+        tensor.free_all()
+        return 1
+    }
+    if (economic.status == DispatchStatus::Balanced) == false {
+        io.eprintln("erro: estado Balanced não comparou por valor")
+        tensor.free_all()
+        return 2
+    }
+
+    let resilient_policy = ResilientPolicy {
+        carbon_weight: 0,
+        reserve_percent: 50,
+        emergency_threshold: 1000,
+    }
+    let resilient_dynamic: dyn DispatchPolicy = resilient_policy as dyn DispatchPolicy
+    let resilient_result = execute(grid, resilient_dynamic, "grid-30-resilient")
+    let resilient = report_or_fail(resilient_result, "resilient")
+    if resilient.unserved_kwh != 0 or resilient.minimum_soc_kwh < grid.battery_capacity_kwh * resilient_policy.reserve_percent / 100 or resilient.fuel_cost_cents <= economic.fuel_cost_cents {
+        io.eprintln("resilient values: min_soc=" + convert.int_to_string(resilient.minimum_soc_kwh) + " reserve=" + convert.int_to_string(grid.battery_capacity_kwh * resilient_policy.reserve_percent / 100) + " cost=" + convert.int_to_string(resilient.fuel_cost_cents) + " economic=" + convert.int_to_string(economic.fuel_cost_cents) + " unserved=" + convert.int_to_string(resilient.unserved_kwh))
+        io.eprintln("erro: reserva resiliente ou custo de reserva inválido")
+        tensor.free_all()
+        return 3
+    }
+
+    let clean_policy = CleanPolicy {
+        carbon_weight: 100,
+        reserve_percent: 15,
+        emergency_threshold: 1000,
+    }
+    let clean_dynamic: dyn DispatchPolicy = clean_policy as dyn DispatchPolicy
+    let clean_result                      = execute(grid, clean_dynamic, "grid-30-clean")
+    let clean                             = report_or_fail(clean_result, "clean")
+    if clean.unserved_kwh != 0 or clean.emissions_grams >= economic.emissions_grams or clean.fuel_cost_cents <= economic.fuel_cost_cents {
+        io.eprintln("erro: objetivo de carbono não alterou o mérito de despacho")
+        tensor.free_all()
+        return 4
+    }
+
+    let stress_demand  = [300, 280, 350, 300, 320, 290]
+    let stress_case    = build_case("islanded-stress", stress_demand, solar, wind)
+    let stress_result  = execute(stress_case, resilient_dynamic, "grid-30-stress")
+    let stress         = report_or_fail(stress_result, "stress")
+    let stress_is_shed = match stress.status {
+        when DispatchStatus::Balanced then false,
+        when DispatchStatus::LoadShed(total) then total == stress.unserved_kwh and total > 0
+    }
+    if not stress_is_shed {
+        io.eprintln("erro: estresse isolado deveria registrar corte de carga")
+        tensor.free_all()
+        return 5
+    }
+    if (stress.status == DispatchStatus::LoadShed(stress.unserved_kwh)) == false {
+        io.eprintln("erro: igualdade de enum com payload não preservou o total de corte")
+        tensor.free_all()
+        return 6
+    }
+
+    let sensitivity = ensemble.demand_sensitivity()
+    if sensitivity.task_count != 2 or not sensitivity.channel_drained or sensitivity.demand_cost_delta_cents <= 0 {
+        io.eprintln("erro: sensibilidade concorrente não concluiu os dois cenários")
+        tensor.free_all()
+        return 7
+    }
+
+    io.println("SPECTRAGRID ok forecast=mlp-residual-layernorm autodiff=adamw algorithm=merit-order-battery-dispatch periods=" + convert.int_to_string(grid.period_count) + " generators=" + convert.int_to_string(grid.generator_count))
+    io.println("forecast: steps=" + convert.int_to_string(forecast_report.steps) + " initial_mse=" + convert.float_to_string(forecast_report.initial_mse) + " final_mse=" + convert.float_to_string(forecast_report.final_mse) + " holdout_mse=" + convert.float_to_string(forecast_report.holdout_mse) + " zero_baseline_mse=" + convert.float_to_string(forecast_report.zero_baseline_mse))
+    io.println("economic: cost_cents=" + convert.int_to_string(economic.fuel_cost_cents) + " emissions_g=" + convert.int_to_string(economic.emissions_grams) + " soc_min_kwh=" + convert.int_to_string(economic.minimum_soc_kwh) + " checksum=" + convert.int_to_string(economic.checksum))
+    io.println("resilient: cost_cents=" + convert.int_to_string(resilient.fuel_cost_cents) + " reserve_min_kwh=" + convert.int_to_string(resilient.minimum_soc_kwh) + " starts=" + convert.int_to_string(resilient.generator_starts))
+    io.println("clean: cost_cents=" + convert.int_to_string(clean.fuel_cost_cents) + " emissions_g=" + convert.int_to_string(clean.emissions_grams) + " curtailed_kwh=" + convert.int_to_string(clean.curtailed_kwh))
+    io.println("stress: unserved_kwh=" + convert.int_to_string(stress.unserved_kwh) + " status=load-shed events=" + convert.int_to_string(stress.event_count))
+    io.println("ensemble: low_cost_cents=" + convert.int_to_string(sensitivity.low_demand_cost_cents) + " high_cost_cents=" + convert.int_to_string(sensitivity.high_demand_cost_cents) + " delta_cents=" + convert.int_to_string(sensitivity.demand_cost_delta_cents) + " tasks=" + convert.int_to_string(sensitivity.task_count) + " channel_drained=true")
+    tensor.free_all()
+    return 0
+}

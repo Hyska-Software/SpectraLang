@@ -1,0 +1,61 @@
+module domain.model
+
+public record Envelope<T> {
+    public trace_id: string,
+    public sequence: int,
+    public payload: T,
+}
+
+public record GridCase {
+    public name: string,
+    public period_count: int,
+    public demand_kw: [int],
+    public solar_kw: [int],
+    public wind_kw: [int],
+    public generator_count: int,
+    public generator_capacity_kw: [int],
+    public generator_ramp_kw: [int],
+    public marginal_cost_cents: [int],
+    public emission_g_per_kwh: [int],
+    public startup_cost_cents: [int],
+    public battery_capacity_kwh: int,
+    public battery_power_kw: int,
+    public initial_soc_kwh: int,
+    public charge_efficiency_percent: int,
+    public discharge_efficiency_percent: int,
+}
+
+public record DispatchBuffers {
+    public renewable_to_load_kw: [int],
+    public battery_discharge_kw: [int],
+    public battery_charge_input_kw: [int],
+    public generator_output_kw: [int],
+    public generator_order: [int],
+    public unserved_kw: [int],
+    public curtailed_kw: [int],
+    public soc_after_kwh: [int],
+}
+
+public enum DispatchStatus {
+    Balanced,
+    LoadShed(int),
+}
+
+public record DispatchReport {
+    public case_name: string,
+    public policy_name: string,
+    public demand_kwh: int,
+    public served_kwh: int,
+    public unserved_kwh: int,
+    public renewable_to_load_kwh: int,
+    public battery_discharge_kwh: int,
+    public battery_charge_input_kwh: int,
+    public curtailed_kwh: int,
+    public fuel_cost_cents: int,
+    public emissions_grams: int,
+    public minimum_soc_kwh: int,
+    public generator_starts: int,
+    public event_count: int,
+    public checksum: int,
+    public status: DispatchStatus,
+}

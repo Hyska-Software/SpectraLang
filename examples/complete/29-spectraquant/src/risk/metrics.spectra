@@ -1,0 +1,44 @@
+module risk.metrics
+
+from std.collections import List
+import std.collections as collections
+import std.option as option
+import std.tensor as tensor
+from domain.model import RiskMetrics
+
+public func calculate(pnl: int, scenario_count: int) returns Result<RiskMetrics, string> {
+    if scenario_count < 20 or tensor.len(pnl) != scenario_count {
+        return Result::Err("invalid-scenario-vector")
+    }
+    let losses: List<int> = collections.list_new()
+    let index             = 0
+    while index < scenario_count {
+        let loss = (0.0 - tensor.get_f(pnl, index)) * 100.0
+        collections.list_push(losses, loss as int)
+        index = index + 1
+    }
+    collections.list_sort_by(losses, | left: int, right: int | left - right)
+    let tail_start = scenario_count * 95 / 100
+    let var_value  = option.option_unwrap_or(collections.list_get_option(losses, tail_start), -1)
+    let worst_loss = option.option_unwrap_or(
+        collections.list_get_option(losses, scenario_count - 1),
+        -1,
+    )
+    let tail_sum   = 0
+    let tail_index = tail_start
+    while tail_index < scenario_count {
+        tail_sum = tail_sum + option.option_unwrap_or(
+            collections.list_get_option(losses, tail_index),
+            0,
+        )
+        tail_index = tail_index + 1
+    }
+    let expected_shortfall = tail_sum /(scenario_count - tail_start)
+    collections.list_free(losses)
+    return Result::Ok(RiskMetrics {
+            value_at_risk_cents: var_value,
+            expected_shortfall_cents: expected_shortfall,
+            worst_loss_cents: worst_loss,
+            scenario_count: scenario_count,
+    })
+}
