@@ -313,6 +313,8 @@ pub(crate) fn reset_registries_after_manual_clear() {
     crate::stdlib::lock_unpoisoned(crate::stdlib::string_builder_registry()).builders.clear();
     // Tensors store scalar host values that may be raw pointers.
     crate::stdlib::with_tensor_registry(|registry| registry.tensors.clear());
+    // Runtime resets start each program with autograd enabled by default.
+    *crate::stdlib::lock_unpoisoned(crate::stdlib::tensor_grad_enabled()) = true;
     // Concurrent tasks/counters store scalar host values too.
     crate::stdlib::lock_unpoisoned(crate::stdlib::concurrent_registry()).clear();
     // Async tasks and coroutine frame slots: polling-safe (frames currently

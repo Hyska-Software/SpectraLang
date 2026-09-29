@@ -45,17 +45,21 @@ impl SemanticAnalyzer {
                     // Exporting `Unknown` makes importers declare an external
                     // with an unresolved IR type (midend verification error).
                     // Trait methods already normalize this way below.
-                    let return_type = analyzed_signature
-                        .map(|signature| signature.return_type.clone())
-                        .unwrap_or_else(|| {
-                            Self::async_task_type(
-                                func.is_async,
-                                match &func.return_type {
-                                    Some(_) => self.type_annotation_to_type(&func.return_type),
-                                    None => Type::Unit,
-                                },
-                            )
-                        });
+                    let return_type = match analyzed_signature {
+                        Some(_)
+                            if func.return_type.is_none() && func.body.statements.is_empty() =>
+                        {
+                            Self::async_task_type(func.is_async, Type::Unit)
+                        }
+                        Some(signature) => signature.return_type.clone(),
+                        None => Self::async_task_type(
+                            func.is_async,
+                            match &func.return_type {
+                                Some(_) => self.type_annotation_to_type(&func.return_type),
+                                None => Type::Unit,
+                            },
+                        ),
+                    };
                     exports.functions.insert(
                         func.name.clone(),
                         ExportedFunction {

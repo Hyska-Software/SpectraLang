@@ -1,0 +1,43 @@
+name: R-2104 FreeBSD kqueue
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/r2104-freebsd-kqueue.yml
+      - Cargo.lock
+      - Cargo.toml
+      - runtime/**
+      - scripts/validate_r2104_reactor.py
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/r2104-freebsd-kqueue.yml
+      - Cargo.lock
+      - Cargo.toml
+      - runtime/**
+      - scripts/validate_r2104_reactor.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  freebsd-kqueue:
+    name: Runtime reactor on FreeBSD
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Run reactor and async runtime tests on FreeBSD
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y rust
+          run: |
+            cargo test -q -p spectra-runtime reactor -- --nocapture
+            cargo test -q -p spectra-runtime async_reactor -- --nocapture
+            cargo test -q -p spectra-runtime async_stdlib_host_calls_cover_fs_tcp_udp_channels_and_cancellation -- --nocapture

@@ -2,10 +2,8 @@ module service
 
 from models import Task
 
-// A function without a `returns` annotation exports unit. Importers declare
-// this as an external, so the export signature must normalize the missing
-// annotation to unit instead of `unknown` (which lowers to an unresolved IR
-// type in the importer).
+// An empty function without a `returns` annotation exports unit. Importers
+// declare this as an external, so its signature must not remain `unknown`.
 public func touch() {
 }
 

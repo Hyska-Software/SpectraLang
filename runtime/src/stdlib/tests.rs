@@ -2227,7 +2227,7 @@ fn tensor_native_apply_bce_matches_analytic_and_finite_difference() {
     }
 
     let _ = call_host(TENSOR_FREE_ALL, &[]);
-    let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[0]);
+    let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[1]);
 }
 
 #[test]
@@ -3792,7 +3792,7 @@ fn ml_attention_layer_norm_gelu_autodiff_matches_finite_difference() {
     }
 
     let _ = call_host(TENSOR_FREE_ALL, &[]);
-    let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[0]);
+    let _ = call_host(TENSOR_SET_GRAD_ENABLED, &[1]);
 }
 
 #[test]

@@ -1506,6 +1506,20 @@ mod manual_clear_registry_tests {
 
         spectra_rt_manual_clear();
     }
+
+    #[test]
+    fn manual_clear_restores_autograd_default() {
+        let _lock = crate::runtime_test_guard();
+        spectra_rt_manual_clear();
+
+        *crate::stdlib::lock_unpoisoned(crate::stdlib::tensor_grad_enabled()) = false;
+        assert!(!crate::stdlib::tensor_is_grad_enabled());
+
+        spectra_rt_manual_clear();
+
+        assert!(crate::stdlib::tensor_is_grad_enabled());
+        spectra_rt_manual_clear();
+    }
 }
 
 #[cfg(test)]
