@@ -595,6 +595,7 @@ pub(crate) fn register_tensor() {
     register_host_function(TENSOR_RELU, std_tensor_relu);
     register_host_function(TENSOR_SIGMOID_F, std_tensor_sigmoid_f);
     register_host_function(TENSOR_TANH_F, std_tensor_tanh_f);
+    register_host_function(TENSOR_FUSED_UNARY, std_tensor_fused_unary);
     register_host_function(TENSOR_SEED, std_tensor_seed);
     register_host_function(TENSOR_UNIFORM, std_tensor_uniform);
     register_host_function(TENSOR_UNIFORM_F, std_tensor_uniform_f);

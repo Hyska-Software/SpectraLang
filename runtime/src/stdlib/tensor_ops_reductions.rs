@@ -717,6 +717,130 @@ pub(crate) extern "C" fn std_tensor_tanh_f(ctx: *mut SpectraHostCallContext) -> 
     tensor_float_unary(ctx, AutogradOp::Tanh, f64::tanh)
 }
 
+/// Executes a CPU-only sequence of unary tensor operations in one pass.
+/// Descriptor layout is shared with `backend/src/tensor_graph_codegen.rs`:
+/// the operation count occupies bits 56..63 and each four-bit operation code
+/// starts at bit zero.
+pub(crate) extern "C" fn std_tensor_fused_unary(ctx: *mut SpectraHostCallContext) -> i32 {
+    unsafe {
+        let Ok((ctx_ref, args)) = tensor_args(ctx, 2) else {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        };
+        let descriptor = args[1] as u64;
+        let count = (descriptor >> 56) as usize;
+        if !(2..=8).contains(&count) {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let operation_codes = (0..count)
+            .map(|index| ((descriptor >> (index * 4)) & 0x0f) as usize)
+            .collect::<Vec<_>>();
+        if operation_codes.iter().any(|code| !matches!(code, 1..=6)) {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let Some((dtype, shape, data, requires_grad, creator, precision)) =
+            with_tensor_registry(|registry| {
+                let tensor = registry.get(args[0] as usize)?.clone();
+                if tensor.device != TensorDevice::Cpu {
+                    return None;
+                }
+                let dtype = if operation_codes.iter().any(|code| *code >= 3) {
+                    TensorDType::Float
+                } else {
+                    tensor.dtype
+                };
+                let source = tensor.materialize();
+                let mut data = Vec::with_capacity(source.len());
+                for raw in source.iter().copied() {
+                    let mut current_dtype = tensor.dtype;
+                    let mut value = match current_dtype {
+                        TensorDType::Int => raw as f64,
+                        TensorDType::Float => f64::from_bits(raw as u64),
+                    };
+                    let mut integer = raw;
+                    for code in &operation_codes {
+                        match code {
+                            1 | 2 if current_dtype == TensorDType::Int => {
+                                integer = match code {
+                                    1 => integer.saturating_neg(),
+                                    _ => integer.max(0),
+                                };
+                                value = integer as f64;
+                            }
+                            1 => value = -value,
+                            2 => value = value.max(0.0),
+                            3 => {
+                                value = 1.0 / (1.0 + (-value).exp());
+                                current_dtype = TensorDType::Float;
+                            }
+                            4 => {
+                                value = value.tanh();
+                                current_dtype = TensorDType::Float;
+                            }
+                            5 => {
+                                value = value.sqrt();
+                                current_dtype = TensorDType::Float;
+                            }
+                            6 => {
+                                value = value.ln();
+                                current_dtype = TensorDType::Float;
+                            }
+                            _ => return None,
+                        }
+                    }
+                    data.push(match dtype {
+                        TensorDType::Int => integer,
+                        TensorDType::Float => value.to_bits() as i64,
+                    });
+                }
+                let requires_grad = dtype == TensorDType::Float
+                    && tensor_requires_autograd(registry, &[args[0] as usize]);
+                let creator = requires_grad.then(|| {
+                    let mut node = AutogradNode::unary(
+                        AutogradOp::FusedUnary,
+                        args[0] as usize,
+                        tensor.shape.clone(),
+                        tensor_values_as_f64(&tensor),
+                        data.iter().map(|raw| f64::from_bits(*raw as u64)).collect(),
+                    );
+                    node.aux = operation_codes.clone();
+                    node
+                });
+                // Float-only operations use the same default F64 allocation
+                // as their unfused host-call implementation. Chains made only
+                // of neg/relu preserve the source precision.
+                let precision = if operation_codes.iter().any(|code| *code >= 3) {
+                    TensorPrecision::F64
+                } else {
+                    tensor.precision
+                };
+                registry.note_kernel(source.len());
+                Some((
+                    dtype,
+                    tensor.shape.clone(),
+                    data,
+                    requires_grad,
+                    creator,
+                    precision,
+                ))
+            })
+        else {
+            return HOST_STATUS_NOT_FOUND;
+        };
+        match tensor_alloc_autograd_on_device(
+            dtype,
+            shape,
+            data,
+            requires_grad,
+            creator,
+            TensorDevice::Cpu,
+            precision,
+        ) {
+            Ok(handle) => tensor_result(ctx_ref, handle as SpectraHostValue),
+            Err(code) => code,
+        }
+    }
+}
+
 pub(crate) fn tensor_unary(
     ctx: *mut SpectraHostCallContext,
     op: AutogradOp,

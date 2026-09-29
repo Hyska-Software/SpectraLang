@@ -1,0 +1,58 @@
+module validation_623_stdlib_vector_growth
+
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let values: Vector<int> = collections.vector_with_capacity(1)
+    let value               = 0
+    while value < 128 {
+        collections.vector_push(values, value)
+        value = value + 1
+    }
+
+    if collections.vector_len(values) != 128 or collections.vector_capacity(values) < 128 {
+        return 1
+    }
+    if option.option_unwrap(collections.vector_get(values, 0)) != 0 or
+    option.option_unwrap(collections.vector_get(values, 64)) != 64 or
+    option.option_unwrap(collections.vector_get(values, 127)) != 127 {
+        return 2
+    }
+    if option.is_some(collections.vector_get(values, -1)) or
+    option.is_some(collections.vector_get(values, 128)) {
+        return 3
+    }
+
+    collections.vector_reserve(values, 32)
+    if collections.vector_capacity(values) < 160 {
+        return 4
+    }
+    collections.vector_insert_at(values, 0, -1)
+    collections.vector_insert_at(values, collections.vector_len(values), 128)
+    if option.option_unwrap(collections.vector_remove_at(values, 0)) != -1 {
+        return 5
+    }
+    if option.option_unwrap(collections.vector_remove_at(values, collections.vector_len(values) - 1)) != 128 {
+        return 6
+    }
+    if option.option_unwrap(collections.vector_pop(values)) != 127 or collections.vector_len(values) != 127 {
+        return 7
+    }
+    if option.option_unwrap(collections.vector_get(values, 0)) != 0 or
+    option.option_unwrap(collections.vector_get(values, 126)) != 126 {
+        return 8
+    }
+
+    collections.vector_clear(values)
+    if collections.vector_is_empty(values) != true or option.is_some(collections.vector_pop(values)) {
+        return 9
+    }
+    collections.vector_push(values, 777)
+    if option.option_unwrap(collections.vector_get(values, 0)) != 777 or
+    collections.vector_capacity(values) < 160 {
+        return 10
+    }
+    collections.vector_free(values)
+    return 0
+}

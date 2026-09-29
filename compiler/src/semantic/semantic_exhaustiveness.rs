@@ -42,8 +42,11 @@ impl SemanticAnalyzer {
             }
         }
 
-        // Se tem wildcard ou identifier, é automaticamente exhaustivo
-        let has_catch_all = arms.iter().any(|arm| pattern_is_catch_all(&arm.pattern));
+        // A guarded arm is conditional, so it cannot prove that every value
+        // matching its pattern is handled.
+        let has_catch_all = arms
+            .iter()
+            .any(|arm| arm.guard.is_none() && pattern_is_catch_all(&arm.pattern));
 
         if has_catch_all {
             return; // Exhaustivo
@@ -66,6 +69,10 @@ impl SemanticAnalyzer {
                     .collect();
 
                 for arm in arms {
+                    if arm.guard.is_some() {
+                        continue;
+                    }
+
                     let mut enum_patterns = Vec::new();
                     visit_enum_patterns(&arm.pattern, &mut enum_patterns);
 
@@ -157,12 +164,12 @@ impl SemanticAnalyzer {
                 }
             }
             Type::Bool => {
-                let has_true = arms
-                    .iter()
-                    .any(|arm| pattern_contains_bool_literal(&arm.pattern, true));
-                let has_false = arms
-                    .iter()
-                    .any(|arm| pattern_contains_bool_literal(&arm.pattern, false));
+                let has_true = arms.iter().any(|arm| {
+                    arm.guard.is_none() && pattern_contains_bool_literal(&arm.pattern, true)
+                });
+                let has_false = arms.iter().any(|arm| {
+                    arm.guard.is_none() && pattern_contains_bool_literal(&arm.pattern, false)
+                });
 
                 if !(has_true && has_false) {
                     self.error_coded(
@@ -181,6 +188,10 @@ impl SemanticAnalyzer {
                 let mut unsupported_pattern = false;
 
                 for arm in arms {
+                    if arm.guard.is_some() {
+                        continue;
+                    }
+
                     if let Pattern::Literal(expr) = &arm.pattern {
                         if let ExpressionKind::TupleLiteral {
                             elements: tuple_elems,
@@ -245,6 +256,7 @@ impl SemanticAnalyzer {
             _ => {
                 let only_literals = arms
                     .iter()
+                    .filter(|arm| arm.guard.is_none())
                     .all(|arm| matches!(arm.pattern, Pattern::Literal(_)));
 
                 if only_literals {

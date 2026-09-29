@@ -1,0 +1,86 @@
+module validation_626_stdlib_priority_queue
+
+from std.collections import PriorityQueue
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let maximums: PriorityQueue<int> = collections.priority_queue_with_capacity(1)
+    let minimums: PriorityQueue<int> = collections.priority_queue_new_min()
+    let value                        = 0
+    while value < 32 {
+        collections.priority_queue_push(maximums, value)
+        collections.priority_queue_push(maximums, value)
+        collections.priority_queue_push(minimums, value)
+        collections.priority_queue_push(minimums, value)
+        value = value + 1
+    }
+    if collections.priority_queue_len(maximums) != 64 or
+    collections.priority_queue_capacity(maximums) < 64 {
+        return 1
+    }
+
+    let max_expected = 31
+    while max_expected >= 0 {
+        let max_repeated = 0
+        while max_repeated < 2 {
+            if option.option_unwrap(collections.priority_queue_peek(maximums)) != max_expected or
+            option.option_unwrap(collections.priority_queue_pop(maximums)) != max_expected {
+                return 2
+            }
+            max_repeated = max_repeated + 1
+        }
+        max_expected = max_expected - 1
+    }
+    if option.is_some(collections.priority_queue_peek(maximums)) or
+    option.is_some(collections.priority_queue_pop(maximums)) {
+        return 3
+    }
+
+    let min_expected = 0
+    while min_expected < 32 {
+        let min_repeated = 0
+        while min_repeated < 2 {
+            if option.option_unwrap(collections.priority_queue_peek(minimums)) != min_expected or
+            option.option_unwrap(collections.priority_queue_pop(minimums)) != min_expected {
+                return 4
+            }
+            min_repeated = min_repeated + 1
+        }
+        min_expected = min_expected + 1
+    }
+    if option.is_some(collections.priority_queue_pop(minimums)) {
+        return 5
+    }
+
+    collections.priority_queue_push(maximums, 7)
+    collections.priority_queue_push(maximums, -4)
+    collections.priority_queue_clear(maximums)
+    if collections.priority_queue_len(maximums) != 0 or
+    option.is_some(collections.priority_queue_pop(maximums)) {
+        return 6
+    }
+    collections.priority_queue_push(maximums, -4)
+    collections.priority_queue_push(maximums, 7)
+    if option.option_unwrap(collections.priority_queue_pop(maximums)) != 7 or
+    option.option_unwrap(collections.priority_queue_pop(maximums)) != -4 {
+        return 7
+    }
+
+    collections.priority_queue_push(minimums, 9)
+    collections.priority_queue_push(minimums, 2)
+    collections.priority_queue_clear(minimums)
+    if option.is_some(collections.priority_queue_peek(minimums)) {
+        return 8
+    }
+    collections.priority_queue_push(minimums, 9)
+    collections.priority_queue_push(minimums, 2)
+    if option.option_unwrap(collections.priority_queue_pop(minimums)) != 2 or
+    option.option_unwrap(collections.priority_queue_pop(minimums)) != 9 {
+        return 9
+    }
+
+    collections.priority_queue_free(maximums)
+    collections.priority_queue_free(minimums)
+    return 0
+}

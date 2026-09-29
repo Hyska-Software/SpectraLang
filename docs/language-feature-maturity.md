@@ -1,9 +1,13 @@
 # Language Feature Maturity Policy
 
-Updated: 2026-08-19
+Updated: 2026-09-29
 Roadmap item: `R-106`, `R-118`, `R-2102`, `R-2103`, `R-2104`, `R-2105`, `R-2106`, `R-2107`, `R-2108`
 
 This file is the source of truth for language maturity labels. Documentation, examples, and CLI behavior must match this policy exactly.
+
+References to test files and validators describe the available coverage contract;
+they do not certify that those commands were executed in this worktree or on a
+particular host.
 
 ## Maturity Levels
 
@@ -11,6 +15,8 @@ This file is the source of truth for language maturity labels. Documentation, ex
 - `beta`: enabled by default and usable, but still expected to evolve in ergonomics or performance
 - `experimental`: available only behind an explicit feature gate when active
 - `deferred`: documented only as roadmap/future work, not as usable language syntax
+- `reserved`: a token, backend, or surface name is held for future use and is
+  not an available implementation contract
 
 ## Current Feature Matrix
 
@@ -46,7 +52,15 @@ This file is the source of truth for language maturity labels. Documentation, ex
   - `do-while` (`do { ... } while ...`)
   - `switch`
   - `match`
+  - guarded match arms whose guard is boolean-checked after pattern bindings are
+    introduced; guarded arms do not contribute unconditional exhaustiveness
+    coverage
+  - `?` propagation for `Option<T>` and `Result<T, E>` when the containing
+    function accepts the corresponding `None`/`Err` early-return path
   - `return`, `break`, `continue`
+- `let mut` is accepted as a redundant binding marker; local bindings remain
+  reassignable by default, so `mut` does not establish a separate mutability
+  mode
 - tuple, struct, enum, and OR-patterns in the validated pattern surface
 - closures/lambdas with by-value captures in the currently validated surface
 - qualified stdlib calls such as `std.io.println(...)`
@@ -59,7 +73,8 @@ This file is the source of truth for language maturity labels. Documentation, ex
   - operation-aware static shape checks for elementwise tensor ops, `tensor.matmul`, `tensor.reshape`, and `ml.linear`
   - `diff { ... }` differentiable block syntax lowering to `std.tensor.backward`, with `E1406` for unsupported qualified stdlib operations
 - `std.tensor` production baseline device placement contract for CPU handles (`device`, `device_available`, `to_device`, `cpu`, `sync`, `stats_device_transfers`)
-- optional `std.tensor` `wgpu` accelerator backend behind Cargo feature `gpu`
+- optional `std.tensor` `wgpu` accelerator backend behind Cargo feature `gpu`;
+  the available kernels and autodiff paths are a subset and may fall back to CPU
 - `std.tensor` mixed-precision quantization metadata/API for f32, f16, and bf16 float tensor handles
 - `std.ml` production baseline runtime API for modules, layers, losses, optimizers, LR scheduling, tensor-backed datasets, and dataloaders
 - Phase 8 interop baseline:
@@ -81,7 +96,8 @@ This file is the source of truth for language maturity labels. Documentation, ex
   - source-aware `error[runtime]` diagnostics for non-zero program exits
 - Phase 11 concurrency and serving baseline:
   - `std.concurrent` task handles, deterministic join, non-blocking FIFO channels, counters, stats/reset, and parallel pipeline sum
-  - `std.serve` local in-process server handles, warmup, request batching, cancellation, timeout state, resident model lookup, result lookup, and deterministic toy benchmark
+  - `std.serve` local in-process server handles, warmup, request batching, cancellation, timeout state, resident model lookup, and result lookup
+  - `std.serve.server_benchmark` invokes the registered model on generated local inputs; it is not an HTTP/gRPC load test or a distributed serving benchmark
 - Phase 12 security and operations baseline:
   - release manifests, SHA-256 checksums, signed release evidence, provenance, and CycloneDX-compatible SBOM
   - CI dependency scanning with `cargo audit` and high-severity `npm audit`
@@ -113,14 +129,15 @@ This file is the source of truth for language maturity labels. Documentation, ex
   - `scripts/validate_r1701_data_runtime.py` and `tests/validation/92_ml_phase17_data_runtime.spectra` validate file-backed tabular training without Python glue
   - `std.ml` emits experiment manifests with configs, metrics, artifacts, seeds, lockfiles, model outputs, reproduction commands, and manifest comparison
   - `scripts/validate_r1702_experiment_tracking.py` and `tests/validation/93_ml_phase17_experiment_tracking.spectra` validate reproducible experiment tracking
-  - `std.ml` supports deterministic single-machine distributed-training simulation with worker progress, coordinated checkpoint JSON, interruption recording, resume, and topology summaries
+  - legacy `std.ml.distributed_session_*`, `distributed_worker_step`, `distributed_global_step`, checkpoint and resume APIs provide a deterministic single-machine counter simulation from caller-provided losses/samples; they do not update model weights or communicate between workers
   - `scripts/validate_r1703_distributed_training.py` and `tests/validation/94_ml_phase17_distributed_training.spectra` validate checkpoint/resume behavior
   - `std.ml` exports/imports a validated binary ONNX `ModelProto` subset for linear, convolutional, activation, normalization, and transformer blocks
   - `scripts/validate_r1801_onnx_import_export.py` and `tests/validation/95_ml_phase18_onnx_import_export.spectra` validate ONNX round-trip behavior
   - `std.ml` implements transformer/LLM primitives for embedding lookup, sinusoidal positional encoding, layer norm, GELU, SwiGLU, scaled dot-product attention, KV cache, and logits sampling
   - `scripts/validate_r1802_transformer_primitives.py` and `tests/validation/96_ml_phase18_transformer_primitives.spectra` validate the transformer primitive baseline
-  - `std.ml` implements deterministic WordPiece-style tokenization, hash embeddings, persistent cosine vector indexes, RAG chunking, prompt assembly, and token-overlap F1 evaluation
+  - `std.ml` implements deterministic WordPiece-style tokenization, token-id lookup in a caller-supplied embedding table, persistent HNSW vector indexes, RAG chunking, prompt assembly, and lexical token-overlap evaluation
   - `scripts/validate_r1803_rag_toolkit.py` and `tests/validation/97_ml_phase18_rag_toolkit.spectra` validate the RAG toolkit baseline
+  - `std.ml.text_embed_model` can produce real text embeddings through ONNX Runtime when the optional `onnx` feature and model/tokenizer artifacts are available; the RAG fixtures use supplied vectors and do not prove semantic retrieval quality
   - `std.ml` implements model evaluation metrics for classification, regression, ranking, generation, and serving behavior, plus versioned machine-readable and human-readable evaluation reports
   - `scripts/validate_r1901_evaluation_metrics.py` and `tests/validation/98_ml_phase19_evaluation_metrics.spectra` validate the evaluation metrics baseline
   - `std.serve` implements AI serving guardrails with input/output policy hooks, rate limits, safe fallback results, structured diagnostics, and versioned audit logs
@@ -179,8 +196,12 @@ This file is the source of truth for language maturity labels. Documentation, ex
   async tasks and is checked against
   `docs/performance/r2111-async-benchmark-baseline.json`
 - first-class tensor language design beyond the current stdlib handle/autodiff API
+- newer `std.ml.distributed_train_*` APIs execute real forward/backward updates
+  with multithread or TCP runners. The TCP path uses real transport, but the
+  runner and cluster failure/metrics coverage remain partial under R-3002.
 - native DWARF/PDB source stepping beyond the current AOT debug-map workflow
-- HTTP/gRPC serving, async I/O integration, distributed model residency policy, and external policy-engine integration
+- network binding for `std.serve`, async serving integration, distributed
+  model residency policy, and external policy-engine integration
 
 These are usable where covered, but still not treated as fully production-hardened language design.
 
@@ -190,9 +211,7 @@ There are currently no active experimental syntax gates. `spectralang --list-exp
 
 ### Deferred
 
-- `class` declarations, inheritance, `override`, `super`, class layout and ABI
 - Unicode identifiers
-- advanced numeric literal syntax beyond current decimal forms
 - scalar exact-width forms outside the certified `i8`–`usize`/`f32`–`f64` matrix
 - closure captures with environment objects
 - `repeat/until`
@@ -201,11 +220,54 @@ There are currently no active experimental syntax gates. `spectralang --list-exp
 - `yield`
 - raw strings and advanced literal modes
 - production tensor syntax and static shape types
-- native CUDA/ROCm/Metal/DirectML/Vulkan backends beyond the current optional `wgpu` baseline
-- `.npz`, safetensors, checkpoints, and ONNX import/export beyond the current `.npy` baseline
+- `.npz`, safetensors, and production checkpoint formats; ONNX import/export
+  remains a validated subset, while general ONNX inference requires the optional
+  `onnx` runtime feature
 - central hosted package registry protocol, authentication, provenance signatures, remote catalog sync, `--locked` enforcement, and semver range solving beyond exact/catalog versions
 - async test macros beyond the `R-2103`/`R-2104`/`R-2105`/`R-2106`/
   `R-2107`/`R-2108` async runtime baseline
+
+### Reserved
+
+- `class` declarations, inheritance, `override`, `super`, class layout and ABI;
+  use the stable `record`/`impl`/`trait` model instead
+- BLAS integration: `runtime` exposes a `blas` Cargo feature name, but the
+  feature is empty and no kernel calls a BLAS library. It is reserved, not an
+  acceleration backend or a performance claim.
+- Native CUDA/ROCm/Metal/DirectML/Vulkan device backends beyond the optional
+  `wgpu` baseline
+
+## Optional Integration and Conformance Boundaries
+
+- `onnx` is opt-in and links ONNX Runtime; model execution is real when built
+  with the feature, but the implemented input/output contracts do not imply
+  support for every ONNX graph or model architecture.
+- `gpu` is opt-in; only supported WGPU operations run on the device, with CPU
+  fallback for unsupported paths. No BLAS backend is currently wired.
+- `spectra.api` has real HTTP/1.1, HTTP/2, TLS, GraphQL and gRPC implementations;
+  HTTP/3 is behind the crate's default `http3` feature. HTTP/2 extended
+  CONNECT/WebSocket and gRPC message compression are unsupported. The v0 API
+  conformance gate covers only HTTP/1, JSON and routing, not the full protocol
+  surface.
+- SQLite uses a bundled driver and has local integration coverage. PostgreSQL
+  and Redis drivers are real, but their service integration tests require
+  `SPECTRA_POSTGRES_URL` and `SPECTRA_REDIS_URL`; tests may return without
+  exercising a service when those variables are absent. OTLP export likewise
+  requires a configured collector.
+- Agent `mock/` providers are deterministic fixtures; their canned responses,
+  fixed accounting and hash-based embeddings do not prove model quality or
+  semantic similarity. OpenAI-compatible transport and local ONNX inference are
+  separate real providers with external configuration/model requirements.
+- RAG example fixtures use fixed vectors and answers. Chunking, prompt assembly
+  and lexical overlap scoring are real helpers, but those fixtures do not
+  certify end-to-end semantic retrieval or answer grounding.
+- Distributed training has separate legacy simulated-counter APIs and newer
+  actual multithread/TCP training APIs. Classify each function family
+  separately; the newer runner is not evidence of fully managed production
+  clusters.
+- The local serving benchmark runs real inference using synthetic local input;
+  it does not establish endpoint throughput, network latency, or distributed
+  model residency.
 
 ## Synchronization Rules
 

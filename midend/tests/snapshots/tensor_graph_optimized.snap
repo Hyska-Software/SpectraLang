@@ -2,4 +2,5 @@ tensor_graph module tensor_graph_optimization_snapshot
 fn main {
   n0 %2 = create.full_f(-) -> dtype=float shape=[8] layout=contiguous device=cpu @b0:i2
   n1 %5 = fused_reduction.relu+tanh_f->sum_t(n0) -> dtype=float shape=[] layout=contiguous device=cpu @b0:i5
+  n2 _ = observe.spectra.std.tensor.backward(n1) -> dtype=? shape=? layout=? device=? @b0:i6
 }

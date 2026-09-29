@@ -1,0 +1,113 @@
+module validation_629_stdlib_collections_graph_search
+
+from std.collections import HashSet, Map, Queue, Vector
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let discovered: HashSet<int> = collections.hash_set_new()
+    let pending: Queue<int>      = collections.queue_new()
+    let parents: Map<int, int>   = collections.map_new()
+    let order: Vector<int>       = collections.vector_new()
+
+    if collections.hash_set_insert(discovered, 0) != true {
+        return 1
+    }
+    collections.map_set(parents, 0, -1)
+    collections.queue_enqueue(pending, 0)
+
+    while collections.queue_is_empty(pending) == false {
+        let current = option.option_unwrap(collections.queue_dequeue(pending))
+        collections.vector_push(order, current)
+
+        if current == 0 {
+            if collections.hash_set_insert(discovered, 1) {
+                collections.map_set(parents, 1, current)
+                collections.queue_enqueue(pending, 1)
+            }
+            if collections.hash_set_insert(discovered, 2) {
+                collections.map_set(parents, 2, current)
+                collections.queue_enqueue(pending, 2)
+            }
+        }
+        if current == 1 {
+            if collections.hash_set_insert(discovered, 0) {
+                collections.map_set(parents, 0, current)
+                collections.queue_enqueue(pending, 0)
+            }
+            if collections.hash_set_insert(discovered, 3) {
+                collections.map_set(parents, 3, current)
+                collections.queue_enqueue(pending, 3)
+            }
+        }
+        if current == 2 {
+            if collections.hash_set_insert(discovered, 0) {
+                collections.map_set(parents, 0, current)
+                collections.queue_enqueue(pending, 0)
+            }
+            if collections.hash_set_insert(discovered, 3) {
+                collections.map_set(parents, 3, current)
+                collections.queue_enqueue(pending, 3)
+            }
+            if collections.hash_set_insert(discovered, 4) {
+                collections.map_set(parents, 4, current)
+                collections.queue_enqueue(pending, 4)
+            }
+        }
+        if current == 3 {
+            if collections.hash_set_insert(discovered, 1) {
+                collections.map_set(parents, 1, current)
+                collections.queue_enqueue(pending, 1)
+            }
+            if collections.hash_set_insert(discovered, 2) {
+                collections.map_set(parents, 2, current)
+                collections.queue_enqueue(pending, 2)
+            }
+            if collections.hash_set_insert(discovered, 5) {
+                collections.map_set(parents, 5, current)
+                collections.queue_enqueue(pending, 5)
+            }
+        }
+        if current == 4 {
+            if collections.hash_set_insert(discovered, 2) {
+                collections.map_set(parents, 2, current)
+                collections.queue_enqueue(pending, 2)
+            }
+            if collections.hash_set_insert(discovered, 5) {
+                collections.map_set(parents, 5, current)
+                collections.queue_enqueue(pending, 5)
+            }
+        }
+        if current == 5 {
+            if collections.hash_set_insert(discovered, 3) {
+                collections.map_set(parents, 3, current)
+                collections.queue_enqueue(pending, 3)
+            }
+        }
+    }
+
+    if collections.vector_len(order) != 6 or collections.hash_set_len(discovered) != 6 {
+        return 2
+    }
+    let expected = 0
+    for node in order {
+        if node != expected {
+            return 3
+        }
+        expected = expected + 1
+    }
+    if expected != 6 {
+        return 4
+    }
+    if option.option_unwrap(collections.map_get(parents, 3)) != 1 or
+    option.option_unwrap(collections.map_get(parents, 4)) != 2 or
+    option.option_unwrap(collections.map_get(parents, 5)) != 3 {
+        return 5
+    }
+
+    collections.hash_set_free(discovered)
+    collections.queue_free(pending)
+    collections.map_free(parents)
+    collections.vector_free(order)
+    return 0
+}

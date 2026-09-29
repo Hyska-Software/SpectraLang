@@ -24,20 +24,45 @@
 ### Conceito / Concept
 
 **PT-BR:**  
-`match` é a construção de correspondência de padrões do SpectraLang. Ela compara um valor contra uma série de padrões e executa o corpo do primeiro padrão que corresponder. O compilador **verifica exaustividade** — todos os casos possíveis devem ser cobertos, ou um padrão curinga `_` deve ser incluído.
+`match` é a construção de correspondência de padrões do SpectraLang. Ela compara um valor contra uma série de padrões e executa o corpo do primeiro braço cujo padrão corresponde e cuja guarda (se houver) resulta em `true`. A guarda é analisada depois que as bindings do padrão entram em escopo e deve ter tipo `bool`. O compilador **verifica exaustividade**; braços com guardas não contam como cobertura incondicional.
 
 **EN-US:**  
-`match` is SpectraLang's pattern matching construct. It compares a value against a series of patterns and executes the body of the first matching pattern. The compiler **checks exhaustiveness** — all possible cases must be covered, or a wildcard `_` pattern must be included.
+`match` is SpectraLang's pattern matching construct. It compares a value against a series of patterns and executes the first arm whose pattern matches and whose optional guard evaluates to `true`. Pattern bindings are in scope in the guard, which must have type `bool`. The compiler **checks exhaustiveness**; guarded arms do not count as unconditional coverage.
 
 ### Sintaxe / Syntax
 
 ```spectra
 match expressão {
-    when padrão1 then corpo1,
+    when padrão1 if guarda then corpo1,
     when padrão2 then corpo2,
     otherwise then corpo_padrão    // curinga / wildcard
 }
 ```
+
+### Guardas / Guards
+
+```spectra
+enum Token { Number(int), Plus, Minus }
+
+func peso(token: Token, sinais_habilitados: bool) returns int {
+    match token {
+        when Token::Number(n) if n > 0 then n,
+        when Token::Number(_) then 0,
+        when Token::Plus | Token::Minus if sinais_habilitados then 1,
+        otherwise then 0
+    }
+}
+```
+
+**PT-BR:** `n` fica disponível na guarda e no corpo. Uma guarda não booleana é
+erro semântico (`E040`). Braços guardados, inclusive `when _ if condicao`, não garantem
+que um caso seja coberto; use um braço não guardado para completar a
+exaustividade. Casos que ainda faltarem geram `E031`.
+
+**EN-US:** `n` is available in both the guard and the arm body. A non-boolean
+guard is a semantic error (`E040`). Guarded arms, including `when _ if
+condition`, do not prove a case is covered; use an unguarded arm to complete
+exhaustiveness. Any remaining missing case reports `E031`.
 
 ### Padrões Literais / Literal Patterns
 
@@ -200,10 +225,10 @@ match x {
 ### Exaustividade / Exhaustiveness
 
 **PT-BR:**  
-O compilador verifica se todos os casos de um enum são cobertos. Se um caso estiver faltando, um erro de compilação é emitido. Use `_` para cobrir os casos restantes.
+O compilador verifica se todos os casos de um enum são cobertos. Se um caso estiver faltando, um erro de compilação é emitido. Use `_` sem guarda para cobrir os casos restantes; braços guardados não contam como cobertura garantida.
 
 **EN-US:**  
-The compiler checks whether all cases of an enum are covered. If a case is missing, a compilation error is emitted. Use `_` to cover remaining cases.
+The compiler checks whether all cases of an enum are covered. If a case is missing, a compilation error is emitted. Use an unguarded `_` arm to cover remaining cases; guarded arms are not guaranteed coverage.
 
 ```spectra
 enum Status { Ativo, Inativo, Pendente }
@@ -547,10 +572,10 @@ func resultado_para_opcao(res: Result<int, string>) returns Option<int> {
 ## 5. Operador de Propagação de Erro `?` / Error Propagation Operator `?`
 
 **PT-BR:**  
-O operador `?` é uma forma concisa de propagar erros. Quando aplicado a um `Result` ou `Option`, ele desembrulha o valor se for `Ok`/`Some`, ou retorna antecipadamente da função com o `Err`/`None` se for o caso.
+O operador `?` é uma forma concisa de propagar falhas. Ele aceita operandos `Result<T, E>` e `Option<T>`: no caminho de sucesso produz o payload `T`; no caminho `Err`/`None`, retorna antecipadamente. A semântica verifica o tipo do operando e se o tipo de retorno da função aceita o erro/ausência propagado.
 
 **EN-US:**  
-The `?` operator is a concise way to propagate errors. When applied to a `Result` or `Option`, it unwraps the value if `Ok`/`Some`, or early-returns from the function with the `Err`/`None` otherwise.
+The `?` operator concisely propagates failure. It accepts `Result<T, E>` and `Option<T>` operands: the success path produces payload `T`; the `Err`/`None` path returns early. Semantic analysis checks both the operand type and whether the enclosing function's return type accepts the propagated error/absence path.
 
 ```spectra
 func processar_entrada(entrada: string) returns Result<int, string> {
@@ -571,7 +596,14 @@ func processar_entrada_conciso(entrada: string) returns Result<int, string> {
 }
 ```
 
-> **Nota / Note:** A função que usa `?` deve ter retorno compatível com o tipo sendo propagado (`Result<T, E>` → `Result<U, E>`).
+> **Nota / Note:** Para `Result<T, E>`, o retorno da função deve aceitar o payload de erro `E` (por exemplo, `Result<U, E>`). Para `Option<T>`, o retorno deve aceitar `None` (normalmente `Option<U>`). Operandos inválidos geram `E049`; contextos de retorno incompatíveis geram `E050`.
+
+```spectra
+func duplicar_se_existir(valor: Option<int>) returns Option<int> {
+    let n = valor?
+    return Option::Some(n * 2)
+}
+```
 
 ```spectra
 // Encadeamento elegante com ? / Elegant chaining with ?

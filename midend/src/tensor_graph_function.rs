@@ -43,6 +43,47 @@ impl TensorGraphFunction {
                 }
             }
         }
+        // The graph only contains operations that return tensor handles.
+        // Record every other use after all producer nodes have been visited,
+        // so a scalar read, return, free, or call can block fusion safely.
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                match &instruction.kind {
+                    InstructionKind::HostCall {
+                        result,
+                        host,
+                        args,
+                        ..
+                    } if result
+                        .map(|value| extractor.value_to_node.contains_key(&value.id))
+                        .unwrap_or(false) => {}
+                    InstructionKind::HostCall { host, args, .. } => {
+                        extractor.record_external_uses(
+                            host,
+                            args,
+                            block.id,
+                            instruction.id,
+                        );
+                    }
+                    _ => extractor.record_external_uses(
+                        "ir",
+                        &crate::passes::verification::instruction_operands(instruction),
+                        block.id,
+                        instruction.id,
+                    ),
+                }
+            }
+            if let Some(terminator) = &block.terminator {
+                let values = match terminator {
+                    crate::ir::Terminator::Return { value } => value.iter().copied().collect(),
+                    crate::ir::Terminator::CondBranch { condition, .. } => vec![*condition],
+                    crate::ir::Terminator::Switch { value, .. } => vec![*value],
+                    crate::ir::Terminator::Branch { .. }
+                    | crate::ir::Terminator::Unreachable => Vec::new(),
+                };
+                extractor.record_external_uses("terminator", &values, block.id, usize::MAX);
+            }
+        }
         Self {
             name: function.name.clone(),
             nodes: extractor.nodes,
@@ -82,6 +123,27 @@ impl TensorGraphFunction {
     }
 
     pub(crate) fn optimize_into(&self, report: &mut TensorGraphOptimizationReport) -> Self {
+        self.optimize_into_with_policy(report, true, true)
+    }
+
+    /// Produce only transformations that have an executable backend path.
+    /// The CPU code generator currently emits fused unary elementwise chains;
+    /// graph-only reduction fusion stays available through `optimize()` but
+    /// is excluded from backend legalization until it has native execution.
+    pub(crate) fn optimize_for_backend(
+        &self,
+        report: &mut TensorGraphOptimizationReport,
+        allow_cpu_fusion: bool,
+    ) -> Self {
+        self.optimize_into_with_policy(report, allow_cpu_fusion, false)
+    }
+
+    fn optimize_into_with_policy(
+        &self,
+        report: &mut TensorGraphOptimizationReport,
+        allow_elementwise_fusion: bool,
+        allow_reduction_fusion: bool,
+    ) -> Self {
         let consumer_counts = self.consumer_counts();
         let mut old_to_new = HashMap::new();
         let mut skipped = HashSet::new();
@@ -91,30 +153,35 @@ impl TensorGraphFunction {
             if skipped.contains(&node.id) {
                 continue;
             }
-            if matches!(node.op, TensorGraphOp::Elementwise { .. })
+            if allow_reduction_fusion
+                && matches!(node.op, TensorGraphOp::Elementwise { .. })
                 && self.elementwise_chain_feeds_reduction(node.id, &consumer_counts)
             {
                 continue;
             }
-            if let Some(fused) =
-                self.try_fuse_reduction(node, &consumer_counts, &mut skipped, report)
-            {
-                let new_id = nodes.len();
-                for old_id in fused.old_node_ids {
-                    old_to_new.insert(old_id, new_id);
+            if allow_reduction_fusion {
+                if let Some(fused) =
+                    self.try_fuse_reduction(node, &consumer_counts, &mut skipped, report)
+                {
+                    let new_id = nodes.len();
+                    for old_id in fused.old_node_ids {
+                        old_to_new.insert(old_id, new_id);
+                    }
+                    nodes.push(fused.node.with_id(new_id));
+                    continue;
                 }
-                nodes.push(fused.node.with_id(new_id));
-                continue;
             }
-            if let Some(fused) =
-                self.try_fuse_elementwise_chain(node, &consumer_counts, &mut skipped, report)
-            {
-                let new_id = nodes.len();
-                for old_id in fused.old_node_ids {
-                    old_to_new.insert(old_id, new_id);
+            if allow_elementwise_fusion {
+                if let Some(fused) =
+                    self.try_fuse_elementwise_chain(node, &consumer_counts, &mut skipped, report)
+                {
+                    let new_id = nodes.len();
+                    for old_id in fused.old_node_ids {
+                        old_to_new.insert(old_id, new_id);
+                    }
+                    nodes.push(fused.node.with_id(new_id));
+                    continue;
                 }
-                nodes.push(fused.node.with_id(new_id));
-                continue;
             }
             let new_id = nodes.len();
             old_to_new.insert(node.id, new_id);
@@ -222,10 +289,33 @@ impl TensorGraphFunction {
         if chain.len() < 2 {
             return None;
         }
+        if chain.len() > 8
+            || chain.iter().any(|chain_node| {
+                chain_node.inputs.len() != 1
+                    || !matches!(
+                        chain_node.op,
+                        TensorGraphOp::Elementwise { ref name }
+                            if matches!(name.as_str(), "neg" | "relu" | "sigmoid_f" | "tanh_f" | "sqrt_f" | "log_f")
+                    )
+            })
+        {
+            return None;
+        }
+        // The native fused kernel implemented by JIT/AOT is currently CPU
+        // only. Keep other device paths explicit instead of reporting graph
+        // fusion that their backend does not execute.
         if chain
-            .last()
-            .and_then(|last| self.single_consumer(last.id, consumer_counts))
-            .is_some_and(|consumer| matches!(consumer.op, TensorGraphOp::Reduction { .. }))
+            .iter()
+            .any(|chain_node| chain_node.output.device != TensorDevice::Cpu)
+        {
+            return None;
+        }
+        let base_input = chain.first()?.inputs.first()?;
+        if self
+            .nodes
+            .iter()
+            .find(|candidate| candidate.id == *base_input)
+            .map_or(true, |base| base.output.device != TensorDevice::Cpu)
         {
             return None;
         }

@@ -63,6 +63,12 @@ pub enum TensorGraphOp {
     Loss {
         name: String,
     },
+    /// A tensor value was observed by an IR operation that does not produce
+    /// a tensor graph node. This dependency prevents unsafe fusion across
+    /// returns, scalar reads, frees, and ordinary function calls.
+    ExternalUse {
+        operation: String,
+    },
     UnknownHost {
         host: String,
     },
@@ -235,10 +241,13 @@ impl TensorGraph {
             tolerance_abs: "1e-9".to_string(),
             tolerance_rel: "1e-9".to_string(),
         };
+        let enable_cpu_fusion = matches!(backend, TensorDevice::Cpu);
         let functions = self
             .functions
             .iter()
-            .map(|function| function.optimize_into(&mut optimization))
+            .map(|function| {
+                function.optimize_for_backend(&mut optimization, enable_cpu_fusion)
+            })
             .collect::<Vec<_>>();
         let optimized = TensorGraph {
             module: self.module.clone(),

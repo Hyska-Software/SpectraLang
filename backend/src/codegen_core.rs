@@ -63,8 +63,10 @@ impl CodeGenerator {
 
     /// Generate code for an entire module
     pub fn generate_module(&mut self, ir_module: &IRModule) -> BackendResult<()> {
+        let mut lowered_ir_module = ir_module.clone();
         self.hostcall_batch_stats = HostCallBatchStats::default();
-        let _tensor_ir = validate_tensor_ir(ir_module)?;
+        let _tensor_ir = validate_tensor_ir(&mut lowered_ir_module)?;
+        let ir_module = &lowered_ir_module;
         self.pre_intern_host_names(ir_module);
         self.define_globals(ir_module)?;
 

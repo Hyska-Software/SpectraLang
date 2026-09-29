@@ -1,112 +1,85 @@
 # Parser da SpectraLang
 
-Este diretório contém a implementação modular do parser da linguagem SpectraLang.
+O parser é um parser descendente recursivo que converte tokens em AST. Aceitar
+uma forma sintática não prova que a análise semântica, o lowering ou os
+backends consigam validá-la e executá-la; consulte
+[`docs/frontend/frontend-coverage-audit.md`](../../../docs/frontend/frontend-coverage-audit.md)
+e [`docs/semantic/semantic-coverage-audit.md`](../../../docs/semantic/semantic-coverage-audit.md)
+para essas fronteiras.
 
-## Estrutura de Arquivos
+## Organização
 
-### `mod.rs` - Parser Principal
-- **Responsabilidade**: Gerenciamento geral do processo de parsing
-- **Conteúdo**:
-  - Estrutura `Parser` principal com estado (tokens, posição, erros)
-  - Métodos de navegação de tokens (`current`, `peek`, `advance`, `is_at_end`)
-  - Métodos de verificação de tokens (`check`, `check_keyword`, `check_symbol`, `check_identifier`)
-  - Métodos de consumo de tokens (`consume_keyword`, `consume_symbol`, `consume_identifier`)
-  - Gerenciamento de erros (`error`, `error_at`)
-  - Sincronização de erros (`synchronize`)
+- `mod.rs`: estado do parser, navegação de tokens, diagnóstico, recuperação e
+  limite de recursão.
+- `workspace.rs`: parsing de conjuntos de módulos/projetos.
+- `module.rs`: cabeçalhos `module` e imports.
+- `item.rs` e módulos `item_*`: despacho de itens, declarações, assinaturas,
+  traits, impls e aliases.
+- `statement.rs`: bindings `let`, atribuições, controle de fluxo e statements.
+- `expression.rs`, `expression_primary.rs` e `expression_precedence.rs`:
+  expressões, chamadas, operadores e precedência.
+- `expression_patterns.rs`: padrões, alternativas OR e padrões de enum.
+- `type_annotation.rs`: tipos simples, compostos, qualificados e genéricos.
 
-### `module.rs` - Parser de Módulos
-- **Responsabilidade**: Parse de declarações de módulos e imports
-- **Sintaxe suportada**:
-  - `module <nome>;` - Declaração de módulo
-  - `import path.to.module;` - Importação de módulos
+## Superfície sintática
 
-### `item.rs` - Parser de Items
-- **Responsabilidade**: Parse de declarações de alto nível (funções, classes, traits)
-- **Sintaxe suportada**:
-  - `fn <nome>(<params>) [-> tipo] { <corpo> }` - Declaração de função
-  - `pub fn ...` - Função pública
-  - Parâmetros de função com tipos opcionais
-  - Tipos de retorno opcionais
-  - Blocos de código
+O parser reconhece módulos/imports, funções, records, enums, traits e impls,
+tipos genéricos, `const`/`static`, closures e os controles de fluxo documentados
+(`if`, `if let`, `while`, `while let`, `for ... in`, `loop`, `do ... while`,
+`switch` e `match`). As expressões incluem chamadas e métodos, acesso/indexação,
+casts, blocos, f-strings, async/`await` e propagação `?`.
 
-### `statement.rs` - Parser de Statements
-- **Responsabilidade**: Parse de declarações dentro de funções
-- **Sintaxe suportada**:
-  - `let <nome> [: tipo] [= expr];` - Declaração de variável
-  - `return [expr];` - Retorno de função
-  - Expressões como statements
+Bindings `let` aceitam `mut` como marcador redundante. Padrões de `match`
+incluem wildcard, binding, literal, tupla, variantes de enum, forma struct e
+OR-pattern. Braços aceitam guarda com a forma `when padrão if expressão then
+corpo`; o parser armazena a guarda na AST.
 
-### `expression.rs` - Parser de Expressões
-- **Responsabilidade**: Parse de expressões
-- **Sintaxe suportada**:
-  - Literais: números, strings
-  - Identificadores
-  - Chamadas de função: `func(arg1, arg2, ...)`
-  - Expressões agrupadas: `(expr)`
-  
-### `type_annotation.rs` - Parser de Tipos
-- **Responsabilidade**: Parse de anotações de tipo
-- **Sintaxe suportada**:
-  - Tipos simples: `i32`, `String`
-  - Tipos qualificados: `std.collections.HashMap`
+O código-fonte termina statements por linha/estrutura de blocos; ponto e vírgula
+não é o terminador canônico. Não há gates sintáticos experimentais ativos;
+`--enable-experimental` é uma opção de compatibilidade sem efeito.
 
-## Arquitetura
+## Validação semântica depois do parsing
 
-O parser utiliza uma arquitetura de **Recursive Descent Parser** com as seguintes características:
+- A guarda é analisada no escopo das bindings do padrão e precisa ser `bool`.
+  Um braço guardado não oferece cobertura incondicional para exaustividade.
+- `?` aceita apenas `Option<T>` e `Result<T, E>`, produz o payload de sucesso e
+  exige que o tipo de retorno da função aceite a propagação de `None`/`Err`.
+- `mut` não cria uma categoria separada de bindings imutáveis; variáveis locais
+  podem ser reatribuídas por padrão.
 
-1. **Modularidade**: Cada tipo de construção sintática tem seu próprio arquivo
-2. **Recuperação de Erros**: Sistema de sincronização para continuar parsing após erros
-3. **Tipos Fortemente Tipados**: Usa a AST definida em `ast/mod.rs`
-4. **Navegação de Tokens**: Métodos auxiliares para facilitar o parse
+Diagnósticos e fixtures correspondentes ficam nas validações frontend/semantic;
+esta nota descreve o contrato, não certifica que os gates foram executados no
+checkout atual.
 
-## Fluxo de Parsing
+## Construção e recuperação de erros
 
-```
-Parser::parse()
-  └─> parse_module()
-       ├─> parse_import() (module.rs)
-       └─> parse_item() (item.rs)
-            └─> parse_function()
-                 ├─> parse_function_params()
-                 ├─> parse_type_annotation() (type_annotation.rs)
-                 └─> parse_block()
-                      └─> parse_statement() (statement.rs)
-                           ├─> parse_let_statement()
-                           ├─> parse_return_statement()
-                           └─> parse_expression() (expression.rs)
-                                ├─> parse_call_expression()
-                                └─> parse_primary_expression()
-```
+`Parser::parse()` percorre o módulo e delega cada construção ao módulo
+responsável. Erros carregam spans localizados. A rotina de sincronização tenta
+continuar após uma falha, e um limite de profundidade impede recursão excessiva
+de consumir a pilha.
 
-## Tratamento de Erros
-
-O parser coleta todos os erros encontrados durante o parsing e retorna uma lista de `ParseError`. O método `synchronize()` é usado para recuperar de erros e continuar o parsing.
-
-## Extensibilidade
-
-Para adicionar novos recursos ao parser:
-
-1. **Novos tipos de expressões**: Adicione em `expression.rs`
-2. **Novos statements**: Adicione em `statement.rs`
-3. **Novos items (classes, traits)**: Adicione em `item.rs`
-4. **Novos operadores**: Implemente precedência em `expression.rs`
-
-## Exemplo de Uso
+Exemplo de uso com a sintaxe atual:
 
 ```rust
 use spectra_compiler::{Lexer, Parser};
 
 let source = r#"
-module example;
+module example
 
-fn main() {
-    let x = 42;
-    return x;
+public func main() returns int {
+    let mut total = 40
+    total = total + 2
+    return total
 }
 "#;
 
-let lexer = Lexer::new(source);
-let tokens = lexer.tokenize().unwrap();
-let parser = Parser::new(tokens);
-let module = parser.parse().unwrap();
+let tokens = Lexer::new(source).tokenize().unwrap();
+let module = Parser::new(tokens).parse().unwrap();
 ```
+
+## Sintaxe reservada ou adiada
+
+`class` é reservado e rejeitado com diagnóstico `P007`. Unicode identifiers,
+lifetime syntax, `foreach`, `repeat/until`, `goto` e `yield` não são construções
+usáveis hoje. A existência de uma palavra-chave no lexer não implica que ela
+tenha uma produção no parser.

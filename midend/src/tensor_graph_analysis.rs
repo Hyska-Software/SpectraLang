@@ -130,6 +130,37 @@ impl TensorGraphExtractor {
         self.value_to_node.insert(value.id, id);
         id
     }
+
+    pub(crate) fn record_external_uses(
+        &mut self,
+        operation: &str,
+        values: &[Value],
+        block: usize,
+        instruction: usize,
+    ) {
+        let inputs = values
+            .iter()
+            .filter_map(|value| self.value_to_node.get(&value.id).copied())
+            .collect::<Vec<_>>();
+        if inputs.is_empty() {
+            return;
+        }
+        let id = self.nodes.len();
+        self.nodes.push(TensorGraphNode {
+            id,
+            value: None,
+            op: TensorGraphOp::ExternalUse {
+                operation: operation.to_string(),
+            },
+            inputs,
+            output: TensorMetadata::unknown(),
+            source: TensorGraphSource {
+                block,
+                instruction,
+                host: None,
+            },
+        });
+    }
 }
 
 impl TensorGraphOp {
@@ -164,6 +195,7 @@ impl TensorGraphOp {
             TensorGraphOp::Dropout => "dropout".to_string(),
             TensorGraphOp::MaxPool2d => "max_pool2d".to_string(),
             TensorGraphOp::Loss { name } => format!("loss.{name}"),
+            TensorGraphOp::ExternalUse { operation } => format!("observe.{operation}"),
             TensorGraphOp::UnknownHost { host } => format!("unknown.{host}"),
         }
     }
@@ -445,7 +477,13 @@ pub(crate) fn infer_output_metadata(
                 )
             })
             .unwrap_or_else(TensorMetadata::unknown),
-        TensorGraphOp::Parameter | TensorGraphOp::UnknownHost { .. } => TensorMetadata::unknown(),
+        TensorGraphOp::Parameter | TensorGraphOp::ExternalUse { .. } => {
+            TensorMetadata::unknown()
+        }
+        TensorGraphOp::UnknownHost { host } if host.ends_with(".requires_grad") => input(0)
+            .map(|node| node.output.clone())
+            .unwrap_or_else(TensorMetadata::unknown),
+        TensorGraphOp::UnknownHost { .. } => TensorMetadata::unknown(),
     }
 }
 

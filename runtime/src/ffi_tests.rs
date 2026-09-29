@@ -12,6 +12,71 @@ mod tests {
     }
 
     #[test]
+    fn manual_allocation_failures_are_controlled_process_errors() {
+        const CHILD_ENV: &str = "SPECTRA_TEST_MANUAL_ALLOC_FAILURE_CHILD";
+        if let Some(case) = std::env::var_os(CHILD_ENV) {
+            let limit = if case == "system" { 0 } else { 1 };
+            crate::initialize_with_config(crate::memory::MemoryConfig {
+                manual_soft_limit_bytes: limit,
+            });
+            if case == "system" {
+                let _ = spectra_rt_manual_alloc(usize::MAX);
+            } else {
+                let first = spectra_rt_manual_alloc(1);
+                assert!(!first.is_null());
+                spectra_rt_manual_free(first);
+                let _ = spectra_rt_manual_alloc(1);
+            }
+            panic!("failed tracked allocation must terminate through the runtime error path");
+        }
+
+        for (case, expected_message) in [
+            ("limit", "configured resident-memory limit exceeded"),
+            ("system", "system allocator could not reserve memory"),
+        ] {
+            let output = std::process::Command::new(
+                std::env::current_exe().expect("runtime test executable path"),
+            )
+            .arg("--exact")
+            .arg("ffi::tests::manual_allocation_failures_are_controlled_process_errors")
+            .arg("--nocapture")
+            .env(CHILD_ENV, case)
+            .output()
+            .expect("spawn deterministic runtime test child");
+
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert_eq!(output.status.code(), Some(101), "child stderr: {stderr}");
+            assert!(
+                stderr.contains(&format!(
+                    "runtime error: manual allocation failed: {expected_message}"
+                )),
+                "child should report the expected Spectra runtime error, stderr was: {stderr}"
+            );
+        }
+    }
+
+    #[test]
+    fn manual_memory_telemetry_separates_live_and_quarantined_bytes() {
+        let _lock = test_guard();
+        spectra_rt_manual_clear();
+
+        let baseline_live = spectra_rt_manual_live_bytes();
+        let baseline_quarantine = spectra_rt_manual_quarantine_bytes();
+        let ptr = spectra_rt_manual_alloc(37);
+        assert!(!ptr.is_null());
+        assert_eq!(spectra_rt_manual_live_bytes(), baseline_live + 37);
+        assert_eq!(spectra_rt_manual_quarantine_bytes(), baseline_quarantine);
+
+        spectra_rt_manual_free(ptr);
+        assert_eq!(spectra_rt_manual_live_bytes(), baseline_live);
+        assert!(spectra_rt_manual_quarantine_bytes() >= baseline_quarantine + 37);
+
+        spectra_rt_manual_clear();
+        assert_eq!(spectra_rt_manual_live_bytes(), baseline_live);
+        assert_eq!(spectra_rt_manual_quarantine_bytes(), 0);
+    }
+
+    #[test]
     fn frame_exit_releases_manual_allocations() {
         let _lock = test_guard();
         spectra_rt_manual_clear();

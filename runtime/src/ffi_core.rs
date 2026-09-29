@@ -35,8 +35,7 @@ pub fn set_program_args(args: Vec<String>) {
         .write()
         .unwrap_or_else(|poison| poison.into_inner()) = Some(args);
 }
-use crate::memory::ManualBox;
-
+use crate::memory::{ManualBox, QuarantinedManualBox};
 
 struct ManualAllocation {
     frame_id: usize,
@@ -76,7 +75,7 @@ struct QuarantineEntry {
     /// tooling reason about how long an address has been quarantined.
     freed_epoch: u64,
     /// Kept alive to pin the address; dropped on eviction.
-    _storage: Vec<u8>,
+    _storage: QuarantinedManualBox<Vec<u8>>,
 }
 
 struct Frame {
@@ -301,10 +300,10 @@ impl AllocationTable {
             return HOST_STATUS_INVALID_ARGUMENT;
         };
 
-        // `into_inner` releases the live-statistics accounting while
-        // keeping the heap block itself alive inside the tombstone, which
-        // pins the address against reuse by `spectra_rt_manual_alloc`.
-        let storage = entry._storage.into_inner();
+        // `into_quarantine` releases live-statistics accounting while
+        // transferring the resident-byte reservation to the tombstone. The
+        // heap block stays pinned against reuse by `spectra_rt_manual_alloc`.
+        let storage = entry._storage.into_quarantine();
         self.remove_from_frame(entry.frame_id, ptr_value);
 
         let freed_epoch = self.next_freed_epoch;
@@ -336,6 +335,14 @@ impl AllocationTable {
     /// [`QUARANTINE_CAPACITY`]).
     pub(crate) fn quarantine_len(&self) -> usize {
         self.quarantine.len()
+    }
+
+    /// Requested payload bytes retained by tombstones in the stale-pointer
+    /// quarantine. This matches the amount charged to the manual heap limit.
+    pub(crate) fn quarantine_bytes(&self) -> usize {
+        self.quarantine.iter().fold(0usize, |total, entry| {
+            total.saturating_add(entry._storage.tracked_size())
+        })
     }
 
     fn check_invariants(&self) -> bool {

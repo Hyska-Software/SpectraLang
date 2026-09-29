@@ -1,0 +1,24 @@
+// Negative regression: guarded enum and OR-pattern arms do not count as total.
+module match_guard_exhaustiveness
+
+enum State {
+    Ready,
+    Busy,
+}
+
+func choose(state: State, enabled: bool) returns int {
+    return match state {
+        when State::Ready | State::Busy if enabled then 1
+    }
+}
+
+func choose_bool(flag: bool) returns int {
+    return match flag {
+        when true if flag then 1,
+        when false then 0
+    }
+}
+
+public func main() returns int {
+    return choose(State::Ready, true) + choose_bool(true)
+}

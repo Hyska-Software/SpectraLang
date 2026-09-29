@@ -254,9 +254,11 @@ impl AotCodeGenerator {
         ir_module: &IRModule,
         opts: &AotOptions,
     ) -> BackendResult<AotCompileOutput> {
+        let mut lowered_ir_module = ir_module.clone();
         self.hostcall_batch_stats = HostCallBatchStats::default();
         let rename_main = opts.emit_executable;
-        let _tensor_ir = validate_tensor_ir(ir_module)?;
+        let _tensor_ir = validate_tensor_ir(&mut lowered_ir_module)?;
+        let ir_module = &lowered_ir_module;
 
         // Pre-intern all host-function names as .rodata data sections so that
         // the generated code can reference them via GlobalValues (relocatable

@@ -1,0 +1,11 @@
+// Negative regression: `?` accepts only Option<T> or Result<T, E> (E049).
+module try_invalid_operand
+
+func invalid() returns Option<int> {
+    let value = 4?
+    return Option::Some(4)
+}
+
+public func main() returns int {
+    return 0
+}

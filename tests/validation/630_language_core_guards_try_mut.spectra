@@ -1,0 +1,87 @@
+module language_core_guards_try_mut
+
+import std.option as option
+import std.result as result
+
+enum Stage {
+    Warm,
+    Cool,
+    Neutral,
+}
+
+func optional_value(enabled: bool) returns Option<int> {
+    if enabled {
+        return Option::Some(7)
+    }
+    return Option::None
+}
+
+func optional_propagate(enabled: bool) returns Option<int> {
+    let value = optional_value(enabled)?
+    return Option::Some(value + 1)
+}
+
+func result_value(fail: bool) returns Result<int, string> {
+    if fail {
+        return Result::Err("failure")
+    }
+    return Result::Ok(10)
+}
+
+func result_propagate(fail: bool) returns Result<int, string> {
+    let value = result_value(fail)?
+    return Result::Ok(value + 2)
+}
+
+func guarded_option(value: Option<int>) returns int {
+    return match value {
+        when Option::Some(number) if number > 0 then number,
+        when Option::Some(number) then -number,
+        otherwise 0
+    }
+}
+
+func guarded_or(stage: Stage, enabled: bool) returns int {
+    return match stage {
+        when Stage::Warm | Stage::Cool if enabled then 10,
+        when Stage::Warm then 1,
+        when Stage::Cool then 2,
+        when Stage::Neutral then 3
+    }
+}
+
+public func main() returns int {
+    let mut total = 0
+    total = total + guarded_option(Option::Some(5))
+    total = total + guarded_option(Option::Some(-3))
+    total = total + guarded_option(Option::None)
+    total = total + guarded_or(Stage::Cool, true)
+
+    let propagated_option = optional_propagate(true)
+    if option.option_unwrap(propagated_option) != 8 {
+        return 1
+    }
+    if option.is_some(optional_propagate(false)) != false {
+        return 2
+    }
+
+    let propagated_result = result_propagate(false)
+    if result.result_unwrap(propagated_result) != 12 {
+        return 3
+    }
+    let failed_result = result_propagate(true)
+    if result.is_err(failed_result) != true or result.result_unwrap_err(failed_result) != "failure" {
+        return 4
+    }
+
+    if total != 18 {
+        return total
+    }
+
+    let default_mutable = total
+    default_mutable = default_mutable + 1
+    if default_mutable != 19 {
+        return 5
+    }
+    return 0
+}

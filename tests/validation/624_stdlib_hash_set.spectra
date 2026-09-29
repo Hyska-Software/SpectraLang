@@ -1,0 +1,72 @@
+module validation_624_stdlib_hash_set
+
+from std.collections import HashSet, Iterator
+import std.collections as collections
+import std.option as option
+import std.string as string
+
+public func main() returns int {
+    let numbers: HashSet<int> = collections.hash_set_with_capacity(4)
+    let value                 = 0
+    while value < 256 {
+        if collections.hash_set_insert(numbers, value) != true {
+            return 1
+        }
+        value = value + 1
+    }
+    if collections.hash_set_capacity(numbers) < 256 or collections.hash_set_len(numbers) != 256 {
+        return 2
+    }
+    if collections.hash_set_insert(numbers, 127) != false or
+    collections.hash_set_contains(numbers, 255) != true {
+        return 3
+    }
+    if collections.hash_set_remove(numbers, 0) != true or
+    collections.hash_set_remove(numbers, 64) != true or
+    collections.hash_set_remove(numbers, 254) != true {
+        return 4
+    }
+    if collections.hash_set_contains(numbers, 64) or collections.hash_set_len(numbers) != 253 {
+        return 5
+    }
+    if collections.hash_set_insert(numbers, 64) != true or
+    collections.hash_set_insert(numbers, 64) != false or
+    collections.hash_set_len(numbers) != 254 {
+        return 6
+    }
+    let number_count = 0
+    for number in numbers {
+        number_count = number_count + 1
+    }
+    if number_count != 254 {
+        return 7
+    }
+    collections.hash_set_clear(numbers)
+    if collections.hash_set_len(numbers) != 0 or collections.hash_set_contains(numbers, 127) {
+        return 8
+    }
+    if collections.hash_set_insert(numbers, -7) != true or
+    collections.hash_set_contains(numbers, -7) != true {
+        return 9
+    }
+    collections.hash_set_free(numbers)
+
+    let words: HashSet<string> = collections.hash_set_new()
+    collections.hash_set_insert(words, "hash")
+    let equal_word = string.concat("ha", "sh")
+    if collections.hash_set_contains(words, equal_word) != true or
+    collections.hash_set_insert(words, equal_word) != false {
+        return 10
+    }
+    if collections.hash_set_remove(words, equal_word) != true or
+    collections.hash_set_contains(words, "hash") {
+        return 11
+    }
+    let empty_words: Iterator<string> = collections.hash_set_iter(words)
+    if option.is_some(collections.iterator_next(empty_words)) {
+        return 12
+    }
+    collections.iterator_free(empty_words)
+    collections.hash_set_free(words)
+    return 0
+}

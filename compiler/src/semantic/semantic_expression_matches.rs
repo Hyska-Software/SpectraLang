@@ -33,6 +33,24 @@ impl SemanticAnalyzer {
                     self.register_pattern_bindings(&arm.pattern);
                     self.bind_pattern_types(&arm.pattern, &scrutinee_type);
 
+                    // Guards run in the same scope as their pattern bindings,
+                    // so names such as `value` in `Some(value) if value > 0`
+                    // resolve to the value captured by this arm.
+                    if let Some(guard) = &arm.guard {
+                        self.analyze_expression(guard);
+                        let guard_type = self.infer_expression_type(guard);
+                        if !matches!(guard_type, Type::Bool | Type::Unknown) {
+                            self.error_coded(
+                                "E040",
+                                format!(
+                                    "Match guard must be boolean, found {}",
+                                    type_name(&guard_type)
+                                ),
+                                guard.span,
+                            );
+                        }
+                    }
+
                     // Analisar corpo do arm
                     self.analyze_expression(&arm.body);
                     arm_result_types.push(self.infer_expression_type(&arm.body));

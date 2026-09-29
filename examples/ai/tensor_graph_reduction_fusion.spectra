@@ -1,4 +1,4 @@
-// AI graph example: elementwise chain followed by a reduction for R-1602 fusion.
+// AI graph example: fuse the unary chain, then execute the reduction separately.
 module ai_tensor_graph_reduction_fusion
 
 import std.tensor as tensor
@@ -18,7 +18,7 @@ public func main() returns int {
     if tensor.get_f(loss, 0) as int <= 0 {
         return 3
     }
-    if tensor.stats_kernel_ops() < 3 {
+    if tensor.stats_kernel_ops() != 2 {
         return 4
     }
 

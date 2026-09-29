@@ -603,9 +603,31 @@ pub(crate) extern "C" fn std_async_reactor_timer(ctx: *mut SpectraHostCallContex
     if args[1] < 0 {
         return HOST_STATUS_INVALID_ARGUMENT;
     }
-    reactor::global().register_timer(args[0], Duration::from_millis(args[1] as u64));
+    let status = async_reactor_timer_with_register(
+        args[0],
+        Duration::from_millis(args[1] as u64),
+        |token, delay| reactor::global().register_timer(token, delay),
+    );
+    if status != HOST_STATUS_SUCCESS {
+        return status;
+    }
     results[0] = 1;
     HOST_STATUS_SUCCESS
+}
+
+/// Maps timer-driver startup failure to the runtime's typed host-call status.
+/// The callback is injectable so the host-call contract can be tested with a
+/// deterministic failure rather than real thread exhaustion.
+pub(crate) fn async_reactor_timer_with_register(
+    token: SpectraHostValue,
+    delay: Duration,
+    register_timer: impl FnOnce(SpectraHostValue, Duration) -> bool,
+) -> i32 {
+    if register_timer(token, delay) {
+        HOST_STATUS_SUCCESS
+    } else {
+        HOST_STATUS_INTERNAL_ERROR
+    }
 }
 
 #[cfg(test)]

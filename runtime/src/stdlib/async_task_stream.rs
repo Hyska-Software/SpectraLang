@@ -893,23 +893,59 @@ pub(crate) extern "C" fn std_async_task_with_timeout(ctx: *mut SpectraHostCallCo
         Ok(registry) => registry,
         Err(status) => return status,
     };
-    let Some(inner) = registry.tasks.get(args[0]).copied() else {
-        return HOST_STATUS_NOT_FOUND;
+    let wrapper = match async_timeout_task_with_register(
+        &mut registry,
+        args[0],
+        Duration::from_millis(args[1] as u64),
+        |token, delay| reactor::global().register_timer(token, delay),
+    ) {
+        Ok(wrapper) => wrapper,
+        Err(status) => return status,
     };
-    // Deadline on the combined virtual + wall-clock scheduler clock: the
-    // timeout expires when real time passes even if nobody ever calls
-    // `advance_time` (which production never does).
-    let deadline = registry.now_ms().saturating_add(args[1]);
-    let wrapper = registry.allocate_task(
-        inner.value,
-        inner.parent_scope,
-        Some(args[0]),
-        Some(deadline),
-    );
-    reactor::global().register_timer(wrapper, Duration::from_millis(args[1] as u64));
-    registry.process_due_timeouts();
     results[0] = wrapper;
     HOST_STATUS_SUCCESS
+}
+
+/// Creates a timeout wrapper only when the reactor accepts its timer. The
+/// injectable registration callback keeps startup-failure behavior
+/// deterministic in runtime tests without exhausting process threads.
+pub(crate) fn async_timeout_task_with_register(
+    registry: &mut AsyncTaskRegistry,
+    inner_id: SpectraHostValue,
+    delay: Duration,
+    register_timer: impl FnOnce(SpectraHostValue, Duration) -> bool,
+) -> Result<SpectraHostValue, i32> {
+    let inner = registry
+        .tasks
+        .get(inner_id)
+        .copied()
+        .ok_or(HOST_STATUS_NOT_FOUND)?;
+    // Deadline on the combined virtual + wall-clock scheduler clock: the
+    // timeout expires when real time passes even if nobody calls
+    // `advance_time` (which production never does).
+    let delay_ms = i64::try_from(delay.as_millis()).unwrap_or(i64::MAX);
+    let deadline = registry.now_ms().saturating_add(delay_ms);
+    let wrapper = registry.allocate_task_with_completion(
+        inner.value,
+        inner.parent_scope,
+        Some(inner_id),
+        Some(deadline),
+        true,
+        false,
+    );
+    if !register_timer(wrapper, delay) {
+        if let Some(task) = registry.tasks.remove(wrapper) {
+            registry.cancel_handles.remove(task.cancel_handle);
+            if let Some(scope_id) = task.parent_scope {
+                if let Some(scope) = registry.scopes.get_mut(scope_id) {
+                    scope.children.retain(|&child| child != wrapper);
+                }
+            }
+        }
+        return Err(HOST_STATUS_INTERNAL_ERROR);
+    }
+    registry.process_due_timeouts();
+    Ok(wrapper)
 }
 
 pub(crate) extern "C" fn std_async_task_fail(ctx: *mut SpectraHostCallContext) -> i32 {

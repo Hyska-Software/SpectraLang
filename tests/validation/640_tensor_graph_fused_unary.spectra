@@ -1,0 +1,30 @@
+// CPU Tensor IR unary fusion must execute as one runtime kernel and preserve autograd.
+module tensor_graph_fused_unary
+
+import std.tensor as tensor
+
+public func main() returns int {
+    tensor.free_all()
+    tensor.reset_stats()
+
+    let input = tensor.requires_grad(tensor.full_f(4, 0.5), true)
+    let output = tensor.tanh_f(tensor.relu(input))
+    let loss = tensor.sum_t(output)
+
+    if tensor.len(output) != 4 {
+        return 1
+    }
+    if tensor.stats_kernel_ops() != 2 {
+        return 2
+    }
+
+    tensor.backward(loss)
+    let gradient = tensor.grad(input)
+    let first_gradient = tensor.get_f(gradient, 0)
+    if first_gradient < 0.7864 or first_gradient > 0.7865 {
+        return 3
+    }
+
+    tensor.free_all()
+    return 0
+}

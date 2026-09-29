@@ -1035,7 +1035,11 @@ fn instruction_result(instruction: &Instruction) -> Option<Value> {
     }
 }
 
-fn instruction_operands(instruction: &Instruction) -> Vec<Value> {
+/// Returns every SSA value read by an instruction.
+///
+/// Backend transformations use this to prove that replacing an instruction
+/// sequence cannot remove a value that is observed elsewhere.
+pub fn instruction_operands(instruction: &Instruction) -> Vec<Value> {
     match &instruction.kind {
         InstructionKind::Add { lhs, rhs, .. }
         | InstructionKind::Sub { lhs, rhs, .. }

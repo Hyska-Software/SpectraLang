@@ -4,4 +4,5 @@ fn main {
   n1 %6 = reshape(n0) -> dtype=int shape=[2,2] layout=contiguous device=cpu @b0:i6
   n2 %7 = matmul(n1,n1) -> dtype=int shape=[2,2] layout=contiguous device=cpu @b0:i7
   n3 %8 = elementwise.relu(n2) -> dtype=int shape=[2,2] layout=contiguous device=cpu @b0:i8
+  n4 _ = observe.spectra.std.tensor.len(n3) -> dtype=? shape=? layout=? device=? @b0:i10
 }

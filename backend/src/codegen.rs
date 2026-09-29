@@ -8,7 +8,10 @@ use spectra_midend::ir::{
     BasicBlock as IRBasicBlock, Constant, Function as IRFunction, Global, Instruction,
     InstructionKind, Module as IRModule, Terminator, Type as IRType, Value as IRValue,
 };
-use spectra_midend::{TensorDevice, TensorGraph, TensorGraphLoweringReport};
+use spectra_midend::{
+    TensorDevice, TensorGraph, TensorGraphFunction, TensorGraphLoweringReport, TensorGraphNode,
+    TensorGraphOp,
+};
 use std::collections::{HashMap, HashSet};
 
 use crate::error::{BackendCodegenError, BackendResult};
@@ -96,15 +99,28 @@ pub(crate) struct StringLiteralRecord {
 /// single-byte terminator (matching the runtime's packed string layout and
 /// the stride-1 indexing in the inline `char_at`/`len` emitters).
 /// In AOT mode the entry is pre-populated by
-/// [`AotCodeGenerator::pre_intern_string_literals`] with a `data_id`, so
-/// the heap fallback never fires.
+/// [`AotCodeGenerator::pre_intern_string_literals`] with a `data_id`.
 pub(crate) fn intern_string_literal(
     string_literal_data: &mut HashMap<String, StringLiteralRecord>,
     string_literal_storage: &mut Vec<Box<[u8]>>,
     value: &str,
-) -> StringLiteralRecord {
+) -> BackendResult<StringLiteralRecord> {
+    intern_string_literal_with_allocator(
+        string_literal_data,
+        string_literal_storage,
+        value,
+        |size| spectra_runtime::ffi::spectra_rt_manual_alloc(size),
+    )
+}
+
+fn intern_string_literal_with_allocator(
+    string_literal_data: &mut HashMap<String, StringLiteralRecord>,
+    string_literal_storage: &mut Vec<Box<[u8]>>,
+    value: &str,
+    mut allocate: impl FnMut(usize) -> *mut u8,
+) -> BackendResult<StringLiteralRecord> {
     if let Some(record) = string_literal_data.get(value) {
-        return *record;
+        return Ok(*record);
     }
 
     let mut bytes: Vec<u8> = value.as_bytes().to_vec();
@@ -118,30 +134,21 @@ pub(crate) fn intern_string_literal(
     // untracked heap buffer makes every literal-keyed lookup miss while a
     // computed key (a tracked allocation) works, which is exactly the
     // asymmetry this avoids.
-    let tracked = unsafe {
-        let raw = spectra_runtime::ffi::spectra_rt_manual_alloc(bytes.len());
-        if raw.is_null() {
-            None
-        } else {
-            // The allocator returns zero-initialised bytes, so the terminating
-            // NUL already stands; copy the payload over it.
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), raw, bytes.len());
-            Some(raw as u64)
-        }
-    };
-
-    let (ptr, keepalive) = match tracked {
-        Some(ptr) => (ptr, None),
-        None => {
-            // Fallback: keep the buffer alive the old way. Lookups classify
-            // this literal as a scalar, which only affects key comparison.
-            let boxed: Box<[u8]> = bytes.into_boxed_slice();
-            (boxed.as_ptr() as u64, Some(boxed))
-        }
-    };
-    if let Some(boxed) = keepalive {
-        string_literal_storage.push(boxed);
+    let raw = allocate(bytes.len());
+    if raw.is_null() {
+        return Err(BackendCodegenError::allocation_failed(format!(
+            "JIT string literal allocation failed for {} bytes",
+            bytes.len()
+        )));
     }
+    // Copy the packed bytes, including NUL, into the zero-initialized
+    // allocation tracked by the runtime.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), raw, bytes.len()) };
+    let ptr = raw as u64;
+
+    // Keep the shared JIT/AOT context signature; JIT literals are owned by
+    // the runtime allocation table and never use an untracked Box fallback.
+    let _ = string_literal_storage;
 
     let record = StringLiteralRecord {
         ptr,
@@ -149,7 +156,7 @@ pub(crate) fn intern_string_literal(
         data_id: None,
     };
     string_literal_data.insert(value.to_string(), record);
-    record
+    Ok(record)
 }
 
 pub struct CodeGenerator {
@@ -202,7 +209,9 @@ pub(crate) struct PhiDescriptor {
     pub incoming: HashMap<usize, usize>, // predecessor_block_id -> incoming_value_id
 }
 
-pub(crate) fn validate_tensor_ir(ir_module: &IRModule) -> BackendResult<TensorGraphLoweringReport> {
+pub(crate) fn validate_tensor_ir(
+    ir_module: &mut IRModule,
+) -> BackendResult<TensorGraphLoweringReport> {
     let graph = TensorGraph::from_ir_module(ir_module);
     let backend = if graph.functions.iter().any(|function| {
         function
@@ -214,25 +223,24 @@ pub(crate) fn validate_tensor_ir(ir_module: &IRModule) -> BackendResult<TensorGr
     } else {
         TensorDevice::Cpu
     };
-    graph
-        .lower_for_backend(backend)
-        .map(|result| result.report)
-        .map_err(|errors| {
-            let details = errors
-                .iter()
-                .map(|error| {
-                    format!(
-                        "{} function='{}' node={:?}: {}",
-                        error.kind.diagnostic_code(),
-                        error.function,
-                        error.node,
-                        error.message
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("; ");
-            BackendCodegenError::tensor_ir(format!("Tensor IR legalization failed: {details}"))
-        })
+    let lowered = graph.lower_for_backend(backend).map_err(|errors| {
+        let details = errors
+            .iter()
+            .map(|error| {
+                format!(
+                    "{} function='{}' node={:?}: {}",
+                    error.kind.diagnostic_code(),
+                    error.function,
+                    error.node,
+                    error.message
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        BackendCodegenError::tensor_ir(format!("Tensor IR legalization failed: {details}"))
+    })?;
+    apply_tensor_graph_fusions(ir_module, &graph, &lowered.graph)?;
+    Ok(lowered.report)
 }
 
 /// Collect the Cranelift block arguments that should be passed for the PHIs
@@ -285,6 +293,7 @@ include!("codegen_instruction_indirect.rs");
 include!("codegen_instruction_cast.rs");
 include!("codegen_instruction_dyn.rs");
 include!("codegen_instruction_values.rs");
+include!("tensor_graph_codegen.rs");
 include!("codegen_strings.rs");
 include!("codegen_default.rs");
 include!("codegen_tests.rs");

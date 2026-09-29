@@ -1,0 +1,19 @@
+// Negative regression: a match guard must have type bool (E040).
+module match_guard_non_bool
+
+enum Flag {
+    On,
+    Off,
+}
+
+func choose(flag: Flag) returns int {
+    return match flag {
+        when Flag::On if 1 then 1,
+        when Flag::On then 2,
+        when Flag::Off then 0
+    }
+}
+
+public func main() returns int {
+    return choose(Flag::On)
+}

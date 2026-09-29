@@ -1,0 +1,74 @@
+module validation_625_stdlib_ordered_map
+
+from std.collections import Iterator, OrderedMap
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let table: OrderedMap<int, int> = collections.ordered_map_new()
+    let key                         = 127
+    while key >= 0 {
+        collections.ordered_map_set(table, key, key * 10)
+        key = key - 1
+    }
+    collections.ordered_map_set(table, 64, 64000)
+    collections.ordered_map_set(table, 128, 1280)
+    collections.ordered_map_set(table, -1, -10)
+    if collections.ordered_map_len(table) != 130 {
+        return 1
+    }
+
+    let value_64 = collections.ordered_map_get(table, 64)
+    if option.is_none(value_64) or option.option_unwrap(value_64) != 64000 {
+        return 2
+    }
+    if option.option_unwrap(collections.ordered_map_remove(table, -1)) != -10 or
+    option.option_unwrap(collections.ordered_map_remove(table, 127)) != 1270 {
+        return 3
+    }
+    if collections.ordered_map_contains(table, -1) or collections.ordered_map_contains(table, 127) {
+        return 4
+    }
+    if collections.ordered_map_len(table) != 128 {
+        return 5
+    }
+
+    let range: Iterator<int> = collections.ordered_map_range_keys(table, 60, 69)
+    let expected_key         = 60
+    while expected_key < 69 {
+        if option.option_unwrap(collections.iterator_next(range)) != expected_key {
+            return 6
+        }
+        expected_key = expected_key + 1
+    }
+    if option.is_some(collections.iterator_next(range)) {
+        return 7
+    }
+    collections.iterator_free(range)
+
+    let empty_range: Iterator<int> = collections.ordered_map_range_keys(table, 64, 64)
+    if option.is_some(collections.iterator_next(empty_range)) {
+        return 8
+    }
+    collections.iterator_free(empty_range)
+    let absent_range: Iterator<int> = collections.ordered_map_range_keys(table, 200, 300)
+    if option.is_some(collections.iterator_next(absent_range)) {
+        return 9
+    }
+    collections.iterator_free(absent_range)
+
+    let previous_key = -2
+    let visited      = 0
+    for current_key in table {
+        if current_key <= previous_key {
+            return 10
+        }
+        previous_key = current_key
+        visited = visited + 1
+    }
+    if visited != 128 or option.option_unwrap(collections.ordered_map_get(table, 128)) != 1280 {
+        return 11
+    }
+    collections.ordered_map_free(table)
+    return 0
+}

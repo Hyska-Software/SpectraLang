@@ -1,0 +1,65 @@
+module validation_622_stdlib_collection_growth
+
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let values: List<int>     = collections.list_with_capacity(1)
+    let lookup: Map<int, int> = collections.map_with_capacity(1)
+    let unique: Set<int>      = collections.set_with_capacity(1)
+    let history: Stack<int>   = collections.stack_with_capacity(1)
+    let pending: Queue<int>   = collections.queue_with_capacity(1)
+
+    let value = 0
+    while value < 96 {
+        collections.list_push(values, value)
+        collections.map_set(lookup, value, value * 2)
+        if collections.set_insert(unique, value) != true {
+            return 1
+        }
+        collections.stack_push(history, value)
+        collections.queue_enqueue(pending, value)
+        value = value + 1
+    }
+
+    if collections.list_len(values) != 96 or collections.map_len(lookup) != 96 or
+    collections.set_len(unique) != 96 or collections.stack_len(history) != 96 or
+    collections.queue_len(pending) != 96 {
+        return 2
+    }
+    if collections.list_capacity(values) < 96 or collections.map_capacity(lookup) < 96 or
+    collections.set_capacity(unique) < 96 or collections.stack_capacity(history) < 96 or
+    collections.queue_capacity(pending) < 96 {
+        return 3
+    }
+    if option.option_unwrap(collections.list_get(values, 0)) != 0 or
+    option.option_unwrap(collections.list_get(values, 95)) != 95 or
+    option.option_unwrap(collections.map_get(lookup, 73)) != 146 {
+        return 4
+    }
+    if collections.set_insert(unique, 42) != false or collections.set_contains(unique, 95) != true {
+        return 5
+    }
+
+    let stack_expected = 95
+    while stack_expected >= 0 {
+        if option.option_unwrap(collections.stack_pop(history)) != stack_expected {
+            return 6
+        }
+        stack_expected = stack_expected - 1
+    }
+    let queue_expected = 0
+    while queue_expected < 96 {
+        if option.option_unwrap(collections.queue_dequeue(pending)) != queue_expected {
+            return 7
+        }
+        queue_expected = queue_expected + 1
+    }
+
+    collections.list_free(values)
+    collections.map_free(lookup)
+    collections.set_free(unique)
+    collections.stack_free(history)
+    collections.queue_free(pending)
+    return 0
+}

@@ -654,7 +654,12 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            ExpressionKind::Try(inner) => self.infer_expression_type(inner),
+            ExpressionKind::Try(inner) => {
+                let operand_type = self.infer_expression_type(inner);
+                self.try_operator_types(&operand_type)
+                    .map(|(_, success_type, _)| success_type)
+                    .unwrap_or(Type::Unknown)
+            }
             ExpressionKind::Await(inner) => match self.infer_expression_type(inner) {
                 Type::Task { output } => *output,
                 Type::Unknown => Type::Unknown,

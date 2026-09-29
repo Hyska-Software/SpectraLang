@@ -1,0 +1,13 @@
+// Negative regression: an `otherwise` arm with a guard is not a catch-all.
+module match_guarded_wildcard_exhaustiveness
+
+func choose(flag: bool, enabled: bool) returns int {
+    return match flag {
+        otherwise if enabled 1,
+        when false then 0
+    }
+}
+
+public func main() returns int {
+    return choose(true, true)
+}

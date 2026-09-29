@@ -1,12 +1,12 @@
 # R-1602 Graph Optimization and Fusion
 
-Updated: 2026-06-06
+Updated: 2026-09-29
 
 Roadmap item: `R-1602 Graph Optimization and Fusion`
 
 ## Purpose
 
-R-1602 adds a deterministic optimization layer over the Phase 16 Tensor Graph IR. The optimizer is graph-level only: it does not replace backend execution yet, but it produces a validated optimized graph that later phases can lower to CPU/GPU kernels, exports, or fusion runtimes.
+R-1602 adds a deterministic optimization layer over the Phase 16 Tensor Graph IR. The optimizer produces a validated graph. The backend now consumes a supported subset of CPU unary fusion during JIT/AOT code generation; other graph optimizations remain analysis results until a matching execution path is implemented.
 
 ## Public Midend Contract
 
@@ -20,10 +20,13 @@ R-1602 adds a deterministic optimization layer over the Phase 16 Tensor Graph IR
 
 - Elementwise chain fusion:
   - `relu -> sqrt_f` becomes one `fused_elementwise.relu+sqrt_f` graph node when the chain has a single consumer and observable output metadata is preserved.
+  - JIT/AOT code generation executes supported CPU unary chains as one runtime kernel. The current executable set is `neg`, `relu`, `sigmoid_f`, `tanh_f`, `sqrt_f`, and `log_f`; chains are limited to eight operations and must have a provably single-consumer path.
 - Reduction-adjacent fusion:
   - `relu -> tanh_f -> sum_t` becomes one `fused_reduction.relu+tanh_f->sum_t` graph node when the elementwise chain feeds the reduction through single-consumer edges.
+  - This fused-reduction graph node is not emitted as one backend kernel. In JIT/AOT, the supported unary prefix executes as one kernel and `sum_t` executes as a separate reduction kernel.
 - Memory-aware scheduling metadata:
   - The optimization report records `reusable_edges`, which identifies fused input edges that can be scheduled without materializing intermediate tensors.
+  - `planned_buffers`, `peak_live_buffers`, and reusable-edge counts are planner estimates/metadata; they do not measure or guarantee reduced runtime allocations by themselves.
 
 ## Correctness Contract
 
@@ -34,7 +37,7 @@ The current optimizer is semantics-preserving at graph level:
 - it emits stable reports with node counts, fused groups, fused elementwise op count, fused reduction count, reusable edges, and tolerance policy;
 - `TensorGraph::compare_optimized` checks optimized graph outputs against the original graph.
 
-Full optimized runtime execution is intentionally deferred to later graph/backend phases. R-1602 provides the correctness-preserving graph transformation foundation required by those phases.
+The graph optimizer and backend execution contract are distinct. The graph can represent a wider set of transformations than the backend executes. Backend legalization accepts only transformations with an implemented lowering; unsupported graph-only transformations retain their ordinary host-call execution path and must not be reported as fused runtime kernels.
 
 ## Test Gate
 
@@ -42,15 +45,22 @@ Run:
 
 ```powershell
 cargo test -p spectra-midend --test tensor_graph_tests
+cargo test -p spectra-backend
+.\target\debug\spectralang.exe run tests/validation/640_tensor_graph_fused_unary.spectra
+.\target\debug\spectralang.exe compile --debug-info=none --emit-exe target/tensor-graph-fused-unary.exe tests/validation/640_tensor_graph_fused_unary.spectra
+.\target\tensor-graph-fused-unary.exe
 ```
 
-The gate includes:
+The graph suite includes:
 
 - elementwise chain fusion;
 - reduction-adjacent fusion;
 - optimized vs unoptimized graph comparison;
 - stable optimized graph snapshot;
 - existing R-1601 graph validation regressions.
+
+The separate backend and CLI checks prove CPU JIT/AOT execution and gradient
+behavior for the supported unary subset.
 
 ## Spectra Examples
 

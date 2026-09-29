@@ -7,8 +7,9 @@ use std::sync::Arc;
 /// Configures the runtime memory manager.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MemoryConfig {
-    /// Maximum number of bytes that may be tracked on the manual heap before allocations
-    /// start failing. A value of `0` disables the limit and allows unbounded manual usage.
+    /// Maximum resident bytes charged to the manual heap before allocations
+    /// start failing. This includes live values and tracked freed blocks held
+    /// by the stale-pointer quarantine. A value of `0` disables the limit.
     pub manual_soft_limit_bytes: usize,
 }
 
@@ -42,6 +43,7 @@ pub struct AllocationError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AllocationErrorKind {
     ManualLimitExceeded { requested: usize, limit: usize },
+    SystemAllocationFailed { requested: usize },
 }
 
 impl AllocationError {
@@ -51,7 +53,15 @@ impl AllocationError {
             AllocationErrorKind::ManualLimitExceeded { requested, limit } => {
                 Some((requested, limit))
             }
+            AllocationErrorKind::SystemAllocationFailed { .. } => None,
         }
+    }
+
+    pub(crate) fn system_allocation_failed(&self) -> bool {
+        matches!(
+            self.kind,
+            AllocationErrorKind::SystemAllocationFailed { .. }
+        )
     }
 }
 
@@ -65,6 +75,11 @@ impl fmt::Display for AllocationError {
                     limit, requested
                 )
             }
+            AllocationErrorKind::SystemAllocationFailed { requested } => write!(
+                f,
+                "system allocator could not reserve {} bytes for the manual heap",
+                requested
+            ),
         }
     }
 }
@@ -109,10 +124,19 @@ impl ManualMemory {
     /// Allocates a zero-initialised byte buffer of `len` bytes. Unlike the
     /// generic [`ManualMemory::allocate_manual`] (whose statistics can only
     /// record `size_of::<T>()`), this records the full buffer length, so
-    /// `stats().manual.bytes` reflects the real payload size.
+    /// `stats().manual.bytes` reflects the live payload size. Reservation
+    /// failure is returned before a buffer is exposed to generated code.
     pub fn allocate_manual_bytes(&self, len: usize) -> Result<ManualBox<Vec<u8>>, AllocationError> {
         self.manual.register(len, &self.config)?;
-        let boxed = Box::new(vec![0u8; len]);
+        let mut bytes = Vec::new();
+        if bytes.try_reserve_exact(len).is_err() {
+            self.manual.release(len);
+            return Err(AllocationError {
+                kind: AllocationErrorKind::SystemAllocationFailed { requested: len },
+            });
+        }
+        bytes.resize(len, 0);
+        let boxed = Box::new(bytes);
         Ok(ManualBox::new(boxed, len, self.manual.clone()))
     }
 
@@ -146,6 +170,7 @@ impl ManualHeap {
             inner: Arc::new(ManualHeapInner {
                 live_allocations: AtomicUsize::new(0),
                 live_bytes: AtomicUsize::new(0),
+                resident_bytes: AtomicUsize::new(0),
             }),
         }
     }
@@ -164,12 +189,13 @@ impl ManualHeap {
     fn register(&self, size: usize, config: &MemoryConfig) -> Result<(), AllocationError> {
         let limit = config.manual_soft_limit_bytes;
         if limit == 0 {
+            self.inner.resident_bytes.fetch_add(size, Ordering::SeqCst);
             self.inner.live_bytes.fetch_add(size, Ordering::SeqCst);
             self.inner.live_allocations.fetch_add(1, Ordering::SeqCst);
             return Ok(());
         }
 
-        let mut current = self.inner.live_bytes.load(Ordering::SeqCst);
+        let mut current = self.inner.resident_bytes.load(Ordering::SeqCst);
         loop {
             let new_total = current.saturating_add(size);
             if new_total > limit {
@@ -181,13 +207,14 @@ impl ManualHeap {
                 });
             }
 
-            match self.inner.live_bytes.compare_exchange_weak(
+            match self.inner.resident_bytes.compare_exchange_weak(
                 current,
                 new_total,
                 Ordering::SeqCst,
                 Ordering::SeqCst,
             ) {
                 Ok(_) => {
+                    self.inner.live_bytes.fetch_add(size, Ordering::SeqCst);
                     self.inner.live_allocations.fetch_add(1, Ordering::SeqCst);
                     return Ok(());
                 }
@@ -197,9 +224,29 @@ impl ManualHeap {
     }
 
     fn release(&self, size: usize) {
+        self.release_live(size);
+        self.release_resident(size);
+    }
+
+    /// Removes a value from live metrics while transferring its resident-byte
+    /// charge to a `QuarantinedManualBox`.
+    fn release_live_to_quarantine(&self, size: usize) {
         self.inner.live_allocations.fetch_sub(1, Ordering::SeqCst);
         if size > 0 {
             self.inner.live_bytes.fetch_sub(size, Ordering::SeqCst);
+        }
+    }
+
+    fn release_live(&self, size: usize) {
+        self.inner.live_allocations.fetch_sub(1, Ordering::SeqCst);
+        if size > 0 {
+            self.inner.live_bytes.fetch_sub(size, Ordering::SeqCst);
+        }
+    }
+
+    fn release_resident(&self, size: usize) {
+        if size > 0 {
+            self.inner.resident_bytes.fetch_sub(size, Ordering::SeqCst);
         }
     }
 
@@ -214,6 +261,9 @@ impl ManualHeap {
 struct ManualHeapInner {
     live_allocations: AtomicUsize,
     live_bytes: AtomicUsize,
+    /// Bytes charged against the configured limit: live values plus blocks
+    /// retained by the FFI stale-pointer quarantine.
+    resident_bytes: AtomicUsize,
 }
 
 /// Wrapper around manually managed allocations that keeps runtime statistics up-to-date.
@@ -234,16 +284,57 @@ impl<T> ManualBox<T> {
 
     pub fn into_inner(mut self) -> T {
         let boxed = self.value.take().expect("manual allocation already taken");
+        let value = *boxed;
         self.heap.release(self.size);
         self.size = 0;
-        *boxed
+        value
+    }
+
+    /// Transfers a live allocation into a quarantine reservation. Live
+    /// telemetry is released immediately, but its resident-byte charge stays
+    /// until the returned wrapper is dropped after FIFO eviction.
+    pub(crate) fn into_quarantine(mut self) -> QuarantinedManualBox<T> {
+        let value = self.value.take().expect("manual allocation already taken");
+        self.heap.release_live_to_quarantine(self.size);
+        let quarantined = QuarantinedManualBox {
+            value: Some(value),
+            size: self.size,
+            heap: self.heap.clone(),
+        };
+        self.size = 0;
+        quarantined
     }
 }
 
 impl<T> Drop for ManualBox<T> {
     fn drop(&mut self) {
-        if self.value.is_some() {
+        if let Some(value) = self.value.take() {
+            drop(value);
             self.heap.release(self.size);
+        }
+    }
+}
+
+/// A freed allocation retained only to prevent pointer-address reuse. It no
+/// longer contributes to live statistics but continues to consume the same
+/// resident-byte budget as live allocations.
+pub(crate) struct QuarantinedManualBox<T> {
+    value: Option<Box<T>>,
+    size: usize,
+    heap: ManualHeap,
+}
+
+impl<T> QuarantinedManualBox<T> {
+    pub(crate) fn tracked_size(&self) -> usize {
+        self.size
+    }
+}
+
+impl<T> Drop for QuarantinedManualBox<T> {
+    fn drop(&mut self) {
+        if let Some(value) = self.value.take() {
+            drop(value);
+            self.heap.release_resident(self.size);
         }
     }
 }
@@ -284,5 +375,48 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("ManualBox").field(&self.deref()).finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resident_limit_includes_quarantined_manual_allocations() {
+        let memory = ManualMemory::with_config(MemoryConfig {
+            manual_soft_limit_bytes: 64,
+        });
+        let live = memory
+            .allocate_manual_bytes(48)
+            .expect("allocation fits the resident-byte limit");
+        let quarantined = live.into_quarantine();
+
+        assert_eq!(memory.stats().manual, ManualStats::default());
+        assert_eq!(quarantined.tracked_size(), 48);
+        let error = memory
+            .allocate_manual_bytes(17)
+            .expect_err("live plus quarantined bytes must share the same limit");
+        assert_eq!(error.manual_limit_exceeded(), Some((17, 64)));
+
+        drop(quarantined);
+        let full_budget = memory
+            .allocate_manual_bytes(64)
+            .expect("evicting the quarantine releases its resident-byte charge");
+        assert_eq!(memory.stats().manual.bytes, 64);
+        drop(full_budget);
+        assert_eq!(memory.stats().manual, ManualStats::default());
+    }
+
+    #[test]
+    fn impossible_byte_reservation_returns_error_and_releases_accounting() {
+        let memory = ManualMemory::with_config(MemoryConfig {
+            manual_soft_limit_bytes: 0,
+        });
+        let error = memory
+            .allocate_manual_bytes(usize::MAX)
+            .expect_err("capacity overflow must be reported without real exhaustion");
+        assert!(error.system_allocation_failed());
+        assert_eq!(memory.stats().manual, ManualStats::default());
     }
 }

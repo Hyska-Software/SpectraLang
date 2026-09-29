@@ -581,7 +581,11 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn generic_enum_payload_type(&self, value_type: &Type, variant: &str) -> Option<Type> {
+    pub(crate) fn generic_enum_payload_type(
+        &self,
+        value_type: &Type,
+        variant: &str,
+    ) -> Option<Type> {
         let (enum_name, substitutions) = match value_type {
             Type::Applied { name, args } => {
                 let (params, _) = self.generic_enums.get(name)?;

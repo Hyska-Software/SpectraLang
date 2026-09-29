@@ -82,6 +82,54 @@ impl SemanticAnalyzer {
             }
             ExpressionKind::Try(inner) => {
                 self.analyze_expression(inner);
+
+                let operand_type = self.infer_expression_type(inner);
+                let Some((family, _success_type, source_error_type)) =
+                    self.try_operator_types(&operand_type)
+                else {
+                    if !matches!(operand_type, Type::Unknown) {
+                        self.error_coded_with_hint(
+                            "E049",
+                            format!(
+                                "`?` operand must be Option<T> or Result<T, E>, found {}",
+                                type_name(&operand_type)
+                            ),
+                            expr.span,
+                            "Use `?` only with an Option or Result value.",
+                        );
+                    }
+                    return;
+                };
+
+                let compatible_context =
+                    self.current_return_type
+                        .as_ref()
+                        .is_some_and(|return_type| {
+                            self.try_context_accepts_propagation(
+                                family,
+                                source_error_type.as_ref(),
+                                return_type,
+                            )
+                        });
+                if !compatible_context {
+                    let context = self
+                        .current_return_type
+                        .as_ref()
+                        .map(type_name)
+                        .unwrap_or_else(|| "no enclosing return type".to_string());
+                    self.error_coded_with_hint(
+                        "E050",
+                        format!(
+                            "`?` cannot propagate {family} failure into {context}"
+                        ),
+                        expr.span,
+                        if family == "Result" {
+                            "Return Result<T, E> with an error type compatible with the operand's Result<T, E>."
+                        } else {
+                            "Use `?` inside a function that returns Option<T>."
+                        },
+                    );
+                }
             }
             ExpressionKind::Await(inner) => {
                 if self.async_context_depth == 0 {
@@ -375,6 +423,56 @@ impl SemanticAnalyzer {
                 }
             }
             StatementKind::Break | StatementKind::Continue => {}
+        }
+    }
+
+    pub(super) fn try_operator_types(
+        &self,
+        operand_type: &Type,
+    ) -> Option<(&'static str, Type, Option<Type>)> {
+        let (enum_name, _, _) = self.specialized_enum_context_for_type(operand_type)?;
+        match enum_name.as_str() {
+            "Option" => Some((
+                "Option",
+                self.generic_enum_payload_type(operand_type, "Some")?,
+                None,
+            )),
+            "Result" => Some((
+                "Result",
+                self.generic_enum_payload_type(operand_type, "Ok")?,
+                Some(self.generic_enum_payload_type(operand_type, "Err")?),
+            )),
+            _ => None,
+        }
+    }
+
+    fn try_context_accepts_propagation(
+        &self,
+        source_family: &str,
+        source_error_type: Option<&Type>,
+        return_type: &Type,
+    ) -> bool {
+        let Some((return_family, _, _)) = self.specialized_enum_context_for_type(return_type)
+        else {
+            return false;
+        };
+        if return_family != source_family {
+            return false;
+        }
+
+        match source_family {
+            "Option" => true,
+            "Result" => {
+                let Some(source_error_type) = source_error_type else {
+                    return false;
+                };
+                let Some(return_error_type) = self.generic_enum_payload_type(return_type, "Err")
+                else {
+                    return false;
+                };
+                self.return_types_match(source_error_type, &return_error_type)
+            }
+            _ => false,
         }
     }
 }

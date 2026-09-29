@@ -83,7 +83,7 @@ impl CodeGenerator {
                 // pre-populated by `pre_intern_string_literals` and we
                 // emit a `global_value` referencing the `.rodata` section.
                 let record =
-                    intern_string_literal(string_literal_data, string_literal_storage, value);
+                    intern_string_literal(string_literal_data, string_literal_storage, value)?;
                 let ptr_val = if let Some(data_id) = record.data_id {
                     let gv = module.declare_data_in_func(data_id, builder.func);
                     builder.ins().global_value(types::I64, gv)

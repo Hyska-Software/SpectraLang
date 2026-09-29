@@ -49,6 +49,32 @@ positive_fixture = "tests/validation/stability_numeric_literal_forms.spectra"
 reason = "Hexadecimal, octal, binary, underscore-separated decimal and scientific notation literals are certified by lexer tests and an executable JIT fixture; malformed separators and missing exponent digits yield coded lexical diagnostics."
 
 [[feature]]
+id = "core.let_mut"
+name = "redundant mutable binding marker"
+status = "stable"
+owner = "semantic"
+positive_fixture = "tests/validation/630_language_core_guards_try_mut.spectra"
+reason = "Local bindings are reassignable by default; `mut` is accepted as a redundant marker and does not establish a distinct immutable/mutable binding mode."
+
+[[feature]]
+id = "core.match_guards"
+name = "typed match guards and guarded exhaustiveness"
+status = "stable"
+owner = "semantic"
+positive_fixture = "tests/validation/630_language_core_guards_try_mut.spectra"
+negative_fixture = "tests/errors/match_guard_non_bool.spectra"
+reason = "Guards are analyzed with pattern bindings in scope, must be bool, and do not count as unconditional coverage. Coverage negatives are tests/errors/match_guard_exhaustiveness.spectra and tests/errors/match_guarded_wildcard_exhaustiveness.spectra."
+
+[[feature]]
+id = "core.try_operator"
+name = "Option and Result propagation operator"
+status = "stable"
+owner = "semantic"
+positive_fixture = "tests/validation/630_language_core_guards_try_mut.spectra"
+negative_fixture = "tests/errors/try_incompatible_context.spectra"
+reason = "`?` extracts the success payload only from Option/Result and checks the enclosing early-return context; tests/errors/try_invalid_operand.spectra rejects other operand types."
+
+[[feature]]
 id = "core.arrays"
 name = "typed arrays and indexing"
 status = "beta"
@@ -89,3 +115,26 @@ name = "external database, OTLP and TLS certification"
 status = "beta"
 owner = "tooling"
 reason = "Local probes are real where configured, but release evidence requires PostgreSQL 16, Redis 7, a real OTLP collector and external TLS endpoint."
+
+[[feature]]
+id = "std.ml.distributed_simulation"
+name = "legacy distributed counter simulation"
+status = "stable"
+owner = "ml"
+positive_fixture = "tests/validation/94_ml_phase17_distributed_training.spectra"
+reason = "The legacy session/worker-step/checkpoint API stores caller-supplied progress and loss counters; it intentionally does not calculate gradients, update weights or communicate workers."
+
+[[feature]]
+id = "std.ml.distributed_training"
+name = "multithread and TCP distributed training"
+status = "beta"
+owner = "ml"
+positive_fixture = "tests/validation/356_distributed_train_tcp.spectra"
+reason = "The newer distributed_train_* family performs real forward/backward updates and mean-gradient aggregation through multithread/TCP runners; production cluster orchestration and failure/metrics coverage remain partial."
+
+[[feature]]
+id = "runtime.blas"
+name = "BLAS kernel integration"
+status = "reserved"
+owner = "numerics"
+reason = "The Cargo feature is empty and no runtime kernel calls a BLAS dependency; it is not an available backend or performance claim."

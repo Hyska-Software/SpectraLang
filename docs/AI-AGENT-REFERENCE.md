@@ -92,7 +92,7 @@ public func main() returns int {
 ### Rules
 
 - `module` must be the first non-comment, non-blank line.
-- Only `//` line comments are supported. Block comments (`/* */`) are **not** supported.
+- Line comments (`//`) and block comments (`/* ... */`) are supported.
 - The canonical runnable entry point is `public func main() returns int { ... }`.
 - Statements end at a line break or closing brace; semicolons are rejected by the parser.
 
@@ -216,7 +216,7 @@ x = x + 1
 - `let` declares a new variable.
 - Variables are scoped to their enclosing block `{ ... }`.
 - There is no `const` evaluation for local variables — use top-level `const` for compile-time constants.
-- `let mut` is accepted syntactically but all `let` variables are mutable by default.
+- `let mut` is accepted as a redundant marker; all local `let` variables are reassignable by default.
 
 ### Examples
 
@@ -225,12 +225,14 @@ module vars
 
 public func main() returns int {
     let count = 0
+    let mut marked = 0       // accepted; `mut` is redundant for local `let`
     let name: string = "Alice"
     let flag: bool = true
     let ratio: float = 1.5
 
     count = count + 1
    // reassignment
+    marked = marked + 1
     flag = false
 
     return count
@@ -278,7 +280,7 @@ public func main() returns int {
 | `..` | Exclusive range: `0..10` = 0 to 9 |
 | `..=` | Inclusive range: `0..=10` = 0 to 10 |
 | `as` | Type cast: `x as float` |
-| `?` | Error propagation (try operator) |
+| `?` | Propagate `None`/`Err` from an `Option<T>`/`Result<T, E>`; success yields the payload. Operand errors are `E049`, incompatible return context is `E050`. |
 
 ### Compound Assignment
 
@@ -1044,6 +1046,22 @@ match token {
 }
 ```
 
+#### Match guards
+
+Use `if` after a pattern to narrow the matching arm. Pattern bindings are
+available in the guard, and the guard must be `bool` (`E040`). A guarded arm,
+including a guarded wildcard, does not count as unconditional coverage when the
+compiler checks exhaustiveness.
+
+```spectra
+match token {
+    when Token::Number(n) if n > 0 then n,
+    when Token::Number(_) then 0,
+    when Token::Plus | Token::Minus if accept_sign then 1,
+    otherwise then 0,
+}
+```
+
 #### Nested Patterns
 
 ```spectra
@@ -1059,9 +1077,10 @@ match wrapped {
 ### Match Arm Body
 
 A match arm body can be:
-- A single expression: `Pattern => expr,`
-- A block: `Pattern => { stmts; expr }`
-- A block with return: `Pattern => { return value; }`
+- A single expression: `when Pattern then expr,`
+- A block whose final expression supplies the arm value:
+  `when Pattern then { statements ...\n    expr }`
+- A block with return: `when Pattern then { return value }`
 
 ```spectra
 let result = match x {
@@ -1073,7 +1092,9 @@ let result = match x {
 
 ### Exhaustiveness
 
-Every `match` must cover all possible cases. Always add `_ =>` if not all cases are listed explicitly.
+Every `match` must cover all possible cases. Use `otherwise` or an unguarded
+`when _ then ...` arm when cases are not listed explicitly; guarded arms do not
+complete exhaustiveness.
 
 ### Cross-Module Enum Matching
 
@@ -1698,6 +1719,39 @@ Phase 6 exposes a runtime-backed ML layer over `std.tensor`:
 | data | `dataset_from_tensors`, `dataset_len`, `dataloader_new`, `dataloader_batch_count`, `dataloader_batch_features`, `dataloader_batch_labels` |
 
 Runtime tests validate MLP and convolutional toy-model convergence. Spectra examples `72_ml_phase6_mlp_training.spectra` and `73_ml_phase6_cnn_training.spectra` verify public API integration.
+
+#### Embeddings and retrieval boundaries
+
+`std.ml.embedding_lookup` gathers rows from a tensor table supplied by the
+caller; it does not turn raw text into semantic vectors. For text embeddings,
+`std.ml.text_embed_model` runs an ONNX embedding graph through ONNX Runtime and
+requires the optional `onnx` build feature plus compatible model/tokenizer
+artifacts.
+
+The vector index performs real HNSW search over caller-provided vectors. RAG
+helpers split text into chunks, assemble prompts and compute lexical token
+overlap; the checked-in RAG fixtures use fixed vectors and fixed answers. They
+exercise those mechanics, not semantic retrieval quality or grounded generation.
+
+#### Distributed training boundaries
+
+The legacy `distributed_session_*`, `distributed_worker_step`,
+`distributed_global_step`, checkpoint and resume APIs track caller-supplied
+worker counters/losses. They do not compute gradients, update model weights or
+communicate between workers. The separate `distributed_train_*` family runs
+actual forward/backward updates through multithread or TCP runners. The TCP
+implementation uses real transport, but a public runner that starts internal
+loopback workers is not automatic management of a production cluster; that
+workstream remains partial.
+
+#### Optional numerical backends
+
+`gpu` enables the optional WGPU backend; only operations with GPU kernels run
+there, and unsupported operations can fall back to CPU. `onnx` enables actual
+ONNX Runtime sessions and inference but is off by default and depends on native
+runtime binaries/model artifacts. The `blas` Cargo feature is empty and no
+kernel consumes it, so BLAS is reserved rather than an available acceleration
+backend.
 
 ### std.random — Random Numbers
 
@@ -2718,6 +2772,21 @@ an existing journal).
 `#[derive(Serialize)]` record emits the JSON Schema that `#[agent_tool]`
 derives for a payload.
 
+### Provider and Example Boundaries
+
+The deterministic mock provider is intentionally a test/demo provider. It
+returns canned text, deterministic accounting and hash-based embeddings; its
+vectors do not represent semantic similarity. The agent examples use mock
+providers to make governance and protocol behavior reproducible, so they do not
+establish model quality or prove an online provider integration.
+
+The OpenAI-compatible provider issues actual HTTP requests through an installed
+`HttpTransport` and parses chat, embeddings and streaming responses. It needs a
+configured endpoint, credentials and a live service. The local provider uses
+the runtime's ONNX generation/embedding paths and needs the opt-in `onnx`
+feature plus model/tokenizer files. Governance checks apply to these providers
+independently of whether the model is mocked or real.
+
 ### The Tool Attribute
 
 Exactly one attribute exists: `#[agent_tool("description")]` on a
@@ -2934,7 +3003,12 @@ Available modules:
   counters, stats/reset, and `pipeline_sum(start, count, workers)`.
 - `std.serve`: local in-process server handles, warmup, queueing, batching,
   cancellation, timeout state, model residency lookup, result lookup, and
-  deterministic `server_benchmark`.
+  `server_benchmark`.
+
+`server_benchmark` invokes inference on the registered model with generated
+local inputs and measures that execution. It is not a remote HTTP/gRPC load
+test and does not measure network latency, external concurrency or distributed
+model residency.
 
 Validation files:
 
@@ -2945,9 +3019,24 @@ User-facing reference:
 
 - `docs/concurrency-serving.md`
 
-Current limit: Phase 11 does not provide HTTP/gRPC, sockets, async I/O, or
-distributed model serving. Treat those as future hardening, not completed
-Phase 11 scope.
+`std.serve` is an in-process module. HTTP/gRPC networking, sockets, async I/O
+integration and distributed model serving are outside Phase 11's scope; the
+separate `spectra.api` package supplies HTTP and gRPC protocol implementations.
+
+### API, Database and Observability Boundaries
+
+The separate `spectra.api` package contains real HTTP/1.1, HTTP/2, TLS,
+GraphQL and gRPC implementations. HTTP/3 uses the optional crate feature that
+is enabled by default. HTTP/2 extended CONNECT/WebSocket and gRPC message
+compression are unsupported. API conformance v0 covers HTTP/1, JSON and
+routing; it is not full protocol conformance.
+
+`spectra-db` uses a bundled SQLite driver and has local database integration
+paths. PostgreSQL and Redis drivers are implemented, but integration tests need
+`SPECTRA_POSTGRES_URL` and `SPECTRA_REDIS_URL`; without those settings a test
+may return without contacting a service. OTLP trace delivery likewise requires
+a configured collector. A code path or mock-transport test does not certify an
+external database, collector or endpoint.
 
 ---
 
@@ -3055,7 +3144,7 @@ external kernels, and production checkpoint formats remain future adoption work.
 | `impl` | ✅ Implemented | Implementation block |
 | `trait` | ✅ Implemented | Declare trait |
 | `let` | ✅ Implemented | Variable declaration |
-| `mut` | ✅ Accepted (optional) | Mutability hint |
+| `mut` | ✅ Accepted (optional) | Redundant binding marker; locals are reassignable by default |
 | `Self` | ✅ Implemented | Implementing type in trait/impl |
 | `if` | ✅ Implemented | Conditional |
 | `else if` | ✅ Implemented | Else-if |
@@ -3102,7 +3191,7 @@ external kernels, and production checkpoint formats remain future adoption work.
 | `module declaration missing` | No `module name` at top of file | Add `module name` as the first line |
 | `main not found` | No `public func main() returns int` | Add entry point function |
 | `type mismatch: int and float` | Mixing int/float without conversion | Use `int_to_float(x)` or `float_to_int(x)` |
-| `cannot assign to immutable` | Rare compiler edge case | Variables are mutable by default; check the context |
+| `cannot assign to immutable` | Assignment targets requiring a mutable reference/receiver | Local `let` bindings are reassignable by default; check the target type and receiver contract |
 | `non-exhaustive match` | Not all enum variants covered | Add an `otherwise` arm |
 | `undefined variable 'x'` | Using variable before `let` or out of scope | Move `let x = ...` to the correct scope |
 | `undefined function 'f'` | Calling a function not imported or defined | Import the module or define the function |

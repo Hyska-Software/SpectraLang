@@ -232,7 +232,13 @@ impl Parser {
     }
 
     fn parse_let_statement(&mut self) -> Result<StatementKind, ()> {
-        // Expect: let <pattern> [: type] [= expr];
+        // `mut` is accepted as a redundant compatibility marker: local
+        // bindings are already reassignable by default.
+        if self.check_keyword(Keyword::Mut) {
+            self.advance();
+        }
+
+        // Expect: let [mut] <pattern> [: type] [= expr];
         let pattern_span = self.current().span;
         let pattern = self.parse_pattern()?;
 

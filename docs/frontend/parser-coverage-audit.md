@@ -1,72 +1,79 @@
 # Parser & Lexer Coverage Audit
 
-_Date: 2025-11-06_
-_Branch: devlop_
+_Updated: 2026-09-29_
 
 ## Scope
-- Reviewed the current lexer (`compiler/src/lexer/mod.rs`) and parser modules (`compiler/src/parser/*`).
-- Cross-referenced behaviour with the frozen alpha language reference (`docs/language-reference-alpha.md`).
 
-## Lexer Findings
-- Supports single-line `//` comments and skips whitespace/newlines; block comments and nested comments are not recognised.
-- Tokenises string literals without escape-sequence handling; unterminated strings raise a lex error but do not recover inline.
-- Numbers accept a single optional fractional part (`123.45`); there is no support for exponent notation, digit separators, or numeric suffixes.
-- Identifiers follow the documented `[A-Za-z_][A-Za-z0-9_]*` pattern; Unicode identifiers are rejected.
-- Keyword table includes reserved tokens (`foreach`, `repeat`, `until`, `cond`, `yield`, `goto`, `class`, `export`) that the parser does not currently consume.
-- Symbols cover the documented operators plus `@`; `@` is lexed but unused downstream.
+This document records the lexer/parser surface in the current source tree. The
+broader feature matrix is maintained in
+[`frontend-coverage-audit.md`](frontend-coverage-audit.md); semantic behavior is
+tracked separately in
+[`semantic-coverage-audit.md`](../semantic/semantic-coverage-audit.md).
+Parsing a construct does not by itself prove type checking, lowering, or runtime
+execution.
 
-## Parser Findings
+## Lexer
 
-### Module & Imports
-- Enforces a `module <path>` header before items; missing headers trigger a parse error followed by synchronisation.
-- `import` supports:
-  - dotted module imports (`import std.io`)
-  - alias imports (`import std.math as math`)
-  - named imports (`from std.io import println, print`)
-  - public re-exports (`public from std.io import println`)
+- Identifiers use the documented ASCII form. Unicode identifiers remain
+  deferred.
+- Numeric literals include decimal, hexadecimal, octal and binary integers,
+  underscore-separated digits, and scientific-notation floats. Malformed
+  separators and incomplete exponents have lexical diagnostics.
+- Strings, character literals, f-strings, common escapes, line comments and
+  block comments are tokenized by the current lexer.
+- The operator/symbol set includes the punctuation used by patterns, casts,
+  references, propagation, and declarations. Statement/declaration semicolons
+  are not the language's terminator model.
+- Reserved words such as `class`, `foreach`, `repeat`, `until`, `yield` and
+  `goto` can be lexed without being usable syntax. `class` is deliberately
+  rejected with `P007`.
 
-### Items & Visibility
-- Handles `public func/record/enum` correctly; `public impl` falls back to inherent impl parsing but visibility is discarded (consistent with current AST).
-- `class` keyword is recognised lexically but has no parser entry point.
-- Generic parameters are parsed for functions, structs, and enums; there is no support for where clauses, default type parameters, or const generics.
+## Parser Surface
 
-### Traits & Trait Inheritance
-- `trait Name: Parent + Another { .. }` is accepted with `+` separators. Comma-separated parent lists are rejected.
-- Default method bodies and receiver qualifiers (`self`, `&self`, `&mut self`) are parsed and recorded.
-- Trait inheritance, default methods, trait-bound method resolution, and `Self` substitution are exercised by the validation suite.
+### Modules and declarations
 
-### Impl Blocks
-- Inherent impls parse method lists with receiver variants and typed parameters.
-- `impl Type` accepts simple identifiers, qualified paths (`impl module::Type`),
-  and generic type arguments (`impl Par<T>`) since R-211; trait impls accept
-  `impl Trait<Args> for Type` and the generic clause `impl<T: Bound> Trait for Type`
-  since R-213.
+- `module`, qualified/aliased imports, named imports, and public re-exports.
+- `func`, visibility modifiers, records, enums, traits, inherent/trait impls,
+  type aliases, constants and module statics.
+- Current generic parameter and type-argument forms, including qualified
+  types, tuples, function types, trait objects, tensor annotations and async
+  types. Unsupported higher-kinded/lifetime syntax remains outside the grammar.
 
-### Statements & Control Flow
-- Control-flow constructs implemented: `while`, `do { } while`, `for name in`, `loop`, `switch`, `break`, `continue`, `if let`, `while let`.
-- Reserved keywords `foreach`, `repeat`, `until`, `yield`, `goto` remain unparsed despite being lexed.
-- `switch` accepts `case` arms and an optional `else` block.
-- Assignments only accept identifiers or index expressions on the LHS; destructuring assignments are not allowed.
+### Statements and expressions
 
-### Expressions & Calls
-- Method chaining (`obj.method().field`) and tuple indexing (`tuple.0`) are supported.
-- Struct literals differentiate from enum variants by disallowing `::` in field initialisers.
-- Generic type arguments on identifiers (`Type::<T>::Variant`) are parsed, though the semantic layer handles association.
-- Lambda/closure literals are supported. Spread operators and inline `if` expressions without blocks are not.
+- `let`, assignment, `return`, `break`, `continue`, `if`/`else`, `if let`,
+  `while`, `while let`, `for ... in`, `loop`, `do ... while`, `switch` and
+  `match`.
+- `mut` after `let` is accepted as a redundant marker; it does not request a
+  distinct immutable/mutable binding mode.
+- Calls, method/field access, indexing, casts, blocks and `if`/`match`
+  expressions, lambdas/closures, async blocks and `await` are represented by
+  the parser. `?` is parsed as a propagation operator; its operand and return
+  context are semantic checks, not parser guarantees.
+- Match patterns include wildcard, binding, literal, tuple, enum payload,
+  struct-style and OR-pattern forms. Match guards are parsed and stored with
+  their arms.
 
-### Pattern Ergonomics
-- `match` patterns cover wildcard (`_`), identifier bindings, literal patterns, enum variants with tuple payloads, and struct-style enum patterns.
-- `let` supports tuple, struct, and enum destructuring patterns in the validated surface.
-- `if let` and `while let` are fully parsed and lowered.
-- OR-patterns (`A | B`) are supported in the validated match surface.
-- Match guards remain unsupported.
+## Parser Organization
 
-## Remaining Gaps
-1. Trait and impl generics are still narrower than the long-term planned surface.
-2. `match` guards remain unsupported.
-3. Control-flow keywords flagged in docs (`foreach`, `repeat`, `until`, `yield`, `goto`) remain deferred.
+The recursive-descent parser is split across `compiler/src/parser/`: module and
+workspace discovery; item/declaration/trait/impl parsing; statement parsing;
+expression precedence and primary expressions; pattern parsing; and type
+annotations. `Parser::parse` builds the AST, while recovery uses source spans
+and synchronization so malformed input can produce localized diagnostics.
 
-## Suggested Follow-Up Tasks
-1. Extend trait and impl parsing to accept the remaining generic forms from the roadmap.
-2. Introduce parser branches for the reserved control-flow keywords that emit deliberate "deferred" diagnostics instead of generic errors.
-3. Expand pattern parsing with guards to align with planned match ergonomics.
+## Boundaries
+
+- Parsing a match guard does not alone prove that its expression is boolean or
+  that pattern bindings are in scope; those checks belong to semantic analysis.
+- Parsing `?` does not alone prove the operand is `Option<T>` or `Result<T, E>`
+  or that the enclosing function accepts the propagated `None`/`Err` path.
+- OR-pattern support and parsing do not imply that guarded branches count as
+  unconditional exhaustive coverage.
+- No experimental syntax gate is currently active. `--enable-experimental`
+  remains a compatibility no-op.
+- The parser does not implement `class`, Unicode identifiers, lifetimes,
+  `foreach`, `repeat/until`, `goto`, or `yield` as usable language constructs.
+
+This document update records the intended current contract and source
+boundaries. It does not report newly executed tests or gates as passing.

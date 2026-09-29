@@ -1,0 +1,45 @@
+module validation_628_stdlib_disjoint_set
+
+from std.collections import DisjointSet
+import std.collections as collections
+
+public func main() returns int {
+    let groups: DisjointSet = collections.disjoint_set_new(256)
+    if collections.disjoint_set_count(groups) != 256 {
+        return 1
+    }
+
+    let member = 0
+    while member < 128 {
+        if collections.disjoint_set_union(groups, member, member + 1) != true {
+            return 2
+        }
+        member = member + 1
+    }
+    if collections.disjoint_set_count(groups) != 128 or
+    collections.disjoint_set_connected(groups, 0, 128) != true or
+    collections.disjoint_set_connected(groups, 64, 3) != true or
+    collections.disjoint_set_connected(groups, 0, 129) {
+        return 3
+    }
+    if collections.disjoint_set_union(groups, 0, 128) != false or
+    collections.disjoint_set_count(groups) != 128 or
+    collections.disjoint_set_find(groups, 1) != collections.disjoint_set_find(groups, 128) {
+        return 4
+    }
+
+    let added       = collections.disjoint_set_add(groups)
+    let added_again = collections.disjoint_set_add(groups)
+    if added != 256 or added_again != 257 or collections.disjoint_set_count(groups) != 130 {
+        return 5
+    }
+    if collections.disjoint_set_union(groups, 255, added) != true or
+    collections.disjoint_set_union(groups, added, added_again) != true or
+    collections.disjoint_set_connected(groups, 255, added_again) != true or
+    collections.disjoint_set_count(groups) != 128 {
+        return 6
+    }
+
+    collections.disjoint_set_free(groups)
+    return 0
+}

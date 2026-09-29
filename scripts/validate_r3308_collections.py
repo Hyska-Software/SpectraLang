@@ -20,6 +20,14 @@ FIXTURES = {
     "collection_capacity": "tests/validation/619_stdlib_collection_capacity.spectra",
     "advanced_collections": "tests/validation/620_stdlib_advanced_collections.spectra",
     "vector": "tests/validation/621_stdlib_vector.spectra",
+    "collection_growth": "tests/validation/622_stdlib_collection_growth.spectra",
+    "vector_growth": "tests/validation/623_stdlib_vector_growth.spectra",
+    "hash_set": "tests/validation/624_stdlib_hash_set.spectra",
+    "ordered_map": "tests/validation/625_stdlib_ordered_map.spectra",
+    "priority_queue": "tests/validation/626_stdlib_priority_queue.spectra",
+    "bitset": "tests/validation/627_stdlib_bitset.spectra",
+    "disjoint_set": "tests/validation/628_stdlib_disjoint_set.spectra",
+    "graph_search": "tests/validation/629_stdlib_collections_graph_search.spectra",
 }
 
 

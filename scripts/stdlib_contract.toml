@@ -832,6 +832,46 @@ id = "phase33-vector"
 path = "tests/validation/621_stdlib_vector.spectra"
 covers = ["std.collections.Vector", "std.collections.vector_*"]
 
+[[probe]]
+id = "phase33-collection-growth"
+path = "tests/validation/622_stdlib_collection_growth.spectra"
+covers = ["std.collections.list_*", "std.collections.map_*", "std.collections.set_*", "std.collections.stack_*", "std.collections.queue_*"]
+
+[[probe]]
+id = "phase33-vector-growth"
+path = "tests/validation/623_stdlib_vector_growth.spectra"
+covers = ["std.collections.Vector", "std.collections.vector_*"]
+
+[[probe]]
+id = "phase33-hash-set"
+path = "tests/validation/624_stdlib_hash_set.spectra"
+covers = ["std.collections.HashSet", "std.collections.hash_set_*"]
+
+[[probe]]
+id = "phase33-ordered-map"
+path = "tests/validation/625_stdlib_ordered_map.spectra"
+covers = ["std.collections.OrderedMap", "std.collections.ordered_map_*"]
+
+[[probe]]
+id = "phase33-priority-queue"
+path = "tests/validation/626_stdlib_priority_queue.spectra"
+covers = ["std.collections.PriorityQueue", "std.collections.priority_queue_*"]
+
+[[probe]]
+id = "phase33-bitset"
+path = "tests/validation/627_stdlib_bitset.spectra"
+covers = ["std.collections.BitSet", "std.collections.bitset_*"]
+
+[[probe]]
+id = "phase33-disjoint-set"
+path = "tests/validation/628_stdlib_disjoint_set.spectra"
+covers = ["std.collections.DisjointSet", "std.collections.disjoint_set_*"]
+
+[[probe]]
+id = "phase33-collections-graph-search"
+path = "tests/validation/629_stdlib_collections_graph_search.spectra"
+covers = ["std.collections.HashSet", "std.collections.Queue", "std.collections.Map", "std.collections.Vector"]
+
 [[follow_up]]
 prefix = "std.time"
 owner = "runtime"

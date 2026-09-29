@@ -111,6 +111,27 @@ pub(crate) fn autograd_parent_grads_cpu(
                 .map(|(g, y)| g * (1.0 - y * y))
                 .collect(),
         )),
+        AutogradOp::FusedUnary => {
+            if node.aux.is_empty() || node.input.len() != grad.len() {
+                return None;
+            }
+            let mut input_grads = Vec::with_capacity(grad.len());
+            for (input, upstream) in node.input.iter().zip(grad.iter()) {
+                let mut values = Vec::with_capacity(node.aux.len() + 1);
+                values.push(*input);
+                for code in &node.aux {
+                    let previous = *values.last()?;
+                    values.push(fused_unary_forward(*code, previous)?);
+                }
+                let mut current_grad = *upstream;
+                for index in (0..node.aux.len()).rev() {
+                    current_grad *=
+                        fused_unary_derivative(node.aux[index], values[index], values[index + 1])?;
+                }
+                input_grads.push(current_grad);
+            }
+            Some(single(input_grads))
+        }
         AutogradOp::SumTensor => Some(single(vec![grad[0]; node.input.len()])),
         AutogradOp::MeanTensor => Some(single(vec![
             grad[0] / node.input.len() as f64;
@@ -511,6 +532,30 @@ pub(crate) fn autograd_parent_grads_cpu(
             }
             Some(single(grad_input))
         }
+    }
+}
+
+fn fused_unary_forward(code: usize, value: f64) -> Option<f64> {
+    match code {
+        1 => Some(-value),
+        2 => Some(value.max(0.0)),
+        3 => Some(1.0 / (1.0 + (-value).exp())),
+        4 => Some(value.tanh()),
+        5 => Some(value.sqrt()),
+        6 => Some(value.ln()),
+        _ => None,
+    }
+}
+
+fn fused_unary_derivative(code: usize, input: f64, output: f64) -> Option<f64> {
+    match code {
+        1 => Some(-1.0),
+        2 => Some(if input > 0.0 { 1.0 } else { 0.0 }),
+        3 => Some(output * (1.0 - output)),
+        4 => Some(1.0 - output * output),
+        5 => Some(0.5 / output),
+        6 => Some(1.0 / input),
+        _ => None,
     }
 }
 

@@ -1,4 +1,4 @@
-// AI graph example: elementwise chain that the R-1602 graph optimizer can fuse.
+// AI graph example: CPU unary chain executed through the fused Tensor IR kernel.
 module ai_tensor_graph_elementwise_fusion
 
 import std.tensor as tensor
@@ -18,7 +18,7 @@ public func main() returns int {
     if tensor.get_f(projected, 0) <= 0.0 {
         return 1
     }
-    if tensor.stats_kernel_ops() < 3 {
+    if tensor.stats_kernel_ops() != 1 {
         return 2
     }
 

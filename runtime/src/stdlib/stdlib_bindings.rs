@@ -336,6 +336,7 @@ pub(crate) const TENSOR_SQRT_F: &str = "spectra.std.tensor.sqrt_f";
 pub(crate) const TENSOR_RELU: &str = "spectra.std.tensor.relu";
 pub(crate) const TENSOR_SIGMOID_F: &str = "spectra.std.tensor.sigmoid_f";
 pub(crate) const TENSOR_TANH_F: &str = "spectra.std.tensor.tanh_f";
+pub(crate) const TENSOR_FUSED_UNARY: &str = "spectra.runtime.tensor.fused_unary";
 pub(crate) const TENSOR_SEED: &str = "spectra.std.tensor.seed";
 pub(crate) const TENSOR_UNIFORM: &str = "spectra.std.tensor.uniform";
 pub(crate) const TENSOR_UNIFORM_F: &str = "spectra.std.tensor.uniform_f";

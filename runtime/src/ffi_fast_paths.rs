@@ -86,17 +86,19 @@ pub extern "C" fn spectra_rt_manual_alloc(size: usize) -> *mut u8 {
 
     let state = initialize();
     let memory = state.memory();
+    let table = allocation_table();
+    let mut guard = table.lock().unwrap_or_else(|e| e.into_inner());
+
     let mut allocation = match memory.allocate_manual_bytes(size) {
         Ok(allocation) => allocation,
-        Err(_) => return ptr::null_mut(),
+        Err(error) => {
+            drop(guard);
+            manual_allocation_abort(&error);
+        }
     };
 
     let ptr = allocation.as_mut().as_mut_ptr();
-
     let ptr_value = ptr as usize;
-
-    let table = allocation_table();
-    let mut guard = table.lock().unwrap_or_else(|e| e.into_inner());
 
     // Attach to the top of the *calling thread's* frame stack (base frame 0
     // when the thread has no open frame) — never to the globally newest frame,
@@ -117,6 +119,36 @@ pub extern "C" fn spectra_rt_manual_alloc(size: usize) -> *mut u8 {
     }
 
     ptr
+}
+
+/// Turns a failed tracked allocation into a normal Spectra runtime diagnostic.
+/// Generated callers may dereference the returned pointer without a null
+/// check, so this path must terminate before the ABI returns a null address.
+fn manual_allocation_abort(error: &crate::memory::AllocationError) -> ! {
+    let message: &'static [u8] = if error.system_allocation_failed() {
+        b"manual allocation failed: system allocator could not reserve memory\0"
+    } else {
+        b"manual allocation failed: configured resident-memory limit exceeded\0"
+    };
+    debug_assert_eq!(message.last(), Some(&0));
+    crate::panic::spectra_rt_panic(message.as_ptr() as i64);
+    unreachable!("spectra_rt_panic terminates the process")
+}
+
+/// Returns the bytes currently counted as live by the manual allocator.
+#[no_mangle]
+pub extern "C" fn spectra_rt_manual_live_bytes() -> usize {
+    initialize().memory_stats().manual.bytes
+}
+
+/// Returns bytes still retained by freed-allocation tombstones. This is
+/// intentionally separate from `spectra_rt_manual_live_bytes` because the
+/// backing blocks no longer count as live values but still occupy memory.
+#[no_mangle]
+pub extern "C" fn spectra_rt_manual_quarantine_bytes() -> usize {
+    let table = allocation_table();
+    let guard = table.lock().unwrap_or_else(|e| e.into_inner());
+    guard.quarantine_bytes()
 }
 
 const SPECTRA_STRING_SCAN_LIMIT: usize = 16 * 1024 * 1024;

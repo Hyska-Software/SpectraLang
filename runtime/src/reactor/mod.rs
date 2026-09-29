@@ -20,7 +20,7 @@
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, Weak};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -180,7 +180,7 @@ struct ReactorCore {
     ready: Condvar,
     timers: TimerWheel,
     os: Option<OsMultiplexer>,
-    timer_driver_started: AtomicBool,
+    timer_driver_started: Mutex<bool>,
 }
 
 #[derive(Debug)]
@@ -192,12 +192,16 @@ struct OsMultiplexer {
 
 impl ReactorCore {
     fn new() -> Self {
+        Self::with_os(OsMultiplexer::new())
+    }
+
+    fn with_os(os: Option<OsMultiplexer>) -> Self {
         Self {
             state: Mutex::new(ReactorState::default()),
             ready: Condvar::new(),
             timers: TimerWheel::default(),
-            os: OsMultiplexer::new(),
-            timer_driver_started: AtomicBool::new(false),
+            os,
+            timer_driver_started: Mutex::new(false),
         }
     }
 
@@ -371,10 +375,16 @@ pub struct Reactor {
 
 impl Reactor {
     pub fn new() -> Self {
-        Self {
-            backend: selected_backend(),
-            core: Arc::new(ReactorCore::new()),
-        }
+        Self::from_core(Arc::new(ReactorCore::new()))
+    }
+
+    fn from_core(core: Arc<ReactorCore>) -> Self {
+        let backend = if core.os.is_some() {
+            selected_backend()
+        } else {
+            BackendKind::Fallback
+        };
+        Self { backend, core }
     }
 
     pub fn backend(&self) -> BackendKind {
@@ -385,31 +395,44 @@ impl Reactor {
         self.core.push_event(ReactorEvent::task(task));
     }
 
-    pub fn register_timer(&self, token: i64, delay: Duration) {
-        let generation = self.core.generation();
-        self.core.schedule_timer(token, delay, generation);
-        self.ensure_timer_driver();
+    pub fn register_timer(&self, token: i64, delay: Duration) -> bool {
+        self.register_timer_with(token, delay, || {
+            let core_ref = Arc::downgrade(&self.core);
+            thread::Builder::new()
+                .name("spectra-reactor-timers".to_string())
+                .spawn(move || run_timer_driver(core_ref))
+                .map(|_| ())
+        })
     }
 
     /// Spawn the single timer driver on first use. Exactly one driver thread
     /// serves every pending deadline for this reactor; it exits on its own
-    /// once the reactor is dropped.
-    fn ensure_timer_driver(&self) {
-        if self.core.timer_driver_started.swap(true, Ordering::AcqRel) {
-            return;
+    /// once the reactor is dropped. The timer is scheduled only after startup
+    /// succeeds, and `false` makes a spawn failure observable to callers.
+    fn register_timer_with(
+        &self,
+        token: i64,
+        delay: Duration,
+        spawn: impl FnOnce() -> std::io::Result<()>,
+    ) -> bool {
+        let mut started = self
+            .core
+            .timer_driver_started
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !*started {
+            TIMER_DRIVER_THREADS.fetch_add(1, Ordering::AcqRel);
+            if spawn().is_err() {
+                TIMER_DRIVER_THREADS.fetch_sub(1, Ordering::AcqRel);
+                return false;
+            }
+            *started = true;
         }
-        TIMER_DRIVER_THREADS.fetch_add(1, Ordering::AcqRel);
-        let core_ref = Arc::downgrade(&self.core);
-        let spawned = thread::Builder::new()
-            .name("spectra-reactor-timers".to_string())
-            .spawn(move || run_timer_driver(core_ref))
-            .is_ok();
-        if !spawned {
-            self.core
-                .timer_driver_started
-                .store(false, Ordering::Release);
-            TIMER_DRIVER_THREADS.fetch_sub(1, Ordering::AcqRel);
-        }
+        drop(started);
+
+        let generation = self.core.generation();
+        self.core.schedule_timer(token, delay, generation);
+        true
     }
 
     /// Synthetic I/O registration for tests only. Production socket readiness
@@ -710,31 +733,48 @@ mod tests {
     static TIMER_TEST_LOCK: Mutex<()> = Mutex::new(());
     #[test]
     fn selects_platform_backend() {
-        let backend = Reactor::new().backend();
-        #[cfg(target_os = "linux")]
-        assert_eq!(backend, BackendKind::LinuxEpoll);
-        #[cfg(target_os = "windows")]
-        assert_eq!(backend, BackendKind::WindowsIocp);
-        #[cfg(any(
-            target_os = "macos",
-            target_os = "ios",
-            target_os = "freebsd",
-            target_os = "openbsd",
-            target_os = "netbsd",
-            target_os = "dragonfly"
-        ))]
-        assert_eq!(backend, BackendKind::MacosKqueue);
-        #[cfg(not(any(
-            target_os = "linux",
-            target_os = "windows",
-            target_os = "macos",
-            target_os = "ios",
-            target_os = "freebsd",
-            target_os = "openbsd",
-            target_os = "netbsd",
-            target_os = "dragonfly"
-        )))]
-        assert_eq!(backend, BackendKind::Fallback);
+        let reactor = Reactor::new();
+        let expected = if reactor.core.os.is_some() {
+            selected_backend()
+        } else {
+            BackendKind::Fallback
+        };
+        assert_eq!(reactor.backend(), expected);
+    }
+
+    #[test]
+    fn reports_fallback_when_platform_poll_is_unavailable() {
+        let reactor = Reactor::from_core(Arc::new(ReactorCore::with_os(None)));
+        assert_eq!(reactor.backend(), BackendKind::Fallback);
+        assert!(!reactor.register_source(
+            &mut mio::net::TcpListener::bind(
+                "127.0.0.1:0".parse().expect("loopback address must parse"),
+            )
+            .expect("loopback listener must bind"),
+            7,
+            Interest::READABLE,
+        ));
+    }
+
+    #[test]
+    fn timer_driver_spawn_failure_is_observable_and_does_not_schedule_timer() {
+        let _timer_guard = TIMER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let reactor = Reactor::from_core(Arc::new(ReactorCore::with_os(None)));
+
+        let registered = reactor.register_timer_with(19, Duration::from_millis(1), || {
+            Err(std::io::Error::other("injected timer-thread spawn failure"))
+        });
+
+        assert!(!registered);
+        assert!(!*reactor
+            .core
+            .timer_driver_started
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner));
+        assert!(lock_timer_heap(&reactor.core).is_empty());
+        assert_eq!(reactor.poll(Some(Duration::ZERO)), None);
     }
 
     #[cfg(any(

@@ -1,0 +1,15 @@
+// Negative regression: Result propagation requires a compatible Result error type (E050).
+module try_incompatible_context
+
+func source() returns Result<int, string> {
+    return Result::Ok(4)
+}
+
+func invalid() returns Result<int, int> {
+    let value = source()?
+    return Result::Ok(value)
+}
+
+public func main() returns int {
+    return 0
+}

@@ -13,6 +13,7 @@ pub enum BackendErrorKind {
     UnsupportedHostArgumentType,
     UnsupportedType,
     TensorIr,
+    AllocationFailed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +109,10 @@ impl BackendCodegenError {
 
     pub(crate) fn tensor_ir(message: impl Into<String>) -> Self {
         Self::new(BackendErrorKind::TensorIr, message)
+    }
+
+    pub(crate) fn allocation_failed(message: impl Into<String>) -> Self {
+        Self::new(BackendErrorKind::AllocationFailed, message)
     }
 }
 

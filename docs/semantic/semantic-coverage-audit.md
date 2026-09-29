@@ -1,6 +1,6 @@
 # Semantic Coverage Audit
 
-Updated: 2026-05-21  
+Updated: 2026-09-29
 Roadmap item: `R-102`
 
 This matrix maps the current AST surface to semantic validation coverage. No AST family is left unclassified.
@@ -31,7 +31,7 @@ Status labels:
 
 | AST family | Status | Notes |
 | --- | --- | --- |
-| `let` bindings | supported | Type inference, shadowing checks, and lint hooks are active. |
+| `let` bindings | supported | Type inference, shadowing checks, and lint hooks are active. `mut` is accepted as a redundant marker; local bindings remain reassignable by default. |
 | Assignments | supported | Undefined targets and type mismatches are diagnosed. |
 | `return` | supported | Function return compatibility and path coverage are validated. |
 | `break` / `continue` | supported | Loop-context validation emits stable semantic codes. |
@@ -61,7 +61,8 @@ Status labels:
 | Blocks as expressions | supported | Final-expression typing is validated. |
 | `if` expressions | supported | Branch result typing is unified. |
 | `if not` expressions | supported | Semantic stage analyzes the canonical negative conditional as a negated `if`. |
-| `match` expressions | supported | Pattern coverage, arm typing, and exhaustiveness checks exist for the current surface. |
+| `match` expressions | supported | Arm typing and exhaustiveness are checked. A guard is analyzed after the pattern bindings are introduced, must have type `bool` (`E040`), and never contributes unconditional coverage; uncovered cases retain `E031`. |
+| `?` propagation | supported | Only `Option<T>` and `Result<T, E>` operands are accepted (`E049` otherwise); the expression has the success payload type, and the enclosing return type must accept the propagated `None`/`Err` path (`E050` otherwise). |
 | Closures/lambdas | supported | Explicit function types and parameter-driven inference now work in current examples. |
 | Trait object expressions `dyn Trait` | supported | Current semantic model handles concrete-to-dyn coercion and method dispatch typing. |
 
@@ -75,7 +76,7 @@ Status labels:
 | Tuple pattern | supported | |
 | Enum variant tuple pattern | supported | |
 | Enum variant struct pattern | supported | |
-| Pattern guards | supported | |
+| Pattern guards | supported | Bindings from the arm pattern are in scope; the guard must be `bool` (`E040`). Guarded enum, boolean, OR-pattern, and wildcard arms do not count as unconditional exhaustive coverage (`E031` if a case remains uncovered). |
 | OR-patterns | supported | Parsed, validated, included in exhaustiveness checks, and covered by validation tests. |
 | Slice patterns | deferred | No parser or semantic contract yet. |
 
@@ -83,7 +84,7 @@ Status labels:
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Primitive types | supported | `int`, `float`, `bool`, `char`, `string`, `unit`, plus numeric aliases over the current canonical ABI. |
+| Primitive types | supported | `int`, `float`, `bool`, `char`, `string`, `unit`, and exact-width integer/float types in the validated surface. |
 | Tuples | supported | |
 | Functions as types | supported | |
 | Generics | supported | Includes current monomorphization pipeline. |
@@ -91,7 +92,7 @@ Status labels:
 | Trait bounds | supported | Current validation handles the supported generic method surface. |
 | Trait objects | supported | Current dyn-trait flows compile in the test suite. |
 | Higher-ranked generics | deferred | |
-| Production-grade scientific numeric lattice | partial | Numeric aliases are accepted and checked; exact-width storage/overflow semantics remain future work. |
+| Exact-width numeric semantics | supported | Checked casts, explicit wrapping operations, JIT/AOT storage and the certified C ABI surface are tracked by `core.exact_width` in `scripts/language_stability_contract.toml`. |
 | Tensor handles | supported baseline | `std.tensor` Phase 3 APIs are typed as runtime handles plus host calls with accepted ADR semantics; first-class static tensor types remain future work. |
 | Tensor autodiff | supported baseline | `std.tensor` Phase 5 APIs expose reverse-mode autodiff as typed host calls over float tensor handles; compiler-native autodiff syntax remains future work. |
 | ML framework handles | supported baseline | `std.ml` Phase 6 APIs are typed as runtime handles plus host calls for modules, layers, losses, optimizers, and dataloaders. |
@@ -101,4 +102,12 @@ Status labels:
 - aggregate, string, tensor, and handle global initialization beyond the stable scalar `static` surface
 - deeper class model finalization: future semantic backlog
 - production-grade indexed collections and shape-aware tensor types: `R-201` through `R-304`
-- exact-width numeric runtime semantics beyond the canonical alpha ABI
+
+The focused fixtures are `tests/validation/630_language_core_guards_try_mut.spectra`
+and the negative cases `tests/errors/match_guard_non_bool.spectra`,
+`tests/errors/match_guard_exhaustiveness.spectra`,
+`tests/errors/match_guarded_wildcard_exhaustiveness.spectra`,
+`tests/errors/try_invalid_operand.spectra` and
+`tests/errors/try_incompatible_context.spectra`. Listing fixtures records the
+coverage contract; it does not report that a gate passed in this documentation
+change.

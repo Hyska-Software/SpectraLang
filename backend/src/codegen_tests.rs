@@ -100,6 +100,29 @@ mod tests {
     }
 
     #[test]
+    fn jit_string_literal_allocation_failure_is_reported_without_untracked_fallback() {
+        let mut records = HashMap::new();
+        let mut storage = Vec::new();
+        let result = intern_string_literal_with_allocator(
+            &mut records,
+            &mut storage,
+            "tracked literal",
+            |_| std::ptr::null_mut(),
+        );
+        let error = match result {
+            Ok(_) => panic!("failed tracked allocation must stop code generation"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.kind(), &BackendErrorKind::AllocationFailed);
+        assert!(error
+            .message()
+            .contains("JIT string literal allocation failed"));
+        assert!(records.is_empty());
+        assert!(storage.is_empty());
+    }
+
+    #[test]
     fn local_scalar_array_allocas_use_native_stack_when_not_escaping() {
         let function = IRFunction {
             name: "stackable".to_string(),

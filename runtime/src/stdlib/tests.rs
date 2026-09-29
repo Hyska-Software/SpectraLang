@@ -5964,6 +5964,47 @@ fn with_timeout_fires_from_wall_clock_without_advance_time() {
 }
 
 #[test]
+fn timer_startup_failure_reaches_host_status_and_rolls_back_timeout_task() {
+    let _lock = test_guard();
+
+    assert_eq!(
+        async_reactor_timer_with_register(303, Duration::from_millis(1), |_, _| false),
+        HOST_STATUS_INTERNAL_ERROR,
+        "reactor timer startup failure must not report host-call success"
+    );
+
+    let mut registry = AsyncTaskRegistry::new();
+    let scope = registry.create_scope(None).expect("test scope");
+    let inner = registry.allocate_task_with_completion(7, Some(scope), None, None, true, false);
+    let result =
+        async_timeout_task_with_register(&mut registry, inner, Duration::from_millis(1), |_, _| {
+            false
+        });
+
+    assert_eq!(result, Err(HOST_STATUS_INTERNAL_ERROR));
+    assert!(registry.tasks.contains_key(inner));
+    assert_eq!(
+        registry.tasks.keys().count(),
+        1,
+        "failed wrapper is removed"
+    );
+    assert_eq!(
+        registry.cancel_handles.keys().count(),
+        1,
+        "failed wrapper cancel handle is removed"
+    );
+    assert_eq!(
+        registry
+            .scopes
+            .get(scope)
+            .expect("test scope remains")
+            .children,
+        vec![inner],
+        "failed wrapper is removed from its parent scope"
+    );
+}
+
+#[test]
 fn async_stream_host_calls_cover_adaptors_backpressure_done_and_cancellation() {
     let _lock = test_guard();
     clear_host_functions();

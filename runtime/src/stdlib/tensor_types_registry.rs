@@ -156,6 +156,7 @@ pub(crate) enum AutogradOp {
     Sqrt,
     Sigmoid,
     Tanh,
+    FusedUnary,
     SumTensor,
     MeanTensor,
     Matmul,
